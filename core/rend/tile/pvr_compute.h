@@ -2055,8 +2055,10 @@ void frag_grads(uint r, uint flags, i64vec3 e, bool vol1, inout Frag f)
          if ((g_py & 1) != 0)
             itl -= iy;
          tl = vec3(itl);
-         dx = vec3(ix);
-         dy = vec3(iy);
+         /* (a direction is under 2^30 in size, so its step's float is its
+          * own float times 256, exactly: no conversion from 64 bits) */
+         dx = vec3(float(-d0.y), float(-d1.y), float(-d2.y)) * 256.0;
+         dy = vec3(float(d0.x), float(d1.x), float(d2.x)) * 256.0;
       }
       else
       {
