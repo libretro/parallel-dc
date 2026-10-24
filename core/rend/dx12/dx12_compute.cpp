@@ -116,6 +116,8 @@ struct DX12ComputeDrawer::Resources
 	ComPtr<ID3D12PipelineState> walkUnsorted;
 	// with SSAA, the walk for renders to a texture, at one sample a pixel, both variants
 	ComPtr<ID3D12PipelineState> walk1, walk1Unsorted;
+	// whether the device loads R8G8B8A8_UNORM from an unordered access view (the Y filter, PVRC_K_YFILTER)
+	bool yfilter = false;
 	ComPtr<ID3D12CommandSignature> dispatch;
 	/* the ring: a piece a slot, each the frame's words then the slots' */
 	ComPtr<ID3D12Resource> ring;
@@ -127,7 +129,7 @@ struct DX12ComputeDrawer::Resources
 	ComPtr<ID3D12Resource> bins;
 	ComPtr<ID3D12Resource> zero;		// zeros, for the bins' counts and starts each frame
 	ComPtr<ID3D12Resource> args;		// the dispatches' arguments: the bins' counts, copied
-	ComPtr<ID3D12Resource> across;		// the walk's dispatches across, pvrc_walk_x() for each tile size, count of samples and Y filter, copied to them
+	ComPtr<ID3D12Resource> across;		// the walk's dispatches across, pvrc_walk_x() for each tile size and count of samples, copied to them
 	ComPtr<ID3D12Resource> stats;		// the counts for the log, a piece a slot, read when it comes round
 	/* the picture a frame starts from when the one before cannot be read
 	 * where it is (CopyStart()): the screen's size, a place in the table */
@@ -299,6 +301,14 @@ bool DX12ComputeDrawer::Init(u32 width, u32 height, u32 samples)
 		if (FAILED(device->CreateCommandSignature(&desc, nullptr, __uuidof(ID3D12CommandSignature), (void **)r->dispatch.put())))
 			return fail("no command signature");
 	}
+	{
+		/* (typed loads of R8G8B8A8_UNORM: every device of feature level
+		 * 12_0 and up has them, but they are an option of 11's) */
+		D3D12_FEATURE_DATA_FORMAT_SUPPORT fs{};
+		fs.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+		r->yfilter = SUCCEEDED(device->CheckFeatureSupport(D3D12_FEATURE_FORMAT_SUPPORT, &fs, sizeof(fs)))
+				&& (fs.Support2 & D3D12_FORMAT_SUPPORT2_UAV_TYPED_LOAD) != 0;
+	}
 
 	const D3D12_RESOURCE_FLAGS uav = D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS;
 	const D3D12_RESOURCE_STATES ua = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
@@ -308,19 +318,18 @@ bool DX12ComputeDrawer::Init(u32 width, u32 height, u32 samples)
 			&& makeBuffer(device, D3D12_HEAP_TYPE_DEFAULT, (u64)r->binWords * 4, uav, ua, r->bins)
 			&& makeBuffer(device, D3D12_HEAP_TYPE_DEFAULT, (u64)PVRC_B_POOL(r->runs) * 4, D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_COPY_SOURCE, r->zero)
 			&& makeBuffer(device, D3D12_HEAP_TYPE_DEFAULT, PVRC_ST_ARGS * 4, D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_INDIRECT_ARGUMENT, r->args)
-			&& makeBuffer(device, D3D12_HEAP_TYPE_UPLOAD, 8 * 32 * 4, D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_GENERIC_READ, r->across)
+			&& makeBuffer(device, D3D12_HEAP_TYPE_UPLOAD, 8 * 4, D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_GENERIC_READ, r->across)
 			&& makeBuffer(device, D3D12_HEAP_TYPE_READBACK, (u64)PVRC_STATS * 4 * Slots, D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_COPY_DEST, r->stats);
 	if (ok)
 	{
-		/* (tiles of 2^5 or 2^6 pixels, ComputeFrame::TileLog2(); 1, 2, 4 or 8
-		 * samples; the Y filter's lines, PVRC_FF_YLINES(), 0 to 31) */
+		/* (tiles of 2^5 or 2^6 pixels, ComputeFrame::TileLog2(); 1, 2, 4 or 8 samples) */
 		u32 *across = nullptr;
 		const D3D12_RANGE none{};
 		ok = SUCCEEDED(r->across->Map(0, &none, (void **)&across));
 		if (ok)
 		{
-			for (u32 i = 0; i < 8 * 32; i++)
-				across[i] = pvrc_walk_x(5 + i / 128, 1u << (i / 32 % 4), PVRC_FF_YFILTER(i % 32, 0u));
+			for (u32 i = 0; i < 8; i++)
+				across[i] = pvrc_walk_x(5 + i / 4, 1u << (i % 4));
 			r->across->Unmap(0, nullptr);
 		}
 	}
@@ -619,7 +628,7 @@ void DX12ComputeDrawer::Record(ID3D12Resource *picture)
 		context->Transition(r.bins, binState, D3D12_RESOURCE_STATE_COPY_SOURCE);
 		context->Transition(r.args, argState, D3D12_RESOURCE_STATE_COPY_DEST);
 		cmd->CopyBufferRegion(r.args, 0, r.bins, (u64)PVRC_B_STATS(r.runs) * 4, PVRC_ST_ARGS * 4);
-		const u64 across = (((words[PVRC_F_TILE_LOG2] - 5) * 4 + SSAA_LOG2(r.rtt ? 1u : samples)) * 32 + PVRC_FF_YLINES(words[PVRC_F_FLAGS])) * 4;
+		const u64 across = ((words[PVRC_F_TILE_LOG2] - 5) * 4 + SSAA_LOG2(r.rtt ? 1u : samples)) * 4;
 		cmd->CopyBufferRegion(r.args, PVRC_ST_WALK_U_X * 4, r.across, across, 4);
 		cmd->CopyBufferRegion(r.args, PVRC_ST_WALK_S_X * 4, r.across, across, 4);
 		context->Transition(r.args, argState, D3D12_RESOURCE_STATE_INDIRECT_ARGUMENT);
@@ -666,6 +675,13 @@ void DX12ComputeDrawer::Record(ID3D12Resource *picture)
 	cmd->SetPipelineState(n != samples ? r.walk1 : r.pipelines[PVRC_K_WALK]);
 	cmd->ExecuteIndirect(r.dispatch, 1, r.args, (u64)PVRC_ST_WALK_S_X * 4, nullptr, 0);
 	barrier();
+	/* the Y filter, in place over the picture, where the frame has it
+	 * (and the device loads the picture's format from a view of it that
+	 * is written: Init()) */
+	u32 yx, yy;
+	pvrc_yfilter_groups(words, &yx, &yy);
+	if (yy != 0 && r.yfilter)
+		step(PVRC_K_YFILTER, yx, yy);
 	indirect(PVRC_K_CLEAR, PVRC_ST_CLEAR_X);
 	// the counts, for when this piece comes round
 	context->Transition(r.bins, binState, D3D12_RESOURCE_STATE_COPY_SOURCE);

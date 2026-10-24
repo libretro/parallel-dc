@@ -130,7 +130,8 @@
 #define PVRC_K_WALK    5
 #define PVRC_K_CLEAR   6
 #define PVRC_K_GPUSRC  7   /* (a frame of the decode's, first) */
-#define PVRC_KERNELS   7
+#define PVRC_K_YFILTER 8   /* (after the walk, where the frame has the Y filter) */
+#define PVRC_KERNELS   8
 
 #define PVRC_NONE 0xffffffffu
 
@@ -380,58 +381,22 @@
 /* The fine tile of a workgroup of the walk, for N samples: 256 lanes */
 #define PVRC_FINE_W(n) ((n) <= 2u ? 16u : 8u)
 #define PVRC_FINE_H(n) (256u / (n) / PVRC_FINE_W(n))
-/* ...through the Y filter, whose taps are @m lines apart: the fine tile
- * also shades the m lines above and the m below the lines it writes (a
- * halo: what its neighbours draw, the filter's taps in its own lanes), so
- * it is made narrower and taller until the halo is a quarter of it or it
- * is two pixels across; fw | fh << 8 (it writes fh - 2m lines), or 0
- * where m leaves it no line to write */
-PVR_FN pvr_u32 pvrc_fine_yfilter(pvr_u32 n, pvr_u32 m)
-{
-   pvr_u32 fw = PVRC_FINE_W(n), fh = PVRC_FINE_H(n);
-   while (fw > 2u && fh < 8u * m)
-   {
-      fw = fw >> 1u;
-      fh = fh << 1u;
-   }
-   return fh > 2u * m ? fw | (fh << 8u) : 0u;
-}
-/* The walk's halo at @n samples for frame flags @flags: the Y filter's
- * lines (PVRC_FF_YLINES()) where its fine tile has lines to write, else
- * 0 (no filter) */
-PVR_FN pvr_u32 pvrc_walk_halo(pvr_u32 n, pvr_u32 flags)
-{
-   const pvr_u32 m = PVRC_FF_YLINES(flags);
-   return m != 0u && pvrc_fine_yfilter(n, m) != 0u ? m : 0u;
-}
-/* ...its fine tile, fw | fh << 8 (the lines it writes are fh less twice
- * the halo) */
-PVR_FN pvr_u32 pvrc_walk_fine(pvr_u32 n, pvr_u32 flags)
-{
-   const pvr_u32 m = pvrc_walk_halo(n, flags);
-   return m != 0u ? pvrc_fine_yfilter(n, m) : PVRC_FINE_W(n) | (PVRC_FINE_H(n) << 8u);
-}
-/* ...the rows of fine tiles down a coarse tile, 2^@log2 pixels square
- * (the last one's lines past the coarse tile left to the next) */
-PVR_FN pvr_u32 pvrc_walk_down(pvr_u32 log2, pvr_u32 n, pvr_u32 flags)
-{
-   const pvr_u32 wr = (pvrc_walk_fine(n, flags) >> 8u) - 2u * pvrc_walk_halo(n, flags);
-   return ((1u << log2) + wr - 1u) / wr;
-}
-/* ...and the fine tiles of a coarse tile */
-PVR_FN pvr_u32 pvrc_walk_x(pvr_u32 log2, pvr_u32 n, pvr_u32 flags)
-{
-   return ((1u << log2) / (pvrc_walk_fine(n, flags) & 255u)) * pvrc_walk_down(log2, n, flags);
-}
+/* ...and the fine tiles of a coarse tile, 2^@log2 pixels square */
+#define pvrc_walk_x(log2, n) (((1u << (log2)) / PVRC_FINE_W(n)) * ((1u << (log2)) / PVRC_FINE_H(n)))
 #if !defined(PVRC_SHADER)
 /* The whole walk's workgroups (PVRC_V_ALL) across (@x) and down (@y), for
  * frame words @f at @n samples a pixel */
 static INLINE void pvrc_walk_groups(const pvr_u32 *f, pvr_u32 n, pvr_u32 *x, pvr_u32 *y)
 {
-   const pvr_u32 t = pvrc_walk_fine(n, f[PVRC_F_FLAGS]);
-   *x = (f[PVRC_F_WIDTH] + (t & 255u) - 1u) / (t & 255u);
-   *y = pvrc_walk_halo(n, f[PVRC_F_FLAGS]) != 0u ? f[PVRC_F_TILES_Y] * pvrc_walk_down(f[PVRC_F_TILE_LOG2], n, f[PVRC_F_FLAGS])
-         : (f[PVRC_F_HEIGHT] + (t >> 8u) - 1u) / (t >> 8u);
+   *x = (f[PVRC_F_WIDTH] + PVRC_FINE_W(n) - 1u) / PVRC_FINE_W(n);
+   *y = (f[PVRC_F_HEIGHT] + PVRC_FINE_H(n) - 1u) / PVRC_FINE_H(n);
+}
+/* The Y filter's workgroups (PVRC_K_YFILTER), across and down: 0 down
+ * where the frame has no filter, and no dispatch is made */
+static INLINE void pvrc_yfilter_groups(const pvr_u32 *f, pvr_u32 *x, pvr_u32 *y)
+{
+   *x = (PVRC_PICTURE_W(f) + 63u) / 64u;
+   *y = PVRC_FF_YLINES(f[PVRC_F_FLAGS]);
 }
 #endif
 
@@ -537,6 +502,11 @@ RWTexture2D<unorm float4> outImage : register(u0, space2);
       pvrc_samplers[NonUniformResourceIndex(slot_w[slot] >> 16)], uv, dx, dy)
 #define textureLod(t, uv, lod) t.SampleLevel(pvrc_linear, uv, lod)
 #define texelFetch(t, p, lod) t.Load(int3(p, lod))
+#define imageStore(image, p, v) image[p] = (v)
+#endif
+#if PVRC_KERNEL == PVRC_K_YFILTER
+RWTexture2D<unorm float4> outImage : register(u0, space2);
+#define imageLoad(image, p) image[p]
 #define imageStore(image, p, v) image[p] = (v)
 #endif
 
@@ -956,23 +926,12 @@ bool pvrc_rec_hits(uint r, int x0, int y0, int x1, int y1)
 
 #if PVRC_KERNEL == PVRC_K_SETUP || PVRC_KERNEL == PVRC_K_SCATTER
 /* The coarse tiles a primitive's pixels touch, first x | y << 16 and last */
-/* Through the Y filter a coarse tile's lists also have what covers the
- * lines its walks shade above and below it (the walk's halo): the lines
- * above and below it a primitive is binned for, for any number of
- * samples (these kernels are the same for all) */
-uint pvrc_tile_halo()
-{
-   return PVRC_FF_YLINES(frm.w[PVRC_F_FLAGS]);
-}
-
 uvec2 pvrc_tile_range(uint r)
 {
    uint b0 = rec.w[r + PVRC_R_BBOX0], b1 = rec.w[r + PVRC_R_BBOX1];
    uint l2 = frm.w[PVRC_F_TILE_LOG2];
-   const uint halo = pvrc_tile_halo();
-   const uint y0 = b0 >> 16, y1 = min((b1 >> 16) + halo, frm.w[PVRC_F_HEIGHT] - 1u);
-   return uvec2(((b0 & 0xffffu) >> l2) | (((y0 > halo ? y0 - halo : 0u) >> l2) << 16),
-         ((b1 & 0xffffu) >> l2) | ((y1 >> l2) << 16));
+   return uvec2(((b0 & 0xffffu) >> l2) | (((b0 >> 16) >> l2) << 16),
+         ((b1 & 0xffffu) >> l2) | (((b1 >> 16) >> l2) << 16));
 }
 
 /* Whether a primitive is binned to a coarse tile of its range: one its
@@ -982,8 +941,7 @@ bool pvrc_tile_hit(uint r, uint tx, uint ty)
 {
    const uint l2 = frm.w[PVRC_F_TILE_LOG2];
    const int x0 = int(tx << l2), y0 = int(ty << l2);
-   const int halo = int(pvrc_tile_halo());
-   return pvrc_rec_hits(r, x0, y0 - halo, x0 + int(1u << l2) - 1, y0 + int(1u << l2) - 1 + halo);
+   return pvrc_rec_hits(r, x0, y0, x0 + int(1u << l2) - 1, y0 + int(1u << l2) - 1);
 }
 #endif
 
@@ -1424,6 +1382,49 @@ void main()
    const uint w = gl_GlobalInvocationID.x;
    if (w < bin.w[PVRC_B_STATS(runs) + PVRC_ST_WORDS])
       bin.w[PVRC_B_POOL(runs) + w] = 0u;
+}
+#endif
+
+#if PVRC_KERNEL == PVRC_K_YFILTER
+/* The Y filter (pvr_scaler.h), in place over the picture the walk wrote:
+ * each line blended with the lines its taps are apart (m, the frame's
+ * PVRC_FF_YLINES()) above and below, the picture's first and last lines in
+ * the place of the line there is not. The lines a tap reaches are those
+ * of one remainder mod m, so a thread takes a column and a remainder (the
+ * workgroup's y) and walks down its lines, the one above and the line
+ * itself kept as they were before it wrote them: each pixel is read once
+ * and written once, by one thread, and nothing is kept anywhere else */
+layout(local_size_x = 64) in;
+
+#if defined(PVRC_SHADER_GLSL)
+layout(set = 0, binding = 3, rgba8) uniform image2D outImage;
+#endif
+
+uint pvrc_yf_load(ivec2 p)
+{
+   const uvec4 v = uvec4(round(imageLoad(outImage, p) * 255.0));
+   return v.x | (v.y << 8) | (v.z << 16) | (v.w << 24);
+}
+
+void main()
+{
+   const uint flags = frm.w[PVRC_F_FLAGS];
+   const uint m = PVRC_FF_YLINES(flags), ycoeff = PVRC_FF_YCOEFF(flags);
+   const uint w = frm.w[PVRC_F_WIDTH] >> ((flags & PVRC_FF_HSCALE) != 0u ? 1u : 0u), h = frm.w[PVRC_F_HEIGHT];
+   const int x = int(gl_GlobalInvocationID.x);
+   uint y = gl_WorkGroupID.y;
+   if (m == 0u || uint(x) >= w || y >= h)
+      return;
+   uint mid = pvrc_yf_load(ivec2(x, int(y)));
+   uint above = mid;
+   for (; y < h; y += m)
+   {
+      const uint below = y + m < h ? pvrc_yf_load(ivec2(x, int(y + m))) : mid;
+      const uint c = pvr_scaler_y(above, mid, below, ycoeff);
+      imageStore(outImage, ivec2(x, int(y)), (vec4(float(c & 255u), float((c >> 8) & 255u), float((c >> 16) & 255u), float(c >> 24)) + 0.25) / 255.0);
+      above = mid;
+      mid = below;
+   }
 }
 #endif
 
@@ -2441,47 +2442,28 @@ bool vol_close_counts(uint cov, uint cull)
 void main()
 {
    g_tid = gl_LocalInvocationIndex;
-   /* the fine tile; through the Y filter, the lines it writes and the
-    * halo above and below them (pvrc_fine_yfilter(); the coarse tile's
-    * lists have the halo's primitives too: pvrc_tile_halo()) */
-   const uint fine = pvrc_walk_fine(PVRC_SAMPLES, frm.w[PVRC_F_FLAGS]);
-   const uint fw = fine & 255u, fh = fine >> 8;
-   const uint halo = pvrc_walk_halo(PVRC_SAMPLES, frm.w[PVRC_F_FLAGS]);
-   const uint l2 = frm.w[PVRC_F_TILE_LOG2], down = pvrc_walk_down(l2, PVRC_SAMPLES, frm.w[PVRC_F_FLAGS]);
+   const uint fw = PVRC_FINE_W(PVRC_SAMPLES), fh = PVRC_FINE_H(PVRC_SAMPLES);
    const uint pix = g_tid >> PVRC_LOG2N, smp = g_tid & (PVRC_SAMPLES - 1u);
-   uint cx, cy, fx, fy;	/* the coarse tile, and the fine tile in it */
    if (PVRC_VARIANT == PVRC_V_ALL)
-   {
-      cx = 0u;
-      fx = gl_WorkGroupID.x;
-      cy = gl_WorkGroupID.y / down;
-      fy = gl_WorkGroupID.y % down;
-   }
+      g_fine.xy = gl_WorkGroupID.xy * uvec2(fw, fh);
    else
    {
       /* a coarse tile of the variant's list (the sort's), and a fine tile
-       * of it */
+       * of it; one past the picture's edge draws nothing */
       const uint runs = pvrc_runs();
       const uint row = PVRC_VARIANT == PVRC_V_SORTED ? pvrc_tiles() - 1u - gl_WorkGroupID.y : gl_WorkGroupID.y;
       const uint ct = bin.w[PVRC_B_TILES(runs) + runs + row];
-      const uint across = (1u << l2) / fw;
-      cx = ct % frm.w[PVRC_F_TILES_X];
-      cy = ct / frm.w[PVRC_F_TILES_X];
-      fx = gl_WorkGroupID.x % across;
-      fy = gl_WorkGroupID.x / across;
+      const uint l2 = frm.w[PVRC_F_TILE_LOG2], across = (1u << l2) / fw;
+      g_fine.xy = uvec2(((ct % frm.w[PVRC_F_TILES_X]) << l2) + (gl_WorkGroupID.x % across) * fw,
+            ((ct / frm.w[PVRC_F_TILES_X]) << l2) + (gl_WorkGroupID.x / across) * fh);
+      if (g_fine.x >= frm.w[PVRC_F_WIDTH] || g_fine.y >= frm.w[PVRC_F_HEIGHT])
+         return;
    }
-   const uint wy = (cy << l2) + fy * (fh - 2u * halo);	/* the first line written */
-   g_fine.x = (cx << l2) + fx * fw;
-   /* (one past the picture's edge draws nothing) */
-   if (g_fine.x >= frm.w[PVRC_F_WIDTH] || wy >= frm.w[PVRC_F_HEIGHT])
-      return;
-   g_fine.y = wy > halo ? wy - halo : 0u;
-   g_fine.zw = uvec2(g_fine.x + fw - 1u, min(wy + fh - 1u - halo, (cy << l2) + (1u << l2) - 1u + halo));
-   g_ct = (g_fine.x >> l2) + cy * frm.w[PVRC_F_TILES_X];
+   g_fine.zw = g_fine.xy + uvec2(fw - 1u, fh - 1u);
+   g_ct = (g_fine.x >> frm.w[PVRC_F_TILE_LOG2]) + (g_fine.y >> frm.w[PVRC_F_TILE_LOG2]) * frm.w[PVRC_F_TILES_X];
    g_px = int(g_fine.x + pix % fw);
-   g_py = int(wy + pix / fw) - int(halo);
-   /* (the lines past the coarse tile's halo are not its lists') */
-   g_in = g_px < int(frm.w[PVRC_F_WIDTH]) && g_py >= 0 && g_py < int(frm.w[PVRC_F_HEIGHT]) && uint(g_py) <= g_fine.w;
+   g_py = int(g_fine.y + pix / fw);
+   g_in = g_px < int(frm.w[PVRC_F_WIDTH]) && g_py < int(frm.w[PVRC_F_HEIGHT]);
    g_cx = g_px * 256 + 128;
    g_cy = g_py * 256 + 128;
    g_sx = g_px * 256 + int(SSAA_SAMPLE_X16(PVRC_SAMPLES, smp)) * 16;
@@ -3094,26 +3076,6 @@ void main()
    }
    else
       c = pvr_resolve_lanes(g_col, PVRC_LOG2N);
-   /* ...then the Y filter (pvr_scaler.h): the lines its taps are apart
-    * above and below in the tile's own lanes (its halo, which it shades
-    * and does not write), the picture's first and last lines in the place
-    * of the line there is not */
-   if (halo != 0u)
-   {
-      const uint step = (halo * fw) << PVRC_LOG2N;
-      const uint row = pix / fw;
-      const bool writes = row >= halo && row < fh - halo && uint(g_py) < ((cy + 1u) << l2);
-      PVR_LANE_SYNC();
-      pvr_lane_xchg[PVR_LANE_SELF] = c;
-      PVR_LANE_SYNC();
-      if (writes)
-      {
-         const uint above = g_py >= int(halo) ? pvr_lane_xchg[PVR_LANE_SELF - step] : c;
-         const uint below = g_py + int(halo) < int(frm.w[PVRC_F_HEIGHT]) ? pvr_lane_xchg[PVR_LANE_SELF + step] : c;
-         c = pvr_scaler_y(above, c, below, PVRC_FF_YCOEFF(frm.w[PVRC_F_FLAGS]));
-      }
-      stores = stores && writes;
-   }
    /* (a quarter of a step up: the device's conversion to 8 bits, whether
     * it rounds or truncates, and however it divides, gives the byte) */
    if (stores)

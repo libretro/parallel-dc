@@ -20,7 +20,7 @@
 #include "tile_test.c"
 
 #define BENCH_SETS 8
-#define BENCH_STAMPS 8
+#define BENCH_STAMPS 9
 
 static unsigned char *set_spv[BENCH_SETS][PVRC_KERNELS + 1];
 static int set_variants[BENCH_SETS];	/* (the set's walk has its variants: a file "variants" in its directory) */
@@ -124,7 +124,7 @@ static struct image make_texture(void)
    return im;
 }
 
-static const char *stage_names[BENCH_STAMPS - 1] = { "fill", "setup", "scan", "scatter", "sort", "walk", "clear" };
+static const char *stage_names[BENCH_STAMPS - 1] = { "fill", "setup", "scan", "scatter", "sort", "walk", "yfilter", "clear" };
 
 int main(int argc, char **argv)
 {
@@ -314,8 +314,8 @@ int main(int argc, char **argv)
                   b.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
                   b.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
                   vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 1, &b, 0, NULL, 0, NULL);
-                  vkCmdFillBuffer(cmd, bb.buffer, (VkDeviceSize)(PVRC_B_STATS(runs) + PVRC_ST_WALK_U_X) * 4, 4, pvrc_walk_x(frame[PVRC_F_TILE_LOG2], n ? n : 1u, frame[PVRC_F_FLAGS]));
-                  vkCmdFillBuffer(cmd, bb.buffer, (VkDeviceSize)(PVRC_B_STATS(runs) + PVRC_ST_WALK_S_X) * 4, 4, pvrc_walk_x(frame[PVRC_F_TILE_LOG2], n ? n : 1u, frame[PVRC_F_FLAGS]));
+                  vkCmdFillBuffer(cmd, bb.buffer, (VkDeviceSize)(PVRC_B_STATS(runs) + PVRC_ST_WALK_U_X) * 4, 4, pvrc_walk_x(frame[PVRC_F_TILE_LOG2], n ? n : 1u));
+                  vkCmdFillBuffer(cmd, bb.buffer, (VkDeviceSize)(PVRC_B_STATS(runs) + PVRC_ST_WALK_S_X) * 4, 4, pvrc_walk_x(frame[PVRC_F_TILE_LOG2], n ? n : 1u));
                }
                mem_barrier(cmd);
                vkCmdWriteTimestamp(cmd, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, queries, 1);
@@ -343,10 +343,15 @@ int main(int argc, char **argv)
                   }
                   BSTEP(PVRC_K_WALK, walkX, walkY, 6);
                }
+               {
+                  unsigned yx, yy;
+                  pvrc_yfilter_groups(frame, &yx, &yy);
+                  BSTEP(PVRC_K_YFILTER, yx, yy, 7);
+               }
                vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, pipes[ss][PVRC_K_CLEAR]);
                vkCmdDispatchIndirect(cmd, bb.buffer, (VkDeviceSize)(PVRC_B_STATS(runs) + PVRC_ST_CLEAR_X) * 4);
                mem_barrier(cmd);
-               vkCmdWriteTimestamp(cmd, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, queries, 7);
+               vkCmdWriteTimestamp(cmd, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, queries, 8);
                barrier(cmd, outImage.image, VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT);
                memset(&copy, 0, sizeof(copy));
                copy.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;

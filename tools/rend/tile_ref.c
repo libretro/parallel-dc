@@ -1134,10 +1134,9 @@ int tile_ref(const unsigned *frame, unsigned samples, const unsigned *last, unsi
             out[y * pw + (x >> 1)] = log2n == 0u ? pvr_scaler_x(sc[0], sc[1]) : pvr_resolve_samples(sc, log2n + 1u);
       }
    /* ...then the Y filter, its taps m lines apart, the picture's first and
-    * last lines in the place of the line there is not (the walk's, where
-    * its fine tile has a line to write: pvrc_fine_yfilter()) */
+    * last lines in the place of the line there is not */
    m = PVRC_FF_YLINES(F[PVRC_F_FLAGS]);
-   if (m != 0u && pvrc_fine_yfilter(samples, m) != 0u)
+   if (m != 0u)
    {
       const unsigned ycoeff = PVRC_FF_YCOEFF(F[PVRC_F_FLAGS]);
       unsigned *line = (unsigned *)malloc((size_t)pw * h * 4);

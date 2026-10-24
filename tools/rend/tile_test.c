@@ -287,7 +287,7 @@ static void init(const char *dir, int validate)
    {
       VkQueryPoolCreateInfo qpi = { VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO };
       qpi.queryType = VK_QUERY_TYPE_TIMESTAMP;
-      qpi.queryCount = 8;
+      qpi.queryCount = 9;
       CHECK(vkCreateQueryPool(device, &qpi, NULL, &queries));
       tick_ns = props.limits.timestampPeriod;
    }
@@ -372,8 +372,8 @@ static double gpu_draw(const unsigned *frame0, unsigned words, unsigned samples,
    memcpy(fb.mapped, frame, (size_t)words * 4);
    memset(bb.mapped, 0, (size_t)binWords * 4);
    /* (the walk's variants' dispatches across, as the renderers give them) */
-   ((unsigned *)bb.mapped)[PVRC_B_STATS(runs) + PVRC_ST_WALK_U_X] = pvrc_walk_x(frame0[PVRC_F_TILE_LOG2], samples, frame0[PVRC_F_FLAGS]);
-   ((unsigned *)bb.mapped)[PVRC_B_STATS(runs) + PVRC_ST_WALK_S_X] = pvrc_walk_x(frame0[PVRC_F_TILE_LOG2], samples, frame0[PVRC_F_FLAGS]);
+   ((unsigned *)bb.mapped)[PVRC_B_STATS(runs) + PVRC_ST_WALK_U_X] = pvrc_walk_x(frame0[PVRC_F_TILE_LOG2], samples);
+   ((unsigned *)bb.mapped)[PVRC_B_STATS(runs) + PVRC_ST_WALK_S_X] = pvrc_walk_x(frame0[PVRC_F_TILE_LOG2], samples);
    for (k = 1; k <= PVRC_KERNELS; k++)
       pipelines[k] = make_pipeline_variant(k, samples, keep, k == PVRC_K_WALK && !walk_whole() ? PVRC_V_SORTED : PVRC_V_ALL);
    if (!walk_whole())
@@ -426,7 +426,7 @@ static double gpu_draw(const unsigned *frame0, unsigned words, unsigned samples,
    barrier(cmd, dummy.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
    barrier(cmd, outImage.image, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_GENERAL, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, pipeline_layout, 0, 1, &set, 0, NULL);
-   vkCmdResetQueryPool(cmd, queries, 0, 8);
+   vkCmdResetQueryPool(cmd, queries, 0, 9);
    vkCmdWriteTimestamp(cmd, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, queries, 0);
 #define STEP(kernel, x, y) do { vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, pipelines[kernel]); \
       if ((x) && (y)) { vkCmdDispatch(cmd, (x), (y), 1); } mem_barrier(cmd); \
@@ -465,6 +465,10 @@ static double gpu_draw(const unsigned *frame0, unsigned words, unsigned samples,
       pvrc_walk_groups(frame0, samples, &walkX, &walkY);
       STEP(PVRC_K_WALK, walkX, walkY);
    }
+   /* the Y filter, in place, where the frame has it */
+   pvrc_yfilter_groups(frame0, &walkX, &walkY);
+   if (walkY)
+      STEP(PVRC_K_YFILTER, walkX, walkY);
    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, pipelines[PVRC_K_CLEAR]);
    vkCmdDispatchIndirect(cmd, bb.buffer, (VkDeviceSize)(PVRC_B_STATS(runs) + PVRC_ST_CLEAR_X) * 4);
    mem_barrier(cmd);

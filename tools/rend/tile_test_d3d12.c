@@ -390,7 +390,7 @@ static double gpu_draw(const unsigned *frame0, unsigned words, unsigned samples,
    m = (unsigned *)map(dummy_up);
    m[0] = getenv("TILE_PROD") ? 0x0000ff00u : 0u;
    /* (and the walk's variants' dispatches across, as the renderer copies them to theirs) */
-   m[4] = pvrc_walk_x(frame0[PVRC_F_TILE_LOG2], samples, frame0[PVRC_F_FLAGS]);
+   m[4] = pvrc_walk_x(frame0[PVRC_F_TILE_LOG2], samples);
    views->lpVtbl->GetCPUDescriptorHandleForHeapStart(views, &vc);
    views->lpVtbl->GetGPUDescriptorHandleForHeapStart(views, &vg);
    samplers->lpVtbl->GetGPUDescriptorHandleForHeapStart(samplers, &sg);
@@ -495,6 +495,13 @@ static double gpu_draw(const unsigned *frame0, unsigned words, unsigned samples,
    ID3D12GraphicsCommandList_SetPipelineState(cl, k[PVRC_K_WALK]);
    ID3D12GraphicsCommandList_ExecuteIndirect(cl, dispatch_sig, 1, ab, (UINT64)PVRC_ST_WALK_S_X * 4, NULL, 0);
    STEP(PVRC_K_WALK, 0, 0);
+   /* the Y filter, in place, where the frame has it */
+   {
+      unsigned yx, yy;
+      pvrc_yfilter_groups(frame0, &yx, &yy);
+      if (yy)
+         STEP(PVRC_K_YFILTER, yx, yy);
+   }
    ID3D12GraphicsCommandList_SetPipelineState(cl, k[PVRC_K_CLEAR]);
    ID3D12GraphicsCommandList_ExecuteIndirect(cl, dispatch_sig, 1, ab, (UINT64)PVRC_ST_CLEAR_X * 4, NULL, 0);
    uav_barrier();

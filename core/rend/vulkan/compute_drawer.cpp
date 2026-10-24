@@ -490,7 +490,7 @@ void ComputeDrawer::Record(vk::Image image, vk::ImageView view, vk::ImageView la
 		}
 		r.binsZero = true;
 		/* (the walk's variants' dispatches across: the CPU's; the sort counts the tiles of each) */
-		const u32 across = pvrc_walk_x(words[PVRC_F_TILE_LOG2], r.rtt ? 1 : samples, words[PVRC_F_FLAGS]);
+		const u32 across = pvrc_walk_x(words[PVRC_F_TILE_LOG2], r.rtt ? 1 : samples);
 		cmd.pipelineBarrier(vk::PipelineStageFlagBits::eTransfer, vk::PipelineStageFlagBits::eTransfer, vk::DependencyFlags(),
 				vk::MemoryBarrier(vk::AccessFlagBits::eTransferWrite, vk::AccessFlagBits::eTransferWrite), nullptr, nullptr);
 		cmd.fillBuffer(bins, (vk::DeviceSize)(PVRC_B_STATS(r.runs) + PVRC_ST_WALK_U_X) * 4, 4, across);
@@ -550,6 +550,14 @@ void ComputeDrawer::Record(vk::Image image, vk::ImageView view, vk::ImageView la
 	cmd.bindPipeline(vk::PipelineBindPoint::eCompute, *pipelines[PVRC_K_WALK]);
 	cmd.dispatchIndirect(bins, (vk::DeviceSize)(PVRC_B_STATS(r.runs) + PVRC_ST_WALK_S_X) * 4);
 	step(PVRC_K_WALK, 0, 0);
+	/* the Y filter, in place over the picture, where the frame has it */
+	u32 yx, yy;
+	pvrc_yfilter_groups(words, &yx, &yy);
+	if (yy != 0)
+	{
+		cmd.bindPipeline(vk::PipelineBindPoint::eCompute, *pipelines[PVRC_K_YFILTER]);
+		cmd.dispatch(yx, yy, 1);
+	}
 	cmd.bindPipeline(vk::PipelineBindPoint::eCompute, *pipelines[PVRC_K_CLEAR]);
 	cmd.dispatchIndirect(bins, (vk::DeviceSize)(PVRC_B_STATS(r.runs) + PVRC_ST_CLEAR_X) * 4);
 	// the counts, for when this slot comes round
