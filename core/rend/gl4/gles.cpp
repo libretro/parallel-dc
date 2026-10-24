@@ -799,6 +799,7 @@ static bool RenderFrame()
 	gl4ShaderUniforms.PT_ALPHA = ((PT_ALPHA_REF & 0xFF) - 0.5f) / 255.0f;
 
 	GLuint output_fbo;
+	GLuint frontend_fbo = 0, writeout_fbo = 0;
 
 	//setup render target first
 	if (is_rtt)
@@ -849,7 +850,11 @@ static bool RenderFrame()
 	else
 	{
 		glViewport(0, 0, screen_width, screen_height);
-		output_fbo = hw_render.get_current_framebuffer();
+		/* (the screen drawn in the write-out's picture, when there is one,
+		 * then to the frontend's after its pass: gles/gl_writeout.h) */
+		frontend_fbo = hw_render.get_current_framebuffer();
+		writeout_fbo = gl_writeout_target(frontend_fbo, screen_width, screen_height);
+		output_fbo = writeout_fbo != 0 ? writeout_fbo : frontend_fbo;
 	}
 
 	glcache.Disable(GL_SCISSOR_TEST);
@@ -975,9 +980,6 @@ static bool RenderFrame()
 			gl_restore_picture();
 		}
 		gl4DrawStrips(output_fbo, rendering_width, rendering_height);
-		// (the chip's write-out, where the option asks for it: gles/gl_writeout.h)
-		if (!is_rtt)
-			gl_writeout_run(output_fbo, rendering_width, rendering_height);
 	}
 	else
 	{
@@ -989,6 +991,8 @@ static bool RenderFrame()
 
 		gl4DrawFramebuffer(640.f, 480.f);
 	}
+	if (writeout_fbo != 0)
+		gl_writeout_present(frontend_fbo, screen_width, screen_height, !pvrrc.isRenderFramebuffer);
 
 
 	/* VMU/Crosshair code - libretro-specific */
@@ -1075,7 +1079,7 @@ struct gl4rend : Renderer
 
 		// the polygons' programs, so that none is made in a frame (glprogram_cache.h)
 		gl4MakePrograms();
-		gl_writeout_init(screen_width, screen_height);
+		gl_writeout_init(screen_width, screen_height, true);
 		glprog_save();
 		glprog_started();
 
@@ -1088,7 +1092,7 @@ struct gl4rend : Renderer
 		screen_height=h;
 		resize(w, h);
 		// (the write-out's picture, of the new size: gles/gl_writeout.h)
-		gl_writeout_init(w, h);
+		gl_writeout_init(w, h, true);
 	}
 	void KeepPicture() override
 	{

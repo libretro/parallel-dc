@@ -1243,12 +1243,17 @@ static void upload_vertex_indices()
 #endif
 static GLuint own_fbo, own_color, own_depth;
 static int own_w, own_h;
+/* With the chip's write-out (gl_writeout.h) the picture is a texture, which
+ * its pass writes in place before it goes to the frontend's */
+static bool own_color_texture;
 
 static void own_target_term(void)
 {
 	if (own_fbo != 0)
 		glDeleteFramebuffers(1, &own_fbo);
-	if (own_color != 0)
+	if (own_color != 0 && own_color_texture)
+		glcache.DeleteTextures(1, &own_color);
+	else if (own_color != 0)
 		glDeleteRenderbuffers(1, &own_color);
 	if (own_depth != 0)
 		glDeleteRenderbuffers(1, &own_depth);
@@ -1262,22 +1267,37 @@ static void own_target_term(void)
 static bool own_target_bind(int w, int h)
 {
 #if defined(GL_READ_FRAMEBUFFER) && defined(GL_DRAW_FRAMEBUFFER)
-	if (gl.depth_format != GL_DEPTH32F_STENCIL8 || w <= 0 || h <= 0)
+	const bool texture = gl_writeout_ready();
+	if ((gl.depth_format != GL_DEPTH32F_STENCIL8 && !texture) || w <= 0 || h <= 0)
 		return false;
 	const GLuint target = hw_render.get_current_framebuffer();
-	if (own_fbo == 0 || own_w != w || own_h != h)
+	if (own_fbo == 0 || own_w != w || own_h != h || own_color_texture != texture)
 	{
 		own_target_term();
-		glGenRenderbuffers(1, &own_color);
-		glBindRenderbuffer(RARCH_GL_RENDERBUFFER, own_color);
-		glRenderbufferStorage(RARCH_GL_RENDERBUFFER, GL_RGBA8, w, h);
+		own_color_texture = texture;
+		if (texture)
+		{
+			own_color = glcache.GenTexture();
+			glcache.BindTexture(GL_TEXTURE_2D, own_color);
+			glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, w, h);
+			glcache.BindTexture(GL_TEXTURE_2D, 0);
+		}
+		else
+		{
+			glGenRenderbuffers(1, &own_color);
+			glBindRenderbuffer(RARCH_GL_RENDERBUFFER, own_color);
+			glRenderbufferStorage(RARCH_GL_RENDERBUFFER, GL_RGBA8, w, h);
+		}
 		glGenRenderbuffers(1, &own_depth);
 		glBindRenderbuffer(RARCH_GL_RENDERBUFFER, own_depth);
 		glRenderbufferStorage(RARCH_GL_RENDERBUFFER, gl.depth_format, w, h);
 		glBindRenderbuffer(RARCH_GL_RENDERBUFFER, 0);
 		glGenFramebuffers(1, &own_fbo);
 		glBindFramebuffer(RARCH_GL_FRAMEBUFFER, own_fbo);
-		glFramebufferRenderbuffer(RARCH_GL_FRAMEBUFFER, RARCH_GL_COLOR_ATTACHMENT0, RARCH_GL_RENDERBUFFER, own_color);
+		if (texture)
+			glFramebufferTexture2D(RARCH_GL_FRAMEBUFFER, RARCH_GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, own_color, 0);
+		else
+			glFramebufferRenderbuffer(RARCH_GL_FRAMEBUFFER, RARCH_GL_COLOR_ATTACHMENT0, RARCH_GL_RENDERBUFFER, own_color);
 		glFramebufferRenderbuffer(RARCH_GL_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT, RARCH_GL_RENDERBUFFER, own_depth);
 		if (glCheckFramebufferStatus(RARCH_GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
 		{
@@ -1598,9 +1618,12 @@ static bool RenderFrame(void)
 		}
 
 		DrawStrips();
-		// (the chip's write-out, where the option asks for it: gl_writeout.h)
-		if (!is_rtt)
-			gl_writeout_run(own_target ? own_fbo : hw_render.get_current_framebuffer(), screen_width, screen_height);
+		// (the chip's write-out, where the option asks for it, in place: gl_writeout.h)
+		if (!is_rtt && own_target && own_color_texture)
+		{
+			gl_writeout_pass(own_color, screen_width, screen_height);
+			glBindFramebuffer(RARCH_GL_FRAMEBUFFER, own_fbo);
+		}
 	}
 	else
 	{
@@ -1716,7 +1739,7 @@ struct glesrend : Renderer
 
       // the polygons' programs, so that none is made in a frame (glprogram_cache.h)
       gl_make_programs();
-      gl_writeout_init(screen_width, screen_height);
+      gl_writeout_init(screen_width, screen_height, false);
       glprog_save();
       glprog_started();
 
@@ -1728,7 +1751,7 @@ struct glesrend : Renderer
 		screen_width=w;
 		screen_height=h;
 		// (the write-out's picture, of the new size: gl_writeout.h)
-		gl_writeout_init(w, h);
+		gl_writeout_init(w, h, false);
 	}
 	void KeepPicture() override
 	{

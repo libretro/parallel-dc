@@ -75,6 +75,7 @@ static_assert(PVRC_FF_YON == 0x4000u, "the pass's flags, as pvr_compute.h has th
 static GLuint program, texture, fbo;
 static GLint wordsAt = -1;
 static int texW, texH;
+static bool fresh;	// the picture is new: the frontend's goes into it first
 
 void gl_writeout_term()
 {
@@ -92,7 +93,7 @@ void gl_writeout_term()
 	texW = texH = 0;
 }
 
-void gl_writeout_init(int width, int height)
+void gl_writeout_init(int width, int height, bool picture)
 {
 	const bool wanted = !ComputeFrame::ScalersOff && !gl.is_gles && glDispatchCompute != nullptr
 			&& (gl.gl_major > 4 || (gl.gl_major == 4 && gl.gl_minor >= 3)) && width > 0 && height > 0;
@@ -112,6 +113,8 @@ void gl_writeout_init(int width, int height)
 		}
 		wordsAt = glGetUniformLocation(program, "words");
 	}
+	if (!picture)
+		return;
 	if (texture == 0 || texW != width || texH != height)
 	{
 		if (fbo != 0)
@@ -129,40 +132,70 @@ void gl_writeout_init(int width, int height)
 		glBindFramebuffer(GL_FRAMEBUFFER, hw_render.get_current_framebuffer());
 		texW = width;
 		texH = height;
+		fresh = true;
 		if (!complete)
 		{
 			WARN_LOG(RENDERER, "OpenGL: no picture for the PowerVR2 write-out pass: the picture goes without it");
-			gl_writeout_term();
+			if (fbo != 0)
+				glDeleteFramebuffers(1, &fbo);
+			glcache.DeleteTextures(1, &texture);
+			texture = fbo = 0;
+			texW = texH = 0;
 		}
 	}
 }
 
-void gl_writeout_run(u32 target, int width, int height)
+bool gl_writeout_ready()
 {
-	if (program == 0 || texture == 0 || width != texW || height != texH)
+	return program != 0;
+}
+
+void gl_writeout_pass(u32 picture, int width, int height)
+{
+	if (program == 0 || picture == 0)
 		return;
 	const u32 flags = ComputeFrame::WriteOut((u32)height);
 	if (PVRC_FF_YLINES(flags) == 0)
 		return;
-	/* (the picture to the pass's and back: the frontend's framebuffer is not
-	 * a texture of the core's) */
-	glcache.Disable(GL_SCISSOR_TEST);
-	glBindFramebuffer(GL_READ_FRAMEBUFFER, target);
-	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, fbo);
-	glBlitFramebuffer(0, 0, width, height, 0, 0, width, height, GL_COLOR_BUFFER_BIT, GL_NEAREST);
 	glcache.UseProgram(program);
 	glUniform4ui(wordsAt, (GLuint)width, (GLuint)height, flags, 0);
-	glBindImageTexture(0, texture, 0, GL_FALSE, 0, GL_READ_WRITE, GL_RGBA8);
+	glBindImageTexture(0, picture, 0, GL_FALSE, 0, GL_READ_WRITE, GL_RGBA8);
 	glDispatchCompute(((u32)width + 63) / 64, PVRC_FF_YLINES(flags), 1);
 	glMemoryBarrier(GL_FRAMEBUFFER_BARRIER_BIT | GL_SHADER_IMAGE_ACCESS_BARRIER_BIT);
 	glBindImageTexture(0, 0, 0, GL_FALSE, 0, GL_READ_WRITE, GL_RGBA8);
+}
+
+u32 gl_writeout_target(u32 frontend, int width, int height)
+{
+	if (program == 0 || texture == 0 || width != texW || height != texH)
+		return 0;
+	if (fresh)
+	{
+		// (a game that draws part of the screen has the rest from the picture there was)
+		glcache.Disable(GL_SCISSOR_TEST);
+		glBindFramebuffer(GL_READ_FRAMEBUFFER, frontend);
+		glBindFramebuffer(GL_DRAW_FRAMEBUFFER, fbo);
+		glBlitFramebuffer(0, 0, width, height, 0, 0, width, height, GL_COLOR_BUFFER_BIT, GL_NEAREST);
+		fresh = false;
+	}
+	return fbo;
+}
+
+void gl_writeout_present(u32 frontend, int width, int height, bool pass)
+{
+	if (pass)
+		gl_writeout_pass(texture, width, height);
+	glcache.Disable(GL_SCISSOR_TEST);
 	glBindFramebuffer(GL_READ_FRAMEBUFFER, fbo);
-	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, target);
+	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, frontend);
 	glBlitFramebuffer(0, 0, width, height, 0, 0, width, height, GL_COLOR_BUFFER_BIT, GL_NEAREST);
-	glBindFramebuffer(GL_FRAMEBUFFER, target);
+	glBindFramebuffer(GL_FRAMEBUFFER, frontend);
 }
 #else
-void gl_writeout_init(int, int) {}
+void gl_writeout_init(int, int, bool) {}
 void gl_writeout_term() {}
-void gl_writeout_run(u32, int, int) {}
+bool gl_writeout_ready() { return false; }
+void gl_writeout_pass(u32, int, int) {}
+u32 gl_writeout_target(u32, int, int) { return 0; }
+void gl_writeout_present(u32, int, int, bool) {}
 #endif
