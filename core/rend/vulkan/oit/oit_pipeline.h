@@ -280,6 +280,11 @@ public:
 			Reset();
 			renderPasses->SetSamples(samples);
 		}
+		if ((samples > 1 && oitBuffers->Sums()) != sums)
+		{
+			Reset();
+			sums = samples > 1 && oitBuffers->Sums();
+		}
 		renderPasses->MakeAll();
 
 		if (!perFrameLayout)
@@ -338,11 +343,15 @@ public:
 	{
 		return vk::Pipeline(fixedSlots[FIXED_TRMODVOL + ModVolIndex(mode, cullMode)].pipeline);
 	}
-	// @perSample: SSAA's for a render pass that is not the last (OITShaderManager::GetFinalShader())
-	vk::Pipeline GetFinalPipeline(bool perSample = false) const
+	/* @perSample: SSAA's for a render pass that is not the last; @sums: the
+	 * last one's, which also stores the channel sums, when there is one
+	 * (OITShaderManager::GetFinalShader(), Sums()) */
+	vk::Pipeline GetFinalPipeline(bool perSample = false, bool sums = false) const
 	{
-		return vk::Pipeline(fixedSlots[perSample ? FIXED_FINAL_PER_SAMPLE : FIXED_FINAL].pipeline);
+		return vk::Pipeline(fixedSlots[perSample ? FIXED_FINAL_PER_SAMPLE : sums && this->sums ? FIXED_FINAL_SUMS : FIXED_FINAL].pipeline);
 	}
+	// the last pass stores SSAA's channel sums (OITBuffers::SetSums(), with samples)
+	bool Sums() const { return sums; }
 	int GetFinalSubpass() const { return renderPasses->GetFinalSubpass(); }
 	u32 GetSamples() const { return renderPasses->GetSamples(); }
 	vk::Pipeline GetClearPipeline() const
@@ -402,11 +411,11 @@ private:
 	VkPipeline BuildPoly(u64 key, bool general, vk::PipelineCache cache);
 	VkPipeline CreateModVolPipeline(ModVolMode mode, int cullMode, vk::PipelineCache cache);
 	VkPipeline CreateTrModVolPipeline(ModVolMode mode, int cullMode, vk::PipelineCache cache);
-	VkPipeline CreateFinalPipeline(bool perSample, vk::PipelineCache cache);
+	VkPipeline CreateFinalPipeline(bool perSample, bool sums, vk::PipelineCache cache);
 	VkPipeline CreateClearPipeline(vk::PipelineCache cache);
 
 	// the fixed pipelines' slots: the modifier volumes' by mode and cull mode, the last subpass's, the lists'
-	enum { FIXED_MODVOL = 0, FIXED_TRMODVOL = 12, FIXED_FINAL = 24, FIXED_FINAL_PER_SAMPLE, FIXED_CLEAR, FIXED_COUNT };
+	enum { FIXED_MODVOL = 0, FIXED_TRMODVOL = 12, FIXED_FINAL = 24, FIXED_FINAL_PER_SAMPLE, FIXED_CLEAR, FIXED_FINAL_SUMS, FIXED_COUNT };
 	// (Xor to Exclusion; cull modes 0 and 1 are both none)
 	static u32 ModVolIndex(ModVolMode mode, int cullMode) { return (u32)mode * 3 + (cullMode < 2 ? 0 : cullMode - 1); }
 
@@ -442,6 +451,7 @@ private:
 	PsoTable pipelines;		// the polygons' own
 	PsoTable general;		// the general ones
 	PsoSlot fixedSlots[FIXED_COUNT] = {};
+	bool sums = false;
 	bool prepared = false;
 	// what the pipelines are made for (one of a kind: all of them work with any)
 	vk::RenderPass renderPass;

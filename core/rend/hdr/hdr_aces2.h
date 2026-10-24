@@ -251,6 +251,10 @@ typedef struct {
 } aces2Params_t;
 
 void	ACES2_Init( const double limitPrims[8], double peakLuminance, aces2Params_t *p );
+/* The same with @surround (as ACES2_SetSurround()'s mode) rather than the
+ * surround set: touches nothing but @p, so it may run on any thread */
+void	ACES2_InitSurround( const double limitPrims[8], double peakLuminance, int surround,
+							aces2Params_t *p );
 void	ACES2_OutputTransformFwd( const double aces[3], const aces2Params_t *p, double RGB[3] );
 
 /*

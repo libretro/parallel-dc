@@ -33,14 +33,18 @@ void hdr_d3d12_free(hdr_d3d12_t *e);
  * state, @picture_format, @width x @height, 8 bits a channel when @unorm8)
  * encoded into the texture for the frontend's frame @index, which is left
  * in the state the frontend wants; @signal is the value the fence is
- * signalled with once @cmd is done. *@texture is that texture, the
- * encoder's to keep. What @cmd had bound - heaps included - is not put
- * back. False, nothing recorded, when it could not be. */
+ * signalled with once @cmd is done. With SSAA's samples the picture was
+ * resolved from (@samples, multisampled, of @picture_format, in the pixel
+ * shader resource state, 2^@samples_log2 a pixel; NULL and 0 without),
+ * where the picture is their resolve their exact average is encoded.
+ * *@texture is that texture, the encoder's to keep. What @cmd had bound -
+ * heaps included - is not put back. False, nothing recorded, when it could
+ * not be. */
 bool hdr_d3d12_encode(hdr_d3d12_t *e, ID3D12GraphicsCommandList *cmd,
       const struct hdr_output *out, ID3D12Resource *picture,
       DXGI_FORMAT picture_format, unsigned width, unsigned height,
-      bool unorm8, unsigned index, uint64_t signal,
-      ID3D12Resource **texture);
+      bool unorm8, ID3D12Resource *samples, unsigned samples_log2,
+      unsigned index, uint64_t signal, ID3D12Resource **texture);
 
 #ifdef __cplusplus
 }

@@ -322,8 +322,11 @@ public:
 	 * @height, encoded into the command list for the frontend's frame and
 	 * left in the pixel shader resource state; the next SetFrame() hands
 	 * the encoded one over. False without the HDR output: the picture is
-	 * then to be left in required_state, as ever. */
-	bool EncodeHdr(DX12Image& image, u32 width, u32 height);
+	 * then to be left in required_state, as ever. With SSAA's samples the
+	 * picture was resolved from (@samples, 2^@samplesLog2 a pixel), where
+	 * the picture is their resolve their exact average is encoded. */
+	bool EncodeHdr(DX12Image& image, u32 width, u32 height, DX12Image *samples = nullptr, u32 samplesLog2 = 0);
+	bool HdrActive() const { return hdr != nullptr; }
 	bool IsHandedOver(const DX12Image *image) const { return v2 && handedOver && image != nullptr && image->resource.get() == frameResource.get(); }
 	/* Just before video_refresh(RETRO_HW_FRAME_BUFFER_VALID) */
 	void Present();

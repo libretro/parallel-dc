@@ -102,6 +102,10 @@ public:
 	 * null). Its own command buffer of the pool's, submitted with the
 	 * frame's others. */
 	void Record(vk::Image image, vk::ImageView view, vk::ImageView last);
+	/* With the HDR output, the channel sums of what the screen's frame just
+	 * recorded resolved, for the encode (VulkanContext::HdrEncode()); null
+	 * when it stored none, or they would add nothing */
+	vk::ImageView Sums() const;
 
 	// a frame left to the raster renderer, and why (ComputeFrame::Why_*)
 	void Fallback(u32 why) { statFallback++; statWhy[why < ComputeFrame::Why_Count ? why : 0]++; }

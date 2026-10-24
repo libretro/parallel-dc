@@ -529,6 +529,51 @@ static int same_pictures(const picture_t *a, const picture_t *b)
    return 0;
 }
 
+/* The scRGB picture (@h) of an SSAA frame against its 24-bit one (@s),
+ * in the 24-bit picture's steps (the reference knee is the identity below
+ * paper white, and 2.4 the transfer): each channel decoded is within half
+ * a step of the byte the resolve rounded it to (and a half float's
+ * rounding) - what was encoded is the samples' exact average, which no
+ * dither moved - and some are off the steps, which a byte cannot be. */
+static int exact_pictures(const picture_t *s, const picture_t *h)
+{
+   const double paper = 200.0, tol = 0.5 + 0.12;
+   unsigned long off = 0, n = 0;
+   double worst = 0.0;
+   uint32_t i;
+   int c;
+   if (s->w != h->w || s->h != h->h || h->format != VK_FORMAT_R16G16B16A16_SFLOAT)
+   {
+      fprintf(stderr, "vk_hdr: --exact wants a scRGB picture the size of the 24-bit one\n");
+      return 2;
+   }
+   for (i = 0; i < s->w * s->h; i++)
+      for (c = 0; c < 3; c++)
+      {
+         const double got = half_to_double(((const uint16_t*)h->px)[i * 4 + c]) * 80.0 / paper;
+         const double e   = 255.0 * pow(got > 0.0 ? got : 0.0, 1.0 / 2.4);
+         const double d   = fabs(e - (double)s->px[i * 4 + c]);
+         n++;
+         if (d > worst)
+            worst = d;
+         if (fabs(e - floor(e + 0.5)) > 0.15)
+            off++;
+      }
+   printf("vk_hdr: %lu channels, %lu off the 24-bit steps, at most %.3f of a step from the 24-bit picture\n",
+         n, off, worst);
+   if (worst > tol)
+   {
+      fprintf(stderr, "vk_hdr: a channel is %.3f of a step from the 24-bit picture: dithered, or not its resolve\n", worst);
+      return 1;
+   }
+   if (off < 100)
+   {
+      fprintf(stderr, "vk_hdr: %lu channels off the 24-bit steps: what was encoded is the bytes, not the samples\n", off);
+      return 1;
+   }
+   return 0;
+}
+
 static int compare(const char *sdr_path, const char *hdr_path)
 {
    return with_pictures(sdr_path, hdr_path, compare_pictures);
@@ -578,6 +623,8 @@ int main(int argc, char **argv)
 
    if (argc == 4 && !strcmp(argv[1], "--compare"))
       return compare(argv[2], argv[3]);
+   if (argc == 4 && !strcmp(argv[1], "--exact"))
+      return with_pictures(argv[2], argv[3], exact_pictures);
    if (argc == 4 && !strcmp(argv[1], "--same"))
       return same(argv[2], argv[3]);
    if (argc < 5)

@@ -30,7 +30,7 @@
  * and the tables (t0-t4) - b0 in the table rather than at the root, since
  * vkd3d cannot have a root CBV and static samplers both on drivers with
  * eight descriptor sets (lavapipe's) */
-#define HDR_D3D12_SRVS        6
+#define HDR_D3D12_SRVS        7    /* b0; t0 the picture, t1-t4 the tables, t5 SSAA's samples */
 
 static const IID iid_root_signature = { 0xc54a6b66, 0x72df, 0x4ee8, { 0x8b, 0xe5, 0xa9, 0x46, 0xa1, 0x42, 0x92, 0x14 } };
 static const IID iid_pipeline_state = { 0x765a30f3, 0xf624, 0x4c6f, { 0xa8, 0x28, 0xac, 0xe9, 0x48, 0x62, 0x24, 0x45 } };
@@ -73,6 +73,7 @@ struct hdr_d3d12
    D3D12_RESOURCE_STATES  handed;
    ID3D12RootSignature   *root;
    ID3D12PipelineState   *pso;
+   ID3D12PipelineState   *pso_ssaa;   /* with SSAA's samples (hdr_encode.hlsl's HDR_ENCODE_SSAA) */
    ID3D12DescriptorHeap  *srv_heap;   /* shader visible: HDR_D3D12_SRVS a slot */
    ID3D12DescriptorHeap  *rtv_heap;   /* one an output */
    UINT                   srv_step;
@@ -274,6 +275,19 @@ static void tables_update(hdr_d3d12_t *e, ID3D12GraphicsCommandList *cmd)
       e->tables[T_DESAT] = table_make(e, cmd, desat, HDR_DT_DESAT_WIDTH, HDR_DT_DESAT_HEIGHT, 1, 4, false, false);
 }
 
+/* SSAA's samples at @place of the heap: @res, multisampled, or a null view of one */
+static void write_srv_ms(hdr_d3d12_t *e, unsigned place, ID3D12Resource *res, DXGI_FORMAT format)
+{
+   D3D12_SHADER_RESOURCE_VIEW_DESC desc;
+   D3D12_CPU_DESCRIPTOR_HANDLE     h = heap_cpu(e->srv_heap);
+   h.ptr += (SIZE_T)place * e->srv_step;
+   memset(&desc, 0, sizeof(desc));
+   desc.Format                  = format;
+   desc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+   desc.ViewDimension           = D3D12_SRV_DIMENSION_TEXTURE2DMS;
+   ID3D12Device_CreateShaderResourceView(e->device, res, &desc, h);
+}
+
 static void write_srv(hdr_d3d12_t *e, unsigned place, ID3D12Resource *res,
       DXGI_FORMAT format, bool three_d)
 {
@@ -384,15 +398,15 @@ static bool make_root(hdr_d3d12_t *e)
    return ok;
 }
 
-static bool make_pso(hdr_d3d12_t *e)
+static bool make_pso(hdr_d3d12_t *e, const unsigned char *ps, size_t ps_size, ID3D12PipelineState **out)
 {
    D3D12_GRAPHICS_PIPELINE_STATE_DESC desc;
    memset(&desc, 0, sizeof(desc));
    desc.pRootSignature                          = e->root;
    desc.VS.pShaderBytecode                      = hdr_encode_dxbc_VS;
    desc.VS.BytecodeLength                       = sizeof(hdr_encode_dxbc_VS);
-   desc.PS.pShaderBytecode                      = hdr_encode_dxbc_PS;
-   desc.PS.BytecodeLength                       = sizeof(hdr_encode_dxbc_PS);
+   desc.PS.pShaderBytecode                      = ps;
+   desc.PS.BytecodeLength                       = ps_size;
    desc.BlendState.RenderTarget[0].RenderTargetWriteMask = D3D12_COLOR_WRITE_ENABLE_ALL;
    desc.SampleMask                              = 0xffffffffu;
    desc.RasterizerState.FillMode                = D3D12_FILL_MODE_SOLID;
@@ -403,7 +417,7 @@ static bool make_pso(hdr_d3d12_t *e)
    desc.RTVFormats[0]                           = e->format;
    desc.SampleDesc.Count                        = 1;
    return SUCCEEDED(ID3D12Device_CreateGraphicsPipelineState(e->device, &desc,
-            &iid_pipeline_state, (void **)&e->pso));
+            &iid_pipeline_state, (void **)out));
 }
 
 static ID3D12DescriptorHeap *make_heap(ID3D12Device *device, D3D12_DESCRIPTOR_HEAP_TYPE type,
@@ -446,7 +460,9 @@ hdr_d3d12_t *hdr_d3d12_new(ID3D12Device *device, DXGI_FORMAT format,
    e->rtv_step   = ID3D12Device_GetDescriptorHandleIncrementSize(device, D3D12_DESCRIPTOR_HEAP_TYPE_RTV);
    none.Begin    = 0;
    none.End      = 0;
-   if (     !make_root(e) || !make_pso(e)
+   if (     !make_root(e)
+         || !make_pso(e, hdr_encode_dxbc_PS, sizeof(hdr_encode_dxbc_PS), &e->pso)
+         || !make_pso(e, hdr_encode_dxbc_PS_SSAA, sizeof(hdr_encode_dxbc_PS_SSAA), &e->pso_ssaa)
          || !(e->srv_heap = make_heap(device, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV,
                HDR_D3D12_SLOTS * HDR_D3D12_SRVS, true))
          || !(e->rtv_heap = make_heap(device, D3D12_DESCRIPTOR_HEAP_TYPE_RTV, HDR_D3D12_MAX_OUTPUTS, false))
@@ -476,6 +492,7 @@ void hdr_d3d12_free(hdr_d3d12_t *e)
    RELEASE(ID3D12DescriptorHeap, e->rtv_heap);
    RELEASE(ID3D12DescriptorHeap, e->srv_heap);
    RELEASE(ID3D12PipelineState, e->pso);
+   RELEASE(ID3D12PipelineState, e->pso_ssaa);
    RELEASE(ID3D12RootSignature, e->root);
    RELEASE(ID3D12Fence, e->fence);
    RELEASE(ID3D12Device, e->device);
@@ -485,8 +502,8 @@ void hdr_d3d12_free(hdr_d3d12_t *e)
 bool hdr_d3d12_encode(hdr_d3d12_t *e, ID3D12GraphicsCommandList *cmd,
       const struct hdr_output *out, ID3D12Resource *picture,
       DXGI_FORMAT picture_format, unsigned width, unsigned height,
-      bool unorm8, unsigned index, uint64_t signal,
-      ID3D12Resource **texture)
+      bool unorm8, ID3D12Resource *samples, unsigned samples_log2,
+      unsigned index, uint64_t signal, ID3D12Resource **texture)
 {
    hdr_d3d12_slot_t           *s;
    hdr_d3d12_output_t         *o;
@@ -526,7 +543,14 @@ bool hdr_d3d12_encode(hdr_d3d12_t *e, ID3D12GraphicsCommandList *cmd,
    /* the cube only once the texture of it is here, whatever the block says */
    if (!e->tables[T_CUBE])
       block->gm[2] = 0.0f;
-   hdr_encode_params_fill(&params, out, unorm8);
+   /* (the samples' exact average is not 8 bits a channel: no dither) */
+   if (samples && samples_log2)
+   {
+      hdr_encode_params_fill(&params, out, false);
+      params.ssaa_log2 = (int32_t)samples_log2;
+   }
+   else
+      hdr_encode_params_fill(&params, out, unorm8);
 
    first = e->slot * HDR_D3D12_SRVS;
    {
@@ -538,6 +562,7 @@ bool hdr_d3d12_encode(hdr_d3d12_t *e, ID3D12GraphicsCommandList *cmd,
       ID3D12Device_CreateConstantBufferView(e->device, &cbv, h);
    }
    write_srv(e, first + 1, picture, picture_format, false);
+   write_srv_ms(e, first + 6, params.ssaa_log2 ? samples : NULL, picture_format);
    for (i = 0; i < 4; i++)
    {
       unsigned t = i;
@@ -564,7 +589,7 @@ bool hdr_d3d12_encode(hdr_d3d12_t *e, ID3D12GraphicsCommandList *cmd,
    barrier(cmd, o->texture, e->handed, D3D12_RESOURCE_STATE_RENDER_TARGET);
    ID3D12GraphicsCommandList_SetDescriptorHeaps(cmd, 1, heaps);
    ID3D12GraphicsCommandList_SetGraphicsRootSignature(cmd, e->root);
-   ID3D12GraphicsCommandList_SetPipelineState(cmd, e->pso);
+   ID3D12GraphicsCommandList_SetPipelineState(cmd, params.ssaa_log2 ? e->pso_ssaa : e->pso);
    ID3D12GraphicsCommandList_SetGraphicsRoot32BitConstants(cmd, 0,
          sizeof(params) / 4, &params, 0);
    ID3D12GraphicsCommandList_SetGraphicsRootDescriptorTable(cmd, 1, table);

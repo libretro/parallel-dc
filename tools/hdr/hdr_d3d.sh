@@ -3,7 +3,8 @@
 # (rend/hdr/hdr_encode_d3d11.c, hdr_encode_d3d12.c) and the DXBC committed
 # for them - built with mingw-w64 and run under wine (wined3d and vkd3d,
 # on a Vulkan driver: lavapipe will do), over every case hdr_hlsl.sh
-# draws, and held to the Vulkan renderer's GLSL (hdr_hlsl --against).
+# draws, and held to the Vulkan renderer's GLSL (hdr_hlsl --against);
+# and Direct3D 12's with SSAA's samples to their exact average (12ssaa).
 #
 #   sh tools/hdr/hdr_d3d.sh
 #
@@ -29,4 +30,6 @@ for api in 11 12; do
       wine "$WORK/hdr_d3d.exe" $api "Z:$WORK/d3d$api.bin"
    HDR_HLSL_AGAINST="$WORK/d3d$api.bin" sh tools/vulkan/hdr_hlsl.sh
 done
+# Direct3D 12's encode with SSAA's samples: their exact average
+env -u TMPDIR DISPLAY=$DISPLAY_NO WINEDEBUG=-all wine "$WORK/hdr_d3d.exe" 12ssaa
 echo "hdr_d3d.sh: passed"

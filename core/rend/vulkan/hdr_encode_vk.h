@@ -35,7 +35,9 @@ struct hdr_output;
 typedef struct hdr_vk hdr_vk_t;
 
 /* The shaders' SPIR-V: SSAA_RESOLVE_VERT's triangle, HDR_ENCODE_FRAG
- * (the picture sampled) and HDR_ENCODE_FRAG_SUBPASS (an input attachment) */
+ * (the picture sampled), HDR_ENCODE_FRAG_SUBPASS (an input attachment),
+ * HDR_ENCODE_FRAG_SUBPASS_SSAA (and SSAA's samples, a second one) and
+ * HDR_ENCODE_FRAG_SUMS (the picture sampled, and SSAA's channel sums) */
 typedef struct hdr_vk_code
 {
    const uint32_t *vert;
@@ -44,6 +46,10 @@ typedef struct hdr_vk_code
    size_t          frag_size;
    const uint32_t *frag_subpass;
    size_t          frag_subpass_size;
+   const uint32_t *frag_subpass_ssaa;
+   size_t          frag_subpass_ssaa_size;
+   const uint32_t *frag_sums;
+   size_t          frag_sums_size;
 } hdr_vk_code_t;
 
 /* @format: what is handed over, VK_FORMAT_A2B10G10R10_UNORM_PACK32 for
@@ -71,27 +77,49 @@ void hdr_vk_prepare(hdr_vk_t *e, const struct hdr_output *out, VkCommandBuffer c
 
 /* A pipeline for subpass @subpass of @render_pass (and those compatible
  * with it), which reads the picture as its input attachment 0 and writes
- * colour attachment 0; the caller's to destroy. VK_NULL_HANDLE when it
+ * colour attachment 0; with @samples above 1, SSAA's samples the picture
+ * was resolved from (rend/tile/pvr_resolve.h's rule) are its input
+ * attachment 1, and where the picture is their resolve their exact
+ * average is encoded. The caller's to destroy. VK_NULL_HANDLE when it
  * could not be made. */
-VkPipeline hdr_vk_subpass_pipeline(hdr_vk_t *e, VkRenderPass render_pass, uint32_t subpass);
+VkPipeline hdr_vk_subpass_pipeline(hdr_vk_t *e, VkRenderPass render_pass, uint32_t subpass,
+      unsigned samples);
 
-/* Draws it, in that subpass, over @width x @height: the picture is @view,
- * 8 bits a channel when @unorm8. After hdr_vk_prepare() for the same ring
- * and slot. */
+/* Draws it, in that subpass, over @width x @height: the picture is @view
+ * (and the samples @samples, for a pipeline made for them), 8 bits a
+ * channel when @unorm8 (and dithered then). After hdr_vk_prepare() for the
+ * same ring and slot. */
 void hdr_vk_subpass_draw(hdr_vk_t *e, const struct hdr_output *out, VkCommandBuffer cmd,
       unsigned ring, unsigned slot, VkPipeline pipeline, VkImageView view,
-      unsigned width, unsigned height, bool unorm8);
+      VkImageView samples, unsigned width, unsigned height, bool unorm8);
 
 /* ---- a pass of its own ---- */
+
+/* What hdr_vk_encode()'s channel sums are of: whatever the samples a
+ * pixel that were resolved (SSAA's, and the X scaler's pair of pixels'),
+ * N of them, a sum is (2^HDR_VK_SUMS_LOG2 / N) times the samples' */
+#define HDR_VK_SUMS_LOG2    4
+#define HDR_VK_SUMS_SAMPLES (1 << HDR_VK_SUMS_LOG2)
+
+/* The pipeline hdr_vk_encode() takes the channel sums with, made now:
+ * before the frames, by a renderer that will hand them over. False when
+ * it could not be. */
+bool hdr_vk_sums_ready(hdr_vk_t *e);
 
 /* The picture (@image, @view, in the shader-read layout, 8 bits a channel
  * when @unorm8), @width x @height, encoded into @cmd, outside a render
  * pass, into the image for the frontend's frame @index; @image and @view
  * become that image's, in the same layout. Prepares the frame itself.
- * False, both as they were, when it could not be. */
+ * With @sums (an R16G16B16A16_UINT image in the general layout: for each
+ * pixel the channel sums of the samples the picture was resolved from by
+ * rend/tile/pvr_resolve.h's rule, scaled to HDR_VK_SUMS_SAMPLES) and
+ * hdr_vk_sums_ready(), their exact average is encoded where the picture
+ * is their resolve, as hdr_vk_subpass_pipeline()'s does. False, both as
+ * they were, when it could not be. */
 bool hdr_vk_encode(hdr_vk_t *e, const struct hdr_output *out, VkCommandBuffer cmd,
       unsigned ring, unsigned slot, uint64_t epoch, unsigned index,
-      VkImage *image, VkImageView *view, unsigned width, unsigned height, bool unorm8);
+      VkImage *image, VkImageView *view, unsigned width, unsigned height, bool unorm8,
+      VkImageView sums);
 
 #ifdef __cplusplus
 }

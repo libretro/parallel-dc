@@ -63,13 +63,23 @@ public:
 	void HdrPrepare(CommandPool& pool, vk::CommandBuffer cmd);
 	/* The encode as subpass @subpass of @renderPass: the picture its input
 	 * attachment 0, the HDR image its colour attachment 0 */
-	vk::UniquePipeline HdrSubpassPipeline(vk::RenderPass renderPass, u32 subpass);
-	void HdrSubpassDraw(CommandPool& pool, vk::CommandBuffer cmd, vk::Pipeline pipeline, vk::ImageView picture, vk::Extent2D extent);
+	// (@samples: SSAA's, above 1 when the subpass also has them as its input attachment 1)
+	vk::UniquePipeline HdrSubpassPipeline(vk::RenderPass renderPass, u32 subpass, u32 samples = 1);
+	// (@samples: those the picture was resolved from, with such a pipeline; null without)
+	void HdrSubpassDraw(CommandPool& pool, vk::CommandBuffer cmd, vk::Pipeline pipeline, vk::ImageView picture,
+			vk::ImageView samples, vk::Extent2D extent);
 	/* The picture (@image, @view, shader-readable, @size) encoded in a pass
 	 * of its own, in a command buffer of @pool's, before the pool's
 	 * EndFrame(); @image and @view become the HDR image's. False, both as
-	 * they were, without the HDR output or when it could not be. */
-	bool HdrEncode(CommandPool& pool, vk::Image& image, vk::ImageView& view, vk::Extent2D size);
+	 * they were, without the HDR output or when it could not be.
+	 * @sums: the channel sums of the samples the picture was resolved
+	 * from (hdr_vk_encode()'s: the per-pixel renderer's, OITBuffers, and
+	 * the compute renderer's), after HdrSumsReady() */
+	bool HdrEncode(CommandPool& pool, vk::Image& image, vk::ImageView& view, vk::Extent2D size,
+			vk::ImageView sums = vk::ImageView());
+	/* The HDR output, and HdrEncode() able to take the channel sums: made
+	 * ready, before the frames */
+	bool HdrSumsReady();
 
 	vk::PhysicalDevice GetPhysicalDevice() const { return physicalDevice; }
 	vk::Device GetDevice() const { return device; }

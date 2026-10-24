@@ -11,6 +11,25 @@ layout (input_attachment_index = 0, set = 0, binding = 0) uniform subpassInput p
 layout (set = 0, binding = 0) uniform sampler2D picture;
 #endif
 
+#ifdef SSAA
+/* With SSAA (after pso_key.h and pvr_resolve.h), the samples the picture
+ * was resolved from, read again: where the picture is their resolve
+ * (pvr_resolve_join(), the rule the resolve wrote it by) their exact
+ * average is encoded, not the byte it was rounded to; where something was
+ * drawn over the picture since (the VMUs, the crosshairs), the picture. */
+layout (constant_id = PSO_SC_SSAA_SAMPLES) const int SSAA_SAMPLES = 4;
+layout (constant_id = PSO_SC_SSAA_LOG2N) const uint SSAA_LOG2N = 2u;
+#ifdef SUBPASS
+layout (input_attachment_index = 1, set = 0, binding = 13) uniform subpassInputMS samples;
+#else
+/* (the per-pixel and compute renderers': no samples by the time the
+ * picture is encoded, but their channel sums, stored by the last pass
+ * (oit_final.frag) or the walk (pvr_compute.h), scaled to the constants'
+ * 16 samples - hdr_encode_vk.h's HDR_VK_SUMS_SAMPLES) */
+layout (set = 0, binding = 13) uniform usampler2D sums;
+#endif
+#endif
+
 layout (push_constant) uniform pushBlock
 {
 	vec4 toPanel[3];	/* linear Rec.2020 -> the panel's RGB, columns; zero when unknown */
@@ -22,6 +41,10 @@ layout (push_constant) uniform pushBlock
 	int sdrEotf;
 	int scrgb;
 	int deband;		/* the picture is 8 bits a channel */
+	int ssaaLog2;		/* (Direct3D 12's; here a constant: SSAA_LOG2N) */
+	int pad0;
+	int pad1;
+	int pad2;
 } pc;
 
 layout (location = 0) out vec4 FragColor;
@@ -29,9 +52,28 @@ layout (location = 0) out vec4 FragColor;
 void main()
 {
 #ifdef SUBPASS
-	highp vec3 rgb = subpassLoad(picture).rgb;
+	highp vec4 pic = subpassLoad(picture);
 #else
-	highp vec3 rgb = texelFetch(picture, ivec2(gl_FragCoord.xy), 0).rgb;
+	highp vec4 pic = texelFetch(picture, ivec2(gl_FragCoord.xy), 0);
+#endif
+	highp vec3 rgb = pic.rgb;
+#ifdef SSAA
+#ifdef SUBPASS
+	uint rb = 0u;
+	uint ga = 0u;
+	for (int s = 0; s < SSAA_SAMPLES; s++)
+	{
+		uint c = packUnorm4x8(subpassLoad(samples, s));
+		rb += pvr_resolve_rb(c);
+		ga += pvr_resolve_ga(c);
+	}
+#else
+	uvec4 t = texelFetch(sums, ivec2(gl_FragCoord.xy), 0);
+	uint rb = t.r | (t.b << 16);
+	uint ga = t.g | (t.a << 16);
+#endif
+	if (packUnorm4x8(pic) == pvr_resolve_join(rb, ga, SSAA_LOG2N))
+		rgb = vec3(float(rb & 0xffffu), float(ga & 0xffffu), float(rb >> 16)) / (255.0 * float(SSAA_SAMPLES));
 #endif
 	if (pc.deband != 0)
 		rgb = hdr_deband(rgb, gl_FragCoord.xy);

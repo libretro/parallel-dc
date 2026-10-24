@@ -28,10 +28,10 @@ static const int WalkUnsorted = PVRC_KERNELS + 1;
  * frame's every primitive (4 MiB) */
 static const u32 PoolEntries = 2u << 20;
 
-// The bindings of the kernels' one set
-enum { B_FRAME, B_REC, B_BIN, B_OUT, B_LAST, B_PAL, B_TEX, B_VTX, B_IDX, B_MOD, B_CMD, B_TRD, B_DFRM, B_COUNT };
+// The bindings of the kernels' one set (B_SUMS: the HDR output's channel sums, pvr_compute.h's PVRC_SUMS)
+enum { B_FRAME, B_REC, B_BIN, B_OUT, B_LAST, B_PAL, B_TEX, B_VTX, B_IDX, B_MOD, B_CMD, B_TRD, B_DFRM, B_SUMS, B_COUNT };
 // (the buffers a frame of the GPU's TA decode is read from: B_VTX to B_DFRM)
-static const int GpuBindings = B_COUNT - B_VTX;
+static const int GpuBindings = B_SUMS - B_VTX;
 
 // what PVRC_K_GPUSRC reads of the decode's buffers
 static_assert(PVRC_TAG_C_WORDS == TAG_C_WORDS && PVRC_TAG_C_COUNT == TAG_C_COUNT && PVRC_TAG_C_FIRST == TAG_C_FIRST
@@ -110,8 +110,17 @@ struct ComputeDrawer::Resources
 	vk::UniqueDescriptorSetLayout setLayout;
 	vk::UniquePipelineLayout pipelineLayout;
 	vk::UniquePipeline pipelines[PVRC_KERNELS + 2];	// (and the walk's unsorted variant last: WalkUnsorted)
-	// with SSAA, the kernels for renders to a texture, at one sample a pixel
+	/* with SSAA, the kernels for renders to a texture, at one sample a
+	 * pixel; with the HDR output, the walks for them (which store no sums:
+	 * the screen's do) - null where they are the screen's */
 	vk::UniquePipeline rttPipelines[PVRC_KERNELS + 2];
+	/* With the HDR output, each pixel's channel sums, which the screen's
+	 * walk stores (hdr_encode_vk.h: of HDR_VK_SUMS_SAMPLES); otherwise an
+	 * image of one pixel, for the binding */
+	std::unique_ptr<FramebufferAttachment> sums;
+	bool sumsOn = false;
+	bool sumsLayout = false;	// in the general layout
+	bool sumsStored = false;	// by the frame just recorded (and nothing over them since)
 	vk::UniqueDescriptorPool descriptorPool;
 	std::vector<vk::DescriptorSet> sets;
 	// what each set's texture slots, picture and last picture have
@@ -215,6 +224,17 @@ bool ComputeDrawer::Init(vk::Extent2D extent, u32 samples, CommandPool *pool, Sa
 		return fail(e.what());
 	}
 
+	/* (with the HDR output, the walk's channel sums: what was resolved,
+	 * SSAA's samples and the X scaler's pairs, has more than 8 bits) */
+	r->sumsOn = context->HdrSumsReady();
+	try {
+		r->sums = std::unique_ptr<FramebufferAttachment>(new FramebufferAttachment(context->GetPhysicalDevice(), device));
+		r->sums->Init(r->sumsOn ? extent.width : 1, r->sumsOn ? extent.height : 1, vk::Format::eR16G16B16A16Uint,
+				vk::ImageUsageFlagBits::eStorage | vk::ImageUsageFlagBits::eSampled, false);
+	} catch (const vk::SystemError& e) {
+		return fail(e.what());
+	}
+
 	vk::DescriptorSetLayoutBinding bindings[B_COUNT] = {
 		{ B_FRAME, vk::DescriptorType::eStorageBuffer, 1, vk::ShaderStageFlagBits::eCompute },
 		{ B_REC, vk::DescriptorType::eStorageBuffer, 1, vk::ShaderStageFlagBits::eCompute },
@@ -229,6 +249,7 @@ bool ComputeDrawer::Init(vk::Extent2D extent, u32 samples, CommandPool *pool, Sa
 		{ B_CMD, vk::DescriptorType::eStorageBuffer, 1, vk::ShaderStageFlagBits::eCompute },
 		{ B_TRD, vk::DescriptorType::eStorageBuffer, 1, vk::ShaderStageFlagBits::eCompute },
 		{ B_DFRM, vk::DescriptorType::eStorageBuffer, 1, vk::ShaderStageFlagBits::eCompute },
+		{ B_SUMS, vk::DescriptorType::eStorageImage, 1, vk::ShaderStageFlagBits::eCompute },
 	};
 	r->setLayout = device.createDescriptorSetLayoutUnique(vk::DescriptorSetLayoutCreateInfo(vk::DescriptorSetLayoutCreateFlags(), B_COUNT, bindings));
 	r->pipelineLayout = device.createPipelineLayoutUnique(vk::PipelineLayoutCreateInfo(vk::PipelineLayoutCreateFlags(), 1, &r->setLayout.get()));
@@ -236,17 +257,22 @@ bool ComputeDrawer::Init(vk::Extent2D extent, u32 samples, CommandPool *pool, Sa
 	/* every kernel, now, for this many samples, and for one when that is
 	 * not one (renders to a texture): none is made while a game runs. The
 	 * walk in its two variants (pvr_compute.h: PVRC_V_*), the one for the
-	 * tiles without sorted translucent fragments keeping none */
-	for (int set = 0; set < (this->samples > 1 ? 2 : 1); set++)
+	 * tiles without sorted translucent fragments keeping none. (With the
+	 * HDR output, the screen's walks store the channel sums; at one sample
+	 * a pixel, renders to a texture have walks of their own, which do not.) */
+	for (int set = 0; set < (this->samples > 1 || r->sumsOn ? 2 : 1); set++)
 	{
 		const u32 n = set == 0 ? this->samples : 1;
 		for (int k = 1; k <= WalkUnsorted; k++)
 		{
 			const bool walk = k == PVRC_K_WALK || k == WalkUnsorted;
-			const u32 spec[5] = { n, SSAA_LOG2(n), k == WalkUnsorted ? 1u : r->keep, 0,
-					k == WalkUnsorted ? PVRC_V_UNSORTED : k == PVRC_K_WALK ? PVRC_V_SORTED : PVRC_V_ALL };
-			const vk::SpecializationMapEntry entries[5] = { { 0, 0, 4 }, { 1, 4, 4 }, { 2, 8, 4 }, { 3, 12, 4 }, { 4, 16, 4 } };
-			const vk::SpecializationInfo specInfo(5, entries, sizeof(spec), spec);
+			if (set == 1 && this->samples <= 1 && !walk)
+				continue;
+			const u32 spec[6] = { n, SSAA_LOG2(n), k == WalkUnsorted ? 1u : r->keep, 0,
+					k == WalkUnsorted ? PVRC_V_UNSORTED : k == PVRC_K_WALK ? PVRC_V_SORTED : PVRC_V_ALL,
+					set == 0 && r->sumsOn ? 1u : 0u };
+			const vk::SpecializationMapEntry entries[6] = { { 0, 0, 4 }, { 1, 4, 4 }, { 2, 8, 4 }, { 3, 12, 4 }, { 4, 16, 4 }, { 5, 20, 4 } };
+			const vk::SpecializationInfo specInfo(6, entries, sizeof(spec), spec);
 			// (the walk's textures taken in turns where the device cannot index them non-uniformly)
 			const bool waterfall = walk && !context->SupportsNonUniformTextureIndexing();
 			vk::UniqueShaderModule module = device.createShaderModuleUnique(vk::ShaderModuleCreateInfo(vk::ShaderModuleCreateFlags(),
@@ -260,7 +286,7 @@ bool ComputeDrawer::Init(vk::Extent2D extent, u32 samples, CommandPool *pool, Sa
 
 	const vk::DescriptorPoolSize sizes[] = {
 		{ vk::DescriptorType::eStorageBuffer, (3u + GpuBindings) * slots },
-		{ vk::DescriptorType::eStorageImage, (u32)slots },
+		{ vk::DescriptorType::eStorageImage, 2u * slots },
 		{ vk::DescriptorType::eCombinedImageSampler, (PVRC_TEX_SLOTS + 2u) * slots },
 	};
 	r->descriptorPool = device.createDescriptorPoolUnique(vk::DescriptorPoolCreateInfo(vk::DescriptorPoolCreateFlags(), slots, 3, sizes));
@@ -281,6 +307,7 @@ bool ComputeDrawer::Init(vk::Extent2D extent, u32 samples, CommandPool *pool, Sa
 	std::vector<vk::DescriptorBufferInfo> buffers;
 	buffers.reserve((3 + GpuBindings) * slots);
 	std::vector<vk::WriteDescriptorSet> writes;
+	const vk::DescriptorImageInfo sumsInfo(vk::Sampler(), r->sums->GetImageView(), vk::ImageLayout::eGeneral);
 	for (int s = 0; s < slots; s++)
 	{
 		buffers.push_back(vk::DescriptorBufferInfo(*r->ring->buffer, (vk::DeviceSize)s * r->ringWords * 4, (vk::DeviceSize)r->ringWords * 4));
@@ -290,11 +317,12 @@ bool ComputeDrawer::Init(vk::Extent2D extent, u32 samples, CommandPool *pool, Sa
 		buffers.push_back(vk::DescriptorBufferInfo(*r->bins->buffer, 0, VK_WHOLE_SIZE));
 		writes.push_back(vk::WriteDescriptorSet(r->sets[s], B_BIN, 0, 1, vk::DescriptorType::eStorageBuffer, nullptr, &buffers.back()));
 		// (a frame of the parse's reads its vertices, indices and volumes from its own words; Prepare() changes them for the decode's)
-		for (int b = B_VTX; b < B_COUNT; b++)
+		for (int b = B_VTX; b < B_SUMS; b++)
 		{
 			buffers.push_back(vk::DescriptorBufferInfo(*r->ring->buffer, (vk::DeviceSize)s * r->ringWords * 4, (vk::DeviceSize)r->ringWords * 4));
 			writes.push_back(vk::WriteDescriptorSet(r->sets[s], b, 0, 1, vk::DescriptorType::eStorageBuffer, nullptr, &buffers.back()));
 		}
+		writes.push_back(vk::WriteDescriptorSet(r->sets[s], B_SUMS, 0, 1, vk::DescriptorType::eStorageImage, &sumsInfo));
 	}
 	{
 		std::array<VkBuffer, GpuBindings> ring;
@@ -333,6 +361,11 @@ void ComputeDrawer::Term()
 	ready = false;
 	statFrames = statFallback = statGpuFrames = statRttFrames = 0;
 	memset(statWhy, 0, sizeof(statWhy));
+}
+
+vk::ImageView ComputeDrawer::Sums() const
+{
+	return res && res->sumsStored ? res->sums->GetImageView() : vk::ImageView();
 }
 
 bool ComputeDrawer::CanDraw() const
@@ -507,16 +540,26 @@ void ComputeDrawer::Record(vk::Image image, vk::ImageView view, vk::ImageView la
 	 * render pass, make them ready for fragment shaders, not these) */
 	const vk::MemoryBarrier toCompute(vk::AccessFlagBits::eMemoryWrite,
 			vk::AccessFlagBits::eShaderRead | vk::AccessFlagBits::eShaderWrite | vk::AccessFlagBits::eIndirectCommandRead);
-	const vk::ImageMemoryBarrier toGeneral(vk::AccessFlags(), vk::AccessFlagBits::eShaderWrite, vk::ImageLayout::eUndefined, vk::ImageLayout::eGeneral,
-			VK_QUEUE_FAMILY_IGNORED, VK_QUEUE_FAMILY_IGNORED, image, vk::ImageSubresourceRange(vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1));
+	const vk::ImageMemoryBarrier toGeneral[2] = {
+		vk::ImageMemoryBarrier(vk::AccessFlags(), vk::AccessFlagBits::eShaderWrite, vk::ImageLayout::eUndefined, vk::ImageLayout::eGeneral,
+				VK_QUEUE_FAMILY_IGNORED, VK_QUEUE_FAMILY_IGNORED, image, vk::ImageSubresourceRange(vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1)),
+		// (the sums, the first time: general from then on)
+		vk::ImageMemoryBarrier(vk::AccessFlags(), vk::AccessFlagBits::eShaderWrite, vk::ImageLayout::eUndefined, vk::ImageLayout::eGeneral,
+				VK_QUEUE_FAMILY_IGNORED, VK_QUEUE_FAMILY_IGNORED, r.sums->GetImage(), vk::ImageSubresourceRange(vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1)),
+	};
 	cmd.pipelineBarrier(vk::PipelineStageFlagBits::eAllCommands,
-			vk::PipelineStageFlagBits::eComputeShader | vk::PipelineStageFlagBits::eDrawIndirect, vk::DependencyFlags(), toCompute, nullptr, toGeneral);
+			vk::PipelineStageFlagBits::eComputeShader | vk::PipelineStageFlagBits::eDrawIndirect, vk::DependencyFlags(), 1, &toCompute, 0, nullptr,
+			r.sumsLayout ? 1 : 2, toGeneral);
+	r.sumsLayout = true;
 	cmd.bindDescriptorSets(vk::PipelineBindPoint::eCompute, *r.pipelineLayout, 0, 1, &set, 0, nullptr);
-	// (a render to a texture is drawn at one sample a pixel)
-	const vk::UniquePipeline *pipelines = r.rtt && samples > 1 ? r.rttPipelines : r.pipelines;
+	/* (a render to a texture is drawn at one sample a pixel, and stores no
+	 * sums: the kernels of its own, where there are) */
+	auto pipeline = [&](int kernel) {
+		return r.rtt && r.rttPipelines[kernel] ? *r.rttPipelines[kernel] : *r.pipelines[kernel];
+	};
 	const u32 n = r.rtt ? 1 : samples;
 	auto step = [&](int kernel, u32 x, u32 y) {
-		cmd.bindPipeline(vk::PipelineBindPoint::eCompute, *pipelines[kernel]);
+		cmd.bindPipeline(vk::PipelineBindPoint::eCompute, pipeline(kernel));
 		if (x != 0 && y != 0)
 			cmd.dispatch(x, y, 1);
 		cmd.pipelineBarrier(vk::PipelineStageFlagBits::eComputeShader, vk::PipelineStageFlagBits::eComputeShader | vk::PipelineStageFlagBits::eDrawIndirect,
@@ -530,7 +573,7 @@ void ComputeDrawer::Record(vk::Image image, vk::ImageView view, vk::ImageView la
 		/* A frame of the decode's: its numbering, and the dispatches of
 		 * the kernels whose sizes are the GPU's, from it */
 		auto indirect = [&](int kernel, u32 at) {
-			cmd.bindPipeline(vk::PipelineBindPoint::eCompute, *pipelines[kernel]);
+			cmd.bindPipeline(vk::PipelineBindPoint::eCompute, pipeline(kernel));
 			cmd.dispatchIndirect(bins, (vk::DeviceSize)(PVRC_B_STATS(r.runs) + at) * 4);
 			cmd.pipelineBarrier(vk::PipelineStageFlagBits::eComputeShader, vk::PipelineStageFlagBits::eComputeShader | vk::PipelineStageFlagBits::eDrawIndirect,
 					vk::DependencyFlags(), vk::MemoryBarrier(vk::AccessFlagBits::eShaderWrite,
@@ -551,9 +594,9 @@ void ComputeDrawer::Record(vk::Image image, vk::ImageView view, vk::ImageView la
 	}
 	/* (the walk's two variants, each over the coarse tiles of its list,
 	 * the sort's: nothing between them) */
-	cmd.bindPipeline(vk::PipelineBindPoint::eCompute, *pipelines[WalkUnsorted]);
+	cmd.bindPipeline(vk::PipelineBindPoint::eCompute, pipeline(WalkUnsorted));
 	cmd.dispatchIndirect(bins, (vk::DeviceSize)(PVRC_B_STATS(r.runs) + PVRC_ST_WALK_U_X) * 4);
-	cmd.bindPipeline(vk::PipelineBindPoint::eCompute, *pipelines[PVRC_K_WALK]);
+	cmd.bindPipeline(vk::PipelineBindPoint::eCompute, pipeline(PVRC_K_WALK));
 	cmd.dispatchIndirect(bins, (vk::DeviceSize)(PVRC_B_STATS(r.runs) + PVRC_ST_WALK_S_X) * 4);
 	step(PVRC_K_WALK, 0, 0);
 	/* the Y filter, in place over the picture, where the frame has it */
@@ -561,10 +604,14 @@ void ComputeDrawer::Record(vk::Image image, vk::ImageView view, vk::ImageView la
 	pvrc_yfilter_groups(words, &yx, &yy);
 	if (yy != 0)
 	{
-		cmd.bindPipeline(vk::PipelineBindPoint::eCompute, *pipelines[PVRC_K_YFILTER]);
+		cmd.bindPipeline(vk::PipelineBindPoint::eCompute, pipeline(PVRC_K_YFILTER));
 		cmd.dispatch(yx, yy, 1);
 	}
-	cmd.bindPipeline(vk::PipelineBindPoint::eCompute, *pipelines[PVRC_K_CLEAR]);
+	/* (the sums are the picture's where it was written by the walk alone:
+	 * not where the write-out has been over it since; and what they add
+	 * is more than 8 bits, which a pixel of one sample does not have) */
+	r.sumsStored = r.sumsOn && !r.rtt && yy == 0 && (n > 1 || (words[PVRC_F_FLAGS] & PVRC_FF_HSCALE) != 0);
+	cmd.bindPipeline(vk::PipelineBindPoint::eCompute, pipeline(PVRC_K_CLEAR));
 	cmd.dispatchIndirect(bins, (vk::DeviceSize)(PVRC_B_STATS(r.runs) + PVRC_ST_CLEAR_X) * 4);
 	// the counts, for when this slot comes round
 	cmd.pipelineBarrier(vk::PipelineStageFlagBits::eComputeShader, vk::PipelineStageFlagBits::eTransfer, vk::DependencyFlags(),

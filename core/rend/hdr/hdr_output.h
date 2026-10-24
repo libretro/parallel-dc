@@ -48,6 +48,8 @@ struct hdr_encode_params
    int32_t sdr_eotf;
    int32_t scrgb;
    int32_t deband;           /* the picture is 8 bits a channel */
+   int32_t ssaa_log2;        /* Direct3D 12: SSAA's samples the picture was resolved from, log2 (0: none) */
+   int32_t pad[3];           /* (a constant buffer is whole 16 bytes) */
 };
 
 void hdr_encode_params_fill(struct hdr_encode_params *p,

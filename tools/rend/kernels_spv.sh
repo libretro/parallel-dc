@@ -111,6 +111,8 @@ compute_source() {
    echo "#version 450"; echo "#define PVR_SHADER_GLSL"; echo "#define PVRC_SHADER_GLSL"; echo "#define PVRC_KERNEL $1"
    if [ "$2" = waterfall ]; then echo "#define PVRC_TEX_WATERFALL"; fi
    if [ "$1" = "$PVRC_K_WALK" ]; then echo "#define PVR_LANE_COUNT 8"; echo "#define PVR_LANE_GROUP_SIZE 256"; else echo "#define PVR_LANE_NONE"; fi
+   # (the HDR output's channel sums, which the walk stores with its constant PVRC_SUMS_ON)
+   echo "#define PVRC_SUMS"
    for h in core/rend/tile/pvr_lane.h core/rend/tile/pvr_tile.h core/rend/tile/pvr_modvol.h core/rend/tile/pvr_resolve.h core/rend/tile/pvr_scaler.h core/rend/ssaa_pattern.h core/rend/tile/pvr_compute.h; do
       sed '/^#include/d' $h
    done
@@ -314,11 +316,15 @@ raster_list() {
    done
    echo "OIT_FINAL_FRAG_S0 frag - key oit_header.glsl oit_final.frag"
    echo "OIT_FINAL_FRAG_S1 frag SSAA=1 key resolve oit_header.glsl oit_final.frag"
+   echo "OIT_FINAL_FRAG_S1_SUMS frag SSAA=1,SSAA_SUMS=1 key resolve oit_header.glsl oit_final.frag"
    echo "OIT_FINAL_FRAG_S2 frag SSAA=1,SSAA_PER_SAMPLE=1 key resolve oit_header.glsl oit_final.frag"
    echo "OIT_FINAL_VERT vert - oit_final.vert"
    # (the HDR output's encode, drawn by SSAA_RESOLVE_VERT's triangle: on its own, and as a render pass's last subpass)
    echo "HDR_ENCODE_FRAG frag HDR_DT=1 hdr hdr_encode.frag"
    echo "HDR_ENCODE_FRAG_SUBPASS frag HDR_DT=1,SUBPASS=1 hdr hdr_encode.frag"
+   # (...and SSAA's: the samples' exact average where the picture is their resolve)
+   echo "HDR_ENCODE_FRAG_SUBPASS_SSAA frag HDR_DT=1,SUBPASS=1,SSAA=1 key resolve hdr hdr_encode.frag"
+   echo "HDR_ENCODE_FRAG_SUMS frag HDR_DT=1,SSAA=1 key resolve hdr hdr_encode.frag"
 }
 
 # a raster module's text: @1 its defines, then what it is made of

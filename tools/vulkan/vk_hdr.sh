@@ -13,6 +13,12 @@
 #    vk_hdr --compare encodes the 24-bit picture on the CPU and holds the
 #    HDR one to it;
 #  - with the chip's write-out on, the picture written out, encoded;
+#  - with it off, what was resolved - SSAA's samples on every renderer,
+#    the X scaler's pair of pixels on the compute renderer - is encoded
+#    from their exact average, not the byte the picture rounded it to,
+#    and is not dithered (vk_hdr --exact; on the disc with a slanted
+#    shaded triangle, and that with the X scaler, which the old code
+#    fails);
 #  - a filmic curve is not (the comparison sees a wrong encode);
 #  - every Display Transform draws, and ACES 2.0 (Full) long enough for
 #    its cube to be made and used.
@@ -31,6 +37,11 @@ trap 'rm -rf "$WORK"' EXIT
 ${CC:-cc} -O1 -g -Wall -I./core/libretro-common/include -I./core/deps/khronos \
    -o "$WORK/vk_hdr" tools/vulkan/vk_hdr.c -ldl -lm
 python3 tools/threads/live_disc.py "$WORK/test.gdi"
+# (each in a directory of its own: the track files are named alike)
+mkdir -p "$WORK/slant" "$WORK/hscale"
+python3 tools/threads/live_disc.py "$WORK/slant/slant.gdi" --slant
+python3 tools/threads/live_disc.py "$WORK/hscale/hscale.gdi" --hscale
+DISC=test.gdi
 # (from frame 70 the disc's picture has its textured background, mid-tones
 # and saturated colours in it; for its first 64 frames it renders through
 # the tile accelerator three frames in four, and writes the fourth to the
@@ -40,7 +51,7 @@ FRAMES=70
 run() {
    # @1 the frontend, @2 the picture, @3... options
    fe=$1; out=$2; shift 2
-   VKH_DIR="$WORK" VKH_FRONTEND=$fe "$WORK/vk_hdr" "$CORE" "$WORK/test.gdi" "$WORK/$out" $FRAMES "$@" \
+   VKH_DIR="$WORK" VKH_FRONTEND=$fe "$WORK/vk_hdr" "$CORE" "$WORK/$DISC" "$WORK/$out" $FRAMES "$@" \
       2>"$WORK/log.txt" || { cat "$WORK/log.txt"; echo "vk_hdr.sh: $out failed"; exit 1; }
 }
 
@@ -94,6 +105,27 @@ if "$WORK/vk_hdr" --compare "$WORK/wo-strip.raw" "$WORK/strip-hdr10.raw" > /dev/
    echo "vk_hdr.sh: the picture before its write-out passed for the one written out"
    exit 1
 fi
+
+# What was resolved, encoded from its exact average: SSAA's samples, on
+# each renderer, the slanted triangle's edges between them...
+DISC=slant/slant.gdi
+for r in "per-strip (fast, least accurate)|rasterizer|x-strip" \
+         "per-triangle (normal)|rasterizer|x-triangle" \
+         "per-pixel (accurate)|rasterizer|x-pixel" \
+         "per-pixel (accurate)|compute|x-compute"; do
+   sort=${r%%|*}; rest=${r#*|}; method=${rest%%|*}; name=${rest#*|}
+   set -- "reicast_alpha_sorting=$sort" "reicast_rendering_method=$method" reicast_ssaa=4x
+   run sdr "$name.raw" "$@"
+   run scrgb "$name-scrgb.raw" reicast_color_format=64bit_scrgb "$@"
+   "$WORK/vk_hdr" --exact "$WORK/$name.raw" "$WORK/$name-scrgb.raw"
+done
+# ...and the compute renderer's X scaler's pairs of pixels, at one sample
+DISC=hscale/hscale.gdi
+set -- reicast_pvr2_scaler=enabled "reicast_alpha_sorting=per-pixel (accurate)" reicast_rendering_method=compute
+run sdr x-hscale.raw "$@"
+run scrgb x-hscale-scrgb.raw reicast_color_format=64bit_scrgb "$@"
+"$WORK/vk_hdr" --exact "$WORK/x-hscale.raw" "$WORK/x-hscale-scrgb.raw"
+DISC=test.gdi
 
 # (the comparison has to see a wrong encode, or it proves nothing)
 run hdr10 aces.raw reicast_color_format=30bit_hdr reicast_hdr_display_transform=aces

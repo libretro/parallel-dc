@@ -56,4 +56,7 @@ run sdr triangle-ssaa reicast_ssaa=4x
 run sdr write-out reicast_pvr2_scaler=enabled
 run hdr10 hdr10 reicast_color_format=30bit_hdr
 run scrgb scrgb reicast_color_format=64bit_scrgb reicast_hdr_display_transform=aces2
+# (SSAA's channel sums for the encode: the per-pixel and compute renderers')
+run scrgb pixel-ssaa-scrgb reicast_color_format=64bit_scrgb "reicast_alpha_sorting=per-pixel (accurate)" reicast_ssaa=4x
+run scrgb compute-ssaa-scrgb reicast_color_format=64bit_scrgb "reicast_alpha_sorting=per-pixel (accurate)" reicast_rendering_method=compute reicast_ssaa=4x
 echo "vk_sanitize.sh: passed ($SANITIZE)"

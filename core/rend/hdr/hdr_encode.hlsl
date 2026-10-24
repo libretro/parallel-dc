@@ -101,6 +101,10 @@ cbuffer Params : register(b1)
 	int    sdrEotf;
 	int    scrgb;
 	int    deband;
+	int    ssaaLog2;   /* HDR_ENCODE_SSAA: the samples', log2 */
+	int    pad0;
+	int    pad1;
+	int    pad2;
 };
 
 Texture2D<float4> picture      : register(t0);
@@ -108,6 +112,22 @@ Texture2D<float4> uDtAces2Lut  : register(t1);
 Texture2D<float4> uDtFilmLut   : register(t2);
 Texture2D<float4> uDtFilmDesat : register(t3);
 Texture3D<float4> uDtAces2Cube : register(t4);
+#ifdef HDR_ENCODE_SSAA
+/* With SSAA (after rend/tile/pvr_lane.h and pvr_resolve.h), the samples
+ * the picture was resolved from, read again: where the picture is their
+ * resolve (pvr_resolve_join(), the rule the resolve wrote it by) their
+ * exact average is encoded, not the byte it was rounded to; where
+ * something was drawn over the picture since (the VMUs, the crosshairs),
+ * the picture. As hdr_encode.frag's with SSAA. */
+Texture2DMS<float4> samples    : register(t5);
+
+/* (a unorm8 colour's bytes, red lowest, as its picture holds them: exact) */
+uint hdr_pack_unorm8(float4 v)
+{
+	const uint4 b = uint4(round(saturate(v) * 255.0));
+	return b.r | (b.g << 8) | (b.b << 16) | (b.a << 24);
+}
+#endif
 SamplerState      linearClamp  : register(s0);
 SamplerState      linearWrap   : register(s1);
 
@@ -688,7 +708,23 @@ float3 hdr_deband(float3 rgb, float2 fragcoord)
 
 float4 main(float4 pos : SV_Position) : SV_Target
 {
-	float3 rgb = picture.Load(int3((int)pos.x, (int)pos.y, 0)).rgb;
+	const float4 pic = picture.Load(int3((int)pos.x, (int)pos.y, 0));
+	float3 rgb = pic.rgb;
+#ifdef HDR_ENCODE_SSAA
+	{
+		uint rb = 0u;
+		uint ga = 0u;
+		for (uint s = 0u; s < (1u << (uint)ssaaLog2); s++)
+		{
+			const uint c = hdr_pack_unorm8(samples.Load(int2(pos.xy), s));
+			rb += pvr_resolve_rb(c);
+			ga += pvr_resolve_ga(c);
+		}
+		if (hdr_pack_unorm8(pic) == pvr_resolve_join(rb, ga, (uint)ssaaLog2))
+			rgb = float3((float)(rb & 0xffffu), (float)(ga & 0xffffu), (float)(rb >> 16))
+					/ (255.0 * (float)(1u << (uint)ssaaLog2));
+	}
+#endif
 	if (deband != 0)
 		rgb = hdr_deband(rgb, pos.xy);
 	return float4(encode_hdr_output(rgb, paperWhite, peak, expandGamut, shoulder, sdrEotf,

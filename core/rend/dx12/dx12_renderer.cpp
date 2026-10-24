@@ -1122,6 +1122,10 @@ void DX12Renderer::EndScreen(bool writeOutPass)
 	FlushBatch();
 	ScreenTarget& target = screenTargets[screenIndex];
 	const bool ssaa = SsaaActive();
+	/* the HDR output takes the samples' exact average where the picture is
+	 * their resolve (not on a frame the chip's write-out changes after,
+	 * nor where the per-pixel renderer resolved them itself): kept till then */
+	const bool hdrSamples = ssaa && BindsScreen() && context->HdrActive() && !(writeOutPass && writeOutPictures);
 	if (ssaa)
 	{
 		/* The samples resolved into the picture, all of it. Their contents
@@ -1141,7 +1145,7 @@ void DX12Renderer::EndScreen(bool writeOutPass)
 			context->SetScissor(whole);
 			SsaaResolve(ssaaColor[0].srv);
 		}
-		for (u32 i = 0; i < SsaaColorImages() && i < 2; i++)
+		for (u32 i = hdrSamples ? 1 : 0; i < SsaaColorImages() && i < 2; i++)
 		{
 			context->Transition(ssaaColor[i], D3D12_RESOURCE_STATE_RENDER_TARGET);
 			context->Cmd()->DiscardResource(ssaaColor[i].resource, nullptr);
@@ -1166,8 +1170,14 @@ void DX12Renderer::EndScreen(bool writeOutPass)
 	}
 	context->SetTargets(~0u, ~0u);
 	// as the frontend wants it - or encoded for its HDR output, which it is handed instead - and off to the GPU
-	if (!context->EncodeHdr(target.image, target.image.width, target.image.height))
+	if (!context->EncodeHdr(target.image, target.image.width, target.image.height,
+			hdrSamples ? &ssaaColor[0] : nullptr, ssaaLog2))
 		context->Transition(target.image, context->RequiredState());
+	if (hdrSamples)
+	{
+		context->Transition(ssaaColor[0], D3D12_RESOURCE_STATE_RENDER_TARGET);
+		context->Cmd()->DiscardResource(ssaaColor[0].resource, nullptr);
+	}
 	context->Submit();
 
 	havePicture = true;

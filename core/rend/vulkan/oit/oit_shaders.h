@@ -98,10 +98,12 @@ public:
 	}
 
 	/* @perSample: SSAA's, of a render pass that is not the last, which puts
-	 * each sample together; else the last one's, which resolves them too */
-	vk::ShaderModule GetFinalShader(bool perSample = false) const
+	 * each sample together; else the last one's, which resolves them too,
+	 * and with @sums stores their channel sums (OITBuffers::SetSums()) */
+	vk::ShaderModule GetFinalShader(bool perSample = false, bool sums = false) const
 	{
-		return modules.Get(samples <= 1 ? RSPV_OIT_FINAL_FRAG_S0 : perSample ? RSPV_OIT_FINAL_FRAG_S2 : RSPV_OIT_FINAL_FRAG_S1);
+		return modules.Get(samples <= 1 ? RSPV_OIT_FINAL_FRAG_S0 : perSample ? RSPV_OIT_FINAL_FRAG_S2
+				: sums ? RSPV_OIT_FINAL_FRAG_S1_SUMS : RSPV_OIT_FINAL_FRAG_S1);
 	}
 	/* SSAA's samples a pixel (1: off): what the pipelines are specialized
 	 * for, and which modules they take */

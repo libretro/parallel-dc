@@ -800,12 +800,9 @@ static void run_case(const char *name, const struct hdr_dt_settings *dt, const s
    double worst = 0.0;
    unsigned at = 0;
    hdr_dt_configure(dt);
-   if (cube)
-   {
-      /* (the tables made for these settings first, the cube from them) */
-      hdr_dt_fill(b, o->paper_white_nits, o->max_nits, o->panel_peak_nits, o->panel_xy);
-      hdr_dt_aces2_cube_finish(o->paper_white_nits);
-   }
+   /* (ACES 2.0 (full)'s tables made now, which frames leave to a worker,
+    * and from them the cube) */
+   hdr_dt_finish(o->paper_white_nits, o->max_nits, o->panel_peak_nits, o->panel_xy, cube != 0);
    hdr_dt_fill(b, o->paper_white_nits, o->max_nits, o->panel_peak_nits, o->panel_xy);
    make_tables();
    if (cube && (tables[3].v == VK_NULL_HANDLE || b->gm[2] == 0.0f))

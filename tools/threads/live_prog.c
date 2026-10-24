@@ -25,8 +25,9 @@
  *   sh4-linux-gnu-objcopy -O binary live_prog.elf live_prog.bin
  *
  * and paste the bytes of live_prog.bin into PROGRAM; the same again with
- * -DNO_REGION_ARRAY for PROGRAM_NO_REGION_ARRAY, and with -DLIVE_MMU_ALIGN
- * for PROGRAM_MMU_ALIGN. */
+ * -DNO_REGION_ARRAY for PROGRAM_NO_REGION_ARRAY, with -DLIVE_MMU_ALIGN
+ * for PROGRAM_MMU_ALIGN, with -DLIVE_SLANT for PROGRAM_SLANT, and with
+ * -DLIVE_SLANT -DLIVE_HSCALE for PROGRAM_HSCALE. */
 typedef unsigned int u32;
 typedef unsigned short u16;
 #define PVR(off) (*(volatile u32 *)(0xA05F8000 + (off)))
@@ -574,6 +575,16 @@ static void ta_scene(void)
     * one's bank has it green. */
    ta_quad_two(TSP_PLAIN, (6u << 27) | (0x1000 >> 3), TSP_PLAIN, (6u << 27) | (0x30u << 21) | (0x60000 >> 3),
          F(0.5f), F(200.0f), F(214.0f), F(240.0f), F(236.0f));
+#ifdef LIVE_SLANT
+   /* With -DLIVE_SLANT, over the middle of it all: a triangle shaded from
+    * red through green to blue, whose edges slant across the pixels and
+    * cover parts of them - what SSAA's samples differ over, and what its
+    * resolve averages (tools/vulkan/vk_hdr.sh's --exact) */
+   ta_send(TA_POLYGON | 0x2, ISP_GEQUAL, TSP_PLAIN, 0, 0, 0, 0, 0);   /* Gouraud */
+   ta_send(TA_VERTEX, F(40.3f), F(115.7f), F(0.92f), 0, 0, 0xFFE01010, 0);
+   ta_send(TA_VERTEX, F(150.1f), F(205.9f), F(0.92f), 0, 0, 0xFF10E010, 0);
+   ta_send(TA_VERTEX | TA_LAST, F(290.6f), F(130.2f), F(0.92f), 0, 0, 0xFF1010E0, 0);
+#endif
    ta_send(0, 0, 0, 0, 0, 0, 0, 0);                    /* end of the opaque list */
 
    ta_volume_part(0, x0, y0, x1, y1, F(0.75f));
@@ -1511,6 +1522,16 @@ void cmain(void)
    PVR(0xCC) = 0x00150104;                             /* SPG_VBLANK_INT: in 260, out 21 */
    PVR(0x68) = 639 << 16;                              /* FB_X_CLIP: 0..639 */
    PVR(0x6C) = 479 << 16;                              /* FB_Y_CLIP: 0..479 */
+#ifdef LIVE_HSCALE
+   /* With -DLIVE_HSCALE, the screen's renders through the X scaler too,
+    * each pixel written the average of a pair drawn, into a framebuffer of
+    * 32 bits, which the write-out does not pack */
+   PVR(0xF4) |= 0x10000;                               /* SCALER_CTL: hscale */
+   PVR(0x48) = 6;                                      /* FB_W_CTRL: ARGB8888 */
+   PVR(0x4C) = 640 * 4 / 8;                            /* FB_W_LINESTRIDE */
+   PVR(0x44) = (PVR(0x44) & 0x00800000) | 0xD;         /* FB_R_CTRL: enable, 0888 */
+   PVR(0x5C) = (1u << 20) | (479u << 10) | 639u;       /* FB_R_SIZE: 640x480 */
+#endif
    PVR(0x7C) = 0x0027DF77;                             /* FPU_PARAM_CFG: 6-word region entries */
    PVR(0x20) = 0x100000;                               /* PARAM_BASE */
    PVR(0x128) = 0x100000;                              /* TA_ISP_BASE */

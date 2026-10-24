@@ -66,12 +66,16 @@ static const double Y_b           = 20.0;
 static double surround_1    = 0.59;
 static double surround_2    = 0.9;
 
-void ACES2_SetSurround( int mode ) {
+static void ACES2_SurroundPair( int mode, double *c, double *F ) {
 	switch ( mode ) {
-	case 0:  surround_1 = 0.525; surround_2 = 0.8; break;   /* dark */
-	case 2:  surround_1 = 0.69;  surround_2 = 1.0; break;   /* average */
-	default: surround_1 = 0.59;  surround_2 = 0.9; break;   /* dim */
+	case 0:  *c = 0.525; *F = 0.8; break;   /* dark */
+	case 2:  *c = 0.69;  *F = 1.0; break;   /* average */
+	default: *c = 0.59;  *F = 0.9; break;   /* dim */
 	}
+}
+
+void ACES2_SetSurround( int mode ) {
+	ACES2_SurroundPair( mode, &surround_1, &surround_2 );
 }
 
 static const double J_scale             = 100.0;
@@ -234,7 +238,16 @@ RGB into the cone response space and back, and the scalars the lightness
 conversion needs.
 ================
 */
+static void ACES2_InitJMh( const double prims[8], double surround_c, double surround_F,
+						   aces2JMhParams_t *p );
+
 void ACES2_InitJMhParams( const double prims[8], aces2JMhParams_t *p ) {
+	ACES2_InitJMh( prims, surround_1, surround_2, p );
+}
+
+/* (the surround given, not the one ACES2_SetSurround() keeps) */
+static void ACES2_InitJMh( const double prims[8], double surround_c, double surround_F,
+						   aces2JMhParams_t *p ) {
 	double MATRIX_16[9], RGB_TO_XYZ[9], XYZ_w[3], RGB_w[3];
 	double D_RGB[3], RGB_wc[3], RGB_Aw[3];
 	double cone_to_Aab[9];
@@ -250,7 +263,7 @@ void ACES2_InitJMhParams( const double prims[8], aces2JMhParams_t *p ) {
 	int i;
 
 	white[0] = white[1] = white[2] = ref_luminance;
-	model_gamma = surround_1 * ( 1.48 + sqrt( Y_b / ref_luminance ) );
+	model_gamma = surround_c * ( 1.48 + sqrt( Y_b / ref_luminance ) );
 
 	{
 		double XYZ_to_RGB_cam[9];
@@ -299,8 +312,8 @@ void ACES2_InitJMhParams( const double prims[8], aces2JMhParams_t *p ) {
 
 	for ( i = 0; i < 3; i++ ) {
 		p->cone_to_Aab[i*3+0] = cone_to_Aab[i*3+0] / A_w;
-		p->cone_to_Aab[i*3+1] = cone_to_Aab[i*3+1] * 43.0 * surround_2;
-		p->cone_to_Aab[i*3+2] = cone_to_Aab[i*3+2] * 43.0 * surround_2;
+		p->cone_to_Aab[i*3+1] = cone_to_Aab[i*3+1] * 43.0 * surround_F;
+		p->cone_to_Aab[i*3+2] = cone_to_Aab[i*3+2] * 43.0 * surround_F;
 	}
 	mat3_invert( p->cone_to_Aab, p->Aab_to_cone );
 
@@ -1187,16 +1200,28 @@ double ACES2_GammaInvForHue( const aces2GammaTable_t *table, double hue ) {
 static const double ACES2_AP0[8] = { 0.7347, 0.2653, 0.0, 1.0, 0.0001, -0.077, 0.32168, 0.33767 };
 static const double ACES2_AP1[8] = { 0.713, 0.293, 0.165, 0.830, 0.128, 0.044, 0.32168, 0.33767 };
 
-void ACES2_Init( const double limitPrims[8], double peakLuminance, aces2Params_t *p ) {
+static void ACES2_InitWith( const double limitPrims[8], double peakLuminance,
+							double surround_c, double surround_F, aces2Params_t *p ) {
 	p->peakLuminance = peakLuminance;
-	ACES2_InitJMhParams( ACES2_AP0, &p->input );
-	ACES2_InitJMhParams( ACES2_AP1, &p->reach );
-	ACES2_InitJMhParams( limitPrims, &p->limit );
+	ACES2_InitJMh( ACES2_AP0, surround_c, surround_F, &p->input );
+	ACES2_InitJMh( ACES2_AP1, surround_c, surround_F, &p->reach );
+	ACES2_InitJMh( limitPrims, surround_c, surround_F, &p->limit );
 	ACES2_InitTSParams( peakLuminance, &p->ts );
 	ACES2_InitChromaParams( &p->input, &p->reach, &p->ts, peakLuminance, &p->chroma );
 	ACES2_InitGamutParams( &p->input, &p->ts, peakLuminance, &p->gamut );
 	ACES2_BuildCuspTable( &p->limit, peakLuminance, &p->cusp );
 	ACES2_BuildUpperHullGammaTable( &p->cusp, &p->gamut, &p->limit, peakLuminance, &p->gamma );
+}
+
+void ACES2_Init( const double limitPrims[8], double peakLuminance, aces2Params_t *p ) {
+	ACES2_InitWith( limitPrims, peakLuminance, surround_1, surround_2, p );
+}
+
+void ACES2_InitSurround( const double limitPrims[8], double peakLuminance, int surround,
+						 aces2Params_t *p ) {
+	double c, F;
+	ACES2_SurroundPair( surround, &c, &F );
+	ACES2_InitWith( limitPrims, peakLuminance, c, F, p );
 }
 
 /*

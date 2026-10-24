@@ -60,6 +60,19 @@ public:
 		plannedSize = 0;
 	}
 
+	/* With SSAA and the HDR output: an image of each pixel's channel sums,
+	 * which the screen's last pass stores (OIT_FINAL_FRAG_S1_SUMS) for the
+	 * encode to take the exact average from (VulkanContext::HdrEncode()).
+	 * Before the renderer is set up, like SetCompact(), or made again for
+	 * a size; made at the next Init(). */
+	void SetSums(bool on)
+	{
+		sums = on;
+	}
+	bool Sums() const { return sums; }
+	// (null without)
+	vk::ImageView GetSumsView() const { return sumsAttachment ? sumsAttachment->GetImageView() : vk::ImageView(); }
+
 	/* The screen's size: the fragment buffer is made for it, at the next
 	 * Init(). Renders to a texture larger than the screen are drawn in
 	 * more bands rather than the buffer made again while a game runs. */
@@ -78,6 +91,8 @@ public:
 					{ 0, vk::DescriptorType::eStorageBuffer, Bindings, vk::ShaderStageFlagBits::eFragment },	// pixel buffer
 					{ 1, vk::DescriptorType::eStorageBuffer, 1, vk::ShaderStageFlagBits::eFragment },		// pixel counter
 					{ 2, vk::DescriptorType::eStorageImage, 1, vk::ShaderStageFlagBits::eFragment },		// a-buffer pointers
+					// (SSAA's channel sums, for the HDR output: written only with SetSums(), read by its shader alone)
+					{ 3, vk::DescriptorType::eStorageImage, 1, vk::ShaderStageFlagBits::eFragment },
 			};
 
 			descSetLayout = context->GetDevice().createDescriptorSetLayoutUnique(
@@ -100,7 +115,7 @@ public:
 			counts = std::unique_ptr<BufferData>(new BufferData(CountSlots * Counts * sizeof(u32), vk::BufferUsageFlagBits::eTransferDst));
 			std::fill(std::begin(written), std::end(written), 0);
 		}
-		if (width > maxWidth || height > maxHeight || !abufferPointerAttachment)
+		if (width > maxWidth || height > maxHeight || !abufferPointerAttachment || sums != (sumsAttachment != nullptr))
 		{
 			maxWidth = std::max(maxWidth, width);
 			maxHeight = std::max(maxHeight, height);
@@ -120,6 +135,15 @@ public:
 			abufferPointerAttachment->Init(maxWidth, maxHeight, vk::Format::eR32Uint,
 					vk::ImageUsageFlagBits::eStorage | vk::ImageUsageFlagBits::eTransferDst);
 			abufferPointerTransitionNeeded = true;
+			if (sumsAttachment)
+				commandPool->DeferDelete(std::move(sumsAttachment));
+			if (sums)
+			{
+				sumsAttachment = std::unique_ptr<FramebufferAttachment>(
+						new FramebufferAttachment(context->GetPhysicalDevice(), context->GetDevice()));
+				sumsAttachment->Init(maxWidth, maxHeight, vk::Format::eR16G16B16A16Uint,
+						vk::ImageUsageFlagBits::eStorage | vk::ImageUsageFlagBits::eSampled, false);
+			}
 			firstFrameAfterInit = true;
 			remake = true;
 		}
@@ -140,6 +164,9 @@ public:
 		writeDescriptorSets.push_back(vk::WriteDescriptorSet(*descSet, 1, 0, 1, vk::DescriptorType::eStorageBuffer, nullptr, &pixelCounterBufferInfo, nullptr));
 		vk::DescriptorImageInfo pointerImageInfo(vk::Sampler(), abufferPointerAttachment->GetImageView(), vk::ImageLayout::eGeneral);
 		writeDescriptorSets.push_back(vk::WriteDescriptorSet(*descSet, 2, 0, 1, vk::DescriptorType::eStorageImage, &pointerImageInfo, nullptr, nullptr));
+		vk::DescriptorImageInfo sumsImageInfo(vk::Sampler(), sumsAttachment ? sumsAttachment->GetImageView() : vk::ImageView(), vk::ImageLayout::eGeneral);
+		if (sumsAttachment)
+			writeDescriptorSets.push_back(vk::WriteDescriptorSet(*descSet, 3, 0, 1, vk::DescriptorType::eStorageImage, &sumsImageInfo, nullptr, nullptr));
 		context->GetDevice().updateDescriptorSets(writeDescriptorSets, nullptr);
 	}
 
@@ -150,6 +177,18 @@ public:
 
 	void OnNewFrame(vk::CommandBuffer commandBuffer)
 	{
+		if (sumsAttachment)
+		{
+			/* The sums: in the general layout from the first; after that,
+			 * the frame before's encode done reading them before this
+			 * frame's last pass stores them again */
+			vk::ImageSubresourceRange range(vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1);
+			vk::ImageMemoryBarrier barrier(vk::AccessFlags(), vk::AccessFlagBits::eShaderWrite,
+					abufferPointerTransitionNeeded ? vk::ImageLayout::eUndefined : vk::ImageLayout::eGeneral, vk::ImageLayout::eGeneral,
+					VK_QUEUE_FAMILY_IGNORED, VK_QUEUE_FAMILY_IGNORED, sumsAttachment->GetImage(), range);
+			commandBuffer.pipelineBarrier(vk::PipelineStageFlagBits::eFragmentShader, vk::PipelineStageFlagBits::eFragmentShader, {}, nullptr, nullptr,
+					barrier);
+		}
 		if (abufferPointerTransitionNeeded)
 		{
 			abufferPointerTransitionNeeded = false;
@@ -262,6 +301,7 @@ public:
 		pixelCounterReset.reset();
 		counts.reset();
 		abufferPointerAttachment.reset();
+		sumsAttachment.reset();
 		descSet.reset();
 		maxWidth = maxHeight = 0;
 	}
@@ -322,6 +362,8 @@ private:
 	std::unique_ptr<BufferData> pixelCounter;
 	std::unique_ptr<BufferData> pixelCounterReset;
 	std::unique_ptr<FramebufferAttachment> abufferPointerAttachment;
+	std::unique_ptr<FramebufferAttachment> sumsAttachment;
+	bool sums = false;
 	bool abufferPointerTransitionNeeded = false;
 	bool firstFrameAfterInit = false;
 	int maxWidth = 0;

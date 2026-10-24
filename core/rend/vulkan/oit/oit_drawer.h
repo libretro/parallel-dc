@@ -55,6 +55,8 @@ public:
 	}
 
 protected:
+	// SSAA's channel sums, when the buffers have them (OITBuffers::SetSums())
+	vk::ImageView GetSumsView() const { return oitBuffers->GetSumsView(); }
 	void Init(SamplerManager *samplerManager, OITPipelineManager *pipelineManager, OITBuffers *oitBuffers)
 	{
 		this->pipelineManager = pipelineManager;
@@ -223,7 +225,9 @@ public:
 		timer.End(currentCommandBuffer, commandPool->GetIndex());
 		currentCommandBuffer.end();
 		currentCommandBuffer = nullptr;
-		Present();
+		/* (with SSAA, the samples' channel sums the last pass stored, when
+		 * it did: no write-out pass came after it) */
+		Present(screenPipelineManager->Sums() && !writeOut.Runs(viewport.extent.height) ? GetSumsView() : vk::ImageView());
 	}
 	vk::RenderPass GetRenderPass() const { return screenPipelineManager->GetRenderPass(false, true); }
 	/* The chip's write-out (../writeout.h), when the frame has one: the
@@ -314,24 +318,25 @@ public:
 			t.last = scaled ? restoredPicture : finalColorAttachments[(GetCurrentImage() + count - 1) % count]->GetImageView();
 		return t;
 	}
-	// ...and once it is recorded, as EndFrame() ends one of this drawer's
-	void ComputeEnd()
+	// ...and once it is recorded, as EndFrame() ends one of this drawer's (@sums: ComputeDrawer::Sums())
+	void ComputeEnd(vk::ImageView sums)
 	{
 		havePicture = true;
 		restoredPicture = nullptr;
 		if (carriedPicture)
 			commandPool->DeferDelete(std::move(carriedPicture));
-		Present();
+		Present(sums);
 	}
 protected:
 	/* The frame submitted and its picture handed over: with the HDR output,
-	 * the picture encoded first, in the same submission (VulkanContext::HdrEncode()) */
-	void Present()
+	 * the picture encoded first, in the same submission (VulkanContext::HdrEncode()),
+	 * from the channel sums @sums where there are */
+	void Present(vk::ImageView sums)
 	{
 		vk::Image image = finalColorAttachments[GetCurrentImage()]->GetImage();
 		vk::ImageView view = finalColorAttachments[GetCurrentImage()]->GetImageView();
 		const bool hdr = GetContext()->HdrEncode(*commandPool, image, view,
-				vk::Extent2D(viewport.extent.width, viewport.extent.height));
+				vk::Extent2D(viewport.extent.width, viewport.extent.height), sums);
 		commandPool->EndFrame();
 		GetContext()->PresentFrame(image, view, vk::Offset2D(viewport.extent.width, viewport.extent.height), hdr);
 	}

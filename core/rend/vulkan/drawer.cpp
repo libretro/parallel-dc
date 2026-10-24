@@ -959,7 +959,7 @@ void ScreenDrawer::Init(SamplerManager *samplerManager, ShaderManager *shaderMan
 				dependencies.size(), dependencies.data()));
 	}
 	if (hdr && !hdrPipeline)
-		hdrPipeline = GetContext()->HdrSubpassPipeline(*renderPass, samples > 1 ? 2 : 1);
+		hdrPipeline = GetContext()->HdrSubpassPipeline(*renderPass, samples > 1 ? 2 : 1, samples);
 	size_t size = VulkanContext::Instance()->GetSwapChainSize();
 	if (colorAttachments.size() > size)
 	{
@@ -1117,7 +1117,8 @@ void ScreenDrawer::EndRenderPass()
 		hdrAfter = writeOut.Runs(viewport.height);
 		if (!hdrAfter)
 			GetContext()->HdrSubpassDraw(*commandPool, currentCommandBuffer, *hdrPipeline,
-					colorAttachments[GetCurrentImage()]->GetImageView(), viewport);
+					colorAttachments[GetCurrentImage()]->GetImageView(),
+					samples > 1 ? samplesAttachment->GetImageView() : vk::ImageView(), viewport);
 	}
 	else if (hdrPipeline)
 		hdrAfter = true;

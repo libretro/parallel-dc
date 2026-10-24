@@ -156,7 +156,12 @@ vec4 blendFragments(int num_frag, vec4 finalColor, uint sampleBit)
 #if defined(SSAA) && !defined(SSAA_PER_SAMPLE)
 /* SSAA's last subpass: the list sorted once, put together at each sample,
  * and the samples resolved by the shared rule (rend/tile/pvr_resolve.h):
- * each as the unorm8 the attachment holds, (sum + N/2) / N per channel */
+ * each as the unorm8 the attachment holds, (sum + N/2) / N per channel.
+ * With SSAA_SUMS (the HDR output's), the channel sums stored as well, for
+ * the encode to have the exact average (hdr_encode.frag) */
+#ifdef SSAA_SUMS
+layout (set = 3, binding = 3, rgba16ui) uniform writeonly restrict uimage2D sums;
+#endif
 void main(void)
 {
 	ivec2 coords = ivec2(gl_FragCoord.xy);
@@ -170,6 +175,12 @@ void main(void)
 		ga += pvr_resolve_ga(c);
 	}
 	FragColor = unpackUnorm4x8(pvr_resolve_join(rb, ga, SSAA_LOG2N));
+#ifdef SSAA_SUMS
+	/* (scaled to 16 samples: hdr_encode_vk.h's HDR_VK_SUMS_LOG2) */
+	rb <<= 4u - SSAA_LOG2N;
+	ga <<= 4u - SSAA_LOG2N;
+	imageStore(sums, coords, uvec4(rb & 0xffffu, ga & 0xffffu, rb >> 16, ga >> 16));
+#endif
 }
 #elif defined(SSAA)
 /* ...and of a render pass that is not the last: each sample put together

@@ -250,6 +250,8 @@ void OITPipelineManager::Prepare()
 	{
 		if (i == FIXED_FINAL_PER_SAMPLE && samples <= 1)
 			continue;
+		if (i == FIXED_FINAL_SUMS && !sums)
+			continue;
 		PsoSlot& slot = fixedSlots[i];
 		slot.key = ((u64)KIND_FIXED << KEY_KIND) | i;
 		slot.owner = this;
@@ -288,8 +290,8 @@ VkPipeline OITPipelineManager::BuildPipeline(u64 key, vk::PipelineCache cache)
 				return CreateModVolPipeline((ModVolMode)(i / 3), culls[i % 3], cache);
 			if (i < FIXED_FINAL)
 				return CreateTrModVolPipeline((ModVolMode)((i - FIXED_TRMODVOL) / 3), culls[(i - FIXED_TRMODVOL) % 3], cache);
-			if (i == FIXED_FINAL || i == FIXED_FINAL_PER_SAMPLE)
-				return CreateFinalPipeline(i == FIXED_FINAL_PER_SAMPLE, cache);
+			if (i == FIXED_FINAL || i == FIXED_FINAL_PER_SAMPLE || i == FIXED_FINAL_SUMS)
+				return CreateFinalPipeline(i == FIXED_FINAL_PER_SAMPLE, i == FIXED_FINAL_SUMS, cache);
 			if (i == FIXED_CLEAR)
 				return CreateClearPipeline(cache);
 			return VK_NULL_HANDLE;
@@ -450,7 +452,7 @@ VkPipeline OITPipelineManager::BuildPoly(u64 key, bool general, vk::PipelineCach
 	return PsoCreate(GetContext()->GetDevice(), cache, graphicsPipelineCreateInfo);
 }
 
-VkPipeline OITPipelineManager::CreateFinalPipeline(bool perSample, vk::PipelineCache cache)
+VkPipeline OITPipelineManager::CreateFinalPipeline(bool perSample, bool sums, vk::PipelineCache cache)
 {
 	vk::PipelineVertexInputStateCreateInfo pipelineVertexInputStateCreateInfo = GetQuadInputStateCreateInfo(false);
 
@@ -509,7 +511,7 @@ VkPipeline OITPipelineManager::CreateFinalPipeline(bool perSample, vk::PipelineC
 	vk::PipelineDynamicStateCreateInfo pipelineDynamicStateCreateInfo(vk::PipelineDynamicStateCreateFlags(), 2, dynamicStates);
 
 	vk::ShaderModule vertex_module = shaderManager->GetFinalVertexShader();
-	vk::ShaderModule fragment_module = shaderManager->GetFinalShader(perSample);
+	vk::ShaderModule fragment_module = shaderManager->GetFinalShader(perSample, sums);
 	const PsoSpecialization specialization(0, renderPasses->GetSamples());
 
 	vk::PipelineShaderStageCreateInfo stages[] = {

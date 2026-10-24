@@ -783,14 +783,17 @@ void DX12Context::SetTargets(u32 rtv, u32 dsv, u32 samples)
 
 /* ---- The frame ---- */
 
-bool DX12Context::EncodeHdr(DX12Image& image, u32 width, u32 height)
+bool DX12Context::EncodeHdr(DX12Image& image, u32 width, u32 height, DX12Image *samples, u32 samplesLog2)
 {
 	hdrFrame = nullptr;
 	if (hdr == nullptr || !image.resource)
 		return false;
 	Transition(image, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
+	if (samples != nullptr)
+		Transition(*samples, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
 	// (signalled by the Submit() that follows)
 	if (!hdr_d3d12_encode(hdr, Cmd(), &hdr_output, image.resource, DX12FrameFormat, width, height, true,
+			samples != nullptr ? samples->resource.get() : nullptr, samples != nullptr ? samplesLog2 : 0,
 			GetPresentIndex(), fenceValue + 1, &hdrFrame))
 		return false;
 	// what the encode bound is not what this has noted

@@ -117,6 +117,11 @@ unsigned hdr_dt_generation(void);
 const uint16_t *hdr_dt_aces2_cube(void);
 /* Bake the rest of the cube now; for tests. */
 void hdr_dt_aces2_cube_finish(float paper_white_nits);
+/* ACES 2.0 (full)'s tables for these, made now if they are not there (and
+ * with @cube, its cube too), where the fills leave them to the worker;
+ * for tests, which want what they draw now. Nothing for other curves. */
+void hdr_dt_finish(float paper_white_nits, float peak_nits,
+      float panel_peak_nits, const uint16_t panel_xy[8], bool cube);
 /* The reference the cube is baked from: what dt_aces2() computes, in
  * double precision. Scene Rec.709 (1.0 = paper white) in, the limiting
  * primaries (1.0 = 100 nits) out. Valid once hdr_dt_fill ran with

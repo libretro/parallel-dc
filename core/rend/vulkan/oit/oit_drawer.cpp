@@ -585,7 +585,7 @@ bool OITDrawer::Draw(const Texture *fogTexture, const Texture *paletteTexture)
 			if (finalPass)
 			{
 				cmdBuffer.setViewport(0, vk::Viewport(0.f, 0.f, (float)viewport.extent.width, (float)viewport.extent.height, 0.f, 1.f));
-				cmdBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, pipelineManager->GetFinalPipeline());
+				cmdBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, pipelineManager->GetFinalPipeline(false, true));
 				quadBuffer->Draw(cmdBuffer);
 			}
 		}

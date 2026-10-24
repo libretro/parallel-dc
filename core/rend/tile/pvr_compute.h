@@ -430,6 +430,14 @@ layout(constant_id = 1) const uint PVRC_LOG2N = 0u;
 layout(constant_id = 2) const uint PVRC_KEEP = 4u;
 layout(constant_id = 3) const uint PVRC_TEST = 0u;
 layout(constant_id = 4) const uint PVRC_VARIANT = 0u;
+#if defined(PVRC_SUMS)
+/* Vulkan's walk, with the HDR output: each pixel's channel sums stored
+ * too, scaled to 16 samples (vulkan/hdr_encode_vk.h's HDR_VK_SUMS_LOG2),
+ * for the encode to have the exact average the picture was rounded from.
+ * (Not in the Direct3D 12 kernels: tools/rend/kernels_dx12.sh leaves
+ * these blocks out.) */
+layout(constant_id = 5) const uint PVRC_SUMS_ON = 0u;
+#endif /* PVRC_SUMS */
 
 #if PVRC_KERNEL == PVRC_K_GPUSRC
 layout(std430, set = 0, binding = 0) coherent buffer Frame { uint w[]; } frm;
@@ -1443,6 +1451,9 @@ layout(local_size_x = 256) in;
 
 #if defined(PVRC_SHADER_GLSL)
 layout(set = 0, binding = 3, rgba8) uniform writeonly image2D outImage;
+#if defined(PVRC_SUMS)
+layout(set = 0, binding = 13, rgba16ui) uniform writeonly uimage2D sumsImage;
+#endif /* PVRC_SUMS */
 layout(set = 0, binding = 4) uniform sampler2D lastPicture;
 layout(set = 0, binding = 5) uniform sampler2D palette;
 layout(set = 0, binding = 6) uniform sampler2D textures[PVRC_TEX_SLOTS];
@@ -3124,6 +3135,9 @@ void main()
    uint c;
    ivec2 at = ivec2(g_px, g_py);
    bool stores = smp == 0u && g_in;
+#if defined(PVRC_SUMS)
+   uint sums_rb = pvr_resolve_rb(g_col), sums_ga = pvr_resolve_ga(g_col), sums_log2 = PVRC_LOG2N;
+#endif /* PVRC_SUMS */
    if ((frm.w[PVRC_F_FLAGS] & PVRC_FF_HSCALE) != 0u)
    {
       uint rb = pvr_resolve_rb(g_col), ga = pvr_resolve_ga(g_col);
@@ -3140,6 +3154,11 @@ void main()
          rb += orb;
       }
       c = pvr_resolve_join(rb, ga, PVRC_LOG2N + 1u);
+#if defined(PVRC_SUMS)
+      sums_rb = rb;
+      sums_ga = ga;
+      sums_log2 = PVRC_LOG2N + 1u;
+#endif /* PVRC_SUMS */
       at.x = g_px >> 1;
       stores = stores && (g_px & 1) == 0;
    }
@@ -3149,6 +3168,23 @@ void main()
     * it rounds or truncates, and however it divides, gives the byte) */
    if (stores)
       imageStore(outImage, at, (vec4(float(c & 255u), float((c >> 8) & 255u), float((c >> 16) & 255u), float(c >> 24)) + 0.25) / 255.0);
+#if defined(PVRC_SUMS)
+   if (PVRC_SUMS_ON != 0u)
+   {
+      /* (the lanes of a pixel's samples summed as pvr_resolve_lanes()
+       * does, where the X scaler did not sum them above) */
+      if ((frm.w[PVRC_F_FLAGS] & PVRC_FF_HSCALE) == 0u)
+         for (uint m = 1u; m < PVRC_SAMPLES; m <<= 1)
+         {
+            sums_rb += LANE_SHUFFLE_XOR(sums_rb, m);
+            sums_ga += LANE_SHUFFLE_XOR(sums_ga, m);
+         }
+      sums_rb <<= 4u - sums_log2;
+      sums_ga <<= 4u - sums_log2;
+      if (stores)
+         imageStore(sumsImage, at, uvec4(sums_rb & 0xffffu, sums_ga & 0xffffu, sums_rb >> 16, sums_ga >> 16));
+   }
+#endif /* PVRC_SUMS */
    if (g_tid == 0u && peels > 1u)
       atomicMax(bin.w[PVRC_B_STATS(pvrc_runs()) + PVRC_ST_PEELS], peels);
    if (g_tid == 0u && g_hiz_skipped != 0u)

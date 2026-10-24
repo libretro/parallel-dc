@@ -482,7 +482,7 @@ bool VulkanContext::Init(retro_hw_render_interface_vulkan *retro_render_if)
 		{ vk::DescriptorType::eSampler, 2 },
       { vk::DescriptorType::eCombinedImageSampler, 4000 },
       { vk::DescriptorType::eSampledImage, 2 },
-      { vk::DescriptorType::eStorageImage, 12 },
+      { vk::DescriptorType::eStorageImage, 24 },
       { vk::DescriptorType::eUniformTexelBuffer, 2 },
 		{ vk::DescriptorType::eStorageTexelBuffer, 2 },
       { vk::DescriptorType::eUniformBuffer, 36 },
@@ -506,6 +506,8 @@ bool VulkanContext::Init(retro_hw_render_interface_vulkan *retro_render_if)
 		code.vert = RasterSpvWords(RSPV_SSAA_RESOLVE_VERT, &code.vert_size);
 		code.frag = RasterSpvWords(RSPV_HDR_ENCODE_FRAG, &code.frag_size);
 		code.frag_subpass = RasterSpvWords(RSPV_HDR_ENCODE_FRAG_SUBPASS, &code.frag_subpass_size);
+		code.frag_subpass_ssaa = RasterSpvWords(RSPV_HDR_ENCODE_FRAG_SUBPASS_SSAA, &code.frag_subpass_ssaa_size);
+		code.frag_sums = RasterSpvWords(RSPV_HDR_ENCODE_FRAG_SUMS, &code.frag_sums_size);
 		hdr = hdr_vk_new(retro_render_if, heap.Raw(), pipelineCache, hdrFormat, (unsigned)swapChainSize, &code);
 		if (hdr == nullptr)
 			ERROR_LOG(RENDERER, "Vulkan: the HDR output could not be set up; the picture goes out as 24-bit");
@@ -671,25 +673,33 @@ void VulkanContext::HdrPrepare(CommandPool& pool, vk::CommandBuffer cmd)
 		hdr_vk_prepare(hdr, &hdr_output, (VkCommandBuffer)cmd, HdrRing(pool), (unsigned)pool.GetIndex(), pool.GetFrames());
 }
 
-vk::UniquePipeline VulkanContext::HdrSubpassPipeline(vk::RenderPass renderPass, u32 subpass)
+vk::UniquePipeline VulkanContext::HdrSubpassPipeline(vk::RenderPass renderPass, u32 subpass, u32 samples)
 {
 	if (hdr == nullptr)
 		return vk::UniquePipeline();
-	const VkPipeline p = hdr_vk_subpass_pipeline(hdr, (VkRenderPass)renderPass, subpass);
+	const VkPipeline p = hdr_vk_subpass_pipeline(hdr, (VkRenderPass)renderPass, subpass, samples);
 	if (p == VK_NULL_HANDLE)
 		ERROR_LOG(RENDERER, "Vulkan: the HDR output's subpass pipeline could not be made");
 	return vk::UniquePipeline(vk::Pipeline(p), vk::ObjectDestroy<vk::Device, vk::DispatchLoaderStatic>(device));
 }
 
-void VulkanContext::HdrSubpassDraw(CommandPool& pool, vk::CommandBuffer cmd, vk::Pipeline pipeline, vk::ImageView picture, vk::Extent2D extent)
+void VulkanContext::HdrSubpassDraw(CommandPool& pool, vk::CommandBuffer cmd, vk::Pipeline pipeline, vk::ImageView picture,
+		vk::ImageView samples, vk::Extent2D extent)
 {
-	// (every picture is 8 bits a channel)
+	/* (every picture is 8 bits a channel, dithered; with SSAA's samples,
+	 * what is encoded is their exact average, which is not) */
 	if (hdr != nullptr)
 		hdr_vk_subpass_draw(hdr, &hdr_output, (VkCommandBuffer)cmd, HdrRing(pool), (unsigned)pool.GetIndex(),
-				(VkPipeline)pipeline, (VkImageView)picture, extent.width, extent.height, true);
+				(VkPipeline)pipeline, (VkImageView)picture, (VkImageView)samples, extent.width, extent.height, !samples);
 }
 
-bool VulkanContext::HdrEncode(CommandPool& pool, vk::Image& image, vk::ImageView& view, vk::Extent2D size)
+bool VulkanContext::HdrSumsReady()
+{
+	return hdr != nullptr && hdr_vk_sums_ready(hdr);
+}
+
+bool VulkanContext::HdrEncode(CommandPool& pool, vk::Image& image, vk::ImageView& view, vk::Extent2D size,
+		vk::ImageView sums)
 {
 	if (hdr == nullptr)
 		return false;
@@ -698,7 +708,8 @@ bool VulkanContext::HdrEncode(CommandPool& pool, vk::Image& image, vk::ImageView
 	vk::CommandBuffer cmd = pool.Allocate();
 	cmd.begin(vk::CommandBufferBeginInfo(vk::CommandBufferUsageFlagBits::eOneTimeSubmit));
 	const bool done = hdr_vk_encode(hdr, &hdr_output, (VkCommandBuffer)cmd, HdrRing(pool), (unsigned)pool.GetIndex(),
-			pool.GetFrames(), (unsigned)GetCurrentImageIndex(), &i, &v, size.width, size.height, true);
+			pool.GetFrames(), (unsigned)GetCurrentImageIndex(), &i, &v, size.width, size.height, true,
+			(VkImageView)sums);
 	cmd.end();
 	if (done)
 	{

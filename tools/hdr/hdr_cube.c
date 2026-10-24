@@ -1,6 +1,15 @@
-/* ACES 2.0 (Full)'s cube baked off the frame (hdr_transform.c): with
- * threads, hdr_dt_fill() hands the bake to a worker and never waits for
- * it. This holds the cube it comes back with to the one baked in place
+/* ACES 2.0 (Full)'s tables and cube made off the frame (hdr_transform.c):
+ * with threads, hdr_dt_fill() hands them to a worker and never waits for
+ * it. The tables:
+ *
+ *  - the first fill with none draws the tone scale alone, and the fills
+ *    after a change of settings go on with the tables there were, not
+ *    the new ones made there and then (as they were before: a frame of
+ *    several milliseconds);
+ *  - what the fills draw once the worker's are back is what the tables
+ *    made in place (hdr_dt_finish()) give, to the byte.
+ *
+ * The cube it comes back with is held to the one baked in place
  * (hdr_dt_aces2_cube_finish()), byte for byte:
  *
  *  - baked through, with the frame thread polling as frames do;
@@ -77,13 +86,11 @@ static unsigned fill_until_baked(float paper)
 static uint16_t *reference(int gamut, float paper)
 {
    struct hdr_dt_settings s;
-   struct hdr_dt_block b;
    uint16_t *ref = (uint16_t*)malloc(CUBE_BYTES);
    hdr_dt_free();
    settings(&s, gamut);
    hdr_dt_configure(&s);
-   hdr_dt_fill(&b, paper, 1000.0f, 1000.0f, xy);
-   hdr_dt_aces2_cube_finish(paper);
+   hdr_dt_finish(paper, 1000.0f, 1000.0f, xy, true);
    if (!ref || !hdr_dt_aces2_cube())
    {
       printf("hdr_cube: no reference cube\n");
@@ -92,6 +99,106 @@ static uint16_t *reference(int gamut, float paper)
    memcpy(ref, hdr_dt_aces2_cube(), CUBE_BYTES);
    hdr_dt_free();
    return ref;
+}
+
+/* The block the fills draw for @gamut at @paper with the tables made in
+ * place, the cube flag aside */
+static void reference_block(int gamut, float paper, struct hdr_dt_block *b)
+{
+   struct hdr_dt_settings s;
+   hdr_dt_free();
+   settings(&s, gamut);
+   hdr_dt_configure(&s);
+   hdr_dt_finish(paper, 1000.0f, 1000.0f, xy, false);
+   hdr_dt_fill(b, paper, 1000.0f, 1000.0f, xy);
+   b->gm[2] = 0.0f;
+   hdr_dt_free();
+}
+
+#ifndef TARGET_NO_THREADS
+/* Fills until the block is @want, the cube flag aside: the tables the
+ * worker makes come to it. Each block before is @before's (NULL: one of
+ * no tables, the tone scale alone), never one of two tables: a fill
+ * whose cube bake took new tables back half way through gave that,
+ * reading the ones it had freed. */
+static void fill_until(float paper, const struct hdr_dt_block *before, const struct hdr_dt_block *want,
+      struct hdr_dt_block *b)
+{
+   clock_t start = clock();
+   for (;;)
+   {
+      hdr_dt_fill(b, paper, 1000.0f, 1000.0f, xy);
+      b->gm[2] = 0.0f;
+      if (!memcmp(b, want, sizeof(*b)))
+         return;
+      if (before ? memcmp(b, before, sizeof(*b)) != 0 : (int)b->mode[0] != HDR_DT_ACES2)
+      {
+         printf("hdr_cube: a block neither of the tables before nor of the new ones\n");
+         failures++;
+         return;
+      }
+      if ((double)(clock() - start) / CLOCKS_PER_SEC > 60.0)
+      {
+         printf("hdr_cube: not the tables made in place after a minute\n");
+         failures++;
+         return;
+      }
+   }
+}
+
+#endif
+
+static void same_block(const char *what, const struct hdr_dt_block *b, const struct hdr_dt_block *ref)
+{
+   if (memcmp(b, ref, sizeof(*b)))
+   {
+      printf("hdr_cube: %s: the block is not the one the tables made in place give\n", what);
+      failures++;
+   }
+   else
+      printf("hdr_cube: %s: same\n", what);
+}
+
+/* The tables: made off the frame, and the same as made in place */
+static void tables(void)
+{
+   struct hdr_dt_settings s;
+   struct hdr_dt_block b, ref1, ref2, old;
+   reference_block(1, 200.0f, &ref1);
+   reference_block(2, 200.0f, &ref2);
+
+   settings(&s, 1);
+   hdr_dt_configure(&s);
+   hdr_dt_fill(&b, 200.0f, 1000.0f, 1000.0f, xy);
+#ifndef TARGET_NO_THREADS
+   /* none yet: the tone scale alone, nothing solved in the fill */
+   if ((int)b.mode[0] != HDR_DT_ACES2 || hdr_dt_aces2_lut())
+   {
+      printf("hdr_cube: the first fill made the tables itself\n");
+      failures++;
+   }
+   fill_until(200.0f, NULL, &ref1, &b);
+#endif
+   b.gm[2] = 0.0f;
+   same_block("tables made off the frame", &b, &ref1);
+
+   /* another gamut (Rec.2020): the fills go on with these until the new ones are back */
+   old = b;
+   settings(&s, 2);
+   hdr_dt_configure(&s);
+   hdr_dt_fill(&b, 200.0f, 1000.0f, 1000.0f, xy);
+   b.gm[2] = 0.0f;
+#ifndef TARGET_NO_THREADS
+   if (memcmp(&b, &old, sizeof(b)))
+   {
+      printf("hdr_cube: the fill after a change made the new tables itself\n");
+      failures++;
+   }
+   fill_until(200.0f, &old, &ref2, &b);
+#endif
+   same_block("another gamut's tables", &b, &ref2);
+   (void)old;
+   hdr_dt_free();
 }
 
 static void same(const char *what, const uint16_t *ref)
@@ -125,6 +232,7 @@ int main(int argc, char **argv)
       return 0;
    }
 
+   tables();
    ref200 = reference(1, 200.0f);
    ref300 = reference(1, 300.0f);
    refp3  = reference(2, 300.0f);

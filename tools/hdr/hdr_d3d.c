@@ -7,12 +7,23 @@
  * it under wine.
  *
  *   hdr_d3d 11|12 out.bin
+ *   hdr_d3d 12ssaa
+ *
+ * 12ssaa: the Direct3D 12 encoder with SSAA's samples (hdr_encode.hlsl's
+ * HDR_ENCODE_SSAA). Known values are drawn into each sample of a 4x
+ * multisampled picture, the picture is made their resolve by the shared
+ * rule (rend/tile/pvr_resolve.h), but for a strip drawn over (the VMUs'
+ * stand-in); the encode of the two is held to that of the samples' exact
+ * average as a half-float picture - the picture where it was drawn over -
+ * and has to differ from that of the 8-bit picture: the extra bits are
+ * there and are the samples'.
  *
  * C89. */
 #define COBJMACROS
 #include <windows.h>
 #include <d3d11.h>
 #include <d3d12.h>
+#include <d3dcompiler.h>
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -73,15 +84,14 @@ static void put(void)
    cases++;
 }
 
-/* (a cube case's tables made for its settings, then its cube baked) */
+/* (ACES 2.0 (full)'s tables made now, which frames leave to a worker,
+ * and a cube case's cube from them) */
 static void prepare(const struct hdr_dt_settings *dt, const struct hdr_output *o, int cube)
 {
-   struct hdr_dt_block b;
    hdr_dt_configure(dt);
+   hdr_dt_finish(o->paper_white_nits, o->max_nits, o->panel_peak_nits, o->panel_xy, cube != 0);
    if (cube)
    {
-      hdr_dt_fill(&b, o->paper_white_nits, o->max_nits, o->panel_peak_nits, o->panel_xy);
-      hdr_dt_aces2_cube_finish(o->paper_white_nits);
       if (!hdr_dt_aces2_cube())
       {
          fprintf(stderr, "hdr_d3d: no cube\n");
@@ -318,7 +328,7 @@ static void run12(const char *name, const struct hdr_dt_settings *dt, const stru
    void *map;
    prepare(dt, o, cube);
    if (!hdr_d3d12_encode(enc12[scrgb], list, o, pic12, DXGI_FORMAT_R8G8B8A8_UNORM, W, H, deband != 0,
-         cases % 3, fence_value + 1, &texture))
+         NULL, 0, cases % 3, fence_value + 1, &texture))
    {
       fprintf(stderr, "hdr_d3d: %s: not encoded\n", name);
       exit(1);
@@ -333,12 +343,295 @@ static void run12(const char *name, const struct hdr_dt_settings *dt, const stru
    put();
 }
 
+/* ---- Direct3D 12 with SSAA's samples ---- */
+
+#define SSAA_N    4
+#define SSAA_LOG2 2
+#define OSD_X     16   /* the columns left of it are "drawn over" */
+
+/* The byte the filler draws at channel @c of sample @s of (x, y): its PS's arithmetic */
+static unsigned sample_byte(unsigned x, unsigned y, unsigned s, unsigned c)
+{
+   unsigned v = (x * 73u + y * 151u + s * 61u + c * 97u) * 2654435761u;
+   /* (a smooth ramp across x, so most samples differ by a few steps, with the hash's low bits) */
+   return ((x + (v >> 30)) * 255u / (W + 3u)) & 255u;
+}
+
+static uint16_t to_half(float f)
+{
+   union { float f; uint32_t u; } v;
+   uint32_t sign, mant;
+   int exp;
+   v.f  = f;
+   sign = (v.u >> 16) & 0x8000u;
+   exp  = (int)((v.u >> 23) & 0xff) - 127 + 15;
+   mant = v.u & 0x7fffffu;
+   if (exp <= 0)
+      return (uint16_t)sign;
+   if (exp >= 31)
+      return (uint16_t)(sign | 0x7bffu);
+   {
+      uint32_t h = ((uint32_t)exp << 10) | (mant >> 13);
+      if ((mant & 0x1fffu) > 0x1000u || ((mant & 0x1fffu) == 0x1000u && (h & 1u)))
+         h++;
+      return (uint16_t)(sign | h);
+   }
+}
+
+static ID3D12Resource *texture12(DXGI_FORMAT format, unsigned samples, D3D12_RESOURCE_FLAGS flags,
+      D3D12_RESOURCE_STATES state)
+{
+   D3D12_HEAP_PROPERTIES hp;
+   D3D12_RESOURCE_DESC rd;
+   ID3D12Resource *r = NULL;
+   memset(&hp, 0, sizeof(hp));
+   hp.Type = D3D12_HEAP_TYPE_DEFAULT;
+   memset(&rd, 0, sizeof(rd));
+   rd.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
+   rd.Width = W;
+   rd.Height = H;
+   rd.DepthOrArraySize = 1;
+   rd.MipLevels = 1;
+   rd.Format = format;
+   rd.SampleDesc.Count = samples;
+   rd.Flags = flags;
+   if (FAILED(ID3D12Device_CreateCommittedResource(d12, &hp, D3D12_HEAP_FLAG_NONE, &rd, state, NULL,
+         &IID_ID3D12Resource, (void**)&r)))
+      exit(2);
+   return r;
+}
+
+/* @data (W x H of @bpp bytes) into a new texture of @format, in the pixel shader resource state */
+static ID3D12Resource *uploaded12(const void *data, DXGI_FORMAT format, unsigned bpp)
+{
+   ID3D12Resource *t = texture12(format, 1, D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_COPY_DEST);
+   ID3D12Resource *up = buffer12(D3D12_HEAP_TYPE_UPLOAD, (UINT64)W * H * bpp, D3D12_RESOURCE_STATE_GENERIC_READ);
+   void *map;
+   ID3D12Resource_Map(up, 0, NULL, &map);
+   memcpy(map, data, (size_t)W * H * bpp);
+   ID3D12Resource_Unmap(up, 0, NULL);
+   copy12(t, up, format, bpp, 1);
+   barrier12(t, D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
+   submit12();
+   ID3D12Resource_Release(up);
+   return t;
+}
+
+static ID3DBlob *compile(const char *src, const char *target)
+{
+   pD3DCompile fn = (pD3DCompile)GetProcAddress(LoadLibraryA("d3dcompiler_47.dll"), "D3DCompile");
+   ID3DBlob *code = NULL, *err = NULL;
+   if (!fn || FAILED(fn(src, strlen(src), NULL, NULL, NULL, "main", target, 0, 0, &code, &err)))
+   {
+      fprintf(stderr, "hdr_d3d: the filler did not compile: %s\n", err ? (const char*)ID3D10Blob_GetBufferPointer(err) : "");
+      exit(2);
+   }
+   return code;
+}
+
+/* Each sample of @ms drawn with sample_byte()'s values: a draw for each,
+ * the pipeline's sample mask picking it and a root constant saying which
+ * (SV_SampleIndex is not in every compiler wine has) */
+static void fill_samples(ID3D12Resource *ms)
+{
+   static const char vs[] =
+      "float4 main(uint id : SV_VertexID) : SV_Position {"
+      " float2 p = float2((id << 1) & 2, id & 2); return float4(p * float2(2, -2) + float2(-1, 1), 0, 1); }";
+   static const char ps[] =
+      "uint b(uint x, uint y, uint s, uint c) { uint v = (x * 73u + y * 151u + s * 61u + c * 97u) * 2654435761u;"
+      " return ((x + (v >> 30)) * 255u / (256u + 3u)) & 255u; }"
+      "cbuffer S : register(b0) { uint s; };"
+      "float4 main(float4 pos : SV_Position) : SV_Target {"
+      " uint x = (uint)pos.x, y = (uint)pos.y;"
+      " return float4(b(x, y, s, 0u), b(x, y, s, 1u), b(x, y, s, 2u), b(x, y, s, 3u)) / 255.0; }";
+   D3D12_ROOT_SIGNATURE_DESC rsd;
+   D3D12_ROOT_PARAMETER rp;
+   ID3DBlob *rsb = NULL, *rse = NULL, *vsb = compile(vs, "vs_5_0"), *psb = compile(ps, "ps_5_0");
+   ID3D12RootSignature *root = NULL;
+   ID3D12PipelineState *pso[SSAA_N];
+   unsigned n;
+   D3D12_GRAPHICS_PIPELINE_STATE_DESC pd;
+   D3D12_DESCRIPTOR_HEAP_DESC hd;
+   ID3D12DescriptorHeap *rtv_heap;
+   D3D12_CPU_DESCRIPTOR_HANDLE rtv;
+   D3D12_VIEWPORT vp;
+   D3D12_RECT sc;
+   memset(&rp, 0, sizeof(rp));
+   rp.ParameterType = D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS;
+   rp.Constants.Num32BitValues = 1;
+   rp.ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
+   memset(&rsd, 0, sizeof(rsd));
+   rsd.NumParameters = 1;
+   rsd.pParameters = &rp;
+   if (FAILED(D3D12SerializeRootSignature(&rsd, D3D_ROOT_SIGNATURE_VERSION_1, &rsb, &rse))
+         || FAILED(ID3D12Device_CreateRootSignature(d12, 0, ID3D10Blob_GetBufferPointer(rsb), ID3D10Blob_GetBufferSize(rsb),
+               &IID_ID3D12RootSignature, (void**)&root)))
+      exit(2);
+   memset(&pd, 0, sizeof(pd));
+   pd.pRootSignature = root;
+   pd.VS.pShaderBytecode = ID3D10Blob_GetBufferPointer(vsb);
+   pd.VS.BytecodeLength = ID3D10Blob_GetBufferSize(vsb);
+   pd.PS.pShaderBytecode = ID3D10Blob_GetBufferPointer(psb);
+   pd.PS.BytecodeLength = ID3D10Blob_GetBufferSize(psb);
+   pd.BlendState.RenderTarget[0].RenderTargetWriteMask = D3D12_COLOR_WRITE_ENABLE_ALL;
+   pd.SampleMask = 0xffffffffu;
+   pd.RasterizerState.FillMode = D3D12_FILL_MODE_SOLID;
+   pd.RasterizerState.CullMode = D3D12_CULL_MODE_NONE;
+   pd.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
+   pd.NumRenderTargets = 1;
+   pd.RTVFormats[0] = DXGI_FORMAT_R8G8B8A8_UNORM;
+   pd.SampleDesc.Count = SSAA_N;
+   for (n = 0; n < SSAA_N; n++)
+   {
+      pd.SampleMask = 1u << n;
+      if (FAILED(ID3D12Device_CreateGraphicsPipelineState(d12, &pd, &IID_ID3D12PipelineState, (void**)&pso[n])))
+         exit(2);
+   }
+   memset(&hd, 0, sizeof(hd));
+   hd.Type = D3D12_DESCRIPTOR_HEAP_TYPE_RTV;
+   hd.NumDescriptors = 1;
+   if (FAILED(ID3D12Device_CreateDescriptorHeap(d12, &hd, &IID_ID3D12DescriptorHeap, (void**)&rtv_heap)))
+      exit(2);
+   rtv_heap->lpVtbl->GetCPUDescriptorHandleForHeapStart(rtv_heap, &rtv);
+   ID3D12Device_CreateRenderTargetView(d12, ms, NULL, rtv);
+   vp.TopLeftX = 0.0f; vp.TopLeftY = 0.0f; vp.Width = (float)W; vp.Height = (float)H; vp.MinDepth = 0.0f; vp.MaxDepth = 1.0f;
+   sc.left = 0; sc.top = 0; sc.right = W; sc.bottom = H;
+   ID3D12GraphicsCommandList_SetGraphicsRootSignature(list, root);
+   ID3D12GraphicsCommandList_RSSetViewports(list, 1, &vp);
+   ID3D12GraphicsCommandList_RSSetScissorRects(list, 1, &sc);
+   ID3D12GraphicsCommandList_OMSetRenderTargets(list, 1, &rtv, FALSE, NULL);
+   ID3D12GraphicsCommandList_IASetPrimitiveTopology(list, D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+   for (n = 0; n < SSAA_N; n++)
+   {
+      ID3D12GraphicsCommandList_SetPipelineState(list, pso[n]);
+      ID3D12GraphicsCommandList_SetGraphicsRoot32BitConstant(list, 0, n, 0);
+      ID3D12GraphicsCommandList_DrawInstanced(list, 3, 1, 0, 0);
+   }
+   barrier12(ms, D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
+   submit12();
+}
+
+/* What @picture (of @format, 8 bits a channel when @unorm8; SSAA's @samples or NULL) encodes to, as floats */
+static void encode12(hdr_d3d12_t *e, const struct hdr_output *o, ID3D12Resource *picture, DXGI_FORMAT format,
+      bool unorm8, ID3D12Resource *samples, float *dst)
+{
+   const int scrgb = o->format == HDR_OUTPUT_SCRGB;
+   const DXGI_FORMAT out = scrgb ? DXGI_FORMAT_R16G16B16A16_FLOAT : DXGI_FORMAT_R10G10B10A2_UNORM;
+   const unsigned bpp = scrgb ? 8 : 4;
+   ID3D12Resource *texture = NULL;
+   void *map;
+   if (!hdr_d3d12_encode(e, list, o, picture, format, W, H, unorm8, samples, samples ? SSAA_LOG2 : 0,
+         cases % 3, fence_value + 1, &texture))
+   {
+      fprintf(stderr, "hdr_d3d: not encoded\n");
+      exit(1);
+   }
+   barrier12(texture, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_COPY_SOURCE);
+   copy12(readback, texture, out, bpp, 0);
+   barrier12(texture, D3D12_RESOURCE_STATE_COPY_SOURCE, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
+   submit12();
+   ID3D12Resource_Map(readback, 0, NULL, &map);
+   to_floats((const unsigned char*)map, (size_t)W * bpp, out);
+   ID3D12Resource_Unmap(readback, 0, NULL);
+   memcpy(dst, pixels, sizeof(pixels));
+   cases++;
+}
+
+static float ssaa_out[W * H * 4], exact_out[W * H * 4], byte_out[W * H * 4];
+
+static int ssaa12(void)
+{
+   static unsigned char pic8[W * H * 4];
+   static uint16_t exact16[W * H * 4];
+   struct hdr_dt_settings dt;
+   struct hdr_output o;
+   ID3D12Resource *ms, *pic, *exact;
+   unsigned x, y, c, i, k;
+
+   setup12();
+   ms = texture12(DXGI_FORMAT_R8G8B8A8_UNORM, SSAA_N, D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET,
+         D3D12_RESOURCE_STATE_RENDER_TARGET);
+   fill_samples(ms);
+   for (y = 0; y < H; y++)
+      for (x = 0; x < W; x++)
+         for (c = 0; c < 4; c++)
+         {
+            const size_t at = ((size_t)y * W + x) * 4 + c;
+            unsigned sum = 0, s;
+            for (s = 0; s < SSAA_N; s++)
+               sum += sample_byte(x, y, s, c);
+            if (x < OSD_X)
+            {
+               /* drawn over: not the resolve (a byte it cannot be: off by 7) */
+               pic8[at] = (unsigned char)(((sum + SSAA_N / 2) / SSAA_N + 7u) & 255u);
+               exact16[at] = to_half((float)pic8[at] / 255.0f);
+            }
+            else
+            {
+               pic8[at] = (unsigned char)((sum + SSAA_N / 2) / SSAA_N);   /* pvr_resolve_join() */
+               exact16[at] = to_half((float)sum / (255.0f * SSAA_N));
+            }
+         }
+   pic = uploaded12(pic8, DXGI_FORMAT_R8G8B8A8_UNORM, 4);
+   exact = uploaded12(exact16, DXGI_FORMAT_R16G16B16A16_FLOAT, 8);
+
+   memset(&dt, 0, sizeof(dt));
+   dt.aces2_surround = 1;
+   dt.gt_toe = 0.22f;
+   dt.gt_linear = 0.40f;
+   dt.filmic_contrast = 3;
+   dt.filmic_max_ev = 4.026068811f;
+   memset(&o, 0, sizeof(o));
+   o.paper_white_nits = 200.0f;
+   o.max_nits = 1000.0f;
+   for (k = 0; k < 4; k++)
+   {
+      unsigned differ = 0, osd_differ = 0;
+      double worst = 0.0;
+      dt.curve = (k & 2) ? HDR_DT_AGX : HDR_DT_KNEE;
+      o.format = (k & 1) ? HDR_OUTPUT_SCRGB : HDR_OUTPUT_HDR10;
+      hdr_dt_configure(&dt);
+      hdr_dt_finish(o.paper_white_nits, o.max_nits, o.panel_peak_nits, o.panel_xy, false);
+      encode12(enc12[k & 1], &o, pic, DXGI_FORMAT_R8G8B8A8_UNORM, true, ms, ssaa_out);
+      encode12(enc12[k & 1], &o, exact, DXGI_FORMAT_R16G16B16A16_FLOAT, false, NULL, exact_out);
+      encode12(enc12[k & 1], &o, pic, DXGI_FORMAT_R8G8B8A8_UNORM, false, NULL, byte_out);
+      for (i = 0; i < W * H * 4; i++)
+      {
+         const double a = ssaa_out[i], b = exact_out[i];
+         /* the half-float picture's rounding and the output's: a 10-bit code (the two
+          * on either side of a rounding, both quantized), or a half float's */
+         const double tol = (o.format == HDR_OUTPUT_SCRGB) ? 2e-3 * (fabs(b) > 1.0 ? fabs(b) : 1.0) : 1.001 / 1023.0;
+         const double d = fabs(a - b) / tol;
+         if (d > worst)
+            worst = d;
+         if (i % 4 != 3 && fabs(ssaa_out[i] - byte_out[i]) > 1e-6)
+         {
+            if ((i / 4) % W < OSD_X)
+               osd_differ++;
+            else
+               differ++;
+         }
+      }
+      printf("hdr_d3d: SSAA %s %s: within %.2f of the tolerance of the exact average's; %u channels not the 8-bit picture's, %u drawn over\n",
+            (k & 2) ? "agx" : "knee", (k & 1) ? "scRGB" : "HDR10", worst, differ, osd_differ);
+      if (!(worst <= 1.0) || differ < 1000 || osd_differ != 0)
+         failures++;
+   }
+   hdr_d3d12_free(enc12[0]);
+   hdr_d3d12_free(enc12[1]);
+   hdr_dt_free();
+   printf("hdr_d3d: Direct3D 12 with SSAA's samples%s\n", failures ? ": failed" : ": the samples' exact average");
+   return failures ? 1 : 0;
+}
+
 int main(int argc, char **argv)
 {
    int api;
+   if (argc == 2 && !strcmp(argv[1], "12ssaa"))
+      return ssaa12();
    if (argc != 3 || (strcmp(argv[1], "11") && strcmp(argv[1], "12")))
    {
-      fprintf(stderr, "usage: hdr_d3d 11|12 out.bin\n");
+      fprintf(stderr, "usage: hdr_d3d 11|12 out.bin | 12ssaa\n");
       return 2;
    }
    api = atoi(argv[1]);

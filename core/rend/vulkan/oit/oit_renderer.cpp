@@ -36,8 +36,11 @@ public:
 		DEBUG_LOG(RENDERER, "OITVulkanRenderer::Init");
 
 		oitBuffers.SetCompact(rend_compute_wanted && ComputeDrawer::DeviceLacks() == nullptr);
-		oitBuffers.Init(0, 0, &texCommandPool);
 		samples = SsaaSamples();
+		/* (with SSAA and the HDR output, the last pass's channel sums, for
+		 * the encode: OITBuffers::SetSums()) */
+		oitBuffers.SetSums(samples > 1 && GetContext()->HdrSumsReady());
+		oitBuffers.Init(0, 0, &texCommandPool);
 		oitShaderManager.SetSamples(samples);
 		NOTICE_LOG(RENDERER, "Vulkan per-pixel renderer: with SSAA, a translucent fragment takes the samples %s",
 				GetContext()->postDepthCoverage ? "the depth test passed (VK_EXT_post_depth_coverage)" : "its own depth test passes, at each sample");
@@ -72,6 +75,7 @@ public:
 		oitBuffers.SetCompact(rend_compute_wanted && ComputeDrawer::DeviceLacks() == nullptr);
 		const u32 was = samples;
 		samples = SsaaSamples();
+		oitBuffers.SetSums(samples > 1 && GetContext()->HdrSumsReady());
 		if (samples != was)
 		{
 			// (a change of SSAA: the shaders, render passes and pipelines of the other count go)
@@ -166,7 +170,7 @@ public:
 			{
 				const OITScreenDrawer::ComputeTarget target = screenDrawer.ComputeBegin(last, scaled);
 				computeDrawer.Record(target.image, target.view, target.last);
-				screenDrawer.ComputeEnd();
+				screenDrawer.ComputeEnd(computeDrawer.Sums());
 				return true;
 			}
 		}

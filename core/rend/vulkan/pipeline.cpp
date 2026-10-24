@@ -678,11 +678,12 @@ vk::UniqueRenderPass MakeSsaaRenderPass(vk::Format colorFormat, u32 samples, vk:
 	vk::AttachmentReference colorReference(1, vk::ImageLayout::eColorAttachmentOptimal);
 	vk::AttachmentReference depthReference(2, vk::ImageLayout::eDepthStencilAttachmentOptimal);
 	vk::AttachmentReference samplesInput(1, vk::ImageLayout::eShaderReadOnlyOptimal);
+	const vk::AttachmentReference hdrInputs[] = { pictureInput, samplesInput };
 	vk::SubpassDescription subpasses[] = {
 			vk::SubpassDescription(vk::SubpassDescriptionFlags(), vk::PipelineBindPoint::eGraphics, 0, nullptr, 1, &colorReference, nullptr, &depthReference),
 			vk::SubpassDescription(vk::SubpassDescriptionFlags(), vk::PipelineBindPoint::eGraphics, 1, &samplesInput, 1, &pictureReference, nullptr, nullptr),
-			// the HDR output: the picture encoded where it is
-			vk::SubpassDescription(vk::SubpassDescriptionFlags(), vk::PipelineBindPoint::eGraphics, 1, &pictureInput, 1, &hdrReference, nullptr, nullptr),
+			// the HDR output: the picture encoded where it is, from the samples' exact average where it is their resolve
+			vk::SubpassDescription(vk::SubpassDescriptionFlags(), vk::PipelineBindPoint::eGraphics, 2, hdrInputs, 1, &hdrReference, nullptr, nullptr),
 	};
 	const vk::PipelineStageFlags fbStages = vk::PipelineStageFlagBits::eEarlyFragmentTests | vk::PipelineStageFlagBits::eLateFragmentTests
 			| vk::PipelineStageFlagBits::eFragmentShader | vk::PipelineStageFlagBits::eColorAttachmentOutput;
@@ -702,8 +703,10 @@ vk::UniqueRenderPass MakeSsaaRenderPass(vk::Format colorFormat, u32 samples, vk:
 			// the picture, to be shown or sampled
 			vk::SubpassDependency(1, VK_SUBPASS_EXTERNAL, fbStages, fbStages | vk::PipelineStageFlagBits::eTransfer,
 					vk::AccessFlagBits::eColorAttachmentWrite, fbAll | vk::AccessFlagBits::eTransferRead),
-			// the HDR output: the picture resolved, then encoded where it is...
+			// the HDR output: the picture resolved, then encoded where it is (with the samples)...
 			vk::SubpassDependency(1, 2, vk::PipelineStageFlagBits::eColorAttachmentOutput, vk::PipelineStageFlagBits::eFragmentShader,
+					vk::AccessFlagBits::eColorAttachmentWrite, vk::AccessFlagBits::eInputAttachmentRead, vk::DependencyFlagBits::eByRegion),
+			vk::SubpassDependency(0, 2, vk::PipelineStageFlagBits::eColorAttachmentOutput, vk::PipelineStageFlagBits::eFragmentShader,
 					vk::AccessFlagBits::eColorAttachmentWrite, vk::AccessFlagBits::eInputAttachmentRead, vk::DependencyFlagBits::eByRegion),
 			// ...into the image the frontend was done with...
 			vk::SubpassDependency(VK_SUBPASS_EXTERNAL, 2, vk::PipelineStageFlagBits::eFragmentShader | vk::PipelineStageFlagBits::eTransfer,
@@ -716,7 +719,7 @@ vk::UniqueRenderPass MakeSsaaRenderPass(vk::Format colorFormat, u32 samples, vk:
 	return context->GetDevice().createRenderPassUnique(vk::RenderPassCreateInfo(vk::RenderPassCreateFlags(),
 			ARRAY_SIZE(attachmentDescriptions) - (hdr ? 0 : 1), attachmentDescriptions,
 			ARRAY_SIZE(subpasses) - (hdr ? 0 : 1), subpasses,
-			ARRAY_SIZE(dependencies) - (hdr ? 0 : 3), dependencies));
+			ARRAY_SIZE(dependencies) - (hdr ? 0 : 4), dependencies));
 }
 
 vk::UniqueRenderPass RttPipelineManager::MakeSsaaRenderPass(u32 samples)

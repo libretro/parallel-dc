@@ -23,9 +23,17 @@ static struct hdr_dt_settings dt_set = {
 
 static unsigned  dt_generation = 1;
 
+/* ACES 2.0 (full)'s tables, as made from their key (dt_aces2_key_t):
+ * the reference's parameters, and the hue LUT and its scales the shader
+ * reads. dt_aces2 is dt_tables' parameters, or NULL while there are none. */
+typedef struct dt_aces2_tables
+{
+   aces2Params_t params;
+   uint16_t      lut[HDR_DT_ACES2_LUT_WIDTH * 4];
+   double        scales[4];
+} dt_aces2_tables_t;
+static dt_aces2_tables_t *dt_tables;
 static aces2Params_t *dt_aces2;
-static uint16_t  dt_aces2_lut[HDR_DT_ACES2_LUT_WIDTH * 4];
-static double    dt_aces2_scales[4];
 static float     dt_aces2_peak;
 static int       dt_aces2_gamut = -1;
 static int       dt_aces2_surround = -1;
@@ -294,9 +302,9 @@ static bool dt_panel_prims(const uint16_t xy[8], double out[8])
    return true;
 }
 
-static const double *dt_limit_prims(const uint16_t panel_xy[8], double scratch[8])
+static const double *dt_limit_prims(int gamut, const uint16_t panel_xy[8], double scratch[8])
 {
-   switch (dt_set.aces2_gamut)
+   switch (gamut)
    {
       case 0:  return DT_PRIMS_709;
       case 1:  return DT_PRIMS_P3;
@@ -312,38 +320,91 @@ static const double *dt_limit_prims(const uint16_t panel_xy[8], double scratch[8
    return DT_PRIMS_P3;
 }
 
-static bool dt_aces2_build(float peak, const uint16_t panel_xy[8])
+/* What ACES 2.0 (full)'s tables are made from */
+typedef struct dt_aces2_key
+{
+   float    peak;
+   int      gamut;
+   int      surround;
+   uint16_t xy[8];
+} dt_aces2_key_t;
+
+static void dt_aces2_key_now(float peak, const uint16_t panel_xy[8], dt_aces2_key_t *k)
+{
+   k->peak     = peak;
+   k->gamut    = dt_set.aces2_gamut;
+   k->surround = dt_set.aces2_surround;
+   memcpy(k->xy, panel_xy, sizeof(k->xy));
+}
+
+/* Peak arrives every frame; a jittering last bit must not re-solve the
+ * searched tables. The panel's primaries count only with the display's
+ * gamut. */
+static bool dt_aces2_key_same(const dt_aces2_key_t *a, const dt_aces2_key_t *b)
+{
+   return fabs((double)a->peak - (double)b->peak) < 0.5
+         && a->gamut == b->gamut && a->surround == b->surround
+         && (a->gamut != 3 || memcmp(a->xy, b->xy, sizeof(a->xy)) == 0);
+}
+
+/* The tables @t (made from @k) made the ones in use */
+static void dt_aces2_adopt(dt_aces2_tables_t *t, const dt_aces2_key_t *k)
+{
+   free(dt_tables);
+   dt_tables         = t;
+   dt_aces2          = &t->params;
+   dt_aces2_built++;
+   dt_aces2_peak     = k->peak;
+   dt_aces2_gamut    = k->gamut;
+   dt_aces2_surround = k->surround;
+   memcpy(dt_aces2_xy, k->xy, sizeof(dt_aces2_xy));
+   dt_generation++;
+}
+
+/* The tables for @k, from the limiting primaries @prims: the solve that
+ * costs a few milliseconds (ACES2_Init()'s searched tables). Touches only
+ * what it makes, so it may run on any thread. */
+static dt_aces2_tables_t *dt_aces2_make(const double prims[8], const dt_aces2_key_t *k)
+{
+   dt_aces2_tables_t *t = (dt_aces2_tables_t*)calloc(1, sizeof(*t));
+   if (!t)
+      return NULL;
+   ACES2_InitSurround(prims, (double)k->peak, k->surround, &t->params);
+   ACES2_PackHueTables(&t->params, t->lut, t->scales);
+   return t;
+}
+
+/* The tables there are already for @k */
+static bool dt_aces2_current(const dt_aces2_key_t *k)
+{
+   dt_aces2_key_t have;
+   if (!dt_tables)
+      return false;
+   have.peak     = dt_aces2_peak;
+   have.gamut    = dt_aces2_gamut;
+   have.surround = dt_aces2_surround;
+   memcpy(have.xy, dt_aces2_xy, sizeof(have.xy));
+   return dt_aces2_key_same(&have, k);
+}
+
+/* The tables for @k made here, now */
+static bool dt_aces2_build_here(const dt_aces2_key_t *k)
 {
    double scratch[8];
-   const double *prims;
-   bool same_xy = (memcmp(dt_aces2_xy, panel_xy, sizeof(dt_aces2_xy)) == 0);
-
-   /* Peak arrives every frame; a jittering last bit must not re-solve
-    * the searched tables. */
-   if (dt_aces2 && fabs((double)dt_aces2_peak - (double)peak) < 0.5
-         && dt_aces2_gamut == dt_set.aces2_gamut
-         && dt_aces2_surround == dt_set.aces2_surround
-         && (dt_set.aces2_gamut != 3 || same_xy))
+   dt_aces2_tables_t *t;
+   if (dt_aces2_current(k))
       return true;
-
-   if (!dt_aces2)
-   {
-      dt_aces2 = (aces2Params_t*)calloc(1, sizeof(*dt_aces2));
-      if (!dt_aces2)
-         return false;
-   }
-   prims = dt_limit_prims(panel_xy, scratch);
-   ACES2_SetSurround(dt_set.aces2_surround);
-   ACES2_Init(prims, (double)peak, dt_aces2);
-   ACES2_PackHueTables(dt_aces2, dt_aces2_lut, dt_aces2_scales);
-   dt_aces2_built++;
-   dt_aces2_peak     = peak;
-   dt_aces2_gamut    = dt_set.aces2_gamut;
-   dt_aces2_surround = dt_set.aces2_surround;
-   memcpy(dt_aces2_xy, panel_xy, sizeof(dt_aces2_xy));
-   dt_generation++;
+   t = dt_aces2_make(dt_limit_prims(k->gamut, k->xy, scratch), k);
+   if (!t)
+      return dt_tables != NULL;
+   dt_aces2_adopt(t, k);
    return true;
 }
+
+/* The tables for @peak and the panel's primaries; with threads, made by
+ * the worker (below) while those there are go on being used. True while
+ * there are any. */
+static bool dt_aces2_build(float peak, const uint16_t panel_xy[8]);
 
 /* A CTL 3x3 (row vector times matrix, i.e. GL column-major) into std140. */
 static void dt_mat3(float dst[12], const double m[9])
@@ -519,81 +580,124 @@ static bool dt_cube_bake_here(unsigned rows, float paper)
 }
 
 #ifndef TARGET_NO_THREADS
-/* The cube is baked on a worker of its own, so that no frame pays for it:
- * the frame thread hands it a job - a copy of the tables and the paper
- * white, and a cube to fill - and takes back what it is done with, and
- * neither ever waits for the other. All of it is atomics: the job handed
- * over is one pointer (exchanged), what comes back a list pushed to with
- * a CAS, a superseded job told to stop by a flag of its own. The worker
- * parks on an eventcount between jobs. Only the frame thread allocates,
- * frees and reads the cubes; the worker writes the one cube it holds.
+/* ACES 2.0 (full)'s tables and its cube are made on a worker of its own,
+ * so that no frame pays for them: the frame thread hands it a job - for
+ * the tables, the primaries, peak and surround to solve them for; for the
+ * cube, a copy of the tables and the paper white, and a cube to fill -
+ * and takes back what it is done with, and neither ever waits for the
+ * other. Until new tables are back the ones there are go on being used,
+ * and their cube with them; with none yet, the tone scale alone is drawn.
+ * All of it is atomics: a job handed over is one pointer for each kind
+ * (exchanged), what comes back a list pushed to with a CAS, a superseded
+ * job told to stop by a flag of its own. The worker parks on an
+ * eventcount between jobs. Only the frame thread allocates, frees and
+ * reads what is made; the worker writes only the job it holds.
  * hdr_dt_free() stops it and joins it, outside any frame. */
-typedef struct dt_cube_job
+enum { DT_JOB_TABLES = 0, DT_JOB_CUBE, DT_JOB_KINDS };
+
+typedef struct dt_job
 {
+   int                 kind;
+   retro_atomic_int_t  stop;    /* superseded: give up (the cube) */
+   int                 done;    /* the worker's, read once the job is back */
+   struct dt_job      *next;    /* on the list of jobs back */
+   /* the tables: what they are for, made into tables */
+   dt_aces2_key_t      key;
+   double              prims[8];
+   dt_aces2_tables_t  *tables;
+   /* the cube: from a copy of the tables, at paper */
    aces2Params_t       params;
    float               paper;
    uint16_t           *cube;
-   retro_atomic_int_t  stop;    /* superseded: give up */
-   int                 baked;   /* the worker's, read once the job is back */
-   struct dt_cube_job *next;    /* on the list of jobs back */
-} dt_cube_job_t;
+} dt_job_t;
 
 static struct
 {
    sthread_t          *thread;
-   retro_eventcount_t  work;    /* the worker parks here */
-   retro_atomic_ptr_t  want;    /* the job handed over, not yet taken */
-   retro_atomic_ptr_t  back;    /* the jobs it is done with, newest first */
+   retro_eventcount_t  work;                  /* the worker parks here */
+   retro_atomic_ptr_t  want[DT_JOB_KINDS];    /* a job handed over, not yet taken */
+   retro_atomic_ptr_t  back;                  /* the jobs it is done with, newest first */
    retro_atomic_int_t  quit;
-   dt_cube_job_t      *current; /* the frame thread's: the job for the cube wanted */
+   dt_job_t           *current[DT_JOB_KINDS]; /* the frame thread's: the job for what is wanted */
    bool                ready;
-   bool                failed;  /* no worker could be had: baked here */
+   bool                failed;                /* no worker could be had: made here */
 } dt_baker;
 
-static void dt_job_free(dt_cube_job_t *job)
+static void dt_job_free(dt_job_t *job)
 {
    if (!job)
       return;
+   free(job->tables);
    free(job->cube);
    free(job);
 }
 
-static void dt_baker_thread(void *unused)
+static void dt_job_run(dt_job_t *job)
 {
    const unsigned n = HDR_DT_ACES2_CUBE;
+   unsigned row;
+   if (job->kind == DT_JOB_TABLES)
+   {
+      job->tables = dt_aces2_make(job->prims, &job->key);
+      job->done   = job->tables != NULL;
+      return;
+   }
+   for (row = 0; row < n * n; row++)
+   {
+      if (retro_atomic_load_relaxed_int(&job->stop)
+            || retro_atomic_load_relaxed_int(&dt_baker.quit))
+         break;
+      dt_cube_row(job->cube, row, job->paper, &job->params);
+   }
+   job->done = row == n * n;
+}
+
+static dt_job_t *dt_baker_take(void)
+{
+   int k;
+   for (k = 0; k < DT_JOB_KINDS; k++)
+   {
+      dt_job_t *job = (dt_job_t*)retro_atomic_exchange_ptr(&dt_baker.want[k], NULL);
+      if (job)
+         return job;
+   }
+   return NULL;
+}
+
+static bool dt_baker_wanted(void)
+{
+   int k;
+   for (k = 0; k < DT_JOB_KINDS; k++)
+      if (retro_atomic_load_acquire_ptr(&dt_baker.want[k]) != NULL)
+         return true;
+   return false;
+}
+
+static void dt_baker_thread(void *unused)
+{
    (void)unused;
    for (;;)
    {
-      dt_cube_job_t *job = (dt_cube_job_t*)retro_atomic_exchange_ptr(&dt_baker.want, NULL);
+      /* (the tables first: the cube is made from them) */
+      dt_job_t *job = dt_baker_take();
       if (!job)
       {
          int key;
          if (retro_atomic_load_acquire_int(&dt_baker.quit))
             return;
          key = retro_eventcount_prepare_wait(&dt_baker.work);
-         if (retro_atomic_load_acquire_ptr(&dt_baker.want) != NULL
-               || retro_atomic_load_acquire_int(&dt_baker.quit))
+         if (dt_baker_wanted() || retro_atomic_load_acquire_int(&dt_baker.quit))
             retro_eventcount_cancel_wait(&dt_baker.work);
          else
             retro_eventcount_commit_wait(&dt_baker.work, key);
          continue;
       }
-      {
-         unsigned row;
-         for (row = 0; row < n * n; row++)
-         {
-            if (retro_atomic_load_relaxed_int(&job->stop)
-                  || retro_atomic_load_relaxed_int(&dt_baker.quit))
-               break;
-            dt_cube_row(job->cube, row, job->paper, &job->params);
-         }
-         job->baked = row == n * n;
-      }
-      /* back, the cube with it (release: the frame thread reads the cube) */
+      dt_job_run(job);
+      /* back, with what it made (release: the frame thread reads it) */
       for (;;)
       {
          void *head = retro_atomic_load_relaxed_ptr(&dt_baker.back);
-         job->next  = (dt_cube_job_t*)head;
+         job->next  = (dt_job_t*)head;
          if (retro_atomic_cas_ptr(&dt_baker.back, head, job))
             break;
       }
@@ -602,6 +706,7 @@ static void dt_baker_thread(void *unused)
 
 static bool dt_baker_start(void)
 {
+   int k;
    if (dt_baker.thread)
       return true;
    if (dt_baker.failed)
@@ -613,7 +718,8 @@ static bool dt_baker_start(void)
          dt_baker.failed = true;
          return false;
       }
-      retro_atomic_ptr_init(&dt_baker.want, NULL);
+      for (k = 0; k < DT_JOB_KINDS; k++)
+         retro_atomic_ptr_init(&dt_baker.want[k], NULL);
       retro_atomic_ptr_init(&dt_baker.back, NULL);
       dt_baker.ready = true;
    }
@@ -624,88 +730,133 @@ static bool dt_baker_start(void)
    return dt_baker.thread != NULL;
 }
 
-/* The job for the cube wanted is no longer wanted */
-static void dt_baker_drop(void)
+/* @job, made, handed to the worker as what is wanted of its kind */
+static void dt_baker_submit(dt_job_t *job)
 {
-   dt_cube_job_t *job = dt_baker.current;
-   dt_cube_job_t *untaken;
-   dt_baker.current = NULL;
+   retro_atomic_int_init(&job->stop, 0);
+   dt_baker.current[job->kind] = job;
+   /* (empty: a job left in it was dropped and taken back, or taken) */
+   dt_job_free((dt_job_t*)retro_atomic_exchange_ptr(&dt_baker.want[job->kind], job));
+   retro_eventcount_notify(&dt_baker.work);
+}
+
+/* The job of @kind for what is wanted is no longer wanted */
+static void dt_baker_drop(int kind)
+{
+   dt_job_t *job = dt_baker.current[kind];
+   dt_job_t *untaken;
+   dt_baker.current[kind] = NULL;
    if (!job)
       return;
    retro_atomic_store_release_int(&job->stop, 1);
    /* still not taken: the worker never sees it */
-   untaken = (dt_cube_job_t*)retro_atomic_load_acquire_ptr(&dt_baker.want);
-   if (untaken == job && retro_atomic_cas_ptr(&dt_baker.want, job, NULL))
+   untaken = (dt_job_t*)retro_atomic_load_acquire_ptr(&dt_baker.want[kind]);
+   if (untaken == job && retro_atomic_cas_ptr(&dt_baker.want[kind], job, NULL))
       dt_job_free(job);
    /* else it comes back, and is freed then */
 }
 
-/* What the worker is done with: the cube wanted made the one in use, the
- * rest freed. True when the cube wanted is complete. */
-static bool dt_baker_collect(void)
+/* What the worker is done with: the tables and the cube wanted made the
+ * ones in use, the rest freed */
+static void dt_baker_collect(void)
 {
    const unsigned n = HDR_DT_ACES2_CUBE;
-   dt_cube_job_t *job = (dt_cube_job_t*)retro_atomic_exchange_ptr(&dt_baker.back, NULL);
-   bool complete = dt_cube_rows == n * n;
+   dt_job_t *job;
+   if (!dt_baker.ready)
+      return;
+   job = (dt_job_t*)retro_atomic_exchange_ptr(&dt_baker.back, NULL);
    while (job)
    {
-      dt_cube_job_t *next = job->next;
-      if (job == dt_baker.current)
+      dt_job_t *next = job->next;
+      if (job == dt_baker.current[job->kind])
       {
-         dt_baker.current = NULL;
-         if (job->baked)
+         dt_baker.current[job->kind] = NULL;
+         if (job->done && job->kind == DT_JOB_TABLES)
+         {
+            dt_aces2_adopt(job->tables, &job->key);
+            job->tables = NULL;
+         }
+         else if (job->done)
          {
             free(dt_cube);
             dt_cube      = job->cube;
             job->cube    = NULL;
             dt_cube_rows = n * n;
             dt_generation++;
-            complete     = true;
          }
       }
       dt_job_free(job);
       job = next;
    }
-   return complete;
+}
+
+static bool dt_aces2_build(float peak, const uint16_t panel_xy[8])
+{
+   dt_aces2_key_t k;
+   dt_job_t      *job;
+   dt_aces2_key_now(peak, panel_xy, &k);
+   dt_baker_collect();
+   if (dt_aces2_current(&k))
+   {
+      /* (a job for others, wanted before these came back, goes) */
+      dt_baker_drop(DT_JOB_TABLES);
+      return true;
+   }
+   if (!dt_baker_start())
+      return dt_aces2_build_here(&k);
+   job = dt_baker.current[DT_JOB_TABLES];
+   if (job && dt_aces2_key_same(&job->key, &k))
+      return dt_tables != NULL;
+   dt_baker_drop(DT_JOB_TABLES);
+   job = (dt_job_t*)calloc(1, sizeof(*job));
+   if (!job)
+      return dt_tables != NULL;
+   job->kind = DT_JOB_TABLES;
+   job->key  = k;
+   {
+      double scratch[8];
+      memcpy(job->prims, dt_limit_prims(k.gamut, k.xy, scratch), sizeof(job->prims));
+   }
+   dt_baker_submit(job);
+   return dt_tables != NULL;
 }
 
 /* true once the cube is complete; never waits */
 static bool dt_cube_bake(unsigned rows, float paper)
 {
    const unsigned n = HDR_DT_ACES2_CUBE;
+   dt_job_t *job;
    if (!dt_aces2)
       return false;
+   dt_baker_collect();
    if (dt_cube_rekey(paper))
-      dt_baker_drop();
+      dt_baker_drop(DT_JOB_CUBE);
    if (!dt_baker_start())
       return dt_cube_bake_here(rows, paper);
-   if (dt_baker_collect())
+   if (dt_cube_rows == n * n)
       return true;
-   if (!dt_baker.current)
+   if (dt_baker.current[DT_JOB_CUBE])
+      return false;
+   job = (dt_job_t*)calloc(1, sizeof(*job));
+   if (!job)
+      return false;
+   job->cube = (uint16_t*)malloc(sizeof(uint16_t) * 4 * n * n * n);
+   if (!job->cube)
    {
-      dt_cube_job_t *job = (dt_cube_job_t*)calloc(1, sizeof(*job));
-      if (!job)
-         return false;
-      job->cube = (uint16_t*)malloc(sizeof(uint16_t) * 4 * n * n * n);
-      if (!job->cube)
-      {
-         free(job);
-         return false;
-      }
-      job->params = *dt_aces2;
-      job->paper  = paper;
-      retro_atomic_int_init(&job->stop, 0);
-      dt_baker.current = job;
-      /* (want is empty: a job left in it was dropped and taken back above) */
-      dt_job_free((dt_cube_job_t*)retro_atomic_exchange_ptr(&dt_baker.want, job));
-      retro_eventcount_notify(&dt_baker.work);
+      free(job);
+      return false;
    }
+   job->kind   = DT_JOB_CUBE;
+   job->params = *dt_aces2;
+   job->paper  = paper;
+   dt_baker_submit(job);
    return false;
 }
 
 /* The worker stopped and joined, and all it held freed: outside a frame */
 static void dt_baker_free(void)
 {
+   int k;
    if (dt_baker.thread)
    {
       retro_atomic_store_release_int(&dt_baker.quit, 1);
@@ -715,23 +866,31 @@ static void dt_baker_free(void)
    }
    if (dt_baker.ready)
    {
-      dt_job_free((dt_cube_job_t*)retro_atomic_exchange_ptr(&dt_baker.want, NULL));
+      dt_job_t *job;
+      for (k = 0; k < DT_JOB_KINDS; k++)
+         dt_job_free((dt_job_t*)retro_atomic_exchange_ptr(&dt_baker.want[k], NULL));
+      job = (dt_job_t*)retro_atomic_exchange_ptr(&dt_baker.back, NULL);
+      while (job)
       {
-         dt_cube_job_t *job = (dt_cube_job_t*)retro_atomic_exchange_ptr(&dt_baker.back, NULL);
-         while (job)
-         {
-            dt_cube_job_t *next = job->next;
-            dt_job_free(job);
-            job = next;
-         }
+         dt_job_t *next = job->next;
+         dt_job_free(job);
+         job = next;
       }
       retro_eventcount_free(&dt_baker.work);
       dt_baker.ready = false;
    }
-   dt_baker.current = NULL;
-   dt_baker.failed  = false;
+   for (k = 0; k < DT_JOB_KINDS; k++)
+      dt_baker.current[k] = NULL;
+   dt_baker.failed = false;
 }
 #else
+static bool dt_aces2_build(float peak, const uint16_t panel_xy[8])
+{
+   dt_aces2_key_t k;
+   dt_aces2_key_now(peak, panel_xy, &k);
+   return dt_aces2_build_here(&k);
+}
+
 static bool dt_cube_bake(unsigned rows, float paper)
 {
    return dt_cube_bake_here(rows, paper);
@@ -743,10 +902,10 @@ void hdr_dt_aces2_cube_finish(float paper_white_nits)
    if (!dt_aces2)
       return;
 #ifndef TARGET_NO_THREADS
-   if (dt_cube_rekey(paper_white_nits))
-      dt_baker_drop();
+   dt_baker_collect();
+   dt_cube_rekey(paper_white_nits);
    if (dt_cube_rows < HDR_DT_ACES2_CUBE * HDR_DT_ACES2_CUBE)
-      dt_baker_drop();
+      dt_baker_drop(DT_JOB_CUBE);
 #endif
    dt_cube_bake_here(HDR_DT_ACES2_CUBE * HDR_DT_ACES2_CUBE, paper_white_nits);
 }
@@ -782,26 +941,52 @@ bool hdr_dt_enabled(void)
    return dt_set.curve != HDR_DT_KNEE;
 }
 
-void hdr_dt_fill(struct hdr_dt_block *b, float paper_white_nits,
-      float peak_nits, float panel_peak_nits, const uint16_t panel_xy[8])
+/* The peak the curves go to: the frontend's, the panel's own or the set */
+static float dt_peak(float peak_nits, float panel_peak_nits)
 {
-   int   curve = dt_set.curve;
-   float paper = paper_white_nits > 0.0f ? paper_white_nits : 200.0f;
-   float peak  = peak_nits;
-   float H, A, slope, film[2];
-   double S0, S1, C2;
-
-   memset(b, 0, sizeof(*b));
+   float peak = peak_nits;
    if (dt_set.peak_mode == 1 && panel_peak_nits > 0.0f)
       peak = panel_peak_nits;
    else if (dt_set.peak_mode == 2 && dt_set.peak_nits > 0.0f)
       peak = dt_set.peak_nits;
    if (!(peak > 0.0f))
       peak = 1000.0f;
+   return peak;
+}
+
+void hdr_dt_finish(float paper_white_nits, float peak_nits,
+      float panel_peak_nits, const uint16_t panel_xy[8], bool cube)
+{
+   dt_aces2_key_t k;
+   if (dt_set.curve != HDR_DT_ACES2FULL)
+      return;
+   dt_aces2_key_now(dt_peak(peak_nits, panel_peak_nits), panel_xy, &k);
+#ifndef TARGET_NO_THREADS
+   dt_baker_collect();
+   if (!dt_aces2_current(&k))
+      dt_baker_drop(DT_JOB_TABLES);
+#endif
+   dt_aces2_build_here(&k);
+   if (cube)
+      hdr_dt_aces2_cube_finish(paper_white_nits > 0.0f ? paper_white_nits : 200.0f);
+}
+
+void hdr_dt_fill(struct hdr_dt_block *b, float paper_white_nits,
+      float peak_nits, float panel_peak_nits, const uint16_t panel_xy[8])
+{
+   int   curve = dt_set.curve;
+   float paper = paper_white_nits > 0.0f ? paper_white_nits : 200.0f;
+   float peak  = dt_peak(peak_nits, panel_peak_nits);
+   float H, A, slope, film[2];
+   double S0, S1, C2;
+
+   memset(b, 0, sizeof(*b));
    H = peak / paper;
    if (H < 1.0f)
       H = 1.0f;
 
+   /* (with threads the tables are made by the worker, and those there
+    * are drawn with until they are: with none yet, the tone scale alone) */
    if (curve == HDR_DT_ACES2FULL && !dt_aces2_build(peak, panel_xy))
       curve = HDR_DT_ACES2;   /* no tables: the tone scale alone */
 
@@ -832,14 +1017,23 @@ void hdr_dt_fill(struct hdr_dt_block *b, float paper_white_nits,
 
    if (curve == HDR_DT_ACES2FULL)
    {
-      const aces2Params_t *p = dt_aces2;
+      const aces2Params_t *p;
       double scratch[8], m[9];
       int i;
+      /* Once the cube is baked the shader reads it instead of solving the
+       * transform per pixel. Until then, it is baked (on a worker of its
+       * own where there are threads). First: what it takes back from the
+       * worker can be new tables, which free the ones before, so the
+       * block is of those there are after it. */
+      b->gm[2] = dt_cube_bake(HDR_DT_CUBE_ROWS_PER_FILL, paper) ? 1.0f : 0.0f;
+      p = dt_aces2;
       dt_mat3(b->in_rgb_to_cam,   p->input.RGB_to_CAM16_c);
       dt_mat3(b->in_cone_to_aab,  p->input.cone_to_Aab);
       dt_mat3(b->lim_aab_to_cone, p->limit.Aab_to_cone);
       dt_mat3(b->lim_cam_to_rgb,  p->limit.CAM16_c_to_RGB);
-      if (!ACES2_PrimariesMatrix(dt_limit_prims(panel_xy, scratch), DT_PRIMS_2020, m))
+      /* (the gamut the tables in use are for, which until the worker's are
+       * back may not be the one set) */
+      if (!ACES2_PrimariesMatrix(dt_limit_prims(dt_aces2_gamut, dt_aces2_xy, scratch), DT_PRIMS_2020, m))
          for (i = 0; i < 9; i++)
             m[i] = (i % 4 == 0) ? 1.0 : 0.0;
       dt_mat3(b->aces2_to_out, m);
@@ -865,18 +1059,14 @@ void hdr_dt_fill(struct hdr_dt_block *b, float paper_white_nits,
       b->cc2[3] = (float)p->gamut.focus_dist;
       b->gm[0]  = (float)p->gamut.lower_hull_gamma_inv;
       b->gm[1]  = (float)p->ts.forward_limit;
-      /* Once the cube is baked the shader reads it instead of solving the
-       * transform per pixel. Until then, it is baked (on a worker
-       * of its own where there are threads). */
-      b->gm[2]  = dt_cube_bake(HDR_DT_CUBE_ROWS_PER_FILL, paper) ? 1.0f : 0.0f;
       for (i = 0; i < 4; i++)
-         b->lut_scale[i] = (float)dt_aces2_scales[i];
+         b->lut_scale[i] = (float)dt_tables->scales[i];
    }
 }
 
 const uint16_t *hdr_dt_aces2_lut(void)
 {
-   return dt_aces2 ? dt_aces2_lut : NULL;
+   return dt_tables ? dt_tables->lut : NULL;
 }
 
 const uint16_t *hdr_dt_film_lut(void)
@@ -1001,7 +1191,8 @@ void hdr_dt_free(void)
    free(dt_cube);
    dt_cube      = NULL;
    dt_cube_rows = 0;
-   free(dt_aces2);
+   free(dt_tables);
+   dt_tables = NULL;
    dt_aces2 = NULL;
    dt_aces2_gamut = -1;
    dt_aces2_surround = -1;

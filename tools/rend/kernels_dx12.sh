@@ -210,8 +210,9 @@ compute_source_of() {
    fi
    shift 2
    for d in "$@"; do echo "$d"; done
+   # (and without the blocks for Vulkan's HDR output, PVRC_SUMS: not in these)
    for h in core/rend/tile/pvr_lane.h core/rend/tile/pvr_tile.h core/rend/tile/pvr_modvol.h core/rend/tile/pvr_resolve.h core/rend/tile/pvr_scaler.h core/rend/ssaa_pattern.h $PVRC_SRC; do
-      sed '/^#include/d' $h
+      sed -e '/^#include/d' -e '/^#if defined(PVRC_SUMS)$/,/^#endif \/\* PVRC_SUMS \*\/$/d' $h
    done | sed -e 's/\b\(frm\|rec\|bin\|vtx\|idx\|mvt\|dcmd\|dtrd\|dfrm\)\.w\[/\1_w[/g' \
       -e 's/^layout(local_size_x = \(.*\)) in;$/#define PVRC_THREADS \1/' \
       -e 's/^\(\(uint\|int\|bool\|float\|uvec4\|vec2\) [A-Za-z_0-9]*\( = [A-Za-z_0-9]*\)\?\(, [A-Za-z_0-9]*\( = [A-Za-z_0-9]*\)\?\)*;\)/static \1/' \

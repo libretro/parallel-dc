@@ -21,4 +21,6 @@ void hdr_encode_params_fill(struct hdr_encode_params *p,
    p->sdr_eotf     = o->sdr_eotf;
    p->scrgb        = o->format == HDR_OUTPUT_SCRGB;
    p->deband       = deband;
+   p->ssaa_log2    = 0;
+   p->pad[0] = p->pad[1] = p->pad[2] = 0;
 }

@@ -31,6 +31,8 @@
 #define B_FILM_LUT  10
 #define B_DESAT     11
 #define B_CUBE      12
+/* with SSAA, the samples the picture was resolved from (hdr_encode.frag) */
+#define B_SAMPLES   13
 
 #define HOST_MEMORY (VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT)
 
@@ -98,6 +100,9 @@ struct hdr_vk
    VkPipeline            pipeline;      /* the pass of its own's */
    VkShaderModule        vert;
    VkShaderModule        frag_subpass;
+   VkShaderModule        frag_subpass_ssaa;
+   VkShaderModule        frag_sums;
+   VkPipeline            pipeline_sums; /* the pass of its own's, with the channel sums (hdr_vk_sums_ready()) */
    VkDescriptorPool      descriptor_pool;
    VkSampler             nearest;
    VkSampler             linear_clamp;
@@ -472,7 +477,7 @@ static bool make_render_pass(hdr_vk_t *e)
 static bool make_layouts(hdr_vk_t *e)
 {
    static const uint32_t        tables[] = { B_ACES2_LUT, B_FILM_LUT, B_DESAT, B_CUBE };
-   VkDescriptorSetLayoutBinding b[6];
+   VkDescriptorSetLayoutBinding b[7];
    VkDescriptorSetLayoutCreateInfo set;
    VkPushConstantRange          push;
    VkPipelineLayoutCreateInfo   layout;
@@ -494,14 +499,16 @@ static bool make_layouts(hdr_vk_t *e)
       }
       b[5].binding        = B_DT;
       b[5].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-      for (i = 0; i < 6; i++)
+      b[6].binding        = B_SAMPLES;
+      b[6].descriptorType = b[0].descriptorType;
+      for (i = 0; i < 7; i++)
       {
          b[i].descriptorCount = 1;
          b[i].stageFlags      = VK_SHADER_STAGE_FRAGMENT_BIT;
       }
       memset(&set, 0, sizeof(set));
       set.sType        = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-      set.bindingCount = 6;
+      set.bindingCount = 7;
       set.pBindings    = b;
       if (vkCreateDescriptorSetLayout(e->device, &set, NULL, &e->set_layout[k]) != VK_SUCCESS)
          return false;
@@ -532,7 +539,7 @@ static VkShaderModule make_module(VkDevice device, const uint32_t *code, size_t 
 
 /* The triangle over the picture into colour attachment 0 of @subpass */
 static VkPipeline make_pipeline(hdr_vk_t *e, VkShaderModule frag, VkPipelineLayout layout,
-      VkRenderPass render_pass, uint32_t subpass)
+      VkRenderPass render_pass, uint32_t subpass, const VkSpecializationInfo *spec)
 {
    static const VkDynamicState          dynamic_states[] = { VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR };
    VkPipelineShaderStageCreateInfo      stages[2];
@@ -556,6 +563,7 @@ static VkPipeline make_pipeline(hdr_vk_t *e, VkShaderModule frag, VkPipelineLayo
    stages[1].stage  = VK_SHADER_STAGE_FRAGMENT_BIT;
    stages[1].module = frag;
    stages[1].pName  = "main";
+   stages[1].pSpecializationInfo = spec;
    memset(&vertex, 0, sizeof(vertex));
    vertex.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
    memset(&assembly, 0, sizeof(assembly));
@@ -613,9 +621,9 @@ static bool make_slots(hdr_vk_t *e)
    unsigned                    r, i;
 
    sizes[0].type            = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-   sizes[0].descriptorCount = sets * 9;
+   sizes[0].descriptorCount = sets * 10;
    sizes[1].type            = VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT;
-   sizes[1].descriptorCount = sets;
+   sizes[1].descriptorCount = sets * 2;
    sizes[2].type            = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
    sizes[2].descriptorCount = sets * 2;
    memset(&pool, 0, sizeof(pool));
@@ -672,12 +680,16 @@ hdr_vk_t *hdr_vk_new(const struct retro_hw_render_interface_vulkan *iface,
    e->linear_wrap  = make_sampler(e->device, VK_FILTER_LINEAR, VK_SAMPLER_ADDRESS_MODE_REPEAT);
    e->vert         = make_module(e->device, code->vert, code->vert_size);
    e->frag_subpass = make_module(e->device, code->frag_subpass, code->frag_subpass_size);
+   e->frag_subpass_ssaa = make_module(e->device, code->frag_subpass_ssaa, code->frag_subpass_ssaa_size);
+   e->frag_sums    = make_module(e->device, code->frag_sums, code->frag_sums_size);
    frag            = make_module(e->device, code->frag, code->frag_size);
    if (     e->nearest != VK_NULL_HANDLE && e->linear_clamp != VK_NULL_HANDLE
          && e->linear_wrap != VK_NULL_HANDLE && e->vert != VK_NULL_HANDLE
-         && e->frag_subpass != VK_NULL_HANDLE && frag != VK_NULL_HANDLE
+         && e->frag_subpass != VK_NULL_HANDLE && e->frag_subpass_ssaa != VK_NULL_HANDLE
+         && e->frag_sums != VK_NULL_HANDLE
+         && frag != VK_NULL_HANDLE
          && make_render_pass(e) && make_layouts(e))
-      e->pipeline = make_pipeline(e, frag, e->pipeline_layout[K_SAMPLED], e->render_pass, 0);
+      e->pipeline = make_pipeline(e, frag, e->pipeline_layout[K_SAMPLED], e->render_pass, 0, NULL);
    if (frag != VK_NULL_HANDLE)
       vkDestroyShaderModule(e->device, frag, NULL);
    if (e->pipeline == VK_NULL_HANDLE || !make_slots(e))
@@ -707,6 +719,8 @@ void hdr_vk_free(hdr_vk_t *e)
       vkDestroyDescriptorPool(e->device, e->descriptor_pool, NULL);
    if (e->pipeline != VK_NULL_HANDLE)
       vkDestroyPipeline(e->device, e->pipeline, NULL);
+   if (e->pipeline_sums != VK_NULL_HANDLE)
+      vkDestroyPipeline(e->device, e->pipeline_sums, NULL);
    for (k = 0; k < K_COUNT; k++)
    {
       if (e->pipeline_layout[k] != VK_NULL_HANDLE)
@@ -718,6 +732,10 @@ void hdr_vk_free(hdr_vk_t *e)
       vkDestroyShaderModule(e->device, e->vert, NULL);
    if (e->frag_subpass != VK_NULL_HANDLE)
       vkDestroyShaderModule(e->device, e->frag_subpass, NULL);
+   if (e->frag_subpass_ssaa != VK_NULL_HANDLE)
+      vkDestroyShaderModule(e->device, e->frag_subpass_ssaa, NULL);
+   if (e->frag_sums != VK_NULL_HANDLE)
+      vkDestroyShaderModule(e->device, e->frag_sums, NULL);
    if (e->render_pass != VK_NULL_HANDLE)
       vkDestroyRenderPass(e->device, e->render_pass, NULL);
    if (e->nearest != VK_NULL_HANDLE)
@@ -765,13 +783,15 @@ void hdr_vk_prepare(hdr_vk_t *e, const struct hdr_output *out, VkCommandBuffer c
       block->gm[2] = 0.0f;
 }
 
+/* @samples (or SSAA's sums), in @samples_layout */
 static void write_set(hdr_vk_t *e, hdr_vk_slot_t *s, VkDescriptorSet set,
-      VkDescriptorType picture_type, VkImageView picture)
+      VkDescriptorType picture_type, VkImageView picture, VkImageView samples,
+      VkImageLayout samples_layout)
 {
-   VkDescriptorImageInfo  images[5];
+   VkDescriptorImageInfo  images[6];
    VkDescriptorBufferInfo dt;
-   VkWriteDescriptorSet   w[6];
-   static const uint32_t  bindings[5] = { B_PICTURE, B_ACES2_LUT, B_FILM_LUT, B_DESAT, B_CUBE };
+   VkWriteDescriptorSet   w[7];
+   static const uint32_t  bindings[6] = { B_PICTURE, B_ACES2_LUT, B_FILM_LUT, B_DESAT, B_CUBE, B_SAMPLES };
    unsigned               i;
 
    images[0].sampler     = picture_type == VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT ? VK_NULL_HANDLE : e->nearest;
@@ -784,27 +804,32 @@ static void write_set(hdr_vk_t *e, hdr_vk_slot_t *s, VkDescriptorSet set,
    images[3].imageView   = table_view(e, T_DESAT);
    images[4].sampler     = e->linear_clamp;
    images[4].imageView   = table_view(e, T_CUBE);
+   /* (the picture where there are no samples: there for the layout, unread) */
+   images[5].sampler     = images[0].sampler;
+   images[5].imageView   = samples != VK_NULL_HANDLE ? samples : picture;
+   images[5].imageLayout = samples != VK_NULL_HANDLE ? samples_layout : VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
    dt.buffer             = s->dt.buffer;
    dt.offset             = 0;
    dt.range              = sizeof(struct hdr_dt_block);
    memset(w, 0, sizeof(w));
-   for (i = 0; i < 5; i++)
+   for (i = 0; i < 6; i++)
    {
-      images[i].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+      if (i < 5)
+         images[i].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
       w[i].sType            = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
       w[i].dstSet           = set;
       w[i].dstBinding       = bindings[i];
       w[i].descriptorCount  = 1;
-      w[i].descriptorType   = i == 0 ? picture_type : VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+      w[i].descriptorType   = (i == 0 || i == 5) ? picture_type : VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
       w[i].pImageInfo       = &images[i];
    }
-   w[5].sType           = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-   w[5].dstSet          = set;
-   w[5].dstBinding      = B_DT;
-   w[5].descriptorCount = 1;
-   w[5].descriptorType  = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-   w[5].pBufferInfo     = &dt;
-   vkUpdateDescriptorSets(e->device, 6, w, 0, NULL);
+   w[6].sType           = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+   w[6].dstSet          = set;
+   w[6].dstBinding      = B_DT;
+   w[6].descriptorCount = 1;
+   w[6].descriptorType  = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+   w[6].pBufferInfo     = &dt;
+   vkUpdateDescriptorSets(e->device, 7, w, 0, NULL);
 }
 
 /* The triangle, with what it reads bound: in a subpass or a pass of its own */
@@ -834,28 +859,74 @@ static void draw(hdr_vk_t *e, const struct hdr_output *out, VkCommandBuffer cmd,
    vkCmdDraw(cmd, 3, 1, 0, 0);
 }
 
-VkPipeline hdr_vk_subpass_pipeline(hdr_vk_t *e, VkRenderPass render_pass, uint32_t subpass)
+static unsigned samples_log2(unsigned samples)
 {
-   return make_pipeline(e, e->frag_subpass, e->pipeline_layout[K_SUBPASS], render_pass, subpass);
+   unsigned k = 0;
+   while ((2u << k) <= samples)
+      k++;
+   return k;
+}
+
+/* A pipeline of SSAA's, its constants @samples (pso_key.h's
+ * PSO_SC_SSAA_SAMPLES and PSO_SC_SSAA_LOG2N) */
+static VkPipeline make_ssaa_pipeline(hdr_vk_t *e, VkShaderModule frag, VkPipelineLayout layout,
+      VkRenderPass render_pass, uint32_t subpass, unsigned samples)
+{
+   VkSpecializationMapEntry entries[2];
+   VkSpecializationInfo     spec;
+   int32_t                  values[2];
+   values[0] = (int32_t)samples;
+   values[1] = (int32_t)samples_log2(samples);
+   entries[0].constantID = 1;
+   entries[0].offset     = 0;
+   entries[0].size       = sizeof(int32_t);
+   entries[1].constantID = 2;
+   entries[1].offset     = sizeof(int32_t);
+   entries[1].size       = sizeof(int32_t);
+   spec.mapEntryCount    = 2;
+   spec.pMapEntries      = entries;
+   spec.dataSize         = sizeof(values);
+   spec.pData            = values;
+   return make_pipeline(e, frag, layout, render_pass, subpass, &spec);
+}
+
+VkPipeline hdr_vk_subpass_pipeline(hdr_vk_t *e, VkRenderPass render_pass, uint32_t subpass,
+      unsigned samples)
+{
+   if (samples <= 1)
+      return make_pipeline(e, e->frag_subpass, e->pipeline_layout[K_SUBPASS], render_pass, subpass, NULL);
+   return make_ssaa_pipeline(e, e->frag_subpass_ssaa, e->pipeline_layout[K_SUBPASS], render_pass, subpass, samples);
+}
+
+bool hdr_vk_sums_ready(hdr_vk_t *e)
+{
+   /* (the sums are of HDR_VK_SUMS_SAMPLES, whatever was drawn) */
+   if (e->pipeline_sums == VK_NULL_HANDLE)
+      e->pipeline_sums = make_ssaa_pipeline(e, e->frag_sums, e->pipeline_layout[K_SAMPLED],
+            e->render_pass, 0, HDR_VK_SUMS_SAMPLES);
+   return e->pipeline_sums != VK_NULL_HANDLE;
 }
 
 void hdr_vk_subpass_draw(hdr_vk_t *e, const struct hdr_output *out, VkCommandBuffer cmd,
       unsigned ring, unsigned slot, VkPipeline pipeline, VkImageView view,
-      unsigned width, unsigned height, bool unorm8)
+      VkImageView samples, unsigned width, unsigned height, bool unorm8)
 {
    hdr_vk_slot_t *s = slot_of(e, ring, slot);
    if (!s || pipeline == VK_NULL_HANDLE)
       return;
-   write_set(e, s, s->set_subpass, VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT, view);
+   write_set(e, s, s->set_subpass, VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT, view, samples,
+         VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
    draw(e, out, cmd, pipeline, e->pipeline_layout[K_SUBPASS], s->set_subpass, width, height, unorm8);
 }
 
 bool hdr_vk_encode(hdr_vk_t *e, const struct hdr_output *out, VkCommandBuffer cmd,
       unsigned ring, unsigned slot, uint64_t epoch, unsigned index,
-      VkImage *image, VkImageView *view, unsigned width, unsigned height, bool unorm8)
+      VkImage *image, VkImageView *view, unsigned width, unsigned height, bool unorm8,
+      VkImageView sums)
 {
    hdr_vk_slot_t        *s = slot_of(e, ring, slot);
    hdr_vk_image_t       *o;
+   VkPipeline            pipeline = e->pipeline;
    VkMemoryBarrier       barrier;
    VkRenderPassBeginInfo rp;
 
@@ -871,7 +942,17 @@ bool hdr_vk_encode(hdr_vk_t *e, const struct hdr_output *out, VkCommandBuffer cm
       image_destroy(e, o);
       return false;
    }
-   write_set(e, s, s->set_sampled, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, *view);
+   /* (the pipeline for the sums made before the frames, by the renderer:
+    * hdr_vk_sums_ready(); none here, the picture alone) */
+   if (sums != VK_NULL_HANDLE && e->pipeline_sums != VK_NULL_HANDLE)
+   {
+      pipeline = e->pipeline_sums;
+      unorm8   = false;
+   }
+   else
+      sums     = VK_NULL_HANDLE;
+   write_set(e, s, s->set_sampled, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, *view, sums,
+         VK_IMAGE_LAYOUT_GENERAL);
 
    /* what drew the picture, earlier in the frame, before it is read; what
     * read the output last, before it is written again */
@@ -892,7 +973,7 @@ bool hdr_vk_encode(hdr_vk_t *e, const struct hdr_output *out, VkCommandBuffer cm
    rp.renderArea.extent.width  = width;
    rp.renderArea.extent.height = height;
    vkCmdBeginRenderPass(cmd, &rp, VK_SUBPASS_CONTENTS_INLINE);
-   draw(e, out, cmd, e->pipeline, e->pipeline_layout[K_SAMPLED], s->set_sampled, width, height, unorm8);
+   draw(e, out, cmd, pipeline, e->pipeline_layout[K_SAMPLED], s->set_sampled, width, height, unorm8);
    vkCmdEndRenderPass(cmd);
 
    *image = o->image;
