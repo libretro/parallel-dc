@@ -52,6 +52,9 @@ public:
 	static u32 MaxRttTiles();
 	// Render To Texture Upscaling, as the renders to a texture have it
 	static u32 RttScale();
+	/* The chip's X and Y scalers (SCALER_CTL, Y_COEFF) left out of the
+	 * frames packed from now on: the core option reicast_pvr2_scaler */
+	static bool ScalersOff;
 
 protected:
 	/* The renderer's: its matrices made for the frame in pvrrc, the

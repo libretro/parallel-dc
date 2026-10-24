@@ -20,7 +20,7 @@ if [ -z "$WORK" ]; then
 fi
 mkdir -p "$WORK"
 [ $# -ge 2 ] || { echo "usage: $0 SOURCE[,SOURCE...] FRAME..." >&2; exit 2; }
-HEADERS="core/rend/tile/pvr_lane.h core/rend/tile/pvr_tile.h core/rend/tile/pvr_modvol.h core/rend/tile/pvr_resolve.h core/rend/ssaa_pattern.h core/rend/tile/pvr_compute.h"
+HEADERS="core/rend/tile/pvr_lane.h core/rend/tile/pvr_tile.h core/rend/tile/pvr_modvol.h core/rend/tile/pvr_resolve.h core/rend/tile/pvr_scaler.h core/rend/ssaa_pattern.h core/rend/tile/pvr_compute.h"
 SETS=
 i=0
 for src in $(echo "$1" | tr ',' ' '); do

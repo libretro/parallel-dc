@@ -17,6 +17,8 @@ static_assert(sizeof(ModTriangle) == 9 * 4, "...and its modifier volume triangle
 // (a record keeps a vertex's number in PVRC_RX_VTX: NAOMI 2's four times the TA data, all vertices)
 static_assert(4u * 4 * 1024 * 1024 / sizeof(Vertex) <= PVRC_RX_VTX, "a vertex's number in a record");
 
+bool ComputeFrame::ScalersOff = false;
+
 /* ---- The frame's words ---- */
 
 static u32 machineScale()
@@ -92,7 +94,21 @@ u32 ComputeFrame::Pack(const Layout& layout, Slots& slots, u32 *out, u32 room, u
 	if (total > room)
 		return 0;
 
-	const xform& vp = Begin();
+	/* Through the X scaler (SCALER_CTL bit 16) the game draws twice as
+	 * wide as the picture, and the kernels draw it so: the matrix, the
+	 * base scissor and the width are twice the picture's across, and each
+	 * pair of pixels drawn is resolved into one of the picture
+	 * (PVRC_FF_HSCALE). A render to a texture keeps the matrix it has,
+	 * which halves what is drawn. The chip's scalers are the core option
+	 * "PVR2 scaler / flicker filter"'s: without it the frame is drawn as
+	 * the raster renderers draw it. */
+	const bool scalers = !ScalersOff && !rc.isRTT;
+	const bool hscale = scalers && SCALER_CTL.hscale;
+	const u32 across = hscale ? 2 : 1;
+	xform vp = Begin();
+	vp.sx *= (float)across;
+	vp.tx *= (float)across;
+	const u32 drawnWidth = layout.width * across;
 	const u32 rttScale = rc.isRTT ? std::max(layout.rttScale, 1u) : 1;
 	// the base scissor: x, y, width, height
 	int scissor[4];
@@ -106,7 +122,11 @@ u32 ComputeFrame::Pack(const Layout& layout, Slots& slots, u32 *out, u32 room, u
 		scissor[3] = (rc.fb_Y_CLIP.max + 1 - rc.fb_Y_CLIP.min) * rttScale;
 	}
 	else
+	{
 		BaseScissor(scissor[0], scissor[1], scissor[2], scissor[3]);
+		scissor[0] *= (int)across;
+		scissor[2] *= (int)across;
+	}
 	/* A polygon's clip rectangle (x, y, width, height), as the raster
 	 * renderers' SetTileClip() makes it */
 	auto tileClip = [&](u32 val, int rect[4]) {
@@ -117,9 +137,9 @@ u32 ComputeFrame::Pack(const Layout& layout, Slots& slots, u32 *out, u32 room, u
 	};
 
 	memset(out, 0, PVRC_F_WORDS * 4);
-	const int bx0 = std::min(scissor[0], (int)layout.width);
+	const int bx0 = std::min(scissor[0], (int)drawnWidth);
 	const int by0 = std::min(scissor[1], (int)layout.height);
-	const int bx1 = std::min(scissor[0] + scissor[2], (int)layout.width);
+	const int bx1 = std::min(scissor[0] + scissor[2], (int)drawnWidth);
 	const int by1 = std::min(scissor[1] + scissor[3], (int)layout.height);
 	const u32 baseRect0 = rectWord(bx0, by0), baseRect1 = rectWord(bx1, by1);
 
@@ -343,16 +363,29 @@ u32 ComputeFrame::Pack(const Layout& layout, Slots& slots, u32 *out, u32 room, u
 		mvp(rc.global_param_mvo_tr.head()[i], out + oMvp + (nmvo + i) * PVRC_MVP_WORDS);
 
 	/* The header */
-	const u32 tilesX = (layout.width + (1u << layout.tileLog2) - 1) >> layout.tileLog2;
+	const u32 tilesX = (drawnWidth + (1u << layout.tileLog2) - 1) >> layout.tileLog2;
 	const u32 tilesY = (layout.height + (1u << layout.tileLog2) - 1) >> layout.tileLog2;
-	out[PVRC_F_WIDTH] = layout.width;
+	// (twice the tiles across: the bins have room for a texture rendered to's, more than that)
+	why = Why_Room;
+	if ((u64)tilesX * tilesY * layout.chunks > layout.runs)
+		return 0;
+	out[PVRC_F_WIDTH] = drawnWidth;
 	out[PVRC_F_HEIGHT] = layout.height;
 	out[PVRC_F_TILES_X] = tilesX;
 	out[PVRC_F_TILES_Y] = tilesY;
 	out[PVRC_F_TILE_LOG2] = layout.tileLog2;
 	out[PVRC_F_PRIMS] = gpu ? 0 : prim;
 	out[PVRC_F_PASSES] = passCount;
-	out[PVRC_F_FLAGS] = layout.lastPicture ? (layout.lastScaled ? PVRC_FF_LAST_PICTURE | PVRC_FF_LAST_SCALED : PVRC_FF_LAST_PICTURE) : 0;
+	out[PVRC_F_FLAGS] = (layout.lastPicture ? (layout.lastScaled ? PVRC_FF_LAST_PICTURE | PVRC_FF_LAST_SCALED : PVRC_FF_LAST_PICTURE) : 0)
+			| (hscale ? PVRC_FF_HSCALE : 0);
+	/* The Y scaler's filter, when the vertical scale factor reduces
+	 * (rend/tile/pvr_scaler.h): its taps a line of the chip's apart, the
+	 * picture's lines over 480 (the internal resolution) */
+	if (scalers && pvr_scaler_yfilter(SCALER_CTL.full))
+	{
+		const u32 lines = std::min(std::max((layout.height + 240) / 480, 1u), 31u);
+		out[PVRC_F_FLAGS] |= PVRC_FF_YFILTER(lines, Y_COEFF & 0xffff);
+	}
 	/* A framebuffer the game has not drawn to lately starts as the border
 	 * colour; any other black (OITDrawer::Draw()), a texture rendered to too */
 	out[PVRC_F_CLEAR] = rc.clearFramebuffer

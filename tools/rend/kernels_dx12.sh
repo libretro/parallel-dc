@@ -210,7 +210,7 @@ compute_source_of() {
    fi
    shift 2
    for d in "$@"; do echo "$d"; done
-   for h in core/rend/tile/pvr_lane.h core/rend/tile/pvr_tile.h core/rend/tile/pvr_modvol.h core/rend/tile/pvr_resolve.h core/rend/ssaa_pattern.h $PVRC_SRC; do
+   for h in core/rend/tile/pvr_lane.h core/rend/tile/pvr_tile.h core/rend/tile/pvr_modvol.h core/rend/tile/pvr_resolve.h core/rend/tile/pvr_scaler.h core/rend/ssaa_pattern.h $PVRC_SRC; do
       sed '/^#include/d' $h
    done | sed -e 's/\b\(frm\|rec\|bin\|vtx\|idx\|mvt\|dcmd\|dtrd\|dfrm\)\.w\[/\1_w[/g' \
       -e 's/^layout(local_size_x = \(.*\)) in;$/#define PVRC_THREADS \1/' \

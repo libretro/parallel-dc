@@ -12,6 +12,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include "pvr_compute.h"
+#include "pvr_scaler.h"
 #include "tile_ref.h"
 
 static const unsigned *F;
@@ -1088,14 +1089,16 @@ static void walk_pixel(unsigned start, unsigned *sc)
 
 int tile_ref(const unsigned *frame, unsigned samples, const unsigned *last, unsigned *out, struct tile_ref_stats *st)
 {
-   unsigned prims, i, w, h, x, y, log2n;
-   unsigned sc[8];
+   unsigned prims, i, w, h, x, y, log2n, hscale, pw, m;
+   unsigned sc[16];
    F = frame;
    g_samples = samples;
    log2n = SSAA_LOG2(samples);
    prims = F[PVRC_F_PRIMS];
    w = F[PVRC_F_WIDTH];
    h = F[PVRC_F_HEIGHT];
+   hscale = (F[PVRC_F_FLAGS] & PVRC_FF_HSCALE) != 0u;
+   pw = PVRC_PICTURE_W(F);
    if (prims > nrecs)
    {
       free(recs);
@@ -1114,7 +1117,7 @@ int tile_ref(const unsigned *frame, unsigned samples, const unsigned *last, unsi
    for (y = 0; y < h; y++)
       for (x = 0; x < w; x++)
       {
-         unsigned start = (F[PVRC_F_FLAGS] & PVRC_FF_LAST_PICTURE) && last ? last[y * w + x] : F[PVRC_F_CLEAR];
+         unsigned start = (F[PVRC_F_FLAGS] & PVRC_FF_LAST_PICTURE) && last ? last[y * pw + (x >> hscale)] : F[PVRC_F_CLEAR];
          g_px = (int)x;
          g_py = (int)y;
          g_in = 1;
@@ -1122,9 +1125,33 @@ int tile_ref(const unsigned *frame, unsigned samples, const unsigned *last, unsi
          g_cy = g_py * 256 + 128;
          g_s0x = g_px * 256 + (int)SSAA_SAMPLE_X16(samples, 0u) * 16;
          g_s0y = g_py * 256 + (int)SSAA_SAMPLE_Y16(samples, 0u) * 16;
-         walk_pixel(start, sc);
-         out[y * w + x] = pvr_resolve_samples(sc, log2n);
+         /* (through the X scaler: a pair of pixels' samples, the second
+          * pixel's after the first's, resolved together into one) */
+         walk_pixel(start, sc + (hscale ? (x & 1u) * samples : 0u));
+         if (!hscale)
+            out[y * w + x] = pvr_resolve_samples(sc, log2n);
+         else if (x & 1u)
+            out[y * pw + (x >> 1)] = log2n == 0u ? pvr_scaler_x(sc[0], sc[1]) : pvr_resolve_samples(sc, log2n + 1u);
       }
+   /* ...then the Y filter, its taps m lines apart, the picture's first and
+    * last lines in the place of the line there is not (the walk's, where
+    * its fine tile has a line to write: pvrc_fine_yfilter()) */
+   m = PVRC_FF_YLINES(F[PVRC_F_FLAGS]);
+   if (m != 0u && pvrc_fine_yfilter(samples, m) != 0u)
+   {
+      const unsigned ycoeff = PVRC_FF_YCOEFF(F[PVRC_F_FLAGS]);
+      unsigned *line = (unsigned *)malloc((size_t)pw * h * 4);
+      if (!line)
+         return 0;
+      memcpy(line, out, (size_t)pw * h * 4);
+      for (y = 0; y < h; y++)
+         for (x = 0; x < pw; x++)
+         {
+            const unsigned c = line[y * pw + x];
+            out[y * pw + x] = pvr_scaler_y(y >= m ? line[(y - m) * pw + x] : c, c, y + m < h ? line[(y + m) * pw + x] : c, ycoeff);
+         }
+      free(line);
+   }
    if (st)
    {
       st->dropped = ref_dropped;

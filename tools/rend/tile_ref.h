@@ -14,7 +14,9 @@ struct tile_ref_stats
 };
 
 /* The frame's words (PVRC_F_*) drawn at @samples a pixel (1, 2, 4 or 8),
- * in test mode: the picture into @out, RGBA8, width x height of the frame;
+ * in test mode: the picture into @out, RGBA8, PVRC_PICTURE_W() x height of
+ * the frame (half what is drawn across through the X scaler), through the
+ * Y filter where the frame's flags have it (PVRC_FF_YLINES());
  * @last the picture it starts from where the frame says so (or NULL).
  * 0 if there was not the memory. */
 int tile_ref(const unsigned *frame, unsigned samples, const unsigned *last, unsigned *out, struct tile_ref_stats *st);

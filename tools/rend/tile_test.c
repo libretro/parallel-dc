@@ -342,7 +342,7 @@ static int walk_whole(void)
 
 static double gpu_draw(const unsigned *frame0, unsigned words, unsigned samples, unsigned keep, unsigned *out, unsigned *stats, int gpu)
 {
-   const unsigned w = frame0[PVRC_F_WIDTH], h = frame0[PVRC_F_HEIGHT], runs = frame0[PVRC_F_RUNS];
+   const unsigned w = PVRC_PICTURE_W(frame0), h = frame0[PVRC_F_HEIGHT], runs = frame0[PVRC_F_RUNS];
    const unsigned tiles = frame0[PVRC_F_TILES_X] * frame0[PVRC_F_TILES_Y];
    const unsigned binWords = pvrc_bin_words(runs, frame0[PVRC_F_POOL]);
    const unsigned nsrc = frame0[PVRC_F_SOURCES] + 1;
@@ -366,14 +366,14 @@ static double gpu_draw(const unsigned *frame0, unsigned words, unsigned samples,
    VkBufferImageCopy copy;
    VkClearColorValue zero;
    VkImageSubresourceRange range = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 };
-   unsigned k, fw = PVRC_FINE_W(samples), fh = PVRC_FINE_H(samples);
+   unsigned k, walkX, walkY;
    double t0, t1;
 
    memcpy(fb.mapped, frame, (size_t)words * 4);
    memset(bb.mapped, 0, (size_t)binWords * 4);
    /* (the walk's variants' dispatches across, as the renderers give them) */
-   ((unsigned *)bb.mapped)[PVRC_B_STATS(runs) + PVRC_ST_WALK_U_X] = pvrc_walk_x(frame0[PVRC_F_TILE_LOG2], samples);
-   ((unsigned *)bb.mapped)[PVRC_B_STATS(runs) + PVRC_ST_WALK_S_X] = pvrc_walk_x(frame0[PVRC_F_TILE_LOG2], samples);
+   ((unsigned *)bb.mapped)[PVRC_B_STATS(runs) + PVRC_ST_WALK_U_X] = pvrc_walk_x(frame0[PVRC_F_TILE_LOG2], samples, frame0[PVRC_F_FLAGS]);
+   ((unsigned *)bb.mapped)[PVRC_B_STATS(runs) + PVRC_ST_WALK_S_X] = pvrc_walk_x(frame0[PVRC_F_TILE_LOG2], samples, frame0[PVRC_F_FLAGS]);
    for (k = 1; k <= PVRC_KERNELS; k++)
       pipelines[k] = make_pipeline_variant(k, samples, keep, k == PVRC_K_WALK && !walk_whole() ? PVRC_V_SORTED : PVRC_V_ALL);
    if (!walk_whole())
@@ -461,7 +461,10 @@ static double gpu_draw(const unsigned *frame0, unsigned words, unsigned samples,
       STEP(PVRC_K_WALK, 0, 0);
    }
    else
-      STEP(PVRC_K_WALK, (w + fw - 1) / fw, (h + fh - 1) / fh);
+   {
+      pvrc_walk_groups(frame0, samples, &walkX, &walkY);
+      STEP(PVRC_K_WALK, walkX, walkY);
+   }
    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, pipelines[PVRC_K_CLEAR]);
    vkCmdDispatchIndirect(cmd, bb.buffer, (VkDeviceSize)(PVRC_B_STATS(runs) + PVRC_ST_CLEAR_X) * 4);
    mem_barrier(cmd);

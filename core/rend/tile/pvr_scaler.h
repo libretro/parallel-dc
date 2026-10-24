@@ -37,15 +37,15 @@ PVR_FN pvr_u32 pvr_scaler_yfilter(pvr_u32 scaler_ctl)
  * and below times coefficient 0/2 (Y_COEFF 7:0), each coefficient n/256
  * (the manual's example: 0x80 is 0.5, 0x40 0.25). Rounded to nearest, and
  * held at 255 where coefficients summing over 256 would go past it */
-PVR_FN pvr_u32 pvr_scaler_y(pvr_u32 above, pvr_u32 line, pvr_u32 below, pvr_u32 ycoeff)
+PVR_FN pvr_u32 pvr_scaler_y(pvr_u32 above, pvr_u32 mid, pvr_u32 below, pvr_u32 ycoeff)
 {
-   pvr_u32 c0 = ycoeff & 255u, c1 = (ycoeff >> 8) & 255u, out = 0u, s, v;
+   pvr_u32 c0 = ycoeff & 255u, c1 = (ycoeff >> 8) & 255u, y = 0u, s, v;
    for (s = 0u; s < 32u; s += 8u)
    {
-      v = (c0 * (((above >> s) & 255u) + ((below >> s) & 255u)) + c1 * ((line >> s) & 255u) + 128u) >> 8;
-      out |= (v > 255u ? 255u : v) << s;
+      v = (c0 * (((above >> s) & 255u) + ((below >> s) & 255u)) + c1 * ((mid >> s) & 255u) + 128u) >> 8;
+      y |= (v > 255u ? 255u : v) << s;
    }
-   return out;
+   return y;
 }
 
 #endif

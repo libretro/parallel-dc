@@ -8,7 +8,7 @@
  *   kernels and the CPU's reference (tools/rend/tile_ref.c) follow;
  * - by a GLSL compiler, with PVRC_SHADER_GLSL defined and PVRC_KERNEL the
  *   kernel wanted (PVRC_K_*), after pvr_lane.h, pvr_tile.h, pvr_modvol.h,
- *   pvr_resolve.h and ssaa_pattern.h (tools/rend/kernels_spv.sh puts them
+ *   pvr_resolve.h, pvr_scaler.h and ssaa_pattern.h (kernels_spv.sh puts them
  *   in front, and the core has the kernels as SPIR-V in
  *   vulkan/compute_spv.inc);
  * - by an HLSL compiler (shader model 6.0, HLSL 2021), with
@@ -64,7 +64,10 @@
  *             the K farthest first, and blended; then the next K beyond
  *             those, and so on until none are left - none is ever
  *             dropped, whatever their number. Then the samples of each
- *             pixel are resolved (pvr_resolve.h) and the pixel written.
+ *             pixel are resolved (pvr_resolve.h) and the pixel written;
+ *             through the chip's X scaler (PVRC_FF_HSCALE: the frame drawn
+ *             twice as wide as the picture), a pair of pixels' samples
+ *             together, into one pixel of the picture.
  *             A list's run is read 256 entries at a time, an entry a lane,
  *             and only the primitives that can cover a sample of the fine
  *             tile are kept, in their order (a bit a lane in shared
@@ -115,6 +118,7 @@
 #include "pvr_tile.h"
 #include "pvr_modvol.h"
 #include "pvr_resolve.h"
+#include "pvr_scaler.h"
 #include "../ssaa_pattern.h"
 #endif
 
@@ -169,9 +173,19 @@
 #define PVRC_PASS_WORDS   8u
 #define PVRC_PASS_MAX     10u
 #define PVRC_F_WORDS      192u
+/* (the picture's width: PVRC_F_WIDTH is what is drawn) */
+#define PVRC_PICTURE_W(f) ((f)[PVRC_F_WIDTH] >> (((f)[PVRC_F_FLAGS] & PVRC_FF_HSCALE) != 0u ? 1u : 0u))
 
 #define PVRC_FF_LAST_PICTURE 1u   /* start from the last picture, not the clear colour */
 #define PVRC_FF_LAST_SCALED  2u   /* ...which is of another size (kept from another context): filtered over the picture, as the raster renderer's quad does */
+#define PVRC_FF_HSCALE       4u   /* the X scaler (SCALER_CTL bit 16): the frame is drawn PVRC_F_WIDTH wide and the picture is half that, each pixel of it a pair drawn,
+                                     their samples resolved together (rend/tile/pvr_scaler.h) */
+/* The Y scaler's filter (rend/tile/pvr_scaler.h), in PVRC_F_FLAGS's bits
+ * above the flags: the lines its taps are apart, the internal scale (0:
+ * no filter), and Y_COEFF's 16 bits */
+#define PVRC_FF_YLINES(f)    (((f) >> 3) & 31u)
+#define PVRC_FF_YCOEFF(f)    ((f) >> 16)
+#define PVRC_FF_YFILTER(lines, ycoeff) (((lines) << 3) | ((ycoeff) << 16))
 
 /* A render pass: where its lists start in the numbering (opaque, opaque
  * modifier volumes, punch-through, translucent, the translucent's end),
@@ -366,8 +380,60 @@
 /* The fine tile of a workgroup of the walk, for N samples: 256 lanes */
 #define PVRC_FINE_W(n) ((n) <= 2u ? 16u : 8u)
 #define PVRC_FINE_H(n) (256u / (n) / PVRC_FINE_W(n))
-/* ...and the fine tiles of a coarse tile, 2^@log2 pixels square */
-#define pvrc_walk_x(log2, n) (((1u << (log2)) / PVRC_FINE_W(n)) * ((1u << (log2)) / PVRC_FINE_H(n)))
+/* ...through the Y filter, whose taps are @m lines apart: the fine tile
+ * also shades the m lines above and the m below the lines it writes (a
+ * halo: what its neighbours draw, the filter's taps in its own lanes), so
+ * it is made narrower and taller until the halo is a quarter of it or it
+ * is two pixels across; fw | fh << 8 (it writes fh - 2m lines), or 0
+ * where m leaves it no line to write */
+PVR_FN pvr_u32 pvrc_fine_yfilter(pvr_u32 n, pvr_u32 m)
+{
+   pvr_u32 fw = PVRC_FINE_W(n), fh = PVRC_FINE_H(n);
+   while (fw > 2u && fh < 8u * m)
+   {
+      fw = fw >> 1u;
+      fh = fh << 1u;
+   }
+   return fh > 2u * m ? fw | (fh << 8u) : 0u;
+}
+/* The walk's halo at @n samples for frame flags @flags: the Y filter's
+ * lines (PVRC_FF_YLINES()) where its fine tile has lines to write, else
+ * 0 (no filter) */
+PVR_FN pvr_u32 pvrc_walk_halo(pvr_u32 n, pvr_u32 flags)
+{
+   const pvr_u32 m = PVRC_FF_YLINES(flags);
+   return m != 0u && pvrc_fine_yfilter(n, m) != 0u ? m : 0u;
+}
+/* ...its fine tile, fw | fh << 8 (the lines it writes are fh less twice
+ * the halo) */
+PVR_FN pvr_u32 pvrc_walk_fine(pvr_u32 n, pvr_u32 flags)
+{
+   const pvr_u32 m = pvrc_walk_halo(n, flags);
+   return m != 0u ? pvrc_fine_yfilter(n, m) : PVRC_FINE_W(n) | (PVRC_FINE_H(n) << 8u);
+}
+/* ...the rows of fine tiles down a coarse tile, 2^@log2 pixels square
+ * (the last one's lines past the coarse tile left to the next) */
+PVR_FN pvr_u32 pvrc_walk_down(pvr_u32 log2, pvr_u32 n, pvr_u32 flags)
+{
+   const pvr_u32 wr = (pvrc_walk_fine(n, flags) >> 8u) - 2u * pvrc_walk_halo(n, flags);
+   return ((1u << log2) + wr - 1u) / wr;
+}
+/* ...and the fine tiles of a coarse tile */
+PVR_FN pvr_u32 pvrc_walk_x(pvr_u32 log2, pvr_u32 n, pvr_u32 flags)
+{
+   return ((1u << log2) / (pvrc_walk_fine(n, flags) & 255u)) * pvrc_walk_down(log2, n, flags);
+}
+#if !defined(PVRC_SHADER)
+/* The whole walk's workgroups (PVRC_V_ALL) across (@x) and down (@y), for
+ * frame words @f at @n samples a pixel */
+static INLINE void pvrc_walk_groups(const pvr_u32 *f, pvr_u32 n, pvr_u32 *x, pvr_u32 *y)
+{
+   const pvr_u32 t = pvrc_walk_fine(n, f[PVRC_F_FLAGS]);
+   *x = (f[PVRC_F_WIDTH] + (t & 255u) - 1u) / (t & 255u);
+   *y = pvrc_walk_halo(n, f[PVRC_F_FLAGS]) != 0u ? f[PVRC_F_TILES_Y] * pvrc_walk_down(f[PVRC_F_TILE_LOG2], n, f[PVRC_F_FLAGS])
+         : (f[PVRC_F_HEIGHT] + (t >> 8u) - 1u) / (t >> 8u);
+}
+#endif
 
 /* The translucent fragments a lane keeps at once, by the shared memory
  * the device gives a workgroup: three words each (the key's two and the
@@ -890,12 +956,23 @@ bool pvrc_rec_hits(uint r, int x0, int y0, int x1, int y1)
 
 #if PVRC_KERNEL == PVRC_K_SETUP || PVRC_KERNEL == PVRC_K_SCATTER
 /* The coarse tiles a primitive's pixels touch, first x | y << 16 and last */
+/* Through the Y filter a coarse tile's lists also have what covers the
+ * lines its walks shade above and below it (the walk's halo): the lines
+ * above and below it a primitive is binned for, for any number of
+ * samples (these kernels are the same for all) */
+uint pvrc_tile_halo()
+{
+   return PVRC_FF_YLINES(frm.w[PVRC_F_FLAGS]);
+}
+
 uvec2 pvrc_tile_range(uint r)
 {
    uint b0 = rec.w[r + PVRC_R_BBOX0], b1 = rec.w[r + PVRC_R_BBOX1];
    uint l2 = frm.w[PVRC_F_TILE_LOG2];
-   return uvec2(((b0 & 0xffffu) >> l2) | (((b0 >> 16) >> l2) << 16),
-         ((b1 & 0xffffu) >> l2) | (((b1 >> 16) >> l2) << 16));
+   const uint halo = pvrc_tile_halo();
+   const uint y0 = b0 >> 16, y1 = min((b1 >> 16) + halo, frm.w[PVRC_F_HEIGHT] - 1u);
+   return uvec2(((b0 & 0xffffu) >> l2) | (((y0 > halo ? y0 - halo : 0u) >> l2) << 16),
+         ((b1 & 0xffffu) >> l2) | ((y1 >> l2) << 16));
 }
 
 /* Whether a primitive is binned to a coarse tile of its range: one its
@@ -905,7 +982,8 @@ bool pvrc_tile_hit(uint r, uint tx, uint ty)
 {
    const uint l2 = frm.w[PVRC_F_TILE_LOG2];
    const int x0 = int(tx << l2), y0 = int(ty << l2);
-   return pvrc_rec_hits(r, x0, y0, x0 + int(1u << l2) - 1, y0 + int(1u << l2) - 1);
+   const int halo = int(pvrc_tile_halo());
+   return pvrc_rec_hits(r, x0, y0 - halo, x0 + int(1u << l2) - 1, y0 + int(1u << l2) - 1 + halo);
 }
 #endif
 
@@ -2363,28 +2441,47 @@ bool vol_close_counts(uint cov, uint cull)
 void main()
 {
    g_tid = gl_LocalInvocationIndex;
-   const uint fw = PVRC_FINE_W(PVRC_SAMPLES), fh = PVRC_FINE_H(PVRC_SAMPLES);
+   /* the fine tile; through the Y filter, the lines it writes and the
+    * halo above and below them (pvrc_fine_yfilter(); the coarse tile's
+    * lists have the halo's primitives too: pvrc_tile_halo()) */
+   const uint fine = pvrc_walk_fine(PVRC_SAMPLES, frm.w[PVRC_F_FLAGS]);
+   const uint fw = fine & 255u, fh = fine >> 8;
+   const uint halo = pvrc_walk_halo(PVRC_SAMPLES, frm.w[PVRC_F_FLAGS]);
+   const uint l2 = frm.w[PVRC_F_TILE_LOG2], down = pvrc_walk_down(l2, PVRC_SAMPLES, frm.w[PVRC_F_FLAGS]);
    const uint pix = g_tid >> PVRC_LOG2N, smp = g_tid & (PVRC_SAMPLES - 1u);
+   uint cx, cy, fx, fy;	/* the coarse tile, and the fine tile in it */
    if (PVRC_VARIANT == PVRC_V_ALL)
-      g_fine.xy = gl_WorkGroupID.xy * uvec2(fw, fh);
+   {
+      cx = 0u;
+      fx = gl_WorkGroupID.x;
+      cy = gl_WorkGroupID.y / down;
+      fy = gl_WorkGroupID.y % down;
+   }
    else
    {
       /* a coarse tile of the variant's list (the sort's), and a fine tile
-       * of it; one past the picture's edge draws nothing */
+       * of it */
       const uint runs = pvrc_runs();
       const uint row = PVRC_VARIANT == PVRC_V_SORTED ? pvrc_tiles() - 1u - gl_WorkGroupID.y : gl_WorkGroupID.y;
       const uint ct = bin.w[PVRC_B_TILES(runs) + runs + row];
-      const uint l2 = frm.w[PVRC_F_TILE_LOG2], across = (1u << l2) / fw;
-      g_fine.xy = uvec2(((ct % frm.w[PVRC_F_TILES_X]) << l2) + (gl_WorkGroupID.x % across) * fw,
-            ((ct / frm.w[PVRC_F_TILES_X]) << l2) + (gl_WorkGroupID.x / across) * fh);
-      if (g_fine.x >= frm.w[PVRC_F_WIDTH] || g_fine.y >= frm.w[PVRC_F_HEIGHT])
-         return;
+      const uint across = (1u << l2) / fw;
+      cx = ct % frm.w[PVRC_F_TILES_X];
+      cy = ct / frm.w[PVRC_F_TILES_X];
+      fx = gl_WorkGroupID.x % across;
+      fy = gl_WorkGroupID.x / across;
    }
-   g_fine.zw = g_fine.xy + uvec2(fw - 1u, fh - 1u);
-   g_ct = (g_fine.x >> frm.w[PVRC_F_TILE_LOG2]) + (g_fine.y >> frm.w[PVRC_F_TILE_LOG2]) * frm.w[PVRC_F_TILES_X];
+   const uint wy = (cy << l2) + fy * (fh - 2u * halo);	/* the first line written */
+   g_fine.x = (cx << l2) + fx * fw;
+   /* (one past the picture's edge draws nothing) */
+   if (g_fine.x >= frm.w[PVRC_F_WIDTH] || wy >= frm.w[PVRC_F_HEIGHT])
+      return;
+   g_fine.y = wy > halo ? wy - halo : 0u;
+   g_fine.zw = uvec2(g_fine.x + fw - 1u, min(wy + fh - 1u - halo, (cy << l2) + (1u << l2) - 1u + halo));
+   g_ct = (g_fine.x >> l2) + cy * frm.w[PVRC_F_TILES_X];
    g_px = int(g_fine.x + pix % fw);
-   g_py = int(g_fine.y + pix / fw);
-   g_in = g_px < int(frm.w[PVRC_F_WIDTH]) && g_py < int(frm.w[PVRC_F_HEIGHT]);
+   g_py = int(wy + pix / fw) - int(halo);
+   /* (the lines past the coarse tile's halo are not its lists') */
+   g_in = g_px < int(frm.w[PVRC_F_WIDTH]) && g_py >= 0 && g_py < int(frm.w[PVRC_F_HEIGHT]) && uint(g_py) <= g_fine.w;
    g_cx = g_px * 256 + 128;
    g_cy = g_py * 256 + 128;
    g_sx = g_px * 256 + int(SSAA_SAMPLE_X16(PVRC_SAMPLES, smp)) * 16;
@@ -2396,7 +2493,7 @@ void main()
       g_col = col_pack(textureLod(lastPicture, (vec2(float(g_px), float(g_py)) + 0.5)
             / vec2(float(frm.w[PVRC_F_WIDTH]), float(frm.w[PVRC_F_HEIGHT])), 0.0));
    else if ((frm.w[PVRC_F_FLAGS] & PVRC_FF_LAST_PICTURE) != 0u && g_in)
-      g_col = col_pack(texelFetch(lastPicture, ivec2(g_px, g_py), 0));
+      g_col = col_pack(texelFetch(lastPicture, ivec2((frm.w[PVRC_F_FLAGS] & PVRC_FF_HSCALE) != 0u ? g_px >> 1 : g_px, g_py), 0));
    else
       g_col = frm.w[PVRC_F_CLEAR];
    g_depth = 0.0;
@@ -2969,12 +3066,58 @@ void main()
       }
    }
 
-   /* The samples of each pixel resolved, and the pixel written */
-   const uint c = pvr_resolve_lanes(g_col, PVRC_LOG2N);
+   /* The samples of each pixel resolved, and the pixel written; through
+    * the X scaler, the samples of a pair of pixels (adjacent lanes: the
+    * fine tile is an even number of pixels across) resolved together, one
+    * box, and the pair written as one pixel */
+   uint c;
+   ivec2 at = ivec2(g_px, g_py);
+   bool stores = smp == 0u && g_in;
+   if ((frm.w[PVRC_F_FLAGS] & PVRC_FF_HSCALE) != 0u)
+   {
+      uint rb = pvr_resolve_rb(g_col), ga = pvr_resolve_ga(g_col);
+      for (uint m = 1u; m < (PVRC_SAMPLES << 1); m <<= 1)
+      {
+         PVR_LANE_SYNC();
+         pvr_lane_xchg[PVR_LANE_SELF] = rb;
+         PVR_LANE_SYNC();
+         const uint orb = pvr_lane_xchg[PVR_LANE_SELF ^ m];
+         PVR_LANE_SYNC();
+         pvr_lane_xchg[PVR_LANE_SELF] = ga;
+         PVR_LANE_SYNC();
+         ga += pvr_lane_xchg[PVR_LANE_SELF ^ m];
+         rb += orb;
+      }
+      c = pvr_resolve_join(rb, ga, PVRC_LOG2N + 1u);
+      at.x = g_px >> 1;
+      stores = stores && (g_px & 1) == 0;
+   }
+   else
+      c = pvr_resolve_lanes(g_col, PVRC_LOG2N);
+   /* ...then the Y filter (pvr_scaler.h): the lines its taps are apart
+    * above and below in the tile's own lanes (its halo, which it shades
+    * and does not write), the picture's first and last lines in the place
+    * of the line there is not */
+   if (halo != 0u)
+   {
+      const uint step = (halo * fw) << PVRC_LOG2N;
+      const uint row = pix / fw;
+      const bool writes = row >= halo && row < fh - halo && uint(g_py) < ((cy + 1u) << l2);
+      PVR_LANE_SYNC();
+      pvr_lane_xchg[PVR_LANE_SELF] = c;
+      PVR_LANE_SYNC();
+      if (writes)
+      {
+         const uint above = g_py >= int(halo) ? pvr_lane_xchg[PVR_LANE_SELF - step] : c;
+         const uint below = g_py + int(halo) < int(frm.w[PVRC_F_HEIGHT]) ? pvr_lane_xchg[PVR_LANE_SELF + step] : c;
+         c = pvr_scaler_y(above, c, below, PVRC_FF_YCOEFF(frm.w[PVRC_F_FLAGS]));
+      }
+      stores = stores && writes;
+   }
    /* (a quarter of a step up: the device's conversion to 8 bits, whether
     * it rounds or truncates, and however it divides, gives the byte) */
-   if (smp == 0u && g_in)
-      imageStore(outImage, ivec2(g_px, g_py), (vec4(float(c & 255u), float((c >> 8) & 255u), float((c >> 16) & 255u), float(c >> 24)) + 0.25) / 255.0);
+   if (stores)
+      imageStore(outImage, at, (vec4(float(c & 255u), float((c >> 8) & 255u), float((c >> 16) & 255u), float(c >> 24)) + 0.25) / 255.0);
    if (g_tid == 0u && peels > 1u)
       atomicMax(bin.w[PVRC_B_STATS(pvrc_runs()) + PVRC_ST_PEELS], peels);
    if (g_tid == 0u && g_hiz_skipped != 0u)

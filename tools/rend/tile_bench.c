@@ -201,7 +201,14 @@ int main(int argc, char **argv)
    {
       size_t bytes;
       unsigned *frame = (unsigned *)read_file(argv[a], &bytes);
-      const unsigned words = (unsigned)(bytes / 4), w = frame[PVRC_F_WIDTH], h = frame[PVRC_F_HEIGHT];
+      const unsigned words = (unsigned)(bytes / 4), w = PVRC_PICTURE_W(frame), h = frame[PVRC_F_HEIGHT];
+      /* BENCH_YFILTER=LINES:YCOEFF (hex): the frame through the Y filter */
+      if (getenv("BENCH_YFILTER"))
+      {
+         unsigned lines = 0, ycoeff = 0;
+         if (sscanf(getenv("BENCH_YFILTER"), "%u:%x", &lines, &ycoeff) == 2)
+            frame[PVRC_F_FLAGS] = (frame[PVRC_F_FLAGS] & 7u) | PVRC_FF_YFILTER(lines & 31u, ycoeff & 0xffffu);
+      }
       const unsigned runs = frame[PVRC_F_RUNS], tiles = frame[PVRC_F_TILES_X] * frame[PVRC_F_TILES_Y];
       const unsigned prims = frame[PVRC_F_PRIMS];
       const unsigned binWords = pvrc_bin_words(runs, frame[PVRC_F_POOL]);
@@ -260,12 +267,13 @@ int main(int argc, char **argv)
       {
          const unsigned n = (unsigned)strtoul(p, &e, 10);
          const unsigned keep = getenv("BENCH_KEEP") ? (unsigned)atoi(getenv("BENCH_KEEP")) : pvrc_fragments_kept(shared_bytes);
-         const unsigned fw = PVRC_FINE_W(n ? n : 1u), fh = PVRC_FINE_H(n ? n : 1u);
+         unsigned walkX, walkY;
          VkPipeline pipes[BENCH_SETS][PVRC_KERNELS + 2];	/* (the walk's unsorted variant last) */
          double *t[BENCH_SETS][BENCH_STAMPS + 1];
          unsigned r, differ[BENCH_SETS], drawn = 0, far = 0, behind = 0;
          if (e == p)
             break;
+         pvrc_walk_groups(frame, n ? n : 1u, &walkX, &walkY);
          for (s = 0; s < nsets; s++)
          {
             for (k = 1; k <= PVRC_KERNELS; k++)
@@ -306,8 +314,8 @@ int main(int argc, char **argv)
                   b.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
                   b.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
                   vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 1, &b, 0, NULL, 0, NULL);
-                  vkCmdFillBuffer(cmd, bb.buffer, (VkDeviceSize)(PVRC_B_STATS(runs) + PVRC_ST_WALK_U_X) * 4, 4, pvrc_walk_x(frame[PVRC_F_TILE_LOG2], n ? n : 1u));
-                  vkCmdFillBuffer(cmd, bb.buffer, (VkDeviceSize)(PVRC_B_STATS(runs) + PVRC_ST_WALK_S_X) * 4, 4, pvrc_walk_x(frame[PVRC_F_TILE_LOG2], n ? n : 1u));
+                  vkCmdFillBuffer(cmd, bb.buffer, (VkDeviceSize)(PVRC_B_STATS(runs) + PVRC_ST_WALK_U_X) * 4, 4, pvrc_walk_x(frame[PVRC_F_TILE_LOG2], n ? n : 1u, frame[PVRC_F_FLAGS]));
+                  vkCmdFillBuffer(cmd, bb.buffer, (VkDeviceSize)(PVRC_B_STATS(runs) + PVRC_ST_WALK_S_X) * 4, 4, pvrc_walk_x(frame[PVRC_F_TILE_LOG2], n ? n : 1u, frame[PVRC_F_FLAGS]));
                }
                mem_barrier(cmd);
                vkCmdWriteTimestamp(cmd, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, queries, 1);
@@ -331,9 +339,9 @@ int main(int argc, char **argv)
                   if (pipes[ss][PVRC_KERNELS + 1] != VK_NULL_HANDLE)
                   {
                      vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, pipes[ss][PVRC_KERNELS + 1]);
-                     vkCmdDispatch(cmd, (w + fw - 1) / fw, (h + fh - 1) / fh, 1);
+                     vkCmdDispatch(cmd, walkX, walkY, 1);
                   }
-                  BSTEP(PVRC_K_WALK, (w + fw - 1) / fw, (h + fh - 1) / fh, 6);
+                  BSTEP(PVRC_K_WALK, walkX, walkY, 6);
                }
                vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, pipes[ss][PVRC_K_CLEAR]);
                vkCmdDispatchIndirect(cmd, bb.buffer, (VkDeviceSize)(PVRC_B_STATS(runs) + PVRC_ST_CLEAR_X) * 4);

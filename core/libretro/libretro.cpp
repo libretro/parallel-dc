@@ -54,6 +54,7 @@ char* strdup(const char *str)
 #include "rend/gles/ta_decoder_gl.h"
 #include "rend/gles/glprogram_cache.h"
 #include "rend/last_picture.h"
+#include "rend/tile/compute_frame.h"
 #include <retro_atomic.h>
 #include <retro_timers.h>
 #include "emulator.h"
@@ -1163,6 +1164,12 @@ static void update_variables(bool first_startup)
    settings.rend.PowerVR2Filter = false;
    if (environ_cb(RETRO_ENVIRONMENT_GET_VARIABLE, &var) && var.value)
      	settings.rend.PowerVR2Filter = !strcmp("enabled", var.value);
+
+   /* The compute renderer's next frame takes it: a frame word (no kernel
+    * made, nothing allocated) */
+   var.key = CORE_OPTION_NAME "_pvr2_scaler";
+   ComputeFrame::ScalersOff = environ_cb(RETRO_ENVIRONMENT_GET_VARIABLE, &var) && var.value
+         && !strcmp("disabled", var.value);
 
    /* Takes effect with the next texture made: one made either way is the
     * same texture, so nothing has to be made again. */

@@ -343,7 +343,7 @@ static ID3D12PipelineState **pipelines_for(unsigned samples, unsigned keep)
 /* tile_test.c's: the same frame, the same kernels, the same order */
 static double gpu_draw(const unsigned *frame0, unsigned words, unsigned samples, unsigned keep, unsigned *out, unsigned *stats, int gpu)
 {
-   const unsigned w = frame0[PVRC_F_WIDTH], h = frame0[PVRC_F_HEIGHT], runs = frame0[PVRC_F_RUNS];
+   const unsigned w = PVRC_PICTURE_W(frame0), h = frame0[PVRC_F_HEIGHT], runs = frame0[PVRC_F_RUNS];
    const unsigned tiles = frame0[PVRC_F_TILES_X] * frame0[PVRC_F_TILES_Y];
    const unsigned binWords = pvrc_bin_words(runs, frame0[PVRC_F_POOL]);
    const unsigned nsrc = frame0[PVRC_F_SOURCES] + 1;
@@ -390,7 +390,7 @@ static double gpu_draw(const unsigned *frame0, unsigned words, unsigned samples,
    m = (unsigned *)map(dummy_up);
    m[0] = getenv("TILE_PROD") ? 0x0000ff00u : 0u;
    /* (and the walk's variants' dispatches across, as the renderer copies them to theirs) */
-   m[4] = pvrc_walk_x(frame0[PVRC_F_TILE_LOG2], samples);
+   m[4] = pvrc_walk_x(frame0[PVRC_F_TILE_LOG2], samples, frame0[PVRC_F_FLAGS]);
    views->lpVtbl->GetCPUDescriptorHandleForHeapStart(views, &vc);
    views->lpVtbl->GetGPUDescriptorHandleForHeapStart(views, &vg);
    samplers->lpVtbl->GetGPUDescriptorHandleForHeapStart(samplers, &sg);

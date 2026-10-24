@@ -166,7 +166,7 @@ static unsigned gpu_frame(const unsigned *frame, unsigned words, unsigned *g, un
 static int ref_picture(const unsigned *frame, unsigned words, unsigned n, unsigned *ref, struct tile_ref_stats *rst, double *ms)
 {
    const char *dir = getenv("TILE_REF_DIR");
-   const unsigned w = frame[PVRC_F_WIDTH], h = frame[PVRC_F_HEIGHT];
+   const unsigned w = PVRC_PICTURE_W(frame), h = frame[PVRC_F_HEIGHT];
    unsigned long long key = 1469598103934665603ull;
    char path[1024];
    FILE *f;
@@ -241,6 +241,9 @@ int main(int argc, char **argv)
    const char *samples_s = getenv("TILE_SAMPLES") ? getenv("TILE_SAMPLES") : "1 2 4 8";
    const char *keep_s = getenv("TILE_KEEP") ? getenv("TILE_KEEP") : "0 1";
    const char *ppm = getenv("TILE_PPM");
+   /* the frames as they are, and with the Y filter (PVRC_FF_YFILTER(): its
+    * taps LINES apart, Y_COEFF): "off" and LINES:YCOEFF, in hex */
+   const char *yfilter_s = getenv("TILE_YFILTER") ? getenv("TILE_YFILTER") : "off 1:8040";
    int validate = getenv("TILE_VALIDATE") && atoi(getenv("TILE_VALIDATE"));
    const int use_gpu = !getenv("TILE_GPU") || atoi(getenv("TILE_GPU")) != 0;
    int a, runs = 0, same = 0, differ = 0;
@@ -272,9 +275,29 @@ int main(int argc, char **argv)
       {
          size_t bytes;
          unsigned *frame = (unsigned *)read_file(argv[a], &bytes);
-         const unsigned words = (unsigned)(bytes / 4), w = frame[PVRC_F_WIDTH], h = frame[PVRC_F_HEIGHT];
+         const unsigned words = (unsigned)(bytes / 4), w = PVRC_PICTURE_W(frame), h = frame[PVRC_F_HEIGHT];
          unsigned *ref = (unsigned *)malloc((size_t)w * h * 4), *got = (unsigned *)malloc((size_t)w * h * 4);
+         const unsigned flags = frame[PVRC_F_FLAGS] & 7u;
          unsigned si, ki;
+         const char *yp;
+         char *ye;
+         for (yp = yfilter_s; *yp; yp = ye)
+         {
+         unsigned long lines = 0, ycoeff = 0;
+         while (*yp == ' ')
+            yp++;
+         if (!*yp)
+            break;
+         if (!strncmp(yp, "off", 3))
+            ye = (char *)yp + 3;
+         else
+         {
+            lines = strtoul(yp, &ye, 10);
+            if (ye == yp || *ye != ':')
+               break;
+            ycoeff = strtoul(ye + 1, &ye, 16);
+         }
+         frame[PVRC_F_FLAGS] = flags | (lines ? PVRC_FF_YFILTER((unsigned)lines, (unsigned)ycoeff & 0xffffu) : 0u);
          for (si = 0; si < ns; si++)
          {
             const unsigned n = sl[si];
@@ -303,7 +326,10 @@ int main(int argc, char **argv)
                   same++;
                else
                   differ++;
-               printf("tile_test: %s at %u sample%s, K %u%s: %s", argv[a], n, n > 1 ? "s" : "", keep, as_gpu ? ", as the decode's" : "", bad ? "DIFFERENT" : "the same");
+               printf("tile_test: %s at %u sample%s, K %u%s", argv[a], n, n > 1 ? "s" : "", keep, as_gpu ? ", as the decode's" : "");
+               if (lines)
+                  printf(", Y filter %lu:%04lx", lines, ycoeff);
+               printf(": %s", bad ? "DIFFERENT" : "the same");
                if (bad)
                   printf(" (%u pixels; the first at %u,%u: %08x, the reference %08x)", bad, first % w, first / w, got[first], ref[first]);
                printf("; %u primitives, %u passes, %u layers at most, %u rounds, %u runs walked whole, %u left out, %u clipped at the eye (the device %u), %u passed over by the tiles' depths; device %.1f ms, reference %.1f ms\n",
@@ -313,13 +339,14 @@ int main(int argc, char **argv)
                {
                   char name[256];
                   const char *base = strrchr(argv[a], '/') ? strrchr(argv[a], '/') + 1 : argv[a];
-                  snprintf(name, sizeof(name), "%s_%u_%u%s_gpu", base, n, keep, as_gpu ? "_dec" : "");
+                  snprintf(name, sizeof(name), "%s_%u_%u%s%s_gpu", base, n, keep, as_gpu ? "_dec" : "", lines ? "_yf" : "");
                   write_ppm(ppm, name, got, w, h);
-                  snprintf(name, sizeof(name), "%s_%u_%u_ref", base, n, keep);
+                  snprintf(name, sizeof(name), "%s_%u_%u%s_ref", base, n, keep, lines ? "_yf" : "");
                   write_ppm(ppm, name, ref, w, h);
                }
                fflush(stdout);
             }
+         }
          }
          free(ref);
          free(got);

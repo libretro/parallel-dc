@@ -534,6 +534,20 @@ struct retro_core_option_v2_definition option_defs_us[] = {
       "rasterizer",
    },
    {
+      CORE_OPTION_NAME "_pvr2_scaler",
+      "PVR2 scaler / flicker filter",
+      NULL,
+      "The PowerVR2's X and Y scalers, as the chip applies them when it writes each tile out: with the game's horizontal scaling, pairs of pixels averaged into one; with its vertical scale factor above 1 (most of Sega's games, VGA too), each line blended with the lines above and below by the game's coefficients, the flicker filter that softens the picture vertically. Disabled draws the picture without them. Compute renderer only.",
+      NULL,
+      "video",
+      {
+         { "enabled",  NULL },
+         { "disabled", NULL },
+         { NULL, NULL },
+      },
+      "enabled",
+   },
+   {
       CORE_OPTION_NAME "_ta_processing",
       "TA Processing",
       NULL,
