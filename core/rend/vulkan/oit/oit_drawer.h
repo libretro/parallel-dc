@@ -214,8 +214,11 @@ public:
 		if (carriedPicture)
 			commandPool->DeferDelete(std::move(carriedPicture));
 		currentCommandBuffer.endRenderPass();
-		writeOut.Record(currentCommandBuffer, GetCurrentImage(), finalColorAttachments[GetCurrentImage()]->GetImage(),
-				finalColorAttachments[GetCurrentImage()]->GetImageView(), viewport.extent.width, viewport.extent.height);
+		if (overlaid)
+			overlaid = false;
+		else
+			writeOut.Record(currentCommandBuffer, GetCurrentImage(), finalColorAttachments[GetCurrentImage()]->GetImage(),
+					finalColorAttachments[GetCurrentImage()]->GetImageView(), viewport.extent.width, viewport.extent.height);
 		CountPass(currentCommandBuffer);
 		timer.End(currentCommandBuffer, commandPool->GetIndex());
 		currentCommandBuffer.end();
@@ -226,6 +229,23 @@ public:
 				vk::Offset2D(viewport.extent.width, viewport.extent.height));
 	}
 	vk::RenderPass GetRenderPass() const { return screenPipelineManager->GetRenderPass(false, true); }
+	/* The chip's write-out (../writeout.h), when the frame has one: the
+	 * frame's render pass ended and the pass recorded now, before the VMUs
+	 * and crosshairs, which are then drawn in the overlay's render pass
+	 * (with a quad pipeline made for OverlayPass()); false if there is none */
+	bool HasWriteOut() const { return (bool)OverlayPass(); }
+	bool WriteOutBeforeOsd()
+	{
+		if (!writeOut.Runs(viewport.extent.height))
+			return false;
+		currentCommandBuffer.endRenderPass();
+		writeOut.Record(currentCommandBuffer, GetCurrentImage(), finalColorAttachments[GetCurrentImage()]->GetImage(),
+				finalColorAttachments[GetCurrentImage()]->GetImageView(), viewport.extent.width, viewport.extent.height);
+		writeOut.BeginOverlay(currentCommandBuffer, GetCurrentImage());
+		overlaid = true;
+		return true;
+	}
+	vk::RenderPass OverlayPass() const { return writeOut.OverlayPass(); }
 	vk::CommandBuffer GetCurrentCommandBuffer() const { return currentCommandBuffer; }
 
 protected:
@@ -327,6 +347,7 @@ private:
 	bool storagePicture = false;
 	// the chip's write-out over the pictures (../writeout.h), which are then made for it to write
 	VulkanWriteOut writeOut;
+	bool overlaid = false;		// this frame's write-out was recorded before the overlays
 };
 
 class OITTextureDrawer : public OITDrawer

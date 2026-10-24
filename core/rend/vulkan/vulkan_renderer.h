@@ -41,6 +41,7 @@ public:
 		shaderManager.Term();
 		vmus.reset();
 		quadPipeline.Term();
+		overlayQuadPipeline.Term();
 		vk_rtt_term();
 		textureCache.Clear();
 		Texture::SetDecoder(nullptr);
@@ -329,6 +330,18 @@ protected:
 	TextureCache textureCache;
 	std::unique_ptr<Texture> keptPicture;
 	QuadPipeline quadPipeline;
+	// the VMUs' and crosshairs' after the chip's write-out, in the screen drawer's overlay render pass (writeout.h)
+	QuadPipeline overlayQuadPipeline;
+	// ...made now, for @pass (none: there is no write-out)
+	void InitOverlay(vk::RenderPass pass)
+	{
+		overlayQuadPipeline.Forget();
+		if (pass)
+		{
+			overlayQuadPipeline.Init(&shaderManager, pass, 0);
+			overlayQuadPipeline.Make();
+		}
+	}
 	std::unique_ptr<VulkanOSD> vmus;
 };
 

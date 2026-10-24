@@ -331,6 +331,13 @@ public:
 	}
 	virtual void EndRenderPass() override;
 	vk::CommandBuffer GetCurrentCommandBuffer() const { return currentCommandBuffer; }
+	/* The chip's write-out (writeout.h), when the frame has one: the
+	 * frame's render pass ended and the pass recorded now, before the VMUs
+	 * and crosshairs, which are then drawn in the overlay's render pass
+	 * (with a quad pipeline made for OverlayPass()); false if there is none */
+	bool HasWriteOut() const { return (bool)OverlayPass(); }
+	bool WriteOutBeforeOsd();
+	vk::RenderPass OverlayPass() const { return writeOut.OverlayPass(); }
 
 protected:
 	virtual vk::CommandBuffer BeginRenderPass() override;
@@ -345,6 +352,7 @@ private:
 	// the chip's write-out over the pictures (writeout.h), which are then made for it to write
 	VulkanWriteOut writeOut;
 	bool storagePictures = false;
+	bool overlaid = false;		// this frame's write-out was recorded before the overlays
 	QuadPipeline *quadPipeline = nullptr;
 	QuadDrawer lastPicture;
 	bool havePicture = false;	/* the image before this one holds the last frame */

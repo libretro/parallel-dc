@@ -54,6 +54,7 @@ public:
 		screenDrawer.SetGpuDraw(taDecoder.Draw());
 		computeDrawer.SetGpuDraw(taDecoder.Draw());
 		BaseInit(screenDrawer.GetRenderPass(), screenDrawer.GetOsdSubpass());
+		InitOverlay(screenDrawer.OverlayPass());
 		textureDrawer.SetStorageTarget(texPool.TargetsStorable());
 		// (a quad pipeline is for one subpass: the one above is the last subpass's, this the colour one's)
 		lastPicturePipeline.Init(&shaderManager, screenDrawer.GetRenderPass(), 1, samples);
@@ -80,6 +81,7 @@ public:
 		}
 		screenDrawer.Init(&samplerManager, &oitShaderManager, &oitBuffers, samples);
 		BaseInit(screenDrawer.GetRenderPass(), screenDrawer.GetOsdSubpass());
+		InitOverlay(screenDrawer.OverlayPass());
 		// (a quad pipeline is for one subpass: the one above is the last subpass's, this the colour one's)
 		lastPicturePipeline.Init(&shaderManager, screenDrawer.GetRenderPass(), 1, samples);
 		screenDrawer.SetLastPicturePipeline(&lastPicturePipeline);
@@ -178,7 +180,13 @@ public:
 		drawer->Draw(fogTexture.get(), paletteTexture.get());
 
 		if (!pvrrc.isRTT)
-			vmus->DrawOSD(screenDrawer.GetCurrentCommandBuffer(), vk::Extent2D(screen_width, screen_height), &texCommandPool);
+		{
+			/* (the chip's write-out before what goes over the picture, which
+			 * then goes in a render pass of its own: writeout.h) */
+			const bool after = screenDrawer.HasWriteOut() && vmus->Drawing() && screenDrawer.WriteOutBeforeOsd();
+			vmus->DrawOSD(screenDrawer.GetCurrentCommandBuffer(), vk::Extent2D(screen_width, screen_height), &texCommandPool,
+					after ? &overlayQuadPipeline : nullptr);
+		}
 
 		drawer->EndFrame();
 

@@ -11,6 +11,8 @@ static_assert(PVRC_F_FLAGS < SlotBytes / 4 && PVRC_F_WIDTH < SlotBytes / 4 && PV
 
 void VulkanWriteOut::Term()
 {
+	overlayFramebuffers.clear();
+	overlayPass.reset();
 	sets.clear();
 	pool.reset();
 	pipeline.reset();
@@ -20,9 +22,10 @@ void VulkanWriteOut::Term()
 	mapped = nullptr;
 }
 
-void VulkanWriteOut::Init(u32 count)
+void VulkanWriteOut::Init(const std::vector<vk::ImageView>& views, vk::Extent2D pictureSize)
 {
 	Term();
+	const u32 count = (u32)views.size();
 	if (!Wanted() || count == 0)
 		return;
 	VulkanContext *context = VulkanContext::Instance();
@@ -55,6 +58,34 @@ void VulkanWriteOut::Init(u32 count)
 		const vk::DescriptorBufferInfo info(*words->buffer, (vk::DeviceSize)SlotBytes * i, SlotBytes);
 		device.updateDescriptorSets(vk::WriteDescriptorSet(sets[i], 0, 0, 1, vk::DescriptorType::eStorageBuffer, nullptr, &info), nullptr);
 	}
+
+	/* What goes over the picture: a render pass that loads it as the pass
+	 * left it, and leaves it as the frame's render pass does */
+	const vk::AttachmentDescription attachment(vk::AttachmentDescriptionFlags(), context->GetColorFormat(), vk::SampleCountFlagBits::e1,
+			vk::AttachmentLoadOp::eLoad, vk::AttachmentStoreOp::eStore, vk::AttachmentLoadOp::eDontCare, vk::AttachmentStoreOp::eDontCare,
+			vk::ImageLayout::eShaderReadOnlyOptimal, vk::ImageLayout::eShaderReadOnlyOptimal);
+	const vk::AttachmentReference colorReference(0, vk::ImageLayout::eColorAttachmentOptimal);
+	const vk::SubpassDescription subpass(vk::SubpassDescriptionFlags(), vk::PipelineBindPoint::eGraphics, 0, nullptr, 1, &colorReference);
+	const vk::SubpassDependency dependencies[] = {
+		// (after Record()'s barrier, whose second half it follows on from)
+		vk::SubpassDependency(VK_SUBPASS_EXTERNAL, 0, vk::PipelineStageFlagBits::eComputeShader | vk::PipelineStageFlagBits::eFragmentShader
+				| vk::PipelineStageFlagBits::eTransfer, vk::PipelineStageFlagBits::eColorAttachmentOutput,
+				vk::AccessFlagBits::eShaderWrite, vk::AccessFlagBits::eColorAttachmentRead | vk::AccessFlagBits::eColorAttachmentWrite),
+		vk::SubpassDependency(0, VK_SUBPASS_EXTERNAL, vk::PipelineStageFlagBits::eColorAttachmentOutput,
+				vk::PipelineStageFlagBits::eFragmentShader | vk::PipelineStageFlagBits::eTransfer,
+				vk::AccessFlagBits::eColorAttachmentWrite, vk::AccessFlagBits::eShaderRead | vk::AccessFlagBits::eTransferRead),
+	};
+	overlayPass = device.createRenderPassUnique(vk::RenderPassCreateInfo(vk::RenderPassCreateFlags(), 1, &attachment, 1, &subpass, 2, dependencies));
+	extent = pictureSize;
+	for (u32 i = 0; i < count; i++)
+		overlayFramebuffers.push_back(device.createFramebufferUnique(vk::FramebufferCreateInfo(vk::FramebufferCreateFlags(), *overlayPass,
+				1, &views[i], extent.width, extent.height, 1)));
+}
+
+void VulkanWriteOut::BeginOverlay(vk::CommandBuffer cmd, u32 index)
+{
+	cmd.beginRenderPass(vk::RenderPassBeginInfo(*overlayPass, *overlayFramebuffers[index], vk::Rect2D({ 0, 0 }, extent), 0, nullptr),
+			vk::SubpassContents::eInline);
 }
 
 void VulkanWriteOut::Record(vk::CommandBuffer cmd, u32 index, vk::Image image, vk::ImageView view, u32 width, u32 height)

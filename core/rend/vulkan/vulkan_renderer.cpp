@@ -44,6 +44,7 @@ public:
 		screenDrawer.SetGpuDraw(taDecoder.Draw());
 		taDecoder.WantSort(true);
 		BaseInit(screenDrawer.GetRenderPass(), screenDrawer.GetOsdSubpass());
+		InitOverlay(screenDrawer.OverlayPass());
 		screenDrawer.SetQuadPipeline(&quadPipeline);
 
 		return true;
@@ -62,6 +63,7 @@ public:
 		}
 		screenDrawer.Init(&samplerManager, &shaderManager, samples);
 		BaseInit(screenDrawer.GetRenderPass(), screenDrawer.GetOsdSubpass());
+		InitOverlay(screenDrawer.OverlayPass());
 		screenDrawer.SetQuadPipeline(&quadPipeline);
 		// what this size no longer needs is given back once the frames that used it are done
 		GetContext()->GetHeap().TrimSoon();
@@ -118,7 +120,13 @@ public:
 		drawer->Draw(fogTexture.get(), paletteTexture.get());
 
 		if (!pvrrc.isRTT)
-			vmus->DrawOSD(screenDrawer.GetCurrentCommandBuffer(), vk::Extent2D(screen_width, screen_height), &texCommandPool);
+		{
+			/* (the chip's write-out before what goes over the picture, which
+			 * then goes in a render pass of its own: writeout.h) */
+			const bool after = screenDrawer.HasWriteOut() && vmus->Drawing() && screenDrawer.WriteOutBeforeOsd();
+			vmus->DrawOSD(screenDrawer.GetCurrentCommandBuffer(), vk::Extent2D(screen_width, screen_height), &texCommandPool,
+					after ? &overlayQuadPipeline : nullptr);
+		}
 
 		drawer->EndRenderPass();
 

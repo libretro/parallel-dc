@@ -135,9 +135,9 @@ const std::vector<vk::CommandBuffer>* VulkanOSD::PrepareOSD(CommandPool *command
 	return &commandBuffers[context->GetCurrentImageIndex()];
 }
 
-void VulkanOSD::DrawOSD(vk::CommandBuffer commandBuffer, vk::Extent2D viewport, CommandPool *commandPool)
+void VulkanOSD::DrawOSD(vk::CommandBuffer commandBuffer, vk::Extent2D viewport, CommandPool *commandPool, QuadPipeline *with)
 {
-	pipeline->BindPipeline(commandBuffer, false);
+	(with != nullptr ? with : pipeline)->BindPipeline(commandBuffer, false);
 	QuadVertex vtx[] = {
 		{ { -1.f, -1.f, 0.f }, { 0.f, 1.f } },
 		{ {  1.f, -1.f, 0.f }, { 1.f, 1.f } },

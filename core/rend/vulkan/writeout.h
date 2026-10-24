@@ -6,7 +6,11 @@
  * on the raster renderer's after the frame's render pass. Made in Init(),
  * when the renderer starts or changes size (a change of the option is
  * one), with the pictures made for it to write; nothing is made in a
- * frame, and a frame without a write-out records nothing. */
+ * frame, and a frame without a write-out records nothing. What goes over
+ * the picture (the VMUs, the crosshairs) is drawn after it, as on the
+ * console: the frame's render pass is ended, the pass run, and they are
+ * drawn in a render pass of their own that loads the picture
+ * (BeginOverlay()), made in Init() too. */
 #pragma once
 #include "vulkan.h"
 #include "buffer.h"
@@ -20,9 +24,15 @@ class VulkanWriteOut
 public:
 	// whether the pictures are to be made for it (vk::ImageUsageFlagBits::eStorage)
 	static bool Wanted() { return !ComputeFrame::ScalersOff; }
-	// @count pictures, a set and a slot of words for each
-	void Init(u32 count);
+	// the pictures @views, @extent: a set, a slot of words and a framebuffer of the overlay's for each
+	void Init(const std::vector<vk::ImageView>& views, vk::Extent2D extent);
 	void Term();
+	// whether the frame in the registers has a write-out, to be recorded
+	bool Runs(u32 height) const { return pipeline && PVRC_FF_YLINES(ComputeFrame::WriteOut(height)) != 0; }
+	// the render pass of what goes over the picture after the pass (null when none was made)
+	vk::RenderPass OverlayPass() const { return *overlayPass; }
+	// ...begun on picture @index, after Record()
+	void BeginOverlay(vk::CommandBuffer cmd, u32 index);
 	/* The pass over picture @index, @image, @width x @height, which the
 	 * render pass left in eShaderReadOnlyOptimal, and leaves so; nothing
 	 * when the frame in the registers has no write-out */
@@ -36,4 +46,7 @@ private:
 	std::vector<vk::DescriptorSet> sets;
 	std::unique_ptr<BufferData> words;
 	u32 *mapped = nullptr;
+	vk::UniqueRenderPass overlayPass;
+	std::vector<vk::UniqueFramebuffer> overlayFramebuffers;
+	vk::Extent2D extent;
 };

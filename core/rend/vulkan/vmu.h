@@ -46,8 +46,8 @@ public:
 		}
 	}
 	const std::vector<vk::CommandBuffer>* PrepareOSD(CommandPool *commandPool);
-	// commandPool: the pool commandBuffer is of
-	void DrawOSD(vk::CommandBuffer commandBuffer, vk::Extent2D viewport, CommandPool *commandPool);
+	// commandPool: the pool commandBuffer is of; @with, a pipeline of another render pass's to draw with (the same layout)
+	void DrawOSD(vk::CommandBuffer commandBuffer, vk::Extent2D viewport, CommandPool *commandPool, QuadPipeline *with = nullptr);
 	// whether DrawOSD() has anything to draw
 	bool Drawing() const
 	{

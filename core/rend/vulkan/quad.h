@@ -89,6 +89,8 @@ public:
 		renderPass = nullptr;
 	}
 	void BindPipeline(vk::CommandBuffer commandBuffer, bool alpha = false) { commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, GetPipeline(alpha)); }
+	// its pipeline made now, not when it is first drawn with
+	void Make() { GetPipeline(false); }
 	vk::DescriptorSetLayout GetDescSetLayout() const { return *descSetLayout; }
 	vk::PipelineLayout GetPipelineLayout() const { return *pipelineLayout; }
 	vk::Sampler GetLinearSampler() const { return *linearSampler; }

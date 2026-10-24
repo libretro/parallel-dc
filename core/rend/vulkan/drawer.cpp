@@ -960,7 +960,12 @@ void ScreenDrawer::Init(SamplerManager *samplerManager, ShaderManager *shaderMan
 	}
 	timer.Init(GetContext()->GetSwapChainSize(), "per-triangle renderer");
 	if (remade)
-		writeOut.Init(storagePictures ? (u32)colorAttachments.size() : 0);
+	{
+		std::vector<vk::ImageView> views;
+		for (const auto& attachment : colorAttachments)
+			views.push_back(attachment->GetImageView());
+		writeOut.Init(storagePictures ? views : std::vector<vk::ImageView>(), viewport);
+	}
 }
 
 vk::CommandBuffer ScreenDrawer::BeginRenderPass()
@@ -1024,6 +1029,18 @@ void ScreenDrawer::KeepPicture()
 				viewport.width, viewport.height, pixels);
 }
 
+bool ScreenDrawer::WriteOutBeforeOsd()
+{
+	if (!writeOut.Runs(viewport.height))
+		return false;
+	currentCommandBuffer.endRenderPass();
+	writeOut.Record(currentCommandBuffer, GetCurrentImage(), colorAttachments[GetCurrentImage()]->GetImage(),
+			colorAttachments[GetCurrentImage()]->GetImageView(), viewport.width, viewport.height);
+	writeOut.BeginOverlay(currentCommandBuffer, GetCurrentImage());
+	overlaid = true;
+	return true;
+}
+
 void ScreenDrawer::EndRenderPass()
 {
 	havePicture = true;
@@ -1032,8 +1049,11 @@ void ScreenDrawer::EndRenderPass()
 	if (carriedPicture)
 		commandPool->DeferDelete(std::move(carriedPicture));
 	currentCommandBuffer.endRenderPass();
-	writeOut.Record(currentCommandBuffer, GetCurrentImage(), colorAttachments[GetCurrentImage()]->GetImage(),
-			colorAttachments[GetCurrentImage()]->GetImageView(), viewport.width, viewport.height);
+	if (overlaid)
+		overlaid = false;
+	else
+		writeOut.Record(currentCommandBuffer, GetCurrentImage(), colorAttachments[GetCurrentImage()]->GetImage(),
+				colorAttachments[GetCurrentImage()]->GetImageView(), viewport.width, viewport.height);
 	timer.End(currentCommandBuffer, commandPool->GetIndex());
 	currentCommandBuffer.end();
 	currentCommandBuffer = nullptr;

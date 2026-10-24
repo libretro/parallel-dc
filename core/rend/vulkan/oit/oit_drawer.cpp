@@ -805,7 +805,12 @@ void OITScreenDrawer::MakeFramebuffers()
 		framebuffers.push_back(GetContext()->GetDevice().createFramebufferUnique(createInfo));
 	}
 	// (the chip's write-out over the pictures: ../writeout.h)
-	writeOut.Init((u32)finalColorAttachments.size());
+	{
+		std::vector<vk::ImageView> views;
+		for (const auto& attachment : finalColorAttachments)
+			views.push_back(attachment->GetImageView());
+		writeOut.Init(views, viewport.extent);
+	}
 }
 
 OITTextureDrawer::Size OITTextureDrawer::GetSize()
