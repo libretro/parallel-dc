@@ -1504,6 +1504,7 @@ bool g_seen;	/* a polygon covered the lane in this render pass's depth subpass *
 #define HIZ_OP   2u	/* the colour subpass's opaque: equal, or its own test without a depth write */
 #define HIZ_PT   3u	/* ...its punch-through: equal, or greater or equal */
 #define HIZ_TR   4u	/* sorted translucent: in front of it, or at it */
+#define HIZ_ZR   5u	/* none, but each primitive's depths over the tile taken (the opaque modifier volumes') */
 
 uint it_lo, it_hi, it_c, it_clast, it_j, it_end, it_k, it_n, it_cbase, it_run;
 uint it_batch = 0u;
@@ -1708,7 +1709,7 @@ uint it_next()
          it_zlo = uintBitsToFloat(s_zlo[it_base + it_k]);
          it_zhi = uintBitsToFloat(s_zhi[it_base + it_k]);
          it_k++;
-         if (it_replay && it_hiz != HIZ_NONE && it_hiz != HIZ_RUN && rp_hiz != it_hiz)
+         if (it_replay && it_hiz != HIZ_NONE && it_hiz != HIZ_RUN && it_hiz != HIZ_ZR && rp_hiz != it_hiz)
          {
             /* (the batch was kept by a looser filter: this walk's now) */
             uint mode = 6u;
@@ -1783,7 +1784,7 @@ uint it_next()
       if (keep && it_hiz != HIZ_NONE)
       {
          zr = rec_zrange(v * PVRC_REC_WORDS, test == 3u);
-         if (it_hiz != HIZ_RUN)
+         if (it_hiz != HIZ_RUN && it_hiz != HIZ_ZR)
          {
             uint mode = 6u;
             if (it_hiz != HIZ_TR)
@@ -2559,7 +2560,7 @@ void main()
                uint cov = 0u;	/* what the volume being sent covers, front and back */
                uint pending = PVRC_NONE;	/* the last triangle of the parameter that ends it */
                uint closer = 0u;	/* ...the triangle that tells which one */
-               it_begin(mvoLo, ptLo, HIZ_NONE, false);
+               it_begin(mvoLo, ptLo, HIZ_ZR, false);
                for (;;)
                {
                   prim = it_next();
@@ -2592,7 +2593,9 @@ void main()
                   cov |= extra & (PVRC_RX_FRONT | PVRC_RX_BACK);
                   if ((extra & PVRC_RX_CULLED) != 0u || !in_rect(mvp_word(r, PVRC_M_RECT), mvp_word(r, PVRC_M_RECT + 1u)))
                      continue;
-                  if (pvrc_depth(fast ? rec_bary32(r, rec_edges32(r, g_cx, g_cy)).w : vol_w(r)) > g_depth)
+                  /* (in front of the lane's depth nowhere in the tile: no
+                   * depth taken, as for a lane its depths are all behind) */
+                  if (!(it_zhi <= g_depth) && pvrc_depth(fast ? rec_bary32(r, rec_edges32(r, g_cx, g_cy)).w : vol_w(r)) > g_depth)
                      g_stencil = (g_stencil & 0x80u) | pvr_modvol_triangle(g_stencil & 3u, 1u, (extra & PVRC_RX_OR) != 0u ? 1u : 0u);
                }
             }
@@ -2618,15 +2621,20 @@ void main()
                vec4 sec = vec4(0.0);
                uint bh = 0u, bl = 0u;
                bool started = false;
+               uint trBound = 0u;	/* the least boundary of the lanes that have more, after a round */
                const uint pbase = g_tid & ~(PVRC_SAMPLES - 1u);	/* the pixel's first lane */
                float pz[8];	/* the depths of the pixel's samples */
                pz[0] = g_depth;
+               float pzmin = g_depth;	/* ...the least */
                if (PVRC_SAMPLES > 1u)
                {
                   s_x[g_tid] = floatBitsToUint(g_depth);
                   barrier();
                   for (uint j = 0u; j < PVRC_SAMPLES; j++)
+                  {
                      pz[j] = uintBitsToFloat(s_x[pbase + j]);
+                     pzmin = min(pzmin, pz[j]);
+                  }
                   barrier();
                }
                for (;;)
@@ -2647,10 +2655,21 @@ void main()
                      /* the step's primitives: the lane of sample j takes the j-th */
                      uint mine = PVRC_NONE;
                      bool mineFast = false;
+                     float mineZhi = 0.0;
                      bool any = false;
                      for (uint j = 0u; j < PVRC_SAMPLES; j++)
                      {
-                        const uint p = any || j == 0u ? it_next() : PVRC_NONE;
+                        uint p = PVRC_NONE;
+                        if (any || j == 0u)
+                        {
+                           /* (after the first round: not a primitive whose
+                            * fragments are all at or before the boundary of
+                            * every lane that has more, which took them all
+                            * in the rounds before) */
+                           do
+                              p = it_next();
+                           while (p != PVRC_NONE && pvr_key_hi(it_zhi, 0u) < trBound);
+                        }
                         if (p != PVRC_NONE)
                            any = true;
                         else if (j == 0u)
@@ -2659,6 +2678,7 @@ void main()
                         {
                            mine = p;
                            mineFast = it_fast;
+                           mineZhi = it_zhi;
                         }
                      }
                      if (!any)
@@ -2672,7 +2692,10 @@ void main()
                      {
                         const uint r = mine * PVRC_REC_WORDS;
                         const uint pp = rec_poly(r);
-                        if (in_rect(frm.w[pp + PVRC_Q_RECT], frm.w[pp + PVRC_Q_RECT + 1u]) && rec_near(r))
+                        /* (nor at a pixel all of whose samples' depths are
+                         * in front of all the primitive's over the tile:
+                         * it is a candidate for none of them) */
+                        if (in_rect(frm.w[pp + PVRC_Q_RECT], frm.w[pp + PVRC_Q_RECT + 1u]) && rec_near(r) && !(mineZhi < pzmin))
                         {
                            /* each sample it covers tested with its depth at
                             * that sample, as the depth subpass took the depth
@@ -2942,14 +2965,17 @@ void main()
                      started = true;
                   }
                   peels++;
-                  /* again, for every lane, while any has more */
+                  /* again, for every lane, while any has more: the least
+                   * of their boundaries (a key's high word, a depth's float
+                   * bits, is never all ones) */
                   if (g_tid == 0u)
-                     s_flag = 0u;
+                     s_flag = 0xffffffffu;
                   barrier();
                   if (more)
-                     atomicOr(s_flag, 1u);
+                     atomicMin(s_flag, bh);
                   barrier();
-                  const bool again = s_flag != 0u;
+                  trBound = s_flag;
+                  const bool again = trBound != 0xffffffffu;
                   barrier();
                   if (!again)
                      break;
@@ -3000,15 +3026,26 @@ void main()
                bool passed = true, seen = false;
                if (!known)
                {
-                  z = pvrc_depth(rec_bary(r, e).w);
+                  const uint test = colourSub ? (writes ? 2u : kind == WALK_COLOR_PT ? 6u : isp >> 29) : mode;
                   if (depthSub)
                   {
                      seen = g_seen;
                      g_seen = true;
-                     if (z == g_depth)
-                        g_multi = true;
                   }
-                  passed = pvrc_depth_pass(colourSub ? (writes ? 2u : kind == WALK_COLOR_PT ? 6u : isp >> 29) : mode, z, g_depth) != 0u;
+                  /* A lane whose depth the primitive's depths over the tile
+                   * (it_next()) are all on the wrong side of fails it
+                   * wherever the primitive covers it: its own depth is not
+                   * taken. (Nor is it the lane's, which only a test it can
+                   * pass would ask of it.) */
+                  if (test == 0u || ((test & 1u) == 0u && it_zhi < g_depth) || ((test == 1u || test == 3u) && it_zlo > g_depth))
+                     passed = false;
+                  else
+                  {
+                     z = pvrc_depth(rec_bary(r, e).w);
+                     if (depthSub && z == g_depth)
+                        g_multi = true;
+                     passed = pvrc_depth_pass(test, z, g_depth) != 0u;
+                  }
                }
                if (passed)
                {
