@@ -2715,28 +2715,37 @@ void main()
                             * which gives the same 1/w (rec_bary()) */
                            uint cov = 0u;
                            i64vec3 es = i64vec3(0);
+                           /* (one sample a pixel: the sample is the centre, whose
+                            * edges and barycentrics the fragment takes again) */
+                           i64vec3 e1 = i64vec3(0);
+                           Bary b1;
                            for (uint j = 0u; j < PVRC_SAMPLES; j++)
                            {
                               const int sx = g_px * 256 + int(SSAA_SAMPLE_X16(PVRC_SAMPLES, j)) * 16;
                               const int sy = g_py * 256 + int(SSAA_SAMPLE_Y16(PVRC_SAMPLES, j)) * 16;
                               i64vec3 e;
                               bool inside;
-                              Bary b;
                               if (mineFast)
                               {
                                  const ivec3 e32 = rec_edges32(r, sx, sy);
                                  e = i64vec3(e32);
                                  inside = rec_inside32(r, e32);
-                                 b = rec_bary32(r, e32);
                               }
                               else
                               {
                                  e = rec_edges(r, sx, sy);
                                  inside = rec_inside(r, e);
-                                 b = rec_bary(r, e);
                               }
                               if (inside)
                               {
+                                 /* (its depth only where it covers the sample) */
+                                 Bary b;
+                                 if (mineFast)
+                                    b = rec_bary32(r, ivec3(e));
+                                 else
+                                    b = rec_bary(r, e);
+                                 e1 = e;
+                                 b1 = b;
                                  cov |= 1u << j;
                                  if (pvrc_depth(b.w) >= pz[j])
                                  {
@@ -2755,12 +2764,14 @@ void main()
                                * triangle where the triangle only clips the
                                * pixel, and sorted the fragments of a model's
                                * neighbouring polygons wrongly along its edges. */
-                              const ivec3 ec32 = mineFast ? rec_edges32(r, g_cx, g_cy) : ivec3(0, 0, 0);
-                              const i64vec3 ec = mineFast ? i64vec3(ec32) : rec_edges(r, g_cx, g_cy);
+                              const ivec3 ec32 = PVRC_SAMPLES == 1u ? ivec3(e1) : mineFast ? rec_edges32(r, g_cx, g_cy) : ivec3(0, 0, 0);
+                              const i64vec3 ec = PVRC_SAMPLES == 1u ? e1 : mineFast ? i64vec3(ec32) : rec_edges(r, g_cx, g_cy);
                               Bary bz;
                               if (cand == (1u << PVRC_SAMPLES) - 1u)
                               {
-                                 if (mineFast)
+                                 if (PVRC_SAMPLES == 1u)
+                                    bz = b1;
+                                 else if (mineFast)
                                     bz = rec_bary32(r, ec32);
                                  else
                                     bz = rec_bary(r, ec);
@@ -2814,7 +2825,16 @@ void main()
                                   * fragment it puts in its lists */
                                  bool killed;
                                  Frag f;
-                                 if (mineFast)
+                                 if (PVRC_SAMPLES == 1u)
+                                 {
+                                    /* (at the centre, from its barycentrics as the depth took them) */
+                                    f = rec_frag_b(r, pp, b1, g_cx, g_cy, false);
+                                    if (mineFast)
+                                       frag_grads32(r, frm.w[pp + PVRC_Q_FLAGS], ec32, false, f);
+                                    else
+                                       frag_grads(r, frm.w[pp + PVRC_Q_FLAGS], ec, false, f);
+                                 }
+                                 else if (mineFast)
                                     f = rate_frag_at32(r, pp, ec32, rate_pos_cov(cov), false);
                                  else
                                     f = rate_frag_at(r, pp, ec, rate_pos_cov(cov), false);
