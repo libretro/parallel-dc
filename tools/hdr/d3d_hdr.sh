@@ -9,7 +9,10 @@
 #    to the byte;
 #  - HDR10 and scRGB, per-strip, per-pixel and compute: the 24-bit picture
 #    of the same frame, encoded;
-#  - a filmic curve is not (the comparison sees a wrong encode).
+#  - a filmic curve is not (the comparison sees a wrong encode);
+#  - a frontend's device that cannot be had, with Direct3D 11 and 12,
+#    threaded rendering on and off: the core runs its frames and draws
+#    none, and does not take the frontend down (DEBUGBREAK, before).
 #
 #   sh tools/hdr/d3d_hdr.sh parallel_dc_libretro.dll
 #
@@ -42,7 +45,7 @@ run() {
    # @1 the frontend, @2 the picture, @3... options
    fe=$1; out=$2; shift 2
    env -u TMPDIR DISPLAY=$DISPLAY_NO WINEDEBUG=-all WINE_D3D_CONFIG=renderer=vulkan \
-      ${OVERRIDES:+WINEDLLOVERRIDES=$OVERRIDES} D3DH_API=$API D3DH_FRONTEND=$fe D3DH_DIR="Z:$WORK" \
+      WINEDLLOVERRIDES="winedbg.exe=d${OVERRIDES:+;$OVERRIDES}" D3DH_API=$API D3DH_FRONTEND=$fe D3DH_DIR="Z:$WORK" \
       timeout 600 wine "$WORK/d3d_hdr.exe" "Z:$CORE" "Z:$WORK/test.gdi" "Z:$WORK/$out" $FRAMES "$@" \
       > "$WORK/log.txt" 2>&1 || { cat "$WORK/log.txt"; echo "d3d_hdr.sh: $out failed"; exit 1; }
    grep "^d3d_hdr:" "$WORK/log.txt"
@@ -72,6 +75,20 @@ if "$WORK/vk_hdr" --compare "$WORK/sdr.raw" "$WORK/aces.raw" > /dev/null 2>&1; t
    exit 1
 fi
 }
+
+# a device that cannot be had (no crash: winedbg is off, so one ends the run)
+for API in 11 12; do
+   for t in disabled enabled; do
+      if ! out=$(D3DH_REFUSED=1 run hdr10 refused-dev.raw reicast_color_format=30bit_hdr reicast_threaded_rendering=$t); then
+         echo "$out" | grep -v '^$' | tail -20
+         echo "d3d_hdr.sh: Direct3D $API refused, threaded $t: the core did not run its frames"
+         exit 1
+      fi
+      echo "$out"
+      case "$out" in *"none drawn"*) ;; *) echo "d3d_hdr.sh: Direct3D $API refused, threaded $t: not as it should be"; exit 1 ;; esac
+   done
+done
+API=11
 
 judge
 if [ -n "$D3D12_DLLS" ]; then

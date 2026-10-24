@@ -30,11 +30,13 @@ using namespace vixl::aarch64;
 
 enum eReg {
 	W0, W1, W2, W3, W4, W5, W6, W7, W8, W9, W10, W11, W12, W13, W14, W15, W16,
-	W17, W18, W19, W20, W21, W22, W23, W24, W25, W26, W27, W28, W29, W30
+	W17, W18, W19, W20, W21, W22, W23, W24, W25, W26, W27, W28, W29, W30,
+	W_NONE = -1	/* (no register: what (eReg)-1 is, which without it is outside the enum) */
 };
 enum eFReg {
 	S0, S1, S2, S3, S4, S5, S6, S7, S8, S9, S10, S11, S12, S13, S14, S15, S16,
-	S17, S18, S19, S20, S21, S22, S23, S24, S25, S26, S27, S28, S29, S30, S31
+	S17, S18, S19, S20, S21, S22, S23, S24, S25, S26, S27, S28, S29, S30, S31,
+	S_NONE = -1	/* (no register, as W_NONE) */
 };
 
 /* x26 is not handed out: recompiled code keeps the address of the SH4's

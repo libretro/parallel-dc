@@ -1630,7 +1630,8 @@ void retro_run (void)
       if (renderer != NULL && (settings.pvr.rend == 4 || settings.pvr.rend == 5))
       {
          rend_prepare_renderer();
-         renderer->OptionsChanged();
+         if (renderer != NULL)
+            renderer->OptionsChanged();
       }
 #endif
 #if defined(HAVE_D3D11) || defined(HAVE_D3D12)
@@ -1638,7 +1639,8 @@ void retro_run (void)
       if (renderer != NULL && (settings.pvr.rend == 9 || settings.pvr.rend == 10 || settings.pvr.rend == 6 || settings.pvr.rend == 7))
       {
          rend_prepare_renderer();
-         renderer->OptionsChanged();
+         if (renderer != NULL)
+            renderer->OptionsChanged();
       }
 #endif
 #ifdef HAVE_GL4
@@ -1647,7 +1649,8 @@ void retro_run (void)
       {
          glsm_ctl(GLSM_CTL_STATE_BIND, NULL);
          rend_prepare_renderer();
-         renderer->OptionsChanged();
+         if (renderer != NULL)
+            renderer->OptionsChanged();
          glsm_ctl(GLSM_CTL_STATE_UNBIND, NULL);
       }
 #endif

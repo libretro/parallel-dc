@@ -359,7 +359,7 @@ u64,f1,(u32 a, s32 b, u32 T),
 	a = (a << 1) | T;
 
 	u32 oldA = a;
-	a += (qxm ? 1 : -1) * b;	// b if Q != M, -b otherwise
+	a += qxm ? (u32)b : 0u - (u32)b;	/* b if Q != M, -b otherwise (modulo 2^32: -b overflows for b = INT_MIN) */
 	sr.Q ^= sr.M ^ (qxm ? a < oldA : a > oldA);
 	T = !(sr.Q ^ sr.M);
 

@@ -26,8 +26,8 @@
  * and for whatever an operation needs on the side. xmm4 to xmm7 are handed
  * out and xmm0 to xmm3 are scratch: no function keeps any of them, so the
  * ones in use are saved round every call (BlockCompiler::GenCall()). */
-static Xbyak::Operand::Code alloc_regs[] = { Xbyak::Operand::EBX, Xbyak::Operand::EBP, Xbyak::Operand::ESI,
-		Xbyak::Operand::EDI, (Xbyak::Operand::Code)-1 };
+static s8 alloc_regs[] = { Xbyak::Operand::EBX, Xbyak::Operand::EBP, Xbyak::Operand::ESI,
+		Xbyak::Operand::EDI, -1 };
 static s8 alloc_fregs[] = { 7, 6, 5, 4, -1 };
 /* Pairs of the SH4's floating-point registers (DRn, XDn) stay in memory:
  * four xmm registers are not enough to give them two each. */
@@ -35,7 +35,7 @@ static s8 alloc_fregs[] = { 7, 6, 5, 4, -1 };
 
 class BlockCompiler;
 
-struct X86RegAlloc : RegAlloc<Xbyak::Operand::Code, s8, ALLOC_F64>
+struct X86RegAlloc : RegAlloc<s8, s8, ALLOC_F64>
 {
 	X86RegAlloc(BlockCompiler *compiler) : compiler(compiler) {}
 
@@ -44,15 +44,15 @@ struct X86RegAlloc : RegAlloc<Xbyak::Operand::Code, s8, ALLOC_F64>
 		RegAlloc::DoAlloc(block, alloc_regs, alloc_fregs);
 	}
 
-	virtual void Preload(u32 reg, Xbyak::Operand::Code nreg) override;
-	virtual void Writeback(u32 reg, Xbyak::Operand::Code nreg) override;
+	virtual void Preload(u32 reg, s8 nreg) override;
+	virtual void Writeback(u32 reg, s8 nreg) override;
 	virtual void Preload_FPU(u32 reg, s8 nreg) override;
 	virtual void Writeback_FPU(u32 reg, s8 nreg) override;
 
 	Xbyak::Reg32 MapRegister(const shil_param& param)
 	{
-		Xbyak::Operand::Code ereg = mapg(param);
-		if (ereg == (Xbyak::Operand::Code)-1)
+		s8 ereg = mapg(param);
+		if (ereg == -1)
 			die("Register not allocated");
 		return Xbyak::Reg32(ereg);
 	}

@@ -77,6 +77,10 @@ u32 FrameCount=1;
 Renderer* renderer;
 static Renderer* fallback_renderer;
 bool renderer_changed = false;	// Signals the renderer interface to switch renderer
+/* No renderer could be set up on the frontend's context (its device was
+ * refused, say): the frames run and none is drawn, until the context is
+ * made again (renderer_changed). Not tried again each frame. */
+static bool renderer_failed = false;
 
 #if !defined(TARGET_NO_THREADS)
 #include "libretro/emu_baton.h"
@@ -171,10 +175,16 @@ void rend_init_renderer()
 	if (!renderer->Init())
     {
 		delete renderer;
+		renderer = NULL;
     	if (fallback_renderer == NULL || !fallback_renderer->Init())
     	{
-         delete fallback_renderer;
-    		die("Renderer initialization failed\n");
+			/* (not the frontend taken down with the core: no frame is drawn
+			 * until there is a context a renderer can be set up on) */
+			delete fallback_renderer;
+			fallback_renderer = NULL;
+			renderer_failed = true;
+			ERROR_LOG(PVR, "Renderer initialization failed: no frame is drawn until the video context is made again");
+			return;
     	}
     	INFO_LOG(PVR, "Selected renderer initialization failed. Falling back to default renderer.");
     	renderer  = fallback_renderer;
@@ -230,9 +240,10 @@ void rend_term_renderer()
 
 void rend_prepare_renderer()
 {
-   if (renderer_changed || renderer == NULL)
+   if (renderer_changed || (renderer == NULL && !renderer_failed))
    {
 	  renderer_changed = false;
+	  renderer_failed = false;
 	  if (renderer != NULL)
 	  {
 		 rend_term_renderer();
@@ -246,6 +257,16 @@ void rend_prepare_renderer()
 bool rend_frame(TA_context* ctx, bool draw_osd)
 {
    rend_prepare_renderer();
+   if (renderer == NULL)
+   {
+      /* (none could be set up: nothing drawn, and the emulation let go on
+       * as a frame that draws nothing lets it) */
+#if !defined(TARGET_NO_THREADS)
+      if (settings.rend.ThreadedRendering)
+         emu_baton.AckWork();
+#endif
+      return false;
+   }
 #if !defined(TARGET_NO_THREADS)
    /* The renderer reads the registers as they were when the game started
     * this render. */

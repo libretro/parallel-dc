@@ -611,10 +611,11 @@ private:
 	{
 		const u8 *buf = (const u8 *)block;
 		int size = 62;
-		int n = 0xffff;
+		/* (unsigned: the CRC's shifts go past bit 31 of an int) */
+		u32 n = 0xffff;
 
 		for (int i = 0; i < size; i++) {
-			n ^= (buf[i] << 8);
+			n ^= ((u32)buf[i] << 8);
 
 			for (int c = 0; c < 8; c++) {
 				if (n & 0x8000) {
@@ -625,7 +626,7 @@ private:
 			}
 		}
 
-		return (~n) & 0xffff;
+		return (int)((~n) & 0xffff);
 	}
 
 	int validate_crc(struct flash_user_block *user)

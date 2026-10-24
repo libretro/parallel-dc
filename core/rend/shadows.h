@@ -102,7 +102,8 @@ static inline bool PolyOverlaps(const PolyParam *gp, const ScreenBounds& area)
 		do
 		{
 			// x and y, which are next to each other in a vertex
-			const __m128 xy = _mm_castpd_ps(_mm_load_sd((const double *)&verts[*idx++].x));
+			/* (one 8-byte load, as movq: a vertex's x is 4-byte aligned, which a double load does not allow) */
+			const __m128 xy = _mm_castsi128_ps(_mm_loadl_epi64((const __m128i *)&verts[*idx++].x));
 			lo = _mm_min_ps(xy, lo);
 			hi = _mm_max_ps(xy, hi);
 		} while (--run != 0);

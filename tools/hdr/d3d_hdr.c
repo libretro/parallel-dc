@@ -5,6 +5,10 @@
  * in vk_hdr's form, for vk_hdr --compare and --same to judge as they do
  * the Vulkan renderer's. d3d_hdr.sh.
  *
+ * With D3DH_REFUSED=1 the interface has no device (Direct3D 11) or no
+ * queue (12), as when a frontend's device was not to be had: the core is
+ * to run its frames, drawing none, and not take the frontend down.
+ *
  *   D3DH_API=11|12 D3DH_FRONTEND=sdr|hdr10|scrgb D3DH_DIR=dir \
  *      d3d_hdr core.dll content out.raw frames [key=value ...]
  *
@@ -487,10 +491,21 @@ int main(int argc, char **argv)
       fprintf(stderr, "d3d_hdr: the core did not ask for Direct3D %d\n", api);
       return finish(1);
    }
+   if (getenv("D3DH_REFUSED"))
+   {
+      iface11.device = NULL;
+      iface12.queue  = NULL;
+   }
    hw.context_reset();
    for (n = 0; n < frames; n++)
       retro_run();
 
+   if (getenv("D3DH_REFUSED"))
+   {
+      printf("d3d_hdr: Direct3D %d refused, %u frames run, %s\n", api, frames,
+            (api == 11 ? frame11 != NULL : frame12 != NULL) ? "a picture handed over" : "none drawn");
+      return finish(0);
+   }
    ok = api == 11 ? read_back11(argv[3], &format) : read_back12(argv[3], &format);
    if (!ok || frame_w == 0)
    {

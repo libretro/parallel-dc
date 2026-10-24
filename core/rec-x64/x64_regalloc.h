@@ -35,12 +35,12 @@
  * register a block could have on Linux, and blocks came out no smaller
  * and no quicker for having it. */
 #ifdef _WIN32
-static Xbyak::Operand::Code alloc_regs[] = { Xbyak::Operand::RBX, Xbyak::Operand::RBP, Xbyak::Operand::RDI, Xbyak::Operand::RSI,
-		Xbyak::Operand::R12, Xbyak::Operand::R13, (Xbyak::Operand::Code)-1 };
+static s8 alloc_regs[] = { Xbyak::Operand::RBX, Xbyak::Operand::RBP, Xbyak::Operand::RDI, Xbyak::Operand::RSI,
+		Xbyak::Operand::R12, Xbyak::Operand::R13, -1 };
 static s8 alloc_fregs[] = { 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, -1 };          // XMM6 to XMM15 are callee-saved in Windows
 #else
-static Xbyak::Operand::Code alloc_regs[] = { Xbyak::Operand::RBX, Xbyak::Operand::RBP, Xbyak::Operand::R12, Xbyak::Operand::R13,
-		(Xbyak::Operand::Code)-1 };
+static s8 alloc_regs[] = { Xbyak::Operand::RBX, Xbyak::Operand::RBP, Xbyak::Operand::R12, Xbyak::Operand::R13,
+		-1 };
 // XMM8 to XMM15. No function has to keep any of them on these hosts: the
 // ones in use are saved round every call recompiled code makes (GenCall).
 static s8 alloc_fregs[] = { 8, 9, 10, 11, 12, 13, 14, 15, -1 };
@@ -53,7 +53,7 @@ static s8 alloc_fregs[] = { 8, 9, 10, 11, 12, 13, 14, 15, -1 };
 
 class BlockCompiler;
 
-struct X64RegAlloc : RegAlloc<Xbyak::Operand::Code, s8, ALLOC_F64>
+struct X64RegAlloc : RegAlloc<s8, s8, ALLOC_F64>
 {
 	X64RegAlloc(BlockCompiler *compiler) : compiler(compiler) {}
 
@@ -62,15 +62,15 @@ struct X64RegAlloc : RegAlloc<Xbyak::Operand::Code, s8, ALLOC_F64>
 		RegAlloc::DoAlloc(block, alloc_regs, alloc_fregs);
 	}
 
-	virtual void Preload(u32 reg, Xbyak::Operand::Code nreg) override;
-	virtual void Writeback(u32 reg, Xbyak::Operand::Code nreg) override;
+	virtual void Preload(u32 reg, s8 nreg) override;
+	virtual void Writeback(u32 reg, s8 nreg) override;
 	virtual void Preload_FPU(u32 reg, s8 nreg) override;
 	virtual void Writeback_FPU(u32 reg, s8 nreg) override;
 
 	Xbyak::Reg32 MapRegister(const shil_param& param)
 	{
-		Xbyak::Operand::Code ereg = mapg(param);
-		if (ereg == (Xbyak::Operand::Code)-1)
+		s8 ereg = mapg(param);
+		if (ereg == -1)
 			die("Register not allocated");
 		return Xbyak::Reg32(ereg);
 	}

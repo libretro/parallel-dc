@@ -1697,11 +1697,11 @@ public:
 		return dword[(u32)(uintptr_t)p];
 	}
 
-	void RegPreload(u32 reg, Xbyak::Operand::Code nreg)
+	void RegPreload(u32 reg, s8 nreg)
 	{
 		mov(Xbyak::Reg32(nreg), Ctx(GetRegPtr(reg)));
 	}
-	void RegWriteback(u32 reg, Xbyak::Operand::Code nreg)
+	void RegWriteback(u32 reg, s8 nreg)
 	{
 		mov(Ctx(GetRegPtr(reg)), Xbyak::Reg32(nreg));
 	}
@@ -2501,11 +2501,11 @@ private:
 	bool charge_at_tail = false;
 };
 
-void X86RegAlloc::Preload(u32 reg, Xbyak::Operand::Code nreg)
+void X86RegAlloc::Preload(u32 reg, s8 nreg)
 {
 	compiler->RegPreload(reg, nreg);
 }
-void X86RegAlloc::Writeback(u32 reg, Xbyak::Operand::Code nreg)
+void X86RegAlloc::Writeback(u32 reg, s8 nreg)
 {
 	compiler->RegWriteback(reg, nreg);
 }

@@ -382,7 +382,7 @@ static int mem_block_regs()
 {
 	int count = 0;
 
-	while (alloc_regs[count] != (Xbyak::Operand::Code)-1)
+	while (alloc_regs[count] != -1)
 		count++;
 	return count;
 }
@@ -402,7 +402,7 @@ static int mem_reg_number(int reg, int first)
 {
 	if (reg == first)
 		return 0;
-	for (int i = 0; alloc_regs[i] != (Xbyak::Operand::Code)-1; i++)
+	for (int i = 0; alloc_regs[i] != -1; i++)
 		if ((int)alloc_regs[i] == reg)
 			return i + 1;
 	return -1;
@@ -2208,11 +2208,11 @@ public:
 		return dword[CtxAt(p)];
 	}
 
-	void RegPreload(u32 reg, Xbyak::Operand::Code nreg)
+	void RegPreload(u32 reg, s8 nreg)
 	{
 	   mov(Xbyak::Reg32(nreg), Ctx(GetRegPtr(reg)));
 	}
-	void RegWriteback(u32 reg, Xbyak::Operand::Code nreg)
+	void RegWriteback(u32 reg, s8 nreg)
 	{
 	   mov(Ctx(GetRegPtr(reg)), Xbyak::Reg32(nreg));
 	}
@@ -3121,11 +3121,11 @@ public:
 	bool charge_at_tail = false;
 };
 
-void X64RegAlloc::Preload(u32 reg, Xbyak::Operand::Code nreg)
+void X64RegAlloc::Preload(u32 reg, s8 nreg)
 {
    compiler->RegPreload(reg, nreg);
 }
-void X64RegAlloc::Writeback(u32 reg, Xbyak::Operand::Code nreg)
+void X64RegAlloc::Writeback(u32 reg, s8 nreg)
 {
    compiler->RegWriteback(reg, nreg);
 }

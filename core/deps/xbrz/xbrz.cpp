@@ -358,7 +358,14 @@ template <> inline unsigned char rotateBlendInfo<ROT_180>(unsigned char b) { ret
 template <> inline unsigned char rotateBlendInfo<ROT_270>(unsigned char b) { return ((b << 6) | (b >> 2)) & 0xff; }
 
 
-#ifndef NDEBUG
+/* (the debugger break is MSVC's own - __declspec(thread), __debugbreak - so
+ * it is there only where that is: a debug build with any other compiler
+ * builds without it) */
+#if !defined(NDEBUG) && defined(_MSC_VER)
+#define XBRZ_DEBUG_BREAK 1
+#endif
+
+#ifdef XBRZ_DEBUG_BREAK
     int debugPixelX = -1;
     int debugPixelY = 12;
     __declspec(thread) bool breakIntoDebugger = false;
@@ -392,7 +399,7 @@ void blendPixel(const Kernel_3x3& ker,
 #define h get_h<rotDeg>(ker)
 #define i get_i<rotDeg>(ker)
 
-#ifndef NDEBUG
+#ifdef XBRZ_DEBUG_BREAK
     if (breakIntoDebugger)
         __debugbreak(); //__asm int 3;
 #endif
@@ -550,7 +557,7 @@ void scaleImage(const uint32_t* src, uint32_t* trg, int srcWidth, int srcHeight,
 
         for (int x = 0; x < srcWidth; ++x, out += Scaler::scale)
         {
-#ifndef NDEBUG
+#ifdef XBRZ_DEBUG_BREAK
             breakIntoDebugger = debugPixelX == x && debugPixelY == y;
 #endif
             //all those bounds checks have only insignificant impact on performance!

@@ -112,6 +112,8 @@ namespace ARM
 		
 		rfp = r9,	sl = r10,	fp = r11,	ip = r12,	sp = r13,	lr = r14,	pc = r15,
 		RFP = R9,	SL = R10,	FP = R11,	IP = R12,	SP = R13,	LR = R14,	PC = R15,
+
+		NO_REG = -1,	/* (no register: what (eReg)-1 is, which without it is outside the enum) */
 	};
 
 
@@ -183,7 +185,9 @@ namespace ARM
 		F16, F17, F18, F19,
 		F20, F21, F22, F23,
 		F24, F25, F26, F27,
-		F28, F29, F30, F31
+		F28, F29, F30, F31,
+
+		NO_FSREG = -1	/* (no register, as NO_REG) */
 	};
 
 

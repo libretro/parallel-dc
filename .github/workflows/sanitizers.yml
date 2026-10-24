@@ -1,0 +1,54 @@
+name: Sanitizers
+
+# The core built with AddressSanitizer (make DEBUG_ASAN=1) and with
+# UndefinedBehaviorSanitizer (make DEBUG_UBSAN=1), each running the test
+# disc's frames on Vulkan (lavapipe) on every renderer, at 24-bit and with
+# the HDR output, the recompiler on: any report fails the run
+# (tools/vulkan/vk_sanitize.sh).
+
+on:
+  push:
+    paths:
+      - 'core/**'
+      - 'tools/vulkan/vk_sanitize.sh'
+      - 'tools/vulkan/vk_hdr.c'
+      - 'tools/threads/live_disc.py'
+      - 'Makefile*'
+      - '.github/workflows/sanitizers.yml'
+  pull_request:
+    paths:
+      - 'core/**'
+      - 'tools/vulkan/vk_sanitize.sh'
+      - 'tools/vulkan/vk_hdr.c'
+      - 'tools/threads/live_disc.py'
+      - 'Makefile*'
+      - '.github/workflows/sanitizers.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  sanitizers:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        sanitizer: [address, undefined]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Vulkan (lavapipe)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential libgl1-mesa-dev mesa-vulkan-drivers libvulkan1 python3
+      - name: Build the core with the sanitizer
+        run: |
+          if [ "${{ matrix.sanitizer }}" = address ]; then
+            make -j"$(nproc)" DEBUG_ASAN=1
+          else
+            make -j"$(nproc)" DEBUG_UBSAN=1
+          fi
+      - name: Frames on every renderer, 24-bit and HDR
+        run: VK_DRIVER_FILES=/usr/share/vulkan/icd.d/lvp_icd.json SANITIZE=${{ matrix.sanitizer }} sh tools/vulkan/vk_sanitize.sh

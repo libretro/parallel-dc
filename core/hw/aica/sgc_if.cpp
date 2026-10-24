@@ -556,7 +556,8 @@ struct ChannelEx
 
 		const s64 mac = -FEG.a0 * sample + FEG.b1 * FEG.prev1 - FEG.b2 * FEG.prev2 - FEG.fract;
 		sample = (SampleType)(mac >> 30);
-		FEG.fract = (s32)(((s64)sample << 30) - mac);
+		/* (a multiply: a negative sample shifted left is undefined) */
+		FEG.fract = (s32)((s64)sample * ((s64)1 << 30) - mac);
 		FEG.prev2 = FEG.prev1;
 		if (sample < -512 * 1024)
 			sample = -512 * 1024;
