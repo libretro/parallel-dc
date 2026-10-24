@@ -1168,8 +1168,8 @@ static void update_variables(bool first_startup)
    /* The compute renderer's next frame takes it: a frame word (no kernel
     * made, nothing allocated) */
    var.key = CORE_OPTION_NAME "_pvr2_scaler";
-   ComputeFrame::ScalersOff = environ_cb(RETRO_ENVIRONMENT_GET_VARIABLE, &var) && var.value
-         && !strcmp("disabled", var.value);
+   ComputeFrame::ScalersOff = !(environ_cb(RETRO_ENVIRONMENT_GET_VARIABLE, &var) && var.value
+         && !strcmp("enabled", var.value));
 
    /* Takes effect with the next texture made: one made either way is the
     * same texture, so nothing has to be made again. */

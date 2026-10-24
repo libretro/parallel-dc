@@ -17,7 +17,7 @@ static_assert(sizeof(ModTriangle) == 9 * 4, "...and its modifier volume triangle
 // (a record keeps a vertex's number in PVRC_RX_VTX: NAOMI 2's four times the TA data, all vertices)
 static_assert(4u * 4 * 1024 * 1024 / sizeof(Vertex) <= PVRC_RX_VTX, "a vertex's number in a record");
 
-bool ComputeFrame::ScalersOff = false;
+bool ComputeFrame::ScalersOff = true;
 
 /* ---- The frame's words ---- */
 
