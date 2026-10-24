@@ -30,6 +30,12 @@
  * which checks they still are its. Nothing is compiled when the core runs. */
 #include "dx12_compute_dxil.inc"
 static_assert(sizeof(dx12_compute_dxil) / sizeof(dx12_compute_dxil[0]) == PVRC_KERNELS + 8, "a kernel for each PVRC_K_*, and the walk's variants");
+// (for the raster renderers' write-out: dx12_writeout.cpp)
+const void *dx12_compute_kernel(u32 kernel, size_t *size)
+{
+	*size = dx12_compute_dxil_size[kernel];
+	return dx12_compute_dxil[kernel];
+}
 // (the walk's unsorted variant for @samples, in the table)
 static inline u32 walkUnsortedDxil(u32 samples) { return PVRC_KERNELS + 4 + SSAA_LOG2(samples); }
 static_assert(PVRC_TAG_C_WORDS == TAG_C_WORDS && PVRC_TAG_C_COUNT == TAG_C_COUNT && PVRC_TAG_C_FIRST == TAG_C_FIRST

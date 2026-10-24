@@ -15,6 +15,12 @@
  * are its. Nothing is compiled when the core runs. */
 #include "compute_spv.inc"
 static_assert(sizeof(compute_spv) / sizeof(compute_spv[0]) == PVRC_KERNELS + 1, "a kernel for each PVRC_K_*");
+// (for the raster renderers' write-out: writeout.cpp)
+const u32 *vk_compute_kernel(u32 kernel, size_t *size)
+{
+	*size = compute_spv_size[kernel];
+	return compute_spv[kernel];
+}
 // (the walk's unsorted variant's pipeline, after the kernels')
 static const int WalkUnsorted = PVRC_KERNELS + 1;
 

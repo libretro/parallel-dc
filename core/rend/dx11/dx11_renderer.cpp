@@ -18,6 +18,7 @@
     along with Flycast.  If not, see <https://www.gnu.org/licenses/>.
 */
 #include "dx11_renderer.h"
+#include "rend/tile/compute_frame.h"
 #include "hw/pvr/ta.h"
 #include "hw/pvr/pvr_mem.h"
 #include "rend/rtt_watch.h"
@@ -149,6 +150,8 @@ bool DX11Renderer::Init()
 	// textures made on the GPU, and the textures themselves, all of them now (rend/tex_pool.h)
 	texDecoder.Init(context);
 	texPool.Init(device, context->GetVramBudget(), &texDecoder);
+	// the chip's write-out, and the pictures made for it (dx11_writeout.h)
+	writeOutPictures = writeOut.Init(device, deviceContext, shaders);
 	DX11Texture::SetDecoder(texDecoder.Ready() ? &texDecoder : nullptr);
 	DX11Texture::SetPool(&texPool);
 	// GPU-side TA processing, if it is on: here, not in a frame
@@ -185,6 +188,7 @@ void DX11Renderer::Term()
 	texPool.Term();
 	texDecoder.Term();
 	overlay.Term();
+	writeOut.Term();
 	depthStencilStates.Term();
 	fbView.reset();
 	fbTexture.reset();
@@ -222,6 +226,14 @@ void DX11Renderer::Term()
  * drawn, and the last picture goes with them - EnsureScreen() */
 void DX11Renderer::Resize(int w, int h)
 {
+	/* (a change of the write-out option is one of size: the pictures are
+	 * made again, for it to write or not) */
+	if (device != nullptr && writeOutPictures != !ComputeFrame::ScalersOff)
+	{
+		DX11Lock lock;
+		writeOutPictures = writeOut.Init(device, deviceContext, shaders);
+		screenWidth = screenHeight = 0;
+	}
 }
 
 u64 DX11Renderer::GetTexture(TSP tsp, TCW tcw, int area)
@@ -686,12 +698,15 @@ bool DX11Renderer::EnsureDepth(u32 width, u32 height)
 /* ---- The screen ---- */
 
 static bool makeScreenTarget(ID3D11Device *device, ID3D11DeviceContext *deviceContext, u32 width, u32 height,
-		ComPtr<ID3D11Texture2D>& texture, ComPtr<ID3D11ShaderResourceView>& view, ComPtr<ID3D11RenderTargetView>& target)
+		ComPtr<ID3D11Texture2D>& texture, ComPtr<ID3D11ShaderResourceView>& view, ComPtr<ID3D11RenderTargetView>& target,
+		bool storage, ComPtr<ID3D11UnorderedAccessView>& uav)
 {
-	if (!makeTexture(device, width, height, DXGI_FORMAT_R8G8B8A8_UNORM, D3D11_BIND_SHADER_RESOURCE | D3D11_BIND_RENDER_TARGET,
-			texture, view)
-			|| FAILED(device->CreateRenderTargetView(texture, nullptr, target.put())))
+	if (!makeTexture(device, width, height, DXGI_FORMAT_R8G8B8A8_UNORM, D3D11_BIND_SHADER_RESOURCE | D3D11_BIND_RENDER_TARGET
+				| (storage ? D3D11_BIND_UNORDERED_ACCESS : 0), texture, view)
+			|| FAILED(device->CreateRenderTargetView(texture, nullptr, target.put()))
+			|| (storage && FAILED(device->CreateUnorderedAccessView(texture, nullptr, uav.put()))))
 	{
+		uav.reset();
 		target.reset();
 		view.reset();
 		texture.reset();
@@ -738,7 +753,8 @@ bool DX11Renderer::EnsureScreen(u32 width, u32 height)
 	while (screenTargets.size() < count)
 		screenTargets.push_back(ScreenTarget());
 	ScreenTarget& target = screenTargets[screenIndex];
-	if (!target.texture && !makeScreenTarget(device, deviceContext, width, height, target.texture, target.view, target.target))
+	if (!target.texture && !makeScreenTarget(device, deviceContext, width, height, target.texture, target.view, target.target,
+			writeOutPictures, target.uav))
 	{
 		target = ScreenTarget();
 		return false;
@@ -751,7 +767,8 @@ bool DX11Renderer::EnsureScreen(u32 width, u32 height)
 		 * frontend has shown it. (The last picture goes where its picture
 		 * goes.) */
 		if (!extraTarget.texture
-				&& !makeScreenTarget(device, deviceContext, width, height, extraTarget.texture, extraTarget.view, extraTarget.target))
+				&& !makeScreenTarget(device, deviceContext, width, height, extraTarget.texture, extraTarget.view, extraTarget.target,
+						writeOutPictures, extraTarget.uav))
 		{
 			extraTarget = ScreenTarget();
 			return false;
@@ -832,9 +849,14 @@ bool DX11Renderer::BeginScreen()
 	return true;
 }
 
-void DX11Renderer::EndScreen()
+void DX11Renderer::EndScreen(bool writeOutPass)
 {
 	ScreenTarget& target = screenTargets[screenIndex];
+	if (writeOutPass && target.uav)
+	{
+		context->SetTargets(nullptr, nullptr);
+		writeOut.Record(target.uav, screenWidth, screenHeight);
+	}
 	// what goes over the picture, onto it (with the depth test off: whatever depth is bound is not looked at)
 	if (!overlay.IsEmpty())
 	{
@@ -1123,7 +1145,7 @@ bool DX11Renderer::Render()
 	if (pvrrc.isRTT)
 		EndRTT();
 	else
-		EndScreen();
+		EndScreen(true);
 
 	return !pvrrc.isRTT;
 }

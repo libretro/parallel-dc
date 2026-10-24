@@ -794,7 +794,7 @@ void OITScreenDrawer::MakeFramebuffers()
 		// (copied from when the context goes, to keep the picture: rend/last_picture.h)
 		finalColorAttachments.back()->Init(viewport.extent.width, viewport.extent.height, GetContext()->GetColorFormat(),
 				vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eSampled | vk::ImageUsageFlagBits::eTransferSrc
-				| (storagePicture ? vk::ImageUsageFlagBits::eStorage : vk::ImageUsageFlags()), false);
+				| (storagePicture || VulkanWriteOut::Wanted() ? vk::ImageUsageFlagBits::eStorage : vk::ImageUsageFlags()), false);
 		vk::ImageView attachments[] = {
 				finalColorAttachments.back()->GetImageView(),
 				colorAttachments[0]->GetImageView(),
@@ -804,6 +804,8 @@ void OITScreenDrawer::MakeFramebuffers()
 				ARRAY_SIZE(attachments), attachments, viewport.extent.width, viewport.extent.height, 1);
 		framebuffers.push_back(GetContext()->GetDevice().createFramebufferUnique(createInfo));
 	}
+	// (the chip's write-out over the pictures: ../writeout.h)
+	writeOut.Init((u32)finalColorAttachments.size());
 }
 
 OITTextureDrawer::Size OITTextureDrawer::GetSize()

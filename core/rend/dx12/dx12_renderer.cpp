@@ -217,6 +217,9 @@ bool DX12Renderer::Init()
 	DX12Texture::SetPool(&texPool);
 	// the pipelines, and SSAA's pictures and pipelines made from them
 	PreparePipelines();
+	// the chip's write-out, and the pictures made for it (dx12_writeout.h)
+	writeOut.Init(context);
+	writeOutPictures = DX12WriteOut::Wanted();
 	SetupSsaa(screen_width, screen_height);
 	/* GPU-side TA processing, if it is on: here, not in a frame; and the
 	 * buffer its frames' vertex constants go to (UploadConstants()) */
@@ -254,6 +257,7 @@ void DX12Renderer::Term()
 		return;
 	FlushBatch();
 	DropSsaa();
+	writeOut.Term();
 	ta_set_flat_strips(false);
 	ta_set_modvol_clip(false);
 	context->SetFrame(nullptr);
@@ -309,6 +313,14 @@ void DX12Renderer::Resize(int w, int h)
 {
 	if (device != nullptr)
 		SetupSsaa((u32)std::max(w, 0), (u32)std::max(h, 0));
+	/* (a change of the write-out option is one of size: the pictures are
+	 * made again, for it to write or not) */
+	if (device != nullptr && writeOutPictures != DX12WriteOut::Wanted())
+	{
+		writeOut.Init(context);
+		writeOutPictures = DX12WriteOut::Wanted();
+		screenWidth = screenHeight = 0;
+	}
 }
 
 /* ---- SSAA ---- */
@@ -875,7 +887,7 @@ void DX12Renderer::ClearTarget(const DX12Image& image, const float color[4])
 
 bool DX12Renderer::MakeScreenTarget(ScreenTarget& target, u32 width, u32 height)
 {
-	if (!makeImage(target.image, width, height, DX12FrameFormat, true, ~0u, storagePictures))
+	if (!makeImage(target.image, width, height, DX12FrameFormat, true, ~0u, storagePictures || writeOutPictures))
 	{
 		target.image = DX12Image();
 		return false;
@@ -1105,7 +1117,7 @@ void DX12Renderer::BeginScreenSsaa(ScreenTarget& target)
 	SetBaseScissor();
 }
 
-void DX12Renderer::EndScreen()
+void DX12Renderer::EndScreen(bool writeOutPass)
 {
 	FlushBatch();
 	ScreenTarget& target = screenTargets[screenIndex];
@@ -1134,6 +1146,13 @@ void DX12Renderer::EndScreen()
 			context->Transition(ssaaColor[i], D3D12_RESOURCE_STATE_RENDER_TARGET);
 			context->Cmd()->DiscardResource(ssaaColor[i].resource, nullptr);
 		}
+	}
+	if (writeOutPass && writeOutPictures)
+	{
+		context->SetTargets(~0u, ~0u);
+		writeOut.Record(target.image);
+		if (!overlay.IsEmpty())
+			context->Transition(target.image, D3D12_RESOURCE_STATE_RENDER_TARGET);
 	}
 	// what goes over the picture, onto it (with the depth test off: whatever depth is bound is not looked at)
 	if (!overlay.IsEmpty())
@@ -1393,7 +1412,7 @@ bool DX12Renderer::Render()
 	if (pvrrc.isRTT)
 		EndRTT();
 	else
-		EndScreen();
+		EndScreen(true);
 
 	return !pvrrc.isRTT;
 }

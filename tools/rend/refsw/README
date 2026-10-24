@@ -175,11 +175,13 @@ What the walk takes from the parse, and the known departures
   reduces (above 0x400: most of Sega's games set 0x401 and Y_COEFF
   0x8040 for the flicker filter, VGA or not) each line is filtered with
   the lines above and below by Y_COEFF's coefficients. Then the pixel
-  clip (FB_X_CLIP/FB_Y_CLIP), in the framebuffer's pixels. Not applied:
-  the Y scaler's choice of lines (the picture keeps every line drawn, as
-  the renderers present it; at 0x401 that is the last line, which the
-  chip leaves unwritten), and the write-out to the framebuffer's 16-bit
-  format and its dithering. What the manual leaves open - the scalers'
+  clip (FB_X_CLIP/FB_Y_CLIP), in the framebuffer's pixels. With a
+  framebuffer of 16 bits a pixel (FB_W_CTRL) the picture is packed to it,
+  dithered where FB_W_CTRL says (rend/rtt_watch.cpp's pattern), and read
+  back as the video output reads it, FB_R_CTRL's fb_concat in the low
+  bits. Not applied: the Y scaler's choice of lines (the picture keeps
+  every line drawn, as the renderers present it; at 0x401 that is the
+  last line, which the chip leaves unwritten). What the manual leaves open - the scalers'
   rounding, whether the clip is taken before or after the X scaler - is
   said in pvr_scaler.h and in scaler_write().
 - The translucent list is always peeled (autosort); refsw does not model

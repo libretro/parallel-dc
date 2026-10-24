@@ -838,7 +838,10 @@ static void render_tile(RefRendInterface *backend, const Frame& fr, int tx, int 
  * pixels is averaged into one; when the vertical scale factor reduces
  * (above 0x400), each line is filtered with the lines above and below,
  * the picture's first and last lines with themselves in the place of the
- * line there is not. The pixel clip (FB_X_CLIP, FB_Y_CLIP) is taken on
+ * line there is not; then the packing to a framebuffer of 16 bits a
+ * pixel and its dither (FB_W_CTRL), read back as the video output reads
+ * it (FB_R_CTRL's fb_concat in the low bits: pvr_fb_write()). The pixel
+ * clip (FB_X_CLIP, FB_Y_CLIP) is taken on
  * the way out, in the framebuffer's pixels (a game that draws 1280 wide
  * through the X scaler clips at 639), the scaler having filtered what
  * the tiles hold beyond it. The Y scaler's choice of lines (the scale
@@ -849,6 +852,11 @@ static void scaler_write(const Frame& fr, const u8 *drawn, u32 drawn_w, u8 *pict
 	SCALER_CTL_type scaler;
 	scaler.full = *(const u32 *)&fr.regs[SCALER_CTL_addr];
 	const u32 ycoeff = *(const u32 *)&fr.regs[Y_COEFF_addr];
+	FB_W_CTRL_type wctrl;
+	fb_r_ctrl rctrl;
+	wctrl.full = *(const u32 *)&fr.regs[FB_W_CTRL_addr];
+	rctrl.full = *(const u32 *)&fr.regs[FB_R_CTRL_addr];
+	const u32 fbw = pvr_fb_word(wctrl.fb_packmode, wctrl.fb_dither, rctrl.fb_concat);
 	FB_X_CLIP_type xclip;
 	FB_Y_CLIP_type yclip;
 	xclip.full = fr.h.fb_x_clip;
@@ -879,6 +887,7 @@ static void scaler_write(const Frame& fr, const u8 *drawn, u32 drawn_w, u8 *pict
 			u32 c = line[y * w + x];
 			if (filter)
 				c = pvr_scaler_y(line[(y == 0 ? 0 : y - 1) * w + x], c, line[(y + 1 == h ? y : y + 1) * w + x], ycoeff);
+			c = pvr_fb_write(c, x, y, fbw);
 			u8 *dst = picture + ((size_t)y * w + x) * 4;
 			memcpy(dst, &c, 4);
 			dst[3] = 0xFF;

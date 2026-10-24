@@ -195,6 +195,7 @@ public:
 	void Term()
 	{
 		timer.Term();
+		writeOut.Term();
 		screenPipelineManager.reset();
 		framebuffers.clear();
 		finalColorAttachments.clear();
@@ -213,6 +214,8 @@ public:
 		if (carriedPicture)
 			commandPool->DeferDelete(std::move(carriedPicture));
 		currentCommandBuffer.endRenderPass();
+		writeOut.Record(currentCommandBuffer, GetCurrentImage(), finalColorAttachments[GetCurrentImage()]->GetImage(),
+				finalColorAttachments[GetCurrentImage()]->GetImageView(), viewport.extent.width, viewport.extent.height);
 		CountPass(currentCommandBuffer);
 		timer.End(currentCommandBuffer, commandPool->GetIndex());
 		currentCommandBuffer.end();
@@ -322,6 +325,8 @@ private:
 	std::unique_ptr<OITPipelineManager> screenPipelineManager;
 	GpuFrameTimer timer;
 	bool storagePicture = false;
+	// the chip's write-out over the pictures (../writeout.h), which are then made for it to write
+	VulkanWriteOut writeOut;
 };
 
 class OITTextureDrawer : public OITDrawer

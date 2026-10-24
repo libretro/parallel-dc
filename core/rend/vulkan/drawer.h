@@ -35,6 +35,7 @@
 #include "rend/shadows.h"
 #include "ssaa.h"
 #include "gpu_timer.h"
+#include "writeout.h"
 #include "rend/depth_scale.h"
 #include "rend/ta_gpu.h"
 
@@ -306,6 +307,7 @@ public:
 	void Init(SamplerManager *samplerManager, ShaderManager *shaderManager, u32 samples);
 	void Term()
 	{
+		writeOut.Term();
 		ssaaResolve.Term();
 		msQuadPipeline.Term();
 		timer.Term();
@@ -340,6 +342,9 @@ private:
 	vk::UniqueRenderPass renderPass;
 	std::vector<vk::UniqueFramebuffer> framebuffers;
 	std::vector<std::unique_ptr<FramebufferAttachment>> colorAttachments;
+	// the chip's write-out over the pictures (writeout.h), which are then made for it to write
+	VulkanWriteOut writeOut;
+	bool storagePictures = false;
 	QuadPipeline *quadPipeline = nullptr;
 	QuadDrawer lastPicture;
 	bool havePicture = false;	/* the image before this one holds the last frame */

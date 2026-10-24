@@ -1477,10 +1477,7 @@ static bool RenderFrame(void)
 	}
 	else
 	{
-		if (settings.rend.PowerVR2Filter && !pvrrc.isRenderFramebuffer)
-			postProcessor.SelectFramebuffer();
-		else
-			own_target = own_target_bind(screen_width, screen_height);
+		own_target = own_target_bind(screen_width, screen_height);
 		glViewport(0, 0, screen_width, screen_height);
 		/* in a new context, the picture kept from the old one (rend/last_picture.h) */
 		gl_restore_picture();
@@ -1601,8 +1598,9 @@ static bool RenderFrame(void)
 		}
 
 		DrawStrips();
-		if (settings.rend.PowerVR2Filter && !is_rtt)
-			postProcessor.Render(hw_render.get_current_framebuffer());
+		// (the chip's write-out, where the option asks for it: gl_writeout.h)
+		if (!is_rtt)
+			gl_writeout_run(own_target ? own_fbo : hw_render.get_current_framebuffer(), screen_width, screen_height);
 	}
 	else
 	{
@@ -1711,9 +1709,6 @@ struct glesrend : Renderer
       // the textures' pool and the decoder, all of them now (gl_texdecoder.h)
       gl_tex_init(true);
 
-      if (settings.rend.PowerVR2Filter)
-      	postProcessor.Init();
-
       /* GPU-side TA processing, if it is on and the context has OpenGL 4.3:
        * here, when the renderer is set up, not in a frame */
       glTaDecoder.WantSort(true);
@@ -1721,6 +1716,7 @@ struct glesrend : Renderer
 
       // the polygons' programs, so that none is made in a frame (glprogram_cache.h)
       gl_make_programs();
+      gl_writeout_init(screen_width, screen_height);
       glprog_save();
       glprog_started();
 
@@ -1731,11 +1727,8 @@ struct glesrend : Renderer
 		gl_carry_picture(screen_width, screen_height, w, h);
 		screen_width=w;
 		screen_height=h;
-		// the filter's own picture is of the size there was: it goes to the new one
-		if (settings.rend.PowerVR2Filter)
-			postProcessor.Resize();
-		else
-			postProcessor.Term();
+		// (the write-out's picture, of the new size: gl_writeout.h)
+		gl_writeout_init(w, h);
 	}
 	void KeepPicture() override
 	{
@@ -1749,7 +1742,7 @@ struct glesrend : Renderer
 		glprog_close();
 		glTaDecoder.Term();
 		ta_set_modvol_clip(false);
-		postProcessor.Term();
+		gl_writeout_term();
 	   TexCache.Clear();
 		rtt_watch_term();
 		gl_tex_term();

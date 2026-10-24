@@ -971,16 +971,13 @@ static bool RenderFrame()
 		if (!is_rtt)
 		{
 			/* in a new context, the picture kept from the old one (rend/last_picture.h) */
-			glBindFramebuffer(GL_FRAMEBUFFER, settings.rend.PowerVR2Filter ? postProcessor.GetFramebuffer() : output_fbo);
+			glBindFramebuffer(GL_FRAMEBUFFER, output_fbo);
 			gl_restore_picture();
 		}
-		if (settings.rend.PowerVR2Filter && !is_rtt)
-		{
-			gl4DrawStrips(postProcessor.GetFramebuffer(), rendering_width, rendering_height);
-			postProcessor.Render(output_fbo);
-		}
-		else
-			gl4DrawStrips(output_fbo, rendering_width, rendering_height);
+		gl4DrawStrips(output_fbo, rendering_width, rendering_height);
+		// (the chip's write-out, where the option asks for it: gles/gl_writeout.h)
+		if (!is_rtt)
+			gl_writeout_run(output_fbo, rendering_width, rendering_height);
 	}
 	else
 	{
@@ -1076,11 +1073,9 @@ struct gl4rend : Renderer
 		// the textures' pool and the decoder, all of them now (gles/gl_texdecoder.h)
 		gl_tex_init(false);
 
-		if (settings.rend.PowerVR2Filter)
-			postProcessor.Init();
-
 		// the polygons' programs, so that none is made in a frame (glprogram_cache.h)
 		gl4MakePrograms();
+		gl_writeout_init(screen_width, screen_height);
 		glprog_save();
 		glprog_started();
 
@@ -1092,11 +1087,8 @@ struct gl4rend : Renderer
 		screen_width=w;
 		screen_height=h;
 		resize(w, h);
-		// the filter's own picture is of the size there was: it goes to the new one
-		if (settings.rend.PowerVR2Filter)
-			postProcessor.Resize();
-		else
-			postProcessor.Term();
+		// (the write-out's picture, of the new size: gles/gl_writeout.h)
+		gl_writeout_init(w, h);
 	}
 	void KeepPicture() override
 	{
@@ -1108,7 +1100,7 @@ struct gl4rend : Renderer
 		// (what is new kept, while the programs are there: glprogram_cache.h)
 		glprog_log("per pixel");
 		glprog_close();
-		postProcessor.Term();
+		gl_writeout_term();
 		glcache.DeleteTextures(ARRAY_SIZE(vmuTextureId), vmuTextureId);
 		memset(vmuTextureId, 0, sizeof(vmuTextureId));
 		glcache.DeleteTextures(ARRAY_SIZE(lightgunTextureId), lightgunTextureId);

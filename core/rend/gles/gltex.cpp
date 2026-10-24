@@ -726,10 +726,6 @@ void gl_carry_picture(int from_w, int from_h, int to_w, int to_h)
 {
 	if (from_w <= 0 || from_h <= 0 || (from_w == to_w && from_h == to_h))
 		return;
-	/* (with the PowerVR2 filter the picture drawn on is the filter's own,
-	 * which takes it over itself: PostProcessor::Resize()) */
-	if (settings.rend.PowerVR2Filter)
-		return;
 #if defined(GL_READ_FRAMEBUFFER) && defined(GL_DRAW_FRAMEBUFFER)
 	if (gl.gl_major >= 3)
 	{

@@ -127,8 +127,6 @@ extern "C" {
 #define CORE_OPTION_NAME_ENABLE_DSP_INFO_0_AR NULL
 #define CORE_OPTION_NAME_ANISOTROPIC_FILTERING_LABEL_AR NULL
 #define CORE_OPTION_NAME_ANISOTROPIC_FILTERING_INFO_0_AR NULL
-#define CORE_OPTION_NAME_PVR2_FILTERING_LABEL_AR NULL
-#define CORE_OPTION_NAME_PVR2_FILTERING_INFO_0_AR NULL
 #define CORE_OPTION_NAME_TEXUPSCALE_LABEL_AR NULL
 #define CORE_OPTION_NAME_TEXUPSCALE_INFO_0_AR NULL
 #define OPTION_VAL_2X_AR NULL
@@ -666,20 +664,6 @@ struct retro_core_option_v2_definition option_defs_ar[] = {
          { NULL, NULL },
       },
       "4",
-   },
-   {
-      CORE_OPTION_NAME "_pvr2_filtering",
-      CORE_OPTION_NAME_PVR2_FILTERING_LABEL_AR,
-      NULL,
-      CORE_OPTION_NAME_PVR2_FILTERING_INFO_0_AR,
-      NULL,
-      "video",
-      {
-         { "disabled", NULL },
-         { "enabled",  NULL },
-         { NULL, NULL },
-      },
-      "disabled",
    },
 #ifdef HAVE_TEXUPSCALE
    {
@@ -1680,8 +1664,6 @@ struct retro_core_options_v2 options_ar = {
 #define CORE_OPTION_NAME_ENABLE_DSP_INFO_0_AST "Activa la emulación del procesador de señal dixital (DSP) d'audiu de Dreamcast. Ameyora la precisión del soníu xeneráu mas aumenta los requirimientos de rindimientu."
 #define CORE_OPTION_NAME_ANISOTROPIC_FILTERING_LABEL_AST NULL
 #define CORE_OPTION_NAME_ANISOTROPIC_FILTERING_INFO_0_AST NULL
-#define CORE_OPTION_NAME_PVR2_FILTERING_LABEL_AST NULL
-#define CORE_OPTION_NAME_PVR2_FILTERING_INFO_0_AST NULL
 #define CORE_OPTION_NAME_TEXUPSCALE_LABEL_AST NULL
 #define CORE_OPTION_NAME_TEXUPSCALE_INFO_0_AST NULL
 #define OPTION_VAL_2X_AST NULL
@@ -2219,20 +2201,6 @@ struct retro_core_option_v2_definition option_defs_ast[] = {
          { NULL, NULL },
       },
       "4",
-   },
-   {
-      CORE_OPTION_NAME "_pvr2_filtering",
-      CORE_OPTION_NAME_PVR2_FILTERING_LABEL_AST,
-      NULL,
-      CORE_OPTION_NAME_PVR2_FILTERING_INFO_0_AST,
-      NULL,
-      "video",
-      {
-         { "disabled", NULL },
-         { "enabled",  NULL },
-         { NULL, NULL },
-      },
-      "disabled",
    },
 #ifdef HAVE_TEXUPSCALE
    {
@@ -3233,8 +3201,6 @@ struct retro_core_options_v2 options_ast = {
 #define CORE_OPTION_NAME_ENABLE_DSP_INFO_0_CA NULL
 #define CORE_OPTION_NAME_ANISOTROPIC_FILTERING_LABEL_CA NULL
 #define CORE_OPTION_NAME_ANISOTROPIC_FILTERING_INFO_0_CA NULL
-#define CORE_OPTION_NAME_PVR2_FILTERING_LABEL_CA NULL
-#define CORE_OPTION_NAME_PVR2_FILTERING_INFO_0_CA NULL
 #define CORE_OPTION_NAME_TEXUPSCALE_LABEL_CA NULL
 #define CORE_OPTION_NAME_TEXUPSCALE_INFO_0_CA NULL
 #define OPTION_VAL_2X_CA NULL
@@ -3772,20 +3738,6 @@ struct retro_core_option_v2_definition option_defs_ca[] = {
          { NULL, NULL },
       },
       "4",
-   },
-   {
-      CORE_OPTION_NAME "_pvr2_filtering",
-      CORE_OPTION_NAME_PVR2_FILTERING_LABEL_CA,
-      NULL,
-      CORE_OPTION_NAME_PVR2_FILTERING_INFO_0_CA,
-      NULL,
-      "video",
-      {
-         { "disabled", NULL },
-         { "enabled",  NULL },
-         { NULL, NULL },
-      },
-      "disabled",
    },
 #ifdef HAVE_TEXUPSCALE
    {
@@ -4786,8 +4738,6 @@ struct retro_core_options_v2 options_ca = {
 #define CORE_OPTION_NAME_ENABLE_DSP_INFO_0_CHS NULL
 #define CORE_OPTION_NAME_ANISOTROPIC_FILTERING_LABEL_CHS NULL
 #define CORE_OPTION_NAME_ANISOTROPIC_FILTERING_INFO_0_CHS NULL
-#define CORE_OPTION_NAME_PVR2_FILTERING_LABEL_CHS NULL
-#define CORE_OPTION_NAME_PVR2_FILTERING_INFO_0_CHS NULL
 #define CORE_OPTION_NAME_TEXUPSCALE_LABEL_CHS NULL
 #define CORE_OPTION_NAME_TEXUPSCALE_INFO_0_CHS NULL
 #define OPTION_VAL_2X_CHS "2 倍"
@@ -5325,20 +5275,6 @@ struct retro_core_option_v2_definition option_defs_chs[] = {
          { NULL, NULL },
       },
       "4",
-   },
-   {
-      CORE_OPTION_NAME "_pvr2_filtering",
-      CORE_OPTION_NAME_PVR2_FILTERING_LABEL_CHS,
-      NULL,
-      CORE_OPTION_NAME_PVR2_FILTERING_INFO_0_CHS,
-      NULL,
-      "video",
-      {
-         { "disabled", NULL },
-         { "enabled",  NULL },
-         { NULL, NULL },
-      },
-      "disabled",
    },
 #ifdef HAVE_TEXUPSCALE
    {
@@ -6339,8 +6275,6 @@ struct retro_core_options_v2 options_chs = {
 #define CORE_OPTION_NAME_ENABLE_DSP_INFO_0_CHT NULL
 #define CORE_OPTION_NAME_ANISOTROPIC_FILTERING_LABEL_CHT NULL
 #define CORE_OPTION_NAME_ANISOTROPIC_FILTERING_INFO_0_CHT NULL
-#define CORE_OPTION_NAME_PVR2_FILTERING_LABEL_CHT NULL
-#define CORE_OPTION_NAME_PVR2_FILTERING_INFO_0_CHT NULL
 #define CORE_OPTION_NAME_TEXUPSCALE_LABEL_CHT NULL
 #define CORE_OPTION_NAME_TEXUPSCALE_INFO_0_CHT NULL
 #define OPTION_VAL_2X_CHT NULL
@@ -6878,20 +6812,6 @@ struct retro_core_option_v2_definition option_defs_cht[] = {
          { NULL, NULL },
       },
       "4",
-   },
-   {
-      CORE_OPTION_NAME "_pvr2_filtering",
-      CORE_OPTION_NAME_PVR2_FILTERING_LABEL_CHT,
-      NULL,
-      CORE_OPTION_NAME_PVR2_FILTERING_INFO_0_CHT,
-      NULL,
-      "video",
-      {
-         { "disabled", NULL },
-         { "enabled",  NULL },
-         { NULL, NULL },
-      },
-      "disabled",
    },
 #ifdef HAVE_TEXUPSCALE
    {
@@ -7892,8 +7812,6 @@ struct retro_core_options_v2 options_cht = {
 #define CORE_OPTION_NAME_ENABLE_DSP_INFO_0_CS NULL
 #define CORE_OPTION_NAME_ANISOTROPIC_FILTERING_LABEL_CS NULL
 #define CORE_OPTION_NAME_ANISOTROPIC_FILTERING_INFO_0_CS NULL
-#define CORE_OPTION_NAME_PVR2_FILTERING_LABEL_CS NULL
-#define CORE_OPTION_NAME_PVR2_FILTERING_INFO_0_CS NULL
 #define CORE_OPTION_NAME_TEXUPSCALE_LABEL_CS NULL
 #define CORE_OPTION_NAME_TEXUPSCALE_INFO_0_CS NULL
 #define OPTION_VAL_2X_CS NULL
@@ -8431,20 +8349,6 @@ struct retro_core_option_v2_definition option_defs_cs[] = {
          { NULL, NULL },
       },
       "4",
-   },
-   {
-      CORE_OPTION_NAME "_pvr2_filtering",
-      CORE_OPTION_NAME_PVR2_FILTERING_LABEL_CS,
-      NULL,
-      CORE_OPTION_NAME_PVR2_FILTERING_INFO_0_CS,
-      NULL,
-      "video",
-      {
-         { "disabled", NULL },
-         { "enabled",  NULL },
-         { NULL, NULL },
-      },
-      "disabled",
    },
 #ifdef HAVE_TEXUPSCALE
    {
@@ -9445,8 +9349,6 @@ struct retro_core_options_v2 options_cs = {
 #define CORE_OPTION_NAME_ENABLE_DSP_INFO_0_CY NULL
 #define CORE_OPTION_NAME_ANISOTROPIC_FILTERING_LABEL_CY NULL
 #define CORE_OPTION_NAME_ANISOTROPIC_FILTERING_INFO_0_CY NULL
-#define CORE_OPTION_NAME_PVR2_FILTERING_LABEL_CY NULL
-#define CORE_OPTION_NAME_PVR2_FILTERING_INFO_0_CY NULL
 #define CORE_OPTION_NAME_TEXUPSCALE_LABEL_CY NULL
 #define CORE_OPTION_NAME_TEXUPSCALE_INFO_0_CY NULL
 #define OPTION_VAL_2X_CY NULL
@@ -9984,20 +9886,6 @@ struct retro_core_option_v2_definition option_defs_cy[] = {
          { NULL, NULL },
       },
       "4",
-   },
-   {
-      CORE_OPTION_NAME "_pvr2_filtering",
-      CORE_OPTION_NAME_PVR2_FILTERING_LABEL_CY,
-      NULL,
-      CORE_OPTION_NAME_PVR2_FILTERING_INFO_0_CY,
-      NULL,
-      "video",
-      {
-         { "disabled", NULL },
-         { "enabled",  NULL },
-         { NULL, NULL },
-      },
-      "disabled",
    },
 #ifdef HAVE_TEXUPSCALE
    {
@@ -10998,8 +10886,6 @@ struct retro_core_options_v2 options_cy = {
 #define CORE_OPTION_NAME_ENABLE_DSP_INFO_0_DA NULL
 #define CORE_OPTION_NAME_ANISOTROPIC_FILTERING_LABEL_DA NULL
 #define CORE_OPTION_NAME_ANISOTROPIC_FILTERING_INFO_0_DA NULL
-#define CORE_OPTION_NAME_PVR2_FILTERING_LABEL_DA NULL
-#define CORE_OPTION_NAME_PVR2_FILTERING_INFO_0_DA NULL
 #define CORE_OPTION_NAME_TEXUPSCALE_LABEL_DA NULL
 #define CORE_OPTION_NAME_TEXUPSCALE_INFO_0_DA NULL
 #define OPTION_VAL_2X_DA NULL
@@ -11537,20 +11423,6 @@ struct retro_core_option_v2_definition option_defs_da[] = {
          { NULL, NULL },
       },
       "4",
-   },
-   {
-      CORE_OPTION_NAME "_pvr2_filtering",
-      CORE_OPTION_NAME_PVR2_FILTERING_LABEL_DA,
-      NULL,
-      CORE_OPTION_NAME_PVR2_FILTERING_INFO_0_DA,
-      NULL,
-      "video",
-      {
-         { "disabled", NULL },
-         { "enabled",  NULL },
-         { NULL, NULL },
-      },
-      "disabled",
    },
 #ifdef HAVE_TEXUPSCALE
    {
@@ -12551,8 +12423,6 @@ struct retro_core_options_v2 options_da = {
 #define CORE_OPTION_NAME_ENABLE_DSP_INFO_0_DE NULL
 #define CORE_OPTION_NAME_ANISOTROPIC_FILTERING_LABEL_DE "Anisotrope Filterung"
 #define CORE_OPTION_NAME_ANISOTROPIC_FILTERING_INFO_0_DE NULL
-#define CORE_OPTION_NAME_PVR2_FILTERING_LABEL_DE NULL
-#define CORE_OPTION_NAME_PVR2_FILTERING_INFO_0_DE NULL
 #define CORE_OPTION_NAME_TEXUPSCALE_LABEL_DE NULL
 #define CORE_OPTION_NAME_TEXUPSCALE_INFO_0_DE NULL
 #define OPTION_VAL_2X_DE "2 x"
@@ -13090,20 +12960,6 @@ struct retro_core_option_v2_definition option_defs_de[] = {
          { NULL, NULL },
       },
       "4",
-   },
-   {
-      CORE_OPTION_NAME "_pvr2_filtering",
-      CORE_OPTION_NAME_PVR2_FILTERING_LABEL_DE,
-      NULL,
-      CORE_OPTION_NAME_PVR2_FILTERING_INFO_0_DE,
-      NULL,
-      "video",
-      {
-         { "disabled", NULL },
-         { "enabled",  NULL },
-         { NULL, NULL },
-      },
-      "disabled",
    },
 #ifdef HAVE_TEXUPSCALE
    {
@@ -14104,8 +13960,6 @@ struct retro_core_options_v2 options_de = {
 #define CORE_OPTION_NAME_ENABLE_DSP_INFO_0_EL NULL
 #define CORE_OPTION_NAME_ANISOTROPIC_FILTERING_LABEL_EL NULL
 #define CORE_OPTION_NAME_ANISOTROPIC_FILTERING_INFO_0_EL NULL
-#define CORE_OPTION_NAME_PVR2_FILTERING_LABEL_EL NULL
-#define CORE_OPTION_NAME_PVR2_FILTERING_INFO_0_EL NULL
 #define CORE_OPTION_NAME_TEXUPSCALE_LABEL_EL NULL
 #define CORE_OPTION_NAME_TEXUPSCALE_INFO_0_EL NULL
 #define OPTION_VAL_2X_EL NULL
@@ -14643,20 +14497,6 @@ struct retro_core_option_v2_definition option_defs_el[] = {
          { NULL, NULL },
       },
       "4",
-   },
-   {
-      CORE_OPTION_NAME "_pvr2_filtering",
-      CORE_OPTION_NAME_PVR2_FILTERING_LABEL_EL,
-      NULL,
-      CORE_OPTION_NAME_PVR2_FILTERING_INFO_0_EL,
-      NULL,
-      "video",
-      {
-         { "disabled", NULL },
-         { "enabled",  NULL },
-         { NULL, NULL },
-      },
-      "disabled",
    },
 #ifdef HAVE_TEXUPSCALE
    {
@@ -15657,8 +15497,6 @@ struct retro_core_options_v2 options_el = {
 #define CORE_OPTION_NAME_ENABLE_DSP_INFO_0_EO NULL
 #define CORE_OPTION_NAME_ANISOTROPIC_FILTERING_LABEL_EO NULL
 #define CORE_OPTION_NAME_ANISOTROPIC_FILTERING_INFO_0_EO NULL
-#define CORE_OPTION_NAME_PVR2_FILTERING_LABEL_EO NULL
-#define CORE_OPTION_NAME_PVR2_FILTERING_INFO_0_EO NULL
 #define CORE_OPTION_NAME_TEXUPSCALE_LABEL_EO NULL
 #define CORE_OPTION_NAME_TEXUPSCALE_INFO_0_EO NULL
 #define OPTION_VAL_2X_EO NULL
@@ -16196,20 +16034,6 @@ struct retro_core_option_v2_definition option_defs_eo[] = {
          { NULL, NULL },
       },
       "4",
-   },
-   {
-      CORE_OPTION_NAME "_pvr2_filtering",
-      CORE_OPTION_NAME_PVR2_FILTERING_LABEL_EO,
-      NULL,
-      CORE_OPTION_NAME_PVR2_FILTERING_INFO_0_EO,
-      NULL,
-      "video",
-      {
-         { "disabled", NULL },
-         { "enabled",  NULL },
-         { NULL, NULL },
-      },
-      "disabled",
    },
 #ifdef HAVE_TEXUPSCALE
    {
@@ -17210,8 +17034,6 @@ struct retro_core_options_v2 options_eo = {
 #define CORE_OPTION_NAME_ENABLE_DSP_INFO_0_ES "Habilita la emulación del DSP (procesador de señales digitales) de audio de Dreamcast. Mejora la precisión del sonido generado a costa de aumentar los requisitos."
 #define CORE_OPTION_NAME_ANISOTROPIC_FILTERING_LABEL_ES "Filtrado anisotrópico"
 #define CORE_OPTION_NAME_ANISOTROPIC_FILTERING_INFO_0_ES "Mejora la calidad de las texturas en aquellas superficies que se encuentren en un ángulo oblicuo respecto a la cámara."
-#define CORE_OPTION_NAME_PVR2_FILTERING_LABEL_ES "Filtro de posprocesamiento del PowerVR2"
-#define CORE_OPTION_NAME_PVR2_FILTERING_INFO_0_ES "Posprocesa la imagen renderizada para simular los efectos dedicados de la GPU PowerVR2 y las señales de vídeo analógico."
 #define CORE_OPTION_NAME_TEXUPSCALE_LABEL_ES "Reescalado de texturas (xBRZ)"
 #define CORE_OPTION_NAME_TEXUPSCALE_INFO_0_ES "Mejora los gráficos 2D de corte «pixel art» dibujado a mano. Utilizar solo con juegos en 2D pixelado."
 #define OPTION_VAL_2X_ES NULL
@@ -17749,20 +17571,6 @@ struct retro_core_option_v2_definition option_defs_es[] = {
          { NULL, NULL },
       },
       "4",
-   },
-   {
-      CORE_OPTION_NAME "_pvr2_filtering",
-      CORE_OPTION_NAME_PVR2_FILTERING_LABEL_ES,
-      NULL,
-      CORE_OPTION_NAME_PVR2_FILTERING_INFO_0_ES,
-      NULL,
-      "video",
-      {
-         { "disabled", NULL },
-         { "enabled",  NULL },
-         { NULL, NULL },
-      },
-      "disabled",
    },
 #ifdef HAVE_TEXUPSCALE
    {
@@ -18763,8 +18571,6 @@ struct retro_core_options_v2 options_es = {
 #define CORE_OPTION_NAME_ENABLE_DSP_INFO_0_FA NULL
 #define CORE_OPTION_NAME_ANISOTROPIC_FILTERING_LABEL_FA NULL
 #define CORE_OPTION_NAME_ANISOTROPIC_FILTERING_INFO_0_FA NULL
-#define CORE_OPTION_NAME_PVR2_FILTERING_LABEL_FA NULL
-#define CORE_OPTION_NAME_PVR2_FILTERING_INFO_0_FA NULL
 #define CORE_OPTION_NAME_TEXUPSCALE_LABEL_FA NULL
 #define CORE_OPTION_NAME_TEXUPSCALE_INFO_0_FA NULL
 #define OPTION_VAL_2X_FA NULL
@@ -19302,20 +19108,6 @@ struct retro_core_option_v2_definition option_defs_fa[] = {
          { NULL, NULL },
       },
       "4",
-   },
-   {
-      CORE_OPTION_NAME "_pvr2_filtering",
-      CORE_OPTION_NAME_PVR2_FILTERING_LABEL_FA,
-      NULL,
-      CORE_OPTION_NAME_PVR2_FILTERING_INFO_0_FA,
-      NULL,
-      "video",
-      {
-         { "disabled", NULL },
-         { "enabled",  NULL },
-         { NULL, NULL },
-      },
-      "disabled",
    },
 #ifdef HAVE_TEXUPSCALE
    {
@@ -20316,8 +20108,6 @@ struct retro_core_options_v2 options_fa = {
 #define CORE_OPTION_NAME_ENABLE_DSP_INFO_0_FI NULL
 #define CORE_OPTION_NAME_ANISOTROPIC_FILTERING_LABEL_FI "Anisotrooppinen suodatus"
 #define CORE_OPTION_NAME_ANISOTROPIC_FILTERING_INFO_0_FI NULL
-#define CORE_OPTION_NAME_PVR2_FILTERING_LABEL_FI "PowerVR2-jälkikäsittelysuodatin"
-#define CORE_OPTION_NAME_PVR2_FILTERING_INFO_0_FI NULL
 #define CORE_OPTION_NAME_TEXUPSCALE_LABEL_FI "Tekstuurin yliskaalaus (xBRZ)"
 #define CORE_OPTION_NAME_TEXUPSCALE_INFO_0_FI NULL
 #define OPTION_VAL_2X_FI NULL
@@ -20855,20 +20645,6 @@ struct retro_core_option_v2_definition option_defs_fi[] = {
          { NULL, NULL },
       },
       "4",
-   },
-   {
-      CORE_OPTION_NAME "_pvr2_filtering",
-      CORE_OPTION_NAME_PVR2_FILTERING_LABEL_FI,
-      NULL,
-      CORE_OPTION_NAME_PVR2_FILTERING_INFO_0_FI,
-      NULL,
-      "video",
-      {
-         { "disabled", NULL },
-         { "enabled",  NULL },
-         { NULL, NULL },
-      },
-      "disabled",
    },
 #ifdef HAVE_TEXUPSCALE
    {
@@ -21869,8 +21645,6 @@ struct retro_core_options_v2 options_fi = {
 #define CORE_OPTION_NAME_ENABLE_DSP_INFO_0_FR "Active l'émulation du DSP audio de la Dreamcast (processeur de signal numérique). Améliore la précision du son généré, mais augmente les exigences de performances."
 #define CORE_OPTION_NAME_ANISOTROPIC_FILTERING_LABEL_FR "Filtrage anisotrope"
 #define CORE_OPTION_NAME_ANISOTROPIC_FILTERING_INFO_0_FR "Améliore la qualité des textures sur les surfaces qui sont à des angles de vue obliques par rapport à la caméra."
-#define CORE_OPTION_NAME_PVR2_FILTERING_LABEL_FR "Filtre de post-traitement PowerVR2"
-#define CORE_OPTION_NAME_PVR2_FILTERING_INFO_0_FR "Post-traitement de l'image rendue pour simuler les effets spécifiques au processeur graphique PowerVR2 et aux signaux vidéo analogiques."
 #define CORE_OPTION_NAME_TEXUPSCALE_LABEL_FR "Agrandissement des textures (xBRZ)"
 #define CORE_OPTION_NAME_TEXUPSCALE_INFO_0_FR "Améliorer les graphismes en pixels 2D dessinés à la main. Devrait être utilisé uniquement avec les jeux en 2D pixelisés."
 #define OPTION_VAL_2X_FR "x2"
@@ -22408,20 +22182,6 @@ struct retro_core_option_v2_definition option_defs_fr[] = {
          { NULL, NULL },
       },
       "4",
-   },
-   {
-      CORE_OPTION_NAME "_pvr2_filtering",
-      CORE_OPTION_NAME_PVR2_FILTERING_LABEL_FR,
-      NULL,
-      CORE_OPTION_NAME_PVR2_FILTERING_INFO_0_FR,
-      NULL,
-      "video",
-      {
-         { "disabled", NULL },
-         { "enabled",  NULL },
-         { NULL, NULL },
-      },
-      "disabled",
    },
 #ifdef HAVE_TEXUPSCALE
    {
@@ -23422,8 +23182,6 @@ struct retro_core_options_v2 options_fr = {
 #define CORE_OPTION_NAME_ENABLE_DSP_INFO_0_GL NULL
 #define CORE_OPTION_NAME_ANISOTROPIC_FILTERING_LABEL_GL "Filtrado anisotrópico"
 #define CORE_OPTION_NAME_ANISOTROPIC_FILTERING_INFO_0_GL "Millora a calidade das texturas nas superficies que se atopan en ángulos de visión oblicuos con respecto á cámara."
-#define CORE_OPTION_NAME_PVR2_FILTERING_LABEL_GL "Filtrado de postprocesado PowerVR2"
-#define CORE_OPTION_NAME_PVR2_FILTERING_INFO_0_GL "Postproceso da imaxe renderizada para simular efectos específicos da PowerVR2 GPU e os sinais analóxicos de vídeo."
 #define CORE_OPTION_NAME_TEXUPSCALE_LABEL_GL "Aumento das texturas (xBRZ)"
 #define CORE_OPTION_NAME_TEXUPSCALE_INFO_0_GL "Millora dos gráficos 2D pixel art debuxados a man. Só se debería usar con xogos pixelados en 2D."
 #define OPTION_VAL_2X_GL NULL
@@ -23961,20 +23719,6 @@ struct retro_core_option_v2_definition option_defs_gl[] = {
          { NULL, NULL },
       },
       "4",
-   },
-   {
-      CORE_OPTION_NAME "_pvr2_filtering",
-      CORE_OPTION_NAME_PVR2_FILTERING_LABEL_GL,
-      NULL,
-      CORE_OPTION_NAME_PVR2_FILTERING_INFO_0_GL,
-      NULL,
-      "video",
-      {
-         { "disabled", NULL },
-         { "enabled",  NULL },
-         { NULL, NULL },
-      },
-      "disabled",
    },
 #ifdef HAVE_TEXUPSCALE
    {
@@ -24975,8 +24719,6 @@ struct retro_core_options_v2 options_gl = {
 #define CORE_OPTION_NAME_ENABLE_DSP_INFO_0_HE NULL
 #define CORE_OPTION_NAME_ANISOTROPIC_FILTERING_LABEL_HE NULL
 #define CORE_OPTION_NAME_ANISOTROPIC_FILTERING_INFO_0_HE NULL
-#define CORE_OPTION_NAME_PVR2_FILTERING_LABEL_HE NULL
-#define CORE_OPTION_NAME_PVR2_FILTERING_INFO_0_HE NULL
 #define CORE_OPTION_NAME_TEXUPSCALE_LABEL_HE NULL
 #define CORE_OPTION_NAME_TEXUPSCALE_INFO_0_HE NULL
 #define OPTION_VAL_2X_HE NULL
@@ -25514,20 +25256,6 @@ struct retro_core_option_v2_definition option_defs_he[] = {
          { NULL, NULL },
       },
       "4",
-   },
-   {
-      CORE_OPTION_NAME "_pvr2_filtering",
-      CORE_OPTION_NAME_PVR2_FILTERING_LABEL_HE,
-      NULL,
-      CORE_OPTION_NAME_PVR2_FILTERING_INFO_0_HE,
-      NULL,
-      "video",
-      {
-         { "disabled", NULL },
-         { "enabled",  NULL },
-         { NULL, NULL },
-      },
-      "disabled",
    },
 #ifdef HAVE_TEXUPSCALE
    {
@@ -26528,8 +26256,6 @@ struct retro_core_options_v2 options_he = {
 #define CORE_OPTION_NAME_ENABLE_DSP_INFO_0_HU NULL
 #define CORE_OPTION_NAME_ANISOTROPIC_FILTERING_LABEL_HU NULL
 #define CORE_OPTION_NAME_ANISOTROPIC_FILTERING_INFO_0_HU NULL
-#define CORE_OPTION_NAME_PVR2_FILTERING_LABEL_HU NULL
-#define CORE_OPTION_NAME_PVR2_FILTERING_INFO_0_HU NULL
 #define CORE_OPTION_NAME_TEXUPSCALE_LABEL_HU NULL
 #define CORE_OPTION_NAME_TEXUPSCALE_INFO_0_HU NULL
 #define OPTION_VAL_2X_HU NULL
@@ -27067,20 +26793,6 @@ struct retro_core_option_v2_definition option_defs_hu[] = {
          { NULL, NULL },
       },
       "4",
-   },
-   {
-      CORE_OPTION_NAME "_pvr2_filtering",
-      CORE_OPTION_NAME_PVR2_FILTERING_LABEL_HU,
-      NULL,
-      CORE_OPTION_NAME_PVR2_FILTERING_INFO_0_HU,
-      NULL,
-      "video",
-      {
-         { "disabled", NULL },
-         { "enabled",  NULL },
-         { NULL, NULL },
-      },
-      "disabled",
    },
 #ifdef HAVE_TEXUPSCALE
    {
@@ -28081,8 +27793,6 @@ struct retro_core_options_v2 options_hu = {
 #define CORE_OPTION_NAME_ENABLE_DSP_INFO_0_ID NULL
 #define CORE_OPTION_NAME_ANISOTROPIC_FILTERING_LABEL_ID NULL
 #define CORE_OPTION_NAME_ANISOTROPIC_FILTERING_INFO_0_ID NULL
-#define CORE_OPTION_NAME_PVR2_FILTERING_LABEL_ID NULL
-#define CORE_OPTION_NAME_PVR2_FILTERING_INFO_0_ID NULL
 #define CORE_OPTION_NAME_TEXUPSCALE_LABEL_ID NULL
 #define CORE_OPTION_NAME_TEXUPSCALE_INFO_0_ID NULL
 #define OPTION_VAL_2X_ID NULL
@@ -28620,20 +28330,6 @@ struct retro_core_option_v2_definition option_defs_id[] = {
          { NULL, NULL },
       },
       "4",
-   },
-   {
-      CORE_OPTION_NAME "_pvr2_filtering",
-      CORE_OPTION_NAME_PVR2_FILTERING_LABEL_ID,
-      NULL,
-      CORE_OPTION_NAME_PVR2_FILTERING_INFO_0_ID,
-      NULL,
-      "video",
-      {
-         { "disabled", NULL },
-         { "enabled",  NULL },
-         { NULL, NULL },
-      },
-      "disabled",
    },
 #ifdef HAVE_TEXUPSCALE
    {
@@ -29634,8 +29330,6 @@ struct retro_core_options_v2 options_id = {
 #define CORE_OPTION_NAME_ENABLE_DSP_INFO_0_IT "Abilita l'emulazione del DSP audio di Dreamcast (processore di segnale digitale). Migliora l'accuratezza del suono generato, ma aumenta i requisiti di prestazioni."
 #define CORE_OPTION_NAME_ANISOTROPIC_FILTERING_LABEL_IT "Filtro Anisotropico"
 #define CORE_OPTION_NAME_ANISOTROPIC_FILTERING_INFO_0_IT "Migliorare la qualità delle texture su superfici che sono ad angoli obliqui rispetto alla fotocamera."
-#define CORE_OPTION_NAME_PVR2_FILTERING_LABEL_IT "Filtro Di Post-Elaborazione PowerVR2"
-#define CORE_OPTION_NAME_PVR2_FILTERING_INFO_0_IT "Post-elaborare l'immagine renderizzata per simulare effetti specifici alla GPU PowerVR2 e segnali video analogici."
 #define CORE_OPTION_NAME_TEXUPSCALE_LABEL_IT "Miglioramento Della Texture (xbrz)"
 #define CORE_OPTION_NAME_TEXUPSCALE_INFO_0_IT "Migliora la grafica grafica grafica a pixel 2D disegnata a mano. Dovrebbe essere usata solo con giochi in pixel 2D."
 #define OPTION_VAL_2X_IT NULL
@@ -30173,20 +29867,6 @@ struct retro_core_option_v2_definition option_defs_it[] = {
          { NULL, NULL },
       },
       "4",
-   },
-   {
-      CORE_OPTION_NAME "_pvr2_filtering",
-      CORE_OPTION_NAME_PVR2_FILTERING_LABEL_IT,
-      NULL,
-      CORE_OPTION_NAME_PVR2_FILTERING_INFO_0_IT,
-      NULL,
-      "video",
-      {
-         { "disabled", NULL },
-         { "enabled",  NULL },
-         { NULL, NULL },
-      },
-      "disabled",
    },
 #ifdef HAVE_TEXUPSCALE
    {
@@ -31187,8 +30867,6 @@ struct retro_core_options_v2 options_it = {
 #define CORE_OPTION_NAME_ENABLE_DSP_INFO_0_JA NULL
 #define CORE_OPTION_NAME_ANISOTROPIC_FILTERING_LABEL_JA NULL
 #define CORE_OPTION_NAME_ANISOTROPIC_FILTERING_INFO_0_JA NULL
-#define CORE_OPTION_NAME_PVR2_FILTERING_LABEL_JA NULL
-#define CORE_OPTION_NAME_PVR2_FILTERING_INFO_0_JA NULL
 #define CORE_OPTION_NAME_TEXUPSCALE_LABEL_JA NULL
 #define CORE_OPTION_NAME_TEXUPSCALE_INFO_0_JA NULL
 #define OPTION_VAL_2X_JA NULL
@@ -31726,20 +31404,6 @@ struct retro_core_option_v2_definition option_defs_ja[] = {
          { NULL, NULL },
       },
       "4",
-   },
-   {
-      CORE_OPTION_NAME "_pvr2_filtering",
-      CORE_OPTION_NAME_PVR2_FILTERING_LABEL_JA,
-      NULL,
-      CORE_OPTION_NAME_PVR2_FILTERING_INFO_0_JA,
-      NULL,
-      "video",
-      {
-         { "disabled", NULL },
-         { "enabled",  NULL },
-         { NULL, NULL },
-      },
-      "disabled",
    },
 #ifdef HAVE_TEXUPSCALE
    {
@@ -32740,8 +32404,6 @@ struct retro_core_options_v2 options_ja = {
 #define CORE_OPTION_NAME_ENABLE_DSP_INFO_0_KO NULL
 #define CORE_OPTION_NAME_ANISOTROPIC_FILTERING_LABEL_KO NULL
 #define CORE_OPTION_NAME_ANISOTROPIC_FILTERING_INFO_0_KO NULL
-#define CORE_OPTION_NAME_PVR2_FILTERING_LABEL_KO NULL
-#define CORE_OPTION_NAME_PVR2_FILTERING_INFO_0_KO NULL
 #define CORE_OPTION_NAME_TEXUPSCALE_LABEL_KO NULL
 #define CORE_OPTION_NAME_TEXUPSCALE_INFO_0_KO NULL
 #define OPTION_VAL_2X_KO NULL
@@ -33279,20 +32941,6 @@ struct retro_core_option_v2_definition option_defs_ko[] = {
          { NULL, NULL },
       },
       "4",
-   },
-   {
-      CORE_OPTION_NAME "_pvr2_filtering",
-      CORE_OPTION_NAME_PVR2_FILTERING_LABEL_KO,
-      NULL,
-      CORE_OPTION_NAME_PVR2_FILTERING_INFO_0_KO,
-      NULL,
-      "video",
-      {
-         { "disabled", NULL },
-         { "enabled",  NULL },
-         { NULL, NULL },
-      },
-      "disabled",
    },
 #ifdef HAVE_TEXUPSCALE
    {
@@ -34293,8 +33941,6 @@ struct retro_core_options_v2 options_ko = {
 #define CORE_OPTION_NAME_ENABLE_DSP_INFO_0_MT NULL
 #define CORE_OPTION_NAME_ANISOTROPIC_FILTERING_LABEL_MT NULL
 #define CORE_OPTION_NAME_ANISOTROPIC_FILTERING_INFO_0_MT NULL
-#define CORE_OPTION_NAME_PVR2_FILTERING_LABEL_MT NULL
-#define CORE_OPTION_NAME_PVR2_FILTERING_INFO_0_MT NULL
 #define CORE_OPTION_NAME_TEXUPSCALE_LABEL_MT NULL
 #define CORE_OPTION_NAME_TEXUPSCALE_INFO_0_MT NULL
 #define OPTION_VAL_2X_MT NULL
@@ -34832,20 +34478,6 @@ struct retro_core_option_v2_definition option_defs_mt[] = {
          { NULL, NULL },
       },
       "4",
-   },
-   {
-      CORE_OPTION_NAME "_pvr2_filtering",
-      CORE_OPTION_NAME_PVR2_FILTERING_LABEL_MT,
-      NULL,
-      CORE_OPTION_NAME_PVR2_FILTERING_INFO_0_MT,
-      NULL,
-      "video",
-      {
-         { "disabled", NULL },
-         { "enabled",  NULL },
-         { NULL, NULL },
-      },
-      "disabled",
    },
 #ifdef HAVE_TEXUPSCALE
    {
@@ -35846,8 +35478,6 @@ struct retro_core_options_v2 options_mt = {
 #define CORE_OPTION_NAME_ENABLE_DSP_INFO_0_NL NULL
 #define CORE_OPTION_NAME_ANISOTROPIC_FILTERING_LABEL_NL NULL
 #define CORE_OPTION_NAME_ANISOTROPIC_FILTERING_INFO_0_NL NULL
-#define CORE_OPTION_NAME_PVR2_FILTERING_LABEL_NL NULL
-#define CORE_OPTION_NAME_PVR2_FILTERING_INFO_0_NL NULL
 #define CORE_OPTION_NAME_TEXUPSCALE_LABEL_NL NULL
 #define CORE_OPTION_NAME_TEXUPSCALE_INFO_0_NL NULL
 #define OPTION_VAL_2X_NL NULL
@@ -36385,20 +36015,6 @@ struct retro_core_option_v2_definition option_defs_nl[] = {
          { NULL, NULL },
       },
       "4",
-   },
-   {
-      CORE_OPTION_NAME "_pvr2_filtering",
-      CORE_OPTION_NAME_PVR2_FILTERING_LABEL_NL,
-      NULL,
-      CORE_OPTION_NAME_PVR2_FILTERING_INFO_0_NL,
-      NULL,
-      "video",
-      {
-         { "disabled", NULL },
-         { "enabled",  NULL },
-         { NULL, NULL },
-      },
-      "disabled",
    },
 #ifdef HAVE_TEXUPSCALE
    {
@@ -37399,8 +37015,6 @@ struct retro_core_options_v2 options_nl = {
 #define CORE_OPTION_NAME_ENABLE_DSP_INFO_0_NO NULL
 #define CORE_OPTION_NAME_ANISOTROPIC_FILTERING_LABEL_NO NULL
 #define CORE_OPTION_NAME_ANISOTROPIC_FILTERING_INFO_0_NO NULL
-#define CORE_OPTION_NAME_PVR2_FILTERING_LABEL_NO NULL
-#define CORE_OPTION_NAME_PVR2_FILTERING_INFO_0_NO NULL
 #define CORE_OPTION_NAME_TEXUPSCALE_LABEL_NO NULL
 #define CORE_OPTION_NAME_TEXUPSCALE_INFO_0_NO NULL
 #define OPTION_VAL_2X_NO NULL
@@ -37938,20 +37552,6 @@ struct retro_core_option_v2_definition option_defs_no[] = {
          { NULL, NULL },
       },
       "4",
-   },
-   {
-      CORE_OPTION_NAME "_pvr2_filtering",
-      CORE_OPTION_NAME_PVR2_FILTERING_LABEL_NO,
-      NULL,
-      CORE_OPTION_NAME_PVR2_FILTERING_INFO_0_NO,
-      NULL,
-      "video",
-      {
-         { "disabled", NULL },
-         { "enabled",  NULL },
-         { NULL, NULL },
-      },
-      "disabled",
    },
 #ifdef HAVE_TEXUPSCALE
    {
@@ -38952,8 +38552,6 @@ struct retro_core_options_v2 options_no = {
 #define CORE_OPTION_NAME_ENABLE_DSP_INFO_0_OC NULL
 #define CORE_OPTION_NAME_ANISOTROPIC_FILTERING_LABEL_OC NULL
 #define CORE_OPTION_NAME_ANISOTROPIC_FILTERING_INFO_0_OC NULL
-#define CORE_OPTION_NAME_PVR2_FILTERING_LABEL_OC NULL
-#define CORE_OPTION_NAME_PVR2_FILTERING_INFO_0_OC NULL
 #define CORE_OPTION_NAME_TEXUPSCALE_LABEL_OC NULL
 #define CORE_OPTION_NAME_TEXUPSCALE_INFO_0_OC NULL
 #define OPTION_VAL_2X_OC NULL
@@ -39491,20 +39089,6 @@ struct retro_core_option_v2_definition option_defs_oc[] = {
          { NULL, NULL },
       },
       "4",
-   },
-   {
-      CORE_OPTION_NAME "_pvr2_filtering",
-      CORE_OPTION_NAME_PVR2_FILTERING_LABEL_OC,
-      NULL,
-      CORE_OPTION_NAME_PVR2_FILTERING_INFO_0_OC,
-      NULL,
-      "video",
-      {
-         { "disabled", NULL },
-         { "enabled",  NULL },
-         { NULL, NULL },
-      },
-      "disabled",
    },
 #ifdef HAVE_TEXUPSCALE
    {
@@ -40505,8 +40089,6 @@ struct retro_core_options_v2 options_oc = {
 #define CORE_OPTION_NAME_ENABLE_DSP_INFO_0_PL NULL
 #define CORE_OPTION_NAME_ANISOTROPIC_FILTERING_LABEL_PL NULL
 #define CORE_OPTION_NAME_ANISOTROPIC_FILTERING_INFO_0_PL NULL
-#define CORE_OPTION_NAME_PVR2_FILTERING_LABEL_PL NULL
-#define CORE_OPTION_NAME_PVR2_FILTERING_INFO_0_PL NULL
 #define CORE_OPTION_NAME_TEXUPSCALE_LABEL_PL NULL
 #define CORE_OPTION_NAME_TEXUPSCALE_INFO_0_PL NULL
 #define OPTION_VAL_2X_PL NULL
@@ -41044,20 +40626,6 @@ struct retro_core_option_v2_definition option_defs_pl[] = {
          { NULL, NULL },
       },
       "4",
-   },
-   {
-      CORE_OPTION_NAME "_pvr2_filtering",
-      CORE_OPTION_NAME_PVR2_FILTERING_LABEL_PL,
-      NULL,
-      CORE_OPTION_NAME_PVR2_FILTERING_INFO_0_PL,
-      NULL,
-      "video",
-      {
-         { "disabled", NULL },
-         { "enabled",  NULL },
-         { NULL, NULL },
-      },
-      "disabled",
    },
 #ifdef HAVE_TEXUPSCALE
    {
@@ -42058,8 +41626,6 @@ struct retro_core_options_v2 options_pl = {
 #define CORE_OPTION_NAME_ENABLE_DSP_INFO_0_PT_BR "Ativa a emulação Dreamcast do DSP (processador de sinal digital) de áudio. Melhora a precisão do som gerado ao custo de requisitos maiores."
 #define CORE_OPTION_NAME_ANISOTROPIC_FILTERING_LABEL_PT_BR "Filtro anisotrópico"
 #define CORE_OPTION_NAME_ANISOTROPIC_FILTERING_INFO_0_PT_BR "Melhora a qualidade das texturas em superfícies que estão em um ângulo oblíquo em relação à câmera."
-#define CORE_OPTION_NAME_PVR2_FILTERING_LABEL_PT_BR "Filtro de pós-processamento do PowerVR2"
-#define CORE_OPTION_NAME_PVR2_FILTERING_INFO_0_PT_BR "Pós-processa a imagem renderizada para simular efeitos específicos da GPU PowerVR2 e os sinais de vídeo analógicos."
 #define CORE_OPTION_NAME_TEXUPSCALE_LABEL_PT_BR "Redimensionamento de textura (xBRZ)"
 #define CORE_OPTION_NAME_TEXUPSCALE_INFO_0_PT_BR "Melhora os gráficos 2D de 'pixel arte' desenhados à mão. Usar somente com jogos em 2D pixelado."
 #define OPTION_VAL_2X_PT_BR NULL
@@ -42597,20 +42163,6 @@ struct retro_core_option_v2_definition option_defs_pt_br[] = {
          { NULL, NULL },
       },
       "4",
-   },
-   {
-      CORE_OPTION_NAME "_pvr2_filtering",
-      CORE_OPTION_NAME_PVR2_FILTERING_LABEL_PT_BR,
-      NULL,
-      CORE_OPTION_NAME_PVR2_FILTERING_INFO_0_PT_BR,
-      NULL,
-      "video",
-      {
-         { "disabled", NULL },
-         { "enabled",  NULL },
-         { NULL, NULL },
-      },
-      "disabled",
    },
 #ifdef HAVE_TEXUPSCALE
    {
@@ -43611,8 +43163,6 @@ struct retro_core_options_v2 options_pt_br = {
 #define CORE_OPTION_NAME_ENABLE_DSP_INFO_0_PT_PT NULL
 #define CORE_OPTION_NAME_ANISOTROPIC_FILTERING_LABEL_PT_PT NULL
 #define CORE_OPTION_NAME_ANISOTROPIC_FILTERING_INFO_0_PT_PT NULL
-#define CORE_OPTION_NAME_PVR2_FILTERING_LABEL_PT_PT NULL
-#define CORE_OPTION_NAME_PVR2_FILTERING_INFO_0_PT_PT NULL
 #define CORE_OPTION_NAME_TEXUPSCALE_LABEL_PT_PT NULL
 #define CORE_OPTION_NAME_TEXUPSCALE_INFO_0_PT_PT NULL
 #define OPTION_VAL_2X_PT_PT NULL
@@ -44150,20 +43700,6 @@ struct retro_core_option_v2_definition option_defs_pt_pt[] = {
          { NULL, NULL },
       },
       "4",
-   },
-   {
-      CORE_OPTION_NAME "_pvr2_filtering",
-      CORE_OPTION_NAME_PVR2_FILTERING_LABEL_PT_PT,
-      NULL,
-      CORE_OPTION_NAME_PVR2_FILTERING_INFO_0_PT_PT,
-      NULL,
-      "video",
-      {
-         { "disabled", NULL },
-         { "enabled",  NULL },
-         { NULL, NULL },
-      },
-      "disabled",
    },
 #ifdef HAVE_TEXUPSCALE
    {
@@ -45164,8 +44700,6 @@ struct retro_core_options_v2 options_pt_pt = {
 #define CORE_OPTION_NAME_ENABLE_DSP_INFO_0_RO NULL
 #define CORE_OPTION_NAME_ANISOTROPIC_FILTERING_LABEL_RO NULL
 #define CORE_OPTION_NAME_ANISOTROPIC_FILTERING_INFO_0_RO NULL
-#define CORE_OPTION_NAME_PVR2_FILTERING_LABEL_RO NULL
-#define CORE_OPTION_NAME_PVR2_FILTERING_INFO_0_RO NULL
 #define CORE_OPTION_NAME_TEXUPSCALE_LABEL_RO NULL
 #define CORE_OPTION_NAME_TEXUPSCALE_INFO_0_RO NULL
 #define OPTION_VAL_2X_RO NULL
@@ -45703,20 +45237,6 @@ struct retro_core_option_v2_definition option_defs_ro[] = {
          { NULL, NULL },
       },
       "4",
-   },
-   {
-      CORE_OPTION_NAME "_pvr2_filtering",
-      CORE_OPTION_NAME_PVR2_FILTERING_LABEL_RO,
-      NULL,
-      CORE_OPTION_NAME_PVR2_FILTERING_INFO_0_RO,
-      NULL,
-      "video",
-      {
-         { "disabled", NULL },
-         { "enabled",  NULL },
-         { NULL, NULL },
-      },
-      "disabled",
    },
 #ifdef HAVE_TEXUPSCALE
    {
@@ -46717,8 +46237,6 @@ struct retro_core_options_v2 options_ro = {
 #define CORE_OPTION_NAME_ENABLE_DSP_INFO_0_RU "Включить эмуляцию звукового DSP (цифрового сигнального процессора) Dreamcast. Улучшает точность генерируемого звука, но повышает системные требования."
 #define CORE_OPTION_NAME_ANISOTROPIC_FILTERING_LABEL_RU "Анизотропная фильтрация"
 #define CORE_OPTION_NAME_ANISOTROPIC_FILTERING_INFO_0_RU "Улучшает качество текстур на поверхностях, расположенных под непрямым углом к камере."
-#define CORE_OPTION_NAME_PVR2_FILTERING_LABEL_RU NULL
-#define CORE_OPTION_NAME_PVR2_FILTERING_INFO_0_RU NULL
 #define CORE_OPTION_NAME_TEXUPSCALE_LABEL_RU NULL
 #define CORE_OPTION_NAME_TEXUPSCALE_INFO_0_RU NULL
 #define OPTION_VAL_2X_RU NULL
@@ -47256,20 +46774,6 @@ struct retro_core_option_v2_definition option_defs_ru[] = {
          { NULL, NULL },
       },
       "4",
-   },
-   {
-      CORE_OPTION_NAME "_pvr2_filtering",
-      CORE_OPTION_NAME_PVR2_FILTERING_LABEL_RU,
-      NULL,
-      CORE_OPTION_NAME_PVR2_FILTERING_INFO_0_RU,
-      NULL,
-      "video",
-      {
-         { "disabled", NULL },
-         { "enabled",  NULL },
-         { NULL, NULL },
-      },
-      "disabled",
    },
 #ifdef HAVE_TEXUPSCALE
    {
@@ -48270,8 +47774,6 @@ struct retro_core_options_v2 options_ru = {
 #define CORE_OPTION_NAME_ENABLE_DSP_INFO_0_SI NULL
 #define CORE_OPTION_NAME_ANISOTROPIC_FILTERING_LABEL_SI NULL
 #define CORE_OPTION_NAME_ANISOTROPIC_FILTERING_INFO_0_SI NULL
-#define CORE_OPTION_NAME_PVR2_FILTERING_LABEL_SI NULL
-#define CORE_OPTION_NAME_PVR2_FILTERING_INFO_0_SI NULL
 #define CORE_OPTION_NAME_TEXUPSCALE_LABEL_SI NULL
 #define CORE_OPTION_NAME_TEXUPSCALE_INFO_0_SI NULL
 #define OPTION_VAL_2X_SI NULL
@@ -48809,20 +48311,6 @@ struct retro_core_option_v2_definition option_defs_si[] = {
          { NULL, NULL },
       },
       "4",
-   },
-   {
-      CORE_OPTION_NAME "_pvr2_filtering",
-      CORE_OPTION_NAME_PVR2_FILTERING_LABEL_SI,
-      NULL,
-      CORE_OPTION_NAME_PVR2_FILTERING_INFO_0_SI,
-      NULL,
-      "video",
-      {
-         { "disabled", NULL },
-         { "enabled",  NULL },
-         { NULL, NULL },
-      },
-      "disabled",
    },
 #ifdef HAVE_TEXUPSCALE
    {
@@ -49823,8 +49311,6 @@ struct retro_core_options_v2 options_si = {
 #define CORE_OPTION_NAME_ENABLE_DSP_INFO_0_SK NULL
 #define CORE_OPTION_NAME_ANISOTROPIC_FILTERING_LABEL_SK NULL
 #define CORE_OPTION_NAME_ANISOTROPIC_FILTERING_INFO_0_SK NULL
-#define CORE_OPTION_NAME_PVR2_FILTERING_LABEL_SK NULL
-#define CORE_OPTION_NAME_PVR2_FILTERING_INFO_0_SK NULL
 #define CORE_OPTION_NAME_TEXUPSCALE_LABEL_SK NULL
 #define CORE_OPTION_NAME_TEXUPSCALE_INFO_0_SK NULL
 #define OPTION_VAL_2X_SK NULL
@@ -50362,20 +49848,6 @@ struct retro_core_option_v2_definition option_defs_sk[] = {
          { NULL, NULL },
       },
       "4",
-   },
-   {
-      CORE_OPTION_NAME "_pvr2_filtering",
-      CORE_OPTION_NAME_PVR2_FILTERING_LABEL_SK,
-      NULL,
-      CORE_OPTION_NAME_PVR2_FILTERING_INFO_0_SK,
-      NULL,
-      "video",
-      {
-         { "disabled", NULL },
-         { "enabled",  NULL },
-         { NULL, NULL },
-      },
-      "disabled",
    },
 #ifdef HAVE_TEXUPSCALE
    {
@@ -51376,8 +50848,6 @@ struct retro_core_options_v2 options_sk = {
 #define CORE_OPTION_NAME_ENABLE_DSP_INFO_0_SR NULL
 #define CORE_OPTION_NAME_ANISOTROPIC_FILTERING_LABEL_SR NULL
 #define CORE_OPTION_NAME_ANISOTROPIC_FILTERING_INFO_0_SR NULL
-#define CORE_OPTION_NAME_PVR2_FILTERING_LABEL_SR NULL
-#define CORE_OPTION_NAME_PVR2_FILTERING_INFO_0_SR NULL
 #define CORE_OPTION_NAME_TEXUPSCALE_LABEL_SR NULL
 #define CORE_OPTION_NAME_TEXUPSCALE_INFO_0_SR NULL
 #define OPTION_VAL_2X_SR NULL
@@ -51915,20 +51385,6 @@ struct retro_core_option_v2_definition option_defs_sr[] = {
          { NULL, NULL },
       },
       "4",
-   },
-   {
-      CORE_OPTION_NAME "_pvr2_filtering",
-      CORE_OPTION_NAME_PVR2_FILTERING_LABEL_SR,
-      NULL,
-      CORE_OPTION_NAME_PVR2_FILTERING_INFO_0_SR,
-      NULL,
-      "video",
-      {
-         { "disabled", NULL },
-         { "enabled",  NULL },
-         { NULL, NULL },
-      },
-      "disabled",
    },
 #ifdef HAVE_TEXUPSCALE
    {
@@ -52929,8 +52385,6 @@ struct retro_core_options_v2 options_sr = {
 #define CORE_OPTION_NAME_ENABLE_DSP_INFO_0_SV NULL
 #define CORE_OPTION_NAME_ANISOTROPIC_FILTERING_LABEL_SV NULL
 #define CORE_OPTION_NAME_ANISOTROPIC_FILTERING_INFO_0_SV NULL
-#define CORE_OPTION_NAME_PVR2_FILTERING_LABEL_SV NULL
-#define CORE_OPTION_NAME_PVR2_FILTERING_INFO_0_SV NULL
 #define CORE_OPTION_NAME_TEXUPSCALE_LABEL_SV NULL
 #define CORE_OPTION_NAME_TEXUPSCALE_INFO_0_SV NULL
 #define OPTION_VAL_2X_SV NULL
@@ -53468,20 +52922,6 @@ struct retro_core_option_v2_definition option_defs_sv[] = {
          { NULL, NULL },
       },
       "4",
-   },
-   {
-      CORE_OPTION_NAME "_pvr2_filtering",
-      CORE_OPTION_NAME_PVR2_FILTERING_LABEL_SV,
-      NULL,
-      CORE_OPTION_NAME_PVR2_FILTERING_INFO_0_SV,
-      NULL,
-      "video",
-      {
-         { "disabled", NULL },
-         { "enabled",  NULL },
-         { NULL, NULL },
-      },
-      "disabled",
    },
 #ifdef HAVE_TEXUPSCALE
    {
@@ -54482,8 +53922,6 @@ struct retro_core_options_v2 options_sv = {
 #define CORE_OPTION_NAME_ENABLE_DSP_INFO_0_TR "Dreamcast ses DSP (dijital sinyal işlemcisi) taklidini etkinleştirin. Üretilen sesin doğruluğunu artırır, ancak performans gereksinimlerini artırır."
 #define CORE_OPTION_NAME_ANISOTROPIC_FILTERING_LABEL_TR "Eşyönsüz Filtreleme"
 #define CORE_OPTION_NAME_ANISOTROPIC_FILTERING_INFO_0_TR NULL
-#define CORE_OPTION_NAME_PVR2_FILTERING_LABEL_TR NULL
-#define CORE_OPTION_NAME_PVR2_FILTERING_INFO_0_TR NULL
 #define CORE_OPTION_NAME_TEXUPSCALE_LABEL_TR "Doku Yükseltme (xBRZ)"
 #define CORE_OPTION_NAME_TEXUPSCALE_INFO_0_TR "Elle çizilmiş 2B piksel sanatsal grafiklerini geliştirin. Yalnızca 2D piksel oyunlarla kullanılmalıdır."
 #define OPTION_VAL_2X_TR NULL
@@ -55021,20 +54459,6 @@ struct retro_core_option_v2_definition option_defs_tr[] = {
          { NULL, NULL },
       },
       "4",
-   },
-   {
-      CORE_OPTION_NAME "_pvr2_filtering",
-      CORE_OPTION_NAME_PVR2_FILTERING_LABEL_TR,
-      NULL,
-      CORE_OPTION_NAME_PVR2_FILTERING_INFO_0_TR,
-      NULL,
-      "video",
-      {
-         { "disabled", NULL },
-         { "enabled",  NULL },
-         { NULL, NULL },
-      },
-      "disabled",
    },
 #ifdef HAVE_TEXUPSCALE
    {
@@ -56035,8 +55459,6 @@ struct retro_core_options_v2 options_tr = {
 #define CORE_OPTION_NAME_ENABLE_DSP_INFO_0_UK NULL
 #define CORE_OPTION_NAME_ANISOTROPIC_FILTERING_LABEL_UK NULL
 #define CORE_OPTION_NAME_ANISOTROPIC_FILTERING_INFO_0_UK NULL
-#define CORE_OPTION_NAME_PVR2_FILTERING_LABEL_UK NULL
-#define CORE_OPTION_NAME_PVR2_FILTERING_INFO_0_UK NULL
 #define CORE_OPTION_NAME_TEXUPSCALE_LABEL_UK NULL
 #define CORE_OPTION_NAME_TEXUPSCALE_INFO_0_UK NULL
 #define OPTION_VAL_2X_UK NULL
@@ -56574,20 +55996,6 @@ struct retro_core_option_v2_definition option_defs_uk[] = {
          { NULL, NULL },
       },
       "4",
-   },
-   {
-      CORE_OPTION_NAME "_pvr2_filtering",
-      CORE_OPTION_NAME_PVR2_FILTERING_LABEL_UK,
-      NULL,
-      CORE_OPTION_NAME_PVR2_FILTERING_INFO_0_UK,
-      NULL,
-      "video",
-      {
-         { "disabled", NULL },
-         { "enabled",  NULL },
-         { NULL, NULL },
-      },
-      "disabled",
    },
 #ifdef HAVE_TEXUPSCALE
    {
@@ -57588,8 +56996,6 @@ struct retro_core_options_v2 options_uk = {
 #define CORE_OPTION_NAME_ENABLE_DSP_INFO_0_VAL NULL
 #define CORE_OPTION_NAME_ANISOTROPIC_FILTERING_LABEL_VAL NULL
 #define CORE_OPTION_NAME_ANISOTROPIC_FILTERING_INFO_0_VAL NULL
-#define CORE_OPTION_NAME_PVR2_FILTERING_LABEL_VAL NULL
-#define CORE_OPTION_NAME_PVR2_FILTERING_INFO_0_VAL NULL
 #define CORE_OPTION_NAME_TEXUPSCALE_LABEL_VAL NULL
 #define CORE_OPTION_NAME_TEXUPSCALE_INFO_0_VAL NULL
 #define OPTION_VAL_2X_VAL NULL
@@ -58127,20 +57533,6 @@ struct retro_core_option_v2_definition option_defs_val[] = {
          { NULL, NULL },
       },
       "4",
-   },
-   {
-      CORE_OPTION_NAME "_pvr2_filtering",
-      CORE_OPTION_NAME_PVR2_FILTERING_LABEL_VAL,
-      NULL,
-      CORE_OPTION_NAME_PVR2_FILTERING_INFO_0_VAL,
-      NULL,
-      "video",
-      {
-         { "disabled", NULL },
-         { "enabled",  NULL },
-         { NULL, NULL },
-      },
-      "disabled",
    },
 #ifdef HAVE_TEXUPSCALE
    {
@@ -59141,8 +58533,6 @@ struct retro_core_options_v2 options_val = {
 #define CORE_OPTION_NAME_ENABLE_DSP_INFO_0_VN NULL
 #define CORE_OPTION_NAME_ANISOTROPIC_FILTERING_LABEL_VN NULL
 #define CORE_OPTION_NAME_ANISOTROPIC_FILTERING_INFO_0_VN NULL
-#define CORE_OPTION_NAME_PVR2_FILTERING_LABEL_VN NULL
-#define CORE_OPTION_NAME_PVR2_FILTERING_INFO_0_VN NULL
 #define CORE_OPTION_NAME_TEXUPSCALE_LABEL_VN NULL
 #define CORE_OPTION_NAME_TEXUPSCALE_INFO_0_VN NULL
 #define OPTION_VAL_2X_VN NULL
@@ -59680,20 +59070,6 @@ struct retro_core_option_v2_definition option_defs_vn[] = {
          { NULL, NULL },
       },
       "4",
-   },
-   {
-      CORE_OPTION_NAME "_pvr2_filtering",
-      CORE_OPTION_NAME_PVR2_FILTERING_LABEL_VN,
-      NULL,
-      CORE_OPTION_NAME_PVR2_FILTERING_INFO_0_VN,
-      NULL,
-      "video",
-      {
-         { "disabled", NULL },
-         { "enabled",  NULL },
-         { NULL, NULL },
-      },
-      "disabled",
    },
 #ifdef HAVE_TEXUPSCALE
    {

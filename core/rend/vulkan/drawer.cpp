@@ -802,8 +802,12 @@ void TextureDrawer::EndRenderPass()
 void ScreenDrawer::Init(SamplerManager *samplerManager, ShaderManager *shaderManager, u32 samples)
 {
 	this->shaderManager = shaderManager;
-	// (a change of SSAA is one of size: everything made for the size is made again)
-	if (viewport != GetContext()->GetViewPort() || samples != this->samples)
+	/* (a change of SSAA is one of size: everything made for the size is
+	 * made again; so is one of the write-out, whose pictures are made for
+	 * it to write) */
+	const bool remade = viewport != GetContext()->GetViewPort() || samples != this->samples
+			|| storagePictures != VulkanWriteOut::Wanted();
+	if (remade)
 	{
 		/* Not destroyed on the spot: the last picture was handed to the
 		 * frontend, which shows it again for as long as no new one comes -
@@ -845,6 +849,7 @@ void ScreenDrawer::Init(SamplerManager *samplerManager, ShaderManager *shaderMan
 			// (Resize() waited for the frames on the GPU: nothing uses it)
 			renderPass.reset();
 		this->samples = samples;
+		storagePictures = VulkanWriteOut::Wanted();
 	}
 	viewport = GetContext()->GetViewPort();
 	const vk::SampleCountFlagBits n = (vk::SampleCountFlagBits)samples;
@@ -935,7 +940,8 @@ void ScreenDrawer::Init(SamplerManager *samplerManager, ShaderManager *shaderMan
 					new FramebufferAttachment(GetContext()->GetPhysicalDevice(), GetContext()->GetDevice())));
 			// (copied from when the context goes, to keep the picture: rend/last_picture.h)
 			colorAttachments.back()->Init(viewport.width, viewport.height, GetContext()->GetColorFormat(),
-					vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eSampled | vk::ImageUsageFlagBits::eTransferSrc, false);
+					vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eSampled | vk::ImageUsageFlagBits::eTransferSrc
+					| (storagePictures ? vk::ImageUsageFlagBits::eStorage : vk::ImageUsageFlags()), false);
 			attachments[0] = colorAttachments.back()->GetImageView();
 			vk::FramebufferCreateInfo createInfo(vk::FramebufferCreateFlags(), *renderPass,
 					samples > 1 ? 3 : 2, attachments, viewport.width, viewport.height, 1);
@@ -953,6 +959,8 @@ void ScreenDrawer::Init(SamplerManager *samplerManager, ShaderManager *shaderMan
 		msQuadPipeline.Init(shaderManager, *renderPass, 0, samples);
 	}
 	timer.Init(GetContext()->GetSwapChainSize(), "per-triangle renderer");
+	if (remade)
+		writeOut.Init(storagePictures ? (u32)colorAttachments.size() : 0);
 }
 
 vk::CommandBuffer ScreenDrawer::BeginRenderPass()
@@ -1024,6 +1032,8 @@ void ScreenDrawer::EndRenderPass()
 	if (carriedPicture)
 		commandPool->DeferDelete(std::move(carriedPicture));
 	currentCommandBuffer.endRenderPass();
+	writeOut.Record(currentCommandBuffer, GetCurrentImage(), colorAttachments[GetCurrentImage()]->GetImage(),
+			colorAttachments[GetCurrentImage()]->GetImageView(), viewport.width, viewport.height);
 	timer.End(currentCommandBuffer, commandPool->GetIndex());
 	currentCommandBuffer.end();
 	currentCommandBuffer = nullptr;

@@ -130,7 +130,7 @@
 #define PVRC_K_WALK    5
 #define PVRC_K_CLEAR   6
 #define PVRC_K_GPUSRC  7   /* (a frame of the decode's, first) */
-#define PVRC_K_YFILTER 8   /* (after the walk, where the frame has the Y filter) */
+#define PVRC_K_YFILTER 8   /* (after the walk, where the frame has the Y filter or a 16-bit framebuffer) */
 #define PVRC_KERNELS   8
 
 #define PVRC_NONE 0xffffffffu
@@ -181,12 +181,18 @@
 #define PVRC_FF_LAST_SCALED  2u   /* ...which is of another size (kept from another context): filtered over the picture, as the raster renderer's quad does */
 #define PVRC_FF_HSCALE       4u   /* the X scaler (SCALER_CTL bit 16): the frame is drawn PVRC_F_WIDTH wide and the picture is half that, each pixel of it a pair drawn,
                                      their samples resolved together (rend/tile/pvr_scaler.h) */
-/* The Y scaler's filter (rend/tile/pvr_scaler.h), in PVRC_F_FLAGS's bits
- * above the flags: the lines its taps are apart, the internal scale (0:
- * no filter), and Y_COEFF's 16 bits */
+/* The chip's write-out after the walk (rend/tile/pvr_scaler.h: the Y
+ * scaler's filter, then the packing to a framebuffer of 16 bits a pixel
+ * and its dither), in PVRC_F_FLAGS's bits above the flags: the internal
+ * scale, the lines the filter's taps are apart and the picture's pixels
+ * to a pixel of the chip's (0: no write-out pass, PVRC_K_YFILTER), the
+ * filter on, pvr_fb_word()'s packing, and Y_COEFF's 16 bits */
 #define PVRC_FF_YLINES(f)    (((f) >> 3) & 31u)
+#define PVRC_FF_FBW(f)       (((f) >> 8) & 63u)
+#define PVRC_FF_YON          0x4000u
 #define PVRC_FF_YCOEFF(f)    ((f) >> 16)
-#define PVRC_FF_YFILTER(lines, ycoeff) (((lines) << 3) | ((ycoeff) << 16))
+#define PVRC_FF_YFILTER(lines, ycoeff) (((lines) << 3) | ((ycoeff) << 16) | PVRC_FF_YON)
+#define PVRC_FF_FBWRITE(lines, fbw) (((lines) << 3) | ((fbw) << 8))
 
 /* A render pass: where its lists start in the numbering (opaque, opaque
  * modifier volumes, punch-through, translucent, the translucent's end),
@@ -391,8 +397,8 @@ static INLINE void pvrc_walk_groups(const pvr_u32 *f, pvr_u32 n, pvr_u32 *x, pvr
    *x = (f[PVRC_F_WIDTH] + PVRC_FINE_W(n) - 1u) / PVRC_FINE_W(n);
    *y = (f[PVRC_F_HEIGHT] + PVRC_FINE_H(n) - 1u) / PVRC_FINE_H(n);
 }
-/* The Y filter's workgroups (PVRC_K_YFILTER), across and down: 0 down
- * where the frame has no filter, and no dispatch is made */
+/* The write-out's workgroups (PVRC_K_YFILTER), across and down: 0 down
+ * where the frame has none, and no dispatch is made */
 static INLINE void pvrc_yfilter_groups(const pvr_u32 *f, pvr_u32 *x, pvr_u32 *y)
 {
    *x = (PVRC_PICTURE_W(f) + 63u) / 64u;
@@ -1386,14 +1392,18 @@ void main()
 #endif
 
 #if PVRC_KERNEL == PVRC_K_YFILTER
-/* The Y filter (pvr_scaler.h), in place over the picture the walk wrote:
- * each line blended with the lines its taps are apart (m, the frame's
- * PVRC_FF_YLINES()) above and below, the picture's first and last lines in
- * the place of the line there is not. The lines a tap reaches are those
+/* The chip's write-out (pvr_scaler.h), in place over the picture the walk
+ * wrote: the Y filter, each line blended with the lines its taps are
+ * apart (m, the frame's PVRC_FF_YLINES()) above and below, the picture's
+ * first and last lines in the place of the line there is not; then the
+ * packing to a framebuffer of 16 bits and its dither, by the chip's pixel
+ * (m of the picture's across and down). The lines a tap reaches are those
  * of one remainder mod m, so a thread takes a column and a remainder (the
  * workgroup's y) and walks down its lines, the one above and the line
  * itself kept as they were before it wrote them: each pixel is read once
- * and written once, by one thread, and nothing is kept anywhere else */
+ * and written once, by one thread, and nothing is kept anywhere else.
+ * Renderers that draw the picture otherwise run it too, with the frame's
+ * words PVRC_F_WIDTH, PVRC_F_HEIGHT and PVRC_F_FLAGS only */
 layout(local_size_x = 64) in;
 
 #if defined(PVRC_SHADER_GLSL)
@@ -1409,7 +1419,7 @@ uint pvrc_yf_load(ivec2 p)
 void main()
 {
    const uint flags = frm.w[PVRC_F_FLAGS];
-   const uint m = PVRC_FF_YLINES(flags), ycoeff = PVRC_FF_YCOEFF(flags);
+   const uint m = PVRC_FF_YLINES(flags), ycoeff = PVRC_FF_YCOEFF(flags), fbw = PVRC_FF_FBW(flags);
    const uint w = frm.w[PVRC_F_WIDTH] >> ((flags & PVRC_FF_HSCALE) != 0u ? 1u : 0u), h = frm.w[PVRC_F_HEIGHT];
    const int x = int(gl_GlobalInvocationID.x);
    uint y = gl_WorkGroupID.y;
@@ -1420,7 +1430,7 @@ void main()
    for (; y < h; y += m)
    {
       const uint below = y + m < h ? pvrc_yf_load(ivec2(x, int(y + m))) : mid;
-      const uint c = pvr_scaler_y(above, mid, below, ycoeff);
+      const uint c = pvr_fb_write((flags & PVRC_FF_YON) != 0u ? pvr_scaler_y(above, mid, below, ycoeff) : mid, uint(x) / m, y / m, fbw);
       imageStore(outImage, ivec2(x, int(y)), (vec4(float(c & 255u), float((c >> 8) & 255u), float((c >> 16) & 255u), float(c >> 24)) + 0.25) / 255.0);
       above = mid;
       mid = below;

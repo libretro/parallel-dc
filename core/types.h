@@ -582,7 +582,6 @@ struct settings_t
 		bool TextureDebug;	// Vulkan: what each texture drawn is, and its levels read back, in the log now and then
 		bool WidescreenGameHacks;
 		int AnisotropicFiltering;
-		bool PowerVR2Filter;
 		bool GpuTextureDecode;	// textures converted from their bytes in video memory by the GPU, where the renderer can
 		bool GpuTextureDecodeD3D9;	// ...on Direct3D 9 too, whose pixel shaders do it (not by default)
 		int Ssaa;	// samples a pixel asked for (1: off, 2, 4 or 8); the renderer may take fewer (rend/ssaa_pattern.h)

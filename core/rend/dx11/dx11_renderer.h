@@ -29,6 +29,7 @@
 #include "rend/sorter.h"
 #include "rend/tileclip.h"
 #include "rend/transform_matrix.h"
+#include "dx11_writeout.h"
 #include "rend/shadows.h"
 #include "rend/depth_scale.h"
 #include "dx11context_lr.h"
@@ -91,6 +92,7 @@ protected:
 		ComPtr<ID3D11Texture2D> texture;
 		ComPtr<ID3D11RenderTargetView> target;
 		ComPtr<ID3D11ShaderResourceView> view;
+		ComPtr<ID3D11UnorderedAccessView> uav;	// for the chip's write-out (dx11_writeout.h)
 	};
 
 	/* The frame's polygons: into what Begin...() bound */
@@ -184,6 +186,9 @@ protected:
 	 * place of the one handed over, which stays the frontend's */
 	ScreenTarget extraTarget;
 	bool lastInExtra = false;		// the last picture is in it
+	// the chip's write-out (dx11_writeout.h), and whether the pictures were made for it
+	DX11WriteOut writeOut;
+	bool writeOutPictures = false;
 	u32 screenWidth = 0;
 	u32 screenHeight = 0;
 	int screenIndex = 0;			// the one being drawn
@@ -297,7 +302,9 @@ protected:
 private:
 	bool ProcessLocked(TA_context* ctx);
 	bool BeginScreen();
-	void EndScreen();
+	/* (@writeOut: the chip's write-out over the picture first, a frame the
+	 * renderer drew: dx11_writeout.h) */
+	void EndScreen(bool writeOut = false);
 	bool BeginRTT();
 	void EndRTT();
 	bool EnsureScreen(u32 width, u32 height);

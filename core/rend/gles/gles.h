@@ -9,7 +9,7 @@
 #include "rend/sorter.h"
 #include "rend/tileclip.h"
 #include "rend/tex_pool.h"
-#include "postprocess.h"
+#include "gl_writeout.h"
 #include "glcache.h"
 #include "rend/depth_scale.h"
 #include "rend/ta_gpu.h"

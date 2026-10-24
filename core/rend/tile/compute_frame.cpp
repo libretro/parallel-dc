@@ -19,6 +19,21 @@ static_assert(4u * 4 * 1024 * 1024 / sizeof(Vertex) <= PVRC_RX_VTX, "a vertex's 
 
 bool ComputeFrame::ScalersOff = true;
 
+u32 ComputeFrame::WriteOut(u32 height)
+{
+	if (ScalersOff)
+		return 0;
+	/* The Y scaler's filter when the vertical scale factor reduces, then
+	 * the packing to a framebuffer of 16 bits and its dither
+	 * (rend/tile/pvr_scaler.h): its taps a line of the chip's apart, the
+	 * picture's lines over 480 (the internal resolution) */
+	const u32 lines = std::min(std::max((height + 240) / 480, 1u), 31u);
+	const u32 fbw = pvr_fb_word(FB_W_CTRL.fb_packmode, FB_W_CTRL.fb_dither, FB_R_CTRL.fb_concat);
+	if (pvr_scaler_yfilter(SCALER_CTL.full))
+		return PVRC_FF_YFILTER(lines, Y_COEFF & 0xffff) | PVRC_FF_FBWRITE(0u, fbw);
+	return fbw != 0 ? PVRC_FF_FBWRITE(lines, fbw) : 0;
+}
+
 /* ---- The frame's words ---- */
 
 static u32 machineScale()
@@ -378,14 +393,8 @@ u32 ComputeFrame::Pack(const Layout& layout, Slots& slots, u32 *out, u32 room, u
 	out[PVRC_F_PASSES] = passCount;
 	out[PVRC_F_FLAGS] = (layout.lastPicture ? (layout.lastScaled ? PVRC_FF_LAST_PICTURE | PVRC_FF_LAST_SCALED : PVRC_FF_LAST_PICTURE) : 0)
 			| (hscale ? PVRC_FF_HSCALE : 0);
-	/* The Y scaler's filter, when the vertical scale factor reduces
-	 * (rend/tile/pvr_scaler.h): its taps a line of the chip's apart, the
-	 * picture's lines over 480 (the internal resolution) */
-	if (scalers && pvr_scaler_yfilter(SCALER_CTL.full))
-	{
-		const u32 lines = std::min(std::max((layout.height + 240) / 480, 1u), 31u);
-		out[PVRC_F_FLAGS] |= PVRC_FF_YFILTER(lines, Y_COEFF & 0xffff);
-	}
+	if (scalers)
+		out[PVRC_F_FLAGS] |= WriteOut(layout.height);
 	/* A framebuffer the game has not drawn to lately starts as the border
 	 * colour; any other black (OITDrawer::Draw()), a texture rendered to too */
 	out[PVRC_F_CLEAR] = rc.clearFramebuffer

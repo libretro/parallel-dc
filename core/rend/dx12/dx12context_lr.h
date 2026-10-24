@@ -189,7 +189,11 @@ public:
 	static const u32 ComputeFirst = OitSsaaFirst + DX12_OIT_TABLE_SIZE;
 	static const u32 ComputeTableSize = 11;
 	static const u32 ComputeTables = 4;
-	static const u32 SrvHeapSize = ComputeFirst + ComputeTables * ComputeTableSize;
+	/* ...then the raster renderers' write-out pass's (dx12_writeout.h): a
+	 * table of two views, the words and the picture, for each of its slots */
+	static const u32 WriteOutFirst = ComputeFirst + ComputeTables * ComputeTableSize;
+	static const u32 WriteOutSlots = 16;
+	static const u32 SrvHeapSize = WriteOutFirst + 2 * WriteOutSlots;
 	/* The per-pixel renderer's table the shaders read: SSAA's or not */
 	void BindOitTable(bool ssaa)
 	{

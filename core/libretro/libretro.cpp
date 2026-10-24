@@ -1159,17 +1159,18 @@ static void update_variables(bool first_startup)
       	settings.rend.AnisotropicFiltering = std::max(1, std::min(16, atoi(var.value)));
    }
 
-   var.key = CORE_OPTION_NAME "_pvr2_filtering";
-
-   settings.rend.PowerVR2Filter = false;
-   if (environ_cb(RETRO_ENVIRONMENT_GET_VARIABLE, &var) && var.value)
-     	settings.rend.PowerVR2Filter = !strcmp("enabled", var.value);
-
    /* The compute renderer's next frame takes it: a frame word (no kernel
-    * made, nothing allocated) */
+    * made, nothing allocated). The raster renderers' pictures are made
+    * for the write-out pass to write (or not) when they start or change
+    * size, so a change while the game runs is one */
    var.key = CORE_OPTION_NAME "_pvr2_scaler";
-   ComputeFrame::ScalersOff = !(environ_cb(RETRO_ENVIRONMENT_GET_VARIABLE, &var) && var.value
-         && !strcmp("enabled", var.value));
+   {
+      const bool off = !(environ_cb(RETRO_ENVIRONMENT_GET_VARIABLE, &var) && var.value
+            && !strcmp("enabled", var.value));
+      if (!first_startup && off != ComputeFrame::ScalersOff)
+         resize_pending = true;
+      ComputeFrame::ScalersOff = off;
+   }
 
    /* Takes effect with the next texture made: one made either way is the
     * same texture, so nothing has to be made again. */

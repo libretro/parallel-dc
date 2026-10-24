@@ -55,6 +55,12 @@ public:
 	/* The chip's X and Y scalers (SCALER_CTL, Y_COEFF) left out of the
 	 * frames packed from now on: the core option reicast_pvr2_scaler */
 	static bool ScalersOff;
+	/* The chip's write-out for a picture @height lines high of the frame
+	 * the registers have now (not a render to a texture): the Y filter and
+	 * the framebuffer's packing and dither, as PVRC_F_FLAGS's bits (the
+	 * walk's PVRC_K_YFILTER, which the raster renderers run too); 0 when
+	 * there is none or ScalersOff */
+	static u32 WriteOut(u32 height);
 
 protected:
 	/* The renderer's: its matrices made for the frame in pvrrc, the

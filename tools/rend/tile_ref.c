@@ -1133,12 +1133,15 @@ int tile_ref(const unsigned *frame, unsigned samples, const unsigned *last, unsi
          else if (x & 1u)
             out[y * pw + (x >> 1)] = log2n == 0u ? pvr_scaler_x(sc[0], sc[1]) : pvr_resolve_samples(sc, log2n + 1u);
       }
-   /* ...then the Y filter, its taps m lines apart, the picture's first and
-    * last lines in the place of the line there is not */
+   /* ...then the chip's write-out: the Y filter, its taps m lines apart,
+    * the picture's first and last lines in the place of the line there is
+    * not; and the packing to a framebuffer of 16 bits and its dither, by
+    * the chip's pixel (m of the picture's) */
    m = PVRC_FF_YLINES(F[PVRC_F_FLAGS]);
    if (m != 0u)
    {
-      const unsigned ycoeff = PVRC_FF_YCOEFF(F[PVRC_F_FLAGS]);
+      const unsigned ycoeff = PVRC_FF_YCOEFF(F[PVRC_F_FLAGS]), fbw = PVRC_FF_FBW(F[PVRC_F_FLAGS]);
+      const int yon = (F[PVRC_F_FLAGS] & PVRC_FF_YON) != 0u;
       unsigned *line = (unsigned *)malloc((size_t)pw * h * 4);
       if (!line)
          return 0;
@@ -1146,8 +1149,10 @@ int tile_ref(const unsigned *frame, unsigned samples, const unsigned *last, unsi
       for (y = 0; y < h; y++)
          for (x = 0; x < pw; x++)
          {
-            const unsigned c = line[y * pw + x];
-            out[y * pw + x] = pvr_scaler_y(y >= m ? line[(y - m) * pw + x] : c, c, y + m < h ? line[(y + m) * pw + x] : c, ycoeff);
+            unsigned c = line[y * pw + x];
+            if (yon)
+               c = pvr_scaler_y(y >= m ? line[(y - m) * pw + x] : c, c, y + m < h ? line[(y + m) * pw + x] : c, ycoeff);
+            out[y * pw + x] = pvr_fb_write(c, x / m, y / m, fbw);
          }
       free(line);
    }

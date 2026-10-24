@@ -29,6 +29,7 @@
 #include "rend/shadows.h"
 #include "dx12context_lr.h"
 #include "dx12_overlay.h"
+#include "dx12_writeout.h"
 #include "dx12_texdecoder.h"
 #include "dx12_texture.h"
 #include "dx12_ta_decoder.h"
@@ -206,6 +207,9 @@ protected:
 	/* The screen's pictures can be drawn into by the compute renderer
 	 * (unordered access views of them): set before they are made */
 	bool storagePictures = false;
+	// ...or by the chip's write-out (dx12_writeout.h), as they were made
+	DX12WriteOut writeOut;
+	bool writeOutPictures = false;
 	bool lastInExtra = false;		// the last picture is in it
 	u32 screenWidth = 0;
 	u32 screenHeight = 0;
@@ -344,7 +348,9 @@ protected:
 	 * texture taken (BeginRTT()) and given to the texture once it is drawn
 	 * (EndRTT()): Render()'s, and the compute renderer's (dx12_compute.h) */
 	bool EnsureScreen(u32 width, u32 height);
-	void EndScreen();
+	/* (@writeOut: the chip's write-out over the picture first, a frame the
+	 * raster renderer drew: dx12_writeout.h) */
+	void EndScreen(bool writeOut = false);
 	bool BeginRTT();
 	void EndRTT();
 	/* The size of the texture a render to a texture draws into: from the

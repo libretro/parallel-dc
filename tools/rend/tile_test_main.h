@@ -241,8 +241,10 @@ int main(int argc, char **argv)
    const char *samples_s = getenv("TILE_SAMPLES") ? getenv("TILE_SAMPLES") : "1 2 4 8";
    const char *keep_s = getenv("TILE_KEEP") ? getenv("TILE_KEEP") : "0 1";
    const char *ppm = getenv("TILE_PPM");
-   /* the frames as they are, and with the Y filter (PVRC_FF_YFILTER(): its
-    * taps LINES apart, Y_COEFF): "off" and LINES:YCOEFF, in hex */
+   /* the frames as they are, and through the chip's write-out (PVRC_K_YFILTER:
+    * the Y filter, its taps LINES apart, Y_COEFF; then pvr_fb_word()'s
+    * packing and dither FBW): "off" and LINES:YCOEFF[:FBW], in hex, YCOEFF
+    * "-" for the packing alone */
    const char *yfilter_s = getenv("TILE_YFILTER") ? getenv("TILE_YFILTER") : "off 1:8040";
    int validate = getenv("TILE_VALIDATE") && atoi(getenv("TILE_VALIDATE"));
    const int use_gpu = !getenv("TILE_GPU") || atoi(getenv("TILE_GPU")) != 0;
@@ -283,7 +285,8 @@ int main(int argc, char **argv)
          char *ye;
          for (yp = yfilter_s; *yp; yp = ye)
          {
-         unsigned long lines = 0, ycoeff = 0;
+         unsigned long lines = 0, ycoeff = 0, fbw = 0;
+         int yon = 1;
          while (*yp == ' ')
             yp++;
          if (!*yp)
@@ -295,9 +298,18 @@ int main(int argc, char **argv)
             lines = strtoul(yp, &ye, 10);
             if (ye == yp || *ye != ':')
                break;
-            ycoeff = strtoul(ye + 1, &ye, 16);
+            if (ye[1] == '-')
+            {
+               yon = 0;
+               ye += 2;
+            }
+            else
+               ycoeff = strtoul(ye + 1, &ye, 16);
+            if (*ye == ':')
+               fbw = strtoul(ye + 1, &ye, 16) & 63u;
          }
-         frame[PVRC_F_FLAGS] = flags | (lines ? PVRC_FF_YFILTER((unsigned)lines, (unsigned)ycoeff & 0xffffu) : 0u);
+         frame[PVRC_F_FLAGS] = flags | (!lines ? 0u : yon ? PVRC_FF_YFILTER((unsigned)lines, (unsigned)ycoeff & 0xffffu) | PVRC_FF_FBWRITE(0u, (unsigned)fbw)
+               : PVRC_FF_FBWRITE((unsigned)lines, (unsigned)fbw));
          for (si = 0; si < ns; si++)
          {
             const unsigned n = sl[si];
@@ -327,8 +339,10 @@ int main(int argc, char **argv)
                else
                   differ++;
                printf("tile_test: %s at %u sample%s, K %u%s", argv[a], n, n > 1 ? "s" : "", keep, as_gpu ? ", as the decode's" : "");
-               if (lines)
+               if (lines && yon)
                   printf(", Y filter %lu:%04lx", lines, ycoeff);
+               if (lines && fbw)
+                  printf(", framebuffer write %lu:%02lx", lines, fbw);
                printf(": %s", bad ? "DIFFERENT" : "the same");
                if (bad)
                   printf(" (%u pixels; the first at %u,%u: %08x, the reference %08x)", bad, first % w, first / w, got[first], ref[first]);

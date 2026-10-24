@@ -9,10 +9,20 @@
 # its text: checked to be the headers', and compiled as a fragment shader).
 #
 #   sh tools/rend/ssaa_rules_test.sh update
-#        core/rend/tile/pvr_resolve_text.inc made again from the headers
+#        core/rend/tile/pvr_resolve_text.inc made again from the headers,
+#        and core/rend/tile/pvr_scaler_text.inc (pvr_scaler.h as text, after
+#        the resolve's, for the write-out pass of the OpenGL and Direct3D 11
+#        renderers)
 set -e
 cd "$(dirname "$0")/../.."
 RINC=core/rend/tile/pvr_resolve_text.inc
+SINC=core/rend/tile/pvr_scaler_text.inc
+make_scaler_text() {
+   echo '/* rend/tile/pvr_scaler.h as text, after pvr_resolve_text.inc, for the write-out pass: made by tools/rend/ssaa_rules_test.sh update from it. Not to be edited. */'
+   echo 'R"PVR_TEXT('
+   grep -v '^#include' core/rend/tile/pvr_scaler.h
+   echo ')PVR_TEXT"'
+}
 make_resolve_text() {
    echo '/* rend/tile/pvr_lane.h and pvr_resolve.h as text, for the shaders that resolve: made by tools/rend/ssaa_rules_test.sh update from them. Not to be edited. */'
    echo 'R"PVR_TEXT('
@@ -21,7 +31,8 @@ make_resolve_text() {
 }
 if [ "$1" = update ]; then
    make_resolve_text > $RINC
-   echo "made $RINC"
+   make_scaler_text > $SINC
+   echo "made $RINC and $SINC"
    exit 0
 fi
 WORK=${TMPDIR:-/tmp}/ssaa_rules_test.$$
@@ -55,6 +66,8 @@ $G -D -e main -S comp -V -o "$WORK/h5.spv" tools/rend/ssaa_rules_shader.hlsl >"$
 # the resolve's text, as the renderers put it in their shaders
 make_resolve_text > "$WORK/resolve.inc"
 cmp -s "$WORK/resolve.inc" $RINC || { echo "FAIL: $RINC is not the headers: run '$0 update'" >&2; exit 1; }
+make_scaler_text > "$WORK/scaler.inc"
+cmp -s "$WORK/scaler.inc" $SINC || { echo "FAIL: $SINC is not the header: run '$0 update'" >&2; exit 1; }
 for n in 2 4 8; do
    l=$(( n == 8 ? 3 : n == 4 ? 2 : 1 ))
    { echo "#version 450"; echo "#define PVR_SHADER_GLSL"; echo "#define PVR_LANE_NONE"

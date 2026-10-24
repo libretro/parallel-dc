@@ -490,20 +490,6 @@ struct retro_core_option_v2_definition option_defs_us[] = {
       "4",
    },
    {
-      CORE_OPTION_NAME "_pvr2_filtering",
-      "PowerVR2 Post-processing Filter",
-      NULL,
-      "Post-process the rendered image to simulate effects specific to the PowerVR2 GPU and analog video signals.",
-      NULL,
-      "video",
-      {
-         { "disabled", NULL },
-         { "enabled",  NULL },
-         { NULL, NULL },
-      },
-      "disabled",
-   },
-   {
       CORE_OPTION_NAME "_gpu_texture_decode",
       "GPU Texture Decoding",
       NULL,
@@ -534,20 +520,6 @@ struct retro_core_option_v2_definition option_defs_us[] = {
       "rasterizer",
    },
    {
-      CORE_OPTION_NAME "_pvr2_scaler",
-      "PVR2 scaler / flicker filter",
-      NULL,
-      "The PowerVR2's X and Y scalers, as the chip applies them when it writes each tile out: with the game's horizontal scaling, pairs of pixels averaged into one; with its vertical scale factor above 1 (most of Sega's games, VGA too), each line blended with the lines above and below by the game's coefficients, the flicker filter that softens the picture vertically. Disabled draws the picture without them. Compute renderer only.",
-      NULL,
-      "video",
-      {
-         { "enabled",  NULL },
-         { "disabled", NULL },
-         { NULL, NULL },
-      },
-      "disabled",
-   },
-   {
       CORE_OPTION_NAME "_ta_processing",
       "TA Processing",
       NULL,
@@ -562,6 +534,20 @@ struct retro_core_option_v2_definition option_defs_us[] = {
       "cpu",
    },
 #endif
+   {
+      CORE_OPTION_NAME "_pvr2_scaler",
+      "PowerVR2 scaler, flicker filter and dither",
+      NULL,
+      "What the PowerVR2 does to the picture as it writes it to video memory. With the game's vertical scale factor above 1 (most of Sega's games, VGA too), each line blended with the lines above and below by the game's coefficients: the flicker filter, which softens the picture vertically. With a framebuffer of 16 bits a pixel (most games), the colours cut to its bits and dithered as the game asks, the bands and the dither pattern of the console's picture. With the game's horizontal scaling (rare), pairs of pixels averaged into one: the compute renderer only. Compute renderer (Vulkan, Direct3D 12) and the rasterizers of Vulkan, Direct3D 12, Direct3D 11 (where the GPU can read its picture back in a compute shader) and OpenGL 4.3 and later; not OpenGL ES, OpenGL 3 or Direct3D 9. Disabled draws the picture without them, as before.",
+      NULL,
+      "video",
+      {
+         { "enabled",  NULL },
+         { "disabled", NULL },
+         { NULL, NULL },
+      },
+      "disabled",
+   },
 #ifdef HAVE_TEXUPSCALE
    {
       CORE_OPTION_NAME "_texupscale",
