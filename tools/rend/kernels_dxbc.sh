@@ -9,9 +9,15 @@
 #   core/rend/texdecode_dx9.inc   the same for Direct3D 9, shader model 3
 #                                 (rend/texdecode_sm3.h with TEXD_SM3_KERNEL;
 #                                 dx9/dx9_texdecoder.cpp)
+#   core/rend/hdr/hdr_encode_dxbc.inc
+#                                 the HDR output's encode, one for Direct3D 11
+#                                 and 12 both (rend/hdr/hdr_encode.hlsl with
+#                                 HDR_ENCODE_VS or HDR_ENCODE_PS;
+#                                 hdr/hdr_encode_d3d11.c, hdr_encode_d3d12.c)
 #
-#   sh tools/rend/kernels_dxbc.sh update   both made again from the headers
-#   sh tools/rend/kernels_dxbc.sh check    whether both are the headers' still
+#   sh tools/rend/kernels_dxbc.sh update   all made again from their sources
+#   sh tools/rend/kernels_dxbc.sh update-hdr  only the HDR output's made again
+#   sh tools/rend/kernels_dxbc.sh check    whether all are their sources' still
 #
 # Each kernel is the header with the two lines in front of it below,
 # compiled with Microsoft's d3dcompiler_47.dll (D3DCompile, entry point
@@ -28,9 +34,11 @@ set -e
 cd "$(dirname "$0")/../.."
 INC=core/rend/texdecode_dxbc.inc
 INC9=core/rend/texdecode_dx9.inc
+INC_HDR=core/rend/hdr/hdr_encode_dxbc.inc
 # kernel: profile
 KERNELS="1:cs_5_0 2:cs_5_0 3:vs_5_0 4:ps_5_0"
 KERNELS9="1:vs_3_0 2:ps_3_0"
+KERNELS_HDR="VS:vs_5_0 PS:ps_5_0"
 CC_WIN=${CC_WIN:-x86_64-w64-mingw32-gcc}
 WINE=${WINE-wine}
 
@@ -40,6 +48,10 @@ trap 'rm -rf "$WORK"' EXIT
 
 source_of() {
    echo "#define TEXD_SHADER_HLSL"; echo "#define TEXD_KERNEL_D3D $1"; cat core/rend/texdecode.h
+}
+
+source_hdr_of() {
+   echo "#define HDR_ENCODE_$1"; cat core/rend/hdr/hdr_encode.hlsl
 }
 
 source9_of() {
@@ -58,6 +70,14 @@ sums() {
    for k in $KERNELS; do
       n=${k%%:*}; p=${k#*:}
       source_of $n > "$WORK/s.hlsl"
+      echo " * kernel $n $p $(sha1sum < "$WORK/s.hlsl" | cut -c1-40)"
+   done
+}
+
+sums_hdr() {
+   for k in $KERNELS_HDR; do
+      n=${k%%:*}; p=${k#*:}
+      source_hdr_of $n > "$WORK/s.hlsl"
       echo " * kernel $n $p $(sha1sum < "$WORK/s.hlsl" | cut -c1-40)"
    done
 }
@@ -96,6 +116,24 @@ make_inc() {
    echo "// by TEXD_KERNEL_D3D: the bytes, and how many"
    echo "static const unsigned char * const texdecode_dxbc[] = { 0, texdecode_dxbc_1, texdecode_dxbc_2, texdecode_dxbc_3, texdecode_dxbc_4 };"
    echo "static const size_t texdecode_dxbc_size[] = { 0, sizeof(texdecode_dxbc_1), sizeof(texdecode_dxbc_2), sizeof(texdecode_dxbc_3), sizeof(texdecode_dxbc_4) };"
+}
+
+# (included by C89, so no C++ comments)
+make_inc_hdr() {
+   echo "/* DXBC of the HDR output's encode for Direct3D 11 and 12"
+   echo " * (rend/hdr/hdr_encode.hlsl with HDR_ENCODE_VS or HDR_ENCODE_PS): made by"
+   echo " * tools/rend/kernels_dxbc.sh update from it. Not to be edited."
+   echo " * d3dcompiler_47 $(compiler_sum)"
+   sums_hdr
+   echo " */"
+   for k in $KERNELS_HDR; do
+      n=${k%%:*}; p=${k#*:}
+      source_hdr_of $n > "$WORK/h$n.hlsl"
+      compile "$WORK/h$n.hlsl" $p "$WORK/h$n.dxbc"
+      echo "static const unsigned char hdr_encode_dxbc_$n[] = {"
+      od -An -v -tx1 -w16 "$WORK/h$n.dxbc" | awk '{ s = ""; for (i = 1; i <= NF; i++) s = s "0x" $i ","; print s }'
+      echo "};"
+   done
 }
 
 # (Direct3D 9 takes its bytecode as words)
@@ -144,18 +182,27 @@ update)
    [ -n "$(compiler_sum)" ] || { echo "$0: D3DCOMPILER=/path/to/d3dcompiler_47.dll is needed to make them" >&2; exit 1; }
    make_inc > "$WORK/new.inc"
    make_inc9 > "$WORK/new9.inc"
+   make_inc_hdr > "$WORK/newhdr.inc"
    cp "$WORK/new.inc" $INC
    cp "$WORK/new9.inc" $INC9
-   echo "made $INC and $INC9"
+   cp "$WORK/newhdr.inc" $INC_HDR
+   echo "made $INC, $INC9 and $INC_HDR"
+   ;;
+update-hdr)
+   [ -n "$(compiler_sum)" ] || { echo "$0: D3DCOMPILER=/path/to/d3dcompiler_47.dll is needed to make it" >&2; exit 1; }
+   make_inc_hdr > "$WORK/newhdr.inc"
+   cp "$WORK/newhdr.inc" $INC_HDR
+   echo "made $INC_HDR"
    ;;
 check)
    rc=0
    check_one $INC sums make_inc || rc=1
    check_one $INC9 sums9 make_inc9 || rc=1
+   check_one $INC_HDR sums_hdr make_inc_hdr || rc=1
    exit $rc
    ;;
 *)
-   echo "usage: $0 update | check" >&2
+   echo "usage: $0 update | update-hdr | check" >&2
    exit 2
    ;;
 esac

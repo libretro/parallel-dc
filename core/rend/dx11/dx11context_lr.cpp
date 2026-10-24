@@ -17,6 +17,7 @@
     along with Flycast.  If not, see <https://www.gnu.org/licenses/>.
 */
 #include "dx11context_lr.h"
+#include "rend/hdr/hdr_output.h"
 #include <dxgi.h>
 #include <dxgi1_4.h>
 #include "rend/dxgi_budget.h"
@@ -117,6 +118,16 @@ bool DX11Context::Init(const struct retro_hw_render_interface_d3d11 *iface)
 		return false;
 	}
 
+	// the HDR output, when the frontend took it (libretro.cpp)
+	if (hdr_output.format != HDR_OUTPUT_NONE)
+	{
+		hdr = hdr_d3d11_new(device, hdr_output.format == HDR_OUTPUT_SCRGB ? DXGI_FORMAT_R16G16B16A16_FLOAT : DXGI_FORMAT_R10G10B10A2_UNORM);
+		if (hdr == nullptr)
+			ERROR_LOG(RENDERER, "DX11: the HDR output could not be set up (feature level 11.0 needed); the picture goes out as 24-bit");
+		else
+			NOTICE_LOG(RENDERER, "DX11: HDR output, %s", hdr_output.format == HDR_OUTPUT_SCRGB ? "scRGB (RGBA16F)" : "HDR10 (R10G10B10A2)");
+	}
+
 	/* (what is bound is not known until the context is first taken and cleared) */
 	stateChanges = stateCleared + 1;
 	shaders.Init(device, compile);
@@ -134,6 +145,8 @@ void DX11Context::Term()
 	frameView.reset();
 	frameTexture.reset();
 	handedOver = false;
+	hdr_d3d11_free(hdr);
+	hdr = nullptr;
 	quad.Term();
 	blendStates.Term();
 	samplers.Term();
@@ -196,6 +209,24 @@ void DX11Context::Unlock()
 
 void DX11Context::SetFrame(ID3D11Texture2D *texture, ID3D11ShaderResourceView *view)
 {
+	/* the HDR output: the frame encoded, with the context taken by the
+	 * render that drew it, and that handed over in its place */
+	if (hdr != nullptr && texture != nullptr && view != nullptr)
+	{
+		D3D11_TEXTURE2D_DESC desc;
+		ID3D11Texture2D *encoded = nullptr;
+		ID3D11ShaderResourceView *encodedView = nullptr;
+		texture->GetDesc(&desc);
+		if (hdr_d3d11_encode(hdr, deviceContext, &hdr_output, view, desc.Width, desc.Height, true,
+				v2 ? GetPresentIndex() : 0, &encoded, &encodedView))
+		{
+			texture = encoded;
+			view = encodedView;
+		}
+		// what the encode bound is not what this has noted
+		deviceContext->ClearState();
+		ClearBound();
+	}
 	if (texture != nullptr)
 		texture->AddRef();
 	frameTexture.reset(texture);

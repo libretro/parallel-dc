@@ -20,6 +20,9 @@
     along with Flycast.  If not, see <https://www.gnu.org/licenses/>.
 */
 #include "vulkan_context.h"
+#include "rend/hdr/hdr_output.h"
+#include "shaders.h"
+#include "commandpool.h"
 #include "rend/ssaa_pattern.h"
 #include <streams/file_stream.h>
 #include "hw/pvr/Renderer_if.h"
@@ -495,6 +498,21 @@ bool VulkanContext::Init(retro_hw_render_interface_vulkan *retro_render_if)
    heap.Init(physicalDevice, device);
    FindDepthFormat();
 
+	// the HDR output, when the frontend took it (libretro.cpp)
+	if (hdr_output.format != HDR_OUTPUT_NONE)
+	{
+		hdr_vk_code_t code;
+		hdrFormat = hdr_output.format == HDR_OUTPUT_SCRGB ? VK_FORMAT_R16G16B16A16_SFLOAT : VK_FORMAT_A2B10G10R10_UNORM_PACK32;
+		code.vert = RasterSpvWords(RSPV_SSAA_RESOLVE_VERT, &code.vert_size);
+		code.frag = RasterSpvWords(RSPV_HDR_ENCODE_FRAG, &code.frag_size);
+		code.frag_subpass = RasterSpvWords(RSPV_HDR_ENCODE_FRAG_SUBPASS, &code.frag_subpass_size);
+		hdr = hdr_vk_new(retro_render_if, heap.Raw(), pipelineCache, hdrFormat, (unsigned)swapChainSize, &code);
+		if (hdr == nullptr)
+			ERROR_LOG(RENDERER, "Vulkan: the HDR output could not be set up; the picture goes out as 24-bit");
+		else
+			NOTICE_LOG(RENDERER, "Vulkan: HDR output, %s", hdr_output.format == HDR_OUTPUT_SCRGB ? "scRGB (RGBA16F)" : "HDR10 (A2B10G10R10)");
+	}
+
 	retro_image.image_layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 	retro_image.create_info.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
 	retro_image.create_info.pNext = nullptr;
@@ -625,13 +643,69 @@ vk::Format VulkanContext::FindDepthFormat()
 	return depthFormat;
 }
 
-void VulkanContext::PresentFrame(vk::Image image, vk::ImageView imageView, vk::Offset2D extent)
+void VulkanContext::PresentFrame(vk::Image image, vk::ImageView imageView, vk::Offset2D extent, bool hdr)
 {
+	if (this->hdr != nullptr)
+		retro_image.create_info.format = hdr ? hdrFormat : (VkFormat)colorFormat;
 	retro_image.image_view = (VkImageView)imageView;
 	retro_image.create_info.image = (VkImage)image;
 	retro_render_if->set_image(retro_render_if->handle, &retro_image, 0, nullptr, VK_QUEUE_FAMILY_IGNORED);
 	// once a frame: memory left empty by a change of size goes back to the driver
 	heap.Frame();
+}
+
+u32 VulkanContext::HdrRing(CommandPool& pool)
+{
+	u32 i;
+	for (i = 0; i < ARRAY_SIZE(hdrPools) && hdrPools[i] != nullptr; i++)
+		if (hdrPools[i] == &pool)
+			return i;
+	if (i < ARRAY_SIZE(hdrPools))
+		hdrPools[i] = &pool;
+	return i;	// (past the last ring: the encode leaves it alone)
+}
+
+void VulkanContext::HdrPrepare(CommandPool& pool, vk::CommandBuffer cmd)
+{
+	if (hdr != nullptr)
+		hdr_vk_prepare(hdr, &hdr_output, (VkCommandBuffer)cmd, HdrRing(pool), (unsigned)pool.GetIndex(), pool.GetFrames());
+}
+
+vk::UniquePipeline VulkanContext::HdrSubpassPipeline(vk::RenderPass renderPass, u32 subpass)
+{
+	if (hdr == nullptr)
+		return vk::UniquePipeline();
+	const VkPipeline p = hdr_vk_subpass_pipeline(hdr, (VkRenderPass)renderPass, subpass);
+	if (p == VK_NULL_HANDLE)
+		ERROR_LOG(RENDERER, "Vulkan: the HDR output's subpass pipeline could not be made");
+	return vk::UniquePipeline(vk::Pipeline(p), vk::ObjectDestroy<vk::Device, vk::DispatchLoaderStatic>(device));
+}
+
+void VulkanContext::HdrSubpassDraw(CommandPool& pool, vk::CommandBuffer cmd, vk::Pipeline pipeline, vk::ImageView picture, vk::Extent2D extent)
+{
+	// (every picture is 8 bits a channel)
+	if (hdr != nullptr)
+		hdr_vk_subpass_draw(hdr, &hdr_output, (VkCommandBuffer)cmd, HdrRing(pool), (unsigned)pool.GetIndex(),
+				(VkPipeline)pipeline, (VkImageView)picture, extent.width, extent.height, true);
+}
+
+bool VulkanContext::HdrEncode(CommandPool& pool, vk::Image& image, vk::ImageView& view, vk::Extent2D size)
+{
+	if (hdr == nullptr)
+		return false;
+	VkImage i = (VkImage)image;
+	VkImageView v = (VkImageView)view;
+	vk::CommandBuffer cmd = pool.Allocate();
+	cmd.begin(vk::CommandBufferBeginInfo(vk::CommandBufferUsageFlagBits::eOneTimeSubmit));
+	const bool done = hdr_vk_encode(hdr, &hdr_output, (VkCommandBuffer)cmd, HdrRing(pool), (unsigned)pool.GetIndex(),
+			pool.GetFrames(), (unsigned)GetCurrentImageIndex(), &i, &v, size.width, size.height, true);
+	cmd.end();
+	if (done)
+	{
+		image = vk::Image(i);
+		view = vk::ImageView(v);
+	}
+	return done;
 }
 
 /* The frontend keeps the last picture it was handed and draws it again
@@ -674,6 +748,11 @@ void VulkanContext::Term()
 		VkPsoWorker::Instance().Stop(pipelineCache);
 		SavePipelineCache();
 	}
+	// (before the heap it has its memory from)
+	hdr_vk_free(hdr);
+	hdr = nullptr;
+	for (CommandPool *& p : hdrPools)
+		p = nullptr;
 	descriptorPool.reset();
 	heap.Term();
 	if (pipelineCache)

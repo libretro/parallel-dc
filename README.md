@@ -78,6 +78,14 @@ What is different from upstream Flycast
   Memory Allocator, sized from the driver's real memory budget.
 - Threaded rendering reworked: one emulated frame per `retro_run`, no
   skipped frames, output identical to non-threaded rendering.
+- **HDR output** (*Color Format*: 30-bit HDR10 or 64-bit scRGB; Vulkan,
+  Direct3D 11 and Direct3D 12): the picture is placed at the frontend's
+  paper white and mapped onto the display through a selectable *Display
+  Transform* (Reinhard soft knee by default, which leaves everything below
+  paper white as the 24-bit picture; ACES, ACES 2.0, AgX, Khronos PBR
+  Neutral, GT, Hable and others), with optional *HDR Expansion* into the
+  headroom. The 24-bit output is unchanged, to the byte, and is what a
+  frontend that cannot present HDR gets.
 
 ### CPU and timing
 

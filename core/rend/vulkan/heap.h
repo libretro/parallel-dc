@@ -96,6 +96,9 @@ public:
 	 * device. */
 	Allocation AllocateForBuffer(vk::Buffer buffer, bool hostVisible, bool readBack);
 
+	// the heap itself, for what allocates from it in C (hdr_encode_vk.c)
+	vk_heap_t *Raw() { return &heap; }
+
 private:
 	void TrimSpare();
 	vk::Result AllocError() const;

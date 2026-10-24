@@ -835,6 +835,9 @@ void ScreenDrawer::Init(SamplerManager *samplerManager, ShaderManager *shaderMan
 			for (auto& attachment : colorAttachments)
 				if (attachment)
 					commandPool->DeferDelete(std::move(attachment));
+			for (auto& attachment : hdrAttachments)
+				if (attachment)
+					commandPool->DeferDelete(std::move(attachment));
 			if (depthAttachment)
 				commandPool->DeferDelete(std::move(depthAttachment));
 			if (samplesAttachment)
@@ -842,6 +845,7 @@ void ScreenDrawer::Init(SamplerManager *samplerManager, ShaderManager *shaderMan
 		}
 		framebuffers.clear();
 		colorAttachments.clear();
+		hdrAttachments.clear();
 		depthAttachment.reset();
 		samplesAttachment.reset();
 		havePicture = false;
@@ -870,10 +874,18 @@ void ScreenDrawer::Init(SamplerManager *samplerManager, ShaderManager *shaderMan
 					| vk::ImageUsageFlagBits::eTransientAttachment, false, n);
 	}
 
+	/* The HDR output: a last subpass encodes the picture, its input, into
+	 * the HDR image, the frontend's (hdr_encode_vk.h) */
+	const bool hdr = GetContext()->HdrActive();
 	if (!renderPass && samples > 1)
-		renderPass = MakeSsaaRenderPass(GetContext()->GetColorFormat(), samples, vk::ImageLayout::eShaderReadOnlyOptimal);
+	{
+		renderPass = MakeSsaaRenderPass(GetContext()->GetColorFormat(), samples, vk::ImageLayout::eShaderReadOnlyOptimal,
+				hdr ? GetContext()->GetHdrFormat() : vk::Format::eUndefined);
+		hdrPipeline.reset();
+	}
 	if (!renderPass)
 	{
+		hdrPipeline.reset();
 		vk::AttachmentDescription attachmentDescriptions[] = {
 				// Color attachment
 				vk::AttachmentDescription(vk::AttachmentDescriptionFlags(), GetContext()->GetColorFormat(), vk::SampleCountFlagBits::e1,
@@ -885,9 +897,16 @@ void ScreenDrawer::Init(SamplerManager *samplerManager, ShaderManager *shaderMan
 						vk::AttachmentLoadOp::eClear, vk::AttachmentStoreOp::eDontCare,
 						vk::AttachmentLoadOp::eClear, vk::AttachmentStoreOp::eDontCare,
 						vk::ImageLayout::eUndefined, vk::ImageLayout::eDepthStencilAttachmentOptimal),
+				// The HDR output's image
+				vk::AttachmentDescription(vk::AttachmentDescriptionFlags(), GetContext()->GetHdrFormat(), vk::SampleCountFlagBits::e1,
+						vk::AttachmentLoadOp::eDontCare, vk::AttachmentStoreOp::eStore,
+						vk::AttachmentLoadOp::eDontCare, vk::AttachmentStoreOp::eDontCare,
+						vk::ImageLayout::eUndefined, vk::ImageLayout::eShaderReadOnlyOptimal),
 		};
 		vk::AttachmentReference colorReference(0, vk::ImageLayout::eColorAttachmentOptimal);
 		vk::AttachmentReference depthReference(1, vk::ImageLayout::eDepthStencilAttachmentOptimal);
+		vk::AttachmentReference pictureInput(0, vk::ImageLayout::eShaderReadOnlyOptimal);
+		vk::AttachmentReference hdrReference(2, vk::ImageLayout::eColorAttachmentOptimal);
 
 		vk::SubpassDescription subpasses[] = {
 				vk::SubpassDescription(vk::SubpassDescriptionFlags(), vk::PipelineBindPoint::eGraphics,
@@ -895,6 +914,12 @@ void ScreenDrawer::Init(SamplerManager *samplerManager, ShaderManager *shaderMan
 						1, &colorReference,
 						nullptr,
 						&depthReference),
+				// the HDR output: the picture encoded where it is
+				vk::SubpassDescription(vk::SubpassDescriptionFlags(), vk::PipelineBindPoint::eGraphics,
+						1, &pictureInput,
+						1, &hdrReference,
+						nullptr,
+						nullptr),
 		};
 
 		std::vector<vk::SubpassDependency> dependencies;
@@ -914,37 +939,64 @@ void ScreenDrawer::Init(SamplerManager *samplerManager, ShaderManager *shaderMan
 				vk::AccessFlagBits::eDepthStencilAttachmentWrite | vk::AccessFlagBits::eColorAttachmentWrite,
 				vk::AccessFlagBits::eDepthStencilAttachmentRead | vk::AccessFlagBits::eDepthStencilAttachmentWrite
 					| vk::AccessFlagBits::eColorAttachmentRead | vk::AccessFlagBits::eColorAttachmentWrite);
+		if (hdr)
+		{
+			// the picture drawn, then encoded where it is...
+			dependencies.emplace_back(0, 1, vk::PipelineStageFlagBits::eColorAttachmentOutput, vk::PipelineStageFlagBits::eFragmentShader,
+					vk::AccessFlagBits::eColorAttachmentWrite, vk::AccessFlagBits::eInputAttachmentRead, vk::DependencyFlagBits::eByRegion);
+			// ...into the image the frontend was done with...
+			dependencies.emplace_back(VK_SUBPASS_EXTERNAL, 1, vk::PipelineStageFlagBits::eFragmentShader | vk::PipelineStageFlagBits::eTransfer,
+					vk::PipelineStageFlagBits::eColorAttachmentOutput, vk::AccessFlags(), vk::AccessFlagBits::eColorAttachmentWrite);
+			// ...and which it is handed to read
+			dependencies.emplace_back(1, VK_SUBPASS_EXTERNAL, vk::PipelineStageFlagBits::eColorAttachmentOutput,
+					vk::PipelineStageFlagBits::eFragmentShader | vk::PipelineStageFlagBits::eTransfer,
+					vk::AccessFlagBits::eColorAttachmentWrite, vk::AccessFlagBits::eShaderRead | vk::AccessFlagBits::eTransferRead);
+		}
 
 		renderPass = GetContext()->GetDevice().createRenderPassUnique(vk::RenderPassCreateInfo(vk::RenderPassCreateFlags(),
-				ARRAY_SIZE(attachmentDescriptions), attachmentDescriptions,
-				ARRAY_SIZE(subpasses), subpasses,
+				ARRAY_SIZE(attachmentDescriptions) - (hdr ? 0 : 1), attachmentDescriptions,
+				ARRAY_SIZE(subpasses) - (hdr ? 0 : 1), subpasses,
 				dependencies.size(), dependencies.data()));
 	}
+	if (hdr && !hdrPipeline)
+		hdrPipeline = GetContext()->HdrSubpassPipeline(*renderPass, samples > 1 ? 2 : 1);
 	size_t size = VulkanContext::Instance()->GetSwapChainSize();
 	if (colorAttachments.size() > size)
 	{
 		colorAttachments.resize(size);
+		hdrAttachments.resize(hdr ? size : 0);
 		framebuffers.resize(size);
 	}
 	else
 	{
-		// (with SSAA: the picture, then the samples' colour and depth)
+		// (with SSAA: the picture, then the samples' colour and depth; then the HDR output's image)
 		vk::ImageView attachments[] = {
 				nullptr,
 				samples > 1 ? samplesAttachment->GetImageView() : depthAttachment->GetImageView(),
-				depthAttachment->GetImageView(),
+				samples > 1 ? depthAttachment->GetImageView() : nullptr,
+				nullptr,
 		};
+		const u32 count = (samples > 1 ? 3 : 2) + (hdr ? 1 : 0);
 		while (colorAttachments.size() < size)
 		{
 			colorAttachments.push_back(std::unique_ptr<FramebufferAttachment>(
 					new FramebufferAttachment(GetContext()->GetPhysicalDevice(), GetContext()->GetDevice())));
-			// (copied from when the context goes, to keep the picture: rend/last_picture.h)
+			// (copied from when the context goes, to keep the picture: rend/last_picture.h; the HDR output's input)
 			colorAttachments.back()->Init(viewport.width, viewport.height, GetContext()->GetColorFormat(),
 					vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eSampled | vk::ImageUsageFlagBits::eTransferSrc
-					| (storagePictures ? vk::ImageUsageFlagBits::eStorage : vk::ImageUsageFlags()), false);
+					| (storagePictures ? vk::ImageUsageFlagBits::eStorage : vk::ImageUsageFlags())
+					| (hdr ? vk::ImageUsageFlagBits::eInputAttachment : vk::ImageUsageFlags()), false);
 			attachments[0] = colorAttachments.back()->GetImageView();
+			if (hdr)
+			{
+				hdrAttachments.push_back(std::unique_ptr<FramebufferAttachment>(
+						new FramebufferAttachment(GetContext()->GetPhysicalDevice(), GetContext()->GetDevice())));
+				hdrAttachments.back()->Init(viewport.width, viewport.height, GetContext()->GetHdrFormat(),
+						vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eSampled | vk::ImageUsageFlagBits::eTransferSrc, false);
+				attachments[count - 1] = hdrAttachments.back()->GetImageView();
+			}
 			vk::FramebufferCreateInfo createInfo(vk::FramebufferCreateFlags(), *renderPass,
-					samples > 1 ? 3 : 2, attachments, viewport.width, viewport.height, 1);
+					count, attachments, viewport.width, viewport.height, 1);
 			framebuffers.push_back(GetContext()->GetDevice().createFramebufferUnique(createInfo));
 		}
 	}
@@ -975,6 +1027,9 @@ vk::CommandBuffer ScreenDrawer::BeginRenderPass()
 	commandBuffer.begin(vk::CommandBufferBeginInfo(vk::CommandBufferUsageFlagBits::eOneTimeSubmit));
 	matrices.CalcMatrices(&pvrrc);
 	vertexUniformBuffer = WriteVertexUniforms<VertexShaderUniforms>(commandBuffer, GetCurrentImage());
+	// (the HDR output's transform, for the render pass's last subpass)
+	if (hdrPipeline)
+		GetContext()->HdrPrepare(*commandPool, commandBuffer);
 
 	/* A framebuffer the game has not drawn to lately starts as the border
 	 * colour, which is what the OpenGL renderers clear it to; any other
@@ -1033,6 +1088,9 @@ bool ScreenDrawer::WriteOutBeforeOsd()
 {
 	if (!writeOut.Runs(viewport.height))
 		return false;
+	/* (the HDR output's subpass passed over: the picture is encoded once it is written out) */
+	if (hdrPipeline)
+		currentCommandBuffer.nextSubpass(vk::SubpassContents::eInline);
 	currentCommandBuffer.endRenderPass();
 	writeOut.Record(currentCommandBuffer, GetCurrentImage(), colorAttachments[GetCurrentImage()]->GetImage(),
 			colorAttachments[GetCurrentImage()]->GetImageView(), viewport.width, viewport.height);
@@ -1048,6 +1106,21 @@ void ScreenDrawer::EndRenderPass()
 	// (this frame may have drawn it: it goes when the frame is done with)
 	if (carriedPicture)
 		commandPool->DeferDelete(std::move(carriedPicture));
+	/* The HDR output: the picture encoded in the render pass's last
+	 * subpass, where it is; on a frame the chip's write-out changes after
+	 * the render pass, once that is done (and what goes over it drawn), in
+	 * the same submission */
+	bool hdrAfter = false;
+	if (hdrPipeline && !overlaid)
+	{
+		currentCommandBuffer.nextSubpass(vk::SubpassContents::eInline);
+		hdrAfter = writeOut.Runs(viewport.height);
+		if (!hdrAfter)
+			GetContext()->HdrSubpassDraw(*commandPool, currentCommandBuffer, *hdrPipeline,
+					colorAttachments[GetCurrentImage()]->GetImageView(), viewport);
+	}
+	else if (hdrPipeline)
+		hdrAfter = true;
 	currentCommandBuffer.endRenderPass();
 	if (overlaid)
 		overlaid = false;
@@ -1057,7 +1130,17 @@ void ScreenDrawer::EndRenderPass()
 	timer.End(currentCommandBuffer, commandPool->GetIndex());
 	currentCommandBuffer.end();
 	currentCommandBuffer = nullptr;
+	vk::Image image = colorAttachments[GetCurrentImage()]->GetImage();
+	vk::ImageView view = colorAttachments[GetCurrentImage()]->GetImageView();
+	bool hdr = false;
+	if (hdrAfter)
+		hdr = GetContext()->HdrEncode(*commandPool, image, view, vk::Extent2D(viewport.width, viewport.height));
+	else if (hdrPipeline)
+	{
+		image = hdrAttachments[GetCurrentImage()]->GetImage();
+		view = hdrAttachments[GetCurrentImage()]->GetImageView();
+		hdr = true;
+	}
 	commandPool->EndFrame();
-	GetContext()->PresentFrame(colorAttachments[GetCurrentImage()]->GetImage(), colorAttachments[GetCurrentImage()]->GetImageView(),
-			vk::Offset2D(viewport.width, viewport.height));
+	GetContext()->PresentFrame(image, view, vk::Offset2D(viewport.width, viewport.height), hdr);
 }

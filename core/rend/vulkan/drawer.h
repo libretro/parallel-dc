@@ -353,6 +353,10 @@ private:
 	VulkanWriteOut writeOut;
 	bool storagePictures = false;
 	bool overlaid = false;		// this frame's write-out was recorded before the overlays
+	/* The HDR output: its images, one for each picture, written by the
+	 * render pass's last subpass from the picture (VulkanContext::HdrActive()) */
+	std::vector<std::unique_ptr<FramebufferAttachment>> hdrAttachments;
+	vk::UniquePipeline hdrPipeline;
 	QuadPipeline *quadPipeline = nullptr;
 	QuadDrawer lastPicture;
 	bool havePicture = false;	/* the image before this one holds the last frame */

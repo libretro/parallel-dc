@@ -646,8 +646,9 @@ VkPipeline PipelineManager::BuildPrepass(int texture, int gouraud, int cull, int
 	return PsoCreate(GetContext()->GetDevice(), cache, graphicsPipelineCreateInfo);
 }
 
-vk::UniqueRenderPass MakeSsaaRenderPass(vk::Format colorFormat, u32 samples, vk::ImageLayout pictureLayout)
+vk::UniqueRenderPass MakeSsaaRenderPass(vk::Format colorFormat, u32 samples, vk::ImageLayout pictureLayout, vk::Format hdrFormat)
 {
+	const bool hdr = hdrFormat != vk::Format::eUndefined;
 	VulkanContext *context = VulkanContext::Instance();
 	const vk::SampleCountFlagBits n = (vk::SampleCountFlagBits)samples;
 	vk::AttachmentDescription attachmentDescriptions[] = {
@@ -665,14 +666,23 @@ vk::UniqueRenderPass MakeSsaaRenderPass(vk::Format colorFormat, u32 samples, vk:
 					vk::AttachmentLoadOp::eClear, vk::AttachmentStoreOp::eDontCare,
 					vk::AttachmentLoadOp::eClear, vk::AttachmentStoreOp::eDontCare,
 					vk::ImageLayout::eUndefined, vk::ImageLayout::eDepthStencilAttachmentOptimal),
+			// the HDR output's image
+			vk::AttachmentDescription(vk::AttachmentDescriptionFlags(), hdrFormat, vk::SampleCountFlagBits::e1,
+					vk::AttachmentLoadOp::eDontCare, vk::AttachmentStoreOp::eStore,
+					vk::AttachmentLoadOp::eDontCare, vk::AttachmentStoreOp::eDontCare,
+					vk::ImageLayout::eUndefined, vk::ImageLayout::eShaderReadOnlyOptimal),
 	};
 	vk::AttachmentReference pictureReference(0, vk::ImageLayout::eColorAttachmentOptimal);
+	vk::AttachmentReference pictureInput(0, vk::ImageLayout::eShaderReadOnlyOptimal);
+	vk::AttachmentReference hdrReference(3, vk::ImageLayout::eColorAttachmentOptimal);
 	vk::AttachmentReference colorReference(1, vk::ImageLayout::eColorAttachmentOptimal);
 	vk::AttachmentReference depthReference(2, vk::ImageLayout::eDepthStencilAttachmentOptimal);
 	vk::AttachmentReference samplesInput(1, vk::ImageLayout::eShaderReadOnlyOptimal);
 	vk::SubpassDescription subpasses[] = {
 			vk::SubpassDescription(vk::SubpassDescriptionFlags(), vk::PipelineBindPoint::eGraphics, 0, nullptr, 1, &colorReference, nullptr, &depthReference),
 			vk::SubpassDescription(vk::SubpassDescriptionFlags(), vk::PipelineBindPoint::eGraphics, 1, &samplesInput, 1, &pictureReference, nullptr, nullptr),
+			// the HDR output: the picture encoded where it is
+			vk::SubpassDescription(vk::SubpassDescriptionFlags(), vk::PipelineBindPoint::eGraphics, 1, &pictureInput, 1, &hdrReference, nullptr, nullptr),
 	};
 	const vk::PipelineStageFlags fbStages = vk::PipelineStageFlagBits::eEarlyFragmentTests | vk::PipelineStageFlagBits::eLateFragmentTests
 			| vk::PipelineStageFlagBits::eFragmentShader | vk::PipelineStageFlagBits::eColorAttachmentOutput;
@@ -692,10 +702,21 @@ vk::UniqueRenderPass MakeSsaaRenderPass(vk::Format colorFormat, u32 samples, vk:
 			// the picture, to be shown or sampled
 			vk::SubpassDependency(1, VK_SUBPASS_EXTERNAL, fbStages, fbStages | vk::PipelineStageFlagBits::eTransfer,
 					vk::AccessFlagBits::eColorAttachmentWrite, fbAll | vk::AccessFlagBits::eTransferRead),
+			// the HDR output: the picture resolved, then encoded where it is...
+			vk::SubpassDependency(1, 2, vk::PipelineStageFlagBits::eColorAttachmentOutput, vk::PipelineStageFlagBits::eFragmentShader,
+					vk::AccessFlagBits::eColorAttachmentWrite, vk::AccessFlagBits::eInputAttachmentRead, vk::DependencyFlagBits::eByRegion),
+			// ...into the image the frontend was done with...
+			vk::SubpassDependency(VK_SUBPASS_EXTERNAL, 2, vk::PipelineStageFlagBits::eFragmentShader | vk::PipelineStageFlagBits::eTransfer,
+					vk::PipelineStageFlagBits::eColorAttachmentOutput, vk::AccessFlags(), vk::AccessFlagBits::eColorAttachmentWrite),
+			// ...and which it is handed to read
+			vk::SubpassDependency(2, VK_SUBPASS_EXTERNAL, vk::PipelineStageFlagBits::eColorAttachmentOutput,
+					vk::PipelineStageFlagBits::eFragmentShader | vk::PipelineStageFlagBits::eTransfer,
+					vk::AccessFlagBits::eColorAttachmentWrite, vk::AccessFlagBits::eShaderRead | vk::AccessFlagBits::eTransferRead),
 	};
 	return context->GetDevice().createRenderPassUnique(vk::RenderPassCreateInfo(vk::RenderPassCreateFlags(),
-			ARRAY_SIZE(attachmentDescriptions), attachmentDescriptions, ARRAY_SIZE(subpasses), subpasses,
-			ARRAY_SIZE(dependencies), dependencies));
+			ARRAY_SIZE(attachmentDescriptions) - (hdr ? 0 : 1), attachmentDescriptions,
+			ARRAY_SIZE(subpasses) - (hdr ? 0 : 1), subpasses,
+			ARRAY_SIZE(dependencies) - (hdr ? 0 : 3), dependencies));
 }
 
 vk::UniqueRenderPass RttPipelineManager::MakeSsaaRenderPass(u32 samples)

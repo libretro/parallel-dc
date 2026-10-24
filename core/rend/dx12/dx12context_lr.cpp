@@ -15,6 +15,7 @@
     along with Flycast.  If not, see <https://www.gnu.org/licenses/>.
 */
 #include "dx12context_lr.h"
+#include "rend/hdr/hdr_output.h"
 #include "rend/dxgi_budget.h"
 #include "rend/ssaa_pattern.h"
 #include <algorithm>
@@ -309,6 +310,16 @@ bool DX12Context::Init(const struct retro_hw_render_interface_d3d12 *iface)
 	pipelines.MakeAtStart();
 	frameResource.reset();
 	handedOver = false;
+	// the HDR output, when the frontend took it (libretro.cpp)
+	if (hdr_output.format != HDR_OUTPUT_NONE)
+	{
+		hdrFormat = hdr_output.format == HDR_OUTPUT_SCRGB ? DXGI_FORMAT_R16G16B16A16_FLOAT : DXGI_FORMAT_R10G10B10A2_UNORM;
+		hdr = hdr_d3d12_new(device, hdrFormat, requiredState, fence);
+		if (hdr == nullptr)
+			ERROR_LOG(RENDERER, "DX12: the HDR output could not be set up; the picture goes out as 24-bit");
+		else
+			NOTICE_LOG(RENDERER, "DX12: HDR output, %s", hdr_output.format == HDR_OUTPUT_SCRGB ? "scRGB (RGBA16F)" : "HDR10 (R10G10B10A2)");
+	}
 	statStalls = statSubmits = 0;
 	return true;
 }
@@ -450,6 +461,9 @@ void DX12Context::Term()
 		WaitFor(fenceValue);
 		ReclaimReleased(fenceValue);
 	}
+	hdr_d3d12_free(hdr);
+	hdr = nullptr;
+	hdrFrame = nullptr;
 	pipelines.Term();
 	drawSignature.reset();
 	decodeRoot.reset();
@@ -769,18 +783,43 @@ void DX12Context::SetTargets(u32 rtv, u32 dsv, u32 samples)
 
 /* ---- The frame ---- */
 
+bool DX12Context::EncodeHdr(DX12Image& image, u32 width, u32 height)
+{
+	hdrFrame = nullptr;
+	if (hdr == nullptr || !image.resource)
+		return false;
+	Transition(image, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
+	// (signalled by the Submit() that follows)
+	if (!hdr_d3d12_encode(hdr, Cmd(), &hdr_output, image.resource, DX12FrameFormat, width, height, true,
+			GetPresentIndex(), fenceValue + 1, &hdrFrame))
+		return false;
+	// what the encode bound is not what this has noted
+	ID3D12DescriptorHeap * const heaps[2] = { srvHeap.Heap(), samplerHeap.Heap() };
+	cmdList->SetDescriptorHeaps(2, heaps);
+	ResetBound();
+	return true;
+}
+
 void DX12Context::SetFrame(const DX12Image *image)
 {
 	frameResource.reset();
-	if (image != nullptr && image->resource)
+	frameFormat = DX12FrameFormat;
+	if (image != nullptr && hdrFrame != nullptr)
+	{
+		hdrFrame->AddRef();
+		frameResource.reset(hdrFrame);
+		frameFormat = hdrFormat;
+	}
+	else if (image != nullptr && image->resource)
 	{
 		image->resource->AddRef();
 		frameResource.reset(image->resource.get());
 	}
+	hdrFrame = nullptr;
 	frameFence = fenceValue;
 	handedOver = v2 && frameResource;
 	if (handedOver)
-		set_texture_fenced(handle, frameResource, DX12FrameFormat, fence, frameFence);
+		set_texture_fenced(handle, frameResource, frameFormat, fence, frameFence);
 }
 
 void DX12Context::Present()
@@ -791,13 +830,13 @@ void DX12Context::Present()
 	{
 		/* (a frame with no render to the screen in it shows the last one again) */
 		if (!handedOver)
-			set_texture_fenced(handle, frameResource, DX12FrameFormat, fence, frameFence);
+			set_texture_fenced(handle, frameResource, frameFormat, fence, frameFence);
 		handedOver = false;
 	}
 	else
 		/* the frontend copies it in video_refresh, on the same queue, after
 		 * the render that drew it */
-		set_texture(handle, frameResource, DX12FrameFormat);
+		set_texture(handle, frameResource, frameFormat);
 }
 
 unsigned DX12Context::GetPresentCount() const

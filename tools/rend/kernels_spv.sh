@@ -316,6 +316,9 @@ raster_list() {
    echo "OIT_FINAL_FRAG_S1 frag SSAA=1 key resolve oit_header.glsl oit_final.frag"
    echo "OIT_FINAL_FRAG_S2 frag SSAA=1,SSAA_PER_SAMPLE=1 key resolve oit_header.glsl oit_final.frag"
    echo "OIT_FINAL_VERT vert - oit_final.vert"
+   # (the HDR output's encode, drawn by SSAA_RESOLVE_VERT's triangle: on its own, and as a render pass's last subpass)
+   echo "HDR_ENCODE_FRAG frag HDR_DT=1 hdr hdr_encode.frag"
+   echo "HDR_ENCODE_FRAG_SUBPASS frag HDR_DT=1,SUBPASS=1 hdr hdr_encode.frag"
 }
 
 # a raster module's text: @1 its defines, then what it is made of
@@ -329,6 +332,8 @@ raster_source() {
       resolve) echo "#define PVR_SHADER_GLSL"; echo "#define PVR_LANE_NONE"; sed -e '1,2d' -e '$d' core/rend/tile/pvr_resolve_text.inc ;;
       pdc) echo "#extension GL_ARB_post_depth_coverage : require" ;;
       pattern) echo "#define PVR_SHADER_GLSL"; echo "#define PVR_LANE_NONE"; sed '/^#include/d' core/rend/tile/pvr_lane.h core/rend/ssaa_pattern.h ;;
+      # hdr.glsl with hdr_transform.glsl where it #includes it (both beetle-psx's, as they are there)
+      hdr) sed -e "/^#include \"hdr_transform.h\"/{r $RS/hdr_transform.glsl" -e 'd' -e '}' $RS/hdr.glsl ;;
       *) cat $RS/$part ;;
       esac
    done

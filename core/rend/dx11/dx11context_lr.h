@@ -34,6 +34,7 @@
 #include "dx11_renderstate.h"
 #include "dx11_quad.h"
 #include "rend/vram_budget.h"
+#include "rend/hdr/hdr_encode_d3d11.h"
 
 /* The frontend's Direct3D 11 device, from RETRO_HW_CONTEXT_D3D11's
  * interface, and what the renderers share of it.
@@ -410,6 +411,8 @@ private:
 
 	ComPtr<ID3D11Texture2D> frameTexture;
 	ComPtr<ID3D11ShaderResourceView> frameView;
+	// the HDR output (Color Format), when the frontend took it: what the frame is encoded through
+	hdr_d3d11_t *hdr = nullptr;
 	bool handedOver = false;
 
 	// version 2

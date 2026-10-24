@@ -29,6 +29,7 @@
 #include "rend/vram_budget.h"
 #include "rend/TexCache.h"
 #include "dx12_pso.h"
+#include "rend/hdr/hdr_encode_d3d12.h"
 
 /* The frontend's Direct3D 12 device and queue, from RETRO_HW_CONTEXT_D3D12's
  * interface, and what the renderers share of them.
@@ -317,6 +318,12 @@ public:
 	 * is handed over here, and is the frontend's (IsHandedOver()) until the
 	 * frame has been shown */
 	void SetFrame(const DX12Image *image);
+	/* With the HDR output (Color Format): the picture @image, @width x
+	 * @height, encoded into the command list for the frontend's frame and
+	 * left in the pixel shader resource state; the next SetFrame() hands
+	 * the encoded one over. False without the HDR output: the picture is
+	 * then to be left in required_state, as ever. */
+	bool EncodeHdr(DX12Image& image, u32 width, u32 height);
 	bool IsHandedOver(const DX12Image *image) const { return v2 && handedOver && image != nullptr && image->resource.get() == frameResource.get(); }
 	/* Just before video_refresh(RETRO_HW_FRAME_BUFFER_VALID) */
 	void Present();
@@ -419,6 +426,11 @@ private:
 
 	// the frame: a reference to its picture, which stays whatever the renderer does with its own
 	ComPtr<ID3D12Resource> frameResource;
+	DXGI_FORMAT frameFormat = DXGI_FORMAT_R8G8B8A8_UNORM;
+	// the HDR output, and the picture it encoded for the next SetFrame()
+	hdr_d3d12_t *hdr = nullptr;
+	DXGI_FORMAT hdrFormat = DXGI_FORMAT_UNKNOWN;
+	ID3D12Resource *hdrFrame = nullptr;
 	u64 frameFence = 0;
 	bool handedOver = false;
 	D3D12_RESOURCE_STATES requiredState = D3D12_RESOURCE_STATE_COPY_SOURCE;

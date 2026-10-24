@@ -26,8 +26,11 @@
 #include "rend/vram_budget.h"
 #include "libretro_vulkan.h"
 #include "pso.h"
+#include "hdr_encode_vk.h"
 
 extern int screen_width, screen_height;
+
+class CommandPool;
 
 #define VENDOR_AMD 0x1022
 #define VENDOR_ARM 0x13B5
@@ -46,7 +49,27 @@ public:
 
 	u32 GetGraphicsQueueFamilyIndex() const { return retro_render_if->queue_index; }
 	void SetWindowSize(u32 width, u32 height) { this->width = screen_width = width; this->height = screen_height = height; }
-	void PresentFrame(vk::Image image, vk::ImageView imageView, vk::Offset2D extent);
+	/* @hdr: the image is the HDR output's (HdrEncode(), the HDR subpass) */
+	void PresentFrame(vk::Image image, vk::ImageView imageView, vk::Offset2D extent, bool hdr = false);
+
+	/* ---- The HDR output (Color Format; hdr_encode_vk.h) ----
+	 * Recorded into the frame's command buffers, from the frame's command
+	 * pool, and submitted with them: nothing of its own is submitted. */
+	bool HdrActive() const { return hdr != nullptr; }
+	vk::Format GetHdrFormat() const { return (vk::Format)hdrFormat; }
+	/* The frame's transform, from a command buffer of @pool's this frame,
+	 * outside a render pass: before the render pass whose last subpass
+	 * encodes (HdrSubpassDraw()) */
+	void HdrPrepare(CommandPool& pool, vk::CommandBuffer cmd);
+	/* The encode as subpass @subpass of @renderPass: the picture its input
+	 * attachment 0, the HDR image its colour attachment 0 */
+	vk::UniquePipeline HdrSubpassPipeline(vk::RenderPass renderPass, u32 subpass);
+	void HdrSubpassDraw(CommandPool& pool, vk::CommandBuffer cmd, vk::Pipeline pipeline, vk::ImageView picture, vk::Extent2D extent);
+	/* The picture (@image, @view, shader-readable, @size) encoded in a pass
+	 * of its own, in a command buffer of @pool's, before the pool's
+	 * EndFrame(); @image and @view become the HDR image's. False, both as
+	 * they were, without the HDR output or when it could not be. */
+	bool HdrEncode(CommandPool& pool, vk::Image& image, vk::ImageView& view, vk::Extent2D size);
 
 	vk::PhysicalDevice GetPhysicalDevice() const { return physicalDevice; }
 	vk::Device GetDevice() const { return device; }
@@ -211,6 +234,13 @@ private:
 	vk::Queue queue;
 
 	retro_vulkan_image retro_image;
+	/* the HDR output (Color Format), when the frontend took it: what every
+	 * picture is encoded through on the way to the frontend */
+	hdr_vk_t *hdr = nullptr;
+	VkFormat hdrFormat = VK_FORMAT_UNDEFINED;
+	// the command pools the encode has kept a frame's things by, a ring each
+	CommandPool *hdrPools[4] = {};
+	u32 HdrRing(CommandPool& pool);
 
 	static VulkanContext *contextInstance;
 };

@@ -400,8 +400,11 @@ private:
 };
 
 /* The render pass of SSAA's frames, the screen's and the textures':
+ * With @hdrFormat, a subpass after the resolve encodes the picture, its
+ * input, into attachment 3, the HDR output's image (hdr_encode_vk.h).
  * attachment 0 the picture (@colorFormat, a single sample), 1 and 2 the
  * colour and depth attachments of @samples the polygons are drawn into.
  * Subpass 0 draws, subpass 1 resolves 1 into 0 (SsaaResolve). Only the
  * picture is stored; it is all written by the resolve, so not loaded. */
-vk::UniqueRenderPass MakeSsaaRenderPass(vk::Format colorFormat, u32 samples, vk::ImageLayout pictureLayout);
+vk::UniqueRenderPass MakeSsaaRenderPass(vk::Format colorFormat, u32 samples, vk::ImageLayout pictureLayout,
+		vk::Format hdrFormat = vk::Format::eUndefined);

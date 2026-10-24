@@ -246,7 +246,8 @@ ifeq ($(HAVE_VULKAN), 1)
 	INCFLAGS += -I$(DEPS_DIR)/khronos
 
 	SOURCES_C += $(LIBRETRO_COMM_DIR)/vulkan/vulkan_symbol_wrapper.c \
-					$(CORE_DIR)/core/rend/vulkan/vk_heap.c
+					$(CORE_DIR)/core/rend/vulkan/vk_heap.c \
+					$(CORE_DIR)/core/rend/vulkan/hdr_encode_vk.c
 	SOURCES_CXX += \
 					$(CORE_DIR)/core/rend/vulkan/vulkan_context.cpp \
 					$(CORE_DIR)/core/rend/vulkan/heap.cpp \
@@ -286,6 +287,7 @@ ifeq ($(HAVE_D3D11), 1)
 					$(CORE_DIR)/core/rend/dx11/dx11_texture.cpp \
 					$(CORE_DIR)/core/rend/dx11/oit/dx11_oitrenderer.cpp \
 					$(CORE_DIR)/core/rend/dx11/oit/dx11_oitshaders.cpp
+	SOURCES_C += $(CORE_DIR)/core/rend/hdr/hdr_encode_d3d11.c
 endif
 
 # Direct3D 12, on Windows: the frontend's device and queue, the shaders DXBC
@@ -304,6 +306,17 @@ ifeq ($(HAVE_D3D12), 1)
 					$(CORE_DIR)/core/rend/dx12/dx12_texdecoder.cpp \
 					$(CORE_DIR)/core/rend/dx12/dx12_texture.cpp \
 					$(CORE_DIR)/core/rend/dx12/oit/dx12_oitrenderer.cpp
+	SOURCES_C += $(CORE_DIR)/core/rend/hdr/hdr_encode_d3d12.c
+endif
+
+# The HDR output's Display Transform (rend/hdr/, Color Format), for the
+# renderers that have the HDR output
+ifneq (,$(filter 1,$(HAVE_VULKAN) $(HAVE_D3D11) $(HAVE_D3D12)))
+	SOURCES_C += $(CORE_DIR)/core/rend/hdr/hdr_output.c \
+					$(CORE_DIR)/core/rend/hdr/hdr_transform.c \
+					$(CORE_DIR)/core/rend/hdr/hdr_aces2.c \
+					$(CORE_DIR)/core/rend/hdr/hdr_display.c \
+					$(CORE_DIR)/core/rend/hdr/hdr_libretro.c
 endif
 
 # NVIDIA's NVAPI, loaded when it is run, for either Direct3D renderer (rend/d3d_nvapi.h)

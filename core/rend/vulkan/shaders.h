@@ -28,6 +28,8 @@
  * (raster_spv.inc, from vulkan/shaders/ by tools/rend/kernels_spv.sh):
  * nothing is compiled when it runs. A module is made from its words. */
 vk::UniqueShaderModule MakeRasterModule(RasterSpv id);
+/* ...and its words, for what makes its modules in C (hdr_encode_vk.c) */
+const u32 *RasterSpvWords(RasterSpv id, size_t *size);
 
 /* The modules a renderer draws with, all made in Make(): they are only
  * read after, from any thread */

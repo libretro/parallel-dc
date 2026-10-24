@@ -77,8 +77,7 @@ public:
 		curTexture->SetCommandBuffer(texCommandPool.Allocate());
 		curTexture->UploadToGPU(width, height, (u8 *)pixels, false);
 		curTexture->SetCommandBuffer(nullptr);
-		texCommandPool.EndFrame();
-		GetContext()->PresentFrame(curTexture->GetImage(), curTexture->GetImageView(), { width, height });
+		PresentTexture(*curTexture, width, height, { width, height });
 		return true;
 	}
 
@@ -245,11 +244,21 @@ protected:
 		curTexture->SetCommandBuffer(texCommandPool.Allocate());
 		curTexture->UploadToGPU(width, height, (u8*)pb.data(), false);
 		curTexture->SetCommandBuffer(nullptr);
-		texCommandPool.EndFrame();
-
-		GetContext()->PresentFrame(curTexture->GetImage(), curTexture->GetImageView(), { 640, 480 });
+		PresentTexture(*curTexture, width, height, { 640, 480 });
 
 		return true;
+	}
+
+	/* The frame submitted and @texture (@width x @height) handed over as
+	 * @extent: with the HDR output, encoded first, in the same submission
+	 * (VulkanContext::HdrEncode()) */
+	void PresentTexture(Texture& texture, int width, int height, vk::Offset2D extent)
+	{
+		vk::Image image = texture.GetImage();
+		vk::ImageView view = texture.GetImageView();
+		const bool hdr = GetContext()->HdrEncode(texCommandPool, image, view, vk::Extent2D(width, height));
+		texCommandPool.EndFrame();
+		GetContext()->PresentFrame(image, view, extent, hdr);
 	}
 
 	// the texture a picture of the CPU's is handed to the frontend in, for the frontend's frame index

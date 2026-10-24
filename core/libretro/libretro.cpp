@@ -1,3 +1,9 @@
+#if defined(HAVE_VULKAN) || defined(HAVE_D3D11) || defined(HAVE_D3D12)
+/* (the renderers that have the HDR output: Color Format) */
+#define HAVE_HDR_OUTPUT
+#include "rend/hdr/hdr_libretro.h"
+#include "rend/hdr/hdr_output.h"
+#endif
 #include <cstdio>
 #include <compat/fopen_utf8.h>
 #include <cstdarg>
@@ -615,6 +621,9 @@ static int gl_ta_possible = -1;
 
 static void set_variable_visibility(void)
 {
+#ifdef HAVE_HDR_OUTPUT
+   hdr_libretro_update_display(environ_cb);
+#endif
    struct retro_core_option_display option_display;
    struct retro_variable var;
    char key[256];
@@ -1544,6 +1553,10 @@ static void update_variables(bool first_startup)
    if (!first_startup)
       dc_apply_game_settings();
 
+#ifdef HAVE_HDR_OUTPUT
+   /* the Display Transform from the next frame; Color Format at the next load */
+   hdr_libretro_options(environ_cb);
+#endif
    set_variable_visibility();
 }
 
@@ -1646,6 +1659,11 @@ void retro_run (void)
 
    if (devices_need_refresh)
       refresh_devices(false);
+#ifdef HAVE_HDR_OUTPUT
+   /* the frontend's paper white, peak and panel, for this frame's encode
+    * (on this thread, which renders, threaded rendering or not) */
+   hdr_libretro_refresh(environ_cb);
+#endif
 
    {
       /* A frame the frontend will not show - one fast-forward's frameskip
@@ -3025,6 +3043,27 @@ bool retro_load_game(const struct retro_game_info *game)
 
    if (!foundRenderApi)
       return false;
+
+#ifdef HAVE_HDR_OUTPUT
+   /* Color Format: asked of the frontend for a renderer that has the HDR
+    * output - Vulkan, Direct3D 11, Direct3D 12 - before its context is
+    * made, which is what makes the picture it hands over. Any other draws
+    * the 24-bit picture. */
+   if (settings.pvr.rend == 4 || settings.pvr.rend == 5 || settings.pvr.rend == 6 || settings.pvr.rend == 7
+         || settings.pvr.rend == 9 || settings.pvr.rend == 10)
+   {
+      if (hdr_libretro_negotiate(environ_cb))
+         NOTICE_LOG(BOOT, "Color Format: HDR output, %s", hdr_output.format == HDR_OUTPUT_SCRGB ? "scRGB" : "HDR10");
+      else if (hdr_libretro_wanted())
+         WARN_LOG(BOOT, "Color Format: the frontend does not present this HDR output; 24-bit");
+   }
+   else
+   {
+      hdr_libretro_reset();
+      if (hdr_libretro_wanted())
+         WARN_LOG(BOOT, "Color Format: HDR output is for the Vulkan, Direct3D 11 and Direct3D 12 renderers; 24-bit");
+   }
+#endif
 
    if (settings.System != DC_PLATFORM_DREAMCAST)
    {

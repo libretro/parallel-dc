@@ -3,19 +3,40 @@ name: Vulkan negotiation
 # The core's Vulkan device, negotiated as RetroArch does (v2, made through
 # the frontend's vkCreateDevice wrapper) and as a frontend without v2 does
 # (v1), on lavapipe under the validation layer: tools/vulkan/vk_negotiate.sh.
+# Then the HDR output (Color Format), the frames run and the pictures read
+# back: tools/vulkan/vk_hdr.sh; and its HLSL, which Direct3D 11 and 12
+# draw with, against the GLSL: tools/vulkan/hdr_hlsl.sh. And ACES 2.0
+# (Full)'s cube, baked by a lock-free worker off the frame, against the
+# cube baked in place, under TSan and ASan/UBSan: tools/hdr/hdr_cube.sh.
+# And Direct3D 11 and 12's HDR encoders and their DXBC, under wine (wined3d
+# and vkd3d on lavapipe), against the GLSL: tools/hdr/hdr_d3d.sh; and the
+# core's Windows build drawing with Direct3D 11 under wine, its 24-bit,
+# HDR10 and scRGB pictures read back and judged: tools/hdr/d3d_hdr.sh.
 
 on:
   push:
     paths:
       - 'core/rend/vulkan/**'
+      - 'core/rend/hdr/**'
+      - 'core/rend/dx11/**'
+      - 'core/rend/dx12/**'
+      - 'tools/rend/kernels_dxbc.sh'
+      - 'tools/hdr/**'
       - 'core/libretro/**'
+      - 'tools/threads/live_disc.py'
       - 'tools/vulkan/**'
       - 'Makefile*'
       - '.github/workflows/vulkan-negotiation.yml'
   pull_request:
     paths:
       - 'core/rend/vulkan/**'
+      - 'core/rend/hdr/**'
+      - 'core/rend/dx11/**'
+      - 'core/rend/dx12/**'
+      - 'tools/rend/kernels_dxbc.sh'
+      - 'tools/hdr/**'
       - 'core/libretro/**'
+      - 'tools/threads/live_disc.py'
       - 'tools/vulkan/**'
       - 'Makefile*'
       - '.github/workflows/vulkan-negotiation.yml'
@@ -34,8 +55,37 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            build-essential libgl1-mesa-dev mesa-vulkan-drivers vulkan-validationlayers libvulkan1
+            build-essential libgl1-mesa-dev mesa-vulkan-drivers vulkan-validationlayers libvulkan1 \
+            glslang-tools mingw-w64 wine wine64 xvfb
       - name: Build the core
         run: make -j"$(nproc)"
       - name: Negotiation v2 and v1
         run: VK_DRIVER_FILES=/usr/share/vulkan/icd.d/lvp_icd.json sh tools/vulkan/vk_negotiate.sh
+      - name: HDR output (HDR10, scRGB, each renderer, every Display Transform)
+        run: VK_DRIVER_FILES=/usr/share/vulkan/icd.d/lvp_icd.json sh tools/vulkan/vk_hdr.sh
+      - name: HDR output's HLSL against its GLSL
+        run: VK_DRIVER_FILES=/usr/share/vulkan/icd.d/lvp_icd.json sh tools/vulkan/hdr_hlsl.sh
+      - name: HDR output's DXBC is its HLSL's (sums)
+        run: sh tools/rend/kernels_dxbc.sh check
+      - name: HDR output with Direct3D 11 and 12 (wine, the core's encoders, against the GLSL)
+        run: VK_DRIVER_FILES=/usr/share/vulkan/icd.d/lvp_icd.json sh tools/hdr/hdr_d3d.sh
+      - name: ACES 2.0 (Full)'s cube baked off the frame (threads, TSan, ASan/UBSan, no threads)
+        run: |
+          sh tools/hdr/hdr_cube.sh
+          SANITIZE=thread sh tools/hdr/hdr_cube.sh
+          SANITIZE=address,undefined UBSAN_OPTIONS=halt_on_error=1 sh tools/hdr/hdr_cube.sh
+
+  d3d11-hdr:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install mingw-w64, wine and lavapipe
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential mingw-w64 wine wine64 xvfb mesa-vulkan-drivers libvulkan1 python3
+      - name: Build the core for Windows
+        run: make -j"$(nproc)" platform=win CC=x86_64-w64-mingw32-gcc CXX=x86_64-w64-mingw32-g++
+      - name: HDR output with Direct3D 11 (24-bit, refused, HDR10, scRGB, each renderer)
+        run: VK_DRIVER_FILES=/usr/share/vulkan/icd.d/lvp_icd.json sh tools/hdr/d3d_hdr.sh parallel_dc_libretro.dll

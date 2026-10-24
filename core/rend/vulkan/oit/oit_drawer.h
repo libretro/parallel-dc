@@ -223,10 +223,7 @@ public:
 		timer.End(currentCommandBuffer, commandPool->GetIndex());
 		currentCommandBuffer.end();
 		currentCommandBuffer = nullptr;
-		commandPool->EndFrame();
-		GetContext()->PresentFrame(finalColorAttachments[GetCurrentImage()]->GetImage(),
-				finalColorAttachments[GetCurrentImage()]->GetImageView(),
-				vk::Offset2D(viewport.extent.width, viewport.extent.height));
+		Present();
 	}
 	vk::RenderPass GetRenderPass() const { return screenPipelineManager->GetRenderPass(false, true); }
 	/* The chip's write-out (../writeout.h), when the frame has one: the
@@ -324,12 +321,20 @@ public:
 		restoredPicture = nullptr;
 		if (carriedPicture)
 			commandPool->DeferDelete(std::move(carriedPicture));
-		commandPool->EndFrame();
-		GetContext()->PresentFrame(finalColorAttachments[GetCurrentImage()]->GetImage(),
-				finalColorAttachments[GetCurrentImage()]->GetImageView(),
-				vk::Offset2D(viewport.extent.width, viewport.extent.height));
+		Present();
 	}
 protected:
+	/* The frame submitted and its picture handed over: with the HDR output,
+	 * the picture encoded first, in the same submission (VulkanContext::HdrEncode()) */
+	void Present()
+	{
+		vk::Image image = finalColorAttachments[GetCurrentImage()]->GetImage();
+		vk::ImageView view = finalColorAttachments[GetCurrentImage()]->GetImageView();
+		const bool hdr = GetContext()->HdrEncode(*commandPool, image, view,
+				vk::Extent2D(viewport.extent.width, viewport.extent.height));
+		commandPool->EndFrame();
+		GetContext()->PresentFrame(image, view, vk::Offset2D(viewport.extent.width, viewport.extent.height), hdr);
+	}
 
 private:
 	void MakeFramebuffers();

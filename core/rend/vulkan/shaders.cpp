@@ -29,6 +29,12 @@
 // otherwise compared at the wider precision)
 static_assert((float)PREPASS_ALPHA_MIN == (float)PREPASS_ALPHA_MIN_GLSL, "the prepass's alpha, in shaders/prepass.frag (pso_key.h)");
 
+const u32 *RasterSpvWords(RasterSpv id, size_t *size)
+{
+	*size = raster_spv_size[id];
+	return raster_spv[id];
+}
+
 vk::UniqueShaderModule MakeRasterModule(RasterSpv id)
 {
 	return VulkanContext::Instance()->GetDevice().createShaderModuleUnique(

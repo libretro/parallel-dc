@@ -68,6 +68,7 @@ public:
 
 	void BeginFrame()
 	{
+		frames++;
 		index = (index + 1) % VulkanContext::Instance()->GetSwapChainSize();
 		VulkanContext::Instance()->GetDevice().waitForFences(1, &fences[index].get(), true, UINT64_MAX);
 		VulkanContext::Instance()->GetDevice().resetFences(1, &fences[index].get());
@@ -137,6 +138,12 @@ public:
 		return index;
 	}
 
+	// how many frames have begun: the one being recorded is the last of them
+	u64 GetFrames() const
+	{
+		return frames;
+	}
+
 	/* Retire a GPU resource so it is destroyed once the current frame's fence has
 	   signaled, rather than stalling the whole device with WaitIdle. Used when an
 	   attachment must be recreated (grown) while previous frames may still reference
@@ -150,6 +157,7 @@ public:
 
 private:
 	int index = 0;
+	u64 frames = 0;
 	std::vector<std::vector<vk::UniqueCommandBuffer>> freeBuffers;
 	std::vector<std::vector<vk::UniqueCommandBuffer>> inFlightBuffers;
 	std::vector<vk::UniqueCommandPool> commandPools;

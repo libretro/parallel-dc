@@ -1165,8 +1165,9 @@ void DX12Renderer::EndScreen(bool writeOutPass)
 		overlay.Draw(screenWidth, screenHeight);
 	}
 	context->SetTargets(~0u, ~0u);
-	// as the frontend wants it, and off to the GPU
-	context->Transition(target.image, context->RequiredState());
+	// as the frontend wants it - or encoded for its HDR output, which it is handed instead - and off to the GPU
+	if (!context->EncodeHdr(target.image, target.image.width, target.image.height))
+		context->Transition(target.image, context->RequiredState());
 	context->Submit();
 
 	havePicture = true;
