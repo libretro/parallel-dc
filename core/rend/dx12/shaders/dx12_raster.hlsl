@@ -25,6 +25,18 @@
 // Without DX12_SSAA they are what they were, to the byte. Its own:
 //   DX12_SSAA_RESOLVE_PS           the samples resolved into the picture
 //
+// The temporal upscaler's motion vector pass (rend/upscaler.h), over the
+// depth the frame left, as the Vulkan renderers' (vulkan/shaders/mv.vert):
+//   DX12_MOTION_VS, DX12_MOTION_PS a vertex placed as the colour pass placed
+//                                  it; the vector to where it was last frame
+//                                  (DX12_MOTION_SAMPLED: tested by the pixel
+//                                  shader against the depth the compute
+//                                  renderer's walk stored, a texture of the
+//                                  table, no depth buffer being bound)
+//   DX12_DEPTH_COPY_PS             the depth buffer's first plane, a texture
+//                                  of the table, drawn whole (the quad's
+//                                  vertex shader) into a picture of floats
+//
 // What the Direct3D 11 renderer made a pixel shader of its own for, a
 // polygon's bits (#if there), is read here from the root constants, and
 // branched on (if): the same operations in the same order, so what a pixel
@@ -65,7 +77,8 @@ SamplerState samplers[DX12_SAMPLER_TABLE_SIZE] : register(s0, space1);
 SamplerState pointSampler : register(s0);
 SamplerState linearSampler : register(s1);
 
-#if !defined(DX12_QUAD_VS) && !defined(DX12_QUAD_PS) && !defined(DX12_SSAA_RESOLVE_PS)
+#if !defined(DX12_QUAD_VS) && !defined(DX12_QUAD_PS) && !defined(DX12_SSAA_RESOLVE_PS) && !defined(DX12_MOTION_VS) && !defined(DX12_MOTION_PS) \
+		&& !defined(DX12_DEPTH_COPY_PS)
 cbuffer PolyConstants : register(b1)
 {
 	float4 clipTest;
@@ -348,6 +361,60 @@ precise float4 main(in float3 pos : POSITION) : SV_POSITION
 }
 #endif
 
+#if defined(DX12_MOTION_VS) || defined(DX12_MOTION_PS)
+// The motion vector pass: the render's size in the root constants (b1),
+// and the depth's place in the table where the pixel shader tests it
+cbuffer MotionConstants : register(b1)
+{
+	float2 motionSize;
+	uint motionDepth;
+};
+
+struct MotionOut
+{
+	float4 pos : SV_POSITION;
+	float2 motion : TEXCOORD0;
+};
+#endif
+
+#ifdef DX12_MOTION_VS
+// The vertex placed as the colour pass placed it, so the depth test against
+// the depth that pass left finds the same surface; the vector from where it
+// is to where it was last frame (its second stream), in pixels of the
+// render (the jitter is in both, and cancels). Clip space's y goes up, the
+// picture's rows down.
+MotionOut main(in float3 pos : POSITION, in float2 prev : PREVPOS)
+{
+	MotionOut vo;
+	if (pos.z < 0.0 || pos.z > 3.4e37)
+	{
+		vo.pos = float4(0.0, 0.0, 1.0, 1.0 / pos.z);
+		vo.motion = float2(0.0, 0.0);
+		return vo;
+	}
+	vo.pos = transformVertex(pos);
+	// (the game's coordinates are on the screen already: the matrix only scales and moves them)
+	const float2 now = pos.xy * normalScale.xy + normalOffset.xy;
+	const float2 then = prev * normalScale.xy + normalOffset.xy;
+	vo.motion = (then - now) * 0.5 * float2(motionSize.x, -motionSize.y);
+	return vo;
+}
+#endif
+
+#ifdef DX12_MOTION_PS
+// The vector, as it is
+float2 main(in MotionOut vin) : SV_Target
+{
+#ifdef DX12_MOTION_SAMPLED
+	// the surface the walk left: its depth there, equal or nearer (reversed), a little under for the walk's rounding
+	const float depth = textures[motionDepth].Load(int3(int2(vin.pos.xy), 0)).r;
+	if (vin.pos.z < depth - 1e-5)
+		discard;
+#endif
+	return vin.motion;
+}
+#endif
+
 #ifdef DX12_MODVOL_PS
 // The colour is only ever written by the pass that darkens what is left
 // in the volumes: by what the shadows take away
@@ -357,7 +424,7 @@ float4 main(in float4 pos : SV_POSITION) : SV_Target
 }
 #endif
 
-#if defined(DX12_QUAD_VS) || defined(DX12_QUAD_PS)
+#if defined(DX12_QUAD_VS) || defined(DX12_QUAD_PS) || defined(DX12_DEPTH_COPY_PS)
 // The quad: no vertex buffer, its rectangle in the root constants (b1):
 // x, y, w, h in clip space (y going up), then u0, v0, u1, v1 (v going
 // down), then the picture's index and its flags
@@ -386,6 +453,14 @@ QuadOut main(uint id : SV_VertexID)
 	vo.pos = float4(quadRect.x + quadRect.z * right, quadRect.y + quadRect.w * top, 0.0, 1.0);
 	vo.uv = float2(right != 0.0 ? quadUV.z : quadUV.x, top != 0.0 ? quadUV.y : quadUV.w);
 	return vo;
+}
+#endif
+
+#ifdef DX12_DEPTH_COPY_PS
+// The depth at the pixel, as the depth buffer has it (quadTex: its first plane in the table)
+float main(in QuadOut vin) : SV_Target
+{
+	return textures[quadTex].Load(int3(int2(vin.pos.xy), 0)).r;
 }
 #endif
 

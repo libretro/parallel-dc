@@ -61,6 +61,11 @@ enum class DX12Shader
 	 * samples the depth test passed: for pipelines made with NVIDIA's
 	 * post-depth coverage (dx12_nvapi.h) */
 	SsaaOITListPostZPS = 38,
+	/* the temporal upscaler's motion vector pass (dx12_renderer.h) */
+	MotionVS = 40,
+	MotionPS = 41,
+	MotionSampledPS = 42,	// testing the depth the compute renderer stored itself
+	DepthCopyPS = 43,		// the depth buffer copied into the upscaler's picture of it
 };
 
 D3D12_SHADER_BYTECODE dx12_shader(DX12Shader shader);

@@ -97,9 +97,13 @@ enum class DX12Stencil
 enum { DX12_BLEND_KEY = 0, DX12_BLEND_ALPHA = 1, DX12_BLEND_FACTOR = 2 };
 /* Which shaders: the per-triangle renderer's polygons, the modifier
  * volumes, the quads; the per-pixel renderer's polygons (in a pass, DX12_PASS_),
- * its lists put together, its translucent modifier volumes; SSAA's resolve */
+ * its lists put together, its translucent modifier volumes; SSAA's resolve;
+ * the temporal upscaler's motion vector pass (dx12_renderer.h: into a
+ * picture of two halves a pixel, over the depth the frame left; with pass
+ * 1, the depth buffer copied into its picture of floats by the quad's
+ * vertex shader) */
 enum { DX12_PSO_POLY = 0, DX12_PSO_MODVOL = 1, DX12_PSO_QUAD = 2, DX12_PSO_OIT = 3, DX12_PSO_OIT_FINAL = 4, DX12_PSO_OIT_MODVOL = 5,
-	DX12_PSO_SSAA_RESOLVE = 6 };
+	DX12_PSO_SSAA_RESOLVE = 6, DX12_PSO_MOTION = 7 };
 /* SSAA's rates (DX12PsoKey::rate): none; a polygon shaded at each sample;
  * once a pixel. (The lists put together: at each sample into samples, or
  * resolved into a picture of one - and with the HDR output, storing the
@@ -161,7 +165,7 @@ struct DX12PsoKey
 	static bool Valid(u64 v)
 	{
 		const DX12PsoKey k = Unpack(v);
-		return (v >> 33) == 0 && ((v >> 28) & 1) == 1 && k.kind <= DX12_PSO_SSAA_RESOLVE && (u32)k.stencil < (u32)DX12Stencil::Count
+		return (v >> 33) == 0 && ((v >> 28) & 1) == 1 && k.kind <= DX12_PSO_MOTION && (u32)k.stencil < (u32)DX12Stencil::Count
 				&& k.cull <= 2 && k.special <= DX12_BLEND_FACTOR && k.pass <= DX12_PASS_OIT
 				&& (k.rate <= DX12_RATE_PIXEL || (k.rate == DX12_RATE_PIXEL_SUMS && k.kind == DX12_PSO_OIT_FINAL));
 	}

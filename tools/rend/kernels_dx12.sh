@@ -60,9 +60,21 @@
 #                                 of a dxc of its own; the PVRC_SUMS blocks
 #                                 are left out of the text of the others
 #
+#   core/rend/dx12/dx12_compute_upscaler_dxil.inc
+#                                 the temporal upscaler's walks of the
+#                                 compute renderer (COMPUTE_UPSCALER_KERNELS:
+#                                 the walk for 1 sample a pixel, both
+#                                 variants, that stores each pixel's depth,
+#                                 PVRC_DEPTH; and the two that store the
+#                                 channel sums as well, for the HDR output
+#                                 with it), of a dxc of its own; the
+#                                 PVRC_DEPTH blocks are left out of the text
+#                                 of the others
+#
 #   sh tools/rend/kernels_dx12.sh update   all made again from the sources
 #   sh tools/rend/kernels_dx12.sh update-hdr  only the HDR output's DXBC made again
 #   sh tools/rend/kernels_dx12.sh update-compute-hdr  ...and its DXIL
+#   sh tools/rend/kernels_dx12.sh update-compute-upscaler  only the upscaler's DXIL made again
 #   sh tools/rend/kernels_dx12.sh check    whether all are the sources' still
 #   sh tools/rend/kernels_dx12.sh bindings what the compute kernels bind, from
 #        their DXIL, as dx12/dx12_compute.cpp binds it (tools/rend/dxil_bindings.c)
@@ -125,7 +137,10 @@ SHADERS="$SHADERS 36:ps_5_1:DX12_OIT_MODVOL_PS,$S 37:ps_5_1:DX12_SSAA_RESOLVE_PS
 # the lists' again, for NVIDIA's post-depth coverage (DX12_POST_Z_COVERAGE: pipelines made through NVAPI)
 SHADERS="$SHADERS 38:ps_5_1:DX12_OIT_PS,$S,DX12_GOURAUD=1,DX12_OIT_PASS=2,DX12_SAMPLE_RATE=2,DX12_POST_Z_COVERAGE"
 SHADERS="$SHADERS 39:ps_5_1:DX12_OIT_PS,$S,DX12_GOURAUD=0,DX12_OIT_PASS=2,DX12_SAMPLE_RATE=2,DX12_POST_Z_COVERAGE"
-COUNT=39
+# the temporal upscaler's motion vector pass (DX12_MOTION_VS, DX12_MOTION_PS)
+SHADERS="$SHADERS 40:vs_5_1:DX12_MOTION_VS 41:ps_5_1:DX12_MOTION_PS 42:ps_5_1:DX12_MOTION_PS,DX12_MOTION_SAMPLED"
+SHADERS="$SHADERS 43:ps_5_1:DX12_DEPTH_COPY_PS"
+COUNT=43
 # The HDR output's own, in core/rend/dx12/dx12_hdr_dxbc.inc (by DX12HdrShader):
 # the per-pixel renderer's lists resolved with SSAA (34's) that store the
 # channel sums as well
@@ -136,6 +151,7 @@ TA_INC=core/rend/dx12/dx12_ta_dxbc.inc
 TA11_INC=core/rend/dx11/dx11_ta_dxbc.inc
 COMPUTE_INC=core/rend/dx12/dx12_compute_dxil.inc
 COMPUTE_HDR_INC=core/rend/dx12/dx12_compute_hdr_dxil.inc
+COMPUTE_UPSCALER_INC=core/rend/dx12/dx12_compute_upscaler_dxil.inc
 PVRC_SRC=core/rend/tile/pvr_compute.h
 PVRC_KERNELS=$(awk '$1 == "#define" && $2 == "PVRC_KERNELS" { print $3 }' $PVRC_SRC)
 PVRC_K_WALK=$(awk '$1 == "#define" && $2 == "PVRC_K_WALK" { print $3 }' $PVRC_SRC)
@@ -147,6 +163,20 @@ while [ $k -le "$PVRC_KERNELS" ]; do
    if [ $k = "$PVRC_K_WALK" ]; then COMPUTE_KERNELS="$COMPUTE_KERNELS $k:1:1 $k:2:1 $k:4:1 $k:8:1 $k:1:2 $k:2:2 $k:4:2 $k:8:2"; else COMPUTE_KERNELS="$COMPUTE_KERNELS $k:0:0"; fi
    k=$((k + 1))
 done
+# the temporal upscaler's: the walk's for 1 sample, variant:sums
+COMPUTE_UPSCALER_KERNELS="1:0 2:0 1:1 2:1"
+# ...a kernel's defines, and its name: the walk's for 1, d, u after it for
+# the unsorted variant, s after that with the sums
+upscaler_defines_of() {
+   v=${1%%:*}
+   if [ "$v" = 2 ]; then echo "#define PVRC_KEEP 1u"; else echo "#define PVRC_KEEP ${PVRC_KEEP_D3D12}u"; fi
+   echo "#define PVRC_VARIANT ${v}u"
+   echo "#define PVRC_DEPTH"
+   if [ "${1##*:}" = 1 ]; then echo "#define PVRC_SUMS"; fi
+}
+upscaler_name_of() {
+   echo "${PVRC_K_WALK}_1$( [ "${1%%:*}" = 2 ] && echo u)d$( [ "${1##*:}" = 1 ] && echo s)"
+}
 # the HDR output's: the walk's, with the channel sums
 COMPUTE_HDR_KERNELS="$PVRC_K_WALK:1:1 $PVRC_K_WALK:2:1 $PVRC_K_WALK:4:1 $PVRC_K_WALK:8:1 $PVRC_K_WALK:1:2 $PVRC_K_WALK:2:2 $PVRC_K_WALK:4:2 $PVRC_K_WALK:8:2"
 # a kernel's defines: @1 number:samples:variant
@@ -243,13 +273,20 @@ compute_source_of() {
       echo "#define PVR_LANE_NONE"
    fi
    shift 2
-   keep=
-   for d in "$@"; do echo "$d"; [ "$d" = "#define PVRC_SUMS" ] && keep=1; done
-   # (and without the blocks for the HDR output, PVRC_SUMS, but in its walks,
-   # nor the Vulkan walk's depth for the temporal upscaler, PVRC_DEPTH)
+   sums=; depth=
+   for d in "$@"; do
+      echo "$d"
+      [ "$d" = "#define PVRC_SUMS" ] && sums=1
+      [ "$d" = "#define PVRC_DEPTH" ] && depth=1
+   done
+   # (and without the blocks for the HDR output, PVRC_SUMS, but in its
+   # walks, nor those for the temporal upscaler's depth, PVRC_DEPTH, but in
+   # its)
+   printf '/^#include/d\n' > "$WORK/strip.sed"
+   [ -n "$sums" ] || printf '/^#if defined(PVRC_SUMS)$/,/^#endif \\/\\* PVRC_SUMS \\*\\/$/d\n' >> "$WORK/strip.sed"
+   [ -n "$depth" ] || printf '/^#if defined(PVRC_DEPTH)$/,/^#endif \\/\\* PVRC_DEPTH \\*\\/$/d\n' >> "$WORK/strip.sed"
    for h in core/rend/tile/pvr_lane.h core/rend/tile/pvr_tile.h core/rend/tile/pvr_modvol.h core/rend/tile/pvr_resolve.h core/rend/tile/pvr_scaler.h core/rend/ssaa_pattern.h $PVRC_SRC; do
-      if [ -n "$keep" ]; then sed -e '/^#include/d' -e '/^#if defined(PVRC_DEPTH)$/,/^#endif \/\* PVRC_DEPTH \*\/$/d' $h
-      else sed -e '/^#include/d' -e '/^#if defined(PVRC_SUMS)$/,/^#endif \/\* PVRC_SUMS \*\/$/d' -e '/^#if defined(PVRC_DEPTH)$/,/^#endif \/\* PVRC_DEPTH \*\/$/d' $h; fi
+      sed -f "$WORK/strip.sed" $h
    done | sed -e 's/\b\(frm\|rec\|bin\|vtx\|idx\|mvt\|dcmd\|dtrd\|dfrm\)\.w\[/\1_w[/g' \
       -e 's/^layout(local_size_x = \(.*\)) in;$/#define PVRC_THREADS \1/' \
       -e 's/^\(\(uint\|int\|bool\|float\|uvec4\|vec2\) [A-Za-z_0-9]*\( = [A-Za-z_0-9]*\)\?\(, [A-Za-z_0-9]*\( = [A-Za-z_0-9]*\)\?\)*;\)/static \1/' \
@@ -281,7 +318,7 @@ compute_sums() {
 
 # The compute renderer's root signature (dx12/dx12_compute.cpp's Init(), as
 # it has it), which dxc holds each kernel's bindings to (-verifyrootsignature)
-COMPUTE_ROOT="RootConstants(num32BitConstants=2, b0), DescriptorTable(UAV(u0, numDescriptors=10), UAV(u0, space=2, numDescriptors=2)), DescriptorTable(SRV(t0, space=1, numDescriptors=unbounded)), DescriptorTable(Sampler(s0, space=1, numDescriptors=unbounded)), StaticSampler(s0, filter=FILTER_MIN_MAG_LINEAR_MIP_POINT, addressU=TEXTURE_ADDRESS_CLAMP, addressV=TEXTURE_ADDRESS_CLAMP, addressW=TEXTURE_ADDRESS_CLAMP, comparisonFunc=COMPARISON_NEVER)"
+COMPUTE_ROOT="RootConstants(num32BitConstants=2, b0), DescriptorTable(UAV(u0, numDescriptors=10), UAV(u0, space=2, numDescriptors=3)), DescriptorTable(SRV(t0, space=1, numDescriptors=unbounded)), DescriptorTable(Sampler(s0, space=1, numDescriptors=unbounded)), StaticSampler(s0, filter=FILTER_MIN_MAG_LINEAR_MIP_POINT, addressU=TEXTURE_ADDRESS_CLAMP, addressV=TEXTURE_ADDRESS_CLAMP, addressW=TEXTURE_ADDRESS_CLAMP, comparisonFunc=COMPARISON_NEVER)"
 compute_root() {
    [ -f "$WORK/root.bin" ] && return
    echo "#define ROOT \"$COMPUTE_ROOT\"" > "$WORK/root.hlsl"
@@ -294,6 +331,54 @@ compute_hdr_sums() {
       compute_source_of ${t%%:*} ${t#*:} "$(compute_defines_of $k | head -1)" "$(compute_defines_of $k | tail -1)" "#define PVRC_SUMS" > "$WORK/s.hlsl"
       echo " * kernel $(compute_name_of $k) $(sha1sum < "$WORK/s.hlsl" | cut -c1-40)"
    done
+}
+
+# @1 a kernel of COMPUTE_UPSCALER_KERNELS: its source
+upscaler_source_of() {
+   upscaler_defines_of $1 > "$WORK/udefs"
+   set --
+   while read d; do set -- "$@" "$d"; done < "$WORK/udefs"
+   compute_source_of $PVRC_K_WALK 1 "$@"
+}
+
+compute_upscaler_sums() {
+   for k in $COMPUTE_UPSCALER_KERNELS; do
+      upscaler_source_of $k > "$WORK/s.hlsl"
+      echo " * kernel $(upscaler_name_of $k) $(sha1sum < "$WORK/s.hlsl" | cut -c1-40)"
+   done
+}
+
+make_compute_upscaler_inc() {
+   echo "/* DXIL of the compute renderer's walks for the temporal upscaler (rend/tile/"
+   echo " * pvr_compute.h's walk with PVRC_DEPTH: each pixel's depth stored as well),"
+   echo " * for 1 sample a pixel, in its two variants, and then the two that store"
+   echo " * the channel sums too (PVRC_SUMS, for the HDR output), as"
+   echo " * tools/rend/kernels_dx12.sh makes HLSL of them: made by"
+   echo " * tools/rend/kernels_dx12.sh update-compute-upscaler from them. Not to be"
+   echo " * edited."
+   echo " * dxc $(dxc_version)"
+   compute_upscaler_sums
+   echo " */"
+   for k in $COMPUTE_UPSCALER_KERNELS; do
+      n=$(upscaler_name_of $k)
+      upscaler_source_of $k > "$WORK/u$n.hlsl"
+      compute_root
+      dxc_compile "$WORK/u$n.hlsl" "$WORK/u$n.dxil"
+      "$DXC" -dumpbin -verifyrootsignature "$WORK/root.bin" "$WORK/u$n.dxil" > "$WORK/log" 2>&1 \
+         || { cat "$WORK/log" >&2; echo "$0: kernel $n binds what the compute renderer's root signature does not have" >&2; exit 1; }
+      echo "static const u32 dx12_compute_upscaler_dxil_$n[] = {"
+      od -An -v -w32 -tx4 --endian=little "$WORK/u$n.dxil" | awk '{ s = ""; for (i = 1; i <= NF; i++) s = s "0x" $i ","; print s }'
+      echo "};"
+   done
+   echo "// the sorted variant, the unsorted; then both with the sums: the words, and their size in bytes"
+   l="static const u32 * const dx12_compute_upscaler_dxil[] = {"
+   z="static const size_t dx12_compute_upscaler_dxil_size[] = {"
+   c=
+   for k in $COMPUTE_UPSCALER_KERNELS; do
+      n=$(upscaler_name_of $k); l="$l$c dx12_compute_upscaler_dxil_$n"; z="$z$c sizeof(dx12_compute_upscaler_dxil_$n)"; c=,
+   done
+   echo "$l };"
+   echo "$z };"
 }
 
 make_compute_hdr_inc() {
@@ -539,6 +624,12 @@ make_hdr_inc() {
 }
 
 case "$1" in
+update-compute-upscaler)
+   [ -n "$(dxc_version)" ] || { echo "$0: DXC=/path/to/dxc is needed to make them" >&2; exit 1; }
+   make_compute_upscaler_inc > "$WORK/new.inc"
+   cp "$WORK/new.inc" $COMPUTE_UPSCALER_INC
+   echo "made $COMPUTE_UPSCALER_INC"
+   ;;
 update-compute-hdr)
    [ -n "$(dxc_version)" ] || { echo "$0: DXC=/path/to/dxc is needed to make them" >&2; exit 1; }
    make_compute_hdr_inc > "$WORK/new.inc"
@@ -566,7 +657,9 @@ update)
    cp "$WORK/new.inc" $HDR_INC
    make_compute_hdr_inc > "$WORK/new.inc"
    cp "$WORK/new.inc" $COMPUTE_HDR_INC
-   echo "made $INC, $TA_INC, $TA11_INC, $COMPUTE_INC, $HDR_INC and $COMPUTE_HDR_INC"
+   make_compute_upscaler_inc > "$WORK/new.inc"
+   cp "$WORK/new.inc" $COMPUTE_UPSCALER_INC
+   echo "made $INC, $TA_INC, $TA11_INC, $COMPUTE_INC, $HDR_INC, $COMPUTE_HDR_INC and $COMPUTE_UPSCALER_INC"
    ;;
 check)
    check_inc $INC make_inc sums d3dcompiler_47
@@ -575,6 +668,7 @@ check)
    check_inc $COMPUTE_INC make_compute_inc compute_sums dxc
    check_inc $HDR_INC make_hdr_inc hdr_sums d3dcompiler_47
    check_inc $COMPUTE_HDR_INC make_compute_hdr_inc compute_hdr_sums dxc
+   check_inc $COMPUTE_UPSCALER_INC make_compute_upscaler_inc compute_upscaler_sums dxc
    ;;
 bindings)
    ${CC:-cc} -std=c99 -O1 -Wall -DPVRC_KERNELS=$PVRC_KERNELS -DPVRC_K_WALK=$PVRC_K_WALK -Icore/rend/dx12 \
@@ -603,7 +697,7 @@ compute-test)
    done
    ;;
 *)
-   echo "usage: $0 update | update-hdr | update-compute-hdr | check | bindings | compute-test DIR SAMPLES KEEP" >&2
+   echo "usage: $0 update | update-hdr | update-compute-hdr | update-compute-upscaler | check | bindings | compute-test DIR SAMPLES KEEP" >&2
    exit 2
    ;;
 esac

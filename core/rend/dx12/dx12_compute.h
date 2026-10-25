@@ -70,9 +70,10 @@ class DX12ComputeDrawer
 public:
 	DX12ComputeDrawer();
 	~DX12ComputeDrawer();
-	/* Made for a picture of @width x @height and @samples a pixel; false
-	 * when the device cannot have it (logged) */
-	bool Init(u32 width, u32 height, u32 samples);
+	/* Made for a picture of @width x @height and @samples a pixel (@depth:
+	 * and for the temporal upscaler, with the walks that store each pixel's
+	 * depth, at one sample); false when the device cannot have it (logged) */
+	bool Init(u32 width, u32 height, u32 samples, bool depth = false);
 	void Term();
 	/* Whether the device has what the kernels need (the reason it has not,
 	 * or null) */
@@ -101,8 +102,20 @@ public:
 	 * R16G16B16A16_UINT texture of at least the screen's size, in
 	 * UNORDERED_ACCESS), a frame of the screen stores each pixel's channel
 	 * sums into it as well, for the HDR output's encode
-	 * (DX12Context::EncodeHdr()) */
-	void Record(ID3D12Resource *picture, ID3D12Resource *sums = nullptr);
+	 * (DX12Context::EncodeHdr()). With @depth (DepthOn(); an R32_FLOAT
+	 * texture of the screen's size, in UNORDERED_ACCESS), a frame of the
+	 * screen stores each pixel's depth into it, for the temporal upscaler
+	 * (dx12_renderer.h) */
+	void Record(ID3D12Resource *picture, ID3D12Resource *sums = nullptr, ID3D12Resource *depth = nullptr);
+	/* Whether the walks that store the depth were made, and whether the
+	 * frame just recorded stored it */
+	bool DepthOn() const;
+	bool DepthStored() const;
+	/* For the motion vector pass over the frame just recorded (the
+	 * renderer's): its vertices and indices where they are in the ring, as
+	 * a vertex and an index buffer, the ring transitioned to be read as
+	 * them (and back by the next Record()) */
+	void RingForDraw(D3D12_VERTEX_BUFFER_VIEW& vertices, D3D12_INDEX_BUFFER_VIEW& indices);
 	/* Whether the walks that store the channel sums were made: with the
 	 * HDR output when Init() was called, and none at 24-bit */
 	bool SumsOn() const;

@@ -97,6 +97,13 @@ static const D3D12_INPUT_ELEMENT_DESC OITLayout[] =
 	// (a translucent strip's number, an instance's: in the second vertex buffer)
 	{ "POLYNUMBER", 0, DXGI_FORMAT_R32_UINT,      1, 0, D3D12_INPUT_CLASSIFICATION_PER_INSTANCE_DATA, 1 },
 };
+/* (the motion vector pass's: the position, and where the vertex was, in
+ * its own stream) */
+static const D3D12_INPUT_ELEMENT_DESC MotionLayout[] =
+{
+	{ "POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, (UINT)offsetof(Vertex, x), D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
+	{ "PREVPOS",  0, DXGI_FORMAT_R32G32_FLOAT,    1, 0, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
+};
 static const D3D12_INPUT_ELEMENT_DESC PositionLayout[] =
 {
 	{ "POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
@@ -225,6 +232,18 @@ bool DX12Pipelines::Build(u64 packed, ID3D12PipelineState **out)
 		vs = DX12Shader::OITFinalVS;
 		ps = DX12Shader::SsaaResolvePS;
 		break;
+	case DX12_PSO_MOTION:
+		if (key.pass == 1)
+		{
+			vs = DX12Shader::QuadVS;
+			ps = DX12Shader::DepthCopyPS;
+			break;
+		}
+		vs = DX12Shader::MotionVS;
+		// (with no depth bound, the compute renderer's frame: the shader tests the depth it stored)
+		ps = key.depthBound ? DX12Shader::MotionPS : DX12Shader::MotionSampledPS;
+		desc.InputLayout = { MotionLayout, (UINT)ARRAY_SIZE(MotionLayout) };
+		break;
 	default:
 		vs = DX12Shader::QuadVS;
 		ps = DX12Shader::QuadPS;
@@ -283,7 +302,7 @@ bool DX12Pipelines::Build(u64 packed, ID3D12PipelineState **out)
 
 	desc.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
 	desc.NumRenderTargets = 1;
-	desc.RTVFormats[0] = DX12FrameFormat;
+	desc.RTVFormats[0] = key.kind != DX12_PSO_MOTION ? DX12FrameFormat : key.pass == 1 ? DX12UpscalerDepthFormat : DX12MotionFormat;
 	desc.DSVFormat = key.depthBound ? DX12DepthFormat : DXGI_FORMAT_UNKNOWN;
 	desc.SampleDesc.Count = 1u << key.samples;
 	// (SSAA's samples where rend/ssaa_pattern.h has them)
@@ -572,6 +591,7 @@ void DX12Pipelines::MakeForSamples(u32 log2n, bool hdr)
 			Add(k.Pack());
 			break;
 		case DX12_PSO_SSAA_RESOLVE:
+		case DX12_PSO_MOTION:	// (never with SSAA: the upscaler is the anti-aliasing then)
 			break;
 		default:
 			// the volumes, the quads: shaded once a pixel, written to every sample covered

@@ -108,4 +108,14 @@ if [ -n "$D3D12_DLLS" ]; then
    OVERRIDES="d3d12,d3d12core=n"
 fi
 judge
+# The frontend's temporal upscaler (rend/upscaler.h): the per-triangle,
+# per-pixel and compute renderers draw at the size it asks for and hand
+# over the frame's motion vectors and depth, with SSAA asked for too
+# (which it stands in for), as the Vulkan renderers do (vk_hdr.sh)
+D3DH_UPSCALER=1440x1080:960x720 run sdr upscaler.raw
+D3DH_UPSCALER=1440x1080:960x720 run sdr upscaler-ssaa.raw reicast_ssaa=4x
+D3DH_UPSCALER=1440x1080:960x720 run sdr upscaler-pixel.raw "reicast_alpha_sorting=per-pixel (accurate)"
+D3DH_UPSCALER=1440x1080:960x720 run sdr upscaler-pixel-ssaa.raw "reicast_alpha_sorting=per-pixel (accurate)" reicast_ssaa=4x
+D3DH_UPSCALER=1440x1080:960x720 run sdr upscaler-compute.raw "reicast_alpha_sorting=per-pixel (accurate)" reicast_rendering_method=compute
+D3DH_UPSCALER=1440x1080:960x720 run scrgb upscaler-scrgb.raw reicast_color_format=64bit_scrgb
 echo "d3d_hdr.sh: passed"

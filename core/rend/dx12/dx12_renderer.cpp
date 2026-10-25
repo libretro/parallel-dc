@@ -221,6 +221,7 @@ bool DX12Renderer::Init()
 	writeOut.Init(context);
 	writeOutPictures = DX12WriteOut::Wanted();
 	SetupSsaa(screen_width, screen_height);
+	SetupUpscaler();
 	/* GPU-side TA processing, if it is on: here, not in a frame; and the
 	 * buffer its frames' vertex constants go to (UploadConstants()) */
 	if (!gpuVtxConstants)
@@ -285,6 +286,7 @@ void DX12Renderer::Term()
 	screenTargets.clear();
 	DropImage(extraTarget.image);
 	lastInExtra = false;
+	DropUpscaler();
 	if (depth.resource)
 	{
 		depth.resource->AddRef();
@@ -312,7 +314,10 @@ void DX12Renderer::Term()
 void DX12Renderer::Resize(int w, int h)
 {
 	if (device != nullptr)
+	{
 		SetupSsaa((u32)std::max(w, 0), (u32)std::max(h, 0));
+		SetupUpscaler();
+	}
 	/* (a change of the write-out option is one of size: the pictures are
 	 * made again, for it to write or not) */
 	if (device != nullptr && writeOutPictures != DX12WriteOut::Wanted())
@@ -328,7 +333,8 @@ void DX12Renderer::Resize(int w, int h)
 void DX12Renderer::SetupSsaa(u32 width, u32 height)
 {
 	u32 samples = 1;
-	if (settings.rend.Ssaa > 1 && width != 0 && height != 0)
+	// (the upscaler is the anti-aliasing then, and reads the depth, which SSAA's samples are not)
+	if (settings.rend.Ssaa > 1 && width != 0 && height != 0 && !upscaler_active())
 		samples = context->SsaaSamples(settings.rend.Ssaa, ssaa_per_sample_kib(width, height, 4 * SsaaColorImages() + 8),
 				SsaaFixedKib(width, height), BindsScreen() ? "DX12 per-triangle renderer" : "DX12 per-pixel renderer");
 	if (samples == ssaaSamples && (samples == 1 || (width == ssaaWidth && height == ssaaHeight)))
@@ -927,6 +933,12 @@ bool DX12Renderer::EnsureScreen(u32 width, u32 height)
 		lastScreen = -1;
 		screenWidth = width;
 		screenHeight = height;
+		// (the upscaler's are the screen's size: made again, and it starts over)
+		if (!upscalerSlots.empty())
+		{
+			DropUpscaler();
+			upscaler_reset();
+		}
 	}
 	if (screenTargets.size() > count)
 	{
@@ -999,6 +1011,8 @@ bool DX12Renderer::BeginScreen()
 	targetHeight = screenHeight;
 
 	matrices.CalcMatrices(&pvrrc);
+	// the frame drawn under this frame's jitter, its strips matched for the motion vector pass
+	BeginUpscaler();
 	if (!BindsScreen())
 	{
 		// (the per-pixel renderer clears and binds its own pictures, and this one at the end)
@@ -1168,11 +1182,15 @@ void DX12Renderer::EndScreen(bool writeOutPass)
 		context->SetScissor(whole);
 		overlay.Draw(screenWidth, screenHeight);
 	}
+	// the motion vectors over the depth the frame left, and the depth, for the upscaler
+	if (upscaled)
+		RecordMotionPass();
 	context->SetTargets(~0u, ~0u);
 	// as the frontend wants it - or encoded for its HDR output, which it is handed instead - and off to the GPU
-	if (!context->EncodeHdr(target.image, target.image.width, target.image.height,
+	const bool hdr = context->EncodeHdr(target.image, target.image.width, target.image.height,
 			hdrSamples ? &ssaaColor[0] : nullptr, ssaaLog2,
-			!(writeOutPass && writeOutPictures) ? HdrSums() : nullptr))
+			!(writeOutPass && writeOutPictures) ? HdrSums() : nullptr);
+	if (!hdr)
 		context->Transition(target.image, context->RequiredState());
 	if (hdrSamples)
 	{
@@ -1180,6 +1198,9 @@ void DX12Renderer::EndScreen(bool writeOutPass)
 		context->Cmd()->DiscardResource(ssaaColor[0].resource, nullptr);
 	}
 	context->Submit();
+	// (before the picture: the frontend takes them with it)
+	if (upscaled)
+		SubmitUpscaler(hdr);
 
 	havePicture = true;
 	lastScreen = screenIndex;
@@ -1196,6 +1217,239 @@ void DX12Renderer::KeepPicture()
 	u8 *pixels = last_picture_keep(screenWidth, screenHeight);
 	if (pixels != nullptr && (image == nullptr || !dx12_read_picture(image->resource, image->state, screenWidth, screenHeight, pixels)))
 		last_picture_drop();
+}
+
+/* ---- The temporal upscaler ---- */
+
+void DX12Renderer::SetupUpscaler()
+{
+	if (!upscaler_active() || ssaaSamples > 1)
+	{
+		DropUpscaler();
+		return;
+	}
+	// the pass's pipelines, for each cull mode, over the depth buffer and over the compute renderer's depth, and the depth's copy: now, and not when a frame first wants one
+	DX12PsoKey key{};
+	key.kind = DX12_PSO_MOTION;
+	key.writeColor = true;
+	key.pass = 1;
+	key.depthFunc = 7;
+	context->Pipelines().Prepare(key);
+	key.pass = 0;
+	key.depthFunc = 0;
+	for (u32 cull = 0; cull < 3; cull++)
+	{
+		key.cull = cull;
+		key.depthBound = true;
+		key.depthTest = true;
+		key.depthFunc = 6;
+		context->Pipelines().Prepare(key);
+		key.depthBound = false;
+		key.depthTest = false;
+		key.depthFunc = 0;
+		context->Pipelines().Prepare(key);
+	}
+}
+
+void DX12Renderer::DropUpscaler()
+{
+	for (UpscalerSlot& slot : upscalerSlots)
+	{
+		DropImage(slot.motion);
+		DropImage(slot.depth);
+	}
+	upscalerSlots.clear();
+	if (depthCopySrv != ~0u)
+		context->ReleaseSrv(depthCopySrv);
+	depthCopySrv = ~0u;
+	depthCopyViewed = nullptr;
+	upscaled = false;
+}
+
+bool DX12Renderer::BeginUpscaler()
+{
+	return UpscalerJitter() && UpscalerMatch();
+}
+
+bool DX12Renderer::UpscalerJitter()
+{
+	upscaled = false;
+	motionSampled = false;
+	// (a frame decoded on the GPU: nothing of it to match)
+	if (!upscaler_active() || SsaaActive() || pvrrc.gpu || screenWidth == 0 || screenHeight == 0)
+		return false;
+	while (upscalerSlots.size() <= (size_t)screenIndex)
+		upscalerSlots.push_back(UpscalerSlot());
+	UpscalerSlot& slot = upscalerSlots[screenIndex];
+	// (the depth: drawn into, or stored into by the compute renderer's walk)
+	if (!slot.motion.resource && (!makeImage(slot.motion, screenWidth, screenHeight, DX12MotionFormat, true)
+			|| !makeImage(slot.depth, screenWidth, screenHeight, DX12UpscalerDepthFormat, true, ~0u, true)))
+	{
+		WARN_LOG(RENDERER, "DX12: the upscaler's pictures could not be made (%d x %d)", screenWidth, screenHeight);
+		DropImage(slot.motion);
+		DropImage(slot.depth);
+		return false;
+	}
+	float jx, jy;
+	upscaler_jitter(&jx, &jy);
+	matrices.Jitter(jx, jy);
+	return true;
+}
+
+bool DX12Renderer::UpscalerMatch()
+{
+	// the frame's strips matched with the frame before's: where each vertex was, in the ring
+	upscaler_match(pvrrc, prevXy);
+	const u32 bytes = (u32)std::max<size_t>(prevXy.size() * sizeof(float), 2 * sizeof(float));
+	DX12Upload upload;
+	if (!context->Upload(bytes, 16, upload))
+		return false;
+	if (!prevXy.empty())
+		memcpy(upload.cpu, prevXy.data(), prevXy.size() * sizeof(float));
+	prevXyView.BufferLocation = upload.gpu;
+	prevXyView.SizeInBytes = bytes;
+	prevXyView.StrideInBytes = 2 * sizeof(float);
+	upscaled = true;
+	return true;
+}
+
+void DX12Renderer::RecordMotionPass()
+{
+	ID3D12GraphicsCommandList *cmd = context->Cmd();
+	UpscalerSlot& slot = upscalerSlots[screenIndex];
+	context->Transition(slot.motion, D3D12_RESOURCE_STATE_RENDER_TARGET);
+	if (motionSampled)
+	{
+		// the vectors over the depth the walk stored, a texture the shader tests
+		context->Transition(slot.depth, (D3D12_RESOURCE_STATES)(D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE | D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE));
+		context->SetTargets(slot.motion.rtv, ~0u);
+	}
+	else
+	{
+		// the vectors drawn over the depth the frame left: tested, not written
+		DepthStates(D3D12_RESOURCE_STATE_DEPTH_READ, D3D12_RESOURCE_STATE_DEPTH_READ);
+		context->SetTargets(slot.motion.rtv, dsvReadOnly);
+	}
+	const float still[4] = { 0.f, 0.f, 0.f, 0.f };
+	cmd->ClearRenderTargetView(context->Rtv().Cpu(slot.motion.rtv), still, 0, nullptr);
+	context->SetViewport((float)screenWidth, (float)screenHeight);
+	context->SetScissor(baseScissor);
+	context->BindRaster();
+	cmd->SetGraphicsRootConstantBufferView(1, vtxConstantsGpu);
+	// (the vectors in pixels: the size, as the shader's constants; and the depth's place, where the shader tests it)
+	const float size[2] = { (float)screenWidth, (float)screenHeight };
+	u32 constants[3];
+	memcpy(constants, size, sizeof(size));
+	constants[2] = slot.depth.srv;
+	context->SetRootConstants(constants, 3);
+	context->SetVertexBuffer(motionSampled ? motionVertexView : vertexView);
+	cmd->IASetVertexBuffers(1, 1, &prevXyView);
+	context->SetIndexBuffer(motionSampled ? motionIndexView : indexView);
+	context->SetTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP);
+	DX12PsoKey key{};
+	key.kind = DX12_PSO_MOTION;
+	key.writeColor = true;
+	key.depthBound = !motionSampled;
+	key.depthTest = !motionSampled;
+	key.depthFunc = motionSampled ? 0 : 6;
+	int bound = -1;
+	const List<PolyParam> *lists[] = { &pvrrc.global_param_op, &pvrrc.global_param_pt };
+	for (const List<PolyParam> *list : lists)
+		for (int i = 0; i < list->used(); i++)
+		{
+			const PolyParam& pp = list->head()[i];
+			if (pp.count < 3)
+				continue;
+			const int cull = pp.isp.CullMode == 3 ? 2 : pp.isp.CullMode == 2 ? 1 : 0;
+			if (cull != bound)
+			{
+				key.cull = cull;
+				ID3D12PipelineState *pso = context->Pipelines().Get(key);
+				if (pso == nullptr)
+					break;
+				context->SetPipeline(pso);
+				bound = cull;
+			}
+			cmd->DrawIndexedInstanced(pp.count, 1, pp.first, 0, 0);
+		}
+	// (the next frame's draws bind the one stream they have: the pass's second is theirs to ignore)
+	if (motionSampled)
+	{
+		context->Transition(slot.motion, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+		context->SetTargets(~0u, ~0u);
+		return;
+	}
+	/* the depth buffer's first plane drawn whole into the slot's picture of
+	 * floats, for the upscaler to read as it likes (a copy between the two
+	 * formats is not one every Direct3D 12 there is takes) */
+	if (depthCopyViewed != depth.resource.get())
+	{
+		if (depthCopySrv != ~0u)
+			context->ReleaseSrv(depthCopySrv);
+		depthCopySrv = context->Srv().Alloc();
+		if (depthCopySrv == ~0u)
+		{
+			upscaled = false;
+			context->Transition(slot.motion, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+			DepthStates(D3D12_RESOURCE_STATE_DEPTH_WRITE, D3D12_RESOURCE_STATE_DEPTH_WRITE);
+			context->SetTargets(~0u, ~0u);
+			return;
+		}
+		D3D12_SHADER_RESOURCE_VIEW_DESC view{};
+		view.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
+		view.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+		view.Texture2D.MipLevels = 1;
+		view.Format = DXGI_FORMAT_R32_FLOAT_X8X24_TYPELESS;
+		device->CreateShaderResourceView(depth.resource, &view, context->Srv().Cpu(depthCopySrv));
+		depthCopyViewed = depth.resource.get();
+	}
+	DepthStates((D3D12_RESOURCE_STATES)(D3D12_RESOURCE_STATE_DEPTH_READ | D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE), D3D12_RESOURCE_STATE_DEPTH_READ);
+	context->Transition(slot.depth, D3D12_RESOURCE_STATE_RENDER_TARGET);
+	context->SetTargets(slot.depth.rtv, ~0u);
+	const D3D12_RECT whole = { 0, 0, (LONG)screenWidth, (LONG)screenHeight };
+	context->SetScissor(whole);
+	key = DX12PsoKey{};
+	key.kind = DX12_PSO_MOTION;
+	key.pass = 1;
+	key.writeColor = true;
+	key.depthFunc = 7;
+	if (ID3D12PipelineState *pso = context->Pipelines().Get(key))
+	{
+		context->SetPipeline(pso);
+		// (the quad's constants: the whole target, the plane's place in the table)
+		const float rect[8] = { -1.f, -1.f, 2.f, 2.f, 0.f, 0.f, 1.f, 1.f };
+		u32 quad[10];
+		memcpy(quad, rect, sizeof(rect));
+		quad[8] = depthCopySrv;
+		quad[9] = 0;
+		context->SetRootConstants(quad, 10);
+		cmd->DrawInstanced(4, 1, 0, 0);
+	}
+	context->Transition(slot.depth, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+	context->Transition(slot.motion, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+	DepthStates(D3D12_RESOURCE_STATE_DEPTH_WRITE, D3D12_RESOURCE_STATE_DEPTH_WRITE);
+	context->SetTargets(~0u, ~0u);
+}
+
+void DX12Renderer::SubmitUpscaler(bool hdr)
+{
+	const UpscalerSlot& slot = upscalerSlots[screenIndex];
+	struct retro_hw_upscaler_image motion, depth;
+	motion.image  = (uint64_t)(uintptr_t)slot.motion.resource.get();
+	motion.view   = 0;
+	motion.format = (unsigned)DX12MotionFormat;
+	motion.state  = (unsigned)slot.motion.state;
+	motion.width  = screenWidth;
+	motion.height = screenHeight;
+	depth.image   = (uint64_t)(uintptr_t)slot.depth.resource.get();
+	depth.view    = 0;
+	depth.format  = (unsigned)DX12UpscalerDepthFormat;
+	depth.state   = (unsigned)slot.depth.state;
+	depth.width   = screenWidth;
+	depth.height  = screenHeight;
+	// (the depth is 1/w: nearer is greater)
+	upscaler_submit(motion, depth, RETRO_HW_UPSCALER_DEPTH_INVERTED | (hdr ? RETRO_HW_UPSCALER_HDR : 0));
+	upscaled = false;
 }
 
 /* ---- Renders to textures ---- */

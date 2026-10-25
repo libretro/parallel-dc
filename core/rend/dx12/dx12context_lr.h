@@ -188,7 +188,7 @@ public:
 	/* ...then the compute renderer's tables of views (dx12_compute.h), one
 	 * for each piece of its ring; and the end of the heap */
 	static const u32 ComputeFirst = OitSsaaFirst + DX12_OIT_TABLE_SIZE;
-	static const u32 ComputeTableSize = 12;
+	static const u32 ComputeTableSize = 13;
 	static const u32 ComputeTables = 4;
 	/* ...then the raster renderers' write-out pass's (dx12_writeout.h): a
 	 * table of two views, the words and the picture, for each of its slots */
@@ -461,6 +461,10 @@ static const DXGI_FORMAT DX12FrameFormat = DXGI_FORMAT_R8G8B8A8_UNORM;
  * the positions rend/ssaa_pattern.h has */
 static const UINT DX12StandardPattern = 0xffffffffu;
 static const DXGI_FORMAT DX12DepthFormat = DXGI_FORMAT_D32_FLOAT_S8X24_UINT;
+/* The temporal upscaler's: the motion vectors, two halves a pixel, and the
+ * depth the frame left, copied out of the depth's first plane */
+static const DXGI_FORMAT DX12MotionFormat = DXGI_FORMAT_R16G16_FLOAT;
+static const DXGI_FORMAT DX12UpscalerDepthFormat = DXGI_FORMAT_R32_FLOAT;
 
 /* The depth and stencil: a float for the depth, as the Vulkan renderers have it */
 static const DXGI_FORMAT DX12DepthResourceFormat = DXGI_FORMAT_R32G8X24_TYPELESS;

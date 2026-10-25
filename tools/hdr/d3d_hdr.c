@@ -9,6 +9,12 @@
  * queue (12), as when a frontend's device was not to be had: the core is
  * to run its frames, drawing none, and not take the frontend down.
  *
+ * With D3DH_UPSCALER=OWxOH:RWxRH (Direct3D 12) the frontend has a temporal
+ * upscaler (rend/upscaler.h) that asks for frames of RWxRH for a screen
+ * of OWxOH: the core is to draw them at that size and hand over each
+ * frame's motion vectors and depth, which are read back and looked at as
+ * vk_hdr.c looks at the Vulkan renderers'.
+ *
  *   D3DH_API=11|12 D3DH_FRONTEND=sdr|hdr10|scrgb D3DH_DIR=dir \
  *      d3d_hdr core.dll content out.raw frames [key=value ...]
  *
@@ -17,6 +23,7 @@
 #include <windows.h>
 #include <d3d11.h>
 #include <d3d12.h>
+#include <math.h>
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -87,6 +94,65 @@ static void set_texture12(void *handle, ID3D12Resource *texture, DXGI_FORMAT for
    frame12        = texture;
    frame12_format = format;
 }
+
+/* ---- the temporal upscaler: the sizes D3DH_UPSCALER names, and what the core handed over ---- */
+
+static unsigned up_out_w, up_out_h, up_render_w, up_render_h;
+static struct retro_hw_upscaler_inputs up_inputs;
+static unsigned up_count, up_bad;
+static int up_first_reset;
+
+static bool up_get_request(void *handle, struct retro_hw_upscaler_request *r)
+{
+   (void)handle;
+   memset(r, 0, sizeof(*r));
+   r->output_width      = up_out_w;
+   r->output_height     = up_out_h;
+   r->render_width      = up_render_w;
+   r->render_height     = up_render_h;
+   r->min_render_width  = up_render_w / 2;
+   r->min_render_height = up_render_h / 2;
+   r->max_render_width  = up_out_w;
+   r->max_render_height = up_out_h;
+   r->mip_bias          = -1.0f;
+   return true;
+}
+
+static void up_set_inputs(void *handle, const struct retro_hw_upscaler_inputs *inputs)
+{
+   int bad = 0;
+   (void)handle;
+   up_inputs = *inputs;
+   /* (an image is the resource, in a state the frontend transitions from with one barrier) */
+   if (!inputs->motion_vectors.image || !inputs->depth.image)
+      bad = 1;
+   if (inputs->motion_vectors.width != up_render_w || inputs->motion_vectors.height != up_render_h
+         || inputs->depth.width != up_render_w || inputs->depth.height != up_render_h)
+      bad = 1;
+   if (inputs->motion_vectors.format != DXGI_FORMAT_R16G16_FLOAT || inputs->depth.format != DXGI_FORMAT_R32_FLOAT)
+      bad = 1;
+   if (!(inputs->motion_vectors.state & D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE)
+         || !(inputs->depth.state & D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE))
+      bad = 1;
+   if (inputs->jitter_x < -0.5f || inputs->jitter_x > 0.5f || inputs->jitter_y < -0.5f || inputs->jitter_y > 0.5f)
+      bad = 1;
+   if (!(inputs->flags & RETRO_HW_UPSCALER_DEPTH_INVERTED) || (inputs->flags & RETRO_HW_UPSCALER_MV_OUTPUT_RES))
+      bad = 1;
+   if (up_count == 0)
+      up_first_reset = (inputs->flags & RETRO_HW_UPSCALER_RESET) != 0;
+   if (bad)
+   {
+      fprintf(stderr, "d3d_hdr: upscaler inputs %u: mv %ux%u format %u state %x, depth %ux%u format %u state %x, jitter %f %f, flags %x\n",
+            up_count, inputs->motion_vectors.width, inputs->motion_vectors.height, inputs->motion_vectors.format, inputs->motion_vectors.state,
+            inputs->depth.width, inputs->depth.height, inputs->depth.format, inputs->depth.state, inputs->jitter_x, inputs->jitter_y, inputs->flags);
+      up_bad++;
+   }
+   up_count++;
+}
+
+static const struct retro_hw_render_upscaler_interface up_iface = {
+   RETRO_HW_RENDER_UPSCALER_INTERFACE_VERSION, NULL, up_get_request, up_set_inputs
+};
 
 static bool environ_cb(unsigned cmd, void *data)
 {
@@ -170,6 +236,11 @@ static bool environ_cb(unsigned cmd, void *data)
       case RETRO_ENVIRONMENT_GET_HW_RENDER_CONTEXT_NEGOTIATION_INTERFACE_SUPPORT:
          /* (version 1 of the interfaces: no negotiation) */
          ((struct retro_hw_render_context_negotiation_interface*)data)->interface_version = 0;
+         return true;
+      case RETRO_ENVIRONMENT_GET_HW_RENDER_UPSCALER_INTERFACE:
+         if (!up_render_w || api != 12)
+            return false;
+         *(const struct retro_hw_render_upscaler_interface**)data = &up_iface;
          return true;
       default:
          return false;
@@ -286,7 +357,10 @@ static int read_back11(const char *path, DXGI_FORMAT *format)
    return ok;
 }
 
-static int read_back12(const char *path, DXGI_FORMAT *format)
+/* @texture, in @state, copied whole to a readback buffer on the queue,
+ * waited for and mapped: its rows, @pitch apart, at least @w x @h of
+ * them; NULL if not. (Never unmapped: a run reads back a few.) */
+static const unsigned char *copy_out12(ID3D12Resource *texture, D3D12_RESOURCE_STATES state, unsigned w, unsigned h, UINT *pitch)
 {
    D3D12_RESOURCE_DESC rd = { 0 }, bd;
    D3D12_PLACED_SUBRESOURCE_FOOTPRINT fp;
@@ -301,12 +375,10 @@ static int read_back12(const char *path, DXGI_FORMAT *format)
    HANDLE ev;
    UINT64 total;
    void *map;
-   int ok;
-   if (!frame12)
-      return 0;
+   if (!texture)
+      return NULL;
    /* (a struct returned: mingw-w64's C binding takes where it goes) */
-   frame12->lpVtbl->GetDesc(frame12, &rd);
-   *format = frame12_format;
+   texture->lpVtbl->GetDesc(texture, &rd);
    ID3D12Device_GetCopyableFootprints(d12, &rd, 0, 1, 0, &fp, NULL, NULL, &total);
    memset(&hp, 0, sizeof(hp));
    hp.Type = D3D12_HEAP_TYPE_READBACK;
@@ -325,26 +397,28 @@ static int read_back12(const char *path, DXGI_FORMAT *format)
          || FAILED(ID3D12Device_CreateCommandList(d12, 0, D3D12_COMMAND_LIST_TYPE_DIRECT, alloc, NULL,
                &IID_ID3D12GraphicsCommandList, (void**)&list))
          || FAILED(ID3D12Device_CreateFence(d12, 0, D3D12_FENCE_FLAG_NONE, &IID_ID3D12Fence, (void**)&fence)))
-      return 0;
+      return NULL;
    memset(b, 0, sizeof(b));
    b[0].Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
-   b[0].Transition.pResource = frame12;
+   b[0].Transition.pResource = texture;
    b[0].Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
-   b[0].Transition.StateBefore = iface12.required_state;
+   b[0].Transition.StateBefore = state;
    b[0].Transition.StateAfter = D3D12_RESOURCE_STATE_COPY_SOURCE;
    b[1] = b[0];
    b[1].Transition.StateBefore = D3D12_RESOURCE_STATE_COPY_SOURCE;
-   b[1].Transition.StateAfter = iface12.required_state;
-   ID3D12GraphicsCommandList_ResourceBarrier(list, 1, &b[0]);
+   b[1].Transition.StateAfter = state;
+   if (state != D3D12_RESOURCE_STATE_COPY_SOURCE)
+      ID3D12GraphicsCommandList_ResourceBarrier(list, 1, &b[0]);
    memset(&src, 0, sizeof(src));
    memset(&dst, 0, sizeof(dst));
-   src.pResource = frame12;
+   src.pResource = texture;
    src.Type = D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX;
    dst.pResource = readback;
    dst.Type = D3D12_TEXTURE_COPY_TYPE_PLACED_FOOTPRINT;
    dst.PlacedFootprint = fp;
    ID3D12GraphicsCommandList_CopyTextureRegion(list, &dst, 0, 0, 0, &src, NULL);
-   ID3D12GraphicsCommandList_ResourceBarrier(list, 1, &b[1]);
+   if (state != D3D12_RESOURCE_STATE_COPY_SOURCE)
+      ID3D12GraphicsCommandList_ResourceBarrier(list, 1, &b[1]);
    ID3D12GraphicsCommandList_Close(list);
    l = (ID3D12CommandList*)list;
    ID3D12CommandQueue_ExecuteCommandLists(q12, 1, &l);
@@ -352,12 +426,90 @@ static int read_back12(const char *path, DXGI_FORMAT *format)
    ev = CreateEventA(NULL, FALSE, FALSE, NULL);
    ID3D12Fence_SetEventOnCompletion(fence, 1, ev);
    WaitForSingleObject(ev, INFINITE);
-   if (rd.Width < frame_w || rd.Height < frame_h
-         || FAILED(ID3D12Resource_Map(readback, 0, NULL, &map)))
+   if (rd.Width < w || rd.Height < h || FAILED(ID3D12Resource_Map(readback, 0, NULL, &map)))
+      return NULL;
+   *pitch = fp.Footprint.RowPitch;
+   return (const unsigned char*)map;
+}
+
+static int read_back12(const char *path, DXGI_FORMAT *format)
+{
+   UINT pitch;
+   const unsigned char *rows = copy_out12(frame12, iface12.required_state, frame_w, frame_h, &pitch);
+   *format = frame12_format;
+   if (!rows)
       return 0;
-   ok = write_raw(path, (const unsigned char*)map, fp.Footprint.RowPitch, frame12_format);
-   ID3D12Resource_Unmap(readback, 0, NULL);
-   return ok;
+   return write_raw(path, rows, pitch, frame12_format);
+}
+
+/* ---- the upscaler's inputs back ---- */
+
+static float half_to_float(unsigned short h)
+{
+   const unsigned s = (h >> 15) & 1, e = (h >> 10) & 0x1f, m = h & 0x3ff;
+   float v;
+   if (e == 0)
+      v = (float)m / 1024.0f / 16384.0f;
+   else if (e == 31)
+      v = m ? (float)(0.0 / 0.0) : (float)HUGE_VAL;
+   else
+      v = (1.0f + (float)m / 1024.0f) * (float)pow(2.0, (double)e - 15.0);
+   return s ? -v : v;
+}
+
+/* The motion vectors checked: finite and under a pixel everywhere, the
+ * scene standing still; the depth with something in it: as vk_hdr.c */
+static int check_upscaler_inputs12(void)
+{
+   UINT pitch;
+   const unsigned char *rows;
+   unsigned x, y, n = up_render_w * up_render_h, drawn = 0, moving = 0, nonfinite = 0;
+
+   rows = copy_out12((ID3D12Resource*)(uintptr_t)up_inputs.motion_vectors.image,
+         (D3D12_RESOURCE_STATES)up_inputs.motion_vectors.state, up_render_w, up_render_h, &pitch);
+   if (!rows)
+   {
+      fprintf(stderr, "d3d_hdr: the motion vectors could not be read back\n");
+      return 0;
+   }
+   for (y = 0; y < up_render_h; y++)
+      for (x = 0; x < up_render_w * 2; x++)
+      {
+         unsigned short h;
+         float v;
+         memcpy(&h, rows + (size_t)y * pitch + (size_t)x * 2, 2);
+         v = half_to_float(h);
+         if (v != v || fabsf(v) == (float)HUGE_VAL)
+            nonfinite++;
+         else if (fabsf(v) > 1.0f)
+            moving++;
+      }
+   if (nonfinite || moving)
+   {
+      fprintf(stderr, "d3d_hdr: motion vectors: %u not finite, %u over a pixel, in a scene standing still\n", nonfinite, moving);
+      return 0;
+   }
+   rows = copy_out12((ID3D12Resource*)(uintptr_t)up_inputs.depth.image,
+         (D3D12_RESOURCE_STATES)up_inputs.depth.state, up_render_w, up_render_h, &pitch);
+   if (!rows)
+   {
+      fprintf(stderr, "d3d_hdr: the depth could not be read back\n");
+      return 0;
+   }
+   for (y = 0; y < up_render_h; y++)
+      for (x = 0; x < up_render_w; x++)
+      {
+         unsigned d;
+         memcpy(&d, rows + (size_t)y * pitch + (size_t)x * 4, 4);
+         if (d != 0)
+            drawn++;
+      }
+   if (drawn < n / 8)
+   {
+      fprintf(stderr, "d3d_hdr: the depth has %u of %u pixels drawn\n", drawn, n);
+      return 0;
+   }
+   return 1;
 }
 
 /* ---- running the core ---- */
@@ -406,6 +558,12 @@ int main(int argc, char **argv)
    }
    api = getenv("D3DH_API") && !strcmp(getenv("D3DH_API"), "12") ? 12 : 11;
    frontend_hdr = fe && !strcmp(fe, "scrgb") ? 2 : fe && !strcmp(fe, "hdr10") ? 1 : 0;
+   if (getenv("D3DH_UPSCALER")
+         && sscanf(getenv("D3DH_UPSCALER"), "%ux%u:%ux%u", &up_out_w, &up_out_h, &up_render_w, &up_render_h) != 4)
+   {
+      fprintf(stderr, "d3d_hdr: D3DH_UPSCALER is OWxOH:RWxRH\n");
+      return 2;
+   }
    strncpy(dir, getenv("D3DH_DIR") ? getenv("D3DH_DIR") : ".", sizeof(dir) - 1);
    frames = (unsigned)atoi(argv[4]);
    for (i = 5; i < (unsigned)argc && nopts < 64; i++)
@@ -522,7 +680,25 @@ int main(int argc, char **argv)
             (int)pix_fmt, (int)format);
       return finish(1);
    }
-   printf("d3d_hdr: Direct3D %d, %u frames, pixel format %d, picture %ux%u DXGI format %d\n",
-         api, frames, (int)pix_fmt, frame_w, frame_h, (int)format);
+   if (up_render_w)
+   {
+      if (frame_w != up_render_w || frame_h != up_render_h)
+      {
+         fprintf(stderr, "d3d_hdr: the upscaler asked for %ux%u, the core drew %ux%u\n",
+               up_render_w, up_render_h, frame_w, frame_h);
+         return finish(1);
+      }
+      /* (the disc renders three frames in four through the tile accelerator) */
+      if (up_count < frames / 2 || up_bad || !up_first_reset)
+      {
+         fprintf(stderr, "d3d_hdr: upscaler inputs for %u of %u frames, %u wrong, first reset %d\n",
+               up_count, frames, up_bad, up_first_reset);
+         return finish(1);
+      }
+      if (!check_upscaler_inputs12())
+         return finish(1);
+   }
+   printf("d3d_hdr: Direct3D %d, %u frames, pixel format %d, picture %ux%u DXGI format %d%s\n",
+         api, frames, (int)pix_fmt, frame_w, frame_h, (int)format, up_render_w ? ", upscaler inputs checked" : "");
    return finish(0);
 }

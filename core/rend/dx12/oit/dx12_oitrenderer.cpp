@@ -183,7 +183,8 @@ private:
 		if (rend_compute_wanted && device != nullptr)
 		{
 			compute.SetGpuDraw(&taDecoder);
-			compute.Init((u32)std::max(screen_width, 1), (u32)std::max(screen_height, 1), ssaaSamples);
+			// (for the temporal upscaler, with the walks that store the depth)
+			compute.Init((u32)std::max(screen_width, 1), (u32)std::max(screen_height, 1), ssaaSamples, upscaler_active() && ssaaSamples == 1);
 		}
 		else
 			compute.Term();
@@ -1406,6 +1407,8 @@ bool DX12OITRenderer::RenderCompute()
 		return false;
 	}
 	matrices.CalcMatrices(&pvrrc);
+	// the frame drawn under this frame's jitter, where the walks store the depth for the upscaler
+	const bool forUpscaler = compute.DepthOn() && UpscalerJitter();
 	/* The picture to start from, where the render covers only part of the
 	 * screen: read where it is; or copied first where it cannot be - this
 	 * frame's own picture (the frontend's one picture, version 1), or one
@@ -1432,6 +1435,8 @@ bool DX12OITRenderer::RenderCompute()
 	computeRules.renderer = this;
 	if (!compute.Prepare(computeRules, last, scaled))
 		return false;
+	// (the upscaler's strips matched once the frame is this renderer's: the raster path matches its own)
+	UpscalerSlot *slot = forUpscaler && UpscalerMatch() ? &upscalerSlots[screenIndex] : nullptr;
 	if (image != nullptr && copy)
 	{
 		context->Transition(*image, D3D12_RESOURCE_STATE_COPY_SOURCE);
@@ -1445,8 +1450,21 @@ bool DX12OITRenderer::RenderCompute()
 	const bool withSums = compute.SumsOn() && MakeSums(screenWidth, screenHeight);
 	if (withSums)
 		context->Transition(sums, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
-	compute.Record(target.image.resource, withSums ? sums.resource.get() : nullptr);
+	if (slot != nullptr)
+		context->Transition(slot->depth, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+	compute.Record(target.image.resource, withSums ? sums.resource.get() : nullptr, slot != nullptr ? slot->depth.resource.get() : nullptr);
 	sumsStored = withSums && compute.SumsStored();
+	/* the motion vector pass at the end of the frame, over the depth the
+	 * walk stored, from the frame's vertices where the walk read them (with
+	 * the constants and scissor the pass draws with: the raster path's) */
+	if (slot != nullptr && compute.DepthStored() && UploadConstants())
+	{
+		SetBaseScissor();
+		compute.RingForDraw(motionVertexView, motionIndexView);
+		motionSampled = true;
+	}
+	else
+		upscaled = false;
 	// (what goes over it is drawn into it, and it is handed over, as any other frame of the screen)
 	context->Transition(target.image, D3D12_RESOURCE_STATE_RENDER_TARGET);
 	EndScreen();

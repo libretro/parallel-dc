@@ -443,7 +443,9 @@ layout(constant_id = 5) const uint PVRC_SUMS_ON = 0u;
 /* Vulkan's walk, for the frontend's temporal upscaler (rend/upscaler.h):
  * each pixel's depth stored too, as the raster renderers' depth buffer
  * has it (pvrc_depth()), for the motion vector pass and the upscaler.
- * (Vulkan's only: tools/rend/kernels_dx12.sh leaves these blocks out.) */
+ * (Direct3D 12's: the walks of their own that have them, PVRC_DEPTH
+ * defined; tools/rend/kernels_dx12.sh leaves these blocks out of the
+ * others.) */
 layout(constant_id = 6) const uint PVRC_DEPTH_ON = 0u;
 #endif /* PVRC_DEPTH */
 
@@ -523,6 +525,11 @@ RWTexture2D<unorm float4> outImage : register(u0, space2);
 RWTexture2D<uint4> sumsImage : register(u1, space2);
 #define PVRC_SUMS_ON 1u
 #endif /* PVRC_SUMS */
+#if defined(PVRC_DEPTH)
+/* (the temporal upscaler's walks: each pixel's depth, as Vulkan's) */
+RWTexture2D<float4> depthImage : register(u2, space2);
+#define PVRC_DEPTH_ON 1u
+#endif /* PVRC_DEPTH */
 #define lastPicture pvrc_table[pvrc_last]
 #define palette pvrc_table[pvrc_palette]
 #define PVRC_TEXTURE_GRAD(slot, uv, dx, dy) pvrc_table[NonUniformResourceIndex(slot_w[slot] & 0xffffu)].SampleGrad( \

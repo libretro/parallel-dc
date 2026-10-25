@@ -1666,8 +1666,8 @@ void retro_run (void)
 #endif
    }
    /* the upscaler's render size, when it changes (rend/upscaler.h); the
-    * Vulkan per-triangle and per-pixel renderers draw for it */
-   if (upscaler_poll(settings.pvr.rend == 4 || settings.pvr.rend == 5))
+    * Vulkan and Direct3D 12 per-triangle and per-pixel renderers draw for it */
+   if (upscaler_poll(settings.pvr.rend == 4 || settings.pvr.rend == 5 || settings.pvr.rend == 9 || settings.pvr.rend == 10))
    {
       resize_pending = true;
       set_variable_visibility();
@@ -2588,6 +2588,21 @@ static void dx12_context_reset(void)
 	take_pending_size();
 	if (!DX12Context::Instance()->Init(iface))
 		ERROR_LOG(RENDERER, "DX12 context initialization failed");
+	/* The frontend's temporal upscaler, where it has one for this context
+	 * (rend/upscaler.h): the Direct3D 12 renderers draw for it */
+	{
+		const struct retro_hw_render_upscaler_interface *upscaler = NULL;
+		if (environ_cb(RETRO_ENVIRONMENT_GET_HW_RENDER_UPSCALER_INTERFACE, (void*)&upscaler)
+				&& upscaler != NULL && upscaler->interface_version == RETRO_HW_RENDER_UPSCALER_INTERFACE_VERSION)
+			upscaler_set_interface(upscaler);
+		else
+			upscaler_set_interface(NULL);
+		if (upscaler_poll(settings.pvr.rend == 9 || settings.pvr.rend == 10))
+		{
+			resize_pending = true;
+			set_variable_visibility();
+		}
+	}
 	renderer_changed = true;
 }
 
@@ -2598,6 +2613,7 @@ static void dx12_context_destroy(void)
 	rend_keep_picture();
 	rend_term_renderer();
 	renderer_changed = true;
+	upscaler_set_interface(NULL);
 	DX12Context::Instance()->Term();
 }
 

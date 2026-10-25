@@ -35,6 +35,11 @@ static_assert(sizeof(dx12_compute_dxil) / sizeof(dx12_compute_dxil[0]) == PVRC_K
  * the unsorted */
 #include "dx12_compute_hdr_dxil.inc"
 static_assert(sizeof(dx12_compute_hdr_dxil) / sizeof(dx12_compute_hdr_dxil[0]) == 8, "the walk's variants for 1, 2, 4 and 8 samples");
+/* ...and the temporal upscaler's, which store each pixel's depth as well
+ * (PVRC_DEPTH), for 1 sample a pixel: the sorted variant, the unsorted,
+ * then both with the channel sums */
+#include "dx12_compute_upscaler_dxil.inc"
+static_assert(sizeof(dx12_compute_upscaler_dxil) / sizeof(dx12_compute_upscaler_dxil[0]) == 4, "the walk's variants, without and with the sums");
 // (for the raster renderers' write-out: dx12_writeout.cpp)
 const void *dx12_compute_kernel(u32 kernel, size_t *size)
 {
@@ -54,9 +59,10 @@ static const u32 PoolEntries = 2u << 20;
 /* The pieces of the ring: frames in flight at once */
 static const u32 Slots = DX12Context::ComputeTables;
 /* The kernels' views (the table's), in the order of their registers: the
- * buffers u0 to u9, then the picture (u0, space 2) and the HDR output's
- * channel sums (u1, space 2: a null view but for its walks) */
-enum { V_FRAME, V_REC, V_BIN, V_VTX, V_IDX, V_MOD, V_CMD, V_TRD, V_DFRM, V_SLOTS, V_PICTURE, V_SUMS, V_COUNT };
+ * buffers u0 to u9, then the picture (u0, space 2), the HDR output's
+ * channel sums (u1, space 2: a null view but for its walks) and the
+ * temporal upscaler's depth (u2, space 2: the same) */
+enum { V_FRAME, V_REC, V_BIN, V_VTX, V_IDX, V_MOD, V_CMD, V_TRD, V_DFRM, V_SLOTS, V_PICTURE, V_SUMS, V_DEPTH, V_COUNT };
 static_assert(V_COUNT == DX12Context::ComputeTableSize, "the context's tables have room for the views");
 /* (the translucent fragments the walk keeps at a time: what the kernels
  * were made for, pvrc_fragments_kept() of what every Direct3D 12 device
@@ -131,6 +137,11 @@ struct DX12ComputeDrawer::Resources
 	// with the HDR output, the screen's walk that stores the channel sums, both variants
 	ComPtr<ID3D12PipelineState> walkSums, walkSumsUnsorted;
 	bool sumsStored = false;	// by the frame just recorded
+	/* for the temporal upscaler, the screen's walk that stores each pixel's
+	 * depth, both variants, and both with the sums */
+	ComPtr<ID3D12PipelineState> walkDepth, walkDepthUnsorted, walkDepthSums, walkDepthSumsUnsorted;
+	bool depthStored = false;	// by the frame just recorded
+	D3D12_RESOURCE_STATES ringState = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
 	// whether the device loads R8G8B8A8_UNORM from an unordered access view (the Y filter, PVRC_K_YFILTER)
 	bool yfilter = false;
 	ComPtr<ID3D12CommandSignature> dispatch;
@@ -217,7 +228,7 @@ static bool makeBuffer(ID3D12Device *device, D3D12_HEAP_TYPE type, u64 bytes, D3
 			__uuidof(ID3D12Resource), (void **)out.put()));
 }
 
-bool DX12ComputeDrawer::Init(u32 width, u32 height, u32 samples)
+bool DX12ComputeDrawer::Init(u32 width, u32 height, u32 samples, bool depth)
 {
 	Term();
 	if (failed)
@@ -255,13 +266,14 @@ bool DX12ComputeDrawer::Init(u32 width, u32 height, u32 samples)
 		return fail("not enough video memory");
 
 	/* The root signature: the pictures' places in the table (b0); the table
-	 * of views (u0 to u9, the picture and the sums u0 and u1 of space 2); the bindless table
+	 * of views (u0 to u9, then the picture, the sums and the depth, u0 to u2
+	 * of space 2); the bindless table
 	 * (t0 on, space 1) and the samplers (s0 on, space 1); the linear
 	 * sampler for a picture of another size to start from (s0) */
 	{
 		D3D12_DESCRIPTOR_RANGE ranges[4]{};
 		ranges[0] = { D3D12_DESCRIPTOR_RANGE_TYPE_UAV, V_PICTURE, 0, 0, 0 };
-		ranges[1] = { D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 2, 0, 2, V_PICTURE };
+		ranges[1] = { D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 3, 0, 2, V_PICTURE };
 		ranges[2] = { D3D12_DESCRIPTOR_RANGE_TYPE_SRV, UINT_MAX, 0, 1, 0 };
 		ranges[3] = { D3D12_DESCRIPTOR_RANGE_TYPE_SAMPLER, UINT_MAX, 0, 1, 0 };
 		D3D12_ROOT_PARAMETER params[4]{};
@@ -322,6 +334,29 @@ bool DX12ComputeDrawer::Init(u32 width, u32 height, u32 samples)
 			WARN_LOG(RENDERER, "Direct3D 12 compute renderer: the HDR output's walks could not be made; the picture is encoded as it is");
 			r->walkSums.reset();
 			r->walkSumsUnsorted.reset();
+		}
+	}
+	/* (the temporal upscaler's: the walks that store the depth, at one
+	 * sample a pixel - the upscaler is the anti-aliasing then; with them not
+	 * made, the frames are drawn by the others and shown as they are) */
+	if (depth && this->samples == 1)
+	{
+		auto makeDepth = [&](u32 index, ComPtr<ID3D12PipelineState>& out) {
+			D3D12_COMPUTE_PIPELINE_STATE_DESC desc{};
+			desc.pRootSignature = r->root;
+			desc.CS = { dx12_compute_upscaler_dxil[index], dx12_compute_upscaler_dxil_size[index] };
+			return SUCCEEDED(device->CreateComputePipelineState(&desc, __uuidof(ID3D12PipelineState), (void **)out.put()));
+		};
+		bool ok = makeDepth(0, r->walkDepth) && makeDepth(1, r->walkDepthUnsorted);
+		if (ok && r->walkSums)
+			ok = makeDepth(2, r->walkDepthSums) && makeDepth(3, r->walkDepthSumsUnsorted);
+		if (!ok)
+		{
+			WARN_LOG(RENDERER, "Direct3D 12 compute renderer: the temporal upscaler's walks could not be made; its frames are shown as they are");
+			r->walkDepth.reset();
+			r->walkDepthUnsorted.reset();
+			r->walkDepthSums.reset();
+			r->walkDepthSumsUnsorted.reset();
 		}
 	}
 	{
@@ -409,6 +444,8 @@ bool DX12ComputeDrawer::Init(u32 width, u32 height, u32 samples)
 		sums.Format = DXGI_FORMAT_R16G16B16A16_UINT;
 		sums.ViewDimension = D3D12_UAV_DIMENSION_TEXTURE2D;
 		device->CreateUnorderedAccessView(nullptr, nullptr, &sums, context->Srv().Cpu(table + V_SUMS));
+		sums.Format = DX12UpscalerDepthFormat;
+		device->CreateUnorderedAccessView(nullptr, nullptr, &sums, context->Srv().Cpu(table + V_DEPTH));
 	}
 
 	ready = true;
@@ -472,6 +509,10 @@ void DX12ComputeDrawer::Term()
 		releasePso(res->walk1Unsorted);
 		releasePso(res->walkSums);
 		releasePso(res->walkSumsUnsorted);
+		releasePso(res->walkDepth);
+		releasePso(res->walkDepthUnsorted);
+		releasePso(res->walkDepthSums);
+		releasePso(res->walkDepthSumsUnsorted);
 		if (res->root)
 		{
 			res->root->AddRef();
@@ -495,6 +536,32 @@ void DX12ComputeDrawer::Term()
 bool DX12ComputeDrawer::SumsOn() const
 {
 	return res != nullptr && res->walkSums;
+}
+
+bool DX12ComputeDrawer::DepthOn() const
+{
+	return res != nullptr && res->walkDepth;
+}
+
+bool DX12ComputeDrawer::DepthStored() const
+{
+	return res != nullptr && res->depthStored;
+}
+
+void DX12ComputeDrawer::RingForDraw(D3D12_VERTEX_BUFFER_VIEW& vertices, D3D12_INDEX_BUFFER_VIEW& indices)
+{
+	Resources& r = *res;
+	DX12Context *context = DX12Context::Instance();
+	const u32 *words = r.ringMap + (size_t)r.slot * r.pieceWords;
+	const D3D12_GPU_VIRTUAL_ADDRESS piece = r.ring->GetGPUVirtualAddress() + (u64)r.slot * r.pieceWords * 4;
+	vertices.BufferLocation = piece + (u64)words[PVRC_F_O_VTX] * 4;
+	vertices.SizeInBytes = (words[PVRC_F_O_IDX] - words[PVRC_F_O_VTX]) * 4;
+	vertices.StrideInBytes = sizeof(Vertex);
+	indices.BufferLocation = piece + (u64)words[PVRC_F_O_IDX] * 4;
+	indices.SizeInBytes = (r.frameWords - words[PVRC_F_O_IDX]) * 4;
+	indices.Format = DXGI_FORMAT_R32_UINT;
+	context->Transition(r.ring, r.ringState,
+			(D3D12_RESOURCE_STATES)(D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER | D3D12_RESOURCE_STATE_INDEX_BUFFER));
 }
 
 bool DX12ComputeDrawer::SumsStored() const
@@ -583,7 +650,7 @@ bool DX12ComputeDrawer::Prepare(ComputeFrame& frame, u32 last, bool scaled, u32 
 	return true;
 }
 
-void DX12ComputeDrawer::Record(ID3D12Resource *picture, ID3D12Resource *sums)
+void DX12ComputeDrawer::Record(ID3D12Resource *picture, ID3D12Resource *sums, ID3D12Resource *depth)
 {
 	Resources& r = *res;
 	DX12Context *context = DX12Context::Instance();
@@ -593,6 +660,8 @@ void DX12ComputeDrawer::Record(ID3D12Resource *picture, ID3D12Resource *sums)
 	const u32 *words = r.ringMap + (size_t)slot * r.pieceWords;
 	const u32 table = DX12Context::ComputeFirst + slot * DX12Context::ComputeTableSize;
 
+	// (the ring as the kernels read it, after a frame's motion vector pass read it as its buffers)
+	context->Transition(r.ring, r.ringState, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
 	/* The piece's views: the picture, and what the frame's vertices,
 	 * indices, volumes and the decode's words are read from - the ring's
 	 * piece, or the decode's buffers (views are a few words in the heap,
@@ -607,6 +676,11 @@ void DX12ComputeDrawer::Record(ID3D12Resource *picture, ID3D12Resource *sums)
 			sums = nullptr;
 		desc.Format = DXGI_FORMAT_R16G16B16A16_UINT;
 		device->CreateUnorderedAccessView(sums, nullptr, &desc, context->Srv().Cpu(table + V_SUMS));
+		// (the temporal upscaler's depth, a frame of the screen's at one sample: where its walks store it)
+		if (!r.walkDepth || r.rtt || (sums != nullptr && !r.walkDepthSums))
+			depth = nullptr;
+		desc.Format = DX12UpscalerDepthFormat;
+		device->CreateUnorderedAccessView(depth, nullptr, &desc, context->Srv().Cpu(table + V_DEPTH));
 		auto view = [&](u32 v, ID3D12Resource *buffer, u64 firstWord, u64 count) {
 			D3D12_UNORDERED_ACCESS_VIEW_DESC d{};
 			d.Format = DXGI_FORMAT_UNKNOWN;
@@ -724,9 +798,13 @@ void DX12ComputeDrawer::Record(ID3D12Resource *picture, ID3D12Resource *sums)
 	/* (the walk's two variants, each over the coarse tiles of its list,
 	 * the sort's: nothing between them; the clear's size is the scan's) */
 	arguments();
-	cmd->SetPipelineState(n != samples ? r.walk1Unsorted : sums != nullptr ? r.walkSumsUnsorted : r.walkUnsorted);
+	cmd->SetPipelineState(n != samples ? r.walk1Unsorted
+			: depth != nullptr ? (sums != nullptr ? r.walkDepthSumsUnsorted : r.walkDepthUnsorted)
+			: sums != nullptr ? r.walkSumsUnsorted : r.walkUnsorted);
 	cmd->ExecuteIndirect(r.dispatch, 1, r.args, (u64)PVRC_ST_WALK_U_X * 4, nullptr, 0);
-	cmd->SetPipelineState(n != samples ? r.walk1 : sums != nullptr ? r.walkSums : r.pipelines[PVRC_K_WALK]);
+	cmd->SetPipelineState(n != samples ? r.walk1
+			: depth != nullptr ? (sums != nullptr ? r.walkDepthSums : r.walkDepth)
+			: sums != nullptr ? r.walkSums : r.pipelines[PVRC_K_WALK]);
 	cmd->ExecuteIndirect(r.dispatch, 1, r.args, (u64)PVRC_ST_WALK_S_X * 4, nullptr, 0);
 	barrier();
 	/* the Y filter, in place over the picture, where the frame has it
@@ -741,6 +819,7 @@ void DX12ComputeDrawer::Record(ID3D12Resource *picture, ID3D12Resource *sums)
 	 * pairs: Vulkan's rule) */
 	r.sumsStored = sums != nullptr && !(yy != 0 && r.yfilter)
 			&& (n > 1 || (words[PVRC_F_FLAGS] & PVRC_FF_HSCALE) != 0);
+	r.depthStored = depth != nullptr;
 	indirect(PVRC_K_CLEAR, PVRC_ST_CLEAR_X);
 	// the counts, for when this piece comes round
 	context->Transition(r.bins, binState, D3D12_RESOURCE_STATE_COPY_SOURCE);

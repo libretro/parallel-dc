@@ -35,6 +35,7 @@
 #include "dx12_ta_decoder.h"
 #include <vector>
 #include "rend/modvol_clip.h"
+#include "rend/upscaler.h"
 
 /* The Direct3D 12 renderer: translucent polygons sorted by triangle or by
  * strip. What the game sees is what it sees with the Direct3D 11 renderer
@@ -75,7 +76,21 @@
  * screens and the crosshairs go on the picture after the resolve. Renders
  * to textures have one sample a pixel, as without SSAA (Direct3D 12 has no
  * memory that is only backed when used, which is where the Vulkan
- * renderers supersample them). */
+ * renderers supersample them).
+ *
+ * The frontend's temporal upscaler (rend/upscaler.h), as the Vulkan
+ * renderers draw for it (vulkan/motion_pass.h): while it has the frames
+ * (SSAA is off then: the upscaler is the anti-aliasing, and reads the
+ * depth, which SSAA's samples are not), each frame of the screen is drawn
+ * under its jitter and ends with the motion vector pass over the depth it
+ * left - the opaque and punch-through strips again, each vertex with where
+ * it was last frame in a second stream, tested against that depth
+ * (DX12_PSO_MOTION) - into a picture of this sync index's, and with the
+ * depth buffer's first plane drawn whole into another of its own, a
+ * picture of floats: both are handed to the frontend with the picture, which reads them
+ * until the frame has been shown, as it does the picture. A frame decoded
+ * on the GPU has no vertices the pass can match: it is drawn without
+ * jitter, handed over without them, and shown as it is. */
 class DX12Renderer : public Renderer
 {
 public:
@@ -261,6 +276,43 @@ protected:
 
 	/* The frontend was waited for in Process(), for the Render() after it */
 	bool heldFromProcess = false;
+
+	/* ---- The temporal upscaler ---- */
+	struct UpscalerSlot
+	{
+		DX12Image motion;	// the vectors (DX12MotionFormat), a render target
+		DX12Image depth;	// the depth (DX12UpscalerDepthFormat), drawn or stored into
+	};
+	std::vector<UpscalerSlot> upscalerSlots;	// one a sync index, the screen's size
+	/* The depth buffer's first plane as a texture of the table, which the
+	 * copy into a slot's depth reads (DX12_DEPTH_COPY_PS): a place of its
+	 * own for each depth buffer there is (the GPU may still read the last) */
+	u32 depthCopySrv = ~0u;
+	ID3D12Resource *depthCopyViewed = nullptr;
+	bool upscaled = false;		// the frame being drawn is drawn for the upscaler
+	std::vector<float> prevXy;	// the pass's second stream: where each vertex was
+	D3D12_VERTEX_BUFFER_VIEW prevXyView{};
+	/* A frame the compute renderer drew (dx12_compute.h): its walk stored
+	 * the depth in the slot's own image, which the pass's pixel shader tests
+	 * against; its vertices and indices are the frame's in the compute
+	 * renderer's ring */
+	bool motionSampled = false;
+	D3D12_VERTEX_BUFFER_VIEW motionVertexView{};
+	D3D12_INDEX_BUFFER_VIEW motionIndexView{};
+	/* The pass's pipelines made while the upscaler has the frames: at Init()
+	 * and Resize(), not in a frame; and its slots let go of when it has not */
+	void SetupUpscaler();
+	void DropUpscaler();
+	/* The frame of the screen starts (BeginScreen()): drawn for the upscaler
+	 * or not - its jitter taken if so, and then its strips matched (the
+	 * compute renderer's frame: once the frame is its, after the jitter) */
+	bool BeginUpscaler();
+	bool UpscalerJitter();
+	bool UpscalerMatch();
+	/* ...and ends (EndScreen()): the pass recorded over the depth, the depth
+	 * copied; then both handed over (@hdr: the picture is the HDR output's) */
+	void RecordMotionPass();
+	void SubmitUpscaler(bool hdr);
 
 	/* ---- SSAA ---- */
 	u32 ssaaSamples = 1;		// the screen's samples a pixel (1: off)
