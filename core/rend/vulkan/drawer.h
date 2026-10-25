@@ -188,7 +188,7 @@ protected:
 		uniforms.pad[0] = uniforms.pad[1] = 0.f;
 		BufferData& buffer = *vertexUniformBuffers[image];
 		buffer.upload(sizeof(uniforms), &uniforms);
-		if (pvrrc.gpu && gpuDraw != nullptr && gpuDraw->frame)
+		if (pvrrc.gpu && gpuDraw != nullptr && gpuDraw->frame && cmdBuffer)
 		{
 			cmdBuffer.copyBuffer(gpuDraw->frame, *buffer.buffer,
 					vk::BufferCopy(TAG_O_ZSCALE * 4, offsetof(T, depth_scale), 4));

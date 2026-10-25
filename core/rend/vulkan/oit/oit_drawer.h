@@ -197,6 +197,7 @@ public:
 	{
 		// (the upscaler wants the depth kept, which SSAA's samples are not)
 		upscaled = upscaler_active() && samples == 1;
+		this->shaderManager = shaderManager;
 		if (!screenPipelineManager)
 			screenPipelineManager = std::unique_ptr<OITPipelineManager>(new OITPipelineManager());
 		screenPipelineManager->Init(shaderManager, oitBuffers, samples, upscaled);
@@ -224,6 +225,7 @@ public:
 		timer.Term();
 		writeOut.Term();
 		motionPass.Term(nullptr);
+		computeMotionPass.Term(nullptr);
 		screenPipelineManager.reset();
 		framebuffers.clear();
 		finalColorAttachments.clear();
@@ -361,6 +363,48 @@ public:
 			commandPool->DeferDelete(std::move(carriedPicture));
 		Present(sums);
 	}
+	/* The temporal upscaler with the compute renderer (vulkan/compute_drawer.h):
+	 * its motion vector pass, drawn in the compute frame's command buffer
+	 * over the depth the walk stored (@depthViews, one a slot of the pool,
+	 * which the pass is indexed by), with this drawer's vertex uniforms;
+	 * null when the upscaler has no frames */
+	MotionVectorPass *ComputeMotionPass(const std::vector<vk::ImageView>& depthViews)
+	{
+		if (!upscaled || depthViews.empty())
+		{
+			computeMotionPass.Term(commandPool);
+			return nullptr;
+		}
+		std::vector<vk::Buffer> uniforms;
+		for (size_t i = 0; i < depthViews.size(); i++)
+		{
+			while (vertexUniformBuffers.size() <= i)
+				vertexUniformBuffers.push_back(std::unique_ptr<BufferData>(new BufferData(sizeof(OITDescriptorSets::VertexShaderUniforms),
+						vk::BufferUsageFlagBits::eUniformBuffer | vk::BufferUsageFlagBits::eTransferDst)));
+			uniforms.push_back(*vertexUniformBuffers[i]->buffer);
+		}
+		computeMotionPass.InitSampled(viewport.extent, depthViews, uniforms, sizeof(OITDescriptorSets::VertexShaderUniforms),
+				shaderManager->GetMotionVertexShader(), shaderManager->GetMotionDepthShader(), commandPool);
+		return &computeMotionPass;
+	}
+	/* Once the compute frame is prepared (jittered as this drawer's matrices
+	 * are here): the strips matched and the vertex uniforms written, for
+	 * the motion vector pass of pool slot @slot */
+	void ComputeMotionBegin(int slot)
+	{
+		if (!upscaled || !computeMotionPass.Begin(slot))
+			return;
+		float jx, jy;
+		upscaler_jitter(&jx, &jy);
+		matrices.Jitter(jx, jy);
+		WriteVertexUniforms<OITDescriptorSets::VertexShaderUniforms>(vk::CommandBuffer(), slot);
+	}
+	// ...and after it is recorded: the vectors and the depth to the upscaler
+	void ComputeMotionEnd(int slot, vk::Image depthImage, vk::ImageView depthView)
+	{
+		if (computeMotionPass.Recorded())
+			computeMotionPass.Submit(slot, depthImage, depthView, vk::Format::eR32Sfloat);
+	}
 protected:
 	/* The frame submitted and its picture handed over: with the HDR output,
 	 * the picture encoded first, in the same submission (VulkanContext::HdrEncode()),
@@ -381,6 +425,8 @@ private:
 	std::vector<std::unique_ptr<FramebufferAttachment>> finalColorAttachments;
 	QuadPipeline *lastPicturePipeline = nullptr;
 	MotionVectorPass motionPass;
+	MotionVectorPass computeMotionPass;
+	OITShaderManager *shaderManager = nullptr;
 	QuadDrawer lastPicture;
 	bool havePicture = false;	/* the image before this one holds the last frame */
 	vk::ImageView restoredPicture;	/* ...or this does: the picture kept from the context before */

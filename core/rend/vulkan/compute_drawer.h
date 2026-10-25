@@ -44,6 +44,7 @@
 #include "gpu_timer.h"
 #include "texture.h"
 #include "rend/tile/compute_frame.h"
+#include "rend/upscaler.h"
 
 #include <memory>
 #include <vector>
@@ -57,6 +58,13 @@ protected:
 	const xform& Begin() override
 	{
 		matrices.CalcMatrices(&pvrrc);
+		// the screen's frame under the temporal upscaler's jitter (rend/upscaler.h), as the raster renderers draw it
+		if (!pvrrc.isRTT && !pvrrc.gpu && upscaler_active())
+		{
+			float jx, jy;
+			upscaler_jitter(&jx, &jy);
+			matrices.Jitter(jx, jy);
+		}
 		return matrices.GetViewportMatrix();
 	}
 	void BaseScissor(int& x, int& y, int& width, int& height) override
@@ -77,7 +85,7 @@ public:
 	~ComputeDrawer();
 	/* Made for a picture of @extent and @samples a pixel, for @pool's
 	 * slots; false when the device cannot have it (logged) */
-	bool Init(vk::Extent2D extent, u32 samples, CommandPool *pool, SamplerManager *samplerManager);
+	bool Init(vk::Extent2D extent, u32 samples, CommandPool *pool, SamplerManager *samplerManager, bool depth = false);
 	void Term();
 	/* Whether the device has what the kernels need (the reason it has not,
 	 * or NULL): what Init() checks before it looks at the frame size and
@@ -102,6 +110,17 @@ public:
 	 * null). Its own command buffer of the pool's, submitted with the
 	 * frame's others. */
 	void Record(vk::Image image, vk::ImageView view, vk::ImageView last);
+	/* For the frontend's temporal upscaler (rend/upscaler.h), made with
+	 * @depth: the screen's walk stores each pixel's depth in an image of
+	 * the slot's, sampled after the frame; the views, a slot each, and the
+	 * image and view of the slot the frame just recorded went to. Record()
+	 * then draws the motion vector pass @motion over it, in the frame's
+	 * command buffer, with the frame's vertices and indices from its words. */
+	std::vector<vk::ImageView> DepthViews() const;
+	vk::Image DepthImage() const;
+	vk::ImageView DepthView() const;
+	void SetMotionPass(class MotionVectorPass *motion) { this->motion = motion; }
+	int Slot() const;
 	/* With the HDR output, the channel sums of what the screen's frame just
 	 * recorded resolved, for the encode (VulkanContext::HdrEncode()); null
 	 * when it stored none, or they would add nothing */
@@ -122,8 +141,11 @@ private:
 	bool ready = false;
 	bool failed = false;
 	u32 samples = 1;
+	bool depth = false;
 	vk::Extent2D extent;
 	CommandPool *commandPool = nullptr;
+	class MotionVectorPass *motion = nullptr;
+	int recordedSlot = 0;
 	SamplerManager *samplerManager = nullptr;
 	const TaGpuDraw *gpuDraw = nullptr;
 	VulkanComputeFrame frame;

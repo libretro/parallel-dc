@@ -245,10 +245,11 @@ compute_source_of() {
    shift 2
    keep=
    for d in "$@"; do echo "$d"; [ "$d" = "#define PVRC_SUMS" ] && keep=1; done
-   # (and without the blocks for the HDR output, PVRC_SUMS, but in its walks)
+   # (and without the blocks for the HDR output, PVRC_SUMS, but in its walks,
+   # nor the Vulkan walk's depth for the temporal upscaler, PVRC_DEPTH)
    for h in core/rend/tile/pvr_lane.h core/rend/tile/pvr_tile.h core/rend/tile/pvr_modvol.h core/rend/tile/pvr_resolve.h core/rend/tile/pvr_scaler.h core/rend/ssaa_pattern.h $PVRC_SRC; do
-      if [ -n "$keep" ]; then sed -e '/^#include/d' $h
-      else sed -e '/^#include/d' -e '/^#if defined(PVRC_SUMS)$/,/^#endif \/\* PVRC_SUMS \*\/$/d' $h; fi
+      if [ -n "$keep" ]; then sed -e '/^#include/d' -e '/^#if defined(PVRC_DEPTH)$/,/^#endif \/\* PVRC_DEPTH \*\/$/d' $h
+      else sed -e '/^#include/d' -e '/^#if defined(PVRC_SUMS)$/,/^#endif \/\* PVRC_SUMS \*\/$/d' -e '/^#if defined(PVRC_DEPTH)$/,/^#endif \/\* PVRC_DEPTH \*\/$/d' $h; fi
    done | sed -e 's/\b\(frm\|rec\|bin\|vtx\|idx\|mvt\|dcmd\|dtrd\|dfrm\)\.w\[/\1_w[/g' \
       -e 's/^layout(local_size_x = \(.*\)) in;$/#define PVRC_THREADS \1/' \
       -e 's/^\(\(uint\|int\|bool\|float\|uvec4\|vec2\) [A-Za-z_0-9]*\( = [A-Za-z_0-9]*\)\?\(, [A-Za-z_0-9]*\( = [A-Za-z_0-9]*\)\?\)*;\)/static \1/' \

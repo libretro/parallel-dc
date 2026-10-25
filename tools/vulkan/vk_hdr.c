@@ -116,8 +116,9 @@ static void up_set_inputs(void *handle, const struct retro_hw_upscaler_inputs *i
       bad = 1;
    if (inputs->motion_vectors.format != VK_FORMAT_R16G16_SFLOAT)
       bad = 1;
+   /* (a depth attachment's, or the compute renderer's depth stored as a float) */
    if (inputs->depth.format != VK_FORMAT_D32_SFLOAT_S8_UINT && inputs->depth.format != VK_FORMAT_D24_UNORM_S8_UINT
-         && inputs->depth.format != VK_FORMAT_D16_UNORM_S8_UINT)
+         && inputs->depth.format != VK_FORMAT_D16_UNORM_S8_UINT && inputs->depth.format != VK_FORMAT_R32_SFLOAT)
       bad = 1;
    if (inputs->jitter_x < -0.5f || inputs->jitter_x > 0.5f || inputs->jitter_y < -0.5f || inputs->jitter_y > 0.5f)
       bad = 1;
@@ -512,7 +513,8 @@ static int check_upscaler_inputs(const char *out)
 
    snprintf(path, sizeof(path), "%s.depth", out);
    if (!read_back_image((VkImage)(uintptr_t)up_inputs.depth.image, (VkImageLayout)up_inputs.depth.state,
-            VK_IMAGE_ASPECT_DEPTH_BIT, (VkFormat)up_inputs.depth.format, up_render_w, up_render_h, depth_bpp, path))
+            up_inputs.depth.format == VK_FORMAT_R32_SFLOAT ? VK_IMAGE_ASPECT_COLOR_BIT : VK_IMAGE_ASPECT_DEPTH_BIT,
+            (VkFormat)up_inputs.depth.format, up_render_w, up_render_h, depth_bpp, path))
       return 0;
    if (!(f = fopen(path, "rb")))
       return 0;

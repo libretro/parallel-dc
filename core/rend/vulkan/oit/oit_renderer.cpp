@@ -169,9 +169,12 @@ public:
 				computeDrawer.Fallback(ComputeFrame::Why_Picture);
 			else if (computeDrawer.Prepare(last, scaled, paletteTexture.get()))
 			{
+				// (the upscaler's strips matched once the frame is this renderer's: the raster drawer matches its own)
+				screenDrawer.ComputeMotionBegin(computeDrawer.Slot());
 				const OITScreenDrawer::ComputeTarget target = screenDrawer.ComputeBegin(last, scaled);
 				computeDrawer.Record(target.image, target.view, target.last);
 				screenDrawer.ComputeEnd(computeDrawer.Sums());
+				screenDrawer.ComputeMotionEnd(computeDrawer.Slot(), computeDrawer.DepthImage(), computeDrawer.DepthView());
 				return true;
 			}
 		}
@@ -203,9 +206,16 @@ private:
 	void InitCompute()
 	{
 		if (rend_compute_wanted)
-			computeDrawer.Init(GetContext()->GetViewPort(), samples, &texCommandPool, &samplerManager);
+		{
+			// (for the temporal upscaler, with the depth stored, and the motion vector pass over it)
+			computeDrawer.Init(GetContext()->GetViewPort(), samples, &texCommandPool, &samplerManager, upscaler_active() && samples == 1);
+			computeDrawer.SetMotionPass(screenDrawer.ComputeMotionPass(computeDrawer.DepthViews()));
+		}
 		else
+		{
 			computeDrawer.Term();
+			screenDrawer.ComputeMotionPass(std::vector<vk::ImageView>());
+		}
 	}
 
 	/* SSAA's samples a pixel, for the screen: as far as the device and

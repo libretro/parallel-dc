@@ -111,8 +111,9 @@ compute_source() {
    echo "#version 450"; echo "#define PVR_SHADER_GLSL"; echo "#define PVRC_SHADER_GLSL"; echo "#define PVRC_KERNEL $1"
    if [ "$2" = waterfall ]; then echo "#define PVRC_TEX_WATERFALL"; fi
    if [ "$1" = "$PVRC_K_WALK" ]; then echo "#define PVR_LANE_COUNT 8"; echo "#define PVR_LANE_GROUP_SIZE 256"; else echo "#define PVR_LANE_NONE"; fi
-   # (the HDR output's channel sums, which the walk stores with its constant PVRC_SUMS_ON)
-   echo "#define PVRC_SUMS"
+   # (the HDR output's channel sums, which the walk stores with its constant PVRC_SUMS_ON,
+   # and the upscaler's depth, with PVRC_DEPTH_ON)
+   echo "#define PVRC_SUMS"; echo "#define PVRC_DEPTH"
    for h in core/rend/tile/pvr_lane.h core/rend/tile/pvr_tile.h core/rend/tile/pvr_modvol.h core/rend/tile/pvr_resolve.h core/rend/tile/pvr_scaler.h core/rend/ssaa_pattern.h core/rend/tile/pvr_compute.h; do
       sed '/^#include/d' $h
    done
@@ -291,6 +292,7 @@ raster_list() {
    echo "MODVOL_FRAG frag - modvol.frag"
    echo "MV_VERT vert - position.glsl mv.vert"
    echo "MV_FRAG frag - mv.frag"
+   echo "MV_DEPTH_FRAG frag - mv_depth.frag"
    echo "QUAD_VERT vert - quad.vert"
    echo "QUAD_FRAG frag - quad.frag"
    echo "SSAA_RESOLVE_VERT vert - ssaa_resolve.vert"

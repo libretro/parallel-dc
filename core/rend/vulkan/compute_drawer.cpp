@@ -1,6 +1,7 @@
 #define PVR_REGS_FOR_RENDERER	// see hw/pvr/pvr_regs.h
 /* The compute renderer on Vulkan: see compute_drawer.h */
 #include "compute_drawer.h"
+#include "motion_pass.h"
 #include "vulkan_context.h"
 #include "ssaa.h"
 #include "rend/TexCache.h"
@@ -29,7 +30,7 @@ static const int WalkUnsorted = PVRC_KERNELS + 1;
 static const u32 PoolEntries = 2u << 20;
 
 // The bindings of the kernels' one set (B_SUMS: the HDR output's channel sums, pvr_compute.h's PVRC_SUMS)
-enum { B_FRAME, B_REC, B_BIN, B_OUT, B_LAST, B_PAL, B_TEX, B_VTX, B_IDX, B_MOD, B_CMD, B_TRD, B_DFRM, B_SUMS, B_COUNT };
+enum { B_FRAME, B_REC, B_BIN, B_OUT, B_LAST, B_PAL, B_TEX, B_VTX, B_IDX, B_MOD, B_CMD, B_TRD, B_DFRM, B_SUMS, B_DEPTH, B_COUNT };
 // (the buffers a frame of the GPU's TA decode is read from: B_VTX to B_DFRM)
 static const int GpuBindings = B_SUMS - B_VTX;
 
@@ -118,6 +119,9 @@ struct ComputeDrawer::Resources
 	 * walk stores (hdr_encode_vk.h: of HDR_VK_SUMS_SAMPLES); otherwise an
 	 * image of one pixel, for the binding */
 	std::unique_ptr<FramebufferAttachment> sums;
+	/* For the upscaler, each pixel's depth, an image a slot (pvr_compute.h's
+	 * PVRC_DEPTH_ON); otherwise one image of one pixel, for the binding */
+	std::vector<std::unique_ptr<FramebufferAttachment>> depths;
 	bool sumsOn = false;
 	bool sumsLayout = false;	// in the general layout
 	bool sumsStored = false;	// by the frame just recorded (and nothing over them since)
@@ -170,7 +174,7 @@ const char *ComputeDrawer::DeviceLacks()
 	return nullptr;
 }
 
-bool ComputeDrawer::Init(vk::Extent2D extent, u32 samples, CommandPool *pool, SamplerManager *samplerManager)
+bool ComputeDrawer::Init(vk::Extent2D extent, u32 samples, CommandPool *pool, SamplerManager *samplerManager, bool depth)
 {
 	Term();
 	if (failed)
@@ -182,6 +186,7 @@ bool ComputeDrawer::Init(vk::Extent2D extent, u32 samples, CommandPool *pool, Sa
 	this->samples = samples > 4 ? 8 : samples > 2 ? 4 : samples > 1 ? 2 : 1;
 	this->commandPool = pool;
 	this->samplerManager = samplerManager;
+	this->depth = depth;
 
 	auto fail = [&](const char *why) {
 		INFO_LOG(RENDERER, "Vulkan compute renderer: not on this device (%s); the raster renderer draws", why);
@@ -210,7 +215,9 @@ bool ComputeDrawer::Init(vk::Extent2D extent, u32 samples, CommandPool *pool, Sa
 		return fail("not enough video memory");
 	try {
 		const vk::BufferUsageFlags storage = vk::BufferUsageFlagBits::eStorageBuffer;
-		r->ring = std::unique_ptr<BufferData>(new BufferData((vk::DeviceSize)r->ringWords * 4 * slots, storage));
+		// (the motion vector pass draws the frame's vertices and indices from the ring)
+		r->ring = std::unique_ptr<BufferData>(new BufferData((vk::DeviceSize)r->ringWords * 4 * slots,
+				depth ? storage | vk::BufferUsageFlagBits::eVertexBuffer | vk::BufferUsageFlagBits::eIndexBuffer : storage));
 		r->ringMap = (u32 *)r->ring->MapMemory();
 		r->records = std::unique_ptr<BufferData>(new BufferData((vk::DeviceSize)ComputeFrame::MaxPrims() * PVRC_REC_WORDS * 4,
 				storage, vk::MemoryPropertyFlagBits::eDeviceLocal));
@@ -231,6 +238,12 @@ bool ComputeDrawer::Init(vk::Extent2D extent, u32 samples, CommandPool *pool, Sa
 		r->sums = std::unique_ptr<FramebufferAttachment>(new FramebufferAttachment(context->GetPhysicalDevice(), device));
 		r->sums->Init(r->sumsOn ? extent.width : 1, r->sumsOn ? extent.height : 1, vk::Format::eR16G16B16A16Uint,
 				vk::ImageUsageFlagBits::eStorage | vk::ImageUsageFlagBits::eSampled, false);
+		for (int i = 0; i < (depth ? slots : 1); i++)
+		{
+			r->depths.push_back(std::unique_ptr<FramebufferAttachment>(new FramebufferAttachment(context->GetPhysicalDevice(), device)));
+			r->depths.back()->Init(depth ? extent.width : 1, depth ? extent.height : 1, vk::Format::eR32Sfloat,
+					vk::ImageUsageFlagBits::eStorage | vk::ImageUsageFlagBits::eSampled | vk::ImageUsageFlagBits::eTransferSrc, false);
+		}
 	} catch (const vk::SystemError& e) {
 		return fail(e.what());
 	}
@@ -250,6 +263,7 @@ bool ComputeDrawer::Init(vk::Extent2D extent, u32 samples, CommandPool *pool, Sa
 		{ B_TRD, vk::DescriptorType::eStorageBuffer, 1, vk::ShaderStageFlagBits::eCompute },
 		{ B_DFRM, vk::DescriptorType::eStorageBuffer, 1, vk::ShaderStageFlagBits::eCompute },
 		{ B_SUMS, vk::DescriptorType::eStorageImage, 1, vk::ShaderStageFlagBits::eCompute },
+		{ B_DEPTH, vk::DescriptorType::eStorageImage, 1, vk::ShaderStageFlagBits::eCompute },
 	};
 	r->setLayout = device.createDescriptorSetLayoutUnique(vk::DescriptorSetLayoutCreateInfo(vk::DescriptorSetLayoutCreateFlags(), B_COUNT, bindings));
 	r->pipelineLayout = device.createPipelineLayoutUnique(vk::PipelineLayoutCreateInfo(vk::PipelineLayoutCreateFlags(), 1, &r->setLayout.get()));
@@ -260,7 +274,7 @@ bool ComputeDrawer::Init(vk::Extent2D extent, u32 samples, CommandPool *pool, Sa
 	 * tiles without sorted translucent fragments keeping none. (With the
 	 * HDR output, the screen's walks store the channel sums; at one sample
 	 * a pixel, renders to a texture have walks of their own, which do not.) */
-	for (int set = 0; set < (this->samples > 1 || r->sumsOn ? 2 : 1); set++)
+	for (int set = 0; set < (this->samples > 1 || r->sumsOn || depth ? 2 : 1); set++)
 	{
 		const u32 n = set == 0 ? this->samples : 1;
 		for (int k = 1; k <= WalkUnsorted; k++)
@@ -268,11 +282,11 @@ bool ComputeDrawer::Init(vk::Extent2D extent, u32 samples, CommandPool *pool, Sa
 			const bool walk = k == PVRC_K_WALK || k == WalkUnsorted;
 			if (set == 1 && this->samples <= 1 && !walk)
 				continue;
-			const u32 spec[6] = { n, SSAA_LOG2(n), k == WalkUnsorted ? 1u : r->keep, 0,
+			const u32 spec[7] = { n, SSAA_LOG2(n), k == WalkUnsorted ? 1u : r->keep, 0,
 					k == WalkUnsorted ? PVRC_V_UNSORTED : k == PVRC_K_WALK ? PVRC_V_SORTED : PVRC_V_ALL,
-					set == 0 && r->sumsOn ? 1u : 0u };
-			const vk::SpecializationMapEntry entries[6] = { { 0, 0, 4 }, { 1, 4, 4 }, { 2, 8, 4 }, { 3, 12, 4 }, { 4, 16, 4 }, { 5, 20, 4 } };
-			const vk::SpecializationInfo specInfo(6, entries, sizeof(spec), spec);
+					set == 0 && r->sumsOn ? 1u : 0u, set == 0 && depth ? 1u : 0u };
+			const vk::SpecializationMapEntry entries[7] = { { 0, 0, 4 }, { 1, 4, 4 }, { 2, 8, 4 }, { 3, 12, 4 }, { 4, 16, 4 }, { 5, 20, 4 }, { 6, 24, 4 } };
+			const vk::SpecializationInfo specInfo(7, entries, sizeof(spec), spec);
 			// (the walk's textures taken in turns where the device cannot index them non-uniformly)
 			const bool waterfall = walk && !context->SupportsNonUniformTextureIndexing();
 			vk::UniqueShaderModule module = device.createShaderModuleUnique(vk::ShaderModuleCreateInfo(vk::ShaderModuleCreateFlags(),
@@ -286,7 +300,7 @@ bool ComputeDrawer::Init(vk::Extent2D extent, u32 samples, CommandPool *pool, Sa
 
 	const vk::DescriptorPoolSize sizes[] = {
 		{ vk::DescriptorType::eStorageBuffer, (3u + GpuBindings) * slots },
-		{ vk::DescriptorType::eStorageImage, 2u * slots },
+		{ vk::DescriptorType::eStorageImage, 3u * slots },
 		{ vk::DescriptorType::eCombinedImageSampler, (PVRC_TEX_SLOTS + 2u) * slots },
 	};
 	r->descriptorPool = device.createDescriptorPoolUnique(vk::DescriptorPoolCreateInfo(vk::DescriptorPoolCreateFlags(), slots, 3, sizes));
@@ -308,6 +322,8 @@ bool ComputeDrawer::Init(vk::Extent2D extent, u32 samples, CommandPool *pool, Sa
 	buffers.reserve((3 + GpuBindings) * slots);
 	std::vector<vk::WriteDescriptorSet> writes;
 	const vk::DescriptorImageInfo sumsInfo(vk::Sampler(), r->sums->GetImageView(), vk::ImageLayout::eGeneral);
+	std::vector<vk::DescriptorImageInfo> depthInfos;
+	depthInfos.reserve(slots);
 	for (int s = 0; s < slots; s++)
 	{
 		buffers.push_back(vk::DescriptorBufferInfo(*r->ring->buffer, (vk::DeviceSize)s * r->ringWords * 4, (vk::DeviceSize)r->ringWords * 4));
@@ -323,6 +339,8 @@ bool ComputeDrawer::Init(vk::Extent2D extent, u32 samples, CommandPool *pool, Sa
 			writes.push_back(vk::WriteDescriptorSet(r->sets[s], b, 0, 1, vk::DescriptorType::eStorageBuffer, nullptr, &buffers.back()));
 		}
 		writes.push_back(vk::WriteDescriptorSet(r->sets[s], B_SUMS, 0, 1, vk::DescriptorType::eStorageImage, &sumsInfo));
+		depthInfos.push_back(vk::DescriptorImageInfo(vk::Sampler(), r->depths[depth ? s : 0]->GetImageView(), vk::ImageLayout::eGeneral));
+		writes.push_back(vk::WriteDescriptorSet(r->sets[s], B_DEPTH, 0, 1, vk::DescriptorType::eStorageImage, &depthInfos.back()));
 	}
 	{
 		std::array<VkBuffer, GpuBindings> ring;
@@ -361,6 +379,30 @@ void ComputeDrawer::Term()
 	ready = false;
 	statFrames = statFallback = statGpuFrames = statRttFrames = 0;
 	memset(statWhy, 0, sizeof(statWhy));
+}
+
+std::vector<vk::ImageView> ComputeDrawer::DepthViews() const
+{
+	std::vector<vk::ImageView> views;
+	if (res && depth)
+		for (const auto& attachment : res->depths)
+			views.push_back(attachment->GetImageView());
+	return views;
+}
+
+vk::Image ComputeDrawer::DepthImage() const
+{
+	return res && depth ? res->depths[recordedSlot]->GetImage() : vk::Image();
+}
+
+vk::ImageView ComputeDrawer::DepthView() const
+{
+	return res && depth ? res->depths[recordedSlot]->GetImageView() : vk::ImageView();
+}
+
+int ComputeDrawer::Slot() const
+{
+	return commandPool != nullptr ? commandPool->GetIndex() : 0;
 }
 
 vk::ImageView ComputeDrawer::Sums() const
@@ -540,17 +582,22 @@ void ComputeDrawer::Record(vk::Image image, vk::ImageView view, vk::ImageView la
 	 * render pass, make them ready for fragment shaders, not these) */
 	const vk::MemoryBarrier toCompute(vk::AccessFlagBits::eMemoryWrite,
 			vk::AccessFlagBits::eShaderRead | vk::AccessFlagBits::eShaderWrite | vk::AccessFlagBits::eIndirectCommandRead);
-	const vk::ImageMemoryBarrier toGeneral[2] = {
+	const bool depthStored = depth && !r.rtt;
+	const vk::ImageMemoryBarrier toGeneral[3] = {
 		vk::ImageMemoryBarrier(vk::AccessFlags(), vk::AccessFlagBits::eShaderWrite, vk::ImageLayout::eUndefined, vk::ImageLayout::eGeneral,
 				VK_QUEUE_FAMILY_IGNORED, VK_QUEUE_FAMILY_IGNORED, image, vk::ImageSubresourceRange(vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1)),
+		// (the slot's depth, written whole by the walk, read by the frame before's upscaler until now)
+		vk::ImageMemoryBarrier(vk::AccessFlags(), vk::AccessFlagBits::eShaderWrite, vk::ImageLayout::eUndefined, vk::ImageLayout::eGeneral,
+				VK_QUEUE_FAMILY_IGNORED, VK_QUEUE_FAMILY_IGNORED, r.depths[depth ? slot : 0]->GetImage(), vk::ImageSubresourceRange(vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1)),
 		// (the sums, the first time: general from then on)
 		vk::ImageMemoryBarrier(vk::AccessFlags(), vk::AccessFlagBits::eShaderWrite, vk::ImageLayout::eUndefined, vk::ImageLayout::eGeneral,
 				VK_QUEUE_FAMILY_IGNORED, VK_QUEUE_FAMILY_IGNORED, r.sums->GetImage(), vk::ImageSubresourceRange(vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1)),
 	};
 	cmd.pipelineBarrier(vk::PipelineStageFlagBits::eAllCommands,
 			vk::PipelineStageFlagBits::eComputeShader | vk::PipelineStageFlagBits::eDrawIndirect, vk::DependencyFlags(), 1, &toCompute, 0, nullptr,
-			r.sumsLayout ? 1 : 2, toGeneral);
+			r.sumsLayout ? 2 : 3, toGeneral);
 	r.sumsLayout = true;
+	recordedSlot = slot;
 	cmd.bindDescriptorSets(vk::PipelineBindPoint::eCompute, *r.pipelineLayout, 0, 1, &set, 0, nullptr);
 	/* (a render to a texture is drawn at one sample a pixel, and stores no
 	 * sums: the kernels of its own, where there are) */
@@ -628,6 +675,24 @@ void ComputeDrawer::Record(vk::Image image, vk::ImageView view, vk::ImageView la
 	cmd.pipelineBarrier(vk::PipelineStageFlagBits::eComputeShader,
 			r.rtt ? vk::PipelineStageFlagBits::eFragmentShader | vk::PipelineStageFlagBits::eComputeShader | vk::PipelineStageFlagBits::eTransfer
 					: vk::PipelineStageFlagBits::eFragmentShader, vk::DependencyFlags(), nullptr, nullptr, toRead);
+	if (depthStored)
+	{
+		// the depth, for the motion vector pass and the upscaler
+		const vk::ImageMemoryBarrier depthRead(vk::AccessFlagBits::eShaderWrite, vk::AccessFlagBits::eShaderRead, vk::ImageLayout::eGeneral,
+				vk::ImageLayout::eShaderReadOnlyOptimal, VK_QUEUE_FAMILY_IGNORED, VK_QUEUE_FAMILY_IGNORED, r.depths[slot]->GetImage(),
+				vk::ImageSubresourceRange(vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1));
+		cmd.pipelineBarrier(vk::PipelineStageFlagBits::eComputeShader,
+				vk::PipelineStageFlagBits::eFragmentShader | vk::PipelineStageFlagBits::eComputeShader, vk::DependencyFlags(), nullptr, nullptr, depthRead);
+		if (motion != nullptr && motion->Recorded() && !r.gpu)
+		{
+			// (the frame's vertices and indices, in its words; its pixel clip)
+			const vk::Rect2D scissor(vk::Offset2D((s32)words[PVRC_F_SCISSOR], (s32)words[PVRC_F_SCISSOR + 1]),
+					vk::Extent2D(words[PVRC_F_SCISSOR + 2] - words[PVRC_F_SCISSOR], words[PVRC_F_SCISSOR + 3] - words[PVRC_F_SCISSOR + 1]));
+			const vk::DeviceSize base = (vk::DeviceSize)slot * r.ringWords * 4;
+			motion->Record(cmd, slot, *r.ring->buffer, base + (vk::DeviceSize)words[PVRC_F_O_IDX] * 4, scissor,
+					base + (vk::DeviceSize)words[PVRC_F_O_VTX] * 4);
+		}
+	}
 	timer.End(cmd, slot);
 	cmd.end();
 	statFrames++;

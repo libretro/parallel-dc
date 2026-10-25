@@ -76,11 +76,12 @@ public:
 		if (postDepthCoverage)
 			modules.Make(RSPV_OIT_FRAG_G0_P2_R2_PDC, RSPV_OIT_FRAG_G1_P2_R2_PDC);
 		modules.Make(RSPV_OIT_MODVOL_FRAG, RSPV_OIT_FINAL_VERT);
-		modules.Make(RSPV_MV_VERT, RSPV_MV_FRAG);
+		modules.Make(RSPV_MV_VERT, RSPV_MV_DEPTH_FRAG);
 	}
-	// the temporal upscaler's motion vector pass (../motion_pass.h)
+	// the temporal upscaler's motion vector pass (../motion_pass.h), and its depth-sampling one
 	vk::ShaderModule GetMotionVertexShader() const { return modules.Get(RSPV_MV_VERT); }
 	vk::ShaderModule GetMotionShader() const { return modules.Get(RSPV_MV_FRAG); }
+	vk::ShaderModule GetMotionDepthShader() const { return modules.Get(RSPV_MV_DEPTH_FRAG); }
 	vk::ShaderModule GetVertexShader(const VertexShaderParams& params) const
 	{
 		return modules.Get(params.gouraud ? RSPV_OIT_VERT_G1 : RSPV_OIT_VERT_G0);

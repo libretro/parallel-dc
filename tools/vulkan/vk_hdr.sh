@@ -69,16 +69,17 @@ run sdr sdr.raw
 run sdr refused.raw reicast_color_format=30bit_hdr
 "$WORK/vk_hdr" --same "$WORK/sdr.raw" "$WORK/refused.raw"
 
-# The frontend's temporal upscaler (rend/upscaler.h): the per-triangle
-# and per-pixel renderers draw at the size it asks for and hand over the
-# frame's motion vectors and depth, with SSAA asked for too (which it
-# stands in for), under the validation layer; another renderer draws as
-# ever.
+# The frontend's temporal upscaler (rend/upscaler.h): the per-triangle,
+# per-pixel and compute renderers draw at the size it asks for and hand
+# over the frame's motion vectors and depth, with SSAA asked for too
+# (which it stands in for), under the validation layer; another renderer
+# draws as ever.
 VKH_UPSCALER=1440x1080:960x720 run sdr upscaler.raw
 VKH_UPSCALER=1440x1080:960x720 run sdr upscaler-ssaa.raw reicast_ssaa=4x
 VKH_UPSCALER=1440x1080:960x720 run sdr upscaler-wide.raw reicast_widescreen_hack=enabled
 VKH_UPSCALER=1440x1080:960x720 run sdr upscaler-pixel.raw "reicast_alpha_sorting=per-pixel (accurate)"
 VKH_UPSCALER=1440x1080:960x720 run sdr upscaler-pixel-ssaa.raw "reicast_alpha_sorting=per-pixel (accurate)" reicast_ssaa=4x
+VKH_UPSCALER=1440x1080:960x720 run sdr upscaler-compute.raw "reicast_alpha_sorting=per-pixel (accurate)" reicast_rendering_method=compute
 
 # a frame of each kind: rendered, and written to the framebuffer by the CPU
 for FRAMES in 41 42 43 44; do

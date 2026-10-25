@@ -74,6 +74,9 @@ public:
 	{
 		normalMatrix.tx += 2.f * x / screen_width;
 		normalMatrix.ty += 2.f * y / screen_height * (invertY ? -1.f : 1.f);
+		// (and in pixels, for the compute renderer's frame)
+		viewportMatrix.tx += x;
+		viewportMatrix.ty += y * (invertY ? -1.f : 1.f);
 	}
 
 	void CalcMatrices(const rend_context *renderingContext)

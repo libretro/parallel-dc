@@ -439,6 +439,13 @@ layout(constant_id = 4) const uint PVRC_VARIANT = 0u;
  * others.) */
 layout(constant_id = 5) const uint PVRC_SUMS_ON = 0u;
 #endif /* PVRC_SUMS */
+#if defined(PVRC_DEPTH)
+/* Vulkan's walk, for the frontend's temporal upscaler (rend/upscaler.h):
+ * each pixel's depth stored too, as the raster renderers' depth buffer
+ * has it (pvrc_depth()), for the motion vector pass and the upscaler.
+ * (Vulkan's only: tools/rend/kernels_dx12.sh leaves these blocks out.) */
+layout(constant_id = 6) const uint PVRC_DEPTH_ON = 0u;
+#endif /* PVRC_DEPTH */
 
 #if PVRC_KERNEL == PVRC_K_GPUSRC
 layout(std430, set = 0, binding = 0) coherent buffer Frame { uint w[]; } frm;
@@ -1460,6 +1467,9 @@ layout(set = 0, binding = 3, rgba8) uniform writeonly image2D outImage;
 #if defined(PVRC_SUMS)
 layout(set = 0, binding = 13, rgba16ui) uniform writeonly uimage2D sumsImage;
 #endif /* PVRC_SUMS */
+#if defined(PVRC_DEPTH)
+layout(set = 0, binding = 14, r32f) uniform writeonly image2D depthImage;
+#endif /* PVRC_DEPTH */
 layout(set = 0, binding = 4) uniform sampler2D lastPicture;
 layout(set = 0, binding = 5) uniform sampler2D palette;
 layout(set = 0, binding = 6) uniform sampler2D textures[PVRC_TEX_SLOTS];
@@ -3174,6 +3184,11 @@ void main()
     * it rounds or truncates, and however it divides, gives the byte) */
    if (stores)
       imageStore(outImage, at, (vec4(float(c & 255u), float((c >> 8) & 255u), float((c >> 16) & 255u), float(c >> 24)) + 0.25) / 255.0);
+#if defined(PVRC_DEPTH)
+   // (the pixel's first sample's: the upscaler has one sample a pixel)
+   if (PVRC_DEPTH_ON != 0u && stores)
+      imageStore(depthImage, at, vec4(g_depth, 0.0, 0.0, 0.0));
+#endif /* PVRC_DEPTH */
 #if defined(PVRC_SUMS)
    if (PVRC_SUMS_ON != 0u)
    {

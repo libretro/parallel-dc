@@ -28,7 +28,7 @@ void MotionVectorPass::Init(vk::Extent2D size, vk::Format depthFormat, vk::Image
 {
 	VulkanContext *context = VulkanContext::Instance();
 	vk::Device device = context->GetDevice();
-	if (size != this->size || depthLayout != this->depthLayout || attachments.size() != depthViews.size())
+	if (size != this->size || depthLayout != this->depthLayout || attachments.size() != depthViews.size() || sampled)
 		Term(commandPool);
 	this->size = size;
 	this->depthLayout = depthLayout;
@@ -79,9 +79,101 @@ void MotionVectorPass::Init(vk::Extent2D size, vk::Format depthFormat, vk::Image
 		framebuffers.push_back(device.createFramebufferUnique(vk::FramebufferCreateInfo(vk::FramebufferCreateFlags(),
 				*renderPass, ARRAY_SIZE(views), views, size.width, size.height, 1)));
 	}
-	if (pipelines[0])
-		return;
+	if (!pipelines[0])
+		MakePipelines(pipelineLayout, vertexShader, fragmentShader, true);
+}
 
+void MotionVectorPass::InitSampled(vk::Extent2D size, const std::vector<vk::ImageView>& depthViews,
+		const std::vector<vk::Buffer>& uniformBuffers, vk::DeviceSize uniformBytes,
+		vk::ShaderModule vertexShader, vk::ShaderModule fragmentShader, CommandPool *commandPool)
+{
+	VulkanContext *context = VulkanContext::Instance();
+	vk::Device device = context->GetDevice();
+	if (size != this->size || !sampled || attachments.size() != depthViews.size())
+		Term(commandPool);
+	this->size = size;
+	this->depthLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
+	sampled = true;
+	if (!renderPass)
+	{
+		// the vectors alone: the depth is sampled
+		vk::AttachmentDescription attachmentDescription(vk::AttachmentDescriptionFlags(), vk::Format::eR16G16Sfloat, vk::SampleCountFlagBits::e1,
+				vk::AttachmentLoadOp::eClear, vk::AttachmentStoreOp::eStore,
+				vk::AttachmentLoadOp::eDontCare, vk::AttachmentStoreOp::eDontCare,
+				vk::ImageLayout::eUndefined, vk::ImageLayout::eShaderReadOnlyOptimal);
+		vk::AttachmentReference colorReference(0, vk::ImageLayout::eColorAttachmentOptimal);
+		vk::SubpassDescription subpass(vk::SubpassDescriptionFlags(), vk::PipelineBindPoint::eGraphics,
+				0, nullptr, 1, &colorReference, nullptr, nullptr);
+		vk::SubpassDependency dependencies[] = {
+				// the frame's depth, stored by the kernel, then sampled here
+				vk::SubpassDependency(VK_SUBPASS_EXTERNAL, 0,
+						vk::PipelineStageFlagBits::eComputeShader, vk::PipelineStageFlagBits::eFragmentShader,
+						vk::AccessFlagBits::eShaderWrite, vk::AccessFlagBits::eShaderRead),
+				// the vectors, read by the upscaler
+				vk::SubpassDependency(0, VK_SUBPASS_EXTERNAL,
+						vk::PipelineStageFlagBits::eColorAttachmentOutput,
+						vk::PipelineStageFlagBits::eFragmentShader | vk::PipelineStageFlagBits::eComputeShader,
+						vk::AccessFlagBits::eColorAttachmentWrite, vk::AccessFlagBits::eShaderRead),
+		};
+		renderPass = device.createRenderPassUnique(vk::RenderPassCreateInfo(vk::RenderPassCreateFlags(),
+				1, &attachmentDescription, 1, &subpass, ARRAY_SIZE(dependencies), dependencies));
+	}
+	if (!setLayout)
+	{
+		// the vertex uniforms as position.glsl has them, and the depth
+		vk::DescriptorSetLayoutBinding bindings[] = {
+				{ 0, vk::DescriptorType::eUniformBuffer, 1, vk::ShaderStageFlagBits::eVertex },
+				{ 1, vk::DescriptorType::eCombinedImageSampler, 1, vk::ShaderStageFlagBits::eFragment },
+		};
+		setLayout = device.createDescriptorSetLayoutUnique(vk::DescriptorSetLayoutCreateInfo(vk::DescriptorSetLayoutCreateFlags(), ARRAY_SIZE(bindings), bindings));
+		ownLayout = device.createPipelineLayoutUnique(vk::PipelineLayoutCreateInfo(vk::PipelineLayoutCreateFlags(), 1, &setLayout.get()));
+		depthSampler = device.createSamplerUnique(vk::SamplerCreateInfo(vk::SamplerCreateFlags(), vk::Filter::eNearest, vk::Filter::eNearest,
+				vk::SamplerMipmapMode::eNearest, vk::SamplerAddressMode::eClampToEdge, vk::SamplerAddressMode::eClampToEdge,
+				vk::SamplerAddressMode::eClampToEdge));
+	}
+	if (sets.size() < depthViews.size())
+	{
+		const u32 count = (u32)depthViews.size();
+		const vk::DescriptorPoolSize sizes[] = {
+				{ vk::DescriptorType::eUniformBuffer, count },
+				{ vk::DescriptorType::eCombinedImageSampler, count },
+		};
+		descriptorPool = device.createDescriptorPoolUnique(vk::DescriptorPoolCreateInfo(vk::DescriptorPoolCreateFlags(), count, ARRAY_SIZE(sizes), sizes));
+		std::vector<vk::DescriptorSetLayout> layouts(count, *setLayout);
+		sets = device.allocateDescriptorSets(vk::DescriptorSetAllocateInfo(*descriptorPool, count, layouts.data()));
+		std::vector<vk::DescriptorBufferInfo> bufferInfos;
+		std::vector<vk::DescriptorImageInfo> imageInfos;
+		std::vector<vk::WriteDescriptorSet> writes;
+		bufferInfos.reserve(count);
+		imageInfos.reserve(count);
+		for (u32 i = 0; i < count; i++)
+		{
+			bufferInfos.push_back(vk::DescriptorBufferInfo(uniformBuffers[i], 0, uniformBytes));
+			writes.push_back(vk::WriteDescriptorSet(sets[i], 0, 0, 1, vk::DescriptorType::eUniformBuffer, nullptr, &bufferInfos.back()));
+			imageInfos.push_back(vk::DescriptorImageInfo(*depthSampler, depthViews[i], vk::ImageLayout::eShaderReadOnlyOptimal));
+			writes.push_back(vk::WriteDescriptorSet(sets[i], 1, 0, 1, vk::DescriptorType::eCombinedImageSampler, &imageInfos.back()));
+		}
+		device.updateDescriptorSets(writes, nullptr);
+	}
+	while (attachments.size() < depthViews.size())
+	{
+		attachments.push_back(std::unique_ptr<FramebufferAttachment>(
+				new FramebufferAttachment(context->GetPhysicalDevice(), device)));
+		attachments.back()->Init(size.width, size.height, vk::Format::eR16G16Sfloat,
+				vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eSampled
+				| vk::ImageUsageFlagBits::eTransferSrc, false);
+		vk::ImageView views[] = { attachments.back()->GetImageView() };
+		framebuffers.push_back(device.createFramebufferUnique(vk::FramebufferCreateInfo(vk::FramebufferCreateFlags(),
+				*renderPass, 1, views, size.width, size.height, 1)));
+	}
+	if (!pipelines[0])
+		MakePipelines(*ownLayout, vertexShader, fragmentShader, false);
+}
+
+void MotionVectorPass::MakePipelines(vk::PipelineLayout pipelineLayout, vk::ShaderModule vertexShader, vk::ShaderModule fragmentShader, bool depthTest)
+{
+	VulkanContext *context = VulkanContext::Instance();
+	vk::Device device = context->GetDevice();
 	// the vertex as the colour pass has it, and where it was: its own stream
 	static const vk::VertexInputBindingDescription bindings[] = {
 			{ 0, sizeof(Vertex) },
@@ -96,9 +188,9 @@ void MotionVectorPass::Init(vk::Extent2D size, vk::Format depthFormat, vk::Image
 	vk::PipelineInputAssemblyStateCreateInfo inputAssembly(vk::PipelineInputAssemblyStateCreateFlags(), vk::PrimitiveTopology::eTriangleStrip);
 	vk::PipelineViewportStateCreateInfo viewportState(vk::PipelineViewportStateCreateFlags(), 1, nullptr, 1, nullptr);
 	vk::PipelineMultisampleStateCreateInfo multisample;
-	// the surface the colour pass left: its depth, equal or nearer (reversed)
+	// the surface the colour pass left: its depth, equal or nearer (reversed); the sampled mode's shader does the test
 	vk::PipelineDepthStencilStateCreateInfo depthStencil(vk::PipelineDepthStencilStateCreateFlags(),
-			true, false, vk::CompareOp::eGreaterOrEqual, false, false);
+			depthTest, false, vk::CompareOp::eGreaterOrEqual, false, false);
 	vk::PipelineColorBlendAttachmentState blendAttachment(false,
 			vk::BlendFactor::eOne, vk::BlendFactor::eZero, vk::BlendOp::eAdd,
 			vk::BlendFactor::eOne, vk::BlendFactor::eZero, vk::BlendOp::eAdd,
@@ -125,7 +217,7 @@ void MotionVectorPass::Init(vk::Extent2D size, vk::Format depthFormat, vk::Image
 				vk::FrontFace::eCounterClockwise, false, 0.f, 0.f, 0.f, 1.f);
 		vk::GraphicsPipelineCreateInfo createInfo(vk::PipelineCreateFlags(), ARRAY_SIZE(stages), stages,
 				&vertexInput, &inputAssembly, nullptr, &viewportState, &rasterization, &multisample,
-				&depthStencil, &blend, &dynamic, pipelineLayout, *renderPass, 0);
+				depthTest ? &depthStencil : nullptr, &blend, &dynamic, pipelineLayout, *renderPass, 0);
 		pipelines[cull] = device.createGraphicsPipelineUnique(context->GetPipelineCache(), createInfo);
 	}
 }
@@ -147,6 +239,9 @@ void MotionVectorPass::Term(CommandPool *commandPool)
 		pipeline.reset();
 	renderPass.reset();
 	prevXyBuffers.clear();
+	sets.clear();
+	descriptorPool.reset();
+	sampled = false;
 	recorded = false;
 }
 
@@ -170,16 +265,18 @@ bool MotionVectorPass::Begin(int image)
 }
 
 void MotionVectorPass::Record(vk::CommandBuffer commandBuffer, int image, vk::Buffer vertexBuffer, vk::DeviceSize indexOffset,
-		const vk::Rect2D& scissor)
+		const vk::Rect2D& scissor, vk::DeviceSize vertexOffset)
 {
 	const vk::ClearValue clearValues[] = { vk::ClearColorValue(std::array<float, 4> { 0.f, 0.f, 0.f, 0.f }), vk::ClearDepthStencilValue { 0.f, 0 } };
 	commandBuffer.beginRenderPass(vk::RenderPassBeginInfo(*renderPass, *framebuffers[image],
-			vk::Rect2D( { 0, 0 }, size), ARRAY_SIZE(clearValues), clearValues), vk::SubpassContents::eInline);
+			vk::Rect2D( { 0, 0 }, size), sampled ? 1u : (u32)ARRAY_SIZE(clearValues), clearValues), vk::SubpassContents::eInline);
 	commandBuffer.setViewport(0, vk::Viewport(0.0f, 0.0f, (float)size.width, (float)size.height, 0.0f, 1.0f));
 	commandBuffer.setScissor(0, scissor);
+	if (sampled)
+		commandBuffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, *ownLayout, 0, 1, &sets[image], 0, nullptr);
 	const vk::Buffer buffers[] = { vertexBuffer, *prevXyBuffers[image]->buffer };
-	const vk::DeviceSize zeros[] = { 0, 0 };
-	commandBuffer.bindVertexBuffers(0, ARRAY_SIZE(buffers), buffers, zeros);
+	const vk::DeviceSize offsets[] = { vertexOffset, 0 };
+	commandBuffer.bindVertexBuffers(0, ARRAY_SIZE(buffers), buffers, offsets);
 	commandBuffer.bindIndexBuffer(vertexBuffer, indexOffset, vk::IndexType::eUint32);
 	int bound = -1;
 	const List<PolyParam> *lists[] = { &pvrrc.global_param_op, &pvrrc.global_param_pt };

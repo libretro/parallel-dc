@@ -42,6 +42,13 @@ public:
 	void Init(vk::Extent2D size, vk::Format depthFormat, vk::ImageLayout depthLayout,
 			const std::vector<vk::ImageView>& depthViews, vk::PipelineLayout pipelineLayout,
 			vk::ShaderModule vertexShader, vk::ShaderModule fragmentShader, CommandPool *commandPool);
+	/* The same over a depth stored by the compute renderer, which is no
+	 * attachment but an image sampled (mv_depth.frag tests against it):
+	 * the pass has a layout of its own then, with the vertex uniforms
+	 * @uniformBuffers (one a frame slot, the drawer's) and the depth */
+	void InitSampled(vk::Extent2D size, const std::vector<vk::ImageView>& depthViews,
+			const std::vector<vk::Buffer>& uniformBuffers, vk::DeviceSize uniformBytes,
+			vk::ShaderModule vertexShader, vk::ShaderModule fragmentShader, CommandPool *commandPool);
 	// what was made goes once the frames that could use it have gone by
 	void Term(CommandPool *commandPool);
 
@@ -49,8 +56,9 @@ public:
 	 * vectors are drawn (the frame's strips are needed: not a GPU-parsed
 	 * one); matches the strips and uploads where each vertex was */
 	bool Begin(int image);
+	// (the vertices and indices in @vertexBuffer, at their offsets)
 	void Record(vk::CommandBuffer commandBuffer, int image, vk::Buffer vertexBuffer, vk::DeviceSize indexOffset,
-			const vk::Rect2D& scissor);
+			const vk::Rect2D& scissor, vk::DeviceSize vertexOffset = 0);
 	// the vectors and the frame's depth, to the upscaler
 	void Submit(int image, vk::Image depthImage, vk::ImageView depthView, vk::Format depthFormat);
 	bool Recorded() const { return recorded; }
@@ -65,4 +73,13 @@ private:
 	std::vector<std::unique_ptr<BufferData>> prevXyBuffers;
 	std::vector<float> prevXy;
 	bool recorded = false;
+	// the sampled-depth mode's own layout and sets
+	bool sampled = false;
+	vk::UniqueDescriptorSetLayout setLayout;
+	vk::UniquePipelineLayout ownLayout;
+	vk::UniqueDescriptorPool descriptorPool;
+	std::vector<vk::DescriptorSet> sets;
+	vk::UniqueSampler depthSampler;
+
+	void MakePipelines(vk::PipelineLayout pipelineLayout, vk::ShaderModule vertexShader, vk::ShaderModule fragmentShader, bool depthTest);
 };
