@@ -16,8 +16,8 @@
 */
 #pragma once
 /* What the Direct3D 11 renderers take from NVIDIA's NVAPI, loaded when it
- * is run by the loader both Direct3D renderers share (rend/d3d_nvapi.h),
- * never linked. Each is for a device of NVIDIA's (DX11Context::GetVendor()
+ * is run by libretro-common's loader (gfx/nvidia/nvapi_loader.h), never
+ * linked. Each is for a device of NVIDIA's (DX11Context::GetVendor()
  * 0x10de) alone, which the caller sees to: a machine with NVAPI can have
  * another vendor's GPU drawing. Without NVAPI none of it is there, and the
  * renderers do what they do without it. Only the thread that renders calls

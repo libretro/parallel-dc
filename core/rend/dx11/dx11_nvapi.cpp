@@ -16,7 +16,7 @@
 */
 /* What the Direct3D 11 renderers take from NVAPI: see dx11_nvapi.h */
 #include "dx11_nvapi.h"
-#include "rend/d3d_nvapi.h"
+#include <gfx/nvidia/nvapi_loader.h>
 
 /* From the NVAPI SDK (github.com/NVIDIA/nvapi), which NVIDIA publishes
  * under the MIT licence:
@@ -45,12 +45,12 @@ static void probe()
 	if (probed)
 		return;
 	probed = true;
-	nvBeginUavOverlap = (NvUavOverlap)d3d_nvapi_query(NvId_D3D11_BeginUAVOverlap);
-	nvEndUavOverlap = (NvUavOverlap)d3d_nvapi_query(NvId_D3D11_EndUAVOverlap);
+	nvBeginUavOverlap = (NvUavOverlap)nvapi_query(NvId_D3D11_BeginUAVOverlap);
+	nvEndUavOverlap = (NvUavOverlap)nvapi_query(NvId_D3D11_EndUAVOverlap);
 	// (both or neither: a run begun is always ended)
 	if (nvBeginUavOverlap == nullptr || nvEndUavOverlap == nullptr)
 		nvBeginUavOverlap = nvEndUavOverlap = nullptr;
-	nvMultiDrawIndexed = (NvMultiDrawIndexed)d3d_nvapi_query(NvId_D3D11_MultiDrawIndexedInstancedIndirect);
+	nvMultiDrawIndexed = (NvMultiDrawIndexed)nvapi_query(NvId_D3D11_MultiDrawIndexedInstancedIndirect);
 }
 
 bool dx11_nvapi_uav_overlap_available()
@@ -77,5 +77,5 @@ bool dx11_nvapi_multi_draw_available()
 
 bool dx11_nvapi_multi_draw_indexed(ID3D11DeviceContext *context, u32 count, ID3D11Buffer *args, u32 offset, u32 stride)
 {
-	return nvMultiDrawIndexed(context, count, args, offset, stride) == D3D_NVAPI_OK;
+	return nvMultiDrawIndexed(context, count, args, offset, stride) == NVAPI_OK;
 }

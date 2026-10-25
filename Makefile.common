@@ -319,9 +319,10 @@ ifneq (,$(filter 1,$(HAVE_VULKAN) $(HAVE_D3D11) $(HAVE_D3D12)))
 					$(CORE_DIR)/core/rend/hdr/hdr_libretro.c
 endif
 
-# NVIDIA's NVAPI, loaded when it is run, for either Direct3D renderer (rend/d3d_nvapi.h)
+# NVIDIA's NVAPI, loaded when it is run, for either Direct3D renderer
+# (libretro-common's loader, gfx/nvidia/nvapi_loader.h)
 ifneq (,$(filter 1,$(HAVE_D3D11) $(HAVE_D3D12)))
-	SOURCES_CXX += $(CORE_DIR)/core/rend/d3d_nvapi.cpp
+	SOURCES_C += $(LIBRETRO_COMM_DIR)/gfx/nvidia/nvapi_loader.c
 endif
 
 # Direct3D 9, on Windows: the frontend's device, every shader compiled when

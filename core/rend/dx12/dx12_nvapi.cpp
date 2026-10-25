@@ -15,7 +15,7 @@
     along with Flycast.  If not, see <https://www.gnu.org/licenses/>.
 */
 #include "dx12_nvapi.h"
-#include "rend/d3d_nvapi.h"
+#include <gfx/nvidia/nvapi_loader.h>
 #include "types.h"
 #include <cstddef>
 #include <cstring>
@@ -81,8 +81,7 @@ bool dx12_nvapi_post_z_available()
 	if (!probed)
 	{
 		probed = true;
-		// (rend/d3d_nvapi.h: the library loaded and initialized, once for both renderers)
-		nvCreateGraphicsPipelineState = (NvCreateGraphicsPipelineState)d3d_nvapi_query(NvId_D3D12_CreateGraphicsPipelineState);
+		nvCreateGraphicsPipelineState = (NvCreateGraphicsPipelineState)nvapi_query(NvId_D3D12_CreateGraphicsPipelineState);
 	}
 	return nvCreateGraphicsPipelineState != nullptr;
 }
@@ -102,7 +101,7 @@ bool dx12_nvapi_create_post_z_pipeline(ID3D12Device *device, const D3D12_GRAPHIC
 	raster.SampleCount = (u8)desc->SampleDesc.Count;
 	raster.PostZCoverageEnable = true;
 	const NvPsoExtensionDesc *extensions[] = { &raster.base };
-	if (nvCreateGraphicsPipelineState(device, desc, 1, extensions, out) != D3D_NVAPI_OK || *out == nullptr)
+	if (nvCreateGraphicsPipelineState(device, desc, 1, extensions, out) != NVAPI_OK || *out == nullptr)
 	{
 		*out = nullptr;
 		return false;
