@@ -52,9 +52,20 @@
 #                                 DX12_OIT_SUMS blocks are left out of the
 #                                 text of the others
 #
+#   core/rend/dx12/dx12_compute_hdr_dxil.inc
+#                                 the HDR output's walks of the compute
+#                                 renderer (COMPUTE_HDR_KERNELS: the walk
+#                                 for 1, 2, 4 and 8 samples, both variants,
+#                                 that stores the channel sums, PVRC_SUMS),
+#                                 of a dxc of its own; the PVRC_SUMS blocks
+#                                 are left out of the text of the others
+#
 #   sh tools/rend/kernels_dx12.sh update   all made again from the sources
-#   sh tools/rend/kernels_dx12.sh update-hdr  only the HDR output's made again
+#   sh tools/rend/kernels_dx12.sh update-hdr  only the HDR output's DXBC made again
+#   sh tools/rend/kernels_dx12.sh update-compute-hdr  ...and its DXIL
 #   sh tools/rend/kernels_dx12.sh check    whether all are the sources' still
+#   sh tools/rend/kernels_dx12.sh bindings what the compute kernels bind, from
+#        their DXIL, as dx12/dx12_compute.cpp binds it (tools/rend/dxil_bindings.c)
 #   sh tools/rend/kernels_dx12.sh compute-test DIR SAMPLES KEEP
 #        the compute kernels for tools/rend/tile_test (TILE_DEVICE=d3d12):
 #        test mode, nothing fused (PVRC_TEST, PVRC_EXACT), the walk for
@@ -124,6 +135,7 @@ HDR_COUNT=1
 TA_INC=core/rend/dx12/dx12_ta_dxbc.inc
 TA11_INC=core/rend/dx11/dx11_ta_dxbc.inc
 COMPUTE_INC=core/rend/dx12/dx12_compute_dxil.inc
+COMPUTE_HDR_INC=core/rend/dx12/dx12_compute_hdr_dxil.inc
 PVRC_SRC=core/rend/tile/pvr_compute.h
 PVRC_KERNELS=$(awk '$1 == "#define" && $2 == "PVRC_KERNELS" { print $3 }' $PVRC_SRC)
 PVRC_K_WALK=$(awk '$1 == "#define" && $2 == "PVRC_K_WALK" { print $3 }' $PVRC_SRC)
@@ -135,6 +147,8 @@ while [ $k -le "$PVRC_KERNELS" ]; do
    if [ $k = "$PVRC_K_WALK" ]; then COMPUTE_KERNELS="$COMPUTE_KERNELS $k:1:1 $k:2:1 $k:4:1 $k:8:1 $k:1:2 $k:2:2 $k:4:2 $k:8:2"; else COMPUTE_KERNELS="$COMPUTE_KERNELS $k:0:0"; fi
    k=$((k + 1))
 done
+# the HDR output's: the walk's, with the channel sums
+COMPUTE_HDR_KERNELS="$PVRC_K_WALK:1:1 $PVRC_K_WALK:2:1 $PVRC_K_WALK:4:1 $PVRC_K_WALK:8:1 $PVRC_K_WALK:1:2 $PVRC_K_WALK:2:2 $PVRC_K_WALK:4:2 $PVRC_K_WALK:8:2"
 # a kernel's defines: @1 number:samples:variant
 compute_defines_of() {
    v=${1##*:}
@@ -229,10 +243,12 @@ compute_source_of() {
       echo "#define PVR_LANE_NONE"
    fi
    shift 2
-   for d in "$@"; do echo "$d"; done
-   # (and without the blocks for Vulkan's HDR output, PVRC_SUMS: not in these)
+   keep=
+   for d in "$@"; do echo "$d"; [ "$d" = "#define PVRC_SUMS" ] && keep=1; done
+   # (and without the blocks for the HDR output, PVRC_SUMS, but in its walks)
    for h in core/rend/tile/pvr_lane.h core/rend/tile/pvr_tile.h core/rend/tile/pvr_modvol.h core/rend/tile/pvr_resolve.h core/rend/tile/pvr_scaler.h core/rend/ssaa_pattern.h $PVRC_SRC; do
-      sed -e '/^#include/d' -e '/^#if defined(PVRC_SUMS)$/,/^#endif \/\* PVRC_SUMS \*\/$/d' $h
+      if [ -n "$keep" ]; then sed -e '/^#include/d' $h
+      else sed -e '/^#include/d' -e '/^#if defined(PVRC_SUMS)$/,/^#endif \/\* PVRC_SUMS \*\/$/d' $h; fi
    done | sed -e 's/\b\(frm\|rec\|bin\|vtx\|idx\|mvt\|dcmd\|dtrd\|dfrm\)\.w\[/\1_w[/g' \
       -e 's/^layout(local_size_x = \(.*\)) in;$/#define PVRC_THREADS \1/' \
       -e 's/^\(\(uint\|int\|bool\|float\|uvec4\|vec2\) [A-Za-z_0-9]*\( = [A-Za-z_0-9]*\)\?\(, [A-Za-z_0-9]*\( = [A-Za-z_0-9]*\)\?\)*;\)/static \1/' \
@@ -260,6 +276,56 @@ compute_sums() {
       compute_source_of ${t%%:*} ${t#*:} "$(compute_defines_of $k | head -1)" "$(compute_defines_of $k | tail -1)" > "$WORK/s.hlsl"
       echo " * kernel $(compute_name_of $k) $(sha1sum < "$WORK/s.hlsl" | cut -c1-40)"
    done
+}
+
+# The compute renderer's root signature (dx12/dx12_compute.cpp's Init(), as
+# it has it), which dxc holds each kernel's bindings to (-verifyrootsignature)
+COMPUTE_ROOT="RootConstants(num32BitConstants=2, b0), DescriptorTable(UAV(u0, numDescriptors=10), UAV(u0, space=2, numDescriptors=2)), DescriptorTable(SRV(t0, space=1, numDescriptors=unbounded)), DescriptorTable(Sampler(s0, space=1, numDescriptors=unbounded)), StaticSampler(s0, filter=FILTER_MIN_MAG_LINEAR_MIP_POINT, addressU=TEXTURE_ADDRESS_CLAMP, addressV=TEXTURE_ADDRESS_CLAMP, addressW=TEXTURE_ADDRESS_CLAMP, comparisonFunc=COMPARISON_NEVER)"
+compute_root() {
+   [ -f "$WORK/root.bin" ] && return
+   echo "#define ROOT \"$COMPUTE_ROOT\"" > "$WORK/root.hlsl"
+   "$DXC" -T rootsig_1_0 -E ROOT -Fo "$WORK/root.bin" "$WORK/root.hlsl" > "$WORK/log" 2>&1 || { cat "$WORK/log" >&2; exit 1; }
+}
+
+compute_hdr_sums() {
+   for k in $COMPUTE_HDR_KERNELS; do
+      t=${k%:*}
+      compute_source_of ${t%%:*} ${t#*:} "$(compute_defines_of $k | head -1)" "$(compute_defines_of $k | tail -1)" "#define PVRC_SUMS" > "$WORK/s.hlsl"
+      echo " * kernel $(compute_name_of $k) $(sha1sum < "$WORK/s.hlsl" | cut -c1-40)"
+   done
+}
+
+make_compute_hdr_inc() {
+   echo "/* DXIL of the compute renderer's walks for the HDR output (rend/tile/"
+   echo " * pvr_compute.h's walk with PVRC_SUMS: each pixel's channel sums stored"
+   echo " * as well), for each of 1, 2, 4 and 8 samples a pixel, in its two"
+   echo " * variants, as tools/rend/kernels_dx12.sh makes HLSL of them: made by"
+   echo " * tools/rend/kernels_dx12.sh update-compute-hdr from them. Not to be"
+   echo " * edited."
+   echo " * dxc $(dxc_version)"
+   compute_hdr_sums
+   echo " */"
+   for k in $COMPUTE_HDR_KERNELS; do
+      n=$(compute_name_of $k)
+      t=${k%:*}
+      compute_source_of ${t%%:*} ${t#*:} "$(compute_defines_of $k | head -1)" "$(compute_defines_of $k | tail -1)" "#define PVRC_SUMS" > "$WORK/h$n.hlsl"
+      compute_root
+      dxc_compile "$WORK/h$n.hlsl" "$WORK/h$n.dxil"
+      "$DXC" -dumpbin -verifyrootsignature "$WORK/root.bin" "$WORK/h$n.dxil" > "$WORK/log" 2>&1 \
+         || { cat "$WORK/log" >&2; echo "$0: kernel $n binds what the compute renderer's root signature does not have" >&2; exit 1; }
+      echo "static const u32 dx12_compute_hdr_dxil_$n[] = {"
+      od -An -v -w32 -tx4 --endian=little "$WORK/h$n.dxil" | awk '{ s = ""; for (i = 1; i <= NF; i++) s = s "0x" $i ","; print s }'
+      echo "};"
+   done
+   echo "// the sorted variant by SSAA_LOG2() of its samples, then the unsorted: the words, and their size in bytes"
+   l="static const u32 * const dx12_compute_hdr_dxil[] = {"
+   z="static const size_t dx12_compute_hdr_dxil_size[] = {"
+   c=
+   for k in $COMPUTE_HDR_KERNELS; do
+      n=$(compute_name_of $k); l="$l$c dx12_compute_hdr_dxil_$n"; z="$z$c sizeof(dx12_compute_hdr_dxil_$n)"; c=,
+   done
+   echo "$l };"
+   echo "$z };"
 }
 
 # the kernels as words (DXIL's container is of whole words)
@@ -472,6 +538,12 @@ make_hdr_inc() {
 }
 
 case "$1" in
+update-compute-hdr)
+   [ -n "$(dxc_version)" ] || { echo "$0: DXC=/path/to/dxc is needed to make them" >&2; exit 1; }
+   make_compute_hdr_inc > "$WORK/new.inc"
+   cp "$WORK/new.inc" $COMPUTE_HDR_INC
+   echo "made $COMPUTE_HDR_INC"
+   ;;
 update-hdr)
    [ -n "$(compiler_sum)" ] || { echo "$0: D3DCOMPILER=/path/to/d3dcompiler_47.dll is needed to make them" >&2; exit 1; }
    make_hdr_inc > "$WORK/new.inc"
@@ -491,7 +563,9 @@ update)
    cp "$WORK/new.inc" $COMPUTE_INC
    make_hdr_inc > "$WORK/new.inc"
    cp "$WORK/new.inc" $HDR_INC
-   echo "made $INC, $TA_INC, $TA11_INC, $COMPUTE_INC and $HDR_INC"
+   make_compute_hdr_inc > "$WORK/new.inc"
+   cp "$WORK/new.inc" $COMPUTE_HDR_INC
+   echo "made $INC, $TA_INC, $TA11_INC, $COMPUTE_INC, $HDR_INC and $COMPUTE_HDR_INC"
    ;;
 check)
    check_inc $INC make_inc sums d3dcompiler_47
@@ -499,6 +573,12 @@ check)
    check_inc $TA11_INC make_ta11_inc ta11_sums d3dcompiler_47
    check_inc $COMPUTE_INC make_compute_inc compute_sums dxc
    check_inc $HDR_INC make_hdr_inc hdr_sums d3dcompiler_47
+   check_inc $COMPUTE_HDR_INC make_compute_hdr_inc compute_hdr_sums dxc
+   ;;
+bindings)
+   ${CC:-cc} -std=c99 -O1 -Wall -DPVRC_KERNELS=$PVRC_KERNELS -DPVRC_K_WALK=$PVRC_K_WALK -Icore/rend/dx12 \
+      -o "$WORK/dxil_bindings" tools/rend/dxil_bindings.c
+   "$WORK/dxil_bindings"
    ;;
 compute-test)
    [ -n "$(dxc_version)" ] || { echo "$0: DXC=/path/to/dxc is needed to make them" >&2; exit 1; }
@@ -522,7 +602,7 @@ compute-test)
    done
    ;;
 *)
-   echo "usage: $0 update | update-hdr | check | compute-test DIR SAMPLES KEEP" >&2
+   echo "usage: $0 update | update-hdr | update-compute-hdr | check | bindings | compute-test DIR SAMPLES KEEP" >&2
    exit 2
    ;;
 esac

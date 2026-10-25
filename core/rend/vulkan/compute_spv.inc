@@ -3,15 +3,15 @@
  * PVRC_KERNEL): made by tools/rend/kernels_spv.sh update from them. Not
  * to be edited.
  * glslang 11:15.1.0
- * kernel 1 98cdf93ba4dd2145fb9311386d2d517996539599
- * kernel 2 48e442312f49264731a0278c7478fcfcea86d052
- * kernel 3 ce5042d70d2be767f6991383296cf1b1958530fe
- * kernel 4 99a8bd4346a262573896e231bb69789dbb056f1d
- * kernel 5 f4d22ee015e25141ad673d96cde622d05423d085
- * kernel 6 31e4a14af8b2477cfb76104339b9bc90d1cf49e4
- * kernel 7 2952f3d09f7db08fe8e9e473a4f968087b688fba
- * kernel 8 1d4c9fad31d5159c7717839a68f5e0748569a52f
- * kernel walk-waterfall d4c09648d700d29dff2917e49515b786a5274435
+ * kernel 1 884b33830a98eb74b9804f5fcd4d82d39b164512
+ * kernel 2 92b8b2fa5c7d9b7a7a59d2696174bc390d1eddb6
+ * kernel 3 e0e27990ef65a01619bd752cc9cb3a4c7bca21df
+ * kernel 4 64a2de7c133891040779e5b4939e876ed8a5ef35
+ * kernel 5 46ea3b0df934dad467050a05e5db78b7719b2363
+ * kernel 6 8f9a63c8fa1e2ab2ff18e83524db22535c5fed89
+ * kernel 7 72f195da37b59281503c1d41b4043bdbcff1d45a
+ * kernel 8 84341e189ae4848da81d87b69c0c3aecef0d8bb4
+ * kernel walk-waterfall 7ebc074639ddc48e32f0c69abbaea2a4cfa4831b
  */
 static const u32 compute_spv_1[] = {
 0x07230203,0x00010000,0x0008000b,0x000007ff,0x00000000,0x00020011,0x00000001,0x00020011,

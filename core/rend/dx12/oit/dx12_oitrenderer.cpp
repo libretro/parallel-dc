@@ -1441,7 +1441,12 @@ bool DX12OITRenderer::RenderCompute()
 		context->Transition(*image, (D3D12_RESOURCE_STATES)(D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE | D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE));
 	context->Transition(paletteTexture, (D3D12_RESOURCE_STATES)(D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE | D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE));
 	context->Transition(target.image, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
-	compute.Record(target.image.resource);
+	// (the HDR output's channel sums, stored by the walk: the per-pixel renderer's image of them)
+	const bool withSums = compute.SumsOn() && MakeSums(screenWidth, screenHeight);
+	if (withSums)
+		context->Transition(sums, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+	compute.Record(target.image.resource, withSums ? sums.resource.get() : nullptr);
+	sumsStored = withSums && compute.SumsStored();
 	// (what goes over it is drawn into it, and it is handed over, as any other frame of the screen)
 	context->Transition(target.image, D3D12_RESOURCE_STATE_RENDER_TARGET);
 	EndScreen();

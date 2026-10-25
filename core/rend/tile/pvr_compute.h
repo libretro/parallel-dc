@@ -434,8 +434,9 @@ layout(constant_id = 4) const uint PVRC_VARIANT = 0u;
 /* Vulkan's walk, with the HDR output: each pixel's channel sums stored
  * too, scaled to 16 samples (vulkan/hdr_encode_vk.h's HDR_VK_SUMS_LOG2),
  * for the encode to have the exact average the picture was rounded from.
- * (Not in the Direct3D 12 kernels: tools/rend/kernels_dx12.sh leaves
- * these blocks out.) */
+ * (Direct3D 12's: the walks of their own that have them, PVRC_SUMS
+ * defined; tools/rend/kernels_dx12.sh leaves these blocks out of the
+ * others.) */
 layout(constant_id = 5) const uint PVRC_SUMS_ON = 0u;
 #endif /* PVRC_SUMS */
 
@@ -510,6 +511,11 @@ Texture2D<float4> pvrc_table[] : register(t0, space1);
 SamplerState pvrc_samplers[] : register(s0, space1);
 SamplerState pvrc_linear : register(s0);
 RWTexture2D<unorm float4> outImage : register(u0, space2);
+#if defined(PVRC_SUMS)
+/* (the HDR output's walks: the channel sums, as Vulkan's) */
+RWTexture2D<uint4> sumsImage : register(u1, space2);
+#define PVRC_SUMS_ON 1u
+#endif /* PVRC_SUMS */
 #define lastPicture pvrc_table[pvrc_last]
 #define palette pvrc_table[pvrc_palette]
 #define PVRC_TEXTURE_GRAD(slot, uv, dx, dy) pvrc_table[NonUniformResourceIndex(slot_w[slot] & 0xffffu)].SampleGrad( \

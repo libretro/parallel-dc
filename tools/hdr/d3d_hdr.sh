@@ -25,7 +25,9 @@
 # otherwise), or vkd3d-proton's d3d12.dll and d3d12core.dll from
 # $D3D12_DLLS where given, as tools/rend/tile_test.sh has it. (Neither
 # with SSAA here: wine's vkd3d has no eval_snapped, which SSAA's shaders
-# sample at.)
+# sample at. And wine's vkd3d makes none of the compute renderer's DXIL
+# kernels: on it, Direct3D 12's compute frames are the per-pixel
+# renderer's; vkd3d-proton draws them.)
 set -e
 cd "$(dirname "$0")/../.."
 CORE=$(readlink -f "${1:-parallel_dc_libretro.dll}")

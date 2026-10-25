@@ -26,6 +26,8 @@ on:
       - 'core/rend/dx12/**'
       - 'tools/rend/kernels_dxbc.sh'
       - 'tools/rend/kernels_dx12.sh'
+      - 'tools/rend/dxil_bindings.c'
+      - 'core/rend/tile/pvr_compute.h'
       - 'tools/hdr/**'
       - 'core/libretro/**'
       - 'tools/threads/live_disc.py'
@@ -40,6 +42,8 @@ on:
       - 'core/rend/dx12/**'
       - 'tools/rend/kernels_dxbc.sh'
       - 'tools/rend/kernels_dx12.sh'
+      - 'tools/rend/dxil_bindings.c'
+      - 'core/rend/tile/pvr_compute.h'
       - 'tools/hdr/**'
       - 'core/libretro/**'
       - 'tools/threads/live_disc.py'
@@ -71,10 +75,11 @@ jobs:
         run: VK_DRIVER_FILES=/usr/share/vulkan/icd.d/lvp_icd.json sh tools/vulkan/vk_hdr.sh
       - name: HDR output's HLSL against its GLSL
         run: VK_DRIVER_FILES=/usr/share/vulkan/icd.d/lvp_icd.json sh tools/vulkan/hdr_hlsl.sh
-      - name: HDR output's DXBC is its HLSL's (sums)
+      - name: HDR output's DXBC and DXIL are their sources' (sums), the compute kernels' bindings
         run: |
           sh tools/rend/kernels_dxbc.sh check
           sh tools/rend/kernels_dx12.sh check
+          sh tools/rend/kernels_dx12.sh bindings
       - name: HDR output with Direct3D 11 and 12 (wine, the core's encoders, against the GLSL)
         run: VK_DRIVER_FILES=/usr/share/vulkan/icd.d/lvp_icd.json sh tools/hdr/hdr_d3d.sh
       - name: ACES 2.0 (Full)'s cube baked off the frame (threads, TSan, ASan/UBSan, no threads)

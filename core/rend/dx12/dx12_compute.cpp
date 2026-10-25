@@ -30,6 +30,11 @@
  * which checks they still are its. Nothing is compiled when the core runs. */
 #include "dx12_compute_dxil.inc"
 static_assert(sizeof(dx12_compute_dxil) / sizeof(dx12_compute_dxil[0]) == PVRC_KERNELS + 8, "a kernel for each PVRC_K_*, and the walk's variants");
+/* ...and the HDR output's walks, which store each pixel's channel sums as
+ * well (PVRC_SUMS): the sorted variant by SSAA_LOG2() of its samples, then
+ * the unsorted */
+#include "dx12_compute_hdr_dxil.inc"
+static_assert(sizeof(dx12_compute_hdr_dxil) / sizeof(dx12_compute_hdr_dxil[0]) == 8, "the walk's variants for 1, 2, 4 and 8 samples");
 // (for the raster renderers' write-out: dx12_writeout.cpp)
 const void *dx12_compute_kernel(u32 kernel, size_t *size)
 {
@@ -49,8 +54,9 @@ static const u32 PoolEntries = 2u << 20;
 /* The pieces of the ring: frames in flight at once */
 static const u32 Slots = DX12Context::ComputeTables;
 /* The kernels' views (the table's), in the order of their registers: the
- * buffers u0 to u9, then the picture (u0, space 2) */
-enum { V_FRAME, V_REC, V_BIN, V_VTX, V_IDX, V_MOD, V_CMD, V_TRD, V_DFRM, V_SLOTS, V_PICTURE, V_COUNT };
+ * buffers u0 to u9, then the picture (u0, space 2) and the HDR output's
+ * channel sums (u1, space 2: a null view but for its walks) */
+enum { V_FRAME, V_REC, V_BIN, V_VTX, V_IDX, V_MOD, V_CMD, V_TRD, V_DFRM, V_SLOTS, V_PICTURE, V_SUMS, V_COUNT };
 static_assert(V_COUNT == DX12Context::ComputeTableSize, "the context's tables have room for the views");
 /* (the translucent fragments the walk keeps at a time: what the kernels
  * were made for, pvrc_fragments_kept() of what every Direct3D 12 device
@@ -122,6 +128,9 @@ struct DX12ComputeDrawer::Resources
 	ComPtr<ID3D12PipelineState> walkUnsorted;
 	// with SSAA, the walk for renders to a texture, at one sample a pixel, both variants
 	ComPtr<ID3D12PipelineState> walk1, walk1Unsorted;
+	// with the HDR output, the screen's walk that stores the channel sums, both variants
+	ComPtr<ID3D12PipelineState> walkSums, walkSumsUnsorted;
+	bool sumsStored = false;	// by the frame just recorded
 	// whether the device loads R8G8B8A8_UNORM from an unordered access view (the Y filter, PVRC_K_YFILTER)
 	bool yfilter = false;
 	ComPtr<ID3D12CommandSignature> dispatch;
@@ -246,13 +255,13 @@ bool DX12ComputeDrawer::Init(u32 width, u32 height, u32 samples)
 		return fail("not enough video memory");
 
 	/* The root signature: the pictures' places in the table (b0); the table
-	 * of views (u0 to u9, the picture u0 of space 2); the bindless table
+	 * of views (u0 to u9, the picture and the sums u0 and u1 of space 2); the bindless table
 	 * (t0 on, space 1) and the samplers (s0 on, space 1); the linear
 	 * sampler for a picture of another size to start from (s0) */
 	{
 		D3D12_DESCRIPTOR_RANGE ranges[4]{};
 		ranges[0] = { D3D12_DESCRIPTOR_RANGE_TYPE_UAV, V_PICTURE, 0, 0, 0 };
-		ranges[1] = { D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 1, 0, 2, V_PICTURE };
+		ranges[1] = { D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 2, 0, 2, V_PICTURE };
 		ranges[2] = { D3D12_DESCRIPTOR_RANGE_TYPE_SRV, UINT_MAX, 0, 1, 0 };
 		ranges[3] = { D3D12_DESCRIPTOR_RANGE_TYPE_SAMPLER, UINT_MAX, 0, 1, 0 };
 		D3D12_ROOT_PARAMETER params[4]{};
@@ -297,6 +306,24 @@ bool DX12ComputeDrawer::Init(u32 width, u32 height, u32 samples)
 		return fail("a kernel's pipeline could not be made");
 	if (this->samples > 1 && (!make(PVRC_K_WALK, r->walk1) || !make(walkUnsortedDxil(1), r->walk1Unsorted)))
 		return fail("a kernel's pipeline could not be made");
+	/* (the HDR output's: the walks that store the channel sums; with them
+	 * not made, the screen's walks are the others and the picture is
+	 * encoded as it is) */
+	if (context->HdrActive())
+	{
+		auto makeHdr = [&](u32 index, ComPtr<ID3D12PipelineState>& out) {
+			D3D12_COMPUTE_PIPELINE_STATE_DESC desc{};
+			desc.pRootSignature = r->root;
+			desc.CS = { dx12_compute_hdr_dxil[index], dx12_compute_hdr_dxil_size[index] };
+			return SUCCEEDED(device->CreateComputePipelineState(&desc, __uuidof(ID3D12PipelineState), (void **)out.put()));
+		};
+		if (!makeHdr(SSAA_LOG2(this->samples), r->walkSums) || !makeHdr(4 + SSAA_LOG2(this->samples), r->walkSumsUnsorted))
+		{
+			WARN_LOG(RENDERER, "Direct3D 12 compute renderer: the HDR output's walks could not be made; the picture is encoded as it is");
+			r->walkSums.reset();
+			r->walkSumsUnsorted.reset();
+		}
+	}
 	{
 		D3D12_INDIRECT_ARGUMENT_DESC arg{};
 		arg.Type = D3D12_INDIRECT_ARGUMENT_TYPE_DISPATCH;
@@ -378,6 +405,10 @@ bool DX12ComputeDrawer::Init(u32 width, u32 height, u32 samples)
 		for (u32 v = V_VTX; v <= V_DFRM; v++)
 			view(v, r->ring, (u64)s * r->pieceWords, r->frameWords);
 		view(V_SLOTS, r->ring, (u64)s * r->pieceWords + r->frameWords, PVRC_TEX_SLOTS);
+		D3D12_UNORDERED_ACCESS_VIEW_DESC sums{};
+		sums.Format = DXGI_FORMAT_R16G16B16A16_UINT;
+		sums.ViewDimension = D3D12_UAV_DIMENSION_TEXTURE2D;
+		device->CreateUnorderedAccessView(nullptr, nullptr, &sums, context->Srv().Cpu(table + V_SUMS));
 	}
 
 	ready = true;
@@ -426,19 +457,21 @@ void DX12ComputeDrawer::Term()
 		release(res->start);
 		if (res->startSrv != ~0u)
 			context->ReleaseSrv(res->startSrv);
-		for (ComPtr<ID3D12PipelineState>& pso : res->pipelines)
+		auto releasePso = [&](ComPtr<ID3D12PipelineState>& pso) {
 			if (pso)
 			{
 				pso->AddRef();
 				context->Release(pso.get());
 				pso.reset();
 			}
-		if (res->walk1)
-		{
-			res->walk1->AddRef();
-			context->Release(res->walk1.get());
-			res->walk1.reset();
-		}
+		};
+		for (ComPtr<ID3D12PipelineState>& pso : res->pipelines)
+			releasePso(pso);
+		releasePso(res->walkUnsorted);
+		releasePso(res->walk1);
+		releasePso(res->walk1Unsorted);
+		releasePso(res->walkSums);
+		releasePso(res->walkSumsUnsorted);
 		if (res->root)
 		{
 			res->root->AddRef();
@@ -457,6 +490,16 @@ void DX12ComputeDrawer::Term()
 	ready = false;
 	statFrames = statFallback = statGpuFrames = statRttFrames = statBusy = 0;
 	memset(statWhy, 0, sizeof(statWhy));
+}
+
+bool DX12ComputeDrawer::SumsOn() const
+{
+	return res != nullptr && res->walkSums;
+}
+
+bool DX12ComputeDrawer::SumsStored() const
+{
+	return res != nullptr && res->sumsStored;
 }
 
 u32 DX12ComputeDrawer::StartSrv() const
@@ -540,7 +583,7 @@ bool DX12ComputeDrawer::Prepare(ComputeFrame& frame, u32 last, bool scaled, u32 
 	return true;
 }
 
-void DX12ComputeDrawer::Record(ID3D12Resource *picture)
+void DX12ComputeDrawer::Record(ID3D12Resource *picture, ID3D12Resource *sums)
 {
 	Resources& r = *res;
 	DX12Context *context = DX12Context::Instance();
@@ -559,6 +602,11 @@ void DX12ComputeDrawer::Record(ID3D12Resource *picture)
 		desc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
 		desc.ViewDimension = D3D12_UAV_DIMENSION_TEXTURE2D;
 		device->CreateUnorderedAccessView(picture, nullptr, &desc, context->Srv().Cpu(table + V_PICTURE));
+		// (the HDR output's channel sums, a frame of the screen's: where its walks store them)
+		if (!r.walkSums || r.rtt)
+			sums = nullptr;
+		desc.Format = DXGI_FORMAT_R16G16B16A16_UINT;
+		device->CreateUnorderedAccessView(sums, nullptr, &desc, context->Srv().Cpu(table + V_SUMS));
 		auto view = [&](u32 v, ID3D12Resource *buffer, u64 firstWord, u64 count) {
 			D3D12_UNORDERED_ACCESS_VIEW_DESC d{};
 			d.Format = DXGI_FORMAT_UNKNOWN;
@@ -676,9 +724,9 @@ void DX12ComputeDrawer::Record(ID3D12Resource *picture)
 	/* (the walk's two variants, each over the coarse tiles of its list,
 	 * the sort's: nothing between them; the clear's size is the scan's) */
 	arguments();
-	cmd->SetPipelineState(n != samples ? r.walk1Unsorted : r.walkUnsorted);
+	cmd->SetPipelineState(n != samples ? r.walk1Unsorted : sums != nullptr ? r.walkSumsUnsorted : r.walkUnsorted);
 	cmd->ExecuteIndirect(r.dispatch, 1, r.args, (u64)PVRC_ST_WALK_U_X * 4, nullptr, 0);
-	cmd->SetPipelineState(n != samples ? r.walk1 : r.pipelines[PVRC_K_WALK]);
+	cmd->SetPipelineState(n != samples ? r.walk1 : sums != nullptr ? r.walkSums : r.pipelines[PVRC_K_WALK]);
 	cmd->ExecuteIndirect(r.dispatch, 1, r.args, (u64)PVRC_ST_WALK_S_X * 4, nullptr, 0);
 	barrier();
 	/* the Y filter, in place over the picture, where the frame has it
@@ -688,6 +736,11 @@ void DX12ComputeDrawer::Record(ID3D12Resource *picture)
 	pvrc_yfilter_groups(words, &yx, &yy);
 	if (yy != 0 && r.yfilter)
 		step(PVRC_K_YFILTER, yx, yy);
+	/* (the sums are the picture's where the walk alone wrote it, and it
+	 * resolved more than one sample a pixel - SSAA's, or the X scaler's
+	 * pairs: Vulkan's rule) */
+	r.sumsStored = sums != nullptr && !(yy != 0 && r.yfilter)
+			&& (n > 1 || (words[PVRC_F_FLAGS] & PVRC_FF_HSCALE) != 0);
 	indirect(PVRC_K_CLEAR, PVRC_ST_CLEAR_X);
 	// the counts, for when this piece comes round
 	context->Transition(r.bins, binState, D3D12_RESOURCE_STATE_COPY_SOURCE);

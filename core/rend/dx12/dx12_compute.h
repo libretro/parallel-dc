@@ -97,8 +97,19 @@ public:
 	/* ...then drawn into @picture (R8G8B8A8, made for unordered access),
 	 * which is in UNORDERED_ACCESS: all of it, the pixels outside the
 	 * frame's clip the clear colour; recorded into the context's list,
-	 * which the next Submit() executes */
-	void Record(ID3D12Resource *picture);
+	 * which the next Submit() executes. With @sums (SumsOn(); an
+	 * R16G16B16A16_UINT texture of at least the screen's size, in
+	 * UNORDERED_ACCESS), a frame of the screen stores each pixel's channel
+	 * sums into it as well, for the HDR output's encode
+	 * (DX12Context::EncodeHdr()) */
+	void Record(ID3D12Resource *picture, ID3D12Resource *sums = nullptr);
+	/* Whether the walks that store the channel sums were made: with the
+	 * HDR output when Init() was called, and none at 24-bit */
+	bool SumsOn() const;
+	/* Whether the frame just recorded stored them, and they are what the
+	 * picture was resolved from: SSAA's samples, or the X scaler's pairs
+	 * of pixels, and no Y filter over it */
+	bool SumsStored() const;
 
 	/* The picture before copied into one of the drawer's own (made with
 	 * it, of the screen's size), for a frame to start from when it cannot be

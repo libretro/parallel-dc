@@ -1172,7 +1172,7 @@ void DX12Renderer::EndScreen(bool writeOutPass)
 	// as the frontend wants it - or encoded for its HDR output, which it is handed instead - and off to the GPU
 	if (!context->EncodeHdr(target.image, target.image.width, target.image.height,
 			hdrSamples ? &ssaaColor[0] : nullptr, ssaaLog2,
-			ssaa && !(writeOutPass && writeOutPictures) ? HdrSums() : nullptr))
+			!(writeOutPass && writeOutPictures) ? HdrSums() : nullptr))
 		context->Transition(target.image, context->RequiredState());
 	if (hdrSamples)
 	{

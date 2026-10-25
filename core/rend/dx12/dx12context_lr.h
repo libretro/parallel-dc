@@ -188,7 +188,7 @@ public:
 	/* ...then the compute renderer's tables of views (dx12_compute.h), one
 	 * for each piece of its ring; and the end of the heap */
 	static const u32 ComputeFirst = OitSsaaFirst + DX12_OIT_TABLE_SIZE;
-	static const u32 ComputeTableSize = 11;
+	static const u32 ComputeTableSize = 12;
 	static const u32 ComputeTables = 4;
 	/* ...then the raster renderers' write-out pass's (dx12_writeout.h): a
 	 * table of two views, the words and the picture, for each of its slots */
