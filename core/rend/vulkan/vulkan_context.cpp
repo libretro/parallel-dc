@@ -508,6 +508,16 @@ bool VulkanContext::Init(retro_hw_render_interface_vulkan *retro_render_if)
 		code.frag_subpass = RasterSpvWords(RSPV_HDR_ENCODE_FRAG_SUBPASS, &code.frag_subpass_size);
 		code.frag_subpass_ssaa = RasterSpvWords(RSPV_HDR_ENCODE_FRAG_SUBPASS_SSAA, &code.frag_subpass_ssaa_size);
 		code.frag_sums = RasterSpvWords(RSPV_HDR_ENCODE_FRAG_SUMS, &code.frag_sums_size);
+		code.frag_linear = RasterSpvWords(RSPV_HDR_ENCODE_FRAG_LINEAR, &code.frag_linear_size);
+		code.frag_sums_linear = RasterSpvWords(RSPV_HDR_ENCODE_FRAG_SUMS_LINEAR, &code.frag_sums_linear_size);
+		{
+			// (by enum hdr_bloom_stage)
+			static const RasterSpv bloom[HDR_BLOOM_STAGES] = { RSPV_HDR_BLOOM_BRIGHT, RSPV_HDR_BLOOM_BLUR,
+					RSPV_HDR_BLOOM_DOWN, RSPV_HDR_BLOOM_DOWN_KARIS, RSPV_HDR_BLOOM_UP };
+			for (int i = 0; i < HDR_BLOOM_STAGES; i++)
+				code.bloom[i] = RasterSpvWords(bloom[i], &code.bloom_size[i]);
+		}
+		code.post = RasterSpvWords(RSPV_HDR_POST_FRAG, &code.post_size);
 		hdr = hdr_vk_new(retro_render_if, heap.Raw(), pipelineCache, hdrFormat, (unsigned)swapChainSize, &code);
 		if (hdr == nullptr)
 			ERROR_LOG(RENDERER, "Vulkan: the HDR output could not be set up; the picture goes out as 24-bit");
@@ -691,6 +701,11 @@ void VulkanContext::HdrSubpassDraw(CommandPool& pool, vk::CommandBuffer cmd, vk:
 	if (hdr != nullptr)
 		hdr_vk_subpass_draw(hdr, &hdr_output, (VkCommandBuffer)cmd, HdrRing(pool), (unsigned)pool.GetIndex(),
 				(VkPipeline)pipeline, (VkImageView)picture, (VkImageView)samples, extent.width, extent.height, !samples);
+}
+
+bool VulkanContext::HdrPostActive() const
+{
+	return hdr != nullptr && hdr_vk_post_active();
 }
 
 bool VulkanContext::HdrSumsReady()

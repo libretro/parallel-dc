@@ -48,7 +48,14 @@ static const char *const hdr_only_options[] = {
    CORE_OPTION_NAME "_hdr_expansion",
    CORE_OPTION_NAME "_hdr_peak",
    CORE_OPTION_NAME "_hdr_highlight_hue",
-   CORE_OPTION_NAME "_hdr_sdr_gamma"
+   CORE_OPTION_NAME "_hdr_sdr_gamma",
+   CORE_OPTION_NAME "_hdr_bloom",
+   CORE_OPTION_NAME "_hdr_bloom_select",
+   CORE_OPTION_NAME "_hdr_bloom_range",
+   CORE_OPTION_NAME "_hdr_bloom_convolution",
+   CORE_OPTION_NAME "_hdr_halation",
+   CORE_OPTION_NAME "_hdr_chromatic",
+   CORE_OPTION_NAME "_hdr_post_compact"
 };
 #define HDR_ONLY_OPTIONS (sizeof(hdr_only_options) / sizeof(hdr_only_options[0]))
 
@@ -78,8 +85,9 @@ void hdr_libretro_options(retro_environment_t env)
 {
    static const char *const contrast[7] = {
       "verylow", "low", "medium", "base", "medhigh", "high", "veryhigh" };
-   struct hdr_dt_settings dt;
-   const char            *v;
+   struct hdr_dt_settings   dt;
+   struct hdr_post_settings post;
+   const char              *v;
    int                    i;
 
    hdr_wanted = 0;
@@ -132,6 +140,27 @@ void hdr_libretro_options(retro_environment_t env)
    if ((v = value_of(env, CORE_OPTION_NAME "_hdr_expansion")))
       dt.expansion = !strcmp(v, "inverse") ? 1 : !strcmp(v, "hue") ? 2 : 0;
    hdr_dt_configure(&dt);
+
+   /* the post effects: bloom, halation, chromatic aberration */
+   memset(&post, 0, sizeof(post));
+   post.firefly_knee = 1.0f;
+   if ((v = value_of(env, CORE_OPTION_NAME "_hdr_bloom")))
+      post.bloom = !strcmp(v, "subtle") ? 0.55f : !strcmp(v, "standard") ? 1.0f
+                 : !strcmp(v, "intense") ? 1.7f : 0.0f;
+   if ((v = value_of(env, CORE_OPTION_NAME "_hdr_bloom_select")))
+      post.bloom_knee = !strcmp(v, "knee");
+   if ((v = value_of(env, CORE_OPTION_NAME "_hdr_bloom_range")))
+      post.firefly_knee = !strcmp(v, "wide") ? 0.25f : !strcmp(v, "widest") ? 0.0625f : 1.0f;
+   if ((v = value_of(env, CORE_OPTION_NAME "_hdr_bloom_convolution")))
+      post.convolution = !strcmp(v, "enabled");
+   if ((v = value_of(env, CORE_OPTION_NAME "_hdr_halation")))
+      post.halation = !strcmp(v, "subtle") ? 1 : !strcmp(v, "strong") ? 2 : 0;
+   if ((v = value_of(env, CORE_OPTION_NAME "_hdr_post_compact")))
+      post.compact = !strcmp(v, "enabled");
+   if ((v = value_of(env, CORE_OPTION_NAME "_hdr_chromatic")))
+      post.chromatic = !strcmp(v, "subtle") ? 1 : !strcmp(v, "strong") ? 2
+                     : !strcmp(v, "heavy") ? 3 : 0;
+   hdr_post_configure(&post);
 
    hdr_output.sdr_eotf = 0;
    if ((v = value_of(env, CORE_OPTION_NAME "_hdr_sdr_gamma")))

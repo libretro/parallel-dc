@@ -9,6 +9,8 @@
 #    to the byte;
 #  - HDR10 and scRGB, per-strip, per-pixel and compute: the 24-bit picture
 #    of the same frame, encoded;
+#  - with the HDR post effects, per-strip, per-pixel and compute: what the
+#    CPU makes of the 24-bit picture through them (vk_hdr --post);
 #  - a filmic curve is not (the comparison sees a wrong encode);
 #  - a frontend's device that cannot be had, with Direct3D 11 and 12,
 #    threaded rendering on and off: the core runs its frames and draws
@@ -34,7 +36,9 @@ trap 'kill $XVFB 2>/dev/null; rm -rf "$WORK"' EXIT
 ${CC_WIN:-x86_64-w64-mingw32-gcc} -O1 -Wall -I./core/libretro-common/include -I./core/deps/khronos \
    -o "$WORK/d3d_hdr.exe" tools/hdr/d3d_hdr.c -ld3d11 -ld3d12 -ldxguid
 ${CC:-cc} -O1 -Wall -I./core/libretro-common/include -I./core/deps/khronos \
-   -o "$WORK/vk_hdr" tools/vulkan/vk_hdr.c -ldl -lm
+   -DTARGET_NO_THREADS -o "$WORK/vk_hdr" tools/vulkan/vk_hdr.c tools/hdr/hdr_post_ref.c \
+   core/rend/hdr/hdr_output.c core/rend/hdr/hdr_transform.c core/rend/hdr/hdr_aces2.c \
+   core/rend/hdr/hdr_libretro.c core/rend/hdr/hdr_display.c -ldl -lm
 python3 tools/threads/live_disc.py "$WORK/test.gdi"
 # (as vk_hdr.sh: from frame 70, the textured background, mid-tones and saturated colours)
 FRAMES=70
@@ -66,6 +70,9 @@ for r in "per-strip (fast, least accurate)|rasterizer|strip" \
    "$WORK/vk_hdr" --compare "$WORK/$name.raw" "$WORK/$name-hdr10.raw"
    run scrgb "$name-scrgb.raw" reicast_color_format=64bit_scrgb "$@"
    "$WORK/vk_hdr" --compare "$WORK/$name.raw" "$WORK/$name-scrgb.raw"
+   P="reicast_hdr_bloom=standard reicast_hdr_chromatic=subtle"
+   run scrgb "$name-post.raw" reicast_color_format=64bit_scrgb $P "$@"
+   "$WORK/vk_hdr" --post "$WORK/$name.raw" "$WORK/$name-post.raw" $P
 done
 
 # (the comparison has to see a wrong encode, or it proves nothing)

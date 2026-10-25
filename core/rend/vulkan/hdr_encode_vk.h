@@ -25,6 +25,7 @@
 #include <boolean.h>
 
 #include "vk_heap.h"
+#include "../hdr/hdr_output.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -37,7 +38,9 @@ typedef struct hdr_vk hdr_vk_t;
 /* The shaders' SPIR-V: SSAA_RESOLVE_VERT's triangle, HDR_ENCODE_FRAG
  * (the picture sampled), HDR_ENCODE_FRAG_SUBPASS (an input attachment),
  * HDR_ENCODE_FRAG_SUBPASS_SSAA (and SSAA's samples, a second one) and
- * HDR_ENCODE_FRAG_SUMS (the picture sampled, and SSAA's channel sums) */
+ * HDR_ENCODE_FRAG_SUMS (the picture sampled, and SSAA's channel sums); the
+ * post effects' HDR_ENCODE_FRAG_LINEAR and _SUMS_LINEAR (into scene-linear
+ * light), HDR_BLOOM_* (by enum hdr_bloom_stage) and HDR_POST_FRAG */
 typedef struct hdr_vk_code
 {
    const uint32_t *vert;
@@ -50,6 +53,14 @@ typedef struct hdr_vk_code
    size_t          frag_subpass_ssaa_size;
    const uint32_t *frag_sums;
    size_t          frag_sums_size;
+   const uint32_t *frag_linear;
+   size_t          frag_linear_size;
+   const uint32_t *frag_sums_linear;
+   size_t          frag_sums_linear_size;
+   const uint32_t *bloom[HDR_BLOOM_STAGES];
+   size_t          bloom_size[HDR_BLOOM_STAGES];
+   const uint32_t *post;
+   size_t          post_size;
 } hdr_vk_code_t;
 
 /* @format: what is handed over, VK_FORMAT_A2B10G10R10_UNORM_PACK32 for
@@ -95,6 +106,11 @@ void hdr_vk_subpass_draw(hdr_vk_t *e, const struct hdr_output *out, VkCommandBuf
 
 /* ---- a pass of its own ---- */
 
+/* Whether this frame's encode is the post effects', which only a pass of
+ * its own (hdr_vk_encode()) draws: a renderer leaves its last subpass
+ * undrawn then */
+bool hdr_vk_post_active(void);
+
 /* What hdr_vk_encode()'s channel sums are of: whatever the samples a
  * pixel that were resolved (SSAA's, and the X scaler's pair of pixels'),
  * N of them, a sum is (2^HDR_VK_SUMS_LOG2 / N) times the samples' */
@@ -114,8 +130,10 @@ bool hdr_vk_sums_ready(hdr_vk_t *e);
  * pixel the channel sums of the samples the picture was resolved from by
  * rend/tile/pvr_resolve.h's rule, scaled to HDR_VK_SUMS_SAMPLES) and
  * hdr_vk_sums_ready(), their exact average is encoded where the picture
- * is their resolve, as hdr_vk_subpass_pipeline()'s does. False, both as
- * they were, when it could not be. */
+ * is their resolve, as hdr_vk_subpass_pipeline()'s does. With the post
+ * effects on (hdr_post_enabled()) the picture goes through them on its
+ * way, what they need made the first time. False, both as they were,
+ * when it could not be. */
 bool hdr_vk_encode(hdr_vk_t *e, const struct hdr_output *out, VkCommandBuffer cmd,
       unsigned ring, unsigned slot, uint64_t epoch, unsigned index,
       VkImage *image, VkImageView *view, unsigned width, unsigned height, bool unorm8,

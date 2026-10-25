@@ -19,6 +19,11 @@
 #    and is not dithered (vk_hdr --exact; on the disc with a slanted
 #    shaded triangle, and that with the X scaler, which the old code
 #    fails);
+#  - with the HDR post effects (bloom in each of its shapes, halation,
+#    chromatic aberration, Compact Intermediates), on each renderer, with
+#    SSAA too, the scRGB picture is what the CPU makes of the 24-bit one
+#    through them (vk_hdr --post, tools/hdr/hdr_post_ref.c), and not what
+#    it makes with other settings; HDR10 through them draws;
 #  - a filmic curve is not (the comparison sees a wrong encode);
 #  - every Display Transform draws, and ACES 2.0 (Full) long enough for
 #    its cube to be made and used.
@@ -35,7 +40,9 @@ WORK=${TMPDIR:-/tmp}/vk_hdr.$$
 mkdir -p "$WORK"
 trap 'rm -rf "$WORK"' EXIT
 ${CC:-cc} -O1 -g -Wall -I./core/libretro-common/include -I./core/deps/khronos \
-   -o "$WORK/vk_hdr" tools/vulkan/vk_hdr.c -ldl -lm
+   -DTARGET_NO_THREADS -o "$WORK/vk_hdr" tools/vulkan/vk_hdr.c tools/hdr/hdr_post_ref.c \
+   core/rend/hdr/hdr_output.c core/rend/hdr/hdr_transform.c core/rend/hdr/hdr_aces2.c \
+   core/rend/hdr/hdr_libretro.c core/rend/hdr/hdr_display.c -ldl -lm
 python3 tools/threads/live_disc.py "$WORK/test.gdi"
 # (each in a directory of its own: the track files are named alike)
 mkdir -p "$WORK/slant" "$WORK/hscale"
@@ -105,6 +112,47 @@ if "$WORK/vk_hdr" --compare "$WORK/wo-strip.raw" "$WORK/strip-hdr10.raw" > /dev/
    echo "vk_hdr.sh: the picture before its write-out passed for the one written out"
    exit 1
 fi
+
+# The HDR post effects: the scRGB picture is what the CPU makes of the
+# 24-bit picture of the same frame through them, on each renderer
+P=reicast_hdr_bloom=standard
+for name in strip triangle pixel compute triangle-ssaa pixel-ssaa; do
+   case $name in
+   strip) set -- "reicast_alpha_sorting=per-strip (fast, least accurate)" reicast_rendering_method=rasterizer reicast_ssaa=disabled ;;
+   triangle) set -- "reicast_alpha_sorting=per-triangle (normal)" reicast_rendering_method=rasterizer reicast_ssaa=disabled ;;
+   pixel) set -- "reicast_alpha_sorting=per-pixel (accurate)" reicast_rendering_method=rasterizer reicast_ssaa=disabled ;;
+   compute) set -- "reicast_alpha_sorting=per-pixel (accurate)" reicast_rendering_method=compute reicast_ssaa=disabled ;;
+   triangle-ssaa) set -- "reicast_alpha_sorting=per-triangle (normal)" reicast_rendering_method=rasterizer reicast_ssaa=4x ;;
+   pixel-ssaa) set -- "reicast_alpha_sorting=per-pixel (accurate)" reicast_rendering_method=rasterizer reicast_ssaa=4x ;;
+   esac
+   run scrgb "$name-post.raw" reicast_color_format=64bit_scrgb $P "$@"
+   "$WORK/vk_hdr" --post "$WORK/$name.raw" "$WORK/$name-post.raw" $P
+done
+# ...each of their settings, on the per-triangle renderer
+for fx in "reicast_hdr_bloom=intense reicast_hdr_bloom_range=widest reicast_hdr_halation=strong" \
+          "reicast_hdr_bloom=subtle reicast_hdr_bloom_convolution=enabled reicast_hdr_bloom_select=knee" \
+          "reicast_hdr_chromatic=heavy" \
+          "reicast_hdr_bloom=standard reicast_hdr_chromatic=subtle reicast_hdr_post_compact=enabled"; do
+   run scrgb fx.raw reicast_color_format=64bit_scrgb $fx
+   "$WORK/vk_hdr" --post "$WORK/sdr.raw" "$WORK/fx.raw" $fx
+done
+# (...and the comparison sees other settings than the picture's: the
+# packed intermediates' picture, the last, is not the half floats')
+if "$WORK/vk_hdr" --post "$WORK/sdr.raw" "$WORK/fx.raw" reicast_hdr_bloom=standard reicast_hdr_chromatic=subtle > /dev/null 2>&1; then
+   echo "vk_hdr.sh: Compact Intermediates drew as half floats"
+   exit 1
+fi
+run scrgb fx.raw reicast_color_format=64bit_scrgb reicast_hdr_bloom=standard
+for fx in "reicast_hdr_bloom=standard reicast_hdr_halation=subtle" "reicast_hdr_bloom=subtle" \
+          "reicast_hdr_bloom=standard reicast_hdr_bloom_convolution=enabled" \
+          "reicast_hdr_bloom=standard reicast_hdr_bloom_range=wide"; do
+   if "$WORK/vk_hdr" --post "$WORK/sdr.raw" "$WORK/fx.raw" $fx > /dev/null 2>&1; then
+      echo "vk_hdr.sh: a bloom of other settings passed for $fx"
+      exit 1
+   fi
+done
+# HDR10 through them
+run hdr10 fx.raw reicast_color_format=30bit_hdr reicast_hdr_bloom=intense reicast_hdr_chromatic=strong
 
 # What was resolved, encoded from its exact average: SSAA's samples, on
 # each renderer, the slanted triangle's edges between them...

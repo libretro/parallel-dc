@@ -12,6 +12,8 @@ name: Vulkan negotiation
 # and vkd3d on lavapipe), against the GLSL: tools/hdr/hdr_d3d.sh; and the
 # core's Windows build drawing with Direct3D 11 under wine, its 24-bit,
 # HDR10 and scRGB pictures read back and judged: tools/hdr/d3d_hdr.sh.
+# The HDR post effects (bloom, halation, chromatic aberration) are judged
+# in each against what the CPU makes of the picture (vk_hdr --post).
 
 on:
   push:

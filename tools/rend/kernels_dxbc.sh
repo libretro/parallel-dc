@@ -16,7 +16,9 @@
 #                                 hdr/hdr_encode_d3d11.c, hdr_encode_d3d12.c),
 #                                 and Direct3D 12's with SSAA's samples too
 #                                 (HDR_ENCODE_SSAA, after rend/tile/pvr_lane.h
-#                                 and pvr_resolve.h: PS_SSAA)
+#                                 and pvr_resolve.h: PS_SSAA); the post
+#                                 effects' (HDR_ENCODE_LINEAR, HDR_ENCODE_POST,
+#                                 HDR_BLOOM_PS)
 #
 #   sh tools/rend/kernels_dxbc.sh update   all made again from their sources
 #   sh tools/rend/kernels_dxbc.sh update-hdr  only the HDR output's made again
@@ -41,7 +43,8 @@ INC_HDR=core/rend/hdr/hdr_encode_dxbc.inc
 # kernel: profile
 KERNELS="1:cs_5_0 2:cs_5_0 3:vs_5_0 4:ps_5_0"
 KERNELS9="1:vs_3_0 2:ps_3_0"
-KERNELS_HDR="VS:vs_5_0 PS:ps_5_0 PS_SSAA:ps_5_0"
+KERNELS_HDR="VS:vs_5_0 PS:ps_5_0 PS_SSAA:ps_5_0 PS_LINEAR:ps_5_0 PS_SSAA_LINEAR:ps_5_0 POST:ps_5_0"
+KERNELS_HDR="$KERNELS_HDR BLOOM_BRIGHT:ps_5_0 BLOOM_BLUR:ps_5_0 BLOOM_DOWN:ps_5_0 BLOOM_DOWN_KARIS:ps_5_0 BLOOM_UP:ps_5_0"
 CC_WIN=${CC_WIN:-x86_64-w64-mingw32-gcc}
 WINE=${WINE-wine}
 
@@ -53,13 +56,19 @@ source_of() {
    echo "#define TEXD_SHADER_HLSL"; echo "#define TEXD_KERNEL_D3D $1"; cat core/rend/texdecode.h
 }
 
-# (PS_SSAA: the pixel shader with SSAA's samples, after the shared rules it resolves by)
+# (PS_SSAA: the pixel shader with SSAA's samples, after the shared rules it
+# resolves by; _LINEAR: the post effects' first pass; POST their composite;
+# BLOOM_*: the bloom's stages)
 source_hdr_of() {
    case $1 in
-   PS_SSAA)
+   PS_SSAA*)
       echo "#define HDR_ENCODE_PS"; echo "#define HDR_ENCODE_SSAA"
+      [ "$1" = PS_SSAA_LINEAR ] && echo "#define HDR_ENCODE_LINEAR"
       echo "#define PVR_SHADER_HLSL"; echo "#define PVR_LANE_NONE"
       cat core/rend/tile/pvr_lane.h core/rend/tile/pvr_resolve.h | grep -v "^#include" ;;
+   PS_LINEAR) echo "#define HDR_ENCODE_PS"; echo "#define HDR_ENCODE_LINEAR" ;;
+   POST) echo "#define HDR_ENCODE_PS"; echo "#define HDR_ENCODE_POST" ;;
+   BLOOM_*) echo "#define HDR_BLOOM_PS"; echo "#define HDR_$1" ;;
    *) echo "#define HDR_ENCODE_$1" ;;
    esac
    cat core/rend/hdr/hdr_encode.hlsl
@@ -134,7 +143,9 @@ make_inc_hdr() {
    echo "/* DXBC of the HDR output's encode for Direct3D 11 and 12"
    echo " * (rend/hdr/hdr_encode.hlsl with HDR_ENCODE_VS or HDR_ENCODE_PS, and"
    echo " * PS_SSAA with HDR_ENCODE_SSAA, after rend/tile/pvr_lane.h and"
-   echo " * pvr_resolve.h): made by tools/rend/kernels_dxbc.sh update from it."
+   echo " * pvr_resolve.h; the post effects' _LINEAR with HDR_ENCODE_LINEAR, POST"
+   echo " * with HDR_ENCODE_POST and BLOOM_* with HDR_BLOOM_PS and their stage):"
+   echo " * made by tools/rend/kernels_dxbc.sh update from it."
    echo " * Not to be edited."
    echo " * d3dcompiler_47 $(compiler_sum)"
    sums_hdr

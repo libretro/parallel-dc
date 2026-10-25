@@ -30,7 +30,13 @@
  *
  *   vk_hdr --same a.raw b.raw
  *
- * Fails unless both pictures are the same, format and bytes. */
+ * Fails unless both pictures are the same, format and bytes.
+ *
+ *   vk_hdr --post sdr.raw scrgb.raw [key=value ...]
+ *
+ * Runs the HDR post effects the options ask for on the 24-bit picture on
+ * the CPU (tools/hdr/hdr_post_ref.c) and fails where the scRGB picture is
+ * not what they make of it. */
 #include <math.h>
 #include <stdarg.h>
 #include <stdint.h>
@@ -42,6 +48,7 @@
 #include "libretro.h"
 #include "libretro_vulkan.h"
 #include <dlfcn.h>
+#include "../hdr/hdr_post_ref.h"
 
 #define VKH_SYNC_IMAGES 3
 
@@ -597,6 +604,35 @@ typedef void (*run_t)(void);
 typedef bool (*load_game_t)(const struct retro_game_info*);
 #define CORE_FN(type, name) type name = (type)dlsym(core, #name)
 
+/* --post: the options as key=value */
+static int post(const char *sdr_path, const char *scrgb_path, int n, char **opts)
+{
+   picture_t   s, h;
+   const char *keys[64], *vals[64];
+   int         i, k = 0, rc = 2;
+   char        buf[64][128];
+   h.px = NULL;
+   for (i = 0; i < n && k < 64; i++)
+   {
+      const char *eq = strchr(opts[i], '=');
+      if (!eq || (size_t)(eq - opts[i]) >= sizeof(buf[0]))
+         continue;
+      memcpy(buf[k], opts[i], (size_t)(eq - opts[i]));
+      buf[k][eq - opts[i]] = '\0';
+      keys[k] = buf[k];
+      vals[k++] = eq + 1;
+   }
+   if (!picture_load(sdr_path, &s) || !picture_load(scrgb_path, &h))
+      fprintf(stderr, "vk_hdr: cannot read the pictures\n");
+   else if (s.w != h.w || s.h != h.h || h.format != VK_FORMAT_R16G16B16A16_SFLOAT)
+      fprintf(stderr, "vk_hdr: --post wants a scRGB picture the size of the 24-bit one\n");
+   else
+      rc = hdr_post_ref_check(s.px, s.w, s.h, (const uint16_t*)h.px, half_to_double, keys, vals, k);
+   free(s.px);
+   free(h.px);
+   return rc;
+}
+
 int main(int argc, char **argv)
 {
    void *core, *vk;
@@ -627,6 +663,8 @@ int main(int argc, char **argv)
       return with_pictures(argv[2], argv[3], exact_pictures);
    if (argc == 4 && !strcmp(argv[1], "--same"))
       return same(argv[2], argv[3]);
+   if (argc >= 4 && !strcmp(argv[1], "--post"))
+      return post(argv[2], argv[3], argc - 4, argv + 4);
    if (argc < 5)
    {
       fprintf(stderr, "usage: vk_hdr core content out.raw frames [key=value ...]\n");

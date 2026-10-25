@@ -21,8 +21,9 @@
 #define HDR_VK_MAX_RINGS   4
 #define HDR_VK_MAX_SLOTS   16
 #define HDR_VK_MAX_OUTPUTS 32
-/* What a frame can retire: the four tables, their staging and one output */
-#define HDR_VK_MAX_RETIRED 8
+/* What a frame can retire: the four tables, their staging, one output and
+ * the post effects' images */
+#define HDR_VK_MAX_RETIRED (8 + 1 + HDR_POST_IMAGES)
 
 /* Bindings, as hdr.glsl and hdr_transform.glsl have them */
 #define B_PICTURE   0
@@ -31,8 +32,11 @@
 #define B_FILM_LUT  10
 #define B_DESAT     11
 #define B_CUBE      12
-/* with SSAA, the samples the picture was resolved from (hdr_encode.frag) */
+/* with SSAA, the samples the picture was resolved from (hdr_encode.frag);
+ * the post effects' composite: the bloom's two bands (hdr_post.frag) */
 #define B_SAMPLES   13
+#define B_BLOOM_T   13
+#define B_BLOOM_W   14
 
 #define HOST_MEMORY (VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT)
 
@@ -61,6 +65,8 @@ typedef struct hdr_vk_slot
    int              prepared;
    VkDescriptorSet  set_sampled;
    VkDescriptorSet  set_subpass;
+   VkDescriptorSet  set_bloom[HDR_POST_PASSES];   /* (the post effects', once they are made) */
+   VkDescriptorSet  set_composite;
    hdr_vk_buffer_t  dt;            /* the transform's constants */
    hdr_vk_image_t   retired_images[HDR_VK_MAX_RETIRED];
    unsigned         retired_image_count;
@@ -86,6 +92,43 @@ enum
    K_SUBPASS,
    K_COUNT
 };
+
+/* The post effects' intermediates: RGBA16F, or (Compact Intermediates)
+ * B10G11R11, each with what is made for it */
+enum
+{
+   P_HALF = 0,
+   P_COMPACT,
+   P_FORMATS
+};
+
+typedef struct hdr_vk_post_format
+{
+   VkFormat         format;
+   VkRenderPass     clear;          /* what was there not kept */
+   VkRenderPass     load;           /* added to (the pyramid's upsample) */
+   VkPipeline       linear;         /* the picture into scene-linear light */
+   VkPipeline       linear_sums;    /* ...from the channel sums */
+   VkPipeline       stage[HDR_BLOOM_STAGES];
+   int              made;
+} hdr_vk_post_format_t;
+
+/* The post effects (hdr_output.h), made the first time they are on and
+ * kept: nothing of it exists while they have not been */
+typedef struct hdr_vk_post
+{
+   int                   made;
+   VkDescriptorSetLayout bloom_layout;
+   VkPipelineLayout      bloom_pipeline_layout;
+   VkDescriptorSetLayout composite_layout;
+   VkPipelineLayout      composite_pipeline_layout;
+   VkPipeline            composite;
+   VkDescriptorPool      pool;
+   hdr_vk_post_format_t  formats[P_FORMATS];
+   int                   current;   /* the format the images are of */
+   hdr_vk_image_t        scene;
+   hdr_vk_image_t        images[HDR_POST_IMAGES];
+} hdr_vk_post_t;
 
 struct hdr_vk
 {
@@ -113,7 +156,11 @@ struct hdr_vk
    hdr_vk_image_t        outputs[HDR_VK_MAX_OUTPUTS];
    hdr_vk_image_t        tables[T_COUNT];
    unsigned              generation;
+   hdr_vk_code_t         code;          /* (the post effects' made from it when first on) */
+   hdr_vk_post_t         post;
 };
+
+static void post_free(hdr_vk_t *e);
 
 /* ---- memory ---- */
 
@@ -537,9 +584,10 @@ static VkShaderModule make_module(VkDevice device, const uint32_t *code, size_t 
    return m;
 }
 
-/* The triangle over the picture into colour attachment 0 of @subpass */
-static VkPipeline make_pipeline(hdr_vk_t *e, VkShaderModule frag, VkPipelineLayout layout,
-      VkRenderPass render_pass, uint32_t subpass, const VkSpecializationInfo *spec)
+/* The triangle over the picture into colour attachment 0 of @subpass;
+ * with @add, added to what is there */
+static VkPipeline make_pipeline_add(hdr_vk_t *e, VkShaderModule frag, VkPipelineLayout layout,
+      VkRenderPass render_pass, uint32_t subpass, const VkSpecializationInfo *spec, bool add)
 {
    static const VkDynamicState          dynamic_states[] = { VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR };
    VkPipelineShaderStageCreateInfo      stages[2];
@@ -585,6 +633,16 @@ static VkPipeline make_pipeline(hdr_vk_t *e, VkShaderModule frag, VkPipelineLayo
    memset(&blend_att, 0, sizeof(blend_att));
    blend_att.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT
                             | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
+   if (add)
+   {
+      blend_att.blendEnable         = VK_TRUE;
+      blend_att.srcColorBlendFactor = VK_BLEND_FACTOR_ONE;
+      blend_att.dstColorBlendFactor = VK_BLEND_FACTOR_ONE;
+      blend_att.colorBlendOp        = VK_BLEND_OP_ADD;
+      blend_att.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
+      blend_att.dstAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
+      blend_att.alphaBlendOp        = VK_BLEND_OP_ADD;
+   }
    memset(&blend, 0, sizeof(blend));
    blend.sType           = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
    blend.attachmentCount = 1;
@@ -610,6 +668,12 @@ static VkPipeline make_pipeline(hdr_vk_t *e, VkShaderModule frag, VkPipelineLayo
    if (vkCreateGraphicsPipelines(e->device, e->cache, 1, &info, NULL, &pipeline) != VK_SUCCESS)
       return VK_NULL_HANDLE;
    return pipeline;
+}
+
+static VkPipeline make_pipeline(hdr_vk_t *e, VkShaderModule frag, VkPipelineLayout layout,
+      VkRenderPass render_pass, uint32_t subpass, const VkSpecializationInfo *spec)
+{
+   return make_pipeline_add(e, frag, layout, render_pass, subpass, spec, false);
 }
 
 static bool make_slots(hdr_vk_t *e)
@@ -675,6 +739,10 @@ hdr_vk_t *hdr_vk_new(const struct retro_hw_render_interface_vulkan *iface,
    e->cache        = cache;
    e->slot_count   = slots < 1 ? 1 : (slots > HDR_VK_MAX_SLOTS ? HDR_VK_MAX_SLOTS : slots);
    e->generation   = hdr_dt_generation() - 1;
+   e->code         = *code;
+   e->post.formats[P_HALF].format    = VK_FORMAT_R16G16B16A16_SFLOAT;
+   e->post.formats[P_COMPACT].format = VK_FORMAT_B10G11R11_UFLOAT_PACK32;
+   e->post.current = -1;
    e->nearest      = make_sampler(e->device, VK_FILTER_NEAREST, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE);
    e->linear_clamp = make_sampler(e->device, VK_FILTER_LINEAR, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE);
    e->linear_wrap  = make_sampler(e->device, VK_FILTER_LINEAR, VK_SAMPLER_ADDRESS_MODE_REPEAT);
@@ -717,6 +785,7 @@ void hdr_vk_free(hdr_vk_t *e)
       image_destroy(e, &e->tables[i]);
    if (e->descriptor_pool != VK_NULL_HANDLE)
       vkDestroyDescriptorPool(e->device, e->descriptor_pool, NULL);
+   post_free(e);
    if (e->pipeline != VK_NULL_HANDLE)
       vkDestroyPipeline(e->device, e->pipeline, NULL);
    if (e->pipeline_sums != VK_NULL_HANDLE)
@@ -898,6 +967,18 @@ VkPipeline hdr_vk_subpass_pipeline(hdr_vk_t *e, VkRenderPass render_pass, uint32
    return make_ssaa_pipeline(e, e->frag_subpass_ssaa, e->pipeline_layout[K_SUBPASS], render_pass, subpass, samples);
 }
 
+static VkPipeline make_ssaa_pipeline_code(hdr_vk_t *e, const uint32_t *code, size_t size,
+      VkPipelineLayout layout, VkRenderPass render_pass, unsigned samples)
+{
+   VkShaderModule m = make_module(e->device, code, size);
+   VkPipeline     p;
+   if (m == VK_NULL_HANDLE)
+      return VK_NULL_HANDLE;
+   p = make_ssaa_pipeline(e, m, layout, render_pass, 0, samples);
+   vkDestroyShaderModule(e->device, m, NULL);
+   return p;
+}
+
 bool hdr_vk_sums_ready(hdr_vk_t *e)
 {
    /* (the sums are of HDR_VK_SUMS_SAMPLES, whatever was drawn) */
@@ -917,6 +998,443 @@ void hdr_vk_subpass_draw(hdr_vk_t *e, const struct hdr_output *out, VkCommandBuf
    write_set(e, s, s->set_subpass, VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT, view, samples,
          VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
    draw(e, out, cmd, pipeline, e->pipeline_layout[K_SUBPASS], s->set_subpass, width, height, unorm8);
+}
+
+/* ---- the post effects ---- */
+
+bool hdr_vk_post_active(void)
+{
+   return hdr_post_enabled();
+}
+
+/* A pass into an intermediate of @format: @load keeps what is there (the
+ * pyramid's upsample adds to it), else it is not; what was there before
+ * read by the shaders first, what is written read by them next */
+static VkRenderPass make_post_pass(hdr_vk_t *e, VkFormat format, bool load)
+{
+   VkAttachmentDescription att;
+   VkAttachmentReference   ref;
+   VkSubpassDescription    sub;
+   VkSubpassDependency     dep[2];
+   VkRenderPassCreateInfo  info;
+   VkRenderPass            rp = VK_NULL_HANDLE;
+
+   memset(&att, 0, sizeof(att));
+   att.format         = format;
+   att.samples        = VK_SAMPLE_COUNT_1_BIT;
+   att.loadOp         = load ? VK_ATTACHMENT_LOAD_OP_LOAD : VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+   att.storeOp        = VK_ATTACHMENT_STORE_OP_STORE;
+   att.stencilLoadOp  = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+   att.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+   att.initialLayout  = load ? VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL : VK_IMAGE_LAYOUT_UNDEFINED;
+   att.finalLayout    = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+   ref.attachment     = 0;
+   ref.layout         = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+   memset(&sub, 0, sizeof(sub));
+   sub.pipelineBindPoint    = VK_PIPELINE_BIND_POINT_GRAPHICS;
+   sub.colorAttachmentCount = 1;
+   sub.pColorAttachments    = &ref;
+   memset(dep, 0, sizeof(dep));
+   dep[0].srcSubpass    = VK_SUBPASS_EXTERNAL;
+   dep[0].dstSubpass    = 0;
+   dep[0].srcStageMask  = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
+   dep[0].dstStageMask  = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+   dep[0].srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+   dep[0].dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+   dep[1].srcSubpass    = 0;
+   dep[1].dstSubpass    = VK_SUBPASS_EXTERNAL;
+   dep[1].srcStageMask  = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+   dep[1].dstStageMask  = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
+   dep[1].srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+   dep[1].dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+   memset(&info, 0, sizeof(info));
+   info.sType           = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
+   info.attachmentCount = 1;
+   info.pAttachments    = &att;
+   info.subpassCount    = 1;
+   info.pSubpasses      = &sub;
+   info.dependencyCount = 2;
+   info.pDependencies   = dep;
+   if (vkCreateRenderPass(e->device, &info, NULL, &rp) != VK_SUCCESS)
+      return VK_NULL_HANDLE;
+   return rp;
+}
+
+static VkPipeline make_post_pipeline(hdr_vk_t *e, const uint32_t *code, size_t size,
+      VkPipelineLayout layout, VkRenderPass rp, bool add)
+{
+   VkShaderModule m = make_module(e->device, code, size);
+   VkPipeline     p;
+   if (m == VK_NULL_HANDLE)
+      return VK_NULL_HANDLE;
+   p = make_pipeline_add(e, m, layout, rp, 0, NULL, add);
+   vkDestroyShaderModule(e->device, m, NULL);
+   return p;
+}
+
+/* The layouts, the composite (into the output, whatever the
+ * intermediates are) and the descriptor sets, the first time */
+static bool post_make(hdr_vk_t *e)
+{
+   hdr_vk_post_t               *p = &e->post;
+   VkDescriptorSetLayoutBinding b[8];
+   VkDescriptorSetLayoutCreateInfo set;
+   VkPushConstantRange          push;
+   VkPipelineLayoutCreateInfo   layout;
+   VkDescriptorPoolSize         sizes[2];
+   VkDescriptorPoolCreateInfo   pool;
+   VkDescriptorSetAllocateInfo  alloc;
+   static const uint32_t        bindings[8] = { B_PICTURE, B_DT, B_ACES2_LUT, B_FILM_LUT,
+                                                B_DESAT, B_CUBE, B_BLOOM_T, B_BLOOM_W };
+   const unsigned               sets = HDR_VK_MAX_RINGS * e->slot_count;
+   unsigned                     i, r;
+
+   if (p->made)
+      return p->composite != VK_NULL_HANDLE;
+   p->made = 1;
+   /* the bloom's: its source */
+   memset(b, 0, sizeof(b));
+   b[0].binding         = 0;
+   b[0].descriptorType  = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+   b[0].descriptorCount = 1;
+   b[0].stageFlags      = VK_SHADER_STAGE_FRAGMENT_BIT;
+   memset(&set, 0, sizeof(set));
+   set.sType        = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+   set.bindingCount = 1;
+   set.pBindings    = b;
+   if (vkCreateDescriptorSetLayout(e->device, &set, NULL, &p->bloom_layout) != VK_SUCCESS)
+      return false;
+   push.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+   push.offset     = 0;
+   push.size       = sizeof(struct hdr_bloom_params);
+   memset(&layout, 0, sizeof(layout));
+   layout.sType                  = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+   layout.setLayoutCount         = 1;
+   layout.pSetLayouts            = &p->bloom_layout;
+   layout.pushConstantRangeCount = 1;
+   layout.pPushConstantRanges    = &push;
+   if (vkCreatePipelineLayout(e->device, &layout, NULL, &p->bloom_pipeline_layout) != VK_SUCCESS)
+      return false;
+   /* the composite's: the scene, the transform, its tables, the bands */
+   for (i = 0; i < 8; i++)
+   {
+      b[i].binding         = bindings[i];
+      b[i].descriptorType  = i == 1 ? VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER : VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+      b[i].descriptorCount = 1;
+      b[i].stageFlags      = VK_SHADER_STAGE_FRAGMENT_BIT;
+   }
+   set.bindingCount = 8;
+   if (vkCreateDescriptorSetLayout(e->device, &set, NULL, &p->composite_layout) != VK_SUCCESS)
+      return false;
+   push.size           = sizeof(struct hdr_encode_params) + sizeof(struct hdr_post_params);
+   layout.pSetLayouts  = &p->composite_layout;
+   if (vkCreatePipelineLayout(e->device, &layout, NULL, &p->composite_pipeline_layout) != VK_SUCCESS)
+      return false;
+
+   sizes[0].type            = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+   sizes[0].descriptorCount = sets * (HDR_POST_PASSES + 7);
+   sizes[1].type            = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+   sizes[1].descriptorCount = sets;
+   memset(&pool, 0, sizeof(pool));
+   pool.sType         = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+   pool.maxSets       = sets * (HDR_POST_PASSES + 1);
+   pool.poolSizeCount = 2;
+   pool.pPoolSizes    = sizes;
+   if (vkCreateDescriptorPool(e->device, &pool, NULL, &p->pool) != VK_SUCCESS)
+      return false;
+   memset(&alloc, 0, sizeof(alloc));
+   alloc.sType              = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+   alloc.descriptorPool     = p->pool;
+   alloc.descriptorSetCount = 1;
+   for (r = 0; r < HDR_VK_MAX_RINGS; r++)
+      for (i = 0; i < e->slot_count; i++)
+      {
+         hdr_vk_slot_t *s = &e->slots[r][i];
+         unsigned       k;
+         alloc.pSetLayouts = &p->bloom_layout;
+         for (k = 0; k < HDR_POST_PASSES; k++)
+            if (vkAllocateDescriptorSets(e->device, &alloc, &s->set_bloom[k]) != VK_SUCCESS)
+               return false;
+         alloc.pSetLayouts = &p->composite_layout;
+         if (vkAllocateDescriptorSets(e->device, &alloc, &s->set_composite) != VK_SUCCESS)
+            return false;
+      }
+   p->composite = make_post_pipeline(e, e->code.post, e->code.post_size,
+         p->composite_pipeline_layout, e->render_pass, false);
+   return p->composite != VK_NULL_HANDLE;
+}
+
+/* What the intermediates of format @k are drawn with, the first time */
+static bool post_format_make(hdr_vk_t *e, unsigned k)
+{
+   hdr_vk_post_format_t *f = &e->post.formats[k];
+   unsigned              i;
+   if (f->made)
+      return f->stage[HDR_BLOOM_UP] != VK_NULL_HANDLE;
+   f->made  = 1;
+   f->clear = make_post_pass(e, f->format, false);
+   f->load  = make_post_pass(e, f->format, true);
+   if (f->clear == VK_NULL_HANDLE || f->load == VK_NULL_HANDLE)
+      return false;
+   f->linear      = make_post_pipeline(e, e->code.frag_linear, e->code.frag_linear_size,
+         e->pipeline_layout[K_SAMPLED], f->clear, false);
+   f->linear_sums = make_ssaa_pipeline_code(e, e->code.frag_sums_linear, e->code.frag_sums_linear_size,
+         e->pipeline_layout[K_SAMPLED], f->clear, HDR_VK_SUMS_SAMPLES);
+   if (f->linear == VK_NULL_HANDLE || f->linear_sums == VK_NULL_HANDLE)
+      return false;
+   for (i = 0; i < HDR_BLOOM_STAGES; i++)
+      if ((f->stage[i] = make_post_pipeline(e, e->code.bloom[i], e->code.bloom_size[i],
+               e->post.bloom_pipeline_layout, i == HDR_BLOOM_UP ? f->load : f->clear,
+               i == HDR_BLOOM_UP)) == VK_NULL_HANDLE)
+         return false;
+   return true;
+}
+
+static void post_format_free(hdr_vk_t *e, hdr_vk_post_format_t *f)
+{
+   unsigned i;
+   if (f->linear != VK_NULL_HANDLE)
+      vkDestroyPipeline(e->device, f->linear, NULL);
+   if (f->linear_sums != VK_NULL_HANDLE)
+      vkDestroyPipeline(e->device, f->linear_sums, NULL);
+   for (i = 0; i < HDR_BLOOM_STAGES; i++)
+      if (f->stage[i] != VK_NULL_HANDLE)
+         vkDestroyPipeline(e->device, f->stage[i], NULL);
+   if (f->clear != VK_NULL_HANDLE)
+      vkDestroyRenderPass(e->device, f->clear, NULL);
+   if (f->load != VK_NULL_HANDLE)
+      vkDestroyRenderPass(e->device, f->load, NULL);
+}
+
+static void post_free(hdr_vk_t *e)
+{
+   hdr_vk_post_t *p = &e->post;
+   unsigned       i;
+   image_destroy(e, &p->scene);
+   for (i = 0; i < HDR_POST_IMAGES; i++)
+      image_destroy(e, &p->images[i]);
+   for (i = 0; i < P_FORMATS; i++)
+      post_format_free(e, &p->formats[i]);
+   if (p->composite != VK_NULL_HANDLE)
+      vkDestroyPipeline(e->device, p->composite, NULL);
+   if (p->pool != VK_NULL_HANDLE)
+      vkDestroyDescriptorPool(e->device, p->pool, NULL);
+   if (p->composite_pipeline_layout != VK_NULL_HANDLE)
+      vkDestroyPipelineLayout(e->device, p->composite_pipeline_layout, NULL);
+   if (p->composite_layout != VK_NULL_HANDLE)
+      vkDestroyDescriptorSetLayout(e->device, p->composite_layout, NULL);
+   if (p->bloom_pipeline_layout != VK_NULL_HANDLE)
+      vkDestroyPipelineLayout(e->device, p->bloom_pipeline_layout, NULL);
+   if (p->bloom_layout != VK_NULL_HANDLE)
+      vkDestroyDescriptorSetLayout(e->device, p->bloom_layout, NULL);
+}
+
+/* An intermediate of @w x @h in format @k, drawn to and sampled */
+static bool post_image_make(hdr_vk_t *e, hdr_vk_image_t *o, unsigned k, unsigned w, unsigned h)
+{
+   const hdr_vk_post_format_t *f = &e->post.formats[k];
+   VkImageCreateInfo           info;
+   VkImageViewCreateInfo       view;
+   VkFramebufferCreateInfo     fb;
+
+   memset(o, 0, sizeof(*o));
+   memset(&info, 0, sizeof(info));
+   info.sType         = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+   info.imageType     = VK_IMAGE_TYPE_2D;
+   info.format        = f->format;
+   info.extent.width  = w;
+   info.extent.height = h;
+   info.extent.depth  = 1;
+   info.mipLevels     = 1;
+   info.arrayLayers   = 1;
+   info.samples       = VK_SAMPLE_COUNT_1_BIT;
+   info.tiling        = VK_IMAGE_TILING_OPTIMAL;
+   info.usage         = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
+   info.sharingMode   = VK_SHARING_MODE_EXCLUSIVE;
+   info.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+   if (vkCreateImage(e->device, &info, NULL, &o->image) != VK_SUCCESS)
+      return false;
+   o->live   = 1;
+   o->width  = w;
+   o->height = h;
+   if (!image_bind(e, o))
+      return false;
+   memset(&view, 0, sizeof(view));
+   view.sType                       = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+   view.image                       = o->image;
+   view.viewType                    = VK_IMAGE_VIEW_TYPE_2D;
+   view.format                      = f->format;
+   view.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+   view.subresourceRange.levelCount = 1;
+   view.subresourceRange.layerCount = 1;
+   if (vkCreateImageView(e->device, &view, NULL, &o->view) != VK_SUCCESS)
+      return false;
+   memset(&fb, 0, sizeof(fb));
+   fb.sType           = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
+   fb.renderPass      = f->clear;
+   fb.attachmentCount = 1;
+   fb.pAttachments    = &o->view;
+   fb.width           = w;
+   fb.height          = h;
+   fb.layers          = 1;
+   return vkCreateFramebuffer(e->device, &fb, NULL, &o->framebuffer) == VK_SUCCESS;
+}
+
+/* The image @o as @k, @w x @h: made again (what it was retired with the
+ * slot) when it is not */
+static bool post_image(hdr_vk_t *e, hdr_vk_image_t *o, unsigned k, unsigned w, unsigned h)
+{
+   if (o->live && o->width == w && o->height == h && (int)k == e->post.current)
+      return true;
+   retire_image(e, o);
+   if (post_image_make(e, o, k, w, h))
+      return true;
+   image_destroy(e, o);
+   return false;
+}
+
+/* Compact Intermediates where the device draws to, blends and filters
+ * B10G11R11 */
+static unsigned post_format_wanted(hdr_vk_t *e)
+{
+   VkFormatProperties props;
+   const VkFormatFeatureFlags need = VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT
+         | VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BLEND_BIT | VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT;
+   if (!hdr_post_compact())
+      return P_HALF;
+   vkGetPhysicalDeviceFormatProperties(e->iface->gpu, VK_FORMAT_B10G11R11_UFLOAT_PACK32, &props);
+   return (props.optimalTilingFeatures & need) == need ? P_COMPACT : P_HALF;
+}
+
+/* All the frame's post effects need, for @plan at @w x @h */
+static bool post_ready(hdr_vk_t *e, const struct hdr_post_plan *plan, unsigned w, unsigned h,
+      unsigned *k)
+{
+   unsigned i;
+   *k = post_format_wanted(e);
+   if (!post_make(e) || !post_format_make(e, *k))
+      return false;
+   if (!post_image(e, &e->post.scene, *k, w, h))
+      return false;
+   for (i = 0; i < HDR_POST_IMAGES; i++)
+      if (plan->w[i] && !post_image(e, &e->post.images[i], *k, plan->w[i], plan->h[i]))
+         return false;
+   e->post.current = (int)*k;
+   return true;
+}
+
+static void write_sampler(VkWriteDescriptorSet *w, VkDescriptorImageInfo *info,
+      VkDescriptorSet set, uint32_t binding, VkSampler sampler, VkImageView view)
+{
+   info->sampler     = sampler;
+   info->imageView   = view;
+   info->imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+   memset(w, 0, sizeof(*w));
+   w->sType           = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+   w->dstSet          = set;
+   w->dstBinding      = binding;
+   w->descriptorCount = 1;
+   w->descriptorType  = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+   w->pImageInfo      = info;
+}
+
+static VkImageView post_view(hdr_vk_t *e, int image)
+{
+   return image == HDR_POST_SCENE ? e->post.scene.view : e->post.images[image].view;
+}
+
+/* One full-target draw of @pipeline into @fb of @rp, @w x @h */
+static void post_draw(VkCommandBuffer cmd, VkRenderPass rp, VkFramebuffer fb,
+      VkPipeline pipeline, VkPipelineLayout layout, VkDescriptorSet set,
+      const void *push, uint32_t push_size, unsigned w, unsigned h)
+{
+   VkRenderPassBeginInfo info;
+   VkViewport            vp;
+   VkRect2D              scissor;
+   memset(&info, 0, sizeof(info));
+   info.sType                    = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+   info.renderPass               = rp;
+   info.framebuffer              = fb;
+   info.renderArea.extent.width  = w;
+   info.renderArea.extent.height = h;
+   vkCmdBeginRenderPass(cmd, &info, VK_SUBPASS_CONTENTS_INLINE);
+   vp.x                  = 0.0f;
+   vp.y                  = 0.0f;
+   vp.width              = (float)w;
+   vp.height             = (float)h;
+   vp.minDepth           = 0.0f;
+   vp.maxDepth           = 1.0f;
+   scissor.offset.x      = 0;
+   scissor.offset.y      = 0;
+   scissor.extent.width  = w;
+   scissor.extent.height = h;
+   vkCmdSetViewport(cmd, 0, 1, &vp);
+   vkCmdSetScissor(cmd, 0, 1, &scissor);
+   vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
+   vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, layout, 0, 1, &set, 0, NULL);
+   vkCmdPushConstants(cmd, layout, VK_SHADER_STAGE_FRAGMENT_BIT, 0, push_size, push);
+   vkCmdDraw(cmd, 3, 1, 0, 0);
+   vkCmdEndRenderPass(cmd);
+}
+
+/* The picture (its set written: s->set_sampled, with the sums when there
+ * are) through the post effects into @o */
+static void post_encode(hdr_vk_t *e, const struct hdr_output *out, VkCommandBuffer cmd,
+      hdr_vk_slot_t *s, const struct hdr_post_plan *plan, unsigned k, bool sums,
+      hdr_vk_image_t *o, unsigned w, unsigned h, bool unorm8)
+{
+   hdr_vk_post_t              *p = &e->post;
+   const hdr_vk_post_format_t *f = &p->formats[k];
+   struct
+   {
+      struct hdr_encode_params encode;
+      struct hdr_post_params   post;
+   } push;
+   VkWriteDescriptorSet  wr[HDR_POST_PASSES + 8];
+   VkDescriptorImageInfo images[HDR_POST_PASSES + 8];
+   VkDescriptorBufferInfo dt;
+   unsigned              n = 0;
+   int                   i;
+
+   /* the sets: each pass's source, the composite's */
+   for (i = 0; i < plan->passes; i++, n++)
+      write_sampler(&wr[n], &images[n], s->set_bloom[i], 0, e->linear_clamp, post_view(e, plan->pass[i].src));
+   write_sampler(&wr[n], &images[n], s->set_composite, B_PICTURE, e->linear_clamp, p->scene.view); n++;
+   write_sampler(&wr[n], &images[n], s->set_composite, B_ACES2_LUT, e->linear_wrap, table_view(e, T_ACES2_LUT)); n++;
+   write_sampler(&wr[n], &images[n], s->set_composite, B_FILM_LUT, e->linear_clamp, table_view(e, T_FILM_LUT)); n++;
+   write_sampler(&wr[n], &images[n], s->set_composite, B_DESAT, e->linear_clamp, table_view(e, T_DESAT)); n++;
+   write_sampler(&wr[n], &images[n], s->set_composite, B_CUBE, e->linear_clamp, table_view(e, T_CUBE)); n++;
+   write_sampler(&wr[n], &images[n], s->set_composite, B_BLOOM_T, e->linear_clamp, post_view(e, plan->band_t)); n++;
+   write_sampler(&wr[n], &images[n], s->set_composite, B_BLOOM_W, e->linear_clamp, post_view(e, plan->band_w)); n++;
+   dt.buffer = s->dt.buffer;
+   dt.offset = 0;
+   dt.range  = sizeof(struct hdr_dt_block);
+   memset(&wr[n], 0, sizeof(wr[n]));
+   wr[n].sType           = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+   wr[n].dstSet          = s->set_composite;
+   wr[n].dstBinding      = B_DT;
+   wr[n].descriptorCount = 1;
+   wr[n].descriptorType  = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+   wr[n].pBufferInfo     = &dt;
+   n++;
+   vkUpdateDescriptorSets(e->device, n, wr, 0, NULL);
+
+   /* the picture into scene-linear light */
+   hdr_encode_params_fill(&push.encode, out, unorm8);
+   post_draw(cmd, f->clear, p->scene.framebuffer, sums ? f->linear_sums : f->linear,
+         e->pipeline_layout[K_SAMPLED], s->set_sampled, &push.encode, sizeof(push.encode), w, h);
+   /* the bloom */
+   for (i = 0; i < plan->passes; i++)
+   {
+      const struct hdr_post_pass *q = &plan->pass[i];
+      post_draw(cmd, q->stage == HDR_BLOOM_UP ? f->load : f->clear, p->images[q->dst].framebuffer,
+            f->stage[q->stage], p->bloom_pipeline_layout, s->set_bloom[i],
+            &q->params, sizeof(q->params), plan->w[q->dst], plan->h[q->dst]);
+   }
+   /* the composite, into the output */
+   push.post = plan->composite;
+   post_draw(cmd, e->render_pass, o->framebuffer, p->composite, p->composite_pipeline_layout,
+         s->set_composite, &push, sizeof(push), w, h);
 }
 
 bool hdr_vk_encode(hdr_vk_t *e, const struct hdr_output *out, VkCommandBuffer cmd,
@@ -966,6 +1484,20 @@ bool hdr_vk_encode(hdr_vk_t *e, const struct hdr_output *out, VkCommandBuffer cm
          | VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
          VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
          0, 1, &barrier, 0, NULL, 0, NULL);
+   if (hdr_post_enabled())
+   {
+      struct hdr_post_plan plan;
+      unsigned             k;
+      hdr_post_plan_make(&plan, width, height);
+      /* (what cannot be made: the picture encoded without them) */
+      if (post_ready(e, &plan, width, height, &k))
+      {
+         post_encode(e, out, cmd, s, &plan, k, sums != VK_NULL_HANDLE, o, width, height, unorm8);
+         *image = o->image;
+         *view  = o->view;
+         return true;
+      }
+   }
    memset(&rp, 0, sizeof(rp));
    rp.sType                    = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
    rp.renderPass               = e->render_pass;

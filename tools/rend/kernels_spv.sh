@@ -325,6 +325,12 @@ raster_list() {
    # (...and SSAA's: the samples' exact average where the picture is their resolve)
    echo "HDR_ENCODE_FRAG_SUBPASS_SSAA frag HDR_DT=1,SUBPASS=1,SSAA=1 key resolve hdr hdr_encode.frag"
    echo "HDR_ENCODE_FRAG_SUMS frag HDR_DT=1,SSAA=1 key resolve hdr hdr_encode.frag"
+   # (the HDR post effects: the scene-linear pass, from the picture or the sums; the bloom's stages; the composite)
+   echo "HDR_ENCODE_FRAG_LINEAR frag HDR_DT=1,LINEAR_OUT=1 hdr hdr_encode.frag"
+   echo "HDR_ENCODE_FRAG_SUMS_LINEAR frag HDR_DT=1,SSAA=1,LINEAR_OUT=1 key resolve hdr hdr_encode.frag"
+   for st in BRIGHT BLUR DOWN UP; do echo "HDR_BLOOM_$st frag $st=1 hdr_bloom.frag"; done
+   echo "HDR_BLOOM_DOWN_KARIS frag DOWN=1,KARIS=1 hdr_bloom.frag"
+   echo "HDR_POST_FRAG frag HDR_DT=1 hdr hdr_post.frag"
 }
 
 # a raster module's text: @1 its defines, then what it is made of

@@ -21,7 +21,9 @@ WORK=${TMPDIR:-/tmp}/vk_sanitize.$$
 mkdir -p "$WORK/log"
 trap 'rm -rf "$WORK"' EXIT
 ${CC:-cc} -O1 -g -Wall -I./core/libretro-common/include -I./core/deps/khronos \
-   -o "$WORK/vk_hdr" tools/vulkan/vk_hdr.c -ldl -lm
+   -DTARGET_NO_THREADS -o "$WORK/vk_hdr" tools/vulkan/vk_hdr.c tools/hdr/hdr_post_ref.c \
+   core/rend/hdr/hdr_output.c core/rend/hdr/hdr_transform.c core/rend/hdr/hdr_aces2.c \
+   core/rend/hdr/hdr_libretro.c core/rend/hdr/hdr_display.c -ldl -lm
 python3 tools/threads/live_disc.py "$WORK/test.gdi"
 case "$SANITIZE" in
 address)
@@ -59,4 +61,8 @@ run scrgb scrgb reicast_color_format=64bit_scrgb reicast_hdr_display_transform=a
 # (SSAA's channel sums for the encode: the per-pixel and compute renderers')
 run scrgb pixel-ssaa-scrgb reicast_color_format=64bit_scrgb "reicast_alpha_sorting=per-pixel (accurate)" reicast_ssaa=4x
 run scrgb compute-ssaa-scrgb reicast_color_format=64bit_scrgb "reicast_alpha_sorting=per-pixel (accurate)" reicast_rendering_method=compute reicast_ssaa=4x
+# (the HDR post effects: the bloom's pyramid, the aberration, Compact Intermediates)
+run scrgb post-scrgb reicast_color_format=64bit_scrgb reicast_hdr_bloom=standard reicast_hdr_bloom_convolution=enabled \
+   reicast_hdr_chromatic=strong reicast_hdr_post_compact=enabled
+run hdr10 post-hdr10 reicast_color_format=30bit_hdr reicast_hdr_bloom=intense reicast_hdr_halation=subtle
 echo "vk_sanitize.sh: passed ($SANITIZE)"

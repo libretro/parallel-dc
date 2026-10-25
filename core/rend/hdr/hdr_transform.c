@@ -1109,7 +1109,7 @@ uint16_t hdr_dt_unorm16_to_half(uint16_t v)
 
 /* ---- post effects ---- */
 
-static struct hdr_post_settings post_set = { 0.0f, 0, 0, 1.0f, 0, 0 };
+static struct hdr_post_settings post_set = { 0.0f, 0, 0, 1.0f, 0, 0, 0 };
 
 void hdr_post_configure(const struct hdr_post_settings *s)
 {

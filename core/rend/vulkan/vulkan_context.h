@@ -56,6 +56,8 @@ public:
 	 * Recorded into the frame's command buffers, from the frame's command
 	 * pool, and submitted with them: nothing of its own is submitted. */
 	bool HdrActive() const { return hdr != nullptr; }
+	// the HDR output's post effects on: its encode a pass of its own (hdr_vk_post_active())
+	bool HdrPostActive() const;
 	vk::Format GetHdrFormat() const { return (vk::Format)hdrFormat; }
 	/* The frame's transform, from a command buffer of @pool's this frame,
 	 * outside a render pass: before the render pass whose last subpass

@@ -8,6 +8,7 @@
  *
  *   hdr_d3d 11|12 out.bin
  *   hdr_d3d 12ssaa
+ *   hdr_d3d post11|post12
  *
  * 12ssaa: the Direct3D 12 encoder with SSAA's samples (hdr_encode.hlsl's
  * HDR_ENCODE_SSAA). Known values are drawn into each sample of a 4x
@@ -17,6 +18,11 @@
  * average as a half-float picture - the picture where it was drawn over -
  * and has to differ from that of the 8-bit picture: the extra bits are
  * there and are the samples'.
+ *
+ * post11, post12: the encoder with the HDR post effects (bloom in each
+ * of its shapes, halation, chromatic aberration, Compact Intermediates),
+ * scRGB, held to what tools/hdr/hdr_post_ref.c makes of the picture on
+ * the CPU.
  *
  * C89. */
 #define COBJMACROS
@@ -32,6 +38,7 @@
 #include "hdr_cases.h"
 #include "../../core/rend/hdr/hdr_encode_d3d11.h"
 #include "../../core/rend/hdr/hdr_encode_d3d12.h"
+#include "hdr_post_ref.h"
 
 #define W HDR_CASES_W
 #define H HDR_CASES_H
@@ -624,11 +631,107 @@ static int ssaa12(void)
    return failures ? 1 : 0;
 }
 
+/* ---- the post effects ---- */
+
+static uint16_t post_out[W * H * 4];
+
+static int post_run(int api)
+{
+   static const char *const sets[][4] = {
+      { "reicast_hdr_bloom=standard", NULL },
+      { "reicast_hdr_bloom=intense", "reicast_hdr_bloom_range=widest", "reicast_hdr_halation=strong", NULL },
+      { "reicast_hdr_bloom=subtle", "reicast_hdr_bloom_convolution=enabled", "reicast_hdr_bloom_select=knee", NULL },
+      { "reicast_hdr_chromatic=heavy", NULL },
+      { "reicast_hdr_bloom=standard", "reicast_hdr_chromatic=subtle", "reicast_hdr_post_compact=enabled", NULL }
+   };
+   struct hdr_output o;
+   unsigned          i;
+   int               bad = 0;
+
+   memset(&o, 0, sizeof(o));
+   o.format           = HDR_OUTPUT_SCRGB;
+   o.paper_white_nits = 200.0f;
+   o.max_nits         = 1000.0f;
+   hdr_cases_picture(picture_px);
+   if (api == 11)
+      setup11();
+   else
+      setup12();
+   for (i = 0; i < sizeof(sets) / sizeof(sets[0]); i++)
+   {
+      const char *keys[4], *vals[4];
+      char        buf[4][64];
+      int         n = 0, k;
+      for (k = 0; sets[i][k]; k++)
+      {
+         const char *eq = strchr(sets[i][k], '=');
+         memcpy(buf[k], sets[i][k], (size_t)(eq - sets[i][k]));
+         buf[k][eq - sets[i][k]] = '\0';
+         keys[n]   = buf[k];
+         vals[n++] = eq + 1;
+      }
+      hdr_post_ref_configure(keys, vals, n);
+      /* (the options' transform, what the frontend says of the display) */
+      o.sdr_eotf = 0;
+      o.shoulder = 0;
+      if (api == 11)
+      {
+         ID3D11Texture2D *texture = NULL, *staging;
+         ID3D11ShaderResourceView *view = NULL;
+         D3D11_TEXTURE2D_DESC td;
+         D3D11_MAPPED_SUBRESOURCE map;
+         if (!hdr_d3d11_encode(enc11[1], c11, &o, pic11, W, H, true, i % 3, &texture, &view))
+            return 1;
+         ID3D11Texture2D_GetDesc(texture, &td);
+         td.Usage = D3D11_USAGE_STAGING;
+         td.BindFlags = 0;
+         td.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
+         td.MiscFlags = 0;
+         if (FAILED(ID3D11Device_CreateTexture2D(d11, &td, NULL, &staging)))
+            return 1;
+         ID3D11DeviceContext_CopyResource(c11, (ID3D11Resource*)staging, (ID3D11Resource*)texture);
+         if (FAILED(ID3D11DeviceContext_Map(c11, (ID3D11Resource*)staging, 0, D3D11_MAP_READ, 0, &map)))
+            return 1;
+         for (k = 0; k < H; k++)
+            memcpy(post_out + (size_t)k * W * 4, (const unsigned char*)map.pData + (size_t)k * map.RowPitch, (size_t)W * 8);
+         ID3D11DeviceContext_Unmap(c11, (ID3D11Resource*)staging, 0);
+         ID3D11Texture2D_Release(staging);
+      }
+      else
+      {
+         ID3D12Resource *texture = NULL;
+         void *map;
+         if (!hdr_d3d12_encode(enc12[1], list, &o, pic12, DXGI_FORMAT_R8G8B8A8_UNORM, W, H, true,
+               NULL, 0, i % 3, fence_value + 1, &texture))
+            return 1;
+         barrier12(texture, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_COPY_SOURCE);
+         copy12(readback, texture, DXGI_FORMAT_R16G16B16A16_FLOAT, 8, 0);
+         barrier12(texture, D3D12_RESOURCE_STATE_COPY_SOURCE, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
+         submit12();
+         ID3D12Resource_Map(readback, 0, NULL, &map);
+         memcpy(post_out, map, sizeof(post_out));
+         ID3D12Resource_Unmap(readback, 0, NULL);
+      }
+      printf("hdr_d3d: Direct3D %d, post effects %u: ", api, i);
+      fflush(stdout);
+      if (hdr_post_ref_check(picture_px, W, H, post_out, half_to_float, keys, vals, n))
+         bad++;
+   }
+   if (api == 11)
+      hdr_d3d11_free(enc11[1]);
+   else
+      hdr_d3d12_free(enc12[1]);
+   hdr_dt_free();
+   return bad ? 1 : 0;
+}
+
 int main(int argc, char **argv)
 {
    int api;
    if (argc == 2 && !strcmp(argv[1], "12ssaa"))
       return ssaa12();
+   if (argc == 2 && (!strcmp(argv[1], "post11") || !strcmp(argv[1], "post12")))
+      return post_run(argv[1][4] == '1' && argv[1][5] == '1' ? 11 : 12);
    if (argc != 3 || (strcmp(argv[1], "11") && strcmp(argv[1], "12")))
    {
       fprintf(stderr, "usage: hdr_d3d 11|12 out.bin | 12ssaa\n");

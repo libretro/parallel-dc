@@ -4,7 +4,9 @@
 # for them - built with mingw-w64 and run under wine (wined3d and vkd3d,
 # on a Vulkan driver: lavapipe will do), over every case hdr_hlsl.sh
 # draws, and held to the Vulkan renderer's GLSL (hdr_hlsl --against);
-# and Direct3D 12's with SSAA's samples to their exact average (12ssaa).
+# and Direct3D 12's with SSAA's samples to their exact average (12ssaa);
+# and both with the post effects to what the CPU makes of the picture
+# (post11, post12: tools/hdr/hdr_post_ref.c).
 #
 #   sh tools/hdr/hdr_d3d.sh
 #
@@ -23,6 +25,7 @@ LRC=core/libretro-common
 $CC_WIN -O2 -Wall -I$LRC/include -Icore/deps/khronos -o "$WORK/hdr_d3d.exe" tools/hdr/hdr_d3d.c \
    core/rend/hdr/hdr_encode_d3d11.c core/rend/hdr/hdr_encode_d3d12.c core/rend/hdr/hdr_output.c \
    core/rend/hdr/hdr_transform.c core/rend/hdr/hdr_aces2.c core/rend/hdr/hdr_display.c \
+   core/rend/hdr/hdr_libretro.c tools/hdr/hdr_post_ref.c \
    $LRC/rthreads/rthreads.c $LRC/rthreads/retro_eventcount.c \
    -ld3d11 -ld3d12 -ldxguid -lm
 for api in 11 12; do
@@ -32,4 +35,9 @@ for api in 11 12; do
 done
 # Direct3D 12's encode with SSAA's samples: their exact average
 env -u TMPDIR DISPLAY=$DISPLAY_NO WINEDEBUG=-all wine "$WORK/hdr_d3d.exe" 12ssaa
+# the post effects, against the CPU's
+for api in 11 12; do
+   env -u TMPDIR DISPLAY=$DISPLAY_NO WINEDEBUG=-all WINE_D3D_CONFIG=renderer=vulkan \
+      wine "$WORK/hdr_d3d.exe" post$api
+done
 echo "hdr_d3d.sh: passed"

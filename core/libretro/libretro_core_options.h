@@ -763,6 +763,110 @@ struct retro_core_option_v2_definition option_defs_us[] = {
       },
       "4"
    },
+   {
+      CORE_OPTION_NAME "_hdr_bloom",
+      "HDR Bloom",
+      NULL,
+      "Multi-band bloom for the HDR output. Bright content is extracted in linear light, blurred at two scales - a tight core and a wide haze - and added before the Display Transform, so the glow genuinely exceeds paper white and lands in the HDR headroom. Firefly-compressed at extraction so a single bright texel cannot make the halo flicker. 'Disabled' leaves the picture as before. Only with Color Format set to 30-bit or 64-bit, on the Vulkan, Direct3D 11 and Direct3D 12 renderers.",
+      NULL,
+      "video",
+      {
+         { "disabled", NULL },
+         { "subtle",   "Subtle" },
+         { "standard", "Standard" },
+         { "intense",  "Intense" },
+         { NULL, NULL },
+      },
+      "disabled"
+   },
+   {
+      CORE_OPTION_NAME "_hdr_bloom_select",
+      "HDR Bloom: Selection",
+      NULL,
+      "What counts as a highlight for 'HDR Bloom'. 'Classic' keeps the 0.70 threshold the bloom was tuned against. 'Curve Knee' derives it from the active Display Transform: Neutral's 0.76 start of compression, or GT's solved shoulder start, so the bloom picks exactly the pixels the curve will compress. Other curves keep 0.70.",
+      NULL,
+      "video",
+      {
+         { "classic", "Classic" },
+         { "knee",    "Curve Knee" },
+         { NULL, NULL },
+      },
+      "classic"
+   },
+   {
+      CORE_OPTION_NAME "_hdr_bloom_range",
+      "HDR Bloom: Range",
+      NULL,
+      "How much brightness the bloom extraction may carry. The bright pass limits what it extracts so one hot texel cannot flicker the halo; 'Standard' caps every extraction below 1.0, so very bright and moderately bright sources bloom alike. 'Wide' and 'Widest' keep the anti-flicker property but let a brighter source bloom brighter. Shows most with HDR Expansion and a curve with headroom, such as ACES 2.0 or Filmic.",
+      NULL,
+      "video",
+      {
+         { "standard", "Standard (clamped)" },
+         { "wide",     "Wide (4x)" },
+         { "widest",   "Widest (16x)" },
+         { NULL, NULL },
+      },
+      "standard"
+   },
+   {
+      CORE_OPTION_NAME "_hdr_bloom_convolution",
+      "HDR Bloom: Convolution",
+      NULL,
+      "Replaces the bloom's two fixed blur scales with a six-octave pyramid accumulated back up with a tent filter - an approximation of one wide, heavy-tailed point spread. Glow carries much further and fades out smoothly instead of stopping at the blur kernel's edge. Total bloom energy is the same, so cores are softer and spill wider. Needs 'HDR Bloom'.",
+      NULL,
+      "video",
+      {
+         { "disabled", NULL },
+         { "enabled",  NULL },
+         { NULL, NULL },
+      },
+      "disabled"
+   },
+   {
+      CORE_OPTION_NAME "_hdr_halation",
+      "HDR Halation",
+      NULL,
+      "Warms the bloom around bright areas toward red-orange, the way film does: light passing through the emulsion scatters off the base and comes back reddened. Tints the existing bloom rather than adding a pass, so it needs 'HDR Bloom'. Pairs naturally with the Filmic Display Transform but is not tied to it.",
+      NULL,
+      "video",
+      {
+         { "disabled", NULL },
+         { "subtle",   "Subtle" },
+         { "strong",   "Strong" },
+         { NULL, NULL },
+      },
+      "disabled"
+   },
+   {
+      CORE_OPTION_NAME "_hdr_chromatic",
+      "HDR Chromatic Aberration",
+      NULL,
+      "Splits red and blue slightly apart toward the edges of the frame, as a lens does when it focuses different wavelengths at different magnifications. Grows with the square of the distance from the centre, so the middle stays clean and only the corners fringe. The offset is a fixed fraction of the frame, so it looks the same at every internal resolution. Only with Color Format set to 30-bit or 64-bit, on the Vulkan, Direct3D 11 and Direct3D 12 renderers.",
+      NULL,
+      "video",
+      {
+         { "disabled", NULL },
+         { "subtle",   "Subtle" },
+         { "strong",   "Strong" },
+         { "heavy",    "Heavy" },
+         { NULL, NULL },
+      },
+      "disabled"
+   },
+   {
+      CORE_OPTION_NAME "_hdr_post_compact",
+      "HDR Post: Compact Intermediates",
+      NULL,
+      "Stores the images the HDR post effects work on - the full-size scene and the bloom chain - as packed 32-bit floats (11/11/10 bits) instead of 64-bit half floats, halving the memory traffic of the effects. Worth it on integrated and mobile GPUs, where that traffic is a real share of the frame. The picture changes slightly: a few 10-bit HDR output steps at most. Only matters while HDR Bloom or HDR Chromatic Aberration is on.",
+      NULL,
+      "video",
+      {
+         { "disabled", NULL },
+         { "enabled",  NULL },
+         { NULL, NULL },
+      },
+      "disabled"
+   },
 #endif
    {
       CORE_OPTION_NAME "_pvr2_scaler",

@@ -1114,7 +1114,8 @@ void ScreenDrawer::EndRenderPass()
 	if (hdrPipeline && !overlaid)
 	{
 		currentCommandBuffer.nextSubpass(vk::SubpassContents::eInline);
-		hdrAfter = writeOut.Runs(viewport.height);
+		/* (or with the post effects, which only the pass of its own draws) */
+		hdrAfter = writeOut.Runs(viewport.height) || GetContext()->HdrPostActive();
 		if (!hdrAfter)
 			GetContext()->HdrSubpassDraw(*commandPool, currentCommandBuffer, *hdrPipeline,
 					colorAttachments[GetCurrentImage()]->GetImageView(),

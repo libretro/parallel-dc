@@ -4,7 +4,10 @@
  * constant, so that the three backends draw the same picture. Shader model
  * 5.0, compiled once to DXBC for both (tools/rend/kernels_dxbc.sh:
  * hdr_encode_dxbc.inc): HDR_ENCODE_VS the triangle over the picture,
- * HDR_ENCODE_PS the encode. tools/vulkan/hdr_hlsl.sh runs this through
+ * HDR_ENCODE_PS the encode. The HDR post effects' (hdr_output.h): with
+ * HDR_ENCODE_LINEAR the encode's first pass into scene-linear light,
+ * with HDR_ENCODE_POST the composite (hdr_post.frag), and HDR_BLOOM_PS
+ * the bloom's stages (hdr_bloom.frag), one a define. tools/vulkan/hdr_hlsl.sh runs this through
  * glslang's HLSL front end on lavapipe against the GLSL.
  *
  * A GLSL mat3 is three columns, M * v their sum weighted by v; here it is
@@ -127,6 +130,19 @@ uint hdr_pack_unorm8(float4 v)
 	const uint4 b = uint4(round(saturate(v) * 255.0));
 	return b.r | (b.g << 8) | (b.b << 16) | (b.a << 24);
 }
+#endif
+#ifdef HDR_ENCODE_POST
+/* the composite's: the scene-linear image (as the picture, t0), the
+ * bloom's two bands, and struct hdr_post_params */
+Texture2D<float4> bloomT       : register(t5);
+Texture2D<float4> bloomW       : register(t6);
+cbuffer Post : register(b2)
+{
+	float4 halBloom;   /* xyz the halation tint, w the bloom amount (0 off) */
+	float2 bandW;      /* the tight band's weight, the wide one's */
+	float  ca;         /* chromatic aberration, 0 off */
+	float  postPad;
+};
 #endif
 SamplerState      linearClamp  : register(s0);
 SamplerState      linearWrap   : register(s1);
@@ -706,6 +722,47 @@ float3 hdr_deband(float3 rgb, float2 fragcoord)
 
 /* ---- hdr_encode.frag ---- */
 
+#ifdef HDR_ENCODE_POST
+/* ---- hdr_post.frag ---- */
+
+float3 encode_hdr_output_linear(float3 scene_linear, float paper_white_nits, float peak_nits,
+                                int expand_gamut, int shoulder_mode, float black_pq,
+                                mat3 to_panel, int scrgb_out)
+{
+	float3 lin = hdr_grade_linear(scene_linear, paper_white_nits, peak_nits,
+	                              expand_gamut, shoulder_mode, to_panel);
+	if (scrgb_out == 0)
+		return pq_black_floor(pq_encode(lin), black_pq);
+	if (black_pq > 0.0)
+		lin = pq_decode(pq_black_floor(pq_encode(lin), black_pq));
+	return rec2020_to_709(lin) * (1.0 / 80.0);
+}
+
+float4 main(float4 pos : SV_Position) : SV_Target
+{
+	uint w, h;
+	picture.GetDimensions(w, h);
+	/* (the scene image is the output's size) */
+	const float2 vUV = pos.xy / float2((float)w, (float)h);
+	float3 lin = picture.SampleLevel(linearClamp, vUV, 0.0).rgb;
+	if (ca != 0.0)
+	{
+		const float2 d = vUV - 0.5;
+		const float  r = dot(d, d) * ca;
+		lin.r = picture.SampleLevel(linearClamp, vUV - d * r, 0.0).r;
+		lin.b = picture.SampleLevel(linearClamp, vUV + d * r, 0.0).b;
+	}
+	if (halBloom.w > 0.0)
+	{
+		float3 bl = bandW.x * bloomT.SampleLevel(linearClamp, vUV, 0.0).rgb;
+		if (bandW.y > 0.0)
+			bl += bandW.y * bloomW.SampleLevel(linearClamp, vUV, 0.0).rgb;
+		lin += (halBloom.w * halBloom.xyz) * bl;
+	}
+	return float4(encode_hdr_output_linear(max(lin, 0.0), paperWhite, peak, expandGamut, shoulder,
+			blackPq, m3v(toPanel[0], toPanel[1], toPanel[2]), scrgb), 1.0);
+}
+#else
 float4 main(float4 pos : SV_Position) : SV_Target
 {
 	const float4 pic = picture.Load(int3((int)pos.x, (int)pos.y, 0));
@@ -727,8 +784,115 @@ float4 main(float4 pos : SV_Position) : SV_Target
 #endif
 	if (deband != 0)
 		rgb = hdr_deband(rgb, pos.xy);
+#ifdef HDR_ENCODE_LINEAR
+	return float4(sdr_to_linear(max(rgb, 0.0), sdrEotf), 1.0);
+#else
 	return float4(encode_hdr_output(rgb, paperWhite, peak, expandGamut, shoulder, sdrEotf,
 			blackPq, m3v(toPanel[0], toPanel[1], toPanel[2]), scrgb), 1.0);
+#endif
+}
+#endif
+
+#endif
+
+#ifdef HDR_BLOOM_PS
+/* ---- hdr_bloom.frag: one stage a define (struct hdr_bloom_params) ---- */
+
+Texture2D<float4> source      : register(t0);
+SamplerState      linearClamp : register(s0);
+cbuffer Bloom : register(b0)
+{
+	float4 p0;
+	float4 p1;   /* xy the step in the source, zw the target's texel */
+};
+
+static float2 vUV;
+
+float3 tap(float2 o)
+{
+	return source.SampleLevel(linearClamp, vUV + p1.xy * o, 0.0).rgb;
 }
 
+#ifdef HDR_BLOOM_DOWN_KARIS
+float kw(float3 c)
+{
+	return 1.0 / (1.0 + max(c.r, max(c.g, c.b)));
+}
+#endif
+
+float4 main(float4 pos : SV_Position) : SV_Target
+{
+	vUV = pos.xy * p1.zw;
+#if defined(HDR_BLOOM_BRIGHT)
+	float3 lin = 0.25 * (tap(float2(-1.0, -1.0)) + tap(float2(1.0, -1.0)) +
+	                     tap(float2(-1.0, 1.0)) + tap(float2(1.0, 1.0)));
+	lin = max(lin, 0.0);
+	const float lum = dot(lin, float3(0.2126, 0.7152, 0.0722));
+	float sk = clamp(lum - p0.x + p0.y, 0.0, 2.0 * p0.y);
+	sk = sk * sk / (4.0 * p0.y);
+	const float3 b = lin * (max(sk, lum - p0.x) / max(lum, 1e-5)) / (1.0 - p0.x);
+	const float l = dot(b, float3(0.2126, 0.7152, 0.0722));
+	return float4(b / (1.0 + l * p0.z), 1.0);
+#elif defined(HDR_BLOOM_BLUR)
+	float3 c = tap(float2(0.0, 0.0)) * 0.24458;
+	c += tap(float2( 1.36268,  1.36268)) * 0.31802;
+	c += tap(float2(-1.36268, -1.36268)) * 0.31802;
+	c += tap(float2( 3.21159,  3.21159)) * 0.05717;
+	c += tap(float2(-3.21159, -3.21159)) * 0.05717;
+	c += tap(float2( 5.11234,  5.11234)) * 0.00251;
+	c += tap(float2(-5.11234, -5.11234)) * 0.00251;
+	return float4(c, 1.0);
+#elif defined(HDR_BLOOM_DOWN) || defined(HDR_BLOOM_DOWN_KARIS)
+	const float3 a = tap(float2(-2.0,  2.0));
+	const float3 b = tap(float2( 0.0,  2.0));
+	const float3 c = tap(float2( 2.0,  2.0));
+	const float3 d = tap(float2(-2.0,  0.0));
+	const float3 e = tap(float2( 0.0,  0.0));
+	const float3 f = tap(float2( 2.0,  0.0));
+	const float3 g = tap(float2(-2.0, -2.0));
+	const float3 h = tap(float2( 0.0, -2.0));
+	const float3 i = tap(float2( 2.0, -2.0));
+	const float3 j = tap(float2(-1.0,  1.0));
+	const float3 k = tap(float2( 1.0,  1.0));
+	const float3 l = tap(float2(-1.0, -1.0));
+	const float3 m = tap(float2( 1.0, -1.0));
+#ifdef HDR_BLOOM_DOWN_KARIS
+	float3 acc = 0.0;
+	float  ws  = 0.0;
+	float  w;
+	w = kw(a) * 0.03125; acc += a * w; ws += w;
+	w = kw(b) * 0.06250; acc += b * w; ws += w;
+	w = kw(c) * 0.03125; acc += c * w; ws += w;
+	w = kw(d) * 0.06250; acc += d * w; ws += w;
+	w = kw(e) * 0.12500; acc += e * w; ws += w;
+	w = kw(f) * 0.06250; acc += f * w; ws += w;
+	w = kw(g) * 0.03125; acc += g * w; ws += w;
+	w = kw(h) * 0.06250; acc += h * w; ws += w;
+	w = kw(i) * 0.03125; acc += i * w; ws += w;
+	w = kw(j) * 0.12500; acc += j * w; ws += w;
+	w = kw(k) * 0.12500; acc += k * w; ws += w;
+	w = kw(l) * 0.12500; acc += l * w; ws += w;
+	w = kw(m) * 0.12500; acc += m * w; ws += w;
+	return float4(acc / ws, 1.0);
+#else
+	float3 o = e * 0.125;
+	o += (a + c + g + i) * 0.03125;
+	o += (b + d + f + h) * 0.0625;
+	o += (j + k + l + m) * 0.125;
+	return float4(o, 1.0);
+#endif
+#else /* HDR_BLOOM_UP */
+	const float r = p0.x;
+	float3 s = tap(float2(-r, -r));
+	s += tap(float2(0.0, -r)) * 2.0;
+	s += tap(float2( r, -r));
+	s += tap(float2(-r, 0.0)) * 2.0;
+	s += tap(float2(0.0, 0.0)) * 4.0;
+	s += tap(float2( r, 0.0)) * 2.0;
+	s += tap(float2(-r,  r));
+	s += tap(float2(0.0,  r)) * 2.0;
+	s += tap(float2( r,  r));
+	return float4(s * 0.0625, 1.0);
+#endif
+}
 #endif

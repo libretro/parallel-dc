@@ -3,7 +3,10 @@
  * hdr.glsl, with hdr_transform.glsl in it (beetle-psx's; kept as they are
  * there). Drawn over the whole picture by SSAA_RESOLVE_VERT's triangle:
  * with SUBPASS, as the last subpass of the frame's render pass, the
- * picture its input attachment; without, the picture sampled. */
+ * picture its input attachment; without, the picture sampled. With
+ * LINEAR_OUT, the HDR post effects' first pass: scene-linear light (1.0 =
+ * paper white) into their half-float scene image, which hdr_post.frag
+ * encodes once the bloom is made from it. */
 
 #ifdef SUBPASS
 layout (input_attachment_index = 0, set = 0, binding = 0) uniform subpassInput picture;
@@ -77,7 +80,11 @@ void main()
 #endif
 	if (pc.deband != 0)
 		rgb = hdr_deband(rgb, gl_FragCoord.xy);
+#ifdef LINEAR_OUT
+	FragColor = vec4(sdr_to_linear(max(rgb, vec3(0.0)), pc.sdrEotf), 1.0);
+#else
 	FragColor = vec4(encode_hdr_output(rgb, pc.paperWhite, pc.peak, pc.expandGamut, pc.shoulder,
 			pc.sdrEotf, 0, pc.blackPq, mat3(pc.toPanel[0].xyz, pc.toPanel[1].xyz, pc.toPanel[2].xyz),
 			pc.scrgb), 1.0);
+#endif
 }
