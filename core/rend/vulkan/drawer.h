@@ -38,6 +38,7 @@
 #include "writeout.h"
 #include "rend/depth_scale.h"
 #include "rend/ta_gpu.h"
+#include "rend/upscaler.h"
 
 class BaseDrawer
 {
@@ -260,6 +261,11 @@ protected:
 
 	vk::CommandBuffer currentCommandBuffer;
 	SamplerManager *samplerManager = nullptr;
+	struct {
+		vk::DeviceSize indexOffset = 0;
+		vk::DeviceSize modVolOffset = 0;
+		vk::DeviceSize fragmentUniformOffset = 0;
+	} offsets;
 	/* SSAA: the samples a pixel of this drawer's render pass (1: off), and
 	 * the resolve its last subpass does at the end of Draw(), over this */
 	u32 samples = 1;
@@ -280,11 +286,6 @@ private:
 	void UploadMainBuffer(const FragmentShaderUniforms& fragmentUniforms);
 
 	int imageIndex = 0;
-	struct {
-		vk::DeviceSize indexOffset = 0;
-		vk::DeviceSize modVolOffset = 0;
-		vk::DeviceSize fragmentUniformOffset = 0;
-	} offsets;
 	std::vector<DescriptorSets> descriptorSets;
 	std::vector<std::unique_ptr<BufferData>> mainBuffers;
 	PipelineManager *pipelineManager = nullptr;
@@ -311,6 +312,9 @@ public:
 		ssaaResolve.Term();
 		msQuadPipeline.Term();
 		timer.Term();
+		for (auto& pipeline : motionPipelines)
+			pipeline.reset();
+		motionRenderPass.reset();
 		/* (the pipeline thread finishes what it is making for it now,
 		 * while the shaders those pipelines are made of are still there) */
 		screenPipelineManager.reset();
@@ -344,6 +348,13 @@ protected:
 	virtual vk::Extent2D ResolveExtent() const override { return viewport; }
 
 private:
+	/* The temporal upscaler's (rend/upscaler.h): the motion vector pass
+	 * drawn after the frame's render pass, over the depth it left, which
+	 * is then kept for the upscaler with the vectors */
+	void MakeMotionPass();
+	void RecordMotionVectors(vk::CommandBuffer commandBuffer);
+	void SubmitUpscalerInputs();
+
 	std::unique_ptr<PipelineManager> screenPipelineManager;
 
 	vk::UniqueRenderPass renderPass;
@@ -370,6 +381,18 @@ private:
 	GpuFrameTimer timer;
 	vk::Extent2D viewport;
 	ShaderManager *shaderManager = nullptr;
+	/* For the upscaler: the depth is one an image, kept and readable, as
+	 * are the motion vectors; the pass that draws them, its pipelines by
+	 * cull mode, and where each vertex was last frame (its vertex stream) */
+	bool upscaled = false;
+	std::vector<std::unique_ptr<FramebufferAttachment>> depthAttachments;
+	std::vector<std::unique_ptr<FramebufferAttachment>> motionAttachments;
+	std::vector<vk::UniqueFramebuffer> motionFramebuffers;
+	vk::UniqueRenderPass motionRenderPass;
+	vk::UniquePipeline motionPipelines[3];
+	std::vector<std::unique_ptr<BufferData>> prevXyBuffers;
+	std::vector<float> prevXy;
+	bool motionRecorded = false;
 };
 
 class TextureDrawer : public Drawer

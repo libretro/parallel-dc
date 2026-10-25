@@ -805,8 +805,10 @@ void ScreenDrawer::Init(SamplerManager *samplerManager, ShaderManager *shaderMan
 	/* (a change of SSAA is one of size: everything made for the size is
 	 * made again; so is one of the write-out, whose pictures are made for
 	 * it to write) */
+	// (the upscaler wants the depth kept, which SSAA's samples are not)
+	const bool upscaled = upscaler_active() && samples == 1;
 	const bool remade = viewport != GetContext()->GetViewPort() || samples != this->samples
-			|| storagePictures != VulkanWriteOut::Wanted();
+			|| storagePictures != VulkanWriteOut::Wanted() || upscaled != this->upscaled;
 	if (remade)
 	{
 		/* Not destroyed on the spot: the last picture was handed to the
@@ -842,22 +844,39 @@ void ScreenDrawer::Init(SamplerManager *samplerManager, ShaderManager *shaderMan
 				commandPool->DeferDelete(std::move(depthAttachment));
 			if (samplesAttachment)
 				commandPool->DeferDelete(std::move(samplesAttachment));
+			for (auto& attachment : depthAttachments)
+				if (attachment)
+					commandPool->DeferDelete(std::move(attachment));
+			for (auto& attachment : motionAttachments)
+				if (attachment)
+					commandPool->DeferDelete(std::move(attachment));
+			for (auto& framebuffer : motionFramebuffers)
+				if (framebuffer)
+					commandPool->DeferDelete(std::unique_ptr<vk::UniqueFramebuffer>(new vk::UniqueFramebuffer(std::move(framebuffer))));
 		}
 		framebuffers.clear();
 		colorAttachments.clear();
 		hdrAttachments.clear();
 		depthAttachment.reset();
 		samplesAttachment.reset();
+		depthAttachments.clear();
+		motionAttachments.clear();
+		motionFramebuffers.clear();
+		// (the motion vector pipelines are made for the size)
+		for (auto& pipeline : motionPipelines)
+			pipeline.reset();
 		havePicture = false;
-		if (samples != this->samples)
+		if (samples != this->samples || upscaled != this->upscaled)
 			// (Resize() waited for the frames on the GPU: nothing uses it)
 			renderPass.reset();
 		this->samples = samples;
+		this->upscaled = upscaled;
 		storagePictures = VulkanWriteOut::Wanted();
+		upscaler_reset();
 	}
 	viewport = GetContext()->GetViewPort();
 	const vk::SampleCountFlagBits n = (vk::SampleCountFlagBits)samples;
-	if (!depthAttachment)
+	if (!depthAttachment && !upscaled)
 	{
 		depthAttachment = std::unique_ptr<FramebufferAttachment>(
 			new FramebufferAttachment(GetContext()->GetPhysicalDevice(), GetContext()->GetDevice()));
@@ -892,9 +911,9 @@ void ScreenDrawer::Init(SamplerManager *samplerManager, ShaderManager *shaderMan
 						vk::AttachmentLoadOp::eClear, vk::AttachmentStoreOp::eStore,
 						vk::AttachmentLoadOp::eDontCare, vk::AttachmentStoreOp::eDontCare,
 						vk::ImageLayout::eUndefined, vk::ImageLayout::eShaderReadOnlyOptimal),
-				// Depth attachment
+				// Depth attachment (kept for the upscaler, when there is one)
 				vk::AttachmentDescription(vk::AttachmentDescriptionFlags(), GetContext()->GetDepthFormat(), vk::SampleCountFlagBits::e1,
-						vk::AttachmentLoadOp::eClear, vk::AttachmentStoreOp::eDontCare,
+						vk::AttachmentLoadOp::eClear, upscaled ? vk::AttachmentStoreOp::eStore : vk::AttachmentStoreOp::eDontCare,
 						vk::AttachmentLoadOp::eClear, vk::AttachmentStoreOp::eDontCare,
 						vk::ImageLayout::eUndefined, vk::ImageLayout::eDepthStencilAttachmentOptimal),
 				// The HDR output's image
@@ -939,6 +958,14 @@ void ScreenDrawer::Init(SamplerManager *samplerManager, ShaderManager *shaderMan
 				vk::AccessFlagBits::eDepthStencilAttachmentWrite | vk::AccessFlagBits::eColorAttachmentWrite,
 				vk::AccessFlagBits::eDepthStencilAttachmentRead | vk::AccessFlagBits::eDepthStencilAttachmentWrite
 					| vk::AccessFlagBits::eColorAttachmentRead | vk::AccessFlagBits::eColorAttachmentWrite);
+		// the depth the frame leaves, for the motion vector pass and the upscaler
+		if (upscaled)
+			dependencies.emplace_back(0, VK_SUBPASS_EXTERNAL,
+					vk::PipelineStageFlagBits::eEarlyFragmentTests | vk::PipelineStageFlagBits::eLateFragmentTests,
+					vk::PipelineStageFlagBits::eEarlyFragmentTests | vk::PipelineStageFlagBits::eLateFragmentTests
+						| vk::PipelineStageFlagBits::eFragmentShader | vk::PipelineStageFlagBits::eComputeShader,
+					vk::AccessFlagBits::eDepthStencilAttachmentWrite,
+					vk::AccessFlagBits::eDepthStencilAttachmentRead | vk::AccessFlagBits::eShaderRead);
 		if (hdr)
 		{
 			// the picture drawn, then encoded where it is...
@@ -966,19 +993,42 @@ void ScreenDrawer::Init(SamplerManager *samplerManager, ShaderManager *shaderMan
 		colorAttachments.resize(size);
 		hdrAttachments.resize(hdr ? size : 0);
 		framebuffers.resize(size);
+		if (upscaled)
+		{
+			depthAttachments.resize(size);
+			motionAttachments.resize(size);
+			motionFramebuffers.resize(size);
+		}
 	}
 	else
 	{
 		// (with SSAA: the picture, then the samples' colour and depth; then the HDR output's image)
 		vk::ImageView attachments[] = {
 				nullptr,
-				samples > 1 ? samplesAttachment->GetImageView() : depthAttachment->GetImageView(),
+				samples > 1 ? samplesAttachment->GetImageView() : upscaled ? vk::ImageView() : depthAttachment->GetImageView(),
 				samples > 1 ? depthAttachment->GetImageView() : nullptr,
 				nullptr,
 		};
 		const u32 count = (samples > 1 ? 3 : 2) + (hdr ? 1 : 0);
 		while (colorAttachments.size() < size)
 		{
+			if (upscaled)
+			{
+				/* the frame's depth, kept, sampled and copied from (the frontend
+				 * reads both as it likes); the motion vectors it draws from it,
+				 * two halves a pixel */
+				depthAttachments.push_back(std::unique_ptr<FramebufferAttachment>(
+						new FramebufferAttachment(GetContext()->GetPhysicalDevice(), GetContext()->GetDevice())));
+				depthAttachments.back()->Init(viewport.width, viewport.height, GetContext()->GetDepthFormat(),
+						vk::ImageUsageFlagBits::eDepthStencilAttachment | vk::ImageUsageFlagBits::eSampled
+						| vk::ImageUsageFlagBits::eTransferSrc, false);
+				motionAttachments.push_back(std::unique_ptr<FramebufferAttachment>(
+						new FramebufferAttachment(GetContext()->GetPhysicalDevice(), GetContext()->GetDevice())));
+				motionAttachments.back()->Init(viewport.width, viewport.height, vk::Format::eR16G16Sfloat,
+						vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eSampled
+						| vk::ImageUsageFlagBits::eTransferSrc, false);
+				attachments[1] = depthAttachments.back()->GetImageView();
+			}
 			colorAttachments.push_back(std::unique_ptr<FramebufferAttachment>(
 					new FramebufferAttachment(GetContext()->GetPhysicalDevice(), GetContext()->GetDevice())));
 			// (copied from when the context goes, to keep the picture: rend/last_picture.h; the HDR output's input)
@@ -1010,6 +1060,8 @@ void ScreenDrawer::Init(SamplerManager *samplerManager, ShaderManager *shaderMan
 		ssaaResolve.Init(*renderPass, 1, samples, samplesAttachment->GetImageView());
 		msQuadPipeline.Init(shaderManager, *renderPass, 0, samples);
 	}
+	if (upscaled)
+		MakeMotionPass();
 	timer.Init(GetContext()->GetSwapChainSize(), "per-triangle renderer");
 	if (remade)
 	{
@@ -1026,6 +1078,25 @@ vk::CommandBuffer ScreenDrawer::BeginRenderPass()
 	vk::CommandBuffer commandBuffer = commandPool->Allocate();
 	commandBuffer.begin(vk::CommandBufferBeginInfo(vk::CommandBufferUsageFlagBits::eOneTimeSubmit));
 	matrices.CalcMatrices(&pvrrc);
+	motionRecorded = false;
+	if (upscaled && !pvrrc.gpu)
+	{
+		/* the frame drawn under this frame's jitter, and its strips matched
+		 * with the frame before's for the motion vector pass */
+		float jx, jy;
+		upscaler_jitter(&jx, &jy);
+		matrices.Jitter(jx, jy);
+		upscaler_match(pvrrc, prevXy);
+		const u32 bytes = (u32)std::max<size_t>(prevXy.size() * sizeof(float), 1024);
+		while (prevXyBuffers.size() <= (size_t)GetCurrentImage())
+			prevXyBuffers.emplace_back();
+		std::unique_ptr<BufferData>& buffer = prevXyBuffers[GetCurrentImage()];
+		if (!buffer || buffer->bufferSize < bytes)
+			buffer = std::unique_ptr<BufferData>(new BufferData(bytes, vk::BufferUsageFlagBits::eVertexBuffer));
+		if (!prevXy.empty())
+			buffer->upload((u32)(prevXy.size() * sizeof(float)), prevXy.data());
+		motionRecorded = true;
+	}
 	vertexUniformBuffer = WriteVertexUniforms<VertexShaderUniforms>(commandBuffer, GetCurrentImage());
 	// (the HDR output's transform, for the render pass's last subpass)
 	if (hdrPipeline)
@@ -1129,6 +1200,8 @@ void ScreenDrawer::EndRenderPass()
 	else
 		writeOut.Record(currentCommandBuffer, GetCurrentImage(), colorAttachments[GetCurrentImage()]->GetImage(),
 				colorAttachments[GetCurrentImage()]->GetImageView(), viewport.width, viewport.height);
+	if (motionRecorded)
+		RecordMotionVectors(currentCommandBuffer);
 	timer.End(currentCommandBuffer, commandPool->GetIndex());
 	currentCommandBuffer.end();
 	currentCommandBuffer = nullptr;
@@ -1145,4 +1218,159 @@ void ScreenDrawer::EndRenderPass()
 	}
 	commandPool->EndFrame();
 	GetContext()->PresentFrame(image, view, vk::Offset2D(viewport.width, viewport.height), hdr);
+	if (motionRecorded)
+		SubmitUpscalerInputs();
+}
+
+/* The motion vector pass: a render pass of its own after the frame's,
+ * over the depth the frame left (loaded, tested, not written, kept
+ * for the upscaler), into the vectors' image, which the upscaler reads
+ * as the colour: two pipelines' worth of state, one a cull mode. */
+void ScreenDrawer::MakeMotionPass()
+{
+	VulkanContext *context = GetContext();
+	vk::Device device = context->GetDevice();
+	if (!motionRenderPass)
+	{
+		vk::AttachmentDescription attachmentDescriptions[] = {
+				vk::AttachmentDescription(vk::AttachmentDescriptionFlags(), vk::Format::eR16G16Sfloat, vk::SampleCountFlagBits::e1,
+						vk::AttachmentLoadOp::eClear, vk::AttachmentStoreOp::eStore,
+						vk::AttachmentLoadOp::eDontCare, vk::AttachmentStoreOp::eDontCare,
+						vk::ImageLayout::eUndefined, vk::ImageLayout::eShaderReadOnlyOptimal),
+				vk::AttachmentDescription(vk::AttachmentDescriptionFlags(), context->GetDepthFormat(), vk::SampleCountFlagBits::e1,
+						vk::AttachmentLoadOp::eLoad, vk::AttachmentStoreOp::eStore,
+						vk::AttachmentLoadOp::eDontCare, vk::AttachmentStoreOp::eDontCare,
+						vk::ImageLayout::eDepthStencilAttachmentOptimal, vk::ImageLayout::eDepthStencilAttachmentOptimal),
+		};
+		vk::AttachmentReference colorReference(0, vk::ImageLayout::eColorAttachmentOptimal);
+		vk::AttachmentReference depthReference(1, vk::ImageLayout::eDepthStencilAttachmentOptimal);
+		vk::SubpassDescription subpass(vk::SubpassDescriptionFlags(), vk::PipelineBindPoint::eGraphics,
+				0, nullptr, 1, &colorReference, nullptr, &depthReference);
+		vk::SubpassDependency dependencies[] = {
+				// the frame's depth, drawn, then tested here
+				vk::SubpassDependency(VK_SUBPASS_EXTERNAL, 0,
+						vk::PipelineStageFlagBits::eEarlyFragmentTests | vk::PipelineStageFlagBits::eLateFragmentTests,
+						vk::PipelineStageFlagBits::eEarlyFragmentTests | vk::PipelineStageFlagBits::eLateFragmentTests,
+						vk::AccessFlagBits::eDepthStencilAttachmentWrite, vk::AccessFlagBits::eDepthStencilAttachmentRead),
+				// the vectors, and the depth, read by the upscaler
+				vk::SubpassDependency(0, VK_SUBPASS_EXTERNAL,
+						vk::PipelineStageFlagBits::eColorAttachmentOutput | vk::PipelineStageFlagBits::eLateFragmentTests,
+						vk::PipelineStageFlagBits::eFragmentShader | vk::PipelineStageFlagBits::eComputeShader,
+						vk::AccessFlagBits::eColorAttachmentWrite | vk::AccessFlagBits::eDepthStencilAttachmentWrite,
+						vk::AccessFlagBits::eShaderRead),
+		};
+		motionRenderPass = device.createRenderPassUnique(vk::RenderPassCreateInfo(vk::RenderPassCreateFlags(),
+				ARRAY_SIZE(attachmentDescriptions), attachmentDescriptions, 1, &subpass,
+				ARRAY_SIZE(dependencies), dependencies));
+	}
+	while (motionFramebuffers.size() < motionAttachments.size())
+	{
+		const size_t i = motionFramebuffers.size();
+		vk::ImageView attachments[] = { motionAttachments[i]->GetImageView(), depthAttachments[i]->GetImageView() };
+		motionFramebuffers.push_back(device.createFramebufferUnique(vk::FramebufferCreateInfo(vk::FramebufferCreateFlags(),
+				*motionRenderPass, ARRAY_SIZE(attachments), attachments, viewport.width, viewport.height, 1)));
+	}
+	if (motionPipelines[0])
+		return;
+
+	// the vertex as the colour pass has it, and where it was: its own stream
+	static const vk::VertexInputBindingDescription bindings[] = {
+			{ 0, sizeof(Vertex) },
+			{ 1, sizeof(float) * 2 },
+	};
+	static const vk::VertexInputAttributeDescription attributes[] = {
+			vk::VertexInputAttributeDescription(0, 0, vk::Format::eR32G32B32Sfloat, offsetof(Vertex, x)),
+			vk::VertexInputAttributeDescription(1, 1, vk::Format::eR32G32Sfloat, 0),
+	};
+	vk::PipelineVertexInputStateCreateInfo vertexInput(vk::PipelineVertexInputStateCreateFlags(),
+			ARRAY_SIZE(bindings), bindings, ARRAY_SIZE(attributes), attributes);
+	vk::PipelineInputAssemblyStateCreateInfo inputAssembly(vk::PipelineInputAssemblyStateCreateFlags(), vk::PrimitiveTopology::eTriangleStrip);
+	vk::PipelineViewportStateCreateInfo viewportState(vk::PipelineViewportStateCreateFlags(), 1, nullptr, 1, nullptr);
+	vk::PipelineMultisampleStateCreateInfo multisample;
+	// the surface the colour pass left: its depth, equal or nearer (reversed)
+	vk::PipelineDepthStencilStateCreateInfo depthStencil(vk::PipelineDepthStencilStateCreateFlags(),
+			true, false, vk::CompareOp::eGreaterOrEqual, false, false);
+	vk::PipelineColorBlendAttachmentState blendAttachment(false,
+			vk::BlendFactor::eOne, vk::BlendFactor::eZero, vk::BlendOp::eAdd,
+			vk::BlendFactor::eOne, vk::BlendFactor::eZero, vk::BlendOp::eAdd,
+			vk::ColorComponentFlagBits::eR | vk::ColorComponentFlagBits::eG);
+	vk::PipelineColorBlendStateCreateInfo blend(vk::PipelineColorBlendStateCreateFlags(), false, vk::LogicOp::eNoOp, 1, &blendAttachment);
+	vk::DynamicState dynamicStates[] = { vk::DynamicState::eViewport, vk::DynamicState::eScissor };
+	vk::PipelineDynamicStateCreateInfo dynamic(vk::PipelineDynamicStateCreateFlags(), ARRAY_SIZE(dynamicStates), dynamicStates);
+	// (the vectors in pixels: the size, as the shader's constants)
+	const float size[] = { (float)viewport.width, (float)viewport.height };
+	const vk::SpecializationMapEntry entries[] = {
+			vk::SpecializationMapEntry(10, 0, sizeof(float)),
+			vk::SpecializationMapEntry(11, sizeof(float), sizeof(float)),
+	};
+	vk::SpecializationInfo specialization(ARRAY_SIZE(entries), entries, sizeof(size), size);
+	vk::PipelineShaderStageCreateInfo stages[] = {
+			{ vk::PipelineShaderStageCreateFlags(), vk::ShaderStageFlagBits::eVertex, shaderManager->GetMotionVertexShader(), "main", &specialization },
+			{ vk::PipelineShaderStageCreateFlags(), vk::ShaderStageFlagBits::eFragment, shaderManager->GetMotionShader(), "main" },
+	};
+	for (int cull = 0; cull < 3; cull++)
+	{
+		vk::PipelineRasterizationStateCreateInfo rasterization(vk::PipelineRasterizationStateCreateFlags(), false, false,
+				vk::PolygonMode::eFill,
+				cull == 2 ? vk::CullModeFlagBits::eBack : cull == 1 ? vk::CullModeFlagBits::eFront : vk::CullModeFlagBits::eNone,
+				vk::FrontFace::eCounterClockwise, false, 0.f, 0.f, 0.f, 1.f);
+		vk::GraphicsPipelineCreateInfo createInfo(vk::PipelineCreateFlags(), ARRAY_SIZE(stages), stages,
+				&vertexInput, &inputAssembly, nullptr, &viewportState, &rasterization, &multisample,
+				&depthStencil, &blend, &dynamic, screenPipelineManager->GetPipelineLayout(), *motionRenderPass, 0);
+		motionPipelines[cull] = device.createGraphicsPipelineUnique(context->GetPipelineCache(), createInfo);
+	}
+}
+
+void ScreenDrawer::RecordMotionVectors(vk::CommandBuffer commandBuffer)
+{
+	const int image = GetCurrentImage();
+	const vk::ClearValue clearValues[] = { vk::ClearColorValue(std::array<float, 4> { 0.f, 0.f, 0.f, 0.f }), vk::ClearDepthStencilValue { 0.f, 0 } };
+	commandBuffer.beginRenderPass(vk::RenderPassBeginInfo(*motionRenderPass, *motionFramebuffers[image],
+			vk::Rect2D( { 0, 0 }, viewport), ARRAY_SIZE(clearValues), clearValues), vk::SubpassContents::eInline);
+	commandBuffer.setViewport(0, vk::Viewport(0.0f, 0.0f, viewport.width, viewport.height, 0.0f, 1.0f));
+	commandBuffer.setScissor(0, baseScissor);
+	// (what went over the picture may have bound its own)
+	GetCurrentDescSet().BindPerFrameDescriptorSets(commandBuffer);
+	const vk::Buffer mainBuffer = GetMainBuffer(0)->buffer.get();
+	const vk::Buffer buffers[] = { mainBuffer, *prevXyBuffers[image]->buffer };
+	const vk::DeviceSize zeros[] = { 0, 0 };
+	commandBuffer.bindVertexBuffers(0, ARRAY_SIZE(buffers), buffers, zeros);
+	commandBuffer.bindIndexBuffer(mainBuffer, offsets.indexOffset, vk::IndexType::eUint32);
+	int bound = -1;
+	const List<PolyParam> *lists[] = { &pvrrc.global_param_op, &pvrrc.global_param_pt };
+	for (const List<PolyParam> *list : lists)
+		for (int i = 0; i < list->used(); i++)
+		{
+			const PolyParam& pp = list->head()[i];
+			if (pp.count < 3)
+				continue;
+			const int cull = pp.isp.CullMode == 3 ? 2 : pp.isp.CullMode == 2 ? 1 : 0;
+			if (cull != bound)
+			{
+				commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, *motionPipelines[cull]);
+				bound = cull;
+			}
+			commandBuffer.drawIndexed(pp.count, 1, pp.first, 0, 0);
+		}
+	commandBuffer.endRenderPass();
+}
+
+void ScreenDrawer::SubmitUpscalerInputs()
+{
+	const int image = GetCurrentImage();
+	struct retro_hw_upscaler_image motion, depth;
+	motion.image  = (uint64_t)(VkImage)motionAttachments[image]->GetImage();
+	motion.view   = (uint64_t)(VkImageView)motionAttachments[image]->GetImageView();
+	motion.format = (unsigned)VK_FORMAT_R16G16_SFLOAT;
+	motion.state  = (unsigned)VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+	motion.width  = viewport.width;
+	motion.height = viewport.height;
+	depth.image   = (uint64_t)(VkImage)depthAttachments[image]->GetImage();
+	depth.view    = (uint64_t)(VkImageView)depthAttachments[image]->GetImageView();
+	depth.format  = (unsigned)(VkFormat)GetContext()->GetDepthFormat();
+	depth.state   = (unsigned)VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+	depth.width   = viewport.width;
+	depth.height  = viewport.height;
+	// (the depth is 1/w: nearer is greater)
+	upscaler_submit(motion, depth, RETRO_HW_UPSCALER_DEPTH_INVERTED);
 }

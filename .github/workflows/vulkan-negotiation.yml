@@ -32,6 +32,8 @@ on:
       - 'core/libretro/**'
       - 'tools/threads/live_disc.py'
       - 'tools/vulkan/**'
+      - 'core/rend/upscaler.*'
+      - 'tools/rend/upscaler_test.*'
       - 'Makefile*'
       - '.github/workflows/vulkan-negotiation.yml'
   pull_request:
@@ -48,6 +50,8 @@ on:
       - 'core/libretro/**'
       - 'tools/threads/live_disc.py'
       - 'tools/vulkan/**'
+      - 'core/rend/upscaler.*'
+      - 'tools/rend/upscaler_test.*'
       - 'Makefile*'
       - '.github/workflows/vulkan-negotiation.yml'
   workflow_dispatch:
@@ -71,6 +75,8 @@ jobs:
         run: make -j"$(nproc)"
       - name: Negotiation v2 and v1
         run: VK_DRIVER_FILES=/usr/share/vulkan/icd.d/lvp_icd.json sh tools/vulkan/vk_negotiate.sh
+      - name: The temporal upscaler's side in the core (strips matched, the request, the inputs)
+        run: sh tools/rend/upscaler_test.sh
       - name: HDR output (HDR10, scRGB, each renderer, every Display Transform)
         run: VK_DRIVER_FILES=/usr/share/vulkan/icd.d/lvp_icd.json sh tools/vulkan/vk_hdr.sh
       - name: HDR output's HLSL against its GLSL

@@ -289,6 +289,8 @@ raster_list() {
    done; done
    echo "MODVOL_VERT vert - position.glsl modvol.vert"
    echo "MODVOL_FRAG frag - modvol.frag"
+   echo "MV_VERT vert - position.glsl mv.vert"
+   echo "MV_FRAG frag - mv.frag"
    echo "QUAD_VERT vert - quad.vert"
    echo "QUAD_FRAG frag - quad.frag"
    echo "SSAA_RESOLVE_VERT vert - ssaa_resolve.vert"

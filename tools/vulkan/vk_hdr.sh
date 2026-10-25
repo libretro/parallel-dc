@@ -27,6 +27,9 @@
 #  - a filmic curve is not (the comparison sees a wrong encode);
 #  - every Display Transform draws, and ACES 2.0 (Full) long enough for
 #    its cube to be made and used.
+#  - with a temporal upscaler on the frontend (VKH_UPSCALER), the
+#    per-triangle renderer draws at the size asked for and hands over
+#    motion vectors and depth of that size, with SSAA asked for too.
 #
 #   sh tools/vulkan/vk_hdr.sh [core.so]
 #
@@ -65,6 +68,14 @@ run() {
 run sdr sdr.raw
 run sdr refused.raw reicast_color_format=30bit_hdr
 "$WORK/vk_hdr" --same "$WORK/sdr.raw" "$WORK/refused.raw"
+
+# The frontend's temporal upscaler (rend/upscaler.h): the per-triangle
+# renderer draws at the size it asks for and hands over the frame's motion
+# vectors and depth, with SSAA asked for too (which it stands in for),
+# under the validation layer; another renderer draws as ever.
+VKH_UPSCALER=1440x1080:960x720 run sdr upscaler.raw
+VKH_UPSCALER=1440x1080:960x720 run sdr upscaler-ssaa.raw reicast_ssaa=4x
+VKH_UPSCALER=1440x1080:960x720 run sdr upscaler-wide.raw reicast_widescreen_hack=enabled
 
 # a frame of each kind: rendered, and written to the framebuffer by the CPU
 for FRAMES in 41 42 43 44; do

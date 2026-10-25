@@ -68,6 +68,14 @@ public:
 		return SCALER_CTL.hscale ? 2.f : 1.f;
 	}
 
+	/* The temporal upscaler's jitter (rend/upscaler.h): the vertices
+	 * moved by @x, @y pixels of the screen, the scissors not */
+	void Jitter(float x, float y)
+	{
+		normalMatrix.tx += 2.f * x / screen_width;
+		normalMatrix.ty += 2.f * y / screen_height * (invertY ? -1.f : 1.f);
+	}
+
 	void CalcMatrices(const rend_context *renderingContext)
 	{
 		this->renderingContext = renderingContext;

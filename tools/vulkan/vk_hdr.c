@@ -20,6 +20,18 @@
  * reports fails the run, as does a picture of another format than the
  * pixel format the core asked for. VKH_DIR is the system/save directory.
  *
+ *   VKH_UPSCALER=OWxOH:RWxRH   the frontend has a temporal upscaler
+ *                        (RETRO_ENVIRONMENT_GET_HW_RENDER_UPSCALER_INTERFACE)
+ *                        whose output is OW x OH and which asks for frames
+ *                        of RW x RH. The run then fails unless the core
+ *                        draws at that size and hands over, with its
+ *                        frames, motion vectors and a depth of that size
+ *                        with the jitter in range and a reset on the first;
+ *                        the motion vectors are read back to out.raw.mv
+ *                        ("VKHR", R16G16_SFLOAT) and must all be finite and
+ *                        small, the disc's scene standing still; the depth
+ *                        must have something drawn in it.
+ *
  *   vk_hdr --compare sdr.raw hdr.raw
  *
  * Encodes the 24-bit picture on the CPU as the HDR output should have -
@@ -69,6 +81,63 @@ static unsigned frame_w, frame_h;
 
 static PFN_vkGetInstanceProcAddr gipa;
 static PFN_vkGetDeviceProcAddr gdpa;
+
+/* the upscaler: the sizes VKH_UPSCALER names, and what the core handed over */
+static unsigned up_out_w, up_out_h, up_render_w, up_render_h;
+static struct retro_hw_upscaler_inputs up_inputs;
+static unsigned up_count, up_bad;
+static int up_first_reset;
+
+static bool up_get_request(void *handle, struct retro_hw_upscaler_request *r)
+{
+   (void)handle;
+   memset(r, 0, sizeof(*r));
+   r->output_width      = up_out_w;
+   r->output_height     = up_out_h;
+   r->render_width      = up_render_w;
+   r->render_height     = up_render_h;
+   r->min_render_width  = up_render_w / 2;
+   r->min_render_height = up_render_h / 2;
+   r->max_render_width  = up_out_w;
+   r->max_render_height = up_out_h;
+   r->mip_bias          = -1.0f;
+   return true;
+}
+
+static void up_set_inputs(void *handle, const struct retro_hw_upscaler_inputs *inputs)
+{
+   int bad = 0;
+   (void)handle;
+   up_inputs = *inputs;
+   if (!inputs->motion_vectors.image || !inputs->motion_vectors.view || !inputs->depth.image || !inputs->depth.view)
+      bad = 1;
+   if (inputs->motion_vectors.width != up_render_w || inputs->motion_vectors.height != up_render_h
+         || inputs->depth.width != up_render_w || inputs->depth.height != up_render_h)
+      bad = 1;
+   if (inputs->motion_vectors.format != VK_FORMAT_R16G16_SFLOAT)
+      bad = 1;
+   if (inputs->depth.format != VK_FORMAT_D32_SFLOAT_S8_UINT && inputs->depth.format != VK_FORMAT_D24_UNORM_S8_UINT
+         && inputs->depth.format != VK_FORMAT_D16_UNORM_S8_UINT)
+      bad = 1;
+   if (inputs->jitter_x < -0.5f || inputs->jitter_x > 0.5f || inputs->jitter_y < -0.5f || inputs->jitter_y > 0.5f)
+      bad = 1;
+   if (!(inputs->flags & RETRO_HW_UPSCALER_DEPTH_INVERTED) || (inputs->flags & RETRO_HW_UPSCALER_MV_OUTPUT_RES))
+      bad = 1;
+   if (up_count == 0)
+      up_first_reset = (inputs->flags & RETRO_HW_UPSCALER_RESET) != 0;
+   if (bad)
+   {
+      fprintf(stderr, "vk_hdr: upscaler inputs %u: mv %ux%u format %u, depth %ux%u format %u, jitter %f %f, flags %x\n",
+            up_count, inputs->motion_vectors.width, inputs->motion_vectors.height, inputs->motion_vectors.format,
+            inputs->depth.width, inputs->depth.height, inputs->depth.format, inputs->jitter_x, inputs->jitter_y, inputs->flags);
+      up_bad++;
+   }
+   up_count++;
+}
+
+static const struct retro_hw_render_upscaler_interface up_iface = {
+   RETRO_HW_RENDER_UPSCALER_INTERFACE_VERSION, NULL, up_get_request, up_set_inputs
+};
 
 static void log_cb(enum retro_log_level level, const char *fmt, ...)
 {
@@ -168,6 +237,11 @@ static bool environ_cb(unsigned cmd, void *data)
       case RETRO_ENVIRONMENT_GET_HW_RENDER_INTERFACE:
          *(const struct retro_hw_render_interface**)data = (const struct retro_hw_render_interface*)&iface;
          return true;
+      case RETRO_ENVIRONMENT_GET_HW_RENDER_UPSCALER_INTERFACE:
+         if (!up_render_w)
+            return false;
+         *(const struct retro_hw_render_upscaler_interface**)data = &up_iface;
+         return true;
       case RETRO_ENVIRONMENT_SET_HW_RENDER_CONTEXT_NEGOTIATION_INTERFACE:
       {
          const struct retro_hw_render_context_negotiation_interface *n =
@@ -252,7 +326,20 @@ static int finish(int code)
 
 /* ---- the picture back ---- */
 
+static int read_back_image(VkImage image, VkImageLayout layout, VkImageAspectFlags aspect, VkFormat format,
+      uint32_t w, uint32_t h, uint32_t bpp, const char *out);
+
 static int read_back(const char *out)
+{
+   return read_back_image(handed.create_info.image, handed.image_layout, VK_IMAGE_ASPECT_COLOR_BIT,
+         handed.create_info.format, frame_w, frame_h,
+         handed.create_info.format == VK_FORMAT_R16G16B16A16_SFLOAT ? 8 : 4, out);
+}
+
+/* (a depth image's depth, as its format lays a pixel's out: 4 bytes for
+ * D32 and D24, 2 for D16) */
+static int read_back_image(VkImage image, VkImageLayout layout, VkImageAspectFlags aspect, VkFormat format,
+      uint32_t w, uint32_t h, uint32_t bpp, const char *out)
 {
    PFN_vkCreateBuffer p_vkCreateBuffer = (PFN_vkCreateBuffer)gdpa(iface.device, "vkCreateBuffer");
    PFN_vkGetBufferMemoryRequirements p_req = (PFN_vkGetBufferMemoryRequirements)gdpa(iface.device, "vkGetBufferMemoryRequirements");
@@ -284,14 +371,12 @@ static int read_back(const char *out)
    VkCommandPool pool;
    VkCommandBuffer cmd;
    void *mapped;
-   uint32_t bpp, i, header[4];
-   VkFormat format = handed.create_info.format;
+   uint32_t i, header[4];
    FILE *f;
 
-   bpp = format == VK_FORMAT_R16G16B16A16_SFLOAT ? 8 : 4;
    memset(&bci, 0, sizeof(bci));
    bci.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-   bci.size  = (VkDeviceSize)frame_w * frame_h * bpp;
+   bci.size  = (VkDeviceSize)w * h * bpp;
    bci.usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT;
    if (p_vkCreateBuffer(iface.device, &bci, NULL, &buffer) != VK_SUCCESS)
       return 0;
@@ -324,26 +409,31 @@ static int read_back(const char *out)
    p_begin(cmd, &begin);
    memset(&b, 0, sizeof(b));
    b.sType               = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-   b.srcAccessMask       = VK_ACCESS_SHADER_READ_BIT;
+   b.srcAccessMask       = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT
+                         | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
    b.dstAccessMask       = VK_ACCESS_TRANSFER_READ_BIT;
-   b.oldLayout           = handed.image_layout;
+   b.oldLayout           = layout;
    b.newLayout           = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
    b.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
    b.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-   b.image               = handed.create_info.image;
-   b.subresourceRange    = handed.create_info.subresourceRange;
+   b.image               = image;
+   b.subresourceRange.aspectMask = aspect == VK_IMAGE_ASPECT_DEPTH_BIT
+                                 ? (VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT) : aspect;
+   b.subresourceRange.levelCount = 1;
+   b.subresourceRange.layerCount = 1;
    p_barrier(cmd, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, NULL, 0, NULL, 1, &b);
    memset(&copy, 0, sizeof(copy));
-   copy.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+   copy.imageSubresource.aspectMask = aspect;
    copy.imageSubresource.layerCount = 1;
-   copy.imageExtent.width           = frame_w;
-   copy.imageExtent.height          = frame_h;
+   copy.imageExtent.width           = w;
+   copy.imageExtent.height          = h;
    copy.imageExtent.depth           = 1;
-   p_copy(cmd, handed.create_info.image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, buffer, 1, &copy);
+   p_copy(cmd, image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, buffer, 1, &copy);
    b.srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
-   b.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+   b.dstAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT
+                   | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
    b.oldLayout     = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
-   b.newLayout     = handed.image_layout;
+   b.newLayout     = layout;
    p_barrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, 0, 0, NULL, 0, NULL, 1, &b);
    p_end(cmd);
    memset(&submit, 0, sizeof(submit));
@@ -357,11 +447,91 @@ static int read_back(const char *out)
       return 0;
    header[0] = 0x52484b56u;    /* "VKHR" */
    header[1] = (uint32_t)format;
-   header[2] = frame_w;
-   header[3] = frame_h;
+   header[2] = w;
+   header[3] = h;
    fwrite(header, sizeof(header), 1, f);
-   fwrite(mapped, 1, (size_t)frame_w * frame_h * bpp, f);
+   fwrite(mapped, 1, (size_t)w * h * bpp, f);
    fclose(f);
+   return 1;
+}
+
+/* ---- the upscaler's inputs back ---- */
+
+static float half_to_float(uint16_t h)
+{
+   const unsigned s = (h >> 15) & 1, e = (h >> 10) & 0x1f, m = h & 0x3ff;
+   float v;
+   if (e == 0)
+      v = (float)m / 1024.0f / 16384.0f;
+   else if (e == 31)
+      v = m ? NAN : INFINITY;
+   else
+      v = (1.0f + (float)m / 1024.0f) * powf(2.0f, (float)e - 15.0f);
+   return s ? -v : v;
+}
+
+/* The motion vectors to @out, checked: finite and under a pixel
+ * everywhere, the scene standing still; the depth with something in it */
+static int check_upscaler_inputs(const char *out)
+{
+   char path[1024];
+   FILE *f;
+   uint32_t header[4], n, i, drawn = 0, moving = 0, nonfinite = 0;
+   uint16_t *mv;
+   uint32_t *depth;
+   const uint32_t depth_bpp = up_inputs.depth.format == VK_FORMAT_D16_UNORM_S8_UINT ? 2 : 4;
+
+   snprintf(path, sizeof(path), "%s.mv", out);
+   if (!read_back_image((VkImage)(uintptr_t)up_inputs.motion_vectors.image, (VkImageLayout)up_inputs.motion_vectors.state,
+            VK_IMAGE_ASPECT_COLOR_BIT, (VkFormat)up_inputs.motion_vectors.format, up_render_w, up_render_h, 4, path))
+      return 0;
+   if (!(f = fopen(path, "rb")))
+      return 0;
+   n = up_render_w * up_render_h;
+   mv = (uint16_t*)malloc((size_t)n * 4);
+   if (fread(header, sizeof(header), 1, f) != 1 || fread(mv, 4, n, f) != n)
+   {
+      fclose(f);
+      return 0;
+   }
+   fclose(f);
+   for (i = 0; i < n * 2; i++)
+   {
+      const float v = half_to_float(mv[i]);
+      if (v != v || fabsf(v) == INFINITY)
+         nonfinite++;
+      else if (fabsf(v) > 1.0f)
+         moving++;
+   }
+   free(mv);
+   if (nonfinite || moving)
+   {
+      fprintf(stderr, "vk_hdr: motion vectors: %u not finite, %u over a pixel, in a scene standing still\n", nonfinite, moving);
+      return 0;
+   }
+
+   snprintf(path, sizeof(path), "%s.depth", out);
+   if (!read_back_image((VkImage)(uintptr_t)up_inputs.depth.image, (VkImageLayout)up_inputs.depth.state,
+            VK_IMAGE_ASPECT_DEPTH_BIT, (VkFormat)up_inputs.depth.format, up_render_w, up_render_h, depth_bpp, path))
+      return 0;
+   if (!(f = fopen(path, "rb")))
+      return 0;
+   depth = (uint32_t*)calloc(n, 4);
+   if (fread(header, sizeof(header), 1, f) != 1 || fread(depth, depth_bpp, n, f) != n)
+   {
+      fclose(f);
+      return 0;
+   }
+   fclose(f);
+   for (i = 0; i < n * depth_bpp / 4; i++)
+      if (depth[i] != 0)
+         drawn++;
+   free(depth);
+   if (drawn < n / 8)
+   {
+      fprintf(stderr, "vk_hdr: the depth has %u of %u pixels drawn\n", drawn, n);
+      return 0;
+   }
    return 1;
 }
 
@@ -711,6 +881,12 @@ int main(int argc, char **argv)
          return finish(2);
       }
    }
+   if (getenv("VKH_UPSCALER") && sscanf(getenv("VKH_UPSCALER"), "%ux%u:%ux%u",
+            &up_out_w, &up_out_h, &up_render_w, &up_render_h) != 4)
+   {
+      fprintf(stderr, "vk_hdr: VKH_UPSCALER is OWxOH:RWxRH\n");
+      return finish(2);
+   }
    if (!have_hw || !neg || neg->interface_version < 2 || !neg->create_device2)
    {
       fprintf(stderr, "vk_hdr: the core did not ask for Vulkan with negotiation v2\n");
@@ -825,9 +1001,28 @@ int main(int argc, char **argv)
       fprintf(stderr, "vk_hdr: the picture could not be read back\n");
       return finish(2);
    }
+   if (up_render_w)
+   {
+      if (frame_w != up_render_w || frame_h != up_render_h)
+      {
+         fprintf(stderr, "vk_hdr: the upscaler asked for %ux%u, the core drew %ux%u\n",
+               up_render_w, up_render_h, frame_w, frame_h);
+         return finish(1);
+      }
+      /* (the disc renders three frames in four through the tile accelerator) */
+      if (up_count < frames / 2 || up_bad || !up_first_reset)
+      {
+         fprintf(stderr, "vk_hdr: upscaler inputs for %u of %u frames, %u wrong, first reset %d\n",
+               up_count, frames, up_bad, up_first_reset);
+         return finish(1);
+      }
+      if (!check_upscaler_inputs(argv[3]))
+         return finish(1);
+   }
    if (validation_errors)
       return finish(1);
-   printf("vk_hdr: %u frames, pixel format %d, picture %ux%u format %d%s\n", frames, (int)pix_fmt,
-         frame_w, frame_h, (int)handed.create_info.format, validation ? ", validation clean" : "");
+   printf("vk_hdr: %u frames, pixel format %d, picture %ux%u format %d%s%s\n", frames, (int)pix_fmt,
+         frame_w, frame_h, (int)handed.create_info.format, validation ? ", validation clean" : "",
+         up_render_w ? ", upscaler inputs checked" : "");
    return finish(0);
 }

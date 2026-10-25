@@ -173,6 +173,8 @@ public:
 	}
 	vk::ShaderModule GetModVolVertexShader() const { return modules.Get(RSPV_MODVOL_VERT); }
 	vk::ShaderModule GetModVolShader() const { return modules.Get(RSPV_MODVOL_FRAG); }
+	vk::ShaderModule GetMotionVertexShader() const { return modules.Get(RSPV_MV_VERT); }
+	vk::ShaderModule GetMotionShader() const { return modules.Get(RSPV_MV_FRAG); }
 	vk::ShaderModule GetQuadVertexShader() const { return modules.Get(RSPV_QUAD_VERT); }
 	vk::ShaderModule GetQuadFragmentShader() const { return modules.Get(RSPV_QUAD_FRAG); }
 	vk::ShaderModule GetSsaaResolveVertexShader() const { return modules.Get(RSPV_SSAA_RESOLVE_VERT); }

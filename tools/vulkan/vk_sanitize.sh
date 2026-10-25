@@ -55,6 +55,9 @@ run sdr strip "reicast_alpha_sorting=per-strip (fast, least accurate)"
 run sdr pixel "reicast_alpha_sorting=per-pixel (accurate)"
 run sdr compute "reicast_alpha_sorting=per-pixel (accurate)" reicast_rendering_method=compute
 run sdr triangle-ssaa reicast_ssaa=4x
+# (the frontend's temporal upscaler: the motion vector pass, the strips matched on this side)
+VKH_UPSCALER=1440x1080:960x720 run sdr upscaler
+VKH_UPSCALER=1440x1080:960x720 run sdr upscaler-ssaa reicast_ssaa=4x
 run sdr write-out reicast_pvr2_scaler=enabled
 run hdr10 hdr10 reicast_color_format=30bit_hdr
 run scrgb scrgb reicast_color_format=64bit_scrgb reicast_hdr_display_transform=aces2

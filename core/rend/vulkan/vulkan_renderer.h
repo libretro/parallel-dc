@@ -17,6 +17,7 @@
     along with Flycast.  If not, see <https://www.gnu.org/licenses/>.
 */
 #include "vulkan.h"
+#include "rend/upscaler.h"
 #include "hw/pvr/Renderer_if.h"
 #include "hw/pvr/ta.h"
 #include "commandpool.h"
@@ -155,7 +156,8 @@ public:
 		 * be drawn from the GPU's decode, in the full parse's place; or it
 		 * is parsed as ever */
 		bool result;
-		if (!taDecoder.Ready() || !taDecoder.Prepare(ctx, TaFlags(), &result))
+		// (the upscaler's motion vectors are matched from the parse's strips: rend/upscaler.h)
+		if (!taDecoder.Ready() || upscaler_active() || !taDecoder.Prepare(ctx, TaFlags(), &result))
 			result = ta_parse_vdrc(ctx);
 		else if (result)
 			taDecoder.Record(ctx, texCommandPool);

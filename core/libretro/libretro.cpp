@@ -53,6 +53,7 @@ char* strdup(const char *str)
 #include "rend/dx12/dx12context_lr.h"
 #endif
 #include "rend/rend_method.h"
+#include "rend/upscaler.h"
 #ifdef HAVE_VULKAN
 #include "rend/vulkan/vulkan_context.h"
 #endif
@@ -1655,6 +1656,10 @@ void retro_run (void)
       }
 #endif
    }
+   /* the upscaler's render size, when it changes (rend/upscaler.h); the
+    * per-triangle Vulkan renderer draws for it */
+   if (upscaler_poll(settings.pvr.rend == 4))
+      resize_pending = true;
    if (resize_pending)
       apply_new_size();
    if (threading_pending)
@@ -2312,6 +2317,18 @@ static void retro_vk_context_reset()
    theVulkanContext.SetWindowSize(screen_width, screen_height);
    if (!theVulkanContext.Init((retro_hw_render_interface_vulkan *)vulkan))
       return;
+   /* The frontend's temporal upscaler, where it has one for this context
+    * (rend/upscaler.h): the per-triangle renderer draws for it */
+   {
+      const struct retro_hw_render_upscaler_interface *upscaler = NULL;
+      if (environ_cb(RETRO_ENVIRONMENT_GET_HW_RENDER_UPSCALER_INTERFACE, (void*)&upscaler)
+            && upscaler != NULL && upscaler->interface_version == RETRO_HW_RENDER_UPSCALER_INTERFACE_VERSION)
+         upscaler_set_interface(upscaler);
+      else
+         upscaler_set_interface(NULL);
+      if (upscaler_poll(settings.pvr.rend == 4))
+         resize_pending = true;
+   }
    /* The renderer is set up now, with the context, and not in the first
     * frame after it: its pipelines, its kernels, its buffers (rend/vulkan:
     * GPU-side TA processing's are made with it, when that is on). The
@@ -2326,6 +2343,7 @@ static void retro_vk_context_destroy()
 	rend_keep_picture();
 	rend_term_renderer();
 	renderer_changed = true;
+	upscaler_set_interface(NULL);
 	theVulkanContext.Term();
 }
 
@@ -3444,6 +3462,8 @@ static void set_geometry(struct retro_game_geometry *geometry, int *width, int *
 {
    int maximum;
 
+   int upscaler_width, upscaler_height;
+
    *width  = 640 * internal_scale;
    *height = 480 * internal_scale;
    if (wide_by_cheat)
@@ -3455,6 +3475,15 @@ static void set_geometry(struct retro_game_geometry *geometry, int *width, int *
    }
    else
       geometry->aspect_ratio = 4.0 / 3.0;
+   /* The frontend's temporal upscaler asks for the size to render at,
+    * which is the picture's then; the aspect is the game's as ever, and
+    * the upscaler's output is the frontend's viewport (rend/upscaler.h) */
+   upscaler_render_size(&upscaler_width, &upscaler_height);
+   if (upscaler_width > 0 && upscaler_height > 0)
+   {
+      *width  = upscaler_width;
+      *height = upscaler_height;
+   }
    if(naomi_cart_GetRotation() == 3)
       geometry->aspect_ratio = 1 / geometry->aspect_ratio;
    maximum               = *width > *height ? *width : *height;

@@ -138,6 +138,9 @@ private:
 	 * as the device and the video memory budget go for its attachments */
 	u32 SsaaSamples() const
 	{
+		// (the upscaler is the anti-aliasing then, and reads the depth, which SSAA's samples are not)
+		if (upscaler_active())
+			return 1;
 		const vk::Extent2D size = GetContext()->GetViewPort();
 		return GetContext()->SsaaSamples(settings.rend.Ssaa, ssaa_per_sample_kib(size.width, size.height, 4 + GetContext()->GetDepthBytes()),
 				0, true, "Vulkan per-triangle renderer");
