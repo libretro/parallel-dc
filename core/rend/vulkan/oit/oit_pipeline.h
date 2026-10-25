@@ -270,15 +270,16 @@ public:
 
 	/* @samples: SSAA's (1: off), which the shader manager has been given too.
 	 * The general pipelines and the fixed ones are made here. */
-	virtual void Init(OITShaderManager *shaderManager, OITBuffers *oitBuffers, u32 samples = 1)
+	virtual void Init(OITShaderManager *shaderManager, OITBuffers *oitBuffers, u32 samples = 1, bool keepDepth = false)
 	{
 		this->shaderManager = shaderManager;
 		shaderManager->Init();
-		if (samples != renderPasses->GetSamples())
+		if (samples != renderPasses->GetSamples() || keepDepth != renderPasses->KeepsDepth())
 		{
-			// everything was made for the render passes of the other count
+			// everything was made for the other render passes
 			Reset();
 			renderPasses->SetSamples(samples);
+			renderPasses->SetKeepDepth(keepDepth);
 		}
 		if ((samples > 1 && oitBuffers->Sums()) != sums)
 		{
@@ -477,13 +478,13 @@ class RttOITPipelineManager : public OITPipelineManager
 {
 public:
 	RttOITPipelineManager() { renderPasses = &rttRenderPasses; who = 4; }
-	void Init(OITShaderManager *shaderManager, OITBuffers *oitBuffers, u32 samples = 1) override
+	void Init(OITShaderManager *shaderManager, OITBuffers *oitBuffers, u32 samples = 1, bool keepDepth = false) override
 	{
 		this->oitBuffers = oitBuffers;
 		// (what was made for the render passes goes before they do)
 		Reset();
 		rttRenderPasses.Reset();
-		OITPipelineManager::Init(shaderManager, oitBuffers, samples);
+		OITPipelineManager::Init(shaderManager, oitBuffers, samples, keepDepth);
 	}
 
 private:

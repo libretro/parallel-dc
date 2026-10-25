@@ -58,6 +58,7 @@ run sdr triangle-ssaa reicast_ssaa=4x
 # (the frontend's temporal upscaler: the motion vector pass, the strips matched on this side)
 VKH_UPSCALER=1440x1080:960x720 run sdr upscaler
 VKH_UPSCALER=1440x1080:960x720 run sdr upscaler-ssaa reicast_ssaa=4x
+VKH_UPSCALER=1440x1080:960x720 run sdr upscaler-pixel "reicast_alpha_sorting=per-pixel (accurate)"
 run sdr write-out reicast_pvr2_scaler=enabled
 run hdr10 hdr10 reicast_color_format=30bit_hdr
 run scrgb scrgb reicast_color_format=64bit_scrgb reicast_hdr_display_transform=aces2

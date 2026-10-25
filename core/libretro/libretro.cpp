@@ -683,6 +683,15 @@ static void set_variable_visibility(void)
    option_display.key = CORE_OPTION_NAME "_show_vmu_screen_settings";
    environ_cb(RETRO_ENVIRONMENT_SET_CORE_OPTIONS_DISPLAY, &option_display);
 
+   /* The frontend's temporal upscaler sets the size the picture is
+    * rendered at and is its anti-aliasing (rend/upscaler.h): while it
+    * has the frames, neither of these has any effect */
+   option_display.visible = !upscaler_active();
+   option_display.key = CORE_OPTION_NAME "_internal_resolution";
+   environ_cb(RETRO_ENVIRONMENT_SET_CORE_OPTIONS_DISPLAY, &option_display);
+   option_display.key = CORE_OPTION_NAME "_ssaa";
+   environ_cb(RETRO_ENVIRONMENT_SET_CORE_OPTIONS_DISPLAY, &option_display);
+
    // Only if texture upscaling is enabled
    option_display.visible = settings.rend.TextureUpscale > 1;
    option_display.key = CORE_OPTION_NAME "_texupscale_max_filtered_texture_size";
@@ -1657,9 +1666,12 @@ void retro_run (void)
 #endif
    }
    /* the upscaler's render size, when it changes (rend/upscaler.h); the
-    * per-triangle Vulkan renderer draws for it */
-   if (upscaler_poll(settings.pvr.rend == 4))
+    * Vulkan per-triangle and per-pixel renderers draw for it */
+   if (upscaler_poll(settings.pvr.rend == 4 || settings.pvr.rend == 5))
+   {
       resize_pending = true;
+      set_variable_visibility();
+   }
    if (resize_pending)
       apply_new_size();
    if (threading_pending)
@@ -2318,7 +2330,7 @@ static void retro_vk_context_reset()
    if (!theVulkanContext.Init((retro_hw_render_interface_vulkan *)vulkan))
       return;
    /* The frontend's temporal upscaler, where it has one for this context
-    * (rend/upscaler.h): the per-triangle renderer draws for it */
+    * (rend/upscaler.h): the Vulkan renderers draw for it */
    {
       const struct retro_hw_render_upscaler_interface *upscaler = NULL;
       if (environ_cb(RETRO_ENVIRONMENT_GET_HW_RENDER_UPSCALER_INTERFACE, (void*)&upscaler)
@@ -2326,8 +2338,11 @@ static void retro_vk_context_reset()
          upscaler_set_interface(upscaler);
       else
          upscaler_set_interface(NULL);
-      if (upscaler_poll(settings.pvr.rend == 4))
+      if (upscaler_poll(settings.pvr.rend == 4 || settings.pvr.rend == 5))
+      {
          resize_pending = true;
+         set_variable_visibility();
+      }
    }
    /* The renderer is set up now, with the context, and not in the first
     * frame after it: its pipelines, its kernels, its buffers (rend/vulkan:

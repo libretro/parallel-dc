@@ -34,10 +34,10 @@ vk::UniqueRenderPass RenderPasses::MakeRenderPass(bool initial, bool last, bool 
 					last ? vk::AttachmentStoreOp::eDontCare : vk::AttachmentStoreOp::eStore,
 					vk::AttachmentLoadOp::eDontCare, vk::AttachmentStoreOp::eDontCare,
 					initial ? vk::ImageLayout::eUndefined : vk::ImageLayout::eShaderReadOnlyOptimal, vk::ImageLayout::eShaderReadOnlyOptimal),
-			// OP+PT depth attachment
+			// OP+PT depth attachment (kept after the last render pass for the upscaler, when there is one)
 			vk::AttachmentDescription(vk::AttachmentDescriptionFlags(), GetContext()->GetDepthFormat(), vk::SampleCountFlagBits::e1,
 					initial ? vk::AttachmentLoadOp::eClear : vk::AttachmentLoadOp::eLoad,
-					last ? vk::AttachmentStoreOp::eDontCare : vk::AttachmentStoreOp::eStore,
+					last && !keepDepth ? vk::AttachmentStoreOp::eDontCare : vk::AttachmentStoreOp::eStore,
 					vk::AttachmentLoadOp::eClear, vk::AttachmentStoreOp::eDontCare,
 					initial ? vk::ImageLayout::eUndefined : vk::ImageLayout::eDepthStencilReadOnlyOptimal, vk::ImageLayout::eDepthStencilReadOnlyOptimal),
     };

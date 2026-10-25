@@ -22,6 +22,7 @@
 #include "../vulkan.h"
 #include "../vulkan_renderer.h"
 #include "oit_drawer.h"
+#include "rend/upscaler.h"
 #include "oit_shaders.h"
 #include "oit_buffer.h"
 #include "rend/ssaa_pattern.h"
@@ -211,6 +212,9 @@ private:
 	 * the video memory budget go for its attachments, after the lists */
 	u32 SsaaSamples() const
 	{
+		// (the upscaler is the anti-aliasing then, and reads the depth, which SSAA's samples are not)
+		if (upscaler_active())
+			return 1;
 		const vk::Extent2D size = GetContext()->GetViewPort();
 		return GetContext()->SsaaSamples(settings.rend.Ssaa, ssaa_per_sample_kib(size.width, size.height, 4 + GetContext()->GetDepthBytes()),
 				(u32)(oitBuffers.PlannedSize(size.width, size.height) >> 10), false, "Vulkan per-pixel renderer");

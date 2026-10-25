@@ -72,6 +72,18 @@ public:
 		}
 	}
 	u32 GetSamples() const { return samples; }
+	/* The depth left by the frame's last render pass stored (the temporal
+	 * upscaler reads it, rend/upscaler.h): the render passes made the
+	 * other way are dropped */
+	void SetKeepDepth(bool keep)
+	{
+		if (keep != keepDepth)
+		{
+			Reset();
+			keepDepth = keep;
+		}
+	}
+	bool KeepsDepth() const { return keepDepth; }
 	/* The subpasses with SSAA: 0 depth and stencil, 1 colour and the
 	 * translucent lists, 2 the translucent modifier volumes (and, in a
 	 * render pass that is not the last, each sample put together, and the
@@ -103,6 +115,7 @@ protected:
 private:
 	std::array<vk::UniqueRenderPass, 16> renderPasses;
 	u32 samples = 1;
+	bool keepDepth = false;
 };
 
 class RttRenderPasses : public RenderPasses

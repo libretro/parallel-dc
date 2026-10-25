@@ -39,6 +39,7 @@
 #include "rend/depth_scale.h"
 #include "rend/ta_gpu.h"
 #include "rend/upscaler.h"
+#include "motion_pass.h"
 
 class BaseDrawer
 {
@@ -312,9 +313,7 @@ public:
 		ssaaResolve.Term();
 		msQuadPipeline.Term();
 		timer.Term();
-		for (auto& pipeline : motionPipelines)
-			pipeline.reset();
-		motionRenderPass.reset();
+		motionPass.Term(nullptr);
 		/* (the pipeline thread finishes what it is making for it now,
 		 * while the shaders those pipelines are made of are still there) */
 		screenPipelineManager.reset();
@@ -348,13 +347,6 @@ protected:
 	virtual vk::Extent2D ResolveExtent() const override { return viewport; }
 
 private:
-	/* The temporal upscaler's (rend/upscaler.h): the motion vector pass
-	 * drawn after the frame's render pass, over the depth it left, which
-	 * is then kept for the upscaler with the vectors */
-	void MakeMotionPass();
-	void RecordMotionVectors(vk::CommandBuffer commandBuffer);
-	void SubmitUpscalerInputs();
-
 	std::unique_ptr<PipelineManager> screenPipelineManager;
 
 	vk::UniqueRenderPass renderPass;
@@ -381,18 +373,12 @@ private:
 	GpuFrameTimer timer;
 	vk::Extent2D viewport;
 	ShaderManager *shaderManager = nullptr;
-	/* For the upscaler: the depth is one an image, kept and readable, as
-	 * are the motion vectors; the pass that draws them, its pipelines by
-	 * cull mode, and where each vertex was last frame (its vertex stream) */
+	/* For the upscaler (rend/upscaler.h): the depth is one an image, kept
+	 * and readable, and the motion vector pass draws over it after the
+	 * frame's render pass */
 	bool upscaled = false;
 	std::vector<std::unique_ptr<FramebufferAttachment>> depthAttachments;
-	std::vector<std::unique_ptr<FramebufferAttachment>> motionAttachments;
-	std::vector<vk::UniqueFramebuffer> motionFramebuffers;
-	vk::UniqueRenderPass motionRenderPass;
-	vk::UniquePipeline motionPipelines[3];
-	std::vector<std::unique_ptr<BufferData>> prevXyBuffers;
-	std::vector<float> prevXy;
-	bool motionRecorded = false;
+	MotionVectorPass motionPass;
 };
 
 class TextureDrawer : public Drawer

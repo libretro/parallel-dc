@@ -364,7 +364,11 @@ bool OITDrawer::Draw(const Texture *fogTexture, const Texture *paletteTexture)
 	{
 		needDepthTransition = false;
 		// Not convinced that this is really needed but it makes validation layers happy
-		setImageLayout(cmdBuffer, depthAttachment->GetImage(), GetContext()->GetDepthFormat(), 1, vk::ImageLayout::eUndefined, vk::ImageLayout::eDepthStencilReadOnlyOptimal);
+		if (upscaled)
+			for (const auto& attachment : depthAttachments)
+				setImageLayout(cmdBuffer, attachment->GetImage(), GetContext()->GetDepthFormat(), 1, vk::ImageLayout::eUndefined, vk::ImageLayout::eDepthStencilReadOnlyOptimal);
+		else
+			setImageLayout(cmdBuffer, depthAttachment->GetImage(), GetContext()->GetDepthFormat(), 1, vk::ImageLayout::eUndefined, vk::ImageLayout::eDepthStencilReadOnlyOptimal);
 	}
 
 	OITDescriptorSets::FragmentShaderUniforms fragUniforms = MakeFragmentUniforms<OITDescriptorSets::FragmentShaderUniforms>();
@@ -402,8 +406,8 @@ bool OITDrawer::Draw(const Texture *fogTexture, const Texture *paletteTexture)
 	const vk::Buffer mainBuffer = GetMainBuffer(0)->buffer.get();
 	GetCurrentDescSet().UpdateUniforms(vertexUniformBuffer, mainBuffer, offsets.fragmentUniformOffset,
 			fogTexture->GetImageView(), offsets.polyParamsOffset,
-			offsets.polyParamsSize, depthAttachment->GetStencilView(),
-			depthAttachment->GetImageView(), paletteTexture->GetImageView(),
+			offsets.polyParamsSize, Depth()->GetStencilView(),
+			Depth()->GetImageView(), paletteTexture->GetImageView(),
 			RenderPasses::DepthInputLayout(depthWrites),
 			pvrrc.gpu ? gpuDraw->trParams : vk::Buffer(), pvrrc.gpu ? gpuDraw->trParamsSize : 0);
 	GetCurrentDescSet().BindPerFrameDescriptorSets(cmdBuffer);
@@ -490,7 +494,7 @@ bool OITDrawer::Draw(const Texture *fogTexture, const Texture *paletteTexture)
     		// (the samples carry on to the next render pass; the picture is written by the last)
     		targetFramebuffer = GetFinalFramebuffer();
     	else if (!finalPass)
-    		targetFramebuffer = *tempFramebuffers[(pvrrc.render_passes.used() - 1 - render_pass) % 2];
+    		targetFramebuffer = *tempFramebuffers[upscaled ? GetCurrentImage() : 0][(pvrrc.render_passes.used() - 1 - render_pass) % 2];
     	else
     		targetFramebuffer = GetFinalFramebuffer();
     	cmdBuffer.beginRenderPass(
@@ -674,10 +678,11 @@ void OITDrawer::MakeBuffers(int width, int height)
 
 	// (made again for another count of samples)
 	const u32 samples = pipelineManager->GetSamples();
-	if (samples != attachmentSamples)
+	if (samples != attachmentSamples || upscaled != attachmentsUpscaled)
 	{
 		maxWidth = maxHeight = 0;
 		attachmentSamples = samples;
+		attachmentsUpscaled = upscaled;
 	}
 	if (width <= maxWidth && height <= maxHeight)
 		return;
@@ -702,23 +707,51 @@ void OITDrawer::MakeBuffers(int width, int height)
 
 	if (depthAttachment)
 		commandPool->DeferDelete(std::move(depthAttachment));
-	depthAttachment = std::unique_ptr<FramebufferAttachment>(
-			new FramebufferAttachment(GetContext()->GetPhysicalDevice(), GetContext()->GetDevice()));
-	depthAttachment->Init(maxWidth, maxHeight, GetContext()->GetDepthFormat(),
-			vk::ImageUsageFlagBits::eDepthStencilAttachment | vk::ImageUsageFlagBits::eInputAttachment);
+	for (auto& attachment : depthAttachments)
+		if (attachment)
+			commandPool->DeferDelete(std::move(attachment));
+	depthAttachments.clear();
+	if (upscaled)
+	{
+		// the frame's depth, kept, sampled and copied from (the frontend reads it as it likes)
+		for (int i = 0; i < GetContext()->GetSwapChainSize(); i++)
+		{
+			depthAttachments.push_back(std::unique_ptr<FramebufferAttachment>(
+					new FramebufferAttachment(GetContext()->GetPhysicalDevice(), GetContext()->GetDevice())));
+			depthAttachments.back()->Init(maxWidth, maxHeight, GetContext()->GetDepthFormat(),
+					vk::ImageUsageFlagBits::eDepthStencilAttachment | vk::ImageUsageFlagBits::eInputAttachment
+					| vk::ImageUsageFlagBits::eSampled | vk::ImageUsageFlagBits::eTransferSrc);
+		}
+	}
+	else
+	{
+		depthAttachment = std::unique_ptr<FramebufferAttachment>(
+				new FramebufferAttachment(GetContext()->GetPhysicalDevice(), GetContext()->GetDevice()));
+		depthAttachment->Init(maxWidth, maxHeight, GetContext()->GetDepthFormat(),
+				vk::ImageUsageFlagBits::eDepthStencilAttachment | vk::ImageUsageFlagBits::eInputAttachment);
+	}
 	needDepthTransition = true;
 
-	vk::ImageView attachments[] = {
-			colorAttachments[1]->GetImageView(),
-			colorAttachments[0]->GetImageView(),
-			depthAttachment->GetImageView(),
-	};
-	vk::FramebufferCreateInfo createInfo(vk::FramebufferCreateFlags(), pipelineManager->GetRenderPass(true, true),
-			ARRAY_SIZE(attachments), attachments, width, height, 1);
-	tempFramebuffers[0] = GetContext()->GetDevice().createFramebufferUnique(createInfo);
-	attachments[0] = attachments[1];
-	attachments[1] = colorAttachments[1]->GetImageView();
-	tempFramebuffers[1] = GetContext()->GetDevice().createFramebufferUnique(createInfo);
+	for (auto& pair : tempFramebuffers)
+		for (auto& framebuffer : pair)
+			if (framebuffer)
+				commandPool->DeferDelete(std::unique_ptr<vk::UniqueFramebuffer>(new vk::UniqueFramebuffer(std::move(framebuffer))));
+	tempFramebuffers.clear();
+	tempFramebuffers.resize(upscaled ? GetContext()->GetSwapChainSize() : 1);
+	for (size_t i = 0; i < tempFramebuffers.size(); i++)
+	{
+		vk::ImageView attachments[] = {
+				colorAttachments[1]->GetImageView(),
+				colorAttachments[0]->GetImageView(),
+				upscaled ? depthAttachments[i]->GetImageView() : depthAttachment->GetImageView(),
+		};
+		vk::FramebufferCreateInfo createInfo(vk::FramebufferCreateFlags(), pipelineManager->GetRenderPass(true, true),
+				ARRAY_SIZE(attachments), attachments, width, height, 1);
+		tempFramebuffers[i][0] = GetContext()->GetDevice().createFramebufferUnique(createInfo);
+		attachments[0] = attachments[1];
+		attachments[1] = colorAttachments[1]->GetImageView();
+		tempFramebuffers[i][1] = GetContext()->GetDevice().createFramebufferUnique(createInfo);
+	}
 }
 
 /* SSAA: one image of samples for the colour, one for the depth, for all
@@ -732,9 +765,15 @@ void OITDrawer::MakeSampleAttachments()
 	for (auto& attachment : colorAttachments)
 		if (attachment)
 			commandPool->DeferDelete(std::move(attachment));
-	for (auto& framebuffer : tempFramebuffers)
-		if (framebuffer)
-			commandPool->DeferDelete(std::unique_ptr<vk::UniqueFramebuffer>(new vk::UniqueFramebuffer(std::move(framebuffer))));
+	for (auto& pair : tempFramebuffers)
+		for (auto& framebuffer : pair)
+			if (framebuffer)
+				commandPool->DeferDelete(std::unique_ptr<vk::UniqueFramebuffer>(new vk::UniqueFramebuffer(std::move(framebuffer))));
+	tempFramebuffers.clear();
+	for (auto& attachment : depthAttachments)
+		if (attachment)
+			commandPool->DeferDelete(std::move(attachment));
+	depthAttachments.clear();
 	colorAttachments[0] = std::unique_ptr<FramebufferAttachment>(
 			new FramebufferAttachment(GetContext()->GetPhysicalDevice(), GetContext()->GetDevice()));
 	colorAttachments[0]->Init(maxWidth, maxHeight, GetColorFormat(),
@@ -798,7 +837,7 @@ void OITScreenDrawer::MakeFramebuffers()
 		vk::ImageView attachments[] = {
 				finalColorAttachments.back()->GetImageView(),
 				colorAttachments[0]->GetImageView(),
-				depthAttachment->GetImageView(),
+				upscaled ? depthAttachments[finalColorAttachments.size() - 1]->GetImageView() : depthAttachment->GetImageView(),
 		};
 		vk::FramebufferCreateInfo createInfo(vk::FramebufferCreateFlags(), screenPipelineManager->GetRenderPass(true, true),
 				ARRAY_SIZE(attachments), attachments, viewport.extent.width, viewport.extent.height, 1);
@@ -1014,6 +1053,13 @@ vk::CommandBuffer OITScreenDrawer::NewFrame()
 	timer.Begin(commandBuffer, commandPool->GetIndex());
 
 	matrices.CalcMatrices(&pvrrc);
+	// the frame drawn under this frame's jitter, its strips matched for the motion vector pass
+	if (upscaled && motionPass.Begin(GetCurrentImage()))
+	{
+		float jx, jy;
+		upscaler_jitter(&jx, &jy);
+		matrices.Jitter(jx, jy);
+	}
 	vertexUniformBuffer = WriteVertexUniforms<OITDescriptorSets::VertexShaderUniforms>(commandBuffer, GetCurrentImage());
 
 	SetBaseScissor();

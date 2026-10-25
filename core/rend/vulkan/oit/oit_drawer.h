@@ -31,6 +31,7 @@
 #include "../quad.h"
 #include "oit_buffer.h"
 #include "../drawer.h"
+#include "../motion_pass.h"
 
 class OITDrawer : public BaseDrawer
 {
@@ -82,9 +83,9 @@ protected:
 		quadBuffer.reset();
 		colorAttachments[0].reset();
 		colorAttachments[1].reset();
-		tempFramebuffers[0].reset();
-		tempFramebuffers[1].reset();
+		tempFramebuffers.clear();
 		depthAttachment.reset();
+		depthAttachments.clear();
 		mainBuffers.clear();
 		vertexUniformBuffers.clear();
 		descriptorSets.clear();
@@ -120,6 +121,7 @@ protected:
 
 	void MakeBuffers(int width, int height);
 	void MakeSampleAttachments();
+	vk::DeviceSize GetIndexOffset() const { return offsets.indexOffset; }
 	void ChooseBands();
 	// (what the lists of fragments a render pass asked for: OITBuffers::CountPass())
 	void CountPass(vk::CommandBuffer cmdBuffer) { oitBuffers->CountPass(cmdBuffer); }
@@ -142,11 +144,18 @@ protected:
 	vk::Rect2D band;	// the one being drawn; no height when not in bands
 	std::array<std::unique_ptr<FramebufferAttachment>, 2> colorAttachments;
 	std::unique_ptr<FramebufferAttachment> depthAttachment;
+	/* For the temporal upscaler (rend/upscaler.h): the depth is one an
+	 * image, kept past the frame and readable, as the frontend has the
+	 * frames for a while; one for all otherwise */
+	bool upscaled = false;
+	std::vector<std::unique_ptr<FramebufferAttachment>> depthAttachments;
+	FramebufferAttachment *Depth() const { return upscaled ? depthAttachments[GetCurrentImage()].get() : depthAttachment.get(); }
 	vk::CommandBuffer currentCommandBuffer;
 	OITPipelineManager *pipelineManager = nullptr;
 	int maxWidth = 0;
 	int maxHeight = 0;
 	u32 attachmentSamples = 1;	// SSAA's, of the attachments made
+	bool attachmentsUpscaled = false;	// ...and whether they were made for the upscaler
 
 private:
    void DrawPoly(const vk::CommandBuffer& cmdBuffer, u32 listType, bool autosort, Pass pass,
@@ -168,7 +177,8 @@ private:
 
 	std::unique_ptr<QuadBuffer> quadBuffer;
 
-	std::array<vk::UniqueFramebuffer, 2> tempFramebuffers;
+	// the render passes' before the last, two taking turns; by image when the depth is one an image
+	std::vector<std::array<vk::UniqueFramebuffer, 2>> tempFramebuffers;
 
 	SamplerManager *samplerManager = nullptr;
 	OITBuffers *oitBuffers = nullptr;
@@ -182,14 +192,29 @@ class OITScreenDrawer : public OITDrawer
 {
 public:
 	// @samples: SSAA's (1: off), which the shader manager has been given
+	// @samples: SSAA's (1: off), which the shader manager has been given
 	void Init(SamplerManager *samplerManager, OITShaderManager *shaderManager, OITBuffers *oitBuffers, u32 samples)
 	{
+		// (the upscaler wants the depth kept, which SSAA's samples are not)
+		upscaled = upscaler_active() && samples == 1;
 		if (!screenPipelineManager)
 			screenPipelineManager = std::unique_ptr<OITPipelineManager>(new OITPipelineManager());
-		screenPipelineManager->Init(shaderManager, oitBuffers, samples);
+		screenPipelineManager->Init(shaderManager, oitBuffers, samples, upscaled);
 		OITDrawer::Init(samplerManager, screenPipelineManager.get(), oitBuffers);
 
 		MakeFramebuffers();
+		if (upscaled)
+		{
+			std::vector<vk::ImageView> depthViews;
+			for (const auto& attachment : depthAttachments)
+				depthViews.push_back(attachment->GetImageView());
+			motionPass.Init(viewport.extent, GetContext()->GetDepthFormat(), vk::ImageLayout::eDepthStencilReadOnlyOptimal,
+					depthViews, screenPipelineManager->GetPipelineLayout(),
+					shaderManager->GetMotionVertexShader(), shaderManager->GetMotionShader(), commandPool);
+		}
+		else
+			motionPass.Term(commandPool);
+		upscaler_reset();
 		timer.Init(GetContext()->GetSwapChainSize(), "per-pixel renderer");
 	}
 	// the subpass the screen's last things are drawn in (the VMUs, the OSD)
@@ -198,6 +223,7 @@ public:
 	{
 		timer.Term();
 		writeOut.Term();
+		motionPass.Term(nullptr);
 		screenPipelineManager.reset();
 		framebuffers.clear();
 		finalColorAttachments.clear();
@@ -221,6 +247,12 @@ public:
 		else
 			writeOut.Record(currentCommandBuffer, GetCurrentImage(), finalColorAttachments[GetCurrentImage()]->GetImage(),
 					finalColorAttachments[GetCurrentImage()]->GetImageView(), viewport.extent.width, viewport.extent.height);
+		if (motionPass.Recorded())
+		{
+			// the motion vectors over the depth the frame left (what went over the picture may have bound its own)
+			GetCurrentDescSet().BindPerFrameDescriptorSets(currentCommandBuffer);
+			motionPass.Record(currentCommandBuffer, GetCurrentImage(), GetMainBuffer(0)->buffer.get(), GetIndexOffset(), baseScissor);
+		}
 		CountPass(currentCommandBuffer);
 		timer.End(currentCommandBuffer, commandPool->GetIndex());
 		currentCommandBuffer.end();
@@ -228,6 +260,8 @@ public:
 		/* (with SSAA, the samples' channel sums the last pass stored, when
 		 * it did: no write-out pass came after it) */
 		Present(screenPipelineManager->Sums() && !writeOut.Runs(viewport.extent.height) ? GetSumsView() : vk::ImageView());
+		if (motionPass.Recorded())
+			motionPass.Submit(GetCurrentImage(), Depth()->GetImage(), Depth()->GetImageView(), GetContext()->GetDepthFormat());
 	}
 	vk::RenderPass GetRenderPass() const { return screenPipelineManager->GetRenderPass(false, true); }
 	/* The chip's write-out (../writeout.h), when the frame has one: the
@@ -346,6 +380,7 @@ private:
 
 	std::vector<std::unique_ptr<FramebufferAttachment>> finalColorAttachments;
 	QuadPipeline *lastPicturePipeline = nullptr;
+	MotionVectorPass motionPass;
 	QuadDrawer lastPicture;
 	bool havePicture = false;	/* the image before this one holds the last frame */
 	vk::ImageView restoredPicture;	/* ...or this does: the picture kept from the context before */
