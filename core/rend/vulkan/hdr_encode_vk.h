@@ -111,11 +111,9 @@ void hdr_vk_subpass_draw(hdr_vk_t *e, const struct hdr_output *out, VkCommandBuf
  * undrawn then */
 bool hdr_vk_post_active(void);
 
-/* What hdr_vk_encode()'s channel sums are of: whatever the samples a
- * pixel that were resolved (SSAA's, and the X scaler's pair of pixels'),
- * N of them, a sum is (2^HDR_VK_SUMS_LOG2 / N) times the samples' */
-#define HDR_VK_SUMS_LOG2    4
-#define HDR_VK_SUMS_SAMPLES (1 << HDR_VK_SUMS_LOG2)
+/* What hdr_vk_encode()'s channel sums are of (hdr_output.h) */
+#define HDR_VK_SUMS_LOG2    HDR_SUMS_LOG2
+#define HDR_VK_SUMS_SAMPLES HDR_SUMS_SAMPLES
 
 /* The pipeline hdr_vk_encode() takes the channel sums with, made now:
  * before the frames, by a renderer that will hand them over. False when

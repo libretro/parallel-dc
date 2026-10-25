@@ -412,6 +412,14 @@ struct Pixel
 RWStructuredBuffer<Pixel> PixelBuffer : register(u1);
 RWTexture2D<uint> abufferPointers : register(u2);
 RWByteAddressBuffer PixelCounter : register(u3);
+#if defined(DX12_OIT_SUMS)
+/* With the HDR output, the SSAA resolve's channel sums too, scaled to 16
+ * samples (hdr_output.h's HDR_SUMS_LOG2), for the encode to have the exact
+ * average the picture was rounded from. (Its own bytecode, of its own
+ * compiler: tools/rend/kernels_dx12.sh leaves these blocks out of the
+ * others'.) */
+RWTexture2D<uint4> oitSums : register(u4);
+#endif /* DX12_OIT_SUMS */
 #ifdef DX12_SSAA
 // (SSAA: the samples' - the per-pixel renderer's table of views is the one of them then)
 Texture2DMS<uint2> shadow_stencil : register(t4);
@@ -1087,6 +1095,12 @@ float4 main(float4 pos : SV_Position) : SV_Target
 	}
 	// The lists start empty for the next pass, or the next frame
 	abufferPointers[coords] = EOL;
+#if defined(DX12_OIT_SUMS)
+	{
+		const uint srb = rb << (4u - ssaaLog2), sga = ga << (4u - ssaaLog2);
+		oitSums[coords] = uint4(srb & 0xffffu, sga & 0xffffu, srb >> 16, sga >> 16);
+	}
+#endif /* DX12_OIT_SUMS */
 	return unpackUnorm8(pvr_resolve_join(rb, ga, ssaaLog2));
 }
 #elif defined(DX12_SSAA)

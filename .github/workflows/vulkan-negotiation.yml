@@ -10,8 +10,10 @@ name: Vulkan negotiation
 # cube baked in place, under TSan and ASan/UBSan: tools/hdr/hdr_cube.sh.
 # And Direct3D 11 and 12's HDR encoders and their DXBC, under wine (wined3d
 # and vkd3d on lavapipe), against the GLSL: tools/hdr/hdr_d3d.sh; and the
-# core's Windows build drawing with Direct3D 11 under wine, its 24-bit,
-# HDR10 and scRGB pictures read back and judged: tools/hdr/d3d_hdr.sh.
+# core's Windows build drawing with Direct3D 11 and 12 under wine, its
+# 24-bit, HDR10 and scRGB pictures read back and judged:
+# tools/hdr/d3d_hdr.sh. SSAA's exact average on Direct3D 12 is the
+# encoders' (hdr_d3d 12ssaa, 12sums): wine's vkd3d cannot draw SSAA.
 # The HDR post effects (bloom, halation, chromatic aberration) are judged
 # in each against what the CPU makes of the picture (vk_hdr --post).
 
@@ -23,6 +25,7 @@ on:
       - 'core/rend/dx11/**'
       - 'core/rend/dx12/**'
       - 'tools/rend/kernels_dxbc.sh'
+      - 'tools/rend/kernels_dx12.sh'
       - 'tools/hdr/**'
       - 'core/libretro/**'
       - 'tools/threads/live_disc.py'
@@ -36,6 +39,7 @@ on:
       - 'core/rend/dx11/**'
       - 'core/rend/dx12/**'
       - 'tools/rend/kernels_dxbc.sh'
+      - 'tools/rend/kernels_dx12.sh'
       - 'tools/hdr/**'
       - 'core/libretro/**'
       - 'tools/threads/live_disc.py'
@@ -68,7 +72,9 @@ jobs:
       - name: HDR output's HLSL against its GLSL
         run: VK_DRIVER_FILES=/usr/share/vulkan/icd.d/lvp_icd.json sh tools/vulkan/hdr_hlsl.sh
       - name: HDR output's DXBC is its HLSL's (sums)
-        run: sh tools/rend/kernels_dxbc.sh check
+        run: |
+          sh tools/rend/kernels_dxbc.sh check
+          sh tools/rend/kernels_dx12.sh check
       - name: HDR output with Direct3D 11 and 12 (wine, the core's encoders, against the GLSL)
         run: VK_DRIVER_FILES=/usr/share/vulkan/icd.d/lvp_icd.json sh tools/hdr/hdr_d3d.sh
       - name: ACES 2.0 (Full)'s cube baked off the frame (threads, TSan, ASan/UBSan, no threads)
@@ -89,5 +95,5 @@ jobs:
             build-essential mingw-w64 wine wine64 xvfb mesa-vulkan-drivers libvulkan1 python3
       - name: Build the core for Windows
         run: make -j"$(nproc)" platform=win CC=x86_64-w64-mingw32-gcc CXX=x86_64-w64-mingw32-g++
-      - name: HDR output with Direct3D 11 (24-bit, refused, HDR10, scRGB, each renderer)
+      - name: HDR output with Direct3D 11 and 12 (24-bit, refused, HDR10, scRGB, each renderer)
         run: VK_DRIVER_FILES=/usr/share/vulkan/icd.d/lvp_icd.json sh tools/hdr/d3d_hdr.sh parallel_dc_libretro.dll

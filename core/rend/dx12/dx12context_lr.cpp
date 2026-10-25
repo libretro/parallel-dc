@@ -298,6 +298,8 @@ bool DX12Context::Init(const struct retro_hw_render_interface_d3d12 *iface)
 		uav.ViewDimension = D3D12_UAV_DIMENSION_TEXTURE2D;
 		for (u32 i = UavFirst; i < SrvHeapSize; i++)
 			device->CreateUnorderedAccessView(nullptr, nullptr, &uav, srvHeap.Cpu(i));
+		uav.Format = DXGI_FORMAT_R16G16B16A16_UINT;
+		device->CreateUnorderedAccessView(nullptr, nullptr, &uav, srvHeap.Cpu(OitSumsSlot));
 	}
 	ok = ok && MakeRootSignatures();
 	if (!ok)
@@ -349,7 +351,8 @@ bool DX12Context::MakeRootSignatures()
 	 * renderer's (see shaders/dx12_raster.hlsl): its lists, heads and
 	 * counter (u1 to u3), the stencil (t4) and the depth (t6) are one table
 	 * at OitFirst of the heap, its translucent polygons' parameters (t5) a
-	 * root descriptor */
+	 * root descriptor; and with the HDR output and SSAA, the channel sums
+	 * its resolve stores (u4) a table of their own, at OitSumsSlot */
 	D3D12_DESCRIPTOR_RANGE srvRange = { D3D12_DESCRIPTOR_RANGE_TYPE_SRV, DX12_SRV_TABLE_SIZE, 0, 1, 0 };
 	D3D12_DESCRIPTOR_RANGE samplerRange = { D3D12_DESCRIPTOR_RANGE_TYPE_SAMPLER, DX12_SAMPLER_TABLE_SIZE, 0, 1, 0 };
 	D3D12_DESCRIPTOR_RANGE oitRanges[3] = {
@@ -357,7 +360,8 @@ bool DX12Context::MakeRootSignatures()
 		{ D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 4, 0, 3 },
 		{ D3D12_DESCRIPTOR_RANGE_TYPE_SRV, 1, 6, 0, 4 },
 	};
-	D3D12_ROOT_PARAMETER params[7]{};
+	D3D12_DESCRIPTOR_RANGE sumsRange = { D3D12_DESCRIPTOR_RANGE_TYPE_UAV, 1, 4, 0, 0 };
+	D3D12_ROOT_PARAMETER params[8]{};
 	params[0].ParameterType = D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS;
 	params[0].Constants = { 1, 0, PolyConstantCount };
 	params[0].ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
@@ -379,6 +383,9 @@ bool DX12Context::MakeRootSignatures()
 	params[6].ParameterType = D3D12_ROOT_PARAMETER_TYPE_SRV;
 	params[6].Descriptor = { 5, 0 };
 	params[6].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
+	params[7].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
+	params[7].DescriptorTable = { 1, &sumsRange };
+	params[7].ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
 	D3D12_STATIC_SAMPLER_DESC statics[2]{};
 	for (int i = 0; i < 2; i++)
 	{
@@ -394,7 +401,7 @@ bool DX12Context::MakeRootSignatures()
 		s.ShaderVisibility = D3D12_SHADER_VISIBILITY_PIXEL;
 	}
 	D3D12_ROOT_SIGNATURE_DESC desc{};
-	desc.NumParameters = 7;
+	desc.NumParameters = 8;
 	desc.pParameters = params;
 	desc.NumStaticSamplers = 2;
 	desc.pStaticSamplers = statics;
@@ -549,6 +556,7 @@ void DX12Context::BindRaster()
 	cmd->SetGraphicsRootDescriptorTable(3, srvHeap.Gpu(0));
 	cmd->SetGraphicsRootDescriptorTable(4, samplerHeap.Gpu(0));
 	cmd->SetGraphicsRootDescriptorTable(5, srvHeap.Gpu(oitTableSsaa ? OitSsaaFirst : OitFirst));
+	cmd->SetGraphicsRootDescriptorTable(7, srvHeap.Gpu(OitSumsSlot));
 	bound.oitSsaa = oitTableSsaa;
 	bound.rootConstantsSet = false;
 	bound.pso = nullptr;
@@ -783,7 +791,8 @@ void DX12Context::SetTargets(u32 rtv, u32 dsv, u32 samples)
 
 /* ---- The frame ---- */
 
-bool DX12Context::EncodeHdr(DX12Image& image, u32 width, u32 height, DX12Image *samples, u32 samplesLog2)
+bool DX12Context::EncodeHdr(DX12Image& image, u32 width, u32 height, DX12Image *samples, u32 samplesLog2,
+		DX12Image *sums)
 {
 	hdrFrame = nullptr;
 	if (hdr == nullptr || !image.resource)
@@ -791,10 +800,12 @@ bool DX12Context::EncodeHdr(DX12Image& image, u32 width, u32 height, DX12Image *
 	Transition(image, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
 	if (samples != nullptr)
 		Transition(*samples, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
+	if (sums != nullptr)
+		Transition(*sums, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
 	// (signalled by the Submit() that follows)
 	if (!hdr_d3d12_encode(hdr, Cmd(), &hdr_output, image.resource, DX12FrameFormat, width, height, true,
 			samples != nullptr ? samples->resource.get() : nullptr, samples != nullptr ? samplesLog2 : 0,
-			GetPresentIndex(), fenceValue + 1, &hdrFrame))
+			sums != nullptr ? sums->resource.get() : nullptr, GetPresentIndex(), fenceValue + 1, &hdrFrame))
 		return false;
 	// what the encode bound is not what this has noted
 	ID3D12DescriptorHeap * const heaps[2] = { srvHeap.Heap(), samplerHeap.Heap() };

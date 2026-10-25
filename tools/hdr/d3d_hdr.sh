@@ -1,6 +1,6 @@
 #!/bin/sh
-# The HDR output (Color Format) with Direct3D 11, and 12 with D3D12_DLLS
-# given: the core's Windows build
+# The HDR output (Color Format) with Direct3D 11 and 12: the core's
+# Windows build
 # run under wine (wined3d on a Vulkan driver: lavapipe will do) by a
 # frontend that reads back what it is handed (d3d_hdr.c), judged by
 # vk_hdr's --same and --compare as tools/vulkan/vk_hdr.sh judges Vulkan's:
@@ -19,11 +19,13 @@
 #   sh tools/hdr/d3d_hdr.sh parallel_dc_libretro.dll
 #
 # Needs mingw-w64, wine, Xvfb, python3 (tools/threads/live_disc.py) and a
-# Vulkan driver. Direct3D 12 is run with vkd3d-proton's d3d12.dll and
-# d3d12core.dll from $D3D12_DLLS, as tools/rend/tile_test.sh does: wine's
-# own vkd3d cannot make the renderer's root signature on a driver with
-# eight descriptor sets (lavapipe's). tools/hdr/hdr_d3d.sh tries the
-# Direct3D 12 HDR encoder on wine's own.
+# Vulkan driver. Direct3D 12 is wine's own vkd3d with its descriptor heaps
+# as Vulkan descriptor arrays (VKD3D_CONFIG=virtual_heaps: the renderer's
+# root signature takes more than the eight descriptor sets lavapipe has
+# otherwise), or vkd3d-proton's d3d12.dll and d3d12core.dll from
+# $D3D12_DLLS where given, as tools/rend/tile_test.sh has it. (Neither
+# with SSAA here: wine's vkd3d has no eval_snapped, which SSAA's shaders
+# sample at.)
 set -e
 cd "$(dirname "$0")/../.."
 CORE=$(readlink -f "${1:-parallel_dc_libretro.dll}")
@@ -48,7 +50,7 @@ OVERRIDES=
 run() {
    # @1 the frontend, @2 the picture, @3... options
    fe=$1; out=$2; shift 2
-   env -u TMPDIR DISPLAY=$DISPLAY_NO WINEDEBUG=-all WINE_D3D_CONFIG=renderer=vulkan \
+   env -u TMPDIR DISPLAY=$DISPLAY_NO WINEDEBUG=-all WINE_D3D_CONFIG=renderer=vulkan VKD3D_CONFIG=virtual_heaps \
       WINEDLLOVERRIDES="winedbg.exe=d${OVERRIDES:+;$OVERRIDES}" D3DH_API=$API D3DH_FRONTEND=$fe D3DH_DIR="Z:$WORK" \
       timeout 600 wine "$WORK/d3d_hdr.exe" "Z:$CORE" "Z:$WORK/test.gdi" "Z:$WORK/$out" $FRAMES "$@" \
       > "$WORK/log.txt" 2>&1 || { cat "$WORK/log.txt"; echo "d3d_hdr.sh: $out failed"; exit 1; }
@@ -98,10 +100,10 @@ done
 API=11
 
 judge
+API=12
 if [ -n "$D3D12_DLLS" ]; then
    cp "$D3D12_DLLS/d3d12.dll" "$D3D12_DLLS/d3d12core.dll" "$WORK/"
-   API=12
    OVERRIDES="d3d12,d3d12core=n"
-   judge
 fi
+judge
 echo "d3d_hdr.sh: passed"

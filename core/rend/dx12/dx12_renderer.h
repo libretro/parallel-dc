@@ -296,6 +296,10 @@ protected:
 	 * renderer puts the frame together in pictures of its own, and binds
 	 * the screen's only at the end */
 	virtual bool BindsScreen() const { return true; }
+	/* With the HDR output and SSAA, the channel sums the frame's resolve
+	 * stored, where the renderer resolves the samples itself (the per-pixel
+	 * one): for the encode, which takes their exact average. Null without */
+	virtual DX12Image *HdrSums() { return nullptr; }
 	/* A modifier volume's pipeline */
 	ID3D12PipelineState *ModVolPipeline(bool depthTest, bool depthWrite, u32 depthFunc, DX12Stencil stencil, u32 cull, bool writeColor, u32 special);
 	void ClearTarget(const DX12Image& image, const float color[4]);

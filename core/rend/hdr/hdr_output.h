@@ -64,6 +64,12 @@ void hdr_encode_params_fill(struct hdr_encode_params *p,
  * composite (hdr_post.frag), which adds the bloom and encodes as the encode
  * would have. Off, none of it runs. */
 
+/* What the encodes' channel sums are of (SSAA's resolve, and the X
+ * scaler's pairs): whatever the samples a pixel that were resolved, N of
+ * them, a sum is (2^HDR_SUMS_LOG2 / N) times the samples' */
+#define HDR_SUMS_LOG2    4
+#define HDR_SUMS_SAMPLES (1 << HDR_SUMS_LOG2)
+
 /* The composite's, after struct hdr_encode_params in the same block: 32 bytes */
 struct hdr_post_params
 {

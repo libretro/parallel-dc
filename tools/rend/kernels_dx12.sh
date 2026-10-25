@@ -43,7 +43,17 @@
 #                                 PVRC_KEEP_D3D12; PVRC_V_UNSORTED, keeping
 #                                 1)
 #
+#   core/rend/dx12/dx12_hdr_dxbc.inc
+#                                 the HDR output's own shaders of
+#                                 dx12_raster.hlsl (HDR_SHADERS: the
+#                                 per-pixel renderer's SSAA resolve that
+#                                 stores the channel sums, DX12_OIT_SUMS),
+#                                 of a compiler of its own; the
+#                                 DX12_OIT_SUMS blocks are left out of the
+#                                 text of the others
+#
 #   sh tools/rend/kernels_dx12.sh update   all made again from the sources
+#   sh tools/rend/kernels_dx12.sh update-hdr  only the HDR output's made again
 #   sh tools/rend/kernels_dx12.sh check    whether all are the sources' still
 #   sh tools/rend/kernels_dx12.sh compute-test DIR SAMPLES KEEP
 #        the compute kernels for tools/rend/tile_test (TILE_DEVICE=d3d12):
@@ -105,6 +115,12 @@ SHADERS="$SHADERS 36:ps_5_1:DX12_OIT_MODVOL_PS,$S 37:ps_5_1:DX12_SSAA_RESOLVE_PS
 SHADERS="$SHADERS 38:ps_5_1:DX12_OIT_PS,$S,DX12_GOURAUD=1,DX12_OIT_PASS=2,DX12_SAMPLE_RATE=2,DX12_POST_Z_COVERAGE"
 SHADERS="$SHADERS 39:ps_5_1:DX12_OIT_PS,$S,DX12_GOURAUD=0,DX12_OIT_PASS=2,DX12_SAMPLE_RATE=2,DX12_POST_Z_COVERAGE"
 COUNT=39
+# The HDR output's own, in core/rend/dx12/dx12_hdr_dxbc.inc (by DX12HdrShader):
+# the per-pixel renderer's lists resolved with SSAA (34's) that store the
+# channel sums as well
+HDR_INC=core/rend/dx12/dx12_hdr_dxbc.inc
+HDR_SHADERS="1:ps_5_1:DX12_OIT_FINAL_PS,$S,DX12_MS_TABLE,DX12_OIT_SUMS"
+HDR_COUNT=1
 TA_INC=core/rend/dx12/dx12_ta_dxbc.inc
 TA11_INC=core/rend/dx11/dx11_ta_dxbc.inc
 COMPUTE_INC=core/rend/dx12/dx12_compute_dxil.inc
@@ -150,7 +166,11 @@ source_of() {
    done
    # (SSAA's resolve: the shared rule, rend/tile/pvr_resolve.h, as HLSL)
    case ",$1," in *,DX12_SSAA,*) echo "#define PVR_SHADER_HLSL"; echo "#define PVR_LANE_NONE"; cat $LANE $RESOLVE | grep -v "^#include" ;; esac
-   cat $FLAGS $SRC
+   # (the HDR output's blocks only in its own shaders: HDR_SHADERS)
+   case ",$1," in
+   *,DX12_OIT_SUMS,*) cat $FLAGS $SRC ;;
+   *) cat $FLAGS; sed '/^#if defined(DX12_OIT_SUMS)$/,/^#endif \/\* DX12_OIT_SUMS \*\/$/d' $SRC ;;
+   esac
 }
 
 # @1 a TA kernel (TAG_K_*): the header made HLSL of. The buffers' words
@@ -418,7 +438,46 @@ make_inc() {
    echo "$z };"
 }
 
+hdr_sums() {
+   for k in $HDR_SHADERS; do
+      n=${k%%:*}; r=${k#*:}; p=${r%%:*}; d=${r#*:}
+      source_of $d > "$WORK/s.hlsl"
+      echo " * shader $n $p $(sha1sum < "$WORK/s.hlsl" | cut -c1-40)"
+   done
+}
+
+make_hdr_inc() {
+   echo "/* DXBC of the Direct3D 12 renderer's shaders for the HDR output"
+   echo " * (rend/dx12/shaders/dx12_raster.hlsl, each with its defines and"
+   echo " * rend/dx12/dx12_shader_flags.h): made by tools/rend/kernels_dx12.sh"
+   echo " * update-hdr from them. Not to be edited."
+   echo " * d3dcompiler_47 $(compiler_sum)"
+   hdr_sums
+   echo " */"
+   for k in $HDR_SHADERS; do
+      n=${k%%:*}; r=${k#*:}; p=${r%%:*}; d=${r#*:}
+      source_of $d > "$WORK/h$n.hlsl"
+      compile "$WORK/h$n.hlsl" $p "$WORK/h$n.dxbc"
+      echo "static const unsigned char dx12_hdr_dxbc_$n[] = {"
+      od -An -v -tx1 -w16 "$WORK/h$n.dxbc" | awk '{ s = ""; for (i = 1; i <= NF; i++) s = s "0x" $i ","; print s }'
+      echo "};"
+   done
+   echo "// by DX12HdrShader: the bytes, and how many"
+   l="static const unsigned char * const dx12_hdr_dxbc[] = { 0"
+   z="static const size_t dx12_hdr_dxbc_size[] = { 0"
+   i=1
+   while [ $i -le $HDR_COUNT ]; do l="$l, dx12_hdr_dxbc_$i"; z="$z, sizeof(dx12_hdr_dxbc_$i)"; i=$((i + 1)); done
+   echo "$l };"
+   echo "$z };"
+}
+
 case "$1" in
+update-hdr)
+   [ -n "$(compiler_sum)" ] || { echo "$0: D3DCOMPILER=/path/to/d3dcompiler_47.dll is needed to make them" >&2; exit 1; }
+   make_hdr_inc > "$WORK/new.inc"
+   cp "$WORK/new.inc" $HDR_INC
+   echo "made $HDR_INC"
+   ;;
 update)
    [ -n "$(compiler_sum)" ] || { echo "$0: D3DCOMPILER=/path/to/d3dcompiler_47.dll is needed to make them" >&2; exit 1; }
    [ -n "$(dxc_version)" ] || { echo "$0: DXC=/path/to/dxc is needed to make them" >&2; exit 1; }
@@ -430,13 +489,16 @@ update)
    cp "$WORK/new.inc" $TA11_INC
    make_compute_inc > "$WORK/new.inc"
    cp "$WORK/new.inc" $COMPUTE_INC
-   echo "made $INC, $TA_INC, $TA11_INC and $COMPUTE_INC"
+   make_hdr_inc > "$WORK/new.inc"
+   cp "$WORK/new.inc" $HDR_INC
+   echo "made $INC, $TA_INC, $TA11_INC, $COMPUTE_INC and $HDR_INC"
    ;;
 check)
    check_inc $INC make_inc sums d3dcompiler_47
    check_inc $TA_INC make_ta_inc ta_sums d3dcompiler_47
    check_inc $TA11_INC make_ta11_inc ta11_sums d3dcompiler_47
    check_inc $COMPUTE_INC make_compute_inc compute_sums dxc
+   check_inc $HDR_INC make_hdr_inc hdr_sums d3dcompiler_47
    ;;
 compute-test)
    [ -n "$(dxc_version)" ] || { echo "$0: DXC=/path/to/dxc is needed to make them" >&2; exit 1; }
@@ -460,7 +522,7 @@ compute-test)
    done
    ;;
 *)
-   echo "usage: $0 update | check | compute-test DIR SAMPLES KEEP" >&2
+   echo "usage: $0 update | update-hdr | check | compute-test DIR SAMPLES KEEP" >&2
    exit 2
    ;;
 esac

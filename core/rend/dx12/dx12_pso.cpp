@@ -232,6 +232,9 @@ bool DX12Pipelines::Build(u64 packed, ID3D12PipelineState **out)
 	}
 	desc.VS = dx12_shader(vs);
 	desc.PS = dx12_shader(ps);
+	// (the HDR output's, of its own bytecode)
+	if (key.kind == DX12_PSO_OIT_FINAL && key.rate == DX12_RATE_PIXEL_SUMS)
+		desc.PS = dx12_hdr_shader(DX12HdrShader::SsaaOITFinalSumsPS);
 
 	D3D12_RENDER_TARGET_BLEND_DESC& rt = desc.BlendState.RenderTarget[0];
 	rt.BlendOp = rt.BlendOpAlpha = D3D12_BLEND_OP_ADD;
@@ -515,7 +518,7 @@ void DX12Pipelines::MakeAtStart()
 			statMade, statFromLibrary, (u32)fromFile);
 }
 
-void DX12Pipelines::MakeForSamples(u32 log2n)
+void DX12Pipelines::MakeForSamples(u32 log2n, bool hdr)
 {
 	if (log2n == 0 || log2n > 3 || slots == nullptr)
 		return;
@@ -558,6 +561,11 @@ void DX12Pipelines::MakeForSamples(u32 log2n)
 			k.samples = 0;
 			k.rate = DX12_RATE_PIXEL;
 			Add(k.Pack());
+			if (hdr)
+			{
+				k.rate = DX12_RATE_PIXEL_SUMS;
+				Add(k.Pack());
+			}
 			break;
 		case DX12_PSO_OIT_MODVOL:
 			k.rate = DX12_RATE_PIXEL;

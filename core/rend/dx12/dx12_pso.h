@@ -102,8 +102,10 @@ enum { DX12_PSO_POLY = 0, DX12_PSO_MODVOL = 1, DX12_PSO_QUAD = 2, DX12_PSO_OIT =
 	DX12_PSO_SSAA_RESOLVE = 6 };
 /* SSAA's rates (DX12PsoKey::rate): none; a polygon shaded at each sample;
  * once a pixel. (The lists put together: at each sample into samples, or
- * resolved into a picture of one; a translucent volume: with SSAA.) */
-enum { DX12_RATE_NONE = 0, DX12_RATE_SAMPLE = 1, DX12_RATE_PIXEL = 2 };
+ * resolved into a picture of one - and with the HDR output, storing the
+ * samples' channel sums as well, DX12_RATE_PIXEL_SUMS; a translucent
+ * volume: with SSAA.) */
+enum { DX12_RATE_NONE = 0, DX12_RATE_SAMPLE = 1, DX12_RATE_PIXEL = 2, DX12_RATE_PIXEL_SUMS = 3 };
 
 struct DX12PsoKey
 {
@@ -160,7 +162,8 @@ struct DX12PsoKey
 	{
 		const DX12PsoKey k = Unpack(v);
 		return (v >> 33) == 0 && ((v >> 28) & 1) == 1 && k.kind <= DX12_PSO_SSAA_RESOLVE && (u32)k.stencil < (u32)DX12Stencil::Count
-				&& k.cull <= 2 && k.special <= DX12_BLEND_FACTOR && k.pass <= DX12_PASS_OIT && k.rate <= DX12_RATE_PIXEL;
+				&& k.cull <= 2 && k.special <= DX12_BLEND_FACTOR && k.pass <= DX12_PASS_OIT
+				&& (k.rate <= DX12_RATE_PIXEL || (k.rate == DX12_RATE_PIXEL_SUMS && k.kind == DX12_PSO_OIT_FINAL));
 	}
 };
 
@@ -179,7 +182,8 @@ public:
 	/* SSAA of 2^@log2n samples taken up: every pipeline of one sample made
 	 * for that many, at each rate it can be drawn at, and the keys of that
 	 * many kept from earlier runs (those made already are found made) */
-	void MakeForSamples(u32 log2n);
+	// (@hdr: the HDR output's too, DX12_RATE_PIXEL_SUMS)
+	void MakeForSamples(u32 log2n, bool hdr = false);
 
 	/* The pipeline of @key: the table's, or made now (and counted) */
 	ID3D12PipelineState *Get(const DX12PsoKey& key)

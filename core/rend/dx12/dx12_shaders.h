@@ -64,5 +64,16 @@ enum class DX12Shader
 };
 
 D3D12_SHADER_BYTECODE dx12_shader(DX12Shader shader);
+
+/* The HDR output's, by their number in dx12_hdr_dxbc.inc (made by
+ * tools/rend/kernels_dx12.sh update-hdr) */
+enum class DX12HdrShader
+{
+	/* SsaaOITFinalPS that stores the samples' channel sums as well, for
+	 * the encode (DX12_OIT_SUMS) */
+	SsaaOITFinalSumsPS = 1,
+};
+
+D3D12_SHADER_BYTECODE dx12_hdr_shader(DX12HdrShader shader);
 /* rend/texdecode.h's, by TEXD_KERNEL_D3D (1 to 4) */
 D3D12_SHADER_BYTECODE dx12_texdecode_kernel(int kernel);

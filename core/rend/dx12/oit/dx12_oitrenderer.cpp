@@ -145,6 +145,7 @@ public:
 			bufferSize = room = pixelBufferRoom = 0;
 			depthViewed = nullptr;
 			clearHeap.Term();
+			DropSums();
 		}
 		DX12Renderer::Term();
 	}
@@ -255,7 +256,17 @@ private:
 	void DrawPoly(u32 listType, bool autosort, u32 pass, const PolyParam& poly, u32 first, u32 count);
 	void DrawList(u32 listType, bool autosort, u32 pass, const List<PolyParam>& polys, u32 first, u32 last);
 	void DrawModifierVolumes(bool translucent, int first, int count, const ModifierVolumeParam *params);
-	void Resolve(u32 targetRtv, u32 opaqueSrv, bool intoSamples);
+	// (@sums: and the samples' channel sums stored, into sums)
+	void Resolve(u32 targetRtv, u32 opaqueSrv, bool intoSamples, bool sums = false);
+	/* With the HDR output and SSAA: each pixel's channel sums, which the
+	 * screen's resolve stores (DX12_RATE_PIXEL_SUMS) for the encode
+	 * (DX12Context::EncodeHdr()); made for @width x @height when they are
+	 * not. False when they cannot be. */
+	bool MakeSums(u32 width, u32 height);
+	void DropSums();
+	DX12Image *HdrSums() override { return sumsStored ? &sums : nullptr; }
+	DX12Image sums;
+	bool sumsStored = false;	// by the last screen frame
 	void ClearStencil()
 	{
 		DepthStates(D3D12_RESOURCE_STATE_DEPTH_WRITE, D3D12_RESOURCE_STATE_DEPTH_WRITE);
@@ -1081,7 +1092,58 @@ void DX12OITRenderer::DrawModifierVolumes(bool translucent, int first, int count
  * SSAA, from the samples: resolved into @target, of one sample, when
  * @intoSamples is not set; else into the samples of @target, and the lists
  * emptied after. */
-void DX12OITRenderer::Resolve(u32 target, u32 opaqueSrv, bool intoSamples)
+bool DX12OITRenderer::MakeSums(u32 width, u32 height)
+{
+	// (grown only, as the lists' heads are: its place is the one for good)
+	if (sums.resource && width <= sums.width && height <= sums.height)
+		return true;
+	width = std::max(width, sums.width);
+	height = std::max(height, sums.height);
+	DropSums();
+	D3D12_HEAP_PROPERTIES heap{};
+	heap.Type = D3D12_HEAP_TYPE_DEFAULT;
+	D3D12_RESOURCE_DESC desc{};
+	desc.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
+	desc.Width = width;
+	desc.Height = height;
+	desc.DepthOrArraySize = 1;
+	desc.MipLevels = 1;
+	desc.Format = DXGI_FORMAT_R16G16B16A16_UINT;
+	desc.SampleDesc.Count = 1;
+	desc.Flags = D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS;
+	sums.state = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
+	if (FAILED(device->CreateCommittedResource(&heap, D3D12_HEAP_FLAG_NONE, &desc, sums.state, nullptr,
+			__uuidof(ID3D12Resource), (void **)sums.resource.put())))
+	{
+		WARN_LOG(RENDERER, "DX12: HDR channel sums creation failed (%d x %d)", width, height);
+		sums.resource.reset();
+		sums = DX12Image();
+		return false;
+	}
+	sums.width = width;
+	sums.height = height;
+	D3D12_UNORDERED_ACCESS_VIEW_DESC uav{};
+	uav.Format = DXGI_FORMAT_R16G16B16A16_UINT;
+	uav.ViewDimension = D3D12_UAV_DIMENSION_TEXTURE2D;
+	device->CreateUnorderedAccessView(sums.resource, nullptr, &uav, context->Srv().Cpu(DX12Context::OitSumsSlot));
+	return true;
+}
+
+void DX12OITRenderer::DropSums()
+{
+	sumsStored = false;
+	if (!sums.resource)
+		return;
+	// (frames still on the GPU may store into it: it goes when they are done)
+	sums.resource->AddRef();
+	context->Release(sums.resource.get());
+	sums.resource.reset();
+	sums = DX12Image();
+	/* (its view stays in its place, unread: only the resolve that stores
+	 * the sums reads it, and that one is drawn after a new one is made) */
+}
+
+void DX12OITRenderer::Resolve(u32 target, u32 opaqueSrv, bool intoSamples, bool withSums)
 {
 	FlushBatch();
 	DX12PsoKey key{};
@@ -1090,7 +1152,7 @@ void DX12OITRenderer::Resolve(u32 target, u32 opaqueSrv, bool intoSamples)
 	key.depthFunc = 7;
 	if (SsaaActive())
 	{
-		key.rate = intoSamples ? DX12_RATE_SAMPLE : DX12_RATE_PIXEL;
+		key.rate = intoSamples ? DX12_RATE_SAMPLE : withSums ? DX12_RATE_PIXEL_SUMS : DX12_RATE_PIXEL;
 		key.samples = intoSamples ? ssaaLog2 : 0;
 	}
 	context->SetTargets(target, ~0u, key.samples);
@@ -1128,6 +1190,11 @@ void DX12OITRenderer::DrawFrame()
 	DX12Image *pictures = ssaa ? ssaaColor : this->pictures;
 	const u32 samples = ssaa ? ssaaLog2 : 0;
 	context->BindOitTable(ssaa);
+	/* (the HDR output's: the screen's resolve stores the samples' channel
+	 * sums as well, where they can be had) */
+	const bool withSums = ssaa && !pvrrc.isRTT && context->HdrActive() && MakeSums(targetWidth, targetHeight);
+	if (!pvrrc.isRTT)
+		sumsStored = false;
 
 	/* A framebuffer the game has not drawn to lately starts as the border
 	 * colour, which is what the OpenGL renderers clear it to (never a
@@ -1247,7 +1314,11 @@ void DX12OITRenderer::DrawFrame()
 			DrawModifierVolumes(true, previous_pass.mvo_tr_count, current_pass.mvo_tr_count - previous_pass.mvo_tr_count, pvrrc.global_param_mvo_tr.head());
 		ListsBarrier();
 		context->Transition(pictures[cur], D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
-		Resolve(target, pictures[cur].srv, !finalPass);
+		if (finalPass && withSums)
+			context->Transition(sums, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+		Resolve(target, pictures[cur].srv, !finalPass, finalPass && withSums);
+		if (finalPass && withSums)
+			sumsStored = true;
 		ListsBarrier();
 
 		if (!finalPass)

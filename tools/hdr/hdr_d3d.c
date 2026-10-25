@@ -7,7 +7,7 @@
  * it under wine.
  *
  *   hdr_d3d 11|12 out.bin
- *   hdr_d3d 12ssaa
+ *   hdr_d3d 12ssaa|12sums
  *   hdr_d3d post11|post12
  *
  * 12ssaa: the Direct3D 12 encoder with SSAA's samples (hdr_encode.hlsl's
@@ -18,6 +18,11 @@
  * average as a half-float picture - the picture where it was drawn over -
  * and has to differ from that of the 8-bit picture: the extra bits are
  * there and are the samples'.
+ *
+ * 12sums: the same with the samples' channel sums in their place, as the
+ * per-pixel renderer's resolve stores them (R16G16B16A16_UINT, scaled to
+ * HDR_SUMS_SAMPLES): the encode, and then the post effects' (bloom and
+ * aberration on), held to those of the exact average.
  *
  * post11, post12: the encoder with the HDR post effects (bloom in each
  * of its shapes, halation, chromatic aberration, Compact Intermediates),
@@ -335,7 +340,7 @@ static void run12(const char *name, const struct hdr_dt_settings *dt, const stru
    void *map;
    prepare(dt, o, cube);
    if (!hdr_d3d12_encode(enc12[scrgb], list, o, pic12, DXGI_FORMAT_R8G8B8A8_UNORM, W, H, deband != 0,
-         NULL, 0, cases % 3, fence_value + 1, &texture))
+         NULL, 0, NULL, cases % 3, fence_value + 1, &texture))
    {
       fprintf(stderr, "hdr_d3d: %s: not encoded\n", name);
       exit(1);
@@ -518,9 +523,10 @@ static void fill_samples(ID3D12Resource *ms)
    submit12();
 }
 
-/* What @picture (of @format, 8 bits a channel when @unorm8; SSAA's @samples or NULL) encodes to, as floats */
+/* What @picture (of @format, 8 bits a channel when @unorm8; SSAA's
+ * @samples or NULL, their channel sums @sums or NULL) encodes to, as floats */
 static void encode12(hdr_d3d12_t *e, const struct hdr_output *o, ID3D12Resource *picture, DXGI_FORMAT format,
-      bool unorm8, ID3D12Resource *samples, float *dst)
+      bool unorm8, ID3D12Resource *samples, ID3D12Resource *sums, float *dst)
 {
    const int scrgb = o->format == HDR_OUTPUT_SCRGB;
    const DXGI_FORMAT out = scrgb ? DXGI_FORMAT_R16G16B16A16_FLOAT : DXGI_FORMAT_R10G10B10A2_UNORM;
@@ -528,7 +534,7 @@ static void encode12(hdr_d3d12_t *e, const struct hdr_output *o, ID3D12Resource 
    ID3D12Resource *texture = NULL;
    void *map;
    if (!hdr_d3d12_encode(e, list, o, picture, format, W, H, unorm8, samples, samples ? SSAA_LOG2 : 0,
-         cases % 3, fence_value + 1, &texture))
+         sums, cases % 3, fence_value + 1, &texture))
    {
       fprintf(stderr, "hdr_d3d: not encoded\n");
       exit(1);
@@ -546,19 +552,58 @@ static void encode12(hdr_d3d12_t *e, const struct hdr_output *o, ID3D12Resource 
 
 static float ssaa_out[W * H * 4], exact_out[W * H * 4], byte_out[W * H * 4];
 
-static int ssaa12(void)
+/* The encodes of the 8-bit picture with SSAA's samples (@with_sums: their
+ * channel sums), of the exact average and of the 8-bit picture alone, held
+ * to each other; 1 when they are not as they should be. */
+static int ssaa_judge(hdr_d3d12_t *e, const struct hdr_output *o, ID3D12Resource *pic, ID3D12Resource *exact,
+      ID3D12Resource *ms, ID3D12Resource *sums, const char *what)
+{
+   unsigned i, differ = 0, osd_differ = 0;
+   double   worst = 0.0;
+   encode12(e, o, pic, DXGI_FORMAT_R8G8B8A8_UNORM, true, ms, sums, ssaa_out);
+   encode12(e, o, exact, DXGI_FORMAT_R16G16B16A16_FLOAT, false, NULL, NULL, exact_out);
+   encode12(e, o, pic, DXGI_FORMAT_R8G8B8A8_UNORM, false, NULL, NULL, byte_out);
+   for (i = 0; i < W * H * 4; i++)
+   {
+      const double a = ssaa_out[i], b = exact_out[i];
+      /* the half-float picture's rounding and the output's: a 10-bit code (the two
+       * on either side of a rounding, both quantized), or a half float's */
+      const double tol = (o->format == HDR_OUTPUT_SCRGB) ? 2e-3 * (fabs(b) > 1.0 ? fabs(b) : 1.0) : 1.001 / 1023.0;
+      const double d = fabs(a - b) / tol;
+      if (d > worst)
+         worst = d;
+      if (i % 4 != 3 && fabs(ssaa_out[i] - byte_out[i]) > 1e-6)
+      {
+         if ((i / 4) % W < OSD_X)
+            osd_differ++;
+         else
+            differ++;
+      }
+   }
+   printf("hdr_d3d: %s %s: within %.2f of the tolerance of the exact average's; %u channels not the 8-bit picture's, %u drawn over\n",
+         sums ? "sums" : "SSAA", what, worst, differ, osd_differ);
+   /* (drawn over and with the post effects, the bloom of what is not
+    * spreads into it: only the encode alone keeps those columns apart) */
+   return !(worst <= 1.0) || differ < 1000 || (osd_differ != 0 && !hdr_post_enabled());
+}
+
+static int ssaa12(int with_sums)
 {
    static unsigned char pic8[W * H * 4];
    static uint16_t exact16[W * H * 4];
+   static uint16_t sums16[W * H * 4];
    struct hdr_dt_settings dt;
    struct hdr_output o;
-   ID3D12Resource *ms, *pic, *exact;
-   unsigned x, y, c, i, k;
+   ID3D12Resource *ms = NULL, *sums = NULL, *pic, *exact;
+   unsigned x, y, c, k;
 
    setup12();
-   ms = texture12(DXGI_FORMAT_R8G8B8A8_UNORM, SSAA_N, D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET,
-         D3D12_RESOURCE_STATE_RENDER_TARGET);
-   fill_samples(ms);
+   if (!with_sums)
+   {
+      ms = texture12(DXGI_FORMAT_R8G8B8A8_UNORM, SSAA_N, D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET,
+            D3D12_RESOURCE_STATE_RENDER_TARGET);
+      fill_samples(ms);
+   }
    for (y = 0; y < H; y++)
       for (x = 0; x < W; x++)
          for (c = 0; c < 4; c++)
@@ -567,6 +612,8 @@ static int ssaa12(void)
             unsigned sum = 0, s;
             for (s = 0; s < SSAA_N; s++)
                sum += sample_byte(x, y, s, c);
+            /* (as dx12_raster.hlsl's resolve stores them) */
+            sums16[at] = (uint16_t)(sum << (HDR_SUMS_LOG2 - SSAA_LOG2));
             if (x < OSD_X)
             {
                /* drawn over: not the resolve (a byte it cannot be: off by 7) */
@@ -581,6 +628,8 @@ static int ssaa12(void)
          }
    pic = uploaded12(pic8, DXGI_FORMAT_R8G8B8A8_UNORM, 4);
    exact = uploaded12(exact16, DXGI_FORMAT_R16G16B16A16_FLOAT, 8);
+   if (with_sums)
+      sums = uploaded12(sums16, DXGI_FORMAT_R16G16B16A16_UINT, 8);
 
    memset(&dt, 0, sizeof(dt));
    dt.aces2_surround = 1;
@@ -593,41 +642,32 @@ static int ssaa12(void)
    o.max_nits = 1000.0f;
    for (k = 0; k < 4; k++)
    {
-      unsigned differ = 0, osd_differ = 0;
-      double worst = 0.0;
       dt.curve = (k & 2) ? HDR_DT_AGX : HDR_DT_KNEE;
       o.format = (k & 1) ? HDR_OUTPUT_SCRGB : HDR_OUTPUT_HDR10;
       hdr_dt_configure(&dt);
       hdr_dt_finish(o.paper_white_nits, o.max_nits, o.panel_peak_nits, o.panel_xy, false);
-      encode12(enc12[k & 1], &o, pic, DXGI_FORMAT_R8G8B8A8_UNORM, true, ms, ssaa_out);
-      encode12(enc12[k & 1], &o, exact, DXGI_FORMAT_R16G16B16A16_FLOAT, false, NULL, exact_out);
-      encode12(enc12[k & 1], &o, pic, DXGI_FORMAT_R8G8B8A8_UNORM, false, NULL, byte_out);
-      for (i = 0; i < W * H * 4; i++)
-      {
-         const double a = ssaa_out[i], b = exact_out[i];
-         /* the half-float picture's rounding and the output's: a 10-bit code (the two
-          * on either side of a rounding, both quantized), or a half float's */
-         const double tol = (o.format == HDR_OUTPUT_SCRGB) ? 2e-3 * (fabs(b) > 1.0 ? fabs(b) : 1.0) : 1.001 / 1023.0;
-         const double d = fabs(a - b) / tol;
-         if (d > worst)
-            worst = d;
-         if (i % 4 != 3 && fabs(ssaa_out[i] - byte_out[i]) > 1e-6)
-         {
-            if ((i / 4) % W < OSD_X)
-               osd_differ++;
-            else
-               differ++;
-         }
-      }
-      printf("hdr_d3d: SSAA %s %s: within %.2f of the tolerance of the exact average's; %u channels not the 8-bit picture's, %u drawn over\n",
-            (k & 2) ? "agx" : "knee", (k & 1) ? "scRGB" : "HDR10", worst, differ, osd_differ);
-      if (!(worst <= 1.0) || differ < 1000 || osd_differ != 0)
+      if (ssaa_judge(enc12[k & 1], &o, pic, exact, ms, sums,
+            (k & 2) ? ((k & 1) ? "agx scRGB" : "agx HDR10") : ((k & 1) ? "knee scRGB" : "knee HDR10")))
          failures++;
+   }
+   if (with_sums)
+   {
+      /* the post effects' linear pass from the sums */
+      static const char *const keys[] = { "reicast_hdr_bloom", "reicast_hdr_chromatic" };
+      static const char *const vals[] = { "standard", "subtle" };
+      hdr_post_ref_configure(keys, vals, 2);
+      o.format = HDR_OUTPUT_SCRGB;
+      o.sdr_eotf = 0;
+      o.shoulder = 0;
+      if (!hdr_post_enabled() || ssaa_judge(enc12[1], &o, pic, exact, NULL, sums, "post scRGB"))
+         failures++;
+      hdr_post_ref_configure(NULL, NULL, 0);
    }
    hdr_d3d12_free(enc12[0]);
    hdr_d3d12_free(enc12[1]);
    hdr_dt_free();
-   printf("hdr_d3d: Direct3D 12 with SSAA's samples%s\n", failures ? ": failed" : ": the samples' exact average");
+   printf("hdr_d3d: Direct3D 12 with SSAA's %s%s\n", with_sums ? "channel sums" : "samples",
+         failures ? ": failed" : ": the samples' exact average");
    return failures ? 1 : 0;
 }
 
@@ -702,7 +742,7 @@ static int post_run(int api)
          ID3D12Resource *texture = NULL;
          void *map;
          if (!hdr_d3d12_encode(enc12[1], list, &o, pic12, DXGI_FORMAT_R8G8B8A8_UNORM, W, H, true,
-               NULL, 0, i % 3, fence_value + 1, &texture))
+               NULL, 0, NULL, i % 3, fence_value + 1, &texture))
             return 1;
          barrier12(texture, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_COPY_SOURCE);
          copy12(readback, texture, DXGI_FORMAT_R16G16B16A16_FLOAT, 8, 0);
@@ -728,13 +768,13 @@ static int post_run(int api)
 int main(int argc, char **argv)
 {
    int api;
-   if (argc == 2 && !strcmp(argv[1], "12ssaa"))
-      return ssaa12();
+   if (argc == 2 && (!strcmp(argv[1], "12ssaa") || !strcmp(argv[1], "12sums")))
+      return ssaa12(argv[1][2] == 's' && argv[1][3] == 'u');
    if (argc == 2 && (!strcmp(argv[1], "post11") || !strcmp(argv[1], "post12")))
       return post_run(argv[1][4] == '1' && argv[1][5] == '1' ? 11 : 12);
    if (argc != 3 || (strcmp(argv[1], "11") && strcmp(argv[1], "12")))
    {
-      fprintf(stderr, "usage: hdr_d3d 11|12 out.bin | 12ssaa\n");
+      fprintf(stderr, "usage: hdr_d3d 11|12 out.bin | 12ssaa | 12sums | post11 | post12\n");
       return 2;
    }
    api = atoi(argv[1]);

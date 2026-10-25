@@ -35,6 +35,8 @@ for api in 11 12; do
 done
 # Direct3D 12's encode with SSAA's samples: their exact average
 env -u TMPDIR DISPLAY=$DISPLAY_NO WINEDEBUG=-all wine "$WORK/hdr_d3d.exe" 12ssaa
+# and with their channel sums, as the per-pixel renderer stores them
+env -u TMPDIR DISPLAY=$DISPLAY_NO WINEDEBUG=-all wine "$WORK/hdr_d3d.exe" 12sums
 # the post effects, against the CPU's
 for api in 11 12; do
    env -u TMPDIR DISPLAY=$DISPLAY_NO WINEDEBUG=-all WINE_D3D_CONFIG=renderer=vulkan \

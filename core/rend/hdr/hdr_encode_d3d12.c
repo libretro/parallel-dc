@@ -98,6 +98,7 @@ typedef struct hdr_d3d12_post
    ID3D12PipelineState  *composite;
    ID3D12PipelineState  *linear[P_FORMATS];
    ID3D12PipelineState  *linear_ssaa[P_FORMATS];
+   ID3D12PipelineState  *linear_sums[P_FORMATS];
    ID3D12PipelineState  *stage[P_FORMATS][HDR_BLOOM_STAGES];
    int                   format_made[P_FORMATS];
    ID3D12DescriptorHeap *srv_heap;   /* HDR_D3D12_POST_SRVS a slot */
@@ -115,6 +116,7 @@ struct hdr_d3d12
    ID3D12RootSignature   *root;
    ID3D12PipelineState   *pso;
    ID3D12PipelineState   *pso_ssaa;   /* with SSAA's samples (hdr_encode.hlsl's HDR_ENCODE_SSAA) */
+   ID3D12PipelineState   *pso_sums;   /* ...or their channel sums (HDR_ENCODE_SUMS) */
    ID3D12DescriptorHeap  *srv_heap;   /* shader visible: HDR_D3D12_SRVS a slot */
    ID3D12DescriptorHeap  *rtv_heap;   /* one an output */
    UINT                   srv_step;
@@ -602,7 +604,9 @@ static bool post_format_make(hdr_d3d12_t *e, int k)
    if (     !make_pso_with(e, e->root, hdr_encode_dxbc_PS_LINEAR, sizeof(hdr_encode_dxbc_PS_LINEAR),
                post_dxgi(k), false, &p->linear[k])
          || !make_pso_with(e, e->root, hdr_encode_dxbc_PS_SSAA_LINEAR, sizeof(hdr_encode_dxbc_PS_SSAA_LINEAR),
-               post_dxgi(k), false, &p->linear_ssaa[k]))
+               post_dxgi(k), false, &p->linear_ssaa[k])
+         || !make_pso_with(e, e->root, hdr_encode_dxbc_PS_SUMS_LINEAR, sizeof(hdr_encode_dxbc_PS_SUMS_LINEAR),
+               post_dxgi(k), false, &p->linear_sums[k]))
       return false;
    for (i = 0; i < HDR_BLOOM_STAGES; i++)
       if (!make_pso_with(e, p->root_bloom, post_stages[i].code, post_stages[i].size,
@@ -622,6 +626,7 @@ static void post_free(hdr_d3d12_t *e)
    {
       RELEASE(ID3D12PipelineState, p->linear[k]);
       RELEASE(ID3D12PipelineState, p->linear_ssaa[k]);
+      RELEASE(ID3D12PipelineState, p->linear_sums[k]);
       for (i = 0; i < HDR_BLOOM_STAGES; i++)
          RELEASE(ID3D12PipelineState, p->stage[k][i]);
    }
@@ -783,7 +788,7 @@ static D3D12_GPU_DESCRIPTOR_HANDLE post_table(hdr_d3d12_t *e, unsigned place)
 static void post_encode(hdr_d3d12_t *e, ID3D12GraphicsCommandList *cmd,
       const struct hdr_post_plan *plan, int k, const struct hdr_encode_params *params,
       ID3D12Resource *picture, DXGI_FORMAT picture_format, ID3D12Resource *samples,
-      D3D12_CPU_DESCRIPTOR_HANDLE rtv, unsigned w, unsigned h)
+      ID3D12Resource *sums, D3D12_CPU_DESCRIPTOR_HANDLE rtv, unsigned w, unsigned h)
 {
    hdr_d3d12_post_t     *p     = &e->post;
    const unsigned        first = e->slot * HDR_D3D12_POST_SRVS;
@@ -796,7 +801,10 @@ static void post_encode(hdr_d3d12_t *e, ID3D12GraphicsCommandList *cmd,
    post_cbv(e, first);
    post_srv(e, first + 1, picture, picture_format, false, false);
    post_tables(e, first + 2);
-   post_srv(e, first + 6, params->ssaa_log2 ? samples : NULL, picture_format, false, true);
+   if (sums)
+      post_srv(e, first + 6, sums, DXGI_FORMAT_R16G16B16A16_UINT, false, false);
+   else
+      post_srv(e, first + 6, params->ssaa_log2 ? samples : NULL, picture_format, false, true);
    post_cbv(e, first + HDR_D3D12_POST_COMPOSITE);
    post_srv(e, first + HDR_D3D12_POST_COMPOSITE + 1, p->scene.texture, post_dxgi(k), false, false);
    post_tables(e, first + HDR_D3D12_POST_COMPOSITE + 2);
@@ -811,7 +819,8 @@ static void post_encode(hdr_d3d12_t *e, ID3D12GraphicsCommandList *cmd,
 
    /* the picture into scene-linear light */
    ID3D12GraphicsCommandList_SetGraphicsRootSignature(cmd, e->root);
-   ID3D12GraphicsCommandList_SetPipelineState(cmd, params->ssaa_log2 ? p->linear_ssaa[k] : p->linear[k]);
+   ID3D12GraphicsCommandList_SetPipelineState(cmd, sums ? p->linear_sums[k]
+         : params->ssaa_log2 ? p->linear_ssaa[k] : p->linear[k]);
    ID3D12GraphicsCommandList_SetGraphicsRoot32BitConstants(cmd, 0, sizeof(*params) / 4, params, 0);
    ID3D12GraphicsCommandList_SetGraphicsRootDescriptorTable(cmd, 1, post_table(e, first));
    post_draw(e, cmd, &p->scene, 0, w, h);
@@ -876,6 +885,7 @@ hdr_d3d12_t *hdr_d3d12_new(ID3D12Device *device, DXGI_FORMAT format,
    if (     !make_root(e)
          || !make_pso(e, hdr_encode_dxbc_PS, sizeof(hdr_encode_dxbc_PS), &e->pso)
          || !make_pso(e, hdr_encode_dxbc_PS_SSAA, sizeof(hdr_encode_dxbc_PS_SSAA), &e->pso_ssaa)
+         || !make_pso(e, hdr_encode_dxbc_PS_SUMS, sizeof(hdr_encode_dxbc_PS_SUMS), &e->pso_sums)
          || !(e->srv_heap = make_heap(device, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV,
                HDR_D3D12_SLOTS * HDR_D3D12_SRVS, true))
          || !(e->rtv_heap = make_heap(device, D3D12_DESCRIPTOR_HEAP_TYPE_RTV, HDR_D3D12_MAX_OUTPUTS, false))
@@ -907,6 +917,7 @@ void hdr_d3d12_free(hdr_d3d12_t *e)
    RELEASE(ID3D12DescriptorHeap, e->srv_heap);
    RELEASE(ID3D12PipelineState, e->pso);
    RELEASE(ID3D12PipelineState, e->pso_ssaa);
+   RELEASE(ID3D12PipelineState, e->pso_sums);
    RELEASE(ID3D12RootSignature, e->root);
    RELEASE(ID3D12Fence, e->fence);
    RELEASE(ID3D12Device, e->device);
@@ -917,7 +928,7 @@ bool hdr_d3d12_encode(hdr_d3d12_t *e, ID3D12GraphicsCommandList *cmd,
       const struct hdr_output *out, ID3D12Resource *picture,
       DXGI_FORMAT picture_format, unsigned width, unsigned height,
       bool unorm8, ID3D12Resource *samples, unsigned samples_log2,
-      unsigned index, uint64_t signal, ID3D12Resource **texture)
+      ID3D12Resource *sums, unsigned index, uint64_t signal, ID3D12Resource **texture)
 {
    hdr_d3d12_slot_t           *s;
    hdr_d3d12_output_t         *o;
@@ -958,7 +969,9 @@ bool hdr_d3d12_encode(hdr_d3d12_t *e, ID3D12GraphicsCommandList *cmd,
    if (!e->tables[T_CUBE])
       block->gm[2] = 0.0f;
    /* (the samples' exact average is not 8 bits a channel: no dither) */
-   if (samples && samples_log2)
+   if (sums)
+      hdr_encode_params_fill(&params, out, false);
+   else if (samples && samples_log2)
    {
       hdr_encode_params_fill(&params, out, false);
       params.ssaa_log2 = (int32_t)samples_log2;
@@ -976,7 +989,10 @@ bool hdr_d3d12_encode(hdr_d3d12_t *e, ID3D12GraphicsCommandList *cmd,
       ID3D12Device_CreateConstantBufferView(e->device, &cbv, h);
    }
    write_srv(e, first + 1, picture, picture_format, false);
-   write_srv_ms(e, first + 6, params.ssaa_log2 ? samples : NULL, picture_format);
+   if (sums)
+      write_srv(e, first + 6, sums, DXGI_FORMAT_R16G16B16A16_UINT, false);
+   else
+      write_srv_ms(e, first + 6, params.ssaa_log2 ? samples : NULL, picture_format);
    for (i = 0; i < 4; i++)
    {
       unsigned t = i;
@@ -1009,7 +1025,7 @@ bool hdr_d3d12_encode(hdr_d3d12_t *e, ID3D12GraphicsCommandList *cmd,
       /* (what cannot be made: the picture encoded without them) */
       if (post_ready(e, &plan, width, height, &k))
       {
-         post_encode(e, cmd, &plan, k, &params, picture, picture_format, samples, rtv, width, height);
+         post_encode(e, cmd, &plan, k, &params, picture, picture_format, samples, sums, rtv, width, height);
          barrier(cmd, o->texture, D3D12_RESOURCE_STATE_RENDER_TARGET, e->handed);
          s->signal = signal;
          *texture = o->texture;
@@ -1018,7 +1034,7 @@ bool hdr_d3d12_encode(hdr_d3d12_t *e, ID3D12GraphicsCommandList *cmd,
    }
    ID3D12GraphicsCommandList_SetDescriptorHeaps(cmd, 1, heaps);
    ID3D12GraphicsCommandList_SetGraphicsRootSignature(cmd, e->root);
-   ID3D12GraphicsCommandList_SetPipelineState(cmd, params.ssaa_log2 ? e->pso_ssaa : e->pso);
+   ID3D12GraphicsCommandList_SetPipelineState(cmd, sums ? e->pso_sums : params.ssaa_log2 ? e->pso_ssaa : e->pso);
    ID3D12GraphicsCommandList_SetGraphicsRoot32BitConstants(cmd, 0,
          sizeof(params) / 4, &params, 0);
    ID3D12GraphicsCommandList_SetGraphicsRootDescriptorTable(cmd, 1, table);

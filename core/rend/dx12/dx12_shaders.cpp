@@ -17,12 +17,20 @@
 #include "dx12_shaders.h"
 #include <cstddef>
 #include "dx12_dxbc.inc"
+#include "dx12_hdr_dxbc.inc"
 #include "rend/texdecode_dxbc.inc"
 
 D3D12_SHADER_BYTECODE dx12_shader(DX12Shader shader)
 {
 	const int n = (int)shader;
 	D3D12_SHADER_BYTECODE code = { dx12_dxbc[n], dx12_dxbc_size[n] };
+	return code;
+}
+
+D3D12_SHADER_BYTECODE dx12_hdr_shader(DX12HdrShader shader)
+{
+	const int n = (int)shader;
+	D3D12_SHADER_BYTECODE code = { dx12_hdr_dxbc[n], dx12_hdr_dxbc_size[n] };
 	return code;
 }
 

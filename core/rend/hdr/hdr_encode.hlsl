@@ -131,6 +131,20 @@ uint hdr_pack_unorm8(float4 v)
 	return b.r | (b.g << 8) | (b.b << 16) | (b.a << 24);
 }
 #endif
+#ifdef HDR_ENCODE_SUMS
+/* Direct3D 12's per-pixel renderer's, with SSAA (after rend/tile/pvr_lane.h
+ * and pvr_resolve.h): not the samples, but their channel sums, which its
+ * resolve stored, scaled to 16 samples (hdr_output.h's HDR_SUMS_LOG2). As
+ * HDR_ENCODE_SSAA's, their exact average where the picture is their
+ * resolve. */
+Texture2D<uint4> sums          : register(t5);
+
+uint hdr_pack_unorm8(float4 v)
+{
+	const uint4 b = uint4(round(saturate(v) * 255.0));
+	return b.r | (b.g << 8) | (b.b << 16) | (b.a << 24);
+}
+#endif
 #ifdef HDR_ENCODE_POST
 /* the composite's: the scene-linear image (as the picture, t0), the
  * bloom's two bands, and struct hdr_post_params */
@@ -780,6 +794,15 @@ float4 main(float4 pos : SV_Position) : SV_Target
 		if (hdr_pack_unorm8(pic) == pvr_resolve_join(rb, ga, (uint)ssaaLog2))
 			rgb = float3((float)(rb & 0xffffu), (float)(ga & 0xffffu), (float)(rb >> 16))
 					/ (255.0 * (float)(1u << (uint)ssaaLog2));
+	}
+#endif
+#ifdef HDR_ENCODE_SUMS
+	{
+		const uint4 t  = sums.Load(int3((int)pos.x, (int)pos.y, 0));
+		const uint  rb = t.r | (t.b << 16);
+		const uint  ga = t.g | (t.a << 16);
+		if (hdr_pack_unorm8(pic) == pvr_resolve_join(rb, ga, 4u))
+			rgb = float3((float)(rb & 0xffffu), (float)(ga & 0xffffu), (float)(rb >> 16)) / (255.0 * 16.0);
 	}
 #endif
 	if (deband != 0)

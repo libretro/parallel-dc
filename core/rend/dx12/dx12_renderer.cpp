@@ -374,7 +374,7 @@ void DX12Renderer::SetupSsaa(u32 width, u32 height)
 	ssaaLog2 = SSAA_LOG2(samples);
 	ssaaWidth = width;
 	ssaaHeight = height;
-	context->Pipelines().MakeForSamples(ssaaLog2);
+	context->Pipelines().MakeForSamples(ssaaLog2, context->HdrActive());
 }
 
 void DX12Renderer::DropSsaa()
@@ -1171,7 +1171,8 @@ void DX12Renderer::EndScreen(bool writeOutPass)
 	context->SetTargets(~0u, ~0u);
 	// as the frontend wants it - or encoded for its HDR output, which it is handed instead - and off to the GPU
 	if (!context->EncodeHdr(target.image, target.image.width, target.image.height,
-			hdrSamples ? &ssaaColor[0] : nullptr, ssaaLog2))
+			hdrSamples ? &ssaaColor[0] : nullptr, ssaaLog2,
+			ssaa && !(writeOutPass && writeOutPictures) ? HdrSums() : nullptr))
 		context->Transition(target.image, context->RequiredState());
 	if (hdrSamples)
 	{
