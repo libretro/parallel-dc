@@ -2313,6 +2313,17 @@ static void remove_extension(char *buf, const char *path, size_t size)
       *base = '\0';
 }
 
+#if defined(HAVE_VULKAN) || defined(HAVE_D3D12)
+/* The frontend makes a context for its temporal upscaler only for a core
+ * that asked before the context is made: asked here, beside
+ * SET_HW_RENDER, and again at context_reset for the interface */
+static void upscaler_announce(void)
+{
+	const struct retro_hw_render_upscaler_interface *upscaler = NULL;
+	environ_cb(RETRO_ENVIRONMENT_GET_HW_RENDER_UPSCALER_INTERFACE, (void*)&upscaler);
+}
+#endif
+
 #ifdef HAVE_VULKAN
 static VulkanContext theVulkanContext;
 
@@ -2383,6 +2394,7 @@ static bool set_vulkan_hw_render()
 
 	if (!environ_cb(RETRO_ENVIRONMENT_SET_HW_RENDER, &hw_render))
 		return false;
+	upscaler_announce();
 
 	/* Version 2 where the frontend has it: the device is then made through
 	 * the frontend, which can add what it needs (e.g. for its low-latency
@@ -2629,6 +2641,7 @@ static bool set_dx12_hw_render(void)
 
 	if (!environ_cb(RETRO_ENVIRONMENT_SET_HW_RENDER, &hw_render))
 		return false;
+	upscaler_announce();
 
 	/* Version 2 of the interface, where the frontend has it: the frame
 	 * handed over with the fence that says when it is drawn, and read by
