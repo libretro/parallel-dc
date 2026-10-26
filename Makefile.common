@@ -438,6 +438,7 @@ SOURCES_C += $(LIBRETRO_COMM_DIR)/memmap/memalign.c \
 					$(LIBRETRO_COMM_DIR)/file/file_path.c \
 					$(LIBRETRO_COMM_DIR)/file/file_path_io.c \
 					$(LIBRETRO_COMM_DIR)/vfs/vfs_implementation.c \
+					$(LIBRETRO_COMM_DIR)/vfs/vfs_prefetch.c \
 					$(LIBRETRO_COMM_DIR)/streams/file_stream.c \
 					$(LIBRETRO_COMM_DIR)/streams/file_stream_transforms.c \
 					$(LIBRETRO_COMM_DIR)/encodings/encoding_utf.c \

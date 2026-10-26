@@ -1,0 +1,50 @@
+name: CHD reading
+
+# tools/chd/run.sh: every frame of CHDs made with each CD codec, a GD-ROM
+# image and a parent chain against the files they came from; and CD audio
+# and data read at once through chd.cpp, where the read-ahead threads must
+# decode the hunks and neither stream throw out the other's (ASan + UBSan,
+# TSan).
+
+on:
+  push:
+    paths:
+      - 'core/imgread/**'
+      - 'core/deps/coreio/**'
+      - 'core/archive/**'
+      - 'core/libretro-common/formats/**'
+      - 'core/libretro-common/encodings/**'
+      - 'core/libretro-common/vfs/**'
+      - 'core/libretro-common/streams/**'
+      - 'core/libretro-common/rthreads/**'
+      - 'tools/chd/**'
+      - '.github/workflows/chd.yml'
+  pull_request:
+    paths:
+      - 'core/imgread/**'
+      - 'core/deps/coreio/**'
+      - 'core/archive/**'
+      - 'core/libretro-common/formats/**'
+      - 'core/libretro-common/encodings/**'
+      - 'core/libretro-common/vfs/**'
+      - 'core/libretro-common/streams/**'
+      - 'core/libretro-common/rthreads/**'
+      - 'tools/chd/**'
+      - '.github/workflows/chd.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  chd:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install chdman
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends build-essential mame-tools python3
+      - name: CHD reads, and CD audio and data at once
+        run: sh tools/chd/run.sh

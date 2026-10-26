@@ -34,7 +34,7 @@ sort -u -o "$WORK/have" "$WORK/have"
 # Only the symbols the core's own headers name: libc, GL and the C++
 # runtime come from the toolchain.
 nm -u "$A" 2>/dev/null | awk '{print $2}' | sort -u \
-   | grep -E '^(core_|archive_|chd_image_|rchd_|r7z_|rzip_|rinflate_|rzstd_|rflac_|filestream_|retro_vfs_|path_|fill_pathname|string_|strlcpy|strlcat|encoding_|cpu_features_|retro_opendir|retro_readdir|retro_closedir|retro_dirent|sthread_|slock_|scond_|retro_eventcount|retro_spsc|memalign_|rtime_|utf8|utf16)' \
+   | grep -E '^(core_|archive_|chd_image_|rchd_|r7z_|rzip_|rinflate_|rzstd_|rflac_|filestream_|retro_vfs_|path_|fill_pathname|string_|strlcpy|strlcat|encoding_|cpu_features_|retro_opendir|retro_readdir|retro_closedir|retro_dirent|sthread_|slock_|scond_|retro_eventcount|retro_spsc|vfs_prefetch_|memalign_|rtime_|utf8|utf16)' \
    > "$WORK/need" || true
 MISSING=$(comm -23 "$WORK/need" "$WORK/have")
 if [ -n "$MISSING" ]; then

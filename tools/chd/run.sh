@@ -13,6 +13,11 @@
 # The preprocessor flags are read back out of the core's own build, so the
 # test decodes with exactly the codec set the core is built with.
 #
+# chd_streams_test then reads CD audio and data from the CD at once, as a
+# game playing music while it streams does, through the core's chd.cpp,
+# under ASan + UBSan and under TSan: the read-ahead threads must decode the
+# hunks, and neither stream throw out the other's.
+#
 # Needs chdman (MAME tools) and python3. Fails rather than skips when either
 # is missing: a CHD check that quietly does nothing is how a codec stops
 # working without anyone noticing.
@@ -62,6 +67,39 @@ $CC -O1 -g $VDEFS -fsanitize=address,undefined \
    $L/string/stdstring.c $L/string/rstrtod.c $L/time/rtime.c \
    $L/memmap/memalign.c \
    -lm -lpthread
+done
+
+CXX=${CXX:-c++}
+STREAM_SRC="core/imgread/chd_image.c core/deps/coreio/coreio.c
+   core/archive/archive.c $L/formats/chd/rchd.c
+   $L/encodings/encoding_huffman.c $L/encodings/encoding_rzstd.c
+   $L/encodings/encoding_deflate.c $L/encodings/encoding_crc32.c
+   $L/formats/7z/r7z_lzma.c $L/formats/7z/r7z_archive.c
+   $L/formats/7z/r7z_lzma2.c $L/formats/7z/r7z_lzma_stream.c
+   $L/formats/7z/r7z_bcj2.c $L/formats/7z/r7z_filters.c
+   $L/formats/zip/rzip_archive.c $L/formats/rar/rrar_archive.c
+   $L/formats/rar/rrar_ppmd7.c $L/rthreads/rthreads.c
+   $L/rthreads/retro_eventcount.c $L/formats/flac/rflac.c
+   $L/features/features_cpu.c $L/streams/file_stream.c
+   $L/vfs/vfs_implementation.c $L/vfs/vfs_prefetch.c $L/file/file_path.c
+   $L/file/file_path_io.c $L/file/retro_dirent.c $L/compat/compat_strl.c
+   $L/compat/fopen_utf8.c $L/compat/compat_strcasestr.c
+   $L/encodings/encoding_utf.c $L/string/stdstring.c $L/string/rstrtod.c
+   $L/time/rtime.c $L/memmap/memalign.c"
+for san in address,undefined thread; do
+   v=$(echo $san | tr -d ,)
+   mkdir -p "$WORK/o_$v"
+   for s in $STREAM_SRC; do
+      $CC -O1 -g $DEFS -fsanitize=$san -fno-sanitize-recover=undefined \
+         -Icore -Icore/libretro -Icore/deps -I$L/include \
+         -c "$s" -o "$WORK/o_$v/$(echo "$s" | tr / _).o"
+   done
+   $CXX -std=c++11 -fpermissive -w -O1 -g $DEFS -fsanitize=$san \
+      -fno-sanitize-recover=undefined \
+      -Icore -Icore/libretro -Icore/deps -I$L/include \
+      -o "$WORK/chd_streams_test_$v" tools/chd/chd_streams_test.cpp \
+      core/imgread/chd.cpp "$WORK/o_$v"/*.o \
+      -Wl,--wrap=chd_image_read_hunk -lm -lpthread
 done
 
 python3 tools/chd/make_fixture.py "$WORK/base"
@@ -117,8 +155,17 @@ for c in cdzs cdlz; do
 done
 check "$WORK/chain/child.chd" "$WORK/child.bin"
 
+export TSAN_OPTIONS=halt_on_error=1
+for c in cdzs cdfl; do
+   for v in addressundefined thread; do
+      "$WORK/chd_streams_test_$v" "$WORK/$c.chd" "$WORK/base.bin" | tail -1 \
+         | grep -q PASS || { echo "FAIL (streams, $v): $c"; fail=1; }
+   done
+done
+
 if [ $fail = 0 ]; then
    echo "chd_image_test: all images PASS (mapped and bounce-buffer builds)"
+   echo "chd_streams_test: CD audio and data read at once PASS"
 else
    exit 1
 fi

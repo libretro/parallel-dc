@@ -19,7 +19,6 @@
 #include "lockfree.h"
 #include "libretro/emu_baton.h"
 #include "libretro/input_latch.h"
-#include "imgread/hunk_prefetch.h"
 
 static int failures;
 
@@ -308,75 +307,6 @@ static void test_mpsc_list(void)
 	CHECK(handled == (long)MPSC_PRODUCERS * MPSC_REQUESTS);
 }
 
-/* ---- HunkPrefetch ---------------------------------------------------- */
-
-#define HUNK_BYTES 4096
-#define HUNK_COUNT 512
-#define HUNK_READS 60000
-
-static bool hunk_is_bad(u32 hunk) { return hunk % 97 == 96; }
-
-static bool hunk_decode(void *, u32 hunk, u8 *dst)
-{
-	if (hunk_is_bad(hunk))
-		return false;
-	for (u32 i = 0; i < HUNK_BYTES; i++)
-		dst[i] = (u8)(hunk * 31 + i);
-	return true;
-}
-
-static bool hunk_matches(u32 hunk, const u8 *p)
-{
-	for (u32 i = 0; i < HUNK_BYTES; i++)
-		if (p[i] != (u8)(hunk * 31 + i))
-			return false;
-	return true;
-}
-
-static void test_hunk_prefetch(void)
-{
-	HunkPrefetch pf;
-	unsigned seed = 12345;
-	u32 hunk = 0;
-	long hits = 0;
-
-	CHECK(pf.Start(hunk_decode, NULL, HUNK_BYTES, HUNK_COUNT));
-	CHECK(!pf.Start(hunk_decode, NULL, HUNK_BYTES, HUNK_COUNT));
-	for (int i = 0; i < HUNK_READS; i++)
-	{
-		unsigned r = rng_next(&seed);
-
-		/* Mostly sequential, as a disc is read, with a seek now and then. */
-		if (r % 50 == 0)
-			hunk = rng_next(&seed) % HUNK_COUNT;
-		else
-			hunk = (hunk + 1) % HUNK_COUNT;
-
-		if (pf.Fetch(hunk))
-		{
-			/* The worker never hands over a hunk it could not decode. */
-			CHECK(!hunk_is_bad(hunk));
-			CHECK(hunk_matches(hunk, pf.Buffer()));
-			hits++;
-		}
-		else if (hunk_decode(NULL, hunk, pf.Buffer()))
-			CHECK(hunk_matches(hunk, pf.Buffer()));
-
-		/* Give the worker a moment now and then, as emulation between
-		 * two disc reads does. */
-		if (i % 64 == 0)
-			retro_sleep(1);
-	}
-	pf.Stop();
-	CHECK(!pf.Running());
-	CHECK(hits > 0);
-
-	/* Starts again after a stop. */
-	CHECK(pf.Start(hunk_decode, NULL, HUNK_BYTES, HUNK_COUNT));
-	pf.Stop();
-	printf("  hunk prefetch: %ld of %d reads found decoded\n", hits, HUNK_READS);
-}
-
 /* ---- EmuBaton -------------------------------------------------------- */
 
 #define BATON_FRAMES 30000
@@ -643,7 +573,6 @@ int main(void)
 		{ "cSlotCache",    test_slot_cache },
 		{ "cTripleBuffer", test_triple_buffer },
 		{ "cMpscList",     test_mpsc_list },
-		{ "HunkPrefetch",  test_hunk_prefetch },
 		{ "EmuBaton",      test_emu_baton },
 		{ "InputLatch",    test_input_latch },
 		{ "cMarkSet",      test_mark_set },

@@ -1,10 +1,20 @@
 #include "common.h"
 
 #include "chd_image.h"
-#include "hunk_prefetch.h"
+
+#include <vfs/vfs_prefetch.h>
 
 /* tracks are padded to a multiple of this many frames */
 const uint32_t CD_TRACK_PADDING = 4;
+
+/* Which read-ahead a track reads through. CD audio and data are read
+ * from different places on the disc at once (music playing while a
+ * game streams), so each has its own, and neither throws out the
+ * hunks the other is about to use. */
+enum { CHD_STREAM_DATA, CHD_STREAM_AUDIO, CHD_STREAMS };
+
+/* Hunks each stream's thread decodes ahead of its reader. */
+static const unsigned chd_stream_slots[CHD_STREAMS] = { 8, 4 };
 
 struct CHDDisc : Disc
 {
@@ -14,16 +24,30 @@ struct CHDDisc : Disc
 
 	u32 hunkbytes;
 	u32 sph;
+	u32 total_hunks = 0;
 
-	/* Read-ahead on a worker thread, with a handle of its own. */
-	chd_image_t* chd2 = nullptr;
-	HunkPrefetch prefetch;
-	static const u32 NO_HUNK = HunkPrefetch::NO_HUNK;
-	u32  total_hunks = 0;
-
-	static bool prefetch_read(void *opaque, u32 hunk, u8 *dst)
+	/* A stream's read-ahead: libretro-common's prefetch thread, which
+	 * decodes the hunks ahead of the reader on an image handle of its
+	 * own. One window is one hunk. */
+	struct Stream
 	{
-		return chd_image_read_hunk(((CHDDisc *)opaque)->chd2, hunk, dst);
+		CHDDisc*             disc;
+		chd_image_t*         chd;
+		struct vfs_prefetch* p;
+	} streams[CHD_STREAMS];
+
+	static const u32 NO_HUNK = 0xFFFFFFFFu;
+
+	static int64_t stream_fetch(void *user, uint64_t off, uint8_t *buf, size_t len)
+	{
+		Stream *st = (Stream *)user;
+		u32 hunk = (u32)(off / st->disc->hunkbytes);
+
+		if (hunk >= st->disc->total_hunks)
+			return 0;
+		if (len < st->disc->hunkbytes || !chd_image_read_hunk(st->chd, hunk, buf))
+			return -1;
+		return (int64_t)st->disc->hunkbytes;
 	}
 
 	/* Decompress @hunk into hunk_mem on this thread. A hunk that fails to
@@ -40,66 +64,75 @@ struct CHDDisc : Disc
 		}
 	}
 
-	/* Return a pointer to the decompressed hunk, preferring the prefetched copy. */
-	u8* hunk_get(u32 hunk)
+	/* Where the sector at @fad_offs is decoded: in the stream's window
+	 * when its thread got there first, else decoded here. Valid until
+	 * the next read on this disc. */
+	const u8* sector_get(unsigned stream, u32 fad_offs)
 	{
-		if (hunk == old_hunk)
-			return hunk_mem;               /* still the current hunk */
-		if (prefetch.Running())
-		{
-			/* Takes the prefetched hunk if there is one and aims the worker
-			 * at the next; on a miss (first read or seek) the worker gets
-			 * going on the next hunk while this thread decodes this one. */
-			bool hit = prefetch.Fetch(hunk);
-			hunk_mem = prefetch.Buffer();
-			old_hunk = hit ? hunk : NO_HUNK;
-			if (hit)
-				return hunk_mem;
-		}
-		hunk_read_sync(hunk);
-		return hunk_mem;
+		const u32 hunk = fad_offs / sph;
+		const u32 in   = (fad_offs % sph) * (2352 + 96);
+		const u8* ptr;
+
+		if (streams[stream].p
+				&& vfs_prefetch_view(streams[stream].p, (uint64_t)hunk * hunkbytes + in, &ptr) > 0)
+			return ptr;
+		if (hunk != old_hunk)
+			hunk_read_sync(hunk);
+		return hunk_mem + in;
 	}
 
-	void start_prefetch(const char* file)
+	/* The stream's thread starts on @hunk now, ahead of the reads. */
+	void stream_aim(unsigned stream, u32 hunk)
 	{
-		chd2 = chd_image_open(file, NULL, 0);
-		if (chd2 == nullptr)
-			return;
-		if (!prefetch.Start(prefetch_read, this, hunkbytes, total_hunks))
-		{
-			chd_image_close(chd2);
-			chd2 = nullptr;
-			return;
-		}
-		/* The prefetcher's buffers take over from the one TryOpen made. */
-		delete [] hunk_mem;
-		hunk_mem = prefetch.Buffer();
-		old_hunk = NO_HUNK;
+		if (streams[stream].p)
+			vfs_prefetch_seek(streams[stream].p, (uint64_t)hunk * hunkbytes);
 	}
 
-	void stop_prefetch()
+	void start_streams(const char* file)
 	{
-		if (prefetch.Running())
+		for (unsigned i = 0; i < CHD_STREAMS; i++)
 		{
-			prefetch.Stop();
-			hunk_mem = nullptr;
-			old_hunk = NO_HUNK;
+			Stream& st = streams[i];
+			st.disc = this;
+			if (!(st.chd = chd_image_open(file, NULL, 0)))
+				continue;
+			if (!(st.p = vfs_prefetch_new(stream_fetch, &st, hunkbytes,
+					chd_stream_slots[i], 0)))
+			{
+				chd_image_close(st.chd);
+				st.chd = nullptr;
+			}
 		}
-		chd_image_close(chd2);
-		chd2 = nullptr;
+	}
+
+	void stop_streams()
+	{
+		for (unsigned i = 0; i < CHD_STREAMS; i++)
+		{
+			vfs_prefetch_free(streams[i].p);
+			streams[i].p = nullptr;
+			chd_image_close(streams[i].chd);
+			streams[i].chd = nullptr;
+		}
 	}
 
 	CHDDisc()
 	{
 		chd=0;
 		hunk_mem=0;
+		for (unsigned i = 0; i < CHD_STREAMS; i++)
+		{
+			streams[i].disc = this;
+			streams[i].chd  = nullptr;
+			streams[i].p    = nullptr;
+		}
 	}
 
 	bool TryOpen(const char* file);
 
 	~CHDDisc()
 	{
-		stop_prefetch();
+		stop_streams();
 		if (hunk_mem)
 			delete [] hunk_mem;
 		chd_image_close(chd);
@@ -112,31 +145,28 @@ struct CHDTrack : TrackFile
 	u32 StartFAD;
 	u32 Offset;
 	u32 fmt;
+	unsigned stream;
 	bool swap_bytes;
 
-	CHDTrack(CHDDisc* disc, u32 StartFAD,u32 Offset, u32 fmt, bool swap_bytes)
+	CHDTrack(CHDDisc* disc, u32 StartFAD,u32 Offset, u32 fmt, unsigned stream, bool swap_bytes)
 	{
 		this->disc=disc;
 		this->StartFAD=StartFAD;
 		this->Offset=Offset;
 		this->fmt=fmt;
+		this->stream=stream;
 		this->swap_bytes = swap_bytes;
 	}
 
 	virtual void Read(u32 FAD,u8* dst,SectorFormat* sector_type,u8* subcode,SubcodeFormat* subcode_type)
 	{
-		u32 fad_offs = FAD + Offset;
-		u32 hunk=(fad_offs)/disc->sph;
-		u8* hmem = disc->hunk_get(hunk);
-
-		u32 hunk_ofs=fad_offs%disc->sph;
+		const u8* from = disc->sector_get(stream, FAD + Offset);
 
 		if (swap_bytes)
 		{
 			/* The other byte order, made on the way across: 16 bits at a
 			 * time, which the compiler does sixteen bytes at a time. (It
 			 * was copied, and then swapped where it lay a byte at a time.) */
-			const u8 *from = hmem + hunk_ofs * (2352 + 96);
 			for (u32 i = 0; i + 1 < fmt; i += 2)
 			{
 				u16 w;
@@ -146,7 +176,7 @@ struct CHDTrack : TrackFile
 			}
 		}
 		else
-			memcpy(dst,hmem+hunk_ofs*(2352+96),fmt);
+			memcpy(dst,from,fmt);
 
 		*sector_type=Format();
 
@@ -162,29 +192,28 @@ struct CHDTrack : TrackFile
 	}
 
 	/* The compressed bytes of every hunk the sectors span, so neither
-	 * this thread nor the read-ahead worker stalls on a cold page. Both
-	 * handles are on the same file, so one hint serves both. */
+	 * this thread nor the read-ahead stalls on a cold page (all handles
+	 * are on the same file, so one hint serves them all), and the
+	 * stream's thread set decoding from the first one. */
 	virtual void Prefetch(u32 FAD, u32 count)
 	{
 		u32 first = (FAD + Offset) / disc->sph;
 		u32 last  = (FAD + Offset + count - 1) / disc->sph;
 
-		if (count)
-			chd_image_prefetch(disc->chd, first, last - first + 1);
+		if (!count)
+			return;
+		chd_image_prefetch(disc->chd, first, last - first + 1);
+		disc->stream_aim(stream, first);
 	}
 
 	/* The sector inside the decoded hunk; a track whose bytes have to
 	 * be swapped is read through a buffer. */
 	virtual const u8* View(u32 FAD, SectorFormat* sector_type)
 	{
-		u32 fad_offs = FAD + Offset;
-		u8* hmem;
-
 		if (swap_bytes)
 			return NULL;
-		hmem = disc->hunk_get(fad_offs / disc->sph);
 		*sector_type = Format();
-		return hmem + (fad_offs % disc->sph) * (2352 + 96);
+		return disc->sector_get(stream, FAD + Offset);
 	}
 };
 
@@ -275,7 +304,9 @@ bool CHDDisc::TryOpen(const char* file)
 		last_pregap = pregap;
 		/* Music is kept in the other byte order in a version 5 image (and
 		 * in any of a CD, which is read from version 5 only). */
-		t.file = new CHDTrack(this, t.StartFAD, Offset + pregap_kept - t.StartFAD, sector_size, t.CTRL == 0 && chd_image_version(chd) >= 5);
+		t.file = new CHDTrack(this, t.StartFAD, Offset + pregap_kept - t.StartFAD, sector_size,
+				t.CTRL == 0 ? CHD_STREAM_AUDIO : CHD_STREAM_DATA,
+				t.CTRL == 0 && chd_image_version(chd) >= 5);
 
 		int padded = (frames + CD_TRACK_PADDING - 1) / CD_TRACK_PADDING;
 		Offset += padded * CD_TRACK_PADDING;
@@ -334,7 +365,7 @@ bool CHDDisc::TryOpen(const char* file)
 		}
 	}
 
-	start_prefetch(file);
+	start_streams(file);
 
 	return true;
 }
