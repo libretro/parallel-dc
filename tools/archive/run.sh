@@ -40,7 +40,7 @@ SOURCES="tools/archive/archive_test.c core/archive/archive.c \
    core/deps/coreio/coreio.c \
    $L/encodings/encoding_deflate.c $L/encodings/encoding_crc32.c \
    $L/encodings/encoding_utf.c \
-   $L/formats/7z/r7z_archive.c $L/formats/7z/r7z_lzma.c \
+   $L/formats/7z/r7z_archive.c $L/encodings/encoding_rbzip2.c $L/formats/7z/r7z_lzma.c \
    $L/formats/7z/r7z_lzma2.c $L/formats/7z/r7z_lzma_stream.c \
    $L/formats/7z/r7z_bcj2.c $L/formats/7z/r7z_filters.c \
    $L/formats/zip/rzip_archive.c \

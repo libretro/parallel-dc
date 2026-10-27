@@ -57,6 +57,12 @@
 #include <7z/r7z_lzma2.h>
 #include <7z/r7z_bcj2.h>
 #include <7z/r7z_filters.h>
+#include <encodings/deflate.h>
+#ifdef HAVE_RBZIP2
+#include <encodings/rbzip2.h>
+#endif
+
+#include "../rar/rrar_ppmd7.h"
 
 /* --------------------------------------------------------------------
  * Header block ids
@@ -91,6 +97,10 @@
 
 /* Coder method ids, as stored in the folder's coder list. */
 #define METHOD_COPY   0x00
+#define METHOD_PPMD   0x030401
+#define METHOD_DEFLATE 0x040108
+#define METHOD_DEFLATE64 0x040109
+#define METHOD_BZIP2  0x040202
 #define METHOD_DELTA  0x03
 #define METHOD_LZMA2  0x21
 #define METHOD_LZMA   0x030101
@@ -346,14 +356,19 @@ struct r7z_archive
    uint8_t       *cached_data;
    size_t         cached_len;
    uint32_t       cached_folder;
+   int            cached_borrowed; /* the archive's own bytes: not freed */
+
+   void          *bz;              /* the bzip2 decoder, made at the first
+                                      BZip2 coder */
 
    /* A folder decode that has been started and paused part way.
     *
-    * Only the LZMA and LZMA2 stages pause: they are 97% of the time
-    * and their decoders already take an output limit. Every other
-    * coder in a chain, the branch filters included, runs to
-    * completion in one go because each is a single linear pass of a
-    * few milliseconds over the whole buffer.
+    * The LZMA, LZMA2, PPMd, Deflate and BZip2 stages pause: they are
+    * nearly all of the time, and each decodes in order to an output
+    * limit, BZip2's a block.
+    * Every other coder in a chain, the branch filters included, runs
+    * to completion in one go because each is a single linear pass of
+    * a few milliseconds over the whole buffer.
     *
     * pend_folder is 0xFFFFFFFF when nothing is in flight. */
    uint32_t       pend_folder;
@@ -363,10 +378,14 @@ struct r7z_archive
    size_t         pend_in_len;
    uint8_t       *pend_out;        /* buffer being filled */
    size_t         pend_out_len;
-   void          *pend_dec;        /* rlzma2_dec_t, when one is live */
+   int            pend_pass;       /* a Copy stage: pend_out is pend_in */
+   void          *pend_dec;        /* the stage's decoder, when one is
+                                      live: see stage_dec_free() */
    uint16_t      *pend_probs;
    size_t         pend_fed;        /* input consumed by this stage */
+   size_t         pend_made;       /* output a Deflate stage has made */
    uint32_t       pend_base;       /* coder_unpack_sizes base for folder */
+   uint32_t       pend_method;     /* the method pend_dec decodes */
 
    /* What a reader on another thread may look at while one thread calls
     * r7z_archive_decode_step(): the buffer the folder is being decoded
@@ -385,6 +404,7 @@ struct r7z_archive
     * bounded by that port's own decode. */
    uint8_t       *pend_b2buf[4];
    size_t         pend_b2len[4];
+   int            pend_b2borrowed[4]; /* the archive's own bytes: not freed */
    uint32_t       pend_b2port;     /* next port to resolve, 0..4 */
    uint32_t       pend_b2at;       /* index of the BCJ2 coder */
    uint32_t       pend_b2in;       /* input-port base of that coder */
@@ -405,6 +425,19 @@ struct r7z_archive
 
 /* Defined with the resumable decoder below; declared here because
  * r7z_archive_close() has to release a decode left in flight. */
+/* Holds @data, @len octets of folder @folder, as the folder cache, in
+ * place of what was held; @borrowed when it is the archive's own. */
+static void r7z_cache_hold(r7z_archive_t *a, uint8_t *data, size_t len,
+      uint32_t folder, int borrowed)
+{
+   if (!a->cached_borrowed)
+      free(a->cached_data);
+   a->cached_data     = data;
+   a->cached_len      = len;
+   a->cached_folder   = folder;
+   a->cached_borrowed = borrowed;
+}
+
 static void decode_pending_reset(r7z_archive_t *a);
 
 /* --------------------------------------------------------------------
@@ -1389,6 +1422,79 @@ fail:
  * the end of one.
  * -------------------------------------------------------------------- */
 
+/* A PPMd coder part way: the model, the range decoder over the
+ * coder's whole input, and the octets decoded so far. */
+typedef struct r7z_ppmd
+{
+   rrar_ppmd7_t       m;
+   rrar_ppmd7_range_t rc;
+   size_t             pos;
+} r7z_ppmd_t;
+
+static void ppmd_close(r7z_ppmd_t *p)
+{
+   if (!p)
+      return;
+   rrar_ppmd7_free(&p->m);
+   free(p);
+}
+
+/* The PPMd decoder for coder @c over @in. */
+static int ppmd_open(const r7z_archive_t *a, const coder_t *c,
+      const uint8_t *in, size_t in_len, r7z_ppmd_t **out)
+{
+   /* order, then the model's memory, little endian */
+   const uint8_t *pr = a->props + c->prop_offset;
+   r7z_ppmd_t    *p;
+   uint32_t       mem;
+   unsigned       order;
+   *out = NULL;
+   if (c->prop_size < 5)
+      return R7Z_ERROR_DATA;
+   order = pr[0];
+   mem   = (uint32_t)pr[1] | ((uint32_t)pr[2] << 8)
+         | ((uint32_t)pr[3] << 16) | ((uint32_t)pr[4] << 24);
+   if (order < 2 || order > 64 || mem < (1u << 11)
+         || mem > 0xFFFFFFFFu - 12 * 3)
+      return R7Z_ERROR_DATA;
+   if (!(p = (r7z_ppmd_t*)malloc(sizeof(*p))))
+      return R7Z_ERROR_MEM;
+   rrar_ppmd7_construct(&p->m);
+   if (!rrar_ppmd7_alloc(&p->m, mem))
+   {
+      free(p);
+      return R7Z_ERROR_MEM;
+   }
+   rrar_ppmd7_init(&p->m, order);
+   p->pos = 0;
+   if (!rrar_ppmd7z_range_init(&p->rc, in, in + in_len))
+   {
+      ppmd_close(p);
+      return R7Z_ERROR_DATA;
+   }
+   *out = p;
+   return R7Z_OK;
+}
+
+/* Decode on to @limit of @out's @out_len octets; at the end, the
+ * stream must not have run past its input. */
+static int ppmd_run(r7z_ppmd_t *p, uint8_t *out, size_t limit,
+      size_t out_len)
+{
+   size_t i;
+   for (i = p->pos; i < limit; i++)
+   {
+      int sym = rrar_ppmd7_decode_symbol(&p->m, &p->rc);
+      if (sym < 0)
+         return R7Z_ERROR_DATA;
+      out[i] = (uint8_t)sym;
+   }
+   p->pos = limit;
+   if (limit == out_len && p->rc.past > 4)
+      return R7Z_ERROR_DATA;
+   return R7Z_OK;
+}
+
 static int decode_coder(r7z_archive_t *a, const coder_t *c,
       const uint8_t *in, size_t in_len,
       uint8_t *out, size_t out_len)
@@ -1522,6 +1628,27 @@ static int decode_coder(r7z_archive_t *a, const coder_t *c,
          rfilters_armt_decode(0, out, out_len);
          return R7Z_OK;
 
+      case METHOD_ARM64:
+      {
+         /* the stream's offset, when it is not 0 */
+         uint32_t ip = 0;
+         if (in_len != out_len)
+            return R7Z_ERROR_DATA;
+         if (c->prop_size == 4)
+         {
+            const uint8_t *pr = a->props + c->prop_offset;
+            ip = (uint32_t)pr[0] | ((uint32_t)pr[1] << 8)
+               | ((uint32_t)pr[2] << 16) | ((uint32_t)pr[3] << 24);
+            if (ip & 3)
+               return R7Z_ERROR_DATA;
+         }
+         else if (c->prop_size)
+            return R7Z_ERROR_DATA;
+         memcpy(out, in, out_len);
+         rfilters_arm64_decode(ip, out, out_len);
+         return R7Z_OK;
+      }
+
       case METHOD_BRA_PPC:
          if (in_len != out_len)
             return R7Z_ERROR_DATA;
@@ -1542,6 +1669,54 @@ static int decode_coder(r7z_archive_t *a, const coder_t *c,
          memcpy(out, in, out_len);
          rfilters_ia64_decode(0, out, out_len);
          return R7Z_OK;
+
+      case METHOD_DEFLATE:
+      {
+         void  *z = rinflate_new(-15);
+         size_t rd = 0, wr = 0;
+         int    st;
+         if (!z)
+            return R7Z_ERROR_MEM;
+         rinflate_set_in(z, in, in_len);
+         rinflate_set_out(z, out, out_len);
+         st = rinflate_process(z, &rd, &wr);
+         rinflate_free(z);
+         return (st == RDEFLATE_PROCESS_END && wr == out_len)
+            ? R7Z_OK : R7Z_ERROR_DATA;
+      }
+
+      case METHOD_DEFLATE64:
+      {
+         size_t wr = 0;
+         return (     rinflate64_decode(out, out_len, in, in_len, &wr)
+                         == RDEFLATE_PROCESS_END
+                   && wr == out_len) ? R7Z_OK : R7Z_ERROR_DATA;
+      }
+
+#ifdef HAVE_RBZIP2
+      case METHOD_BZIP2:
+      {
+         size_t wr = 0;
+         int    e;
+         if (!a->bz && !(a->bz = rbzip2_new()))
+            return R7Z_ERROR_MEM;
+         e = rbzip2_decode((rbzip2_t*)a->bz, out, out_len, in, in_len, &wr);
+         if (e == RBZIP2_ERROR_MEM)
+            return R7Z_ERROR_MEM;
+         return (e == RBZIP2_OK && wr == out_len) ? R7Z_OK : R7Z_ERROR_DATA;
+      }
+#endif
+
+      case METHOD_PPMD:
+      {
+         r7z_ppmd_t *p;
+         int         res = ppmd_open(a, c, in, in_len, &p);
+         if (res != R7Z_OK)
+            return res;
+         res = ppmd_run(p, out, out_len, out_len);
+         ppmd_close(p);
+         return res;
+      }
 
       default:
          break;
@@ -1587,9 +1762,11 @@ static int folder_input_offsets(r7z_archive_t *a, uint32_t fi,
 }
 
 /* Produce the bytes arriving at one input port of the folder's coder
- * graph. Returns a malloc'd buffer the caller frees. */
+ * graph: a malloc'd buffer the caller frees, or, for a packed stream
+ * of an archive in memory, the archive's own bytes, *@borrowed set. */
 static int resolve_input(r7z_archive_t *a, uint32_t fi, uint32_t port,
-      uint32_t coder_out_base, uint8_t **out, size_t *out_len)
+      uint32_t coder_out_base, uint8_t **out, size_t *out_len,
+      int *borrowed)
 {
    folder_t *f = &a->folders[fi];
    uint32_t  b;
@@ -1625,6 +1802,13 @@ static int resolve_input(r7z_archive_t *a, uint32_t fi, uint32_t port,
                || (uint64_t)n > (uint64_t)a->len - 32 - off)
             return R7Z_ERROR_DATA;
 
+         *out_len  = n;
+         *borrowed = a->data != NULL;
+         if (a->data)
+         {
+            *out = (uint8_t *)(a->data + 32 + (size_t)off);
+            return R7Z_OK;
+         }
          *out = (uint8_t *)malloc(n ? n : 1);
          if (!*out)
             return R7Z_ERROR_MEM;
@@ -1634,7 +1818,6 @@ static int resolve_input(r7z_archive_t *a, uint32_t fi, uint32_t port,
             *out = NULL;
             return res;
          }
-         *out_len = n;
          return R7Z_OK;
       }
    }
@@ -1657,7 +1840,8 @@ static int resolve_input(r7z_archive_t *a, uint32_t fi, uint32_t port,
             {
                uint8_t *in = NULL;
                size_t   in_len = 0;
-               size_t   want;
+               int      in_borrowed = 0;
+               size_t   want = 0;
                uint8_t *dst;
                uint32_t in_base = 0;
                uint32_t z;
@@ -1670,38 +1854,33 @@ static int resolve_input(r7z_archive_t *a, uint32_t fi, uint32_t port,
                   in_base += a->coders[f->coder_first + z].num_in;
 
                res = resolve_input(a, fi, in_base, coder_out_base,
-                     &in, &in_len);
+                     &in, &in_len, &in_borrowed);
                if (res != R7Z_OK)
                   return res;
 
-               if (coder_out_base + out_port >= a->num_coder_unpack_sizes)
+               dst = NULL;
+               if (     coder_out_base + out_port >= a->num_coder_unpack_sizes
+                     || a->coder_unpack_sizes[coder_out_base + out_port]
+                        > (uint64_t)((size_t)-1))
+                  res = R7Z_ERROR_DATA;
+               else
                {
-                  free(in);
-                  return R7Z_ERROR_DATA;
+                  want = (size_t)a->coder_unpack_sizes[coder_out_base + out_port];
+                  if (!(dst = (uint8_t *)malloc(want ? want : 1)))
+                     res = R7Z_ERROR_MEM;
+                  else
+                     res = decode_coder(a, c, in, in_len, dst, want);
                }
-               if (a->coder_unpack_sizes[coder_out_base + out_port]
-                     > (uint64_t)((size_t)-1))
-               {
+               if (!in_borrowed)
                   free(in);
-                  return R7Z_ERROR_DATA;
-               }
-               want = (size_t)a->coder_unpack_sizes[coder_out_base + out_port];
-
-               dst = (uint8_t *)malloc(want ? want : 1);
-               if (!dst)
-               {
-                  free(in);
-                  return R7Z_ERROR_MEM;
-               }
-               res = decode_coder(a, c, in, in_len, dst, want);
-               free(in);
                if (res != R7Z_OK)
                {
                   free(dst);
                   return res;
                }
-               *out     = dst;
-               *out_len = want;
+               *out      = dst;
+               *out_len  = want;
+               *borrowed = 0;
                return R7Z_OK;
             }
             seen += c->num_out;
@@ -1719,6 +1898,7 @@ static int decode_folder_bcj2(r7z_archive_t *a, uint32_t fi,
    folder_t *f = &a->folders[fi];
    uint8_t  *bufs[4];
    size_t    lens[4];
+   int       borrowed[4];
    uint32_t  in_base = 0;
    uint32_t  coder_out_base = 0;
    uint32_t  i;
@@ -1728,8 +1908,9 @@ static int decode_folder_bcj2(r7z_archive_t *a, uint32_t fi,
 
    for (i = 0; i < 4; i++)
    {
-      bufs[i] = NULL;
-      lens[i] = 0;
+      bufs[i]     = NULL;
+      lens[i]     = 0;
+      borrowed[i] = 0;
    }
 
    if (a->coders[f->coder_first + bcj2_at].num_in != 4)
@@ -1747,7 +1928,7 @@ static int decode_folder_bcj2(r7z_archive_t *a, uint32_t fi,
    for (i = 0; i < 4; i++)
    {
       res = resolve_input(a, fi, in_base + i, coder_out_base,
-            &bufs[i], &lens[i]);
+            &bufs[i], &lens[i], &borrowed[i]);
       if (res != R7Z_OK)
          goto done;
    }
@@ -1789,13 +1970,15 @@ static int decode_folder_bcj2(r7z_archive_t *a, uint32_t fi,
 
 done:
    for (i = 0; i < 4; i++)
-      free(bufs[i]);
+      if (!borrowed[i])
+         free(bufs[i]);
    return res;
 }
 
-/* Decode one folder in full. Returns a malloc'd buffer of
- * f->unpack_size bytes. */
-static int decode_folder(r7z_archive_t *a, uint32_t fi, uint8_t **out)
+/* Decode one folder in full: f->unpack_size bytes, malloc'd, or the
+ * archive's own where no coder changed them, *@borrowed set. */
+static int decode_folder(r7z_archive_t *a, uint32_t fi, uint8_t **out,
+      int *borrowed)
 {
    folder_t *f;
    uint8_t  *cur      = NULL;
@@ -1821,6 +2004,7 @@ static int decode_folder(r7z_archive_t *a, uint32_t fi, uint8_t **out)
          if (a->coders[f->coder_first + ci].method == METHOD_BCJ2)
             bcj2_at = ci;
 
+      *borrowed = 0;
       if (bcj2_at != 0xFFFFFFFFu)
          return decode_folder_bcj2(a, fi, bcj2_at, out);
    }
@@ -1900,6 +2084,10 @@ static int decode_folder(r7z_archive_t *a, uint32_t fi, uint8_t **out)
          }
          next_len = (size_t)a->coder_unpack_sizes[base + ci];
 
+         /* Copy hands its input on as its output */
+         if (c->method == METHOD_COPY && next_len == cur_len)
+            continue;
+
          next = (uint8_t *)malloc(next_len ? next_len : 1);
          if (!next)
          {
@@ -1936,16 +2124,10 @@ static int decode_folder(r7z_archive_t *a, uint32_t fi, uint8_t **out)
       return R7Z_ERROR_CRC;
    }
 
-   /* (a folder no coder touched hands out a copy, not the archive) */
-   if (!cur_owned)
-   {
-      uint8_t *copy = (uint8_t *)malloc(cur_len ? cur_len : 1);
-      if (!copy)
-         return R7Z_ERROR_MEM;
-      memcpy(copy, cur, cur_len);
-      cur = copy;
-   }
-   *out = cur;
+   /* a folder no coder changed is the archive's own bytes, when it is
+    * in memory */
+   *out      = cur;
+   *borrowed = !cur_owned;
    return R7Z_OK;
 }
 
@@ -2107,7 +2289,21 @@ static int decode_encoded_header(r7z_archive_t *a, rd_t *r,
       if (tmp.num_folders != 1)
          res = R7Z_ERROR_DATA;
       else
-         res = decode_folder(&tmp, 0, &buf);
+      {
+         int borrowed = 0;
+         /* the header is the caller's to free */
+         if (     (res = decode_folder(&tmp, 0, &buf, &borrowed)) == R7Z_OK
+               && borrowed)
+         {
+            size_t   n    = (size_t)tmp.folders[0].unpack_size;
+            uint8_t *copy = (uint8_t *)malloc(n ? n : 1);
+            if (!copy)
+               res = R7Z_ERROR_MEM;
+            else
+               memcpy(copy, buf, n);
+            buf = copy;
+         }
+      }
    }
 
    if (res == R7Z_OK)
@@ -2116,6 +2312,9 @@ static int decode_encoded_header(r7z_archive_t *a, rd_t *r,
       *out_len = (size_t)tmp.folders[0].unpack_size;
    }
 
+#ifdef HAVE_RBZIP2
+   rbzip2_free((rbzip2_t*)tmp.bz);
+#endif
    free(tmp.pack_sizes);
    free(tmp.coders);
    free(tmp.props);
@@ -2266,7 +2465,11 @@ void r7z_archive_close(r7z_archive_t *a)
       return;
    decode_pending_reset(a);
    retro_atomic_store_release_int(&a->prog_state, 0);
-   free(a->cached_data);
+   if (!a->cached_borrowed)
+      free(a->cached_data);
+#ifdef HAVE_RBZIP2
+   rbzip2_free((rbzip2_t*)a->bz);
+#endif
    free(a->header_buf);
    free(a->next_buf);
    free(a->pack_sizes);
@@ -2302,9 +2505,10 @@ const r7z_entry_t *r7z_archive_entry(const r7z_archive_t *a, uint32_t index)
  * single uninterruptible block of work: a 2.8 MiB solid folder takes
  * about 67 ms, four dropped frames.
  *
- * These two functions do the same work in bounded slices. Only the
- * LZMA and LZMA2 stages pause, because they are 97% of the time and
- * their decoders already accept an output limit. Every other coder,
+ * These two functions do the same work in bounded slices. The LZMA,
+ * LZMA2, PPMd, Deflate and BZip2 stages pause, because they are nearly
+ * all of the time and each decodes in order to an output limit, BZip2's
+ * a block. Every other coder,
  * the branch filters included, is a single linear pass of one to three
  * milliseconds over the whole buffer, so it runs to completion within
  * one slice rather than being restructured.
@@ -2316,6 +2520,28 @@ const r7z_entry_t *r7z_archive_entry(const r7z_archive_t *a, uint32_t index)
  * Larger slices scale linearly: 256 KiB is already 7 ms. */
 #define R7Z_SLICE_BYTES (64 * 1024)
 
+/* The paused stage's decoder, freed as what it is. */
+static void stage_dec_free(r7z_archive_t *a)
+{
+   if (a->pend_method == METHOD_PPMD)
+      ppmd_close((r7z_ppmd_t *)a->pend_dec);
+#ifdef HAVE_RBZIP2
+   else if (a->pend_method == METHOD_BZIP2)
+      rbzip2_free((rbzip2_t *)a->pend_dec);
+#endif
+   else if (a->pend_method == METHOD_DEFLATE)
+   {
+      if (a->pend_dec)
+         rinflate_free(a->pend_dec);
+   }
+   else
+      free(a->pend_dec);
+   free(a->pend_probs);
+   a->pend_dec    = NULL;
+   a->pend_probs  = NULL;
+   a->pend_method = 0;
+}
+
 static void decode_pending_reset(r7z_archive_t *a)
 {
    if (!a)
@@ -2325,23 +2551,25 @@ static void decode_pending_reset(r7z_archive_t *a)
       retro_atomic_store_release_int(&a->prog_state, 0);
    if (!a->pend_in_borrowed)
       free(a->pend_in);
-   free(a->pend_out);
-   free(a->pend_dec);
-   free(a->pend_probs);
+   if (!a->pend_pass)
+      free(a->pend_out);
+   stage_dec_free(a);
    a->pend_in          = NULL;
    a->pend_in_borrowed = 0;
+   a->pend_pass        = 0;
    a->pend_out    = NULL;
-   a->pend_dec    = NULL;
-   a->pend_probs  = NULL;
    a->pend_in_len = 0;
    a->pend_out_len = 0;
    a->pend_fed    = 0;
+   a->pend_made   = 0;
    {
       uint32_t k;
       for (k = 0; k < 4; k++)
       {
-         free(a->pend_b2buf[k]);
-         a->pend_b2buf[k] = NULL;
+         if (!a->pend_b2borrowed[k])
+            free(a->pend_b2buf[k]);
+         a->pend_b2buf[k]      = NULL;
+         a->pend_b2borrowed[k] = 0;
          a->pend_b2len[k] = 0;
       }
    }
@@ -2361,12 +2589,18 @@ static void decode_pending_reset(r7z_archive_t *a)
    a->pend_base   = 0;
 }
 
-/* True when this coder is one whose decode can be paused. Both LZMA
- * flavours qualify: LZMA2 through r7z_lzma2, plain LZMA through
- * r7z_lzma_stream. Everything else is a single linear pass. */
+/* True when this coder is one whose decode can be paused: LZMA2
+ * through r7z_lzma2, plain LZMA through r7z_lzma_stream, PPMd a symbol
+ * at a time, Deflate through rinflate and BZip2 a block at a time.
+ * Everything else is a single linear pass. */
 static int coder_is_resumable(const coder_t *c)
 {
-   return (c->method == METHOD_LZMA2 || c->method == METHOD_LZMA);
+   return (     c->method == METHOD_LZMA2 || c->method == METHOD_LZMA
+             || c->method == METHOD_PPMD  || c->method == METHOD_DEFLATE
+#ifdef HAVE_RBZIP2
+             || c->method == METHOD_BZIP2
+#endif
+             );
 }
 
 /* The cached folder, decoded whole and checked, is there to be read. */
@@ -2466,6 +2700,90 @@ static int decode_slice_lzma(r7z_archive_t *a, int *done)
    return R7Z_OK;
 }
 
+/* Run one slice of a paused PPMd stage. */
+static int decode_slice_ppmd(r7z_archive_t *a, int *done)
+{
+   r7z_ppmd_t *p     = (r7z_ppmd_t *)a->pend_dec;
+   size_t      limit = p->pos + R7Z_SLICE_BYTES;
+   int         res;
+   if (limit > a->pend_out_len)
+      limit = a->pend_out_len;
+   res = ppmd_run(p, a->pend_out, limit, a->pend_out_len);
+   r7z_progress_at(a, p->pos);
+   *done = (res == R7Z_OK && p->pos == a->pend_out_len);
+   return res;
+}
+
+/* Run one slice of a paused Deflate stage: its whole input and the
+ * buffer it decodes into are bound once, and each slice moves the end
+ * of the output on, so matches reach back into the buffer itself. */
+static int decode_slice_deflate(r7z_archive_t *a, int *done)
+{
+   size_t limit = a->pend_made + R7Z_SLICE_BYTES;
+   size_t wr    = 0;
+   int    st;
+   if (limit > a->pend_out_len)
+      limit = a->pend_out_len;
+   rinflate_extend_out(a->pend_dec, limit);
+   st            = rinflate_process(a->pend_dec, NULL, &wr);
+   a->pend_made += wr;
+   r7z_progress_at(a, a->pend_made);
+   *done = 0;
+   if (st == RDEFLATE_PROCESS_END)
+   {
+      if (a->pend_made != a->pend_out_len)
+         return R7Z_ERROR_DATA;
+      *done = 1;
+      return R7Z_OK;
+   }
+   /* short of the limit, the input ran out; at the end of the
+    * output, the stream goes on past it */
+   if (     st != RDEFLATE_PROCESS_NEXT || a->pend_made < limit
+         || a->pend_made == a->pend_out_len)
+      return R7Z_ERROR_DATA;
+   return R7Z_OK;
+}
+
+#ifdef HAVE_RBZIP2
+/* Run one slice of a paused BZip2 stage: a block, up to 900 000
+ * octets, its CRC checked. */
+static int decode_slice_bzip2(r7z_archive_t *a, int *done)
+{
+   size_t wrote = 0;
+   int    e     = rbzip2_step((rbzip2_t *)a->pend_dec, &wrote);
+   *done = 0;
+   r7z_progress_at(a, wrote);
+   if (e == RBZIP2_PENDING)
+      return R7Z_OK;
+   if (e == RBZIP2_ERROR_MEM)
+      return R7Z_ERROR_MEM;
+   if (e != RBZIP2_OK || wrote != a->pend_out_len)
+      return R7Z_ERROR_DATA;
+   *done = 1;
+   return R7Z_OK;
+}
+#endif
+
+/* One slice of whichever paused stage c is. */
+static int decode_slice(r7z_archive_t *a, const coder_t *c, int *done)
+{
+   switch (c->method)
+   {
+      case METHOD_LZMA2:
+         return decode_slice_lzma2(a, c, done);
+      case METHOD_LZMA:
+         return decode_slice_lzma(a, done);
+      case METHOD_PPMD:
+         return decode_slice_ppmd(a, done);
+#ifdef HAVE_RBZIP2
+      case METHOD_BZIP2:
+         return decode_slice_bzip2(a, done);
+#endif
+      default:
+         return decode_slice_deflate(a, done);
+   }
+}
+
 /* Set up the stage at a->pend_coder, ready for slicing or immediate
  * execution. */
 static int decode_stage_begin(r7z_archive_t *a, const folder_t *f)
@@ -2480,6 +2798,16 @@ static int decode_stage_begin(r7z_archive_t *a, const folder_t *f)
       return R7Z_ERROR_DATA;
 
    out_len = (size_t)a->coder_unpack_sizes[a->pend_base + a->pend_coder];
+
+   /* Copy hands its input on as its output */
+   if (c->method == METHOD_COPY && out_len == a->pend_in_len)
+   {
+      a->pend_out     = a->pend_in;
+      a->pend_out_len = out_len;
+      a->pend_fed     = 0;
+      a->pend_pass    = 1;
+      return R7Z_OK;
+   }
 
    if (!(a->pend_out = (uint8_t *)malloc(out_len ? out_len : 1)))
       return R7Z_ERROR_MEM;
@@ -2500,6 +2828,34 @@ static int decode_stage_begin(r7z_archive_t *a, const folder_t *f)
    }
 
    /* Stand up a decoder that survives between slices. */
+   a->pend_method = c->method;
+   if (c->method == METHOD_PPMD)
+      return ppmd_open(a, c, a->pend_in, a->pend_in_len,
+            (r7z_ppmd_t **)&a->pend_dec);
+#ifdef HAVE_RBZIP2
+   /* a decoder of its own: a folder decoded whole meanwhile uses the
+    * archive's */
+   if (c->method == METHOD_BZIP2)
+   {
+      int e;
+      if (!(a->pend_dec = rbzip2_new()))
+         return R7Z_ERROR_MEM;
+      e = rbzip2_begin((rbzip2_t *)a->pend_dec, a->pend_out,
+            a->pend_out_len, a->pend_in, a->pend_in_len);
+      if (e == RBZIP2_ERROR_MEM)
+         return R7Z_ERROR_MEM;
+      return e == RBZIP2_OK ? R7Z_OK : R7Z_ERROR_DATA;
+   }
+#endif
+   if (c->method == METHOD_DEFLATE)
+   {
+      if (!(a->pend_dec = rinflate_new(-15)))
+         return R7Z_ERROR_MEM;
+      rinflate_set_in(a->pend_dec, a->pend_in, a->pend_in_len);
+      rinflate_set_out(a->pend_dec, a->pend_out, 0);
+      a->pend_made = 0;
+      return R7Z_OK;
+   }
    if (c->method == METHOD_LZMA2)
    {
       if (c->prop_size < 1)
@@ -2561,17 +2917,19 @@ static int decode_stage_begin(r7z_archive_t *a, const folder_t *f)
  * Returns 1 when the whole chain is done. */
 static int decode_stage_finish(r7z_archive_t *a, const folder_t *f)
 {
-   free(a->pend_dec);
-   free(a->pend_probs);
-   a->pend_dec   = NULL;
-   a->pend_probs = NULL;
+   stage_dec_free(a);
 
-   if (!a->pend_in_borrowed)
-      free(a->pend_in);
-   a->pend_in_borrowed = 0;
-   a->pend_in     = a->pend_out;
-   a->pend_in_len = a->pend_out_len;
-   a->pend_out    = NULL;
+   if (a->pend_pass)
+      a->pend_pass = 0;   /* pend_in as it was, borrowed or not */
+   else
+   {
+      if (!a->pend_in_borrowed)
+         free(a->pend_in);
+      a->pend_in_borrowed = 0;
+      a->pend_in          = a->pend_out;
+      a->pend_in_len      = a->pend_out_len;
+   }
+   a->pend_out     = NULL;
    a->pend_out_len = 0;
 
    a->pend_coder++;
@@ -2754,13 +3112,16 @@ static int decode_folder_bcj2_slice(r7z_archive_t *a, uint32_t fi,
                      }
                      if (!a->pend_in_borrowed)
                         free(a->pend_in);
-                     a->pend_in_borrowed = 0;
-                     if (!(a->pend_in = (uint8_t *)malloc(n ? n : 1)))
+                     /* where it lies, when the archive is in memory */
+                     a->pend_in_borrowed = a->data != NULL;
+                     if (a->data)
+                        a->pend_in = (uint8_t *)(a->data + 32 + (size_t)off);
+                     else if (!(a->pend_in = (uint8_t *)malloc(n ? n : 1)))
                      {
                         decode_pending_reset(a);
                         return R7Z_ERROR_MEM;
                      }
-                     if (r7z_fetch(a, 32 + off, a->pend_in, n) != R7Z_OK)
+                     else if (r7z_fetch(a, 32 + off, a->pend_in, n) != R7Z_OK)
                      {
                         decode_pending_reset(a);
                         return R7Z_ERROR_DATA;
@@ -2781,9 +3142,7 @@ static int decode_folder_bcj2_slice(r7z_archive_t *a, uint32_t fi,
          {
             int stage_done = 0;
 
-            res = (pc->method == METHOD_LZMA2)
-               ? decode_slice_lzma2(a, pc, &stage_done)
-               : decode_slice_lzma(a, &stage_done);
+            res = decode_slice(a, pc, &stage_done);
 
             if (res != R7Z_OK)
             {
@@ -2794,13 +3153,11 @@ static int decode_folder_bcj2_slice(r7z_archive_t *a, uint32_t fi,
                return R7Z_OK;
 
             /* Port complete: hand its buffer over and move on. */
-            free(a->pend_dec);
-            free(a->pend_probs);
-            a->pend_dec   = NULL;
-            a->pend_probs = NULL;
+            stage_dec_free(a);
 
-            a->pend_b2buf[i] = a->pend_out;
-            a->pend_b2len[i] = a->pend_out_len;
+            a->pend_b2buf[i]      = a->pend_out;
+            a->pend_b2len[i]      = a->pend_out_len;
+            a->pend_b2borrowed[i] = 0;
             a->pend_out      = NULL;
             a->pend_out_len  = 0;
             a->pend_b2port++;
@@ -2813,7 +3170,7 @@ static int decode_folder_bcj2_slice(r7z_archive_t *a, uint32_t fi,
        * whose port is fed by a chain. See the coverage note in
        * r7z_bcj2.h before changing this. */
       res = resolve_input(a, fi, a->pend_b2in + i, a->pend_base,
-            &a->pend_b2buf[i], &a->pend_b2len[i]);
+            &a->pend_b2buf[i], &a->pend_b2len[i], &a->pend_b2borrowed[i]);
       if (res != R7Z_OK)
       {
          decode_pending_reset(a);
@@ -2875,10 +3232,7 @@ static int decode_folder_bcj2_slice(r7z_archive_t *a, uint32_t fi,
    }
 
    retro_atomic_store_release_int(&a->prog_state, 0);
-   free(a->cached_data);
-   a->cached_data   = a->pend_b2dst;
-   a->cached_len    = a->pend_b2dstlen;
-   a->cached_folder = fi;
+   r7z_cache_hold(a, a->pend_b2dst, a->pend_b2dstlen, fi, 0);
    a->pend_b2dst    = NULL;
 
    decode_pending_reset(a);
@@ -2997,9 +3351,7 @@ static int decode_folder_slice(r7z_archive_t *a, uint32_t fi, int *done)
    {
       int stage_done = 0;
 
-      res = (c->method == METHOD_LZMA2)
-         ? decode_slice_lzma2(a, c, &stage_done)
-         : decode_slice_lzma(a, &stage_done);
+      res = decode_slice(a, c, &stage_done);
 
       if (res != R7Z_OK)
       {
@@ -3012,8 +3364,8 @@ static int decode_folder_slice(r7z_archive_t *a, uint32_t fi, int *done)
    else
    {
       /* Not sliceable: run it whole. One to three milliseconds. */
-      res = decode_coder(a, c, a->pend_in, a->pend_in_len,
-            a->pend_out, a->pend_out_len);
+      res = a->pend_pass ? R7Z_OK : decode_coder(a, c, a->pend_in,
+            a->pend_in_len, a->pend_out, a->pend_out_len);
       if (res != R7Z_OK)
       {
          decode_pending_reset(a);
@@ -3044,28 +3396,15 @@ static int decode_folder_slice(r7z_archive_t *a, uint32_t fi, int *done)
       return R7Z_ERROR_CRC;
    }
 
-   /* (a folder no coder touched is kept as a copy, not as the archive) */
-   if (a->pend_in_borrowed)
-   {
-      uint8_t *copy = (uint8_t *)malloc(a->pend_in_len ? a->pend_in_len : 1);
-      if (!copy)
-      {
-         decode_pending_reset(a);
-         return R7Z_ERROR_MEM;
-      }
-      memcpy(copy, a->pend_in, a->pend_in_len);
-      a->pend_in          = copy;
-      a->pend_in_borrowed = 0;
-   }
+   /* a folder no coder touched is held where it lies, when the
+    * archive is in memory */
    retro_atomic_store_release_int(&a->prog_state, 0);
-   free(a->cached_data);
-   a->cached_data   = a->pend_in;
-   a->cached_len    = a->pend_in_len;
-   a->cached_folder = fi;
+   r7z_cache_hold(a, a->pend_in, a->pend_in_len, fi, a->pend_in_borrowed);
    r7z_progress_held(a);
 
-   a->pend_in     = NULL;
-   a->pend_in_len = 0;
+   a->pend_in          = NULL;
+   a->pend_in_len      = 0;
+   a->pend_in_borrowed = 0;
    decode_pending_reset(a);
 
    *done = 1;
@@ -3151,15 +3490,15 @@ int r7z_archive_extract_slice(r7z_archive_t *a, uint32_t index,
        * correct, and the caller sees one long call rather than many
        * short ones. */
       uint8_t *folder_data;
+      int      folder_borrowed = 0;
 
-      if ((res = decode_folder(a, e->folder, &folder_data)) != R7Z_OK)
+      if ((res = decode_folder(a, e->folder, &folder_data, &folder_borrowed)) != R7Z_OK)
          return res;
 
       retro_atomic_store_release_int(&a->prog_state, 0);
-      free(a->cached_data);
-      a->cached_data   = folder_data;
-      a->cached_len    = (size_t)a->folders[e->folder].unpack_size;
-      a->cached_folder = e->folder;
+      r7z_cache_hold(a, folder_data,
+            (size_t)a->folders[e->folder].unpack_size, e->folder,
+            folder_borrowed);
 
       return extract_from_cache(a, e, out, out_len);
     }
@@ -3177,6 +3516,7 @@ int r7z_archive_extract(r7z_archive_t *a, uint32_t index,
 {
    const r7z_entry_t *e;
    uint8_t           *folder_data;
+   int                folder_borrowed = 0;
    uint8_t           *buf;
    int                res;
 
@@ -3212,15 +3552,14 @@ int r7z_archive_extract(r7z_archive_t *a, uint32_t index,
       folder_data = a->cached_data;
    else
    {
-      res = decode_folder(a, e->folder, &folder_data);
+      res = decode_folder(a, e->folder, &folder_data, &folder_borrowed);
       if (res != R7Z_OK)
          return res;
 
       retro_atomic_store_release_int(&a->prog_state, 0);
-      free(a->cached_data);
-      a->cached_data   = folder_data;
-      a->cached_len    = (size_t)a->folders[e->folder].unpack_size;
-      a->cached_folder = e->folder;
+      r7z_cache_hold(a, folder_data,
+            (size_t)a->folders[e->folder].unpack_size, e->folder,
+            folder_borrowed);
    }
 
    {
@@ -3279,23 +3618,33 @@ int r7z_archive_extract_detach(r7z_archive_t *a, uint32_t index,
    *out_len = 0;
 
    if (a->cached_folder == e->folder && a->cached_data)
+   {
+      /* the archive's own bytes are not the caller's to have */
+      if (a->cached_borrowed)
+         return r7z_archive_extract(a, index, out, out_len);
       buf = a->cached_data;
+   }
    else
    {
+      int borrowed = 0;
       retro_atomic_store_release_int(&a->prog_state, 0);
-      free(a->cached_data);
-      a->cached_data   = NULL;
-      a->cached_folder = 0xFFFFFFFFu;
-      if ((res = decode_folder(a, e->folder, &buf)) != R7Z_OK)
+      r7z_cache_hold(a, NULL, 0, 0xFFFFFFFFu, 0);
+      if ((res = decode_folder(a, e->folder, &buf, &borrowed)) != R7Z_OK)
          return res;
+      if (borrowed)
+      {
+         r7z_cache_hold(a, buf, (size_t)e->size, e->folder, 1);
+         return r7z_archive_extract(a, index, out, out_len);
+      }
    }
 
    /* The folder's output is the member: hand the buffer over rather
     * than keep it cached and copy it. */
    retro_atomic_store_release_int(&a->prog_state, 0);
-   a->cached_data   = NULL;
-   a->cached_len    = 0;
-   a->cached_folder = 0xFFFFFFFFu;
+   a->cached_data     = NULL;
+   a->cached_len      = 0;
+   a->cached_folder   = 0xFFFFFFFFu;
+   a->cached_borrowed = 0;
 
    if (e->has_crc && encoding_crc32(0, buf, (size_t)e->size) != e->crc)
    {
@@ -3313,6 +3662,7 @@ int r7z_archive_entry_borrow(r7z_archive_t *a, uint32_t index,
 {
    const r7z_entry_t *e;
    uint8_t           *folder_data;
+   int                folder_borrowed = 0;
    int                res;
 
    if (!a || !out || !out_len)
@@ -3335,13 +3685,12 @@ int r7z_archive_entry_borrow(r7z_archive_t *a, uint32_t index,
       folder_data = a->cached_data;
    else
    {
-      if ((res = decode_folder(a, e->folder, &folder_data)) != R7Z_OK)
+      if ((res = decode_folder(a, e->folder, &folder_data, &folder_borrowed)) != R7Z_OK)
          return res;
       retro_atomic_store_release_int(&a->prog_state, 0);
-      free(a->cached_data);
-      a->cached_data   = folder_data;
-      a->cached_len    = (size_t)a->folders[e->folder].unpack_size;
-      a->cached_folder = e->folder;
+      r7z_cache_hold(a, folder_data,
+            (size_t)a->folders[e->folder].unpack_size, e->folder,
+            folder_borrowed);
    }
 
    if (e->offset_in_folder > a->cached_len
@@ -3390,14 +3739,14 @@ int r7z_archive_decode_step(r7z_archive_t *a, uint32_t index)
    {
       /* A shape the slicer will not take: whole, in this one call. */
       uint8_t *folder_data;
+      int      folder_borrowed = 0;
 
-      if ((res = decode_folder(a, e->folder, &folder_data)) != R7Z_OK)
+      if ((res = decode_folder(a, e->folder, &folder_data, &folder_borrowed)) != R7Z_OK)
          return res;
       retro_atomic_store_release_int(&a->prog_state, 0);
-      free(a->cached_data);
-      a->cached_data   = folder_data;
-      a->cached_len    = (size_t)a->folders[e->folder].unpack_size;
-      a->cached_folder = e->folder;
+      r7z_cache_hold(a, folder_data,
+            (size_t)a->folders[e->folder].unpack_size, e->folder,
+            folder_borrowed);
       r7z_progress_held(a);
       return R7Z_OK;
    }
