@@ -36,11 +36,8 @@
 #include "gdcartridge.h"
 #include "systemsp.h"
 #include "archive/archive.h"
+#include "naomi_interleave.h"
 #include "file/file_path.h"
-#if defined(__SSE2__) || defined(_M_X64) || (defined(_M_IX86_FP) && _M_IX86_FP >= 2)
-#include <emmintrin.h>
-#endif
-
 Cartridge *CurrentCartridge;
 bool bios_loaded = false;
 
@@ -418,44 +415,6 @@ static const u8 *naomi_find_blob(archive_t *const *archives, int count,
    return idx >= 0 ? archive_entry_data(in, (unsigned)idx, len) : NULL;
 }
 
-/* The 16-bit words of @blob (@len bytes of them) to every other word from
- * @to on: one of the two ROMs that share an address range, a word each in
- * turn. The words in between are the other ROM's and are left as they
- * are. */
-static void naomi_copy_interleaved(u16 *to, const u8 *blob, u32 len)
-{
-   const u16 *from = (const u16 *)blob;
-   int i = len / 2;
-
-#if defined(__SSE2__) || defined(_M_X64) || (defined(_M_IX86_FP) && _M_IX86_FP >= 2)
-   /* eight words at a time: spread out with nothing between them, and
-    * put over what is there with the other ROM's words kept */
-   {
-      const __m128i zero  = _mm_setzero_si128();
-      const __m128i other = _mm_set1_epi32((int)0xFFFF0000u);
-
-      /* (never the last word this way: the sixteen words stored reach one
-       * past the eighth one read, and after the last word of the second
-       * ROM of a pair that is the end of the cartridge) */
-      for (; i > 8; i -= 8, from += 8, to += 16)
-      {
-         const __m128i words = _mm_loadu_si128((const __m128i *)from);
-         const __m128i low   = _mm_unpacklo_epi16(words, zero);
-         const __m128i high  = _mm_unpackhi_epi16(words, zero);
-         __m128i a = _mm_loadu_si128((const __m128i *)to);
-         __m128i b = _mm_loadu_si128((const __m128i *)(to + 8));
-
-         a = _mm_or_si128(_mm_and_si128(a, other), low);
-         b = _mm_or_si128(_mm_and_si128(b, other), high);
-         _mm_storeu_si128((__m128i *)to, a);
-         _mm_storeu_si128((__m128i *)(to + 8), b);
-      }
-   }
-#endif
-   for (; --i >= 0; to++)
-      *to++ = *from++;
-}
-
 static bool naomi_LoadBios(const char *filename, archive_t *child_archive, archive_t *parent_archive, int region)
 {
 	int biosid = 0;
@@ -504,6 +463,28 @@ static bool naomi_LoadBios(const char *filename, archive_t *child_archive, archi
 
 		  if (found_region)
 			 continue;
+		  /* decoded straight into the BIOS when it fits its place */
+		  {
+			 archive_t *in = NULL;
+			 const int idx = naomi_find_member(archives, 3, bios->blobs[romid].crc,
+				   arch_name, bios->blobs[romid].filename, &in);
+			 const archive_entry_t *entry = idx >= 0 ? archive_entry(in, (unsigned)idx) : NULL;
+
+			 if (entry && entry->usable && entry->size <= bios->blobs[romid].length)
+			 {
+				if (bios->blobs[romid].offset + entry->size > rom_chip->size)
+				   goto error;
+				if (!archive_entry_read(in, (unsigned)idx, rom_chip->data + bios->blobs[romid].offset,
+						 bios->blobs[romid].length, &blob_len))
+				{
+				   WARN_LOG(NAOMI, "%s: Cannot open %s", filename, bios->blobs[romid].filename);
+				   continue;
+				}
+				region = bios->blobs[romid].region;
+				found_region = true;
+				continue;
+			 }
+		  }
 		  blob = naomi_find_blob(archives, 3, bios->blobs[romid].crc,
 				arch_name, bios->blobs[romid].filename, &blob_len);
 		  if (!blob)
@@ -532,6 +513,27 @@ static bool naomi_LoadBios(const char *filename, archive_t *child_archive, archi
 		else
 		{
 			size_t blob_len = 0;
+			verify(bios->blobs[romid].offset + bios->blobs[romid].length <= rom_chip->size);
+			/* One of two ROMs that share a range: spread out as it is
+			 * decoded, when it fits its place. */
+			if (bios->blobs[romid].blob_type == InterleavedWord)
+			{
+				archive_t *in = NULL;
+				const int idx = naomi_find_member(archives, 3, bios->blobs[romid].crc,
+						bios->name, bios->blobs[romid].filename, &in);
+				const archive_entry_t *entry = idx >= 0 ? archive_entry(in, (unsigned)idx) : NULL;
+
+				if (entry && entry->usable && entry->size <= bios->blobs[romid].length)
+				{
+					if (!archive_entry_stream(in, (unsigned)idx, naomi_interleave_piece,
+								rom_chip->data + bios->blobs[romid].offset))
+					{
+						WARN_LOG(NAOMI, "%s: Cannot open %s", filename, bios->blobs[romid].filename);
+						goto error;
+					}
+					continue;
+				}
+			}
 			const u8 *blob = naomi_find_blob(archives, 3, bios->blobs[romid].crc,
 					bios->name, bios->blobs[romid].filename, &blob_len);
 			if (!blob) {
@@ -594,9 +596,6 @@ static const char *naomi_BiosArchive(const char *name)
 
 static bool naomi_cart_LoadZip(const char *filename)
 {
-	u8 *scratch = NULL;			// for the ROMs that are spread out: see below
-	size_t scratch_size = 0;
-
 	const int gameid = naomi_find_game(filename);
 	if (gameid < 0)
 	{
@@ -801,10 +800,9 @@ static bool naomi_cart_LoadZip(const char *filename)
 			}
 			if (game->blobs[romid].blob_type == InterleavedWord)
 			{
-				/* One of two ROMs that share a range: decoded into a buffer
-				 * that the next such ROM uses again - not one the archive
-				 * keeps for each until the set is loaded - and spread from
-				 * there. */
+				/* One of two ROMs that share a range: spread into the
+				 * cartridge a piece at a time as it is decoded, or from
+				 * where it lies. */
 				archive_t *in = NULL;
 				const int idx = naomi_find_member(archives, 2, game->blobs[romid].crc,
 						game->name, game->blobs[romid].filename, &in);
@@ -812,21 +810,15 @@ static bool naomi_cart_LoadZip(const char *filename)
 
 				if (entry && entry->usable && entry->size <= len)
 				{
-					if (len > scratch_size)
-					{
-						free(scratch);
-						scratch = (u8 *)malloc(len);
-						scratch_size = scratch ? len : 0;
-					}
-					if (!scratch || !archive_entry_read(in, (unsigned)idx, scratch, len, &blob_len))
+					u16 *to = (u16 *)CurrentCartridge->GetPtr(game->blobs[romid].offset, len);
+					if (to == NULL)
+						goto error;
+					if (!archive_entry_stream(in, (unsigned)idx, naomi_interleave_piece, to))
 					{
 						WARN_LOG(NAOMI, "%s: Cannot open %s", filename, game->blobs[romid].filename);
 						goto error;
 					}
-					u16 *to = (u16 *)CurrentCartridge->GetPtr(game->blobs[romid].offset, len);
-					if (to == NULL)
-						goto error;
-					naomi_copy_interleaved(to, scratch, (u32)blob_len);
+					blob_len = (size_t)entry->size;
 					DEBUG_LOG(NAOMI, "Mapped %s: %x bytes (interleaved word) at %07x", game->blobs[romid].filename, (u32)blob_len, game->blobs[romid].offset);
 					continue;
 				}
@@ -900,7 +892,6 @@ static bool naomi_cart_LoadZip(const char *filename)
 	if (naomi_default_eeprom == NULL && game->eeprom_dump != NULL)
 		naomi_default_eeprom = game->eeprom_dump;
 	game_rotation = game->rotation_flag;
-	free(scratch);
 	archive_close(archive);
 	archive_close(parent_archive);
 
@@ -937,7 +928,6 @@ static bool naomi_cart_LoadZip(const char *filename)
 	return true;
 
 error:
-	free(scratch);
 	archive_close(archive);
 	archive_close(parent_archive);
 	delete CurrentCartridge;

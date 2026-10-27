@@ -69,6 +69,20 @@ const uint8_t *archive_entry_map(archive_t *a, unsigned index, size_t *len);
  * fails its checksum (@dst may then hold part of it). */
 int archive_entry_read(archive_t *a, unsigned index, uint8_t *dst,
       size_t dst_size, size_t *len);
+/* The member's bytes handed to @sink in order, a piece at a time, for a
+ * reader that only passes them on changed: where they already lie when
+ * they are addressable, a deflated zip member decoded ARCHIVE_PIECE bytes
+ * at a time (and checked against its CRC as it goes), else decoded the
+ * usual way. Every piece but the last is a whole multiple of
+ * ARCHIVE_PIECE long, and @offset is where it starts in the member.
+ * @sink returns 0 to stop. Returns 1 when the whole member went to @sink
+ * and passed its checksum; a piece already handed over is not taken
+ * back. */
+#define ARCHIVE_PIECE (64 * 1024)
+typedef int (*archive_sink_t)(void *ud, uint64_t offset, const uint8_t *p,
+      size_t len);
+int archive_entry_stream(archive_t *a, unsigned index, archive_sink_t sink,
+      void *ud);
 /* A large deflated zip member is not decoded whole to be read: it is
  * read through an index of places its stream can be decoded from
  * (rzip_seek), a piece at a time, and takes a few megabytes where it

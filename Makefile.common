@@ -171,6 +171,9 @@ XXHASH_SOURCES_C = $(DEPS_DIR)/xxhash/xxhash.c
 # The NAOMI 2's geometry processor
 SOURCES_C += $(CORE_DIR)/core/hw/pvr/elan.c
 
+# The ROMs of a NAOMI cartridge that share a range a word each in turn
+SOURCES_C += $(CORE_DIR)/core/hw/naomi/naomi_interleave.c
+
 SOURCES_ASM :=
 
 ifeq ($(SYSTEM_PICOTCP), 1)

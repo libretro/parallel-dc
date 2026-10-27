@@ -20,6 +20,8 @@
 #include <string.h>
 
 #include <7z/r7z_archive.h>
+#include <encodings/crc32.h>
+#include <encodings/deflate.h>
 #include <encodings/utf.h>
 #include <file/file_path.h>
 #include <string/stdstring.h>
@@ -1050,6 +1052,136 @@ int archive_entry_read(archive_t *a, unsigned index, uint8_t *dst,
    memcpy(dst, src, src_len);
    *len = src_len;
    return 1;
+}
+
+/* A zip member a piece at a time: a deflated one decoded from its
+ * compressed bytes - in the mapping, or read in from the file a piece at
+ * a time - and a stored one of an unmapped archive read in, either
+ * checked against the member's CRC as it goes. */
+static int zip_entry_stream(archive_t *a, unsigned index,
+      archive_sink_t sink, void *ud)
+{
+   const archive_entry_t *e       = &a->entries[index];
+   const uint64_t         fsz     = core_fsize(a->f);
+   uint8_t               *out     = NULL;
+   uint8_t               *in      = NULL;
+   void                  *inf     = NULL;
+   uint64_t               in_off  = e->data_off;
+   uint64_t               in_left = e->csize;
+   size_t                 pending = 0;   /* input given and not yet used */
+   uint64_t               done    = 0;
+   uint32_t               crc     = 0;
+   size_t                 fill    = 0;
+   int                    ok      = 0;
+
+   if (e->csize > fsz || e->data_off > fsz - e->csize)
+      return 0;
+   if (!(out = (uint8_t*)malloc(ARCHIVE_PIECE)))
+      return 0;
+
+   if (e->stored)
+   {
+      while (done < e->size)
+      {
+         const uint64_t left = e->size - done;
+         const size_t   take = left < ARCHIVE_PIECE ? (size_t)left : ARCHIVE_PIECE;
+         if (core_fread_at(a->f, e->data_off + done, out, take) != take)
+            goto end;
+         crc = encoding_crc32(crc, out, take);
+         if (!sink(ud, done, out, take))
+            goto end;
+         done += take;
+      }
+      ok = crc == e->crc;
+      goto end;
+   }
+
+   if (!(inf = rinflate_new(-15)))
+      goto end;
+   if (a->map)
+   {
+      rinflate_set_in(inf, a->map + (size_t)in_off, (size_t)in_left);
+      pending = (size_t)in_left;
+      in_left = 0;
+   }
+   else if (!(in = (uint8_t*)malloc(ARCHIVE_PIECE)))
+      goto end;
+   rinflate_set_out(inf, out, ARCHIVE_PIECE);
+
+   for (;;)
+   {
+      size_t rd = 0, wr = 0;
+      int    st;
+
+      /* more input once what was given is used up */
+      if (!pending && in_left)
+      {
+         const size_t take = in_left < ARCHIVE_PIECE ? (size_t)in_left : ARCHIVE_PIECE;
+         if (core_fread_at(a->f, in_off, in, take) != take)
+            goto end;
+         rinflate_set_in(inf, in, take);
+         pending  = take;
+         in_off  += take;
+         in_left -= take;
+      }
+
+      st       = rinflate_process(inf, &rd, &wr);
+      pending -= rd < pending ? rd : pending;
+      fill    += wr;
+      if (st == RDEFLATE_PROCESS_ERROR)
+         goto end;
+      /* a full piece, or the last one, goes on */
+      if (fill == ARCHIVE_PIECE || (st == RDEFLATE_PROCESS_END && fill))
+      {
+         if (fill > e->size - done)
+            goto end;
+         crc = encoding_crc32(crc, out, fill);
+         if (!sink(ud, done, out, fill))
+            goto end;
+         done += fill;
+         fill  = 0;
+         rinflate_set_out(inf, out, ARCHIVE_PIECE);
+      }
+      if (st == RDEFLATE_PROCESS_END)
+      {
+         ok = done == e->size && crc == e->crc;
+         break;
+      }
+      /* nothing moved, and nothing more to give it: a truncated stream */
+      if (!rd && !wr && !pending && !in_left)
+         goto end;
+   }
+
+end:
+   if (inf)
+      rinflate_free(inf);
+   free(out);
+   free(in);
+   return ok;
+}
+
+int archive_entry_stream(archive_t *a, unsigned index, archive_sink_t sink,
+      void *ud)
+{
+   const archive_entry_t *e;
+   const uint8_t         *src;
+   size_t                 len = 0;
+
+   if (!a || !sink || index >= a->num_entries)
+      return 0;
+   e = &a->entries[index];
+   if (!e->usable)
+      return 0;
+   /* Where they lie: in the mapping, or decoded for someone else. */
+   if ((src = archive_entry_map(a, index, &len)))
+      return len ? sink(ud, 0, src, len) : 1;
+   if (a->zip)
+      return zip_entry_stream(a, index, sink, ud);
+   /* A 7z or rar member: decoded the usual way, which the archive
+    * keeps. */
+   if (!(src = archive_entry_data(a, index, &len)))
+      return 0;
+   return len ? sink(ud, 0, src, len) : 1;
 }
 
 const uint8_t *archive_entry_map(archive_t *a, unsigned index, size_t *len)

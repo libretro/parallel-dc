@@ -15,6 +15,7 @@
  * Built with and without HAVE_MMAP by run.sh, so both the mapped path
  * and the read-in-place path are exercised.
  */
+#include <stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -27,6 +28,7 @@
 
 #include "../../core/archive/archive.h"
 #include "../../core/deps/coreio/coreio.h"
+#include "../../core/hw/naomi/naomi_interleave.h"
 
 static const char *const members[] =
 { "disc.gdi", "track01.bin", "track02.raw", "track03.bin" };
@@ -134,6 +136,85 @@ static void check_reads(core_file *cf, const uint8_t *want, size_t len,
    free(buf);
 }
 
+/* archive_entry_stream()'s pieces gathered: in order, each but the last
+ * a whole number of ARCHIVE_PIECE long, none past the member. */
+typedef struct stream_sink
+{
+   uint8_t *buf;
+   size_t   size;
+   uint64_t next;     /* where the next piece has to start */
+   int      ended;    /* a piece short of ARCHIVE_PIECE multiples came */
+   int      bad;
+   int      stop_at;  /* > 0: refuse the stop_at-th piece */
+   int      pieces;
+} stream_sink_t;
+
+static int stream_sink(void *ud, uint64_t offset, const uint8_t *p, size_t len)
+{
+   stream_sink_t *s = (stream_sink_t*)ud;
+
+   if (s->stop_at && ++s->pieces == s->stop_at)
+      return 0;
+   if (offset != s->next || s->ended || !len || len > s->size - offset)
+   {
+      s->bad = 1;
+      return 0;
+   }
+   if (len % ARCHIVE_PIECE)
+      s->ended = 1;
+   memcpy(s->buf + offset, p, len);
+   s->next = offset + len;
+   return 1;
+}
+
+/* The member through archive_entry_stream(): its bytes, then one whose
+ * sink stops it early, which has to fail. */
+static void check_stream(archive_t *a, unsigned idx, const uint8_t *want,
+      size_t want_len, const char *name)
+{
+   stream_sink_t s;
+
+   memset(&s, 0, sizeof(s));
+   s.size = want_len;
+   s.buf  = (uint8_t*)malloc(want_len ? want_len : 1);
+   CHECK(s.buf != NULL, name);
+   if (!s.buf)
+      return;
+   CHECK(archive_entry_stream(a, idx, stream_sink, &s), name);
+   CHECK(!s.bad && s.next == want_len && !memcmp(s.buf, want, want_len), name);
+   if (want_len)
+   {
+      memset(&s.next, 0, sizeof(s) - offsetof(stream_sink_t, next));
+      s.stop_at = 1;
+      CHECK(!archive_entry_stream(a, idx, stream_sink, &s), name);
+   }
+   free(s.buf);
+
+   /* spread over every other 16-bit word as it comes, the words between
+    * (another ROM's) left as they were, nothing past the last touched */
+   {
+      const size_t words = want_len / 2;
+      uint8_t     *cart  = (uint8_t*)malloc(words * 4 + 64);
+      size_t       w;
+      int          bad   = 0;
+
+      CHECK(cart != NULL, name);
+      if (!cart)
+         return;
+      memset(cart, 0xA5, words * 4 + 64);
+      CHECK(archive_entry_stream(a, idx, naomi_interleave_piece, cart), name);
+      for (w = 0; w < words; w++)
+         if (memcmp(cart + w * 4, want + w * 2, 2)
+               || cart[w * 4 + 2] != 0xA5 || cart[w * 4 + 3] != 0xA5)
+            bad++;
+      for (w = words * 4; w < words * 4 + 64; w++)
+         if (cart[w] != 0xA5)
+            bad++;
+      CHECK(!bad, name);
+      free(cart);
+   }
+}
+
 static void check_archive(const char *work, const char *arc_name,
       const char *prefix, int expect_mapped, int mapped_build,
       unsigned count)
@@ -218,8 +299,12 @@ static void check_archive(const char *work, const char *arc_name,
             free(own);
          }
       }
+      /* streamed, before the archive has decoded it for anyone */
+      check_stream(a, (unsigned)idx, want, want_len, name);
       data = archive_entry_data(a, (unsigned)idx, &len);
       CHECK(data != NULL && len == want_len, name);
+      /* ...and from where the archive keeps it */
+      check_stream(a, (unsigned)idx, want, want_len, name);
       /* ...and again once it has been decoded */
       {
          uint8_t *own = (uint8_t*)malloc(want_len ? want_len : 1);
@@ -397,6 +482,91 @@ int main(int argc, char **argv)
    /* (a rar's members are reached through the archive only: the file
     * layer has no "archive#member" names for one) */
    check_archive(work, "stored.rar",  "",      0, mapped_build, NUM_MEMBERS);
+
+   /* A deflated member that does not decode to its CRC, and one whose
+    * stream is damaged: neither is handed over whole. */
+   {
+      size_t   zlen = 0;
+      uint8_t *zip;
+      join3(path, sizeof(path), work, "/deflate.zip", "");
+      zip = read_file(path, &zlen);
+      CHECK(zip != NULL, "deflate.zip");
+      if (zip)
+      {
+         int pass;
+         for (pass = 0; pass < 2; pass++)
+         {
+            archive_t *a;
+            uint8_t   *copy = (uint8_t*)malloc(zlen);
+            FILE      *fp;
+            size_t     k;
+            const char *what = pass ? "damaged deflate stream refused" : "CRC mismatch refused";
+
+            if (!copy)
+               break;
+            memcpy(copy, zip, zlen);
+            join3(path, sizeof(path), work, "/damaged.zip", "");
+            if (!pass)
+            {
+               /* track03.bin's central directory entry: its CRC */
+               for (k = 0; k + 46 + 11 < zlen; k++)
+                  if (copy[k] == 'P' && copy[k + 1] == 'K' && copy[k + 2] == 1 && copy[k + 3] == 2
+                        && copy[k + 28] == 11 && copy[k + 29] == 0
+                        && !memcmp(copy + k + 46, "track03.bin", 11))
+                  {
+                     copy[k + 16] ^= 0x5A;
+                     break;
+                  }
+            }
+            fp = fopen(path, "wb");
+            if (fp)
+            {
+               fwrite(copy, 1, zlen, fp);
+               fclose(fp);
+            }
+            a = archive_open(path);
+            CHECK(a != NULL, what);
+            if (a)
+            {
+               int idx = archive_find(a, "track03.bin");
+               const archive_entry_t *e = idx >= 0 ? archive_entry(a, (unsigned)idx) : NULL;
+               stream_sink_t s;
+
+               if (pass && e)
+               {
+                  /* a run of bytes in the middle of its compressed data */
+                  const size_t at  = (size_t)e->data_off + (size_t)e->csize / 2;
+                  const size_t run = (size_t)e->csize / 4 + 1;
+                  archive_close(a);
+                  memset(copy + at, 0xFF, run);
+                  fp = fopen(path, "wb");
+                  if (fp)
+                  {
+                     fwrite(copy, 1, zlen, fp);
+                     fclose(fp);
+                  }
+                  a   = archive_open(path);
+                  idx = a ? archive_find(a, "track03.bin") : -1;
+                  e   = idx >= 0 ? archive_entry(a, (unsigned)idx) : NULL;
+               }
+               if (a && e)
+               {
+                  memset(&s, 0, sizeof(s));
+                  s.size = (size_t)e->size;
+                  s.buf  = (uint8_t*)malloc(s.size ? s.size : 1);
+                  CHECK(e->size > ARCHIVE_PIECE, what);
+                  CHECK(s.buf && !archive_entry_stream(a, (unsigned)idx, stream_sink, &s), what);
+                  free(s.buf);
+               }
+               if (a)
+                  archive_close(a);
+            }
+            core_archive_release();
+            free(copy);
+         }
+         free(zip);
+      }
+   }
 
    /* single.7z holds track03.bin only: the detach path */
    {

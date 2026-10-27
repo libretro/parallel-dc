@@ -37,6 +37,7 @@ mkdir -p "$WORK"
 trap 'rm -rf "$WORK"' EXIT
 
 SOURCES="tools/archive/archive_test.c core/archive/archive.c \
+   core/hw/naomi/naomi_interleave.c \
    core/deps/coreio/coreio.c \
    $L/encodings/encoding_deflate.c $L/encodings/encoding_crc32.c \
    $L/encodings/encoding_utf.c \
