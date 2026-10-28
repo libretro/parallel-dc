@@ -266,7 +266,7 @@ protected:
 	void MakeFragmentConstants(FragmentConstants& constants);
 	u32 pixelBufferRoom = 0;	// the per-pixel renderer's: how many pixels its lists have room for
 	/* The polygons, the volumes and the indexes, and the sorted triangles'
-	 * indexes after those (sortedIndexes), and the constants, in the ring */
+	 * indexes after those, sorted there,, and the constants, in the ring */
 	bool UploadGeometry();
 	/* ...and the constants alone (UploadGeometry()'s, and a frame decoded
 	 * on the GPU's: its 1/fZ_max copied in from the decode's words) */
@@ -361,11 +361,12 @@ protected:
 
 	// Per-triangle sort results
 	std::vector<std::vector<SortTrigDrawParam>> sortedPolys;
-	std::vector<std::vector<u32>> sortedIndexes;
+	// (their indices: in the upload ring, sorted there by UploadGeometry())
 	u32 sortedIndexCount = 0;
 	// ...and the depth prepasses of the sorted lists (rend/sorter.h), their indexes after each pass's sorted ones
 	std::vector<std::vector<SortTrigDrawParam>> prepassPolys;
-	void SortTriangles();
+	u32 SortedIndexRoom() const;
+	void SortTriangles(u32 *out);
 
 	/* ---- The draws, batched ----
 	 *

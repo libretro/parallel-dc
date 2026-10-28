@@ -25,10 +25,28 @@
 #include "drawer.h"
 #include "hw/pvr/pvr_mem.h"
 
-void Drawer::SortTriangles()
+/* The most indices SortTriangles() writes */
+u32 Drawer::SortedIndexRoom() const
+{
+	u32 tris = 0;
+	RenderPass previousPass = {};
+
+	for (int render_pass = 0; render_pass < pvrrc.render_passes.used(); render_pass++)
+	{
+		const RenderPass& current_pass = pvrrc.render_passes.head()[render_pass];
+		if (current_pass.autosort)
+			tris += SortedTriangles(previousPass.tr_count, current_pass.tr_count - previousPass.tr_count);
+		previousPass = current_pass;
+	}
+	return tris * 6;
+}
+
+/* The sorted passes' triangles and their prepasses', their indices written
+ * to @out (SortedIndexRoom() of them): the main buffer, which the card
+ * reads them from */
+void Drawer::SortTriangles(u32 *out)
 {
 	sortedPolys.resize(pvrrc.render_passes.used());
-	sortedIndexes.resize(pvrrc.render_passes.used());
 	prepassPolys.resize(pvrrc.render_passes.used());
 	sortedIndexCount = 0;
 	RenderPass previousPass = {};
@@ -36,18 +54,19 @@ void Drawer::SortTriangles()
 	for (int render_pass = 0; render_pass < pvrrc.render_passes.used(); render_pass++)
 	{
 		const RenderPass& current_pass = pvrrc.render_passes.head()[render_pass];
-		sortedIndexes[render_pass].clear();
 		prepassPolys[render_pass].clear();
 		if (current_pass.autosort)
 		{
-			GenSorted(previousPass.tr_count, current_pass.tr_count - previousPass.tr_count, sortedPolys[render_pass], sortedIndexes[render_pass], true);
-			GenPrepass(previousPass.tr_count, current_pass.tr_count - previousPass.tr_count,
-					render_pass == pvrrc.render_passes.used() - 1, prepassPolys[render_pass], sortedIndexes[render_pass], true);
+			const int first = previousPass.tr_count;
+			const int count = current_pass.tr_count - previousPass.tr_count;
+			u32 n = GenSortedTo(first, count, sortedPolys[render_pass], out, true);
+			n += GenPrepassTo(first, count, render_pass == pvrrc.render_passes.used() - 1, prepassPolys[render_pass], out + n, n, true);
 			for (auto& poly : sortedPolys[render_pass])
 				poly.first += sortedIndexCount;
 			for (auto& poly : prepassPolys[render_pass])
 				poly.first += sortedIndexCount;
-			sortedIndexCount += sortedIndexes[render_pass].size();
+			sortedIndexCount += n;
+			out += n;
 		}
 		else
 			sortedPolys[render_pass].clear();
@@ -431,73 +450,46 @@ void Drawer::DrawModVols(const vk::CommandBuffer& cmdBuffer, int first, int coun
 	cmdBuffer.drawIndexed(4, 1, 0, 0, 0);
 }
 
-void Drawer::UploadMainBuffer(const FragmentShaderUniforms& fragmentUniforms)
+/* The main buffer of this render, laid out - the vertices, the volumes'
+ * triangles, the indices, room for the sorted passes' indices after those,
+ * and the fragment uniforms - with the sorted passes sorted into it */
+BufferData *Drawer::SortIntoMainBuffer()
 {
-	// TODO Put this logic in an allocator
-	std::vector<const void *> chunks;
-	std::vector<u32> chunkSizes;
-
-	// (a frame decoded on the GPU has its geometry there)
+	// (a frame decoded on the GPU has its geometry there, and is sorted there: TA_GPU_SORT)
 	const u32 vertexBytes = pvrrc.gpu ? 0 : pvrrc.verts.bytes();
 	const u32 modVolBytes = ModVolsOnCpu() ? ModVolList().bytes() : 0;
 	const u32 indexBytes = pvrrc.gpu ? 0 : pvrrc.idx.bytes();
+	const u32 sortedBytes = pvrrc.gpu ? 0 : SortedIndexRoom() * sizeof(u32);
 
-	// Vertex
-	chunks.push_back(pvrrc.verts.head());
-	chunkSizes.push_back(vertexBytes);
+	offsets.modVolOffset = vertexBytes + align(vertexBytes, 4);
+	offsets.indexOffset = offsets.modVolOffset + modVolBytes + align(offsets.modVolOffset + modVolBytes, 4);
+	const u32 indexSize = indexBytes + sortedBytes;
+	offsets.fragmentUniformOffset = offsets.indexOffset + indexSize
+			+ align(offsets.indexOffset + indexSize, std::max(4, (int)GetContext()->GetUniformBufferAlignment()));
 
-	u32 padding = align(vertexBytes, 4);
-	offsets.modVolOffset = vertexBytes + padding;
-	chunks.push_back(nullptr);
-	chunkSizes.push_back(padding);
+	BufferData *buffer = GetMainBuffer(offsets.fragmentUniformOffset + sizeof(FragmentShaderUniforms));
+	if (pvrrc.gpu)
+		sortedIndexCount = 0;
+	else
+		SortTriangles((u32 *)((u8 *)buffer->MapMemory() + offsets.indexOffset + indexBytes));
+	return buffer;
+}
 
-	// Modifier Volumes
-	chunks.push_back(ModVolList().head());
-	chunkSizes.push_back(modVolBytes);
-	padding = align(offsets.modVolOffset + modVolBytes, 4);
-	offsets.indexOffset = offsets.modVolOffset + modVolBytes + padding;
-	chunks.push_back(nullptr);
-	chunkSizes.push_back(padding);
-
-	// Index
-	chunks.push_back(pvrrc.idx.head());
-	chunkSizes.push_back(indexBytes);
-	for (const std::vector<u32>& idx : sortedIndexes)
+/* ...and the rest of it */
+void Drawer::UploadMainBuffer(BufferData *buffer, const FragmentShaderUniforms& fragmentUniforms)
+{
+	if (!pvrrc.gpu)
 	{
-		if (!idx.empty())
-		{
-			chunks.push_back(&idx[0]);
-			chunkSizes.push_back(idx.size() * sizeof(u32));
-		}
+		buffer->upload(pvrrc.verts.bytes(), pvrrc.verts.head(), 0);
+		buffer->upload(pvrrc.idx.bytes(), pvrrc.idx.head(), offsets.indexOffset);
 	}
-	// Fragment uniform buffer (the vertex one is its own: WriteVertexUniforms())
-	u32 indexSize = indexBytes + sortedIndexCount * sizeof(u32);
-	padding = align(offsets.indexOffset + indexSize, std::max(4, (int)GetContext()->GetUniformBufferAlignment()));
-	offsets.fragmentUniformOffset = offsets.indexOffset + indexSize + padding;
-	chunks.push_back(nullptr);
-	chunkSizes.push_back(padding);
-
-	chunks.push_back(&fragmentUniforms);
-	chunkSizes.push_back(sizeof(fragmentUniforms));
-	u32 totalSize = offsets.fragmentUniformOffset + sizeof(FragmentShaderUniforms);
-
-	BufferData *buffer = GetMainBuffer(totalSize);
-	buffer->upload(chunks.size(), &chunkSizes[0], &chunks[0]);
+	if (ModVolsOnCpu())
+		buffer->upload(ModVolList().bytes(), ModVolList().head(), offsets.modVolOffset);
+	buffer->upload(sizeof(fragmentUniforms), &fragmentUniforms, offsets.fragmentUniformOffset);
 }
 
 bool Drawer::Draw(const Texture *fogTexture, const Texture *paletteTexture)
 {
-	/* (a frame decoded on the GPU has its sorted passes sorted already, and
-	 * their indices went straight to the decoder's room for them when the
-	 * decode was recorded: see TA_GPU_SORT) */
-	if (!pvrrc.gpu)
-		SortTriangles();
-	else
-	{
-		for (std::vector<u32>& idx : sortedIndexes)
-			idx.clear();
-		sortedIndexCount = 0;
-	}
 	currentScissor = vk::Rect2D();
 
 	/* (which works the matrices out for this render, and writes the vertex
@@ -509,12 +501,19 @@ bool Drawer::Draw(const Texture *fogTexture, const Texture *paletteTexture)
 	FragmentShaderUniforms fragUniforms = MakeFragmentUniforms<FragmentShaderUniforms>();
 	fragUniforms.shade_scale_factor = FPU_SHAD_SCALE.scale_factor / 256.f;
 
+	/* Sorted where the card reads the indices (this frame's main buffer:
+	 * the render pass is begun), from the vertices as the game sent them.
+	 * (A frame decoded on the GPU has its sorted passes sorted already, and
+	 * their indices went straight to the decoder's room for them when the
+	 * decode was recorded: see TA_GPU_SORT.) */
+	BufferData *mainBuffer = SortIntoMainBuffer();
+
 	// (the GPU's decode has done it to a frame it made)
 	if (!pvrrc.gpu)
 		SetProvokingVertices();
 
 	// Upload vertex and index buffers
-	UploadMainBuffer(fragUniforms);
+	UploadMainBuffer(mainBuffer, fragUniforms);
 
 	// Update per-frame descriptor set and bind it
 	GetCurrentDescSet().UpdateUniforms(vertexUniformBuffer, GetMainBuffer(0)->buffer.get(), offsets.fragmentUniformOffset,

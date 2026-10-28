@@ -42,6 +42,14 @@ struct SortTrigDrawParam
 // back; otherwise from its last (OpenGL).
 void GenSorted(int first, int count, std::vector<SortTrigDrawParam>& pidx_sort, std::vector<u32>& vidx_sort,
 		bool firstProvoking = false);
+/* The triangles of translucent polygons [first, first + count): GenSorted()
+ * makes three indices of each, and GenPrepass() at most as many again, so
+ * 6 times this is the room the two need together. */
+u32 SortedTriangles(int first, int count);
+/* GenSorted(), its indices written to @out (3 * SortedTriangles() of room),
+ * once each and in order, so that it may be the memory the card reads them
+ * from: how many. */
+u32 GenSortedTo(int first, int count, std::vector<SortTrigDrawParam>& pidx_sort, u32 *out, bool firstProvoking);
 
 /* The depth prepass of a sorted translucent list (per triangle or per
  * strip). Sorting by triangle or by strip draws a polygon that is behind
@@ -151,5 +159,9 @@ static inline PrepassKey PrepassMakeKey(const PolyParam *pp, u64 texid)
  * @lastPass: see PrepassWanted(). Neither is cleared when nothing is drawn. */
 void GenPrepass(int first, int count, bool lastPass, std::vector<SortTrigDrawParam>& draws, std::vector<u32>& vidx,
 		bool firstProvoking = false);
+/* GenPrepass(), its indices written to @out as GenSortedTo()'s, where the
+ * pass's @base'th index is (what its draws' first count from): how many. */
+u32 GenPrepassTo(int first, int count, bool lastPass, std::vector<SortTrigDrawParam>& draws, u32 *out, u32 base,
+		bool firstProvoking);
 /* (the alpha the prepass compares against: 254.5 / 255, the least that writes as 255) */
 #define PREPASS_ALPHA_MIN 0.998039216f

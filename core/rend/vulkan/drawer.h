@@ -274,7 +274,8 @@ protected:
 	virtual vk::Extent2D ResolveExtent() const = 0;
 
 private:
-	void SortTriangles();
+	u32 SortedIndexRoom() const;
+	void SortTriangles(u32 *out);
 	void DrawPoly(const vk::CommandBuffer& cmdBuffer, u32 listType, bool sortTriangles, const PolyParam& poly, u32 first, u32 count,
 			PipelineManager::ShadowPass shadowPass = PipelineManager::ShadowPass::None, const vk::Rect2D *within = nullptr);
 	void DrawShadowed(const vk::CommandBuffer& cmdBuffer, u32 listType, const List<PolyParam>& polys, u32 first, u32 last,
@@ -284,7 +285,8 @@ private:
    void DrawList(const vk::CommandBuffer& cmdBuffer, u32 listType, bool sortTriangles, const List<PolyParam>& polys, u32 first, u32 last);
 	void DrawModVols(const vk::CommandBuffer& cmdBuffer, int first, int count, const RenderPass& previous_pass, const RenderPass& current_pass,
 			int render_pass);
-	void UploadMainBuffer(const FragmentShaderUniforms& fragmentUniforms);
+	BufferData *SortIntoMainBuffer();
+	void UploadMainBuffer(BufferData *buffer, const FragmentShaderUniforms& fragmentUniforms);
 
 	int imageIndex = 0;
 	std::vector<DescriptorSets> descriptorSets;
@@ -293,7 +295,7 @@ private:
 
 	// Per-triangle sort results
 	std::vector<std::vector<SortTrigDrawParam>> sortedPolys;
-	std::vector<std::vector<u32>> sortedIndexes;
+	// (their indices: in the main buffer, sorted there)
 	u32 sortedIndexCount = 0;
 	// ...and the depth prepasses of the sorted lists (rend/sorter.h), their indexes after each pass's sorted ones
 	std::vector<std::vector<SortTrigDrawParam>> prepassPolys;

@@ -647,10 +647,28 @@ void DX12Renderer::SetProvokingVertices()
 	setProvokingVertex(pvrrc.global_param_tr);
 }
 
-void DX12Renderer::SortTriangles()
+/* The most indices SortTriangles() writes */
+u32 DX12Renderer::SortedIndexRoom() const
+{
+	u32 tris = 0;
+	RenderPass previousPass = {};
+
+	for (int render_pass = 0; render_pass < pvrrc.render_passes.used(); render_pass++)
+	{
+		const RenderPass& current_pass = pvrrc.render_passes.head()[render_pass];
+		if (current_pass.autosort)
+			tris += SortedTriangles(previousPass.tr_count, current_pass.tr_count - previousPass.tr_count);
+		previousPass = current_pass;
+	}
+	return tris * 6;
+}
+
+/* The sorted passes' triangles and their prepasses', their indices written
+ * to @out (SortedIndexRoom() of them): the ring, which the card reads them
+ * from */
+void DX12Renderer::SortTriangles(u32 *out)
 {
 	sortedPolys.resize(pvrrc.render_passes.used());
-	sortedIndexes.resize(pvrrc.render_passes.used());
 	prepassPolys.resize(pvrrc.render_passes.used());
 	sortedIndexCount = 0;
 	RenderPass previousPass = {};
@@ -658,18 +676,19 @@ void DX12Renderer::SortTriangles()
 	for (int render_pass = 0; render_pass < pvrrc.render_passes.used(); render_pass++)
 	{
 		const RenderPass& current_pass = pvrrc.render_passes.head()[render_pass];
-		sortedIndexes[render_pass].clear();
 		prepassPolys[render_pass].clear();
 		if (current_pass.autosort)
 		{
-			GenSorted(previousPass.tr_count, current_pass.tr_count - previousPass.tr_count, sortedPolys[render_pass], sortedIndexes[render_pass], true);
-			GenPrepass(previousPass.tr_count, current_pass.tr_count - previousPass.tr_count,
-					render_pass == pvrrc.render_passes.used() - 1, prepassPolys[render_pass], sortedIndexes[render_pass], true);
+			const int first = previousPass.tr_count;
+			const int count = current_pass.tr_count - previousPass.tr_count;
+			u32 n = GenSortedTo(first, count, sortedPolys[render_pass], out, true);
+			n += GenPrepassTo(first, count, render_pass == pvrrc.render_passes.used() - 1, prepassPolys[render_pass], out + n, n, true);
 			for (auto& poly : sortedPolys[render_pass])
 				poly.first += sortedIndexCount;
 			for (auto& poly : prepassPolys[render_pass])
 				poly.first += sortedIndexCount;
-			sortedIndexCount += sortedIndexes[render_pass].size();
+			sortedIndexCount += n;
+			out += n;
 		}
 		else
 			sortedPolys[render_pass].clear();
@@ -683,7 +702,9 @@ bool DX12Renderer::UploadGeometry()
 {
 	if (pvrrc.gpu)
 	{
-		// (the decode's, on the GPU)
+		/* (the decode's, on the GPU, its sorted passes sorted already and
+		 * their indices in the decoder's room for them: see TA_GPU_SORT) */
+		sortedIndexCount = 0;
 		const DX12TaDraw& gpu = taDecoder.Draw();
 		vertexView = gpu.vertices;
 		indexView = gpu.indices;
@@ -708,7 +729,8 @@ bool DX12Renderer::UploadGeometry()
 		return UploadConstants();
 	}
 	const u32 vertexBytes = pvrrc.verts.bytes();
-	const u32 indexBytes = pvrrc.idx.bytes() + sortedIndexCount * sizeof(u32);
+	// (room for the sorted passes' indices, which are sorted into it)
+	const u32 indexBytes = pvrrc.idx.bytes() + SortedIndexRoom() * sizeof(u32);
 	const List<ModTriangle>& modVolList = pvrrc.mv_clip.used() != 0 ? pvrrc.mv_clip : pvrrc.modtrig;
 	const u32 modVolBytes = modVolList.bytes();
 	/* the vertices, the indexes, the volumes' triangles, each at a multiple
@@ -720,18 +742,15 @@ bool DX12Renderer::UploadGeometry()
 	if (!context->Upload(total, 64, upload))
 	{
 		WARN_LOG(RENDERER, "DX12: the render's geometry does not fit the upload ring (%u bytes)", total);
+		// (as it was before: the vertices made for the card, once)
+		SetProvokingVertices();
 		return false;
 	}
+	// sorted from the vertices as the game sent them, then those made for the card
+	SortTriangles((u32 *)(upload.cpu + indexes + pvrrc.idx.bytes()));
+	SetProvokingVertices();
 	memcpy(upload.cpu, pvrrc.verts.head(), vertexBytes);
-	u8 *dst = upload.cpu + indexes;
-	memcpy(dst, pvrrc.idx.head(), pvrrc.idx.bytes());
-	dst += pvrrc.idx.bytes();
-	for (const std::vector<u32>& idx : sortedIndexes)
-		if (!idx.empty())
-		{
-			memcpy(dst, idx.data(), idx.size() * sizeof(u32));
-			dst += idx.size() * sizeof(u32);
-		}
+	memcpy(upload.cpu + indexes, pvrrc.idx.head(), pvrrc.idx.bytes());
 	if (modVolBytes != 0)
 		memcpy(upload.cpu + modVols, modVolList.head(), modVolBytes);
 
@@ -739,7 +758,7 @@ bool DX12Renderer::UploadGeometry()
 	vertexView.SizeInBytes = vertexBytes;
 	vertexView.StrideInBytes = sizeof(Vertex);
 	indexView.BufferLocation = upload.gpu + indexes;
-	indexView.SizeInBytes = indexBytes;
+	indexView.SizeInBytes = pvrrc.idx.bytes() + sortedIndexCount * sizeof(u32);
 	indexView.Format = DXGI_FORMAT_R32_UINT;
 	modVolView.BufferLocation = upload.gpu + modVols;
 	modVolView.SizeInBytes = modVolBytes;
@@ -1672,23 +1691,12 @@ bool DX12Renderer::Render()
 		return true;
 	}
 
-	/* (a frame decoded on the GPU has its sorted passes sorted already, and
-	 * their indices went straight to the decoder's room for them when the
-	 * decode was recorded: see TA_GPU_SORT) */
-	if (!pvrrc.gpu)
-		SortTriangles();
-	else
-	{
-		for (std::vector<u32>& idx : sortedIndexes)
-			idx.clear();
-		sortedIndexCount = 0;
-	}
 	if (pvrrc.isRTT ? !BeginRTT() : !BeginScreen())
 	{
 		rttTexture = nullptr;
 		return false;
 	}
-	SetProvokingVertices();
+	// (sorted into the ring, and the provoking vertices set: UploadGeometry())
 	if (!UploadGeometry())
 	{
 		context->SetTargets(~0u, ~0u);

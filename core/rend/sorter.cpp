@@ -201,15 +201,28 @@ static void fill_id(u32 *d, const Vertex *v0, const Vertex *v1, const Vertex *v2
 	d[2] = (u32)(v2 - vb);
 }
 
-void GenSorted(int first, int count, std::vector<SortTrigDrawParam>& pidx_sort, std::vector<u32>& vidx_sort,
-		bool firstProvoking)
+u32 SortedTriangles(int first, int count)
+{
+	const PolyParam *pp = pvrrc.global_param_tr.head() + first;
+	const PolyParam * const pp_end = pp + count;
+	u32 tris = 0;
+
+	for (; pp < pp_end; pp++)
+		if (pp->count > 2)
+			tris += pp->count - 2;
+	return tris;
+}
+
+/* GenSorted(), its indices to @out or, if NULL, to @grow made their size */
+static u32 gen_sorted(int first, int count, std::vector<SortTrigDrawParam>& pidx_sort, u32 *out,
+		std::vector<u32> *grow, bool firstProvoking)
 {
 	u32 tess_gen=0;
 
 	pidx_sort.clear();
 
 	if (pvrrc.verts.used() == 0 || count == 0)
-		return;
+		return 0;
 
 	const Vertex * const vtx_base = pvrrc.verts.head();
 	const u32 * const idx_base = pvrrc.idx.head();
@@ -220,7 +233,7 @@ void GenSorted(int first, int count, std::vector<SortTrigDrawParam>& pidx_sort, 
 	while (pp->count == 0 && pp < pp_end)
 		pp++;
 	if (pp == pp_end)
-		return;
+		return 0;
 
 	vtx_sort_base=vtx_base;
 
@@ -235,7 +248,7 @@ void GenSorted(int first, int count, std::vector<SortTrigDrawParam>& pidx_sort, 
 #endif
 
 	if (vtx_count<=0)
-		return;
+		return 0;
 
 	//make lists of all triangles, with their pid and vid
 	static std::vector<IndexTrig> lst;
@@ -349,18 +362,23 @@ void GenSorted(int first, int count, std::vector<SortTrigDrawParam>& pidx_sort, 
 #endif
 
 	//re-assemble them into drawing commands
-	vidx_sort.resize(aused*3);
+	if (out == NULL)
+	{
+		grow->resize(aused*3);
+		out = grow->data();
+	}
 
 	int idx=-1;
 
-	for (u32 i=0; i<aused; i++)
+	for (u32 i=0; i<aused; i++, out += 3)
 	{
 		int pid=lst[i].pid;
-		u32* midx = lst[i].id;
+		const u32* midx = lst[i].id;
 
-		vidx_sort[i*3 + 0]=midx[0];
-		vidx_sort[i*3 + 1]=midx[1];
-		vidx_sort[i*3 + 2]=midx[2];
+		// (stored in order, whole: @out may be memory the card reads)
+		out[0]=midx[0];
+		out[1]=midx[1];
+		out[2]=midx[2];
 
 		if (idx!=pid /* && !PP_EQ(&pp_base[pid],&pp_base[idx]) */ )
 		{
@@ -388,6 +406,18 @@ void GenSorted(int first, int count, std::vector<SortTrigDrawParam>& pidx_sort, 
 #endif
 
 	if (tess_gen) DEBUG_LOG(RENDERER, "Generated %.2fK Triangles !", tess_gen / 1000.0);
+	return aused * 3;
+}
+
+void GenSorted(int first, int count, std::vector<SortTrigDrawParam>& pidx_sort, std::vector<u32>& vidx_sort,
+		bool firstProvoking)
+{
+	gen_sorted(first, count, pidx_sort, NULL, &vidx_sort, firstProvoking);
+}
+
+u32 GenSortedTo(int first, int count, std::vector<SortTrigDrawParam>& pidx_sort, u32 *out, bool firstProvoking)
+{
+	return gen_sorted(first, count, pidx_sort, out, NULL, firstProvoking);
 }
 
 /* Whether a polygon that blends with one minus its alpha can have a pixel
@@ -404,8 +434,10 @@ static bool PrepassVerticesOpaque(const PolyParam *pp, const Vertex *vtx_base, c
 	return false;
 }
 
-void GenPrepass(int first, int count, bool lastPass, std::vector<SortTrigDrawParam>& draws, std::vector<u32>& vidx,
-		bool firstProvoking)
+/* GenPrepass(), its indices to @out, the @base'th of the pass's, or, if
+ * NULL, to the end of @grow, which is @base long */
+static u32 gen_prepass(int first, int count, bool lastPass, std::vector<SortTrigDrawParam>& draws, u32 *out, u32 base,
+		std::vector<u32> *grow, bool firstProvoking)
 {
 	/* The polygons that can hide, in their order (order), in runs of
 	 * neighbours drawn alike (runs): a model's polygons come one after the
@@ -421,7 +453,7 @@ void GenPrepass(int first, int count, bool lastPass, std::vector<SortTrigDrawPar
 	static std::vector<Run> runs;
 
 	if (count <= 0 || pvrrc.verts.used() == 0 || !PrepassWanted(lastPass))
-		return;
+		return 0;
 	const Vertex * const vtx_base = pvrrc.verts.head();
 	const u32 * const idx_base = pvrrc.idx.head();
 	const PolyParam * const pp_base = pvrrc.global_param_tr.head();
@@ -449,15 +481,17 @@ void GenPrepass(int first, int count, bool lastPass, std::vector<SortTrigDrawPar
 		tris += pp->count - 2;
 	}
 	if (runs.empty())
-		return;
+		return 0;
 	std::sort(runs.begin(), runs.end(), [](const Run& a, const Run& b) {
 		return a.key < b.key || (a.key == b.key && a.start < b.start);
 	});
 
 	// the triangles, as GenSorted() makes them of a strip, written in place
-	const size_t base = vidx.size();
-	vidx.resize(base + (size_t)tris * 3);
-	u32 *out = vidx.data() + base;
+	if (out == NULL)
+	{
+		grow->resize(base + (size_t)tris * 3);
+		out = grow->data() + base;
+	}
 	u32 *dst = out;
 	for (size_t k = 0; k < runs.size(); k++)
 	{
@@ -506,5 +540,20 @@ void GenPrepass(int first, int count, bool lastPass, std::vector<SortTrigDrawPar
 	}
 	if (draws.back().count == 0)
 		draws.pop_back();
-	vidx.resize(base + (dst - out));
+	return (u32)(dst - out);
+}
+
+void GenPrepass(int first, int count, bool lastPass, std::vector<SortTrigDrawParam>& draws, std::vector<u32>& vidx,
+		bool firstProvoking)
+{
+	const u32 base = (u32)vidx.size();
+	const u32 n = gen_prepass(first, count, lastPass, draws, NULL, base, &vidx, firstProvoking);
+	if (vidx.size() != base)
+		vidx.resize(base + n);
+}
+
+u32 GenPrepassTo(int first, int count, bool lastPass, std::vector<SortTrigDrawParam>& draws, u32 *out, u32 base,
+		bool firstProvoking)
+{
+	return gen_prepass(first, count, lastPass, draws, out, base, NULL, firstProvoking);
 }

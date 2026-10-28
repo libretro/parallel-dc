@@ -443,10 +443,28 @@ void DX11Renderer::SetProvokingVertices()
 	setProvokingVertex(pvrrc.global_param_tr);
 }
 
-void DX11Renderer::SortTriangles()
+/* The most indices SortTriangles() writes */
+u32 DX11Renderer::SortedIndexRoom() const
+{
+	u32 tris = 0;
+	RenderPass previousPass = {};
+
+	for (int render_pass = 0; render_pass < pvrrc.render_passes.used(); render_pass++)
+	{
+		const RenderPass& current_pass = pvrrc.render_passes.head()[render_pass];
+		if (current_pass.autosort)
+			tris += SortedTriangles(previousPass.tr_count, current_pass.tr_count - previousPass.tr_count);
+		previousPass = current_pass;
+	}
+	return tris * 6;
+}
+
+/* The sorted passes' triangles and their prepasses', their indices written
+ * to @out (SortedIndexRoom() of them): the geometry buffer, mapped, which
+ * the card reads them from */
+void DX11Renderer::SortTriangles(u32 *out)
 {
 	sortedPolys.resize(pvrrc.render_passes.used());
-	sortedIndexes.resize(pvrrc.render_passes.used());
 	prepassPolys.resize(pvrrc.render_passes.used());
 	sortedIndexCount = 0;
 	RenderPass previousPass = {};
@@ -454,19 +472,20 @@ void DX11Renderer::SortTriangles()
 	for (int render_pass = 0; render_pass < pvrrc.render_passes.used(); render_pass++)
 	{
 		const RenderPass& current_pass = pvrrc.render_passes.head()[render_pass];
-		sortedIndexes[render_pass].clear();
 		prepassPolys[render_pass].clear();
 		if (current_pass.autosort)
 		{
-			GenSorted(previousPass.tr_count, current_pass.tr_count - previousPass.tr_count, sortedPolys[render_pass], sortedIndexes[render_pass], true);
+			const int first = previousPass.tr_count;
+			const int count = current_pass.tr_count - previousPass.tr_count;
+			u32 n = GenSortedTo(first, count, sortedPolys[render_pass], out, true);
 			if (DrawsSorted())
-				GenPrepass(previousPass.tr_count, current_pass.tr_count - previousPass.tr_count,
-						render_pass == pvrrc.render_passes.used() - 1, prepassPolys[render_pass], sortedIndexes[render_pass], true);
+				n += GenPrepassTo(first, count, render_pass == pvrrc.render_passes.used() - 1, prepassPolys[render_pass], out + n, n, true);
 			for (auto& poly : sortedPolys[render_pass])
 				poly.first += sortedIndexCount;
 			for (auto& poly : prepassPolys[render_pass])
 				poly.first += sortedIndexCount;
-			sortedIndexCount += sortedIndexes[render_pass].size();
+			sortedIndexCount += n;
+			out += n;
 		}
 		else
 			sortedPolys[render_pass].clear();
@@ -493,7 +512,8 @@ bool DX11Renderer::UploadGeometry()
 	const bool gpu = pvrrc.gpu;
 	if (gpu && pvrrc.mv_clip.used() == 0)
 	{
-		// (the decode's, on the GPU, each from its start)
+		// (the decode's, on the GPU, each from its start, its sorted passes sorted there: TA_GPU_SORT)
+		sortedIndexCount = 0;
 		vertexBase = 0;
 		indexBase = 0;
 		modVolBase = 0;
@@ -504,7 +524,10 @@ bool DX11Renderer::UploadGeometry()
 	 * the cut ones, here, and the rest the decode's */
 	const List<ModTriangle>& modVolList = pvrrc.mv_clip.used() != 0 ? pvrrc.mv_clip : pvrrc.modtrig;
 	const u32 vertexBytes = gpu ? 0 : pvrrc.verts.bytes();
-	const u32 indexBytes = gpu ? 0 : pvrrc.idx.bytes() + sortedIndexCount * sizeof(u32);
+	// (with room for the sorted passes' indices, which are sorted into it)
+	if (gpu)
+		sortedIndexCount = 0;
+	const u32 indexBytes = gpu ? 0 : pvrrc.idx.bytes() + SortedIndexRoom() * sizeof(u32);
 	const u32 modVolBytes = modVolList.bytes();
 	u32 vertices, indexes, modVols;
 	u32 end = layGeometry(geometryUsed, vertexBytes, indexBytes, modVolBytes, vertices, indexes, modVols);
@@ -533,6 +556,8 @@ bool DX11Renderer::UploadGeometry()
 			{
 				WARN_LOG(RENDERER, "DX11: buffer creation failed (%d bytes)", newSize);
 				geometry.reset();
+				// (as it was before: the vertices made for the card, once)
+				SetProvokingVertices();
 				return false;
 			}
 			geometrySize = newSize;
@@ -540,20 +565,18 @@ bool DX11Renderer::UploadGeometry()
 	}
 	D3D11_MAPPED_SUBRESOURCE mapped;
 	if (FAILED(deviceContext->Map(geometry, 0, mode, 0, &mapped)))
+	{
+		SetProvokingVertices();
 		return false;
+	}
 	u8 *base = (u8 *)mapped.pData;
 	if (!gpu)
 	{
+		// sorted from the vertices as the game sent them, then those made for the card
+		SortTriangles((u32 *)(base + indexes + pvrrc.idx.bytes()));
+		SetProvokingVertices();
 		memcpy(base + vertices, pvrrc.verts.head(), vertexBytes);
-		u8 *dst = base + indexes;
-		memcpy(dst, pvrrc.idx.head(), pvrrc.idx.bytes());
-		dst += pvrrc.idx.bytes();
-		for (const std::vector<u32>& idx : sortedIndexes)
-			if (!idx.empty())
-			{
-				memcpy(dst, idx.data(), idx.size() * sizeof(u32));
-				dst += idx.size() * sizeof(u32);
-			}
+		memcpy(base + indexes, pvrrc.idx.head(), pvrrc.idx.bytes());
 	}
 	if (modVolBytes != 0)
 		memcpy(base + modVols, modVolList.head(), modVolBytes);
@@ -1110,23 +1133,12 @@ bool DX11Renderer::Render()
 		return true;
 	}
 
-	/* (a frame decoded on the GPU has its sorted passes sorted already, and
-	 * their indices went to the decoder's buffer for them when the decode
-	 * was run: see TA_GPU_SORT) */
-	if (!pvrrc.gpu)
-		SortTriangles();
-	else
-	{
-		for (std::vector<u32>& idx : sortedIndexes)
-			idx.clear();
-		sortedIndexCount = 0;
-	}
 	if (pvrrc.isRTT ? !BeginRTT() : !BeginScreen())
 	{
 		rttTexture = nullptr;
 		return false;
 	}
-	SetProvokingVertices();
+	// (sorted into the geometry buffer, and the provoking vertices set: UploadGeometry())
 	if (!UploadGeometry())
 	{
 		context->SetTargets(nullptr, nullptr);

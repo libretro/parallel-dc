@@ -255,7 +255,8 @@ protected:
 	bool polyUploadedValid = false;
 	void MakeFragmentConstants(FragmentConstants& constants);
 	/* The polygons, the volumes and the indexes, and the sorted triangles'
-	 * indexes after those (sortedIndexes) */
+	 * indexes after those, sorted there, and the vertices'
+	 * colours made for the card (SetProvokingVertices()) */
 	bool UploadGeometry();
 	/* What every polygon of the frame is drawn with */
 	void SetupFrame();
@@ -290,11 +291,12 @@ protected:
 
 	// Per-triangle sort results
 	std::vector<std::vector<SortTrigDrawParam>> sortedPolys;
-	std::vector<std::vector<u32>> sortedIndexes;
+	// (their indices: in the geometry buffer, sorted there by UploadGeometry())
 	u32 sortedIndexCount = 0;
 	// ...and the depth prepasses of the sorted lists (rend/sorter.h), their indexes after each pass's sorted ones
 	std::vector<std::vector<SortTrigDrawParam>> prepassPolys;
-	void SortTriangles();
+	u32 SortedIndexRoom() const;
+	void SortTriangles(u32 *out);
 	/* Whether the sorted lists are drawn as sorted (and have a prepass):
 	 * not by the per-pixel renderer */
 	virtual bool DrawsSorted() const { return true; }
