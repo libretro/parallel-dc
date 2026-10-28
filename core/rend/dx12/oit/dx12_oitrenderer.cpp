@@ -298,7 +298,6 @@ private:
 	 * cleared with (SSAA, a render pass that is not the last: Resolve()) */
 	DX12DescriptorHeap clearHeap;
 	/* The translucent polygons' parameters, in the ring */
-	std::vector<u32> trPolyParamsData;
 	Buffer noInstance;		// a zero, the instances' buffer of a frame parsed on the CPU
 	/* A frame drawn in horizontal bands (DrawFrame()): the band being
 	 * drawn, in pixels of the target - from its top to its bottom, which is
@@ -555,19 +554,21 @@ bool DX12OITRenderer::UploadTrPolyParams()
 	const D3D12_VERTEX_BUFFER_VIEW none = { noInstance.resource->GetGPUVirtualAddress(), 256, 4 };
 	context->Cmd()->IASetVertexBuffers(1, 1, &none);
 	const int count = pvrrc.global_param_tr.used();
-	trPolyParamsData.resize(std::max(count, 1) * 2);
-	trPolyParamsData[0] = trPolyParamsData[1] = 0;
-	const PolyParam *pp = pvrrc.global_param_tr.head();
-	for (int i = 0; i < count; i++, pp++)
-	{
-		trPolyParamsData[i * 2] = (pp->tsp.full & 0xffff00c0) | ((pp->isp.full >> 16) & 0xe400) | ((pp->pcw.full >> 7) & 1);
-		trPolyParamsData[i * 2 + 1] = pp->tsp1.full;
-	}
-	const u32 size = (u32)(trPolyParamsData.size() * sizeof(u32));
+	const u32 size = (u32)(std::max(count, 1) * 2 * sizeof(u32));
 	DX12Upload upload;
 	if (!context->Upload(size, 16, upload))
 		return false;
-	memcpy(upload.cpu, trPolyParamsData.data(), size);
+	/* (written into the ring, in order: a pair of words a polygon, or one
+	 * of zeros for none) */
+	u32 *words = (u32 *)upload.cpu;
+	if (count == 0)
+		words[0] = words[1] = 0;
+	const PolyParam *pp = pvrrc.global_param_tr.head();
+	for (int i = 0; i < count; i++, pp++, words += 2)
+	{
+		words[0] = (pp->tsp.full & 0xffff00c0) | ((pp->isp.full >> 16) & 0xe400) | ((pp->pcw.full >> 7) & 1);
+		words[1] = pp->tsp1.full;
+	}
 	context->Cmd()->SetGraphicsRootShaderResourceView(6, upload.gpu);
 	return true;
 }

@@ -203,7 +203,6 @@ private:
 	 * often than not */
 	ComPtr<ID3D11Buffer> polyNumbers;
 	u32 polyNumbersCount = 0;
-	std::vector<u32> trPolyParamsData;
 	/* What the opaque and punch-through polygons are drawn into, two of
 	 * them: with several render passes, each draws on what the last one
 	 * put together */
@@ -333,15 +332,7 @@ bool DX11OITRenderer::UploadTrPolyParams()
 		return true;
 	}
 	const int count = pvrrc.global_param_tr.used();
-	trPolyParamsData.resize(std::max(count, 1) * 2);
-	trPolyParamsData[0] = trPolyParamsData[1] = 0;
-	const PolyParam *pp = pvrrc.global_param_tr.head();
-	for (int i = 0; i < count; i++, pp++)
-	{
-		trPolyParamsData[i * 2] = (pp->tsp.full & 0xffff00c0) | ((pp->isp.full >> 16) & 0xe400) | ((pp->pcw.full >> 7) & 1);
-		trPolyParamsData[i * 2 + 1] = pp->tsp1.full;
-	}
-	const u32 size = (u32)(trPolyParamsData.size() * sizeof(u32));
+	const u32 size = (u32)(std::max(count, 1) * 2 * sizeof(u32));
 	if (!trPolyParams || trPolyParamsSize < size)
 	{
 		trPolyParamsView.reset();
@@ -373,7 +364,17 @@ bool DX11OITRenderer::UploadTrPolyParams()
 	D3D11_MAPPED_SUBRESOURCE mapped;
 	if (FAILED(deviceContext->Map(trPolyParams, 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped)))
 		return false;
-	memcpy(mapped.pData, trPolyParamsData.data(), size);
+	/* (written where it is mapped, in order: a pair of words a polygon, or
+	 * one of zeros for none) */
+	u32 *words = (u32 *)mapped.pData;
+	if (count == 0)
+		words[0] = words[1] = 0;
+	const PolyParam *pp = pvrrc.global_param_tr.head();
+	for (int i = 0; i < count; i++, pp++, words += 2)
+	{
+		words[0] = (pp->tsp.full & 0xffff00c0) | ((pp->isp.full >> 16) & 0xe400) | ((pp->pcw.full >> 7) & 1);
+		words[1] = pp->tsp1.full;
+	}
 	deviceContext->Unmap(trPolyParams, 0);
 	context->SetPSResource(5, trPolyParamsView);
 
