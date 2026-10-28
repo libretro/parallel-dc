@@ -602,6 +602,10 @@ bool Texture::GpuDecode(const texd_plan& plan)
 			levels[i].pc[3] = lv.wh;
 			levels[i].pc[4] = lv.sr;
 			levels[i].pc[5] = lv.mode;
+			levels[i].group[0] = 0;
+			levels[i].group[1] = 0;
+			levels[i].group[2] = ((lv.wh & 0xFFFF) + 7) / 8;
+			levels[i].group[3] = ((lv.wh >> 16) + 7) / 8;
 		}
 		decodeJob = decoder->AddDecode(GetImage(), fresh, mipmapLevels, plan.out, levels, plan.levels);
 	}
@@ -610,6 +614,135 @@ bool Texture::GpuDecode(const texd_plan& plan)
 	debugPath = copy ? DBG_COPY : DBG_KERNEL;
 	debugLevels = 0;
 	return true;
+}
+
+/* The image's format for texels of @type */
+static vk::Format type_format(TextureType type)
+{
+	switch (type)
+	{
+	case TextureType::_5551: return vk::Format::eR5G5B5A1UnormPack16;
+	case TextureType::_565: return vk::Format::eR5G6B5UnormPack16;
+	case TextureType::_4444: return vk::Format::eR4G4B4A4UnormPack16;
+	case TextureType::_8888: return vk::Format::eR8G8B8A8Unorm;
+	default: return vk::Format::eR8Unorm;
+	}
+}
+
+/* The image the last whole update made, as it made it (in @format), and
+ * nothing for it still to be done this frame */
+bool Texture::PartReady(vk::Format format) const
+{
+	const u32 levels = made_mips ? 1 + bitscanrev(w) : 1;
+
+	if (made_type != (u8)tex_type + 1 || IsNew() || fresh || this->format != format
+			|| extent.width != w || extent.height != h || mipmapLevels != levels || debugPath == DBG_TARGET)
+		return false;
+	return decodeJob < 0 || decoder == nullptr || decodeSerial != decoder->Serial();
+}
+
+bool Texture::PartMemory(size_t bytes, void **memory)
+{
+	if (!needsStaging || !(imageUsage & vk::ImageUsageFlagBits::eTransferDst) || !PartReady(type_format(tex_type)))
+		return false;
+	partSlot = Ring().Allocate(bytes, &partBuffer, &partOffset);
+	*memory = partSlot;
+	return partSlot != nullptr;
+}
+
+void Texture::UploadPart(const TexRegion *regions, u32 count, u8 *data, const size_t *offset)
+{
+	vk::BufferImageCopy copies[TEXP_REGIONS];
+	u32 i;
+
+	if (!commandBuffer && commandPool != nullptr)
+		commandBuffer = commandPool->Allocate();
+	verify((bool)commandBuffer);
+	for (i = 0; i < count; i++)
+		copies[i] = vk::BufferImageCopy(partOffset + offset[i], regions[i].w, regions[i].h,
+				vk::ImageSubresourceLayers(vk::ImageAspectFlagBits::eColor, regions[i].level, 0, 1),
+				vk::Offset3D((int32_t)regions[i].x, (int32_t)regions[i].y, 0), vk::Extent3D(regions[i].w, regions[i].h, 1));
+	/* (what the image has is kept: from what it is sampled as) */
+	commandBuffer.begin(vk::CommandBufferBeginInfo(vk::CommandBufferUsageFlagBits::eOneTimeSubmit));
+	setImageLayout(commandBuffer, GetImage(), format, mipmapLevels, vk::ImageLayout::eShaderReadOnlyOptimal, vk::ImageLayout::eTransferDstOptimal);
+	commandBuffer.copyBufferToImage(partBuffer, GetImage(), vk::ImageLayout::eTransferDstOptimal, count, copies);
+	setImageLayout(commandBuffer, GetImage(), format, mipmapLevels, vk::ImageLayout::eTransferDstOptimal, vk::ImageLayout::eShaderReadOnlyOptimal);
+	commandBuffer.end();
+	partSlot = nullptr;
+	debugPath = DBG_STAGED;
+	debugLevels = 0;
+}
+
+int Texture::GpuDecodePart(const texd_plan& plan, const TexRegion *regions, u32 count)
+{
+	TexDecoder::Level levels[TEXP_REGIONS];
+	TexPartPlan part;
+	vk::Format nativeFormat, format;
+	bool copy;
+	u8 *to;
+	u32 offset, i;
+
+	if (decoder == nullptr || !decoder->Ready())
+		return TEXP_CPU;
+	nativeFormat = plan.native ? decoder->NativeFormat(tex_type) : vk::Format::eUndefined;
+	copy = nativeFormat != vk::Format::eUndefined;
+	format = copy ? nativeFormat : type_format(tex_type);
+	if (!copy && !decoder->Takes(format))
+		return TEXP_CPU;
+	/* an image the whole update made otherwise is made in part as that was */
+	if (!PartReady(format))
+		return PartReady(type_format(tex_type)) ? TEXP_CPU : TEXP_WHOLE;
+	if (copy ? !(imageUsage & vk::ImageUsageFlagBits::eTransferDst) : !StorageView(0) || !decoder->RunsPart())
+		return TEXP_CPU;
+
+	if (copy)
+	{
+		/* the rows, as they are: from the first region's to the last's, in one copy */
+		const u32 stride = plan.level[0].sr & 0xFFFF;
+		u32 y0 = plan.height, y1 = 0, bytes;
+		for (i = 0; i < count; i++)
+		{
+			y0 = std::min(y0, regions[i].y);
+			y1 = std::max(y1, regions[i].y + regions[i].h);
+		}
+		bytes = (y1 - y0) * stride * 2;
+		if (y0 >= y1 || !decoder->Room(bytes, 0))
+			return TEXP_CPU;
+		to = decoder->Reserve(bytes, &offset);
+		memcpy(to, &vram[plan.src + plan.level[0].data + y0 * stride * 2], bytes);
+		decodeJob = decoder->AddCopy(GetImage(), false, offset, stride, plan.width, y1 - y0, y0);
+	}
+	else
+	{
+		if (!tex_plan_part(&plan, regions, count, &part) || !decoder->Room(part.total, count))
+			return TEXP_CPU;
+		to = decoder->Reserve(part.total, &offset);
+		memcpy(to, &vram[plan.src], part.codebook);
+		for (i = 0; i < count; i++)
+			memcpy(to + part.at[i], &vram[plan.src + part.from[i]], part.bytes[i]);
+		if (plan.pal_entries != 0)
+			memcpy(to + part.pal, (plan.out == TEXD_OUT16 ? palette16_ram : palette32_ram) + plan.pal_index, plan.pal_entries * 4);
+		for (i = 0; i < count; i++)
+		{
+			const texd_level& lv = plan.level[part.level[i]];
+			levels[i].view = StorageView(lv.mip);
+			levels[i].pc[0] = offset / 4;
+			levels[i].pc[1] = part.data[i];
+			levels[i].pc[2] = part.pal;
+			levels[i].pc[3] = lv.wh;
+			levels[i].pc[4] = lv.sr;
+			levels[i].pc[5] = lv.mode;
+			levels[i].group[0] = regions[i].x / 8;
+			levels[i].group[1] = regions[i].y / 8;
+			levels[i].group[2] = (regions[i].w + 7) / 8;
+			levels[i].group[3] = (regions[i].h + 7) / 8;
+		}
+		decodeJob = decoder->AddDecode(GetImage(), false, mipmapLevels, plan.out, levels, count);
+	}
+	decodeSerial = decoder->Serial();
+	debugPath = copy ? DBG_COPY : DBG_KERNEL;
+	debugLevels = 0;
+	return TEXP_DONE;
 }
 
 void *Texture::UploadMemory(u32 width, u32 height, size_t bytes, u32 pixel, bool mipmaps)
@@ -763,6 +896,7 @@ void Texture::Defer(bool isNew)
 		commandBuffer.end();
 	}
 	fresh = false;
+	made_type = 0;
 	if (cached)
 		dirty = FrameCount != 0 ? FrameCount : 1;
 }

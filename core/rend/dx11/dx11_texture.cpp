@@ -442,6 +442,85 @@ void DX11Texture::UploadToGPU(int width, int height, u8 *data, bool mipmapped, b
 	}
 }
 
+/* The format the texture's image has for texels of @type, and how far
+ * the texture cache's 16-bit ones are turned for it (UploadToGPU()) */
+static DXGI_FORMAT typeFormat(TextureType type, u32 *bpp, unsigned *turn)
+{
+	*bpp = 2;
+	*turn = 0;
+	switch (type)
+	{
+	case TextureType::_5551: *turn = 1; return DXGI_FORMAT_B5G5R5A1_UNORM;
+	case TextureType::_565: return DXGI_FORMAT_B5G6R5_UNORM;
+	case TextureType::_4444: *turn = 4; return DXGI_FORMAT_B4G4R4A4_UNORM;
+	case TextureType::_8888: *bpp = 4; return DXGI_FORMAT_R8G8B8A8_UNORM;
+	case TextureType::_8: *bpp = 1; return DXGI_FORMAT_R8_UNORM;
+	default: return DXGI_FORMAT_UNKNOWN;
+	}
+}
+
+/* The image the last whole update made, and nothing the decoder still has
+ * to do to it */
+bool DX11Texture::PartReady() const
+{
+	u32 bpp;
+	unsigned turn;
+	D3D11_TEXTURE2D_DESC desc;
+
+	if (made_type != (u8)tex_type + 1 || !texture || DX11Context::Instance()->GetDevice() == nullptr
+			|| (decodeCount != 0 && decoder != nullptr && decodeSerial == decoder->Serial()))
+		return false;
+	texture->GetDesc(&desc);
+	return desc.Width == w && desc.Height == h && desc.Format == typeFormat(tex_type, &bpp, &turn)
+			&& desc.MipLevels == (made_mips ? 1 + bitscanrev(w) : 1) && desc.ArraySize == 1;
+}
+
+bool DX11Texture::PartMemory(size_t bytes, void **memory)
+{
+	/* (the cache's own: UpdateSubresource() copies it) */
+	*memory = nullptr;
+	return PartReady();
+}
+
+void DX11Texture::UploadPart(const TexRegion *regions, u32 count, u8 *data, const size_t *offset)
+{
+	ID3D11DeviceContext *deviceContext = DX11Context::Instance()->GetDeviceContext();
+	u32 bpp, i;
+	unsigned turn;
+
+	typeFormat(tex_type, &bpp, &turn);
+	for (i = 0; i < count; i++)
+	{
+		const TexRegion& r = regions[i];
+		const D3D11_BOX box = { r.x, r.y, 0, r.x + r.w, r.y + r.h, 1 };
+		if (turn != 0)
+			turnBits(data + offset[i], (size_t)r.w * r.h, turn, true);
+		deviceContext->UpdateSubresource(texture, r.level, &box, data + offset[i], r.w * bpp, 0);
+	}
+}
+
+/* A planar 16-bit texture's rows go from video memory to the image as
+ * they are (GpuDecode()); the decoder's textures are made whole */
+int DX11Texture::GpuDecodePart(const texd_plan& plan, const TexRegion *regions, u32 count)
+{
+	DX11Context *context = DX11Context::Instance();
+	u32 i;
+
+	if (!plan.native)
+		return decoder == nullptr || !decoder->Takes(tex_type) ? TEXP_CPU : TEXP_WHOLE;
+	if (tex_type == TextureType::_8888 || tex_type == TextureType::_8 || !context->IsFormatSupported(tex_type) || !PartReady())
+		return TEXP_WHOLE;
+	for (i = 0; i < count; i++)
+	{
+		const TexRegion& r = regions[i];
+		const u32 stride = plan.level[0].sr & 0xFFFF;
+		const D3D11_BOX box = { 0, r.y, 0, plan.width, r.y + r.h, 1 };
+		context->GetDeviceContext()->UpdateSubresource(texture, 0, &box, &vram[plan.src + plan.level[0].data + r.y * stride * 2],
+				stride * 2, 0);
+	}
+	return TEXP_DONE;
+}
+
 bool DX11Texture::Force32BitTexture(TextureType type) const
 {
 	return !DX11Context::Instance()->IsFormatSupported(type);

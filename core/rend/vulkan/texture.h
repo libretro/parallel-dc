@@ -158,6 +158,9 @@ public:
 	void UploadToGPU(int width, int height, u8 *data, bool mipmapped, bool mipmapsIncluded = false) override;
 	void *UploadMemory(u32 width, u32 height, size_t bytes, u32 pixel, bool mipmaps) override;
 	bool GpuDecode(const texd_plan& plan) override;
+	bool PartMemory(size_t bytes, void **memory) override;
+	void UploadPart(const TexRegion *regions, u32 count, u8 *data, const size_t *offset) override;
+	int GpuDecodePart(const texd_plan& plan, const TexRegion *regions, u32 count) override;
 	static UploadRing& Ring();
 	/* The renderer's, while it has one */
 	static void SetDecoder(TexDecoder *decoder) { Texture::decoder = decoder; }
@@ -186,6 +189,7 @@ private:
 	 * decoding kernel; by a copy of the texture's texels as they are */
 	enum Maker { CPU, KERNEL, COPY };
 	void Init(u32 width, u32 height, vk::Format format ,u32 dataSize, bool mipmapped, bool mipmapsIncluded, Maker maker = CPU);
+	bool PartReady(vk::Format format) const;
 	bool Prepare(int width, int height, bool mipmapped, bool mipmapsIncluded, Maker maker = CPU, vk::Format native = vk::Format::eUndefined);
 	void SetImage(u32 size, void *data, bool isNew, bool genMipmaps);
    void CreateImage(vk::ImageTiling tiling, const vk::ImageUsageFlags& usage, vk::ImageLayout initialLayout,
@@ -220,6 +224,10 @@ private:
 	u8 *slot = nullptr;
 	vk::Buffer slotBuffer;
 	vk::DeviceSize slotOffset = 0;
+	/* the piece PartMemory() handed out, for the UploadPart() that follows */
+	u8 *partSlot = nullptr;
+	vk::Buffer partBuffer;
+	vk::DeviceSize partOffset = 0;
 	bool prepared = false;
 	bool preparedNew = false;
 	vk::CommandBuffer commandBuffer;

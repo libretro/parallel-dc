@@ -1,6 +1,7 @@
 #!/bin/sh
 # The texture converters, byte for byte against upstream's; and the texture
-# cache's checks for change, against a full upload (texconv_test cache).
+# cache's checks for change, and the parts of a texture it makes again,
+# against a full upload (texconv_test cache, texconv_test part).
 #
 #   sh tools/rend/texconv_test.sh
 #
@@ -27,3 +28,4 @@ else
    exit 1
 fi
 "$WORK/texconv_test" cache
+"$WORK/texconv_test" part

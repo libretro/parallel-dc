@@ -965,6 +965,46 @@ enum class TextureType { _565, _5551, _4444, _8888, _8 };
  * fault (see BaseTextureCacheData::Update / NeedsUpdate). */
 #define FREQUENT_UPDATE_COUNT 8
 
+/* Such a texture is hashed by pieces of video memory this size, on their
+ * multiples: the pieces that changed are made again, not the texture */
+#define TEX_HASH_PIECE 4096
+
+/* A part of a texture's image made again: @w by @h texels from (@x, @y)
+ * of the image's level @level, 0 the largest. Multiples of 8. */
+struct TexRegion
+{
+	u32 level;
+	u32 x, y;
+	u32 w, h;
+};
+
+/* The most regions a texture is made again in */
+#define TEXP_REGIONS 16
+
+/* What GpuDecodePart() did: made the regions; nothing, and the texture is
+ * made whole; nothing, as GpuDecode() would have done, and the regions
+ * are made on the CPU */
+enum { TEXP_WHOLE, TEXP_DONE, TEXP_CPU };
+
+/* What a renderer copies for the GPU to make regions of a texture with
+ * (tex_plan_part()): a compressed texture's codebook, @codebook bytes
+ * from the plan's src, at the start; for region i, @bytes[i] from the
+ * plan's src + @from[i], at @at[i]; and at @pal the palette words the plan
+ * has. @total bytes in all. The kernel is run over region i with the data
+ * of its level of the plan, @level[i], where the copy has it: @data[i]. */
+struct TexPartPlan
+{
+	u32 codebook;
+	u32 pal;
+	u32 total;
+	u32 level[TEXP_REGIONS];
+	u32 data[TEXP_REGIONS];
+	u32 from[TEXP_REGIONS];
+	u32 bytes[TEXP_REGIONS];
+	u32 at[TEXP_REGIONS];
+};
+bool tex_plan_part(const texd_plan *plan, const TexRegion *regions, u32 count, TexPartPlan *part);
+
 class BaseTextureCacheData
 {
 public:
@@ -993,9 +1033,14 @@ public:
 	vram_block* lock_block;
 
 	u32 Updates;
-	u32 vram_hash;				// content hash of the locked vram range, used instead of
-								// write-protection for frequently-updated textures
-	/* The render vram_hash was last found to hold in, and vram_write_epoch
+	/* For a texture updated often, watched by its hashes instead of
+	 * write-protection: a hash for each of the pieces of video memory
+	 * (TEX_HASH_PIECE) the locked range is on, from the one at @piece_first
+	 * on, @pieces of them, and after them a bit for each that changed */
+	u32 *piece_hash = nullptr;
+	u32 piece_first;
+	u32 pieces;
+	/* The render the hashes were last found to hold in, and vram_write_epoch
 	 * then: the texture is not hashed again until one of them moves. */
 	u32 hash_frame;
 	u32 hash_epoch;
@@ -1022,6 +1067,12 @@ public:
 	retro_atomic_int_t custom_request_hash;
 	retro_atomic_int_t custom_request_old_hash;
 	retro_atomic_int_t custom_request_old_vqhash;
+	/* What a whole update made the image last, tex_type and all; 0 if
+	 * something else has been in it since (a custom texture, a render) */
+	u8 made_type;
+	bool made_mips;
+	/* NeedsUpdate() found nothing changed but some of the pieces */
+	bool changed_pieces;
 
 	void PrintTextureName();
 	virtual std::string GetId() = 0;
@@ -1060,9 +1111,16 @@ public:
 
 	void Create();
 	void ComputeHash();
-	u32 ComputeVramHash();
+	/* The pieces hashed; those that differ from their hashes marked, how
+	 * many returned. False if there is no memory for the hashes. */
+	bool HashPieces(u32 *changed);
+	bool HashChanged();
 	void Update();
 	bool PlanDecode(texd_plan& plan, u32 stride, u32 rows, u32 out, bool mipmapped);
+	/* The regions the changed pieces are in, up to TEXP_REGIONS; 0 if the
+	 * texture is to be made whole */
+	u32 ChangedRegions(TexRegion *regions, u32 stride, u32 rows, bool mipmapped);
+	bool UpdatePart(u32 stride, u32 rows, bool mipmapped, bool need_32bit_buffer);
 	void *ConvertInto(u32 width, u32 height, size_t bytes, u32 pixel, bool mipmaps, bool direct);
 	virtual void UploadToGPU(int width, int height, u8 *temp_tex_buffer, bool mipmapped, bool mipmapsIncluded = false) = 0;
 	/* Memory for Update() to convert the texture into, which UploadToGPU()
@@ -1079,6 +1137,17 @@ public:
 	 * made, to the bit; tex_type is already what it would have been.
 	 * False, and the texture is converted here as before. */
 	virtual bool GpuDecode(const texd_plan& plan) { return false; }
+	/* Part of the image made again, the rest left as it is: the image has
+	 * to be what the last whole update made (made_type), with nothing for
+	 * it still to be done. PartMemory(): true if it is, and then *@memory
+	 * is where the regions are made (@bytes of it), or null for the
+	 * cache's own (false, and the texture is made whole); UploadPart()
+	 * takes them from @data, region i at @offset[i], in rows of its width,
+	 * and may change them on the way. GpuDecodePart(): the regions made
+	 * from @plan on the GPU, as GpuDecode() would make them (TEXP_*). */
+	virtual bool PartMemory(size_t bytes, void **memory) { return false; }
+	virtual void UploadPart(const TexRegion *regions, u32 count, u8 *data, const size_t *offset) {}
+	virtual int GpuDecodePart(const texd_plan& plan, const TexRegion *regions, u32 count) { return TEXP_CPU; }
 	virtual bool Force32BitTexture(TextureType type) const { return false; }
 	void CheckCustomTexture();
 	//true if : dirty or paletted texture and hashes don't match

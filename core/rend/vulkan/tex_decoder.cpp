@@ -166,7 +166,8 @@ static VkPipeline MakeKernel(vk::ShaderModule module, vk::PipelineLayout layout,
 {
 	const vk::Device device = VulkanContext::Instance()->GetDevice();
 	const vk::PipelineShaderStageCreateInfo stage(vk::PipelineShaderStageCreateFlags(), vk::ShaderStageFlagBits::eCompute, module, "main");
-	const vk::ComputePipelineCreateInfo info(vk::PipelineCreateFlags(), stage, layout);
+	/* (run over a part of a level too: TexDecoder::Level::group) */
+	const vk::ComputePipelineCreateInfo info(vk::PipelineCreateFlagBits::eDispatchBase, stage, layout);
 	if (!orThrow)
 		return PsoCreateCompute(device, cache, info);
 	return (VkPipeline)device.createComputePipelineUnique(cache, info).release();
@@ -262,7 +263,7 @@ int TexDecoder::AddDecode(vk::Image image, bool fresh, u32 mipLevels, u32 out, c
 	return (int)jobCount++;
 }
 
-int TexDecoder::AddCopy(vk::Image image, bool fresh, u32 offset, u32 rowLength, u32 width, u32 height)
+int TexDecoder::AddCopy(vk::Image image, bool fresh, u32 offset, u32 rowLength, u32 width, u32 height, u32 y)
 {
 	Job& job = jobs[jobCount];
 	job.image = image;
@@ -278,6 +279,7 @@ int TexDecoder::AddCopy(vk::Image image, bool fresh, u32 offset, u32 rowLength, 
 	copy.rowLength = rowLength;
 	copy.width = width;
 	copy.height = height;
+	copy.y = y;
 	statTextures++;
 	statCopies++;
 	return (int)jobCount++;
@@ -369,7 +371,7 @@ void TexDecoder::Flush(CommandPool& pool)
 		const Copy& c = copies[job.first];
 		const vk::BufferImageCopy region(c.offset, c.rowLength, c.height,
 				vk::ImageSubresourceLayers(vk::ImageAspectFlagBits::eColor, 0, 0, 1),
-				vk::Offset3D(0, 0, 0), vk::Extent3D(c.width, c.height, 1));
+				vk::Offset3D(0, (int32_t)c.y, 0), vk::Extent3D(c.width, c.height, 1));
 		cmd.copyBufferToImage(*ring->buffer, job.image, vk::ImageLayout::eTransferDstOptimal, region);
 	}
 
@@ -401,7 +403,10 @@ void TexDecoder::Flush(CommandPool& pool)
 					const Level& lv = dispatches[d];
 					cmd.bindDescriptorSets(vk::PipelineBindPoint::eCompute, *pipelineLayout, 1, sets[s], nullptr);
 					cmd.pushConstants(*pipelineLayout, vk::ShaderStageFlagBits::eCompute, 0, sizeof(lv.pc), lv.pc);
-					cmd.dispatch(((lv.pc[3] & 0xFFFF) + 7) / 8, ((lv.pc[3] >> 16) + 7) / 8, 1);
+					if (lv.group[0] == 0 && lv.group[1] == 0)
+						cmd.dispatch(lv.group[2], lv.group[3], 1);
+					else
+						vkCmdDispatchBase((VkCommandBuffer)cmd, lv.group[0], lv.group[1], 0, lv.group[2], lv.group[3], 1);
 				}
 			}
 		}

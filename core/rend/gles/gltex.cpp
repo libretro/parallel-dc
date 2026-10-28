@@ -539,6 +539,46 @@ void TextureCacheData::UploadToGPU(int width, int height, u8 *temp_tex_buffer, b
 	}
 }
 	
+/* The texture the last whole update made, its shape the pool's if it is
+ * the pool's, and nothing the decoder still has to do to it */
+bool TextureCacheData::PartMemory(size_t bytes, void **memory)
+{
+	*memory = nullptr;
+	if (made_type != (u8)tex_type + 1 || texID == 0 || (decodeSerial != 0 && decodeSerial == glTexDecoder.Serial()))
+		return false;
+	return pooled == nullptr || (int)pooled->cls == TexPoolBook::Class((u32)tex_type, w, h, made_mips);
+}
+
+void TextureCacheData::UploadPart(const TexRegion *regions, u32 count, u8 *data, const size_t *offset)
+{
+	const u32 f = (u32)tex_type;
+	GLenum format, type;
+	u32 i;
+
+	if (pooled != nullptr)
+	{
+		format = poolFormat[f];
+		type = poolType[f];
+	}
+	else
+	{
+		/* as UploadToGPU() makes it */
+		format = tex_type == TextureType::_8 ? gl.single_channel_format : tex_type == TextureType::_565 ? GL_RGB : GL_RGBA;
+		type = tex_type == TextureType::_5551 ? GL_UNSIGNED_SHORT_5_5_5_1 : tex_type == TextureType::_565 ? GL_UNSIGNED_SHORT_5_6_5
+				: tex_type == TextureType::_4444 ? GL_UNSIGNED_SHORT_4_4_4_4 : GL_UNSIGNED_BYTE;
+	}
+	glcache.BindTexture(GL_TEXTURE_2D, texID);
+	for (i = 0; i < count; i++)
+		glTexSubImage2D(GL_TEXTURE_2D, regions[i].level, regions[i].x, regions[i].y, regions[i].w, regions[i].h, format, type, data + offset[i]);
+	glCheck();
+}
+
+/* The decoder's textures are made whole */
+int TextureCacheData::GpuDecodePart(const texd_plan& plan, const TexRegion *regions, u32 count)
+{
+	return plan.native || glTexDecoder.Takes(tex_type, plan.out) ? TEXP_WHOLE : TEXP_CPU;
+}
+
 bool TextureCacheData::Delete()
 {
 	if (!BaseTextureCacheData::Delete())
@@ -961,6 +1001,7 @@ void ReadRTTBuffer() {
     	texture_data->SetRendered(gl.rtt.tex, gl.rtt.pooled);
     	texture_data->dirty = 0;
 	texture_data->stride_read = 0;	// (rendered, not read)
+	texture_data->made_type = 0;
       libCore_vramlock_Lock(texture_data->sa_tex, texture_data->sa + texture_data->size - 1, texture_data);
       rtt_watch_add(&watch, &rtt_gl_backend);
     }

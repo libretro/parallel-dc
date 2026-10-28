@@ -803,6 +803,7 @@ void DX9Renderer::EndRTT()
 
 	rttTexture->dirty = 0;
 	rttTexture->stride_read = 0;	// (rendered, not read)
+	rttTexture->made_type = 0;
 	libCore_vramlock_Lock(rttTexture->sa_tex, rttTexture->sa + rttTexture->size - 1, rttTexture);
 	/* video memory gets it when something first touches it there */
 	dx9_rtt_watch(rttTexture, rttAddr, pvrrc.fb_X_CLIP.min, pvrrc.fb_Y_CLIP.min,

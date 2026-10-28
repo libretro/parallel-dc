@@ -66,14 +66,17 @@ public:
 	{
 		vk::ImageView view;		// the level's storage view
 		texd_u32 pc[6];			// base (in words), data, pal, wh, sr, mode
+		u32 group[4];			/* the groups of 8x8 texels run: from x, y, so many across, down */
 	};
 	/* The texture's image made from the ring: @count levels, of an image
 	 * of @mipLevels; @fresh if it has never been written. Returns what
 	 * Cancel() takes. */
 	int AddDecode(vk::Image image, bool fresh, u32 mipLevels, u32 out, const Level *levels, u32 count);
 	/* The texture's image copied from the ring: @width by @height texels,
-	 * rows of @rowLength, from @offset */
-	int AddCopy(vk::Image image, bool fresh, u32 offset, u32 rowLength, u32 width, u32 height);
+	 * rows of @rowLength, from @offset, to its row @y on */
+	int AddCopy(vk::Image image, bool fresh, u32 offset, u32 rowLength, u32 width, u32 height, u32 y = 0);
+	/* Whether a level can be run over some of its groups only */
+	bool RunsPart() const { return ready && vkCmdDispatchBase != nullptr; }
 	/* What was added is not done after all (the texture is made another
 	 * way, or goes); returns whether its image was fresh */
 	bool Cancel(int job);
@@ -107,7 +110,7 @@ private:
 	};
 	struct Copy
 	{
-		u32 offset, rowLength, width, height;
+		u32 offset, rowLength, width, height, y;
 	};
 
 	bool ready = false;

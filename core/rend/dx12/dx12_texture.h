@@ -103,6 +103,9 @@ public:
 	void UploadToGPU(int width, int height, u8 *data, bool mipmapped, bool mipmapsIncluded = false) override;
 	void *UploadMemory(u32 width, u32 height, size_t bytes, u32 pixel, bool mipmaps) override;
 	bool GpuDecode(const texd_plan& plan) override;
+	bool PartMemory(size_t bytes, void **memory) override;
+	void UploadPart(const TexRegion *regions, u32 count, u8 *data, const size_t *offset) override;
+	int GpuDecodePart(const texd_plan& plan, const TexRegion *regions, u32 count) override;
 	bool Delete() override;
 	/* The renderer's, while it has them */
 	static void SetDecoder(DX12TexDecoder *decoder) { DX12Texture::decoder = decoder; }
@@ -144,6 +147,7 @@ private:
 	void ReleasePooled();
 	/* What was asked of the decoder for it is not done after all */
 	void CancelDecode();
+	bool PartReady() const;
 
 	DX12PooledTexture *pooled = nullptr;
 	DX12PooledTexture *spare = nullptr;

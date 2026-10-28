@@ -487,6 +487,92 @@ void DX12Texture::UploadToGPU(int width, int height, u8 *data, bool mipmapped, b
 	context->Transition(pooled->resource, pooled->state, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
 }
 
+/* The copy of what uploadRows() put in the ring into @level of @texture,
+ * at @x, @y of it */
+static void copyToRegion(DX12Context *context, DX12PooledTexture *texture, u32 level, u32 x, u32 y, u32 width, u32 height,
+		const DX12Upload& upload, u32 pitch)
+{
+	D3D12_TEXTURE_COPY_LOCATION dst{};
+	dst.pResource = texture->resource;
+	dst.Type = D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX;
+	dst.SubresourceIndex = level;
+	D3D12_TEXTURE_COPY_LOCATION src{};
+	src.pResource = upload.buffer;
+	src.Type = D3D12_TEXTURE_COPY_TYPE_PLACED_FOOTPRINT;
+	src.PlacedFootprint.Offset = upload.offset;
+	src.PlacedFootprint.Footprint.Format = texture->format;
+	src.PlacedFootprint.Footprint.Width = width;
+	src.PlacedFootprint.Footprint.Height = height;
+	src.PlacedFootprint.Footprint.Depth = 1;
+	src.PlacedFootprint.Footprint.RowPitch = pitch;
+	context->Cmd()->CopyTextureRegion(&dst, x, y, 0, &src, nullptr);
+}
+
+/* The image the last whole update made, and nothing the decoder still has
+ * to do to it */
+bool DX12Texture::PartReady() const
+{
+	if (made_type != (u8)tex_type + 1 || pooled == nullptr || (unsigned)tex_type >= 5 || DX12Context::Instance()->GetDevice() == nullptr
+			|| (decodeCount != 0 && decoder != nullptr && decodeSerial == decoder->Serial()))
+		return false;
+	return pooled->width == w && pooled->height == h && pooled->format == poolFormats[(int)tex_type]
+			&& pooled->levels == (made_mips ? 1 + bitscanrev(w) : 1);
+}
+
+bool DX12Texture::PartMemory(size_t bytes, void **memory)
+{
+	/* (the cache's own: copied into the ring at Direct3D's pitch) */
+	*memory = nullptr;
+	uploadCpu = nullptr;
+	return PartReady();
+}
+
+void DX12Texture::UploadPart(const TexRegion *regions, u32 count, u8 *data, const size_t *offset)
+{
+	DX12Context *context = DX12Context::Instance();
+	const u32 bpp = tex_type == TextureType::_8888 ? 4 : tex_type == TextureType::_8 ? 1 : 2;
+	const unsigned turn = tex_type == TextureType::_5551 ? 1 : tex_type == TextureType::_4444 ? 4 : 0;
+	u32 i;
+
+	context->Transition(pooled->resource, pooled->state, D3D12_RESOURCE_STATE_COPY_DEST);
+	for (i = 0; i < count; i++)
+	{
+		const TexRegion& r = regions[i];
+		DX12Upload upload;
+		u32 pitch;
+		if (turn != 0)
+			turnBits(data + offset[i], (size_t)r.w * r.h, turn, true);
+		if (uploadRows(context, data + offset[i], r.w * bpp, r.w * bpp, r.h, upload, pitch))
+			copyToRegion(context, pooled, r.level, r.x, r.y, r.w, r.h, upload, pitch);
+	}
+	context->Transition(pooled->resource, pooled->state, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
+}
+
+/* A planar 16-bit texture's rows go from video memory to the image as
+ * they are (GpuDecode()); the decoder's textures are made whole */
+int DX12Texture::GpuDecodePart(const texd_plan& plan, const TexRegion *regions, u32 count)
+{
+	DX12Context *context = DX12Context::Instance();
+	const u32 stride = plan.level[0].sr & 0xFFFF;
+	u32 i;
+
+	if (!plan.native)
+		return decoder == nullptr || !decoder->Takes(tex_type) ? TEXP_CPU : TEXP_WHOLE;
+	if (tex_type == TextureType::_8888 || tex_type == TextureType::_8 || !context->IsFormatSupported(tex_type) || !PartReady())
+		return TEXP_WHOLE;
+	context->Transition(pooled->resource, pooled->state, D3D12_RESOURCE_STATE_COPY_DEST);
+	for (i = 0; i < count; i++)
+	{
+		const TexRegion& r = regions[i];
+		DX12Upload upload;
+		u32 pitch;
+		if (uploadRows(context, &vram[plan.src + plan.level[0].data + r.y * stride * 2], stride * 2, plan.width * 2, r.h, upload, pitch))
+			copyToRegion(context, pooled, 0, 0, r.y, plan.width, r.h, upload, pitch);
+	}
+	context->Transition(pooled->resource, pooled->state, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
+	return TEXP_DONE;
+}
+
 bool DX12Texture::Force32BitTexture(TextureType type) const
 {
 	return !DX12Context::Instance()->IsFormatSupported(type);

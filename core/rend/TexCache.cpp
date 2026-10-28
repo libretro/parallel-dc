@@ -481,18 +481,53 @@ void BaseTextureCacheData::PrintTextureName()
 	DEBUG_LOG(RENDERER, "%s", str);
 }
 
-/* Hash of the vram content backing this texture, over the same range the
- * write-protection lock would cover, clamped to VRAM like the lock is. Used to
- * detect changes for frequently-updated textures that run unprotected. */
-u32 BaseTextureCacheData::ComputeVramHash()
+/* The vram content backing this texture, over the same range the
+ * write-protection lock would cover, clamped to VRAM like the lock is,
+ * hashed piece by piece. For frequently-updated textures that run
+ * unprotected. */
+bool BaseTextureCacheData::HashPieces(u32 *changed)
 {
-	u32 start = sa_tex & VRAM_MASK;
+	const u32 start = sa_tex & VRAM_MASK;
 	u32 end = sa + size;
+	u32 first, count, i, n;
+	u32 *bits;
+	bool all;
+
+	*changed = 0;
 	if (end > VRAM_SIZE)
 		end = VRAM_SIZE;
 	if (end <= start)
-		return 0;
-	return XXH32(&vram[start], end - start, 7);
+		return true;
+	first = start / TEX_HASH_PIECE;
+	count = (end - 1) / TEX_HASH_PIECE - first + 1;
+	all = piece_hash == NULL || count != pieces || first != piece_first;
+	if (all)
+	{
+		free(piece_hash);
+		piece_hash = (u32 *)malloc(((size_t)count + (count + 31) / 32) * sizeof(u32));
+		pieces = 0;
+		if (piece_hash == NULL)
+			return false;
+		piece_first = first;
+		pieces = count;
+	}
+	bits = piece_hash + count;
+	memset(bits, 0, ((count + 31) / 32) * sizeof(u32));
+	n = 0;
+	for (i = 0; i < count; i++)
+	{
+		const u32 from = i == 0 ? start : (first + i) * TEX_HASH_PIECE;
+		const u32 to = i == count - 1 ? end : (first + i + 1) * TEX_HASH_PIECE;
+		const u32 hash = XXH32(&vram[from], to - from, 7);
+		if (all || hash != piece_hash[i])
+		{
+			piece_hash[i] = hash;
+			bits[i >> 5] |= 1u << (i & 31);
+			n++;
+		}
+	}
+	*changed = n;
+	return true;
 }
 
 //true if : dirty or paletted texture and hashes don't match
@@ -527,17 +562,27 @@ bool BaseTextureCacheData::NeedsUpdate() {
 	 * uses it. */
 	if (!rc && lock_block == nullptr && Updates >= FREQUENT_UPDATE_COUNT
 			&& (hash_frame != FrameCount || hash_epoch != vram_write_epoch))
-	{
-		if (ComputeVramHash() != vram_hash)
-			rc = true;
-		else
-		{
-			hash_frame = FrameCount;
-			hash_epoch = vram_write_epoch;
-		}
-	}
+		rc = HashChanged();
 
 	return rc;
+}
+
+/* (NeedsUpdate()'s, kept out of its way) */
+bool BaseTextureCacheData::HashChanged()
+{
+	u32 changed;
+
+	if (!HashPieces(&changed))
+		return true;
+	if (changed != 0)
+	{
+		/* (until the Update() that follows) */
+		changed_pieces = true;
+		return true;
+	}
+	hash_frame = FrameCount;
+	hash_epoch = vram_write_epoch;
+	return false;
 }
 
 void texcache_stop_custom_loads()
@@ -554,6 +599,9 @@ bool BaseTextureCacheData::Delete()
 		libCore_vramlock_Unlock_block_wb(lock_block);
 	lock_block = nullptr;
 
+	free(piece_hash);
+	piece_hash = NULL;
+	pieces = 0;
 	free(custom_image_data);
 
 	return true;
@@ -566,6 +614,12 @@ void BaseTextureCacheData::Create()
 	dirty = FrameCount;
 	stride_read = 0;
 	lock_block = nullptr;
+	free(piece_hash);
+	piece_hash = NULL;
+	pieces = 0;
+	made_type = 0;
+	made_mips = false;
+	changed_pieces = false;
 	custom_image_data = nullptr;
 	retro_atomic_store_release_int(&custom_load_in_progress, 0);
 	retro_atomic_int_init(&custom_request_hash, 0);
@@ -834,8 +888,473 @@ bool BaseTextureCacheData::PlanDecode(texd_plan& plan, u32 stride, u32 rows, u32
 	return true;
 }
 
+/* Where in a twiddled picture 2^@lw by 2^@lh texel @t is: its bits are y's
+ * and x's in turn, y's first, as long as both have any, then the rest of
+ * the larger one's (detwiddle[][][]) */
+static void tw_position(u32 t, u32 lw, u32 lh, u32 *x, u32 *y)
+{
+	const u32 n = lw < lh ? lw : lh;
+	u32 i;
+	u32 px = 0, py = 0;
+
+	for (i = 0; i < n; i++)
+	{
+		py |= ((t >> (2 * i)) & 1) << i;
+		px |= ((t >> (2 * i + 1)) & 1) << i;
+	}
+	if (lw > lh)
+		px |= (t >> (2 * n)) << n;
+	else
+		py |= (t >> (2 * n)) << n;
+	*x = px;
+	*y = py;
+}
+
+/* The regions a texture's changed texels are in, up to TEXP_REGIONS of
+ * them; full if there would have to be more */
+struct part_list
+{
+	TexRegion *r;
+	u32 count;
+	bool full;
+};
+
+/* Texels @x0, @y0 to @x1, @y1 (past the last) of level @level, @t by @t
+ * squares of a @width by @height level from a multiple of @t on, into
+ * @list: joined to a region of the level they overlap, or that the two
+ * fill most of together; one region more otherwise, or where there is no
+ * room for one, joined to the region that grows the least. The regions
+ * never overlap. */
+static void part_add(part_list *list, u32 level, u32 t, u32 width, u32 height, u32 x0, u32 y0, u32 x1, u32 y1)
+{
+	TexRegion r;
+	u32 i;
+
+	r.level = level;
+	r.x = x0 & ~(t - 1);
+	r.y = y0 & ~(t - 1);
+	x1 = (x1 + t - 1) & ~(t - 1);
+	y1 = (y1 + t - 1) & ~(t - 1);
+	r.w = (x1 < width ? x1 : width) - r.x;
+	r.h = (y1 < height ? y1 : height) - r.y;
+	for (;;)
+	{
+		u32 best = list->count;
+		u32 grows = 0xFFFFFFFF;
+		bool joined = false;
+
+		for (i = 0; i < list->count && !joined; i++)
+		{
+			const TexRegion *o = &list->r[i];
+			const u32 ux0 = o->x < r.x ? o->x : r.x, uy0 = o->y < r.y ? o->y : r.y;
+			const u32 ux1 = o->x + o->w > r.x + r.w ? o->x + o->w : r.x + r.w;
+			const u32 uy1 = o->y + o->h > r.y + r.h ? o->y + o->h : r.y + r.h;
+			const u32 both = o->w * o->h + r.w * r.h;
+			const u32 u = (ux1 - ux0) * (uy1 - uy0);
+			const bool overlap = o->x < r.x + r.w && r.x < o->x + o->w && o->y < r.y + r.h && r.y < o->y + o->h;
+
+			if (o->level != level)
+				continue;
+			if (overlap || u <= both + both / 8)
+			{
+				r.x = ux0;
+				r.y = uy0;
+				r.w = ux1 - ux0;
+				r.h = uy1 - uy0;
+				list->r[i] = list->r[--list->count];
+				joined = true;
+			}
+			else if (u - both < grows)
+			{
+				grows = u - both;
+				best = i;
+			}
+		}
+		if (joined)
+			continue;	/* (and what it is now may join another) */
+		if (list->count < TEXP_REGIONS)
+		{
+			list->r[list->count++] = r;
+			return;
+		}
+		if (best == list->count)
+		{
+			list->full = true;
+			return;
+		}
+		{
+			const TexRegion *o = &list->r[best];
+			const u32 ux0 = o->x < r.x ? o->x : r.x, uy0 = o->y < r.y ? o->y : r.y;
+			const u32 ux1 = o->x + o->w > r.x + r.w ? o->x + o->w : r.x + r.w;
+			const u32 uy1 = o->y + o->h > r.y + r.h ? o->y + o->h : r.y + r.h;
+			r.x = ux0;
+			r.y = uy0;
+			r.w = ux1 - ux0;
+			r.h = uy1 - uy0;
+			list->r[best] = list->r[--list->count];
+		}
+	}
+}
+
+/* Texels @t0 to @t1 of a twiddled level 2^@lw by 2^@lh, into @list: as
+ * runs of a power of two on a multiple of it, each a rectangle */
+static void part_add_twiddled(part_list *list, u32 level, u32 t0, u32 t1, u32 lw, u32 lh)
+{
+	const u32 n = lw < lh ? lw : lh;
+	const u32 t = n < 4 ? 8 : 16;
+
+	while (t0 < t1 && !list->full)
+	{
+		u32 k = 0;
+		u32 x, y, bw, bh;
+
+		while (k < lw + lh && (t0 & ((2u << k) - 1)) == 0 && t0 + (2u << k) <= t1)
+			k++;
+		tw_position(t0, lw, lh, &x, &y);
+		if (k <= 2 * n)
+		{
+			bw = 1u << (k / 2);
+			bh = 1u << ((k + 1) / 2);
+		}
+		else if (lw > lh)
+		{
+			bw = 1u << (k - n);
+			bh = 1u << n;
+		}
+		else
+		{
+			bw = 1u << n;
+			bh = 1u << (k - n);
+		}
+		part_add(list, level, t, 1u << lw, 1u << lh, x, y, x + bw, y + bh);
+		t0 += 1u << k;
+	}
+}
+
+/* Texels a converter makes of a block: 8 bytes of a twiddled texture, an
+ * index of a compressed one */
+static u32 block_texels(u32 bpp)
+{
+	return bpp == 4 ? 16 : bpp == 8 ? 8 : 4;
+}
+
+u32 BaseTextureCacheData::ChangedRegions(TexRegion *regions, u32 stride, u32 rows, bool mipmapped)
+{
+	const bool planar = tcw.ScanOrder && (tex->PL || tex->PL32);
+	const u32 levels = mipmapped ? tsp.TexU + 3 + 1 : 1;
+	const u32 start = sa_tex & VRAM_MASK;
+	const u32 B = block_texels(tex->bpp);
+	const u32 *bits;
+	part_list list;
+	u32 end = sa + size;
+	u32 i, l, texels, all;
+
+	if (piece_hash == NULL || pieces == 0 || levels > TEXD_MAX_LEVELS || tex->bpp == 0)
+		return 0;
+	if (end > VRAM_SIZE)
+		end = VRAM_SIZE;
+	bits = piece_hash + pieces;
+	list.r = regions;
+	list.count = 0;
+	list.full = false;
+
+	for (i = 0; i < pieces && !list.full; )
+	{
+		u32 j = i;
+		u32 b0, b1;
+
+		if ((bits[i >> 5] & (1u << (i & 31))) == 0)
+		{
+			i++;
+			continue;
+		}
+		while (j < pieces && (bits[j >> 5] & (1u << (j & 31))) != 0)
+			j++;
+		b0 = (piece_first + i) * TEX_HASH_PIECE;
+		b1 = (piece_first + j) * TEX_HASH_PIECE;
+		if (b0 < start)
+			b0 = start;
+		if (b1 > end)
+			b1 = end;
+		i = j;
+		/* the codebook is all of a compressed texture */
+		if (tcw.VQ_Comp && b0 < sa_tex + 256 * 4 * 2)
+			return 0;
+		if (planar)
+		{
+			/* rows of the texture's width, read 'stride' texels apart */
+			const u32 row = tcw.VQ_Comp ? stride / 4 : stride * 2;
+			const u32 data = tcw.VQ_Comp ? sa + 256 * 4 * 2 : sa;
+			const u32 data_end = data + row * rows;
+			u32 r0 = b0 > data ? b0 - data : 0;
+			u32 r1 = (b1 < data_end ? b1 : data_end) - data;
+
+			if (b1 <= data || r0 >= r1)
+				continue;
+			part_add(&list, 0, 8, w, h, 0, r0 / row, w, (r1 + row - 1) / row);
+			continue;
+		}
+		for (l = 0; l < levels; l++)
+		{
+			/* the level's data where its converter reads it (a codebook index for each block) */
+			const u32 lw = mipmapped ? l : bitscanrev(w);
+			const u32 lh = mipmapped ? l : bitscanrev(h);
+			const u32 n = (1u << lw) << lh;
+			u32 data, data_end, r0, r1;
+
+			if (tcw.VQ_Comp)
+			{
+				data = (mipmapped ? sa_tex + VQMipPoint[l] : sa) + 256 * 4 * 2;
+				data_end = data + (n + B - 1) / B;
+			}
+			else
+			{
+				data = mipmapped ? sa_tex + OtherMipPoint[l] * tex->bpp / 8 : sa;
+				data_end = data + (n * tex->bpp + 7) / 8;
+			}
+			if (b1 <= data || b0 >= data_end)
+				continue;
+			/* the smallest levels (and their corners and special cases)
+			 * are made whole with the texture */
+			if (lw < 3 || lh < 3)
+				return 0;
+			r0 = b0 > data ? b0 - data : 0;
+			r1 = (b1 < data_end ? b1 : data_end) - data;
+			if (tcw.VQ_Comp)
+				part_add_twiddled(&list, levels - 1 - l, r0 * B, r1 * B < n ? r1 * B : n, lw, lh);
+			else
+				part_add_twiddled(&list, levels - 1 - l, r0 / 8 * B, (r1 + 7) / 8 * B < n ? (r1 + 7) / 8 * B : n, lw, lh);
+		}
+	}
+	if (list.full)
+		return 0;
+
+	/* half of it or more: made whole */
+	texels = 0;
+	for (i = 0; i < list.count; i++)
+		texels += regions[i].w * regions[i].h;
+	all = 0;
+	for (l = 0; l < levels; l++)
+		all += mipmapped ? 1u << (2 * l) : w * h;
+	if (texels * 2 >= all)
+		return 0;
+	return list.count;
+}
+
+bool tex_plan_part(const texd_plan *plan, const TexRegion *regions, u32 count, TexPartPlan *part)
+{
+	u32 at, i, l;
+
+	if (count > TEXP_REGIONS)
+		return false;
+	part->codebook = ((plan->level[0].mode >> 4) & 1) != 0 ? 256 * 4 * 2 : 0;
+	at = part->codebook;
+	for (i = 0; i < count; i++)
+	{
+		const TexRegion *r = &regions[i];
+		const texd_level *lv = NULL;
+		u32 mode, fmt, scan, lw, lh, first, last;
+
+		for (l = 0; l < plan->levels; l++)
+			if (plan->level[l].mip == r->level)
+				lv = &plan->level[l];
+		if (lv == NULL || r->w == 0 || r->h == 0)
+			return false;
+		part->level[i] = (u32)(lv - plan->level);
+		mode = lv->mode;
+		fmt = mode & 15;
+		scan = (mode >> 4) & 3;
+		lw = (mode >> 12) & 15;
+		lh = (mode >> 16) & 15;
+		/* the bytes the texels of the region are made from: texd_texel() */
+		if (scan == TEXD_PL || scan == TEXD_PLVQ)
+		{
+			const u32 stride = lv->sr & 0xFFFF;
+			const u32 rows = lv->sr >> 16;
+			const u32 row = scan == TEXD_PL ? stride * 2 : stride / 4;
+			const u32 y1 = r->y + r->h < rows ? r->y + r->h : rows;
+
+			first = lv->data + r->y * row;
+			last = r->y < y1 ? lv->data + y1 * row : first;
+		}
+		else
+		{
+			const u32 div = fmt == TEXD_PAL4 ? 16 : fmt == TEXD_PAL8 ? 8 : 4;
+			/* (the first texel of a box of a twiddled picture is first in it, the last last) */
+			const u32 t0 = texd_twiddle(r->x, r->y, lw, lh);
+			const u32 t1 = texd_twiddle(r->x + r->w - 1, r->y + r->h - 1, lw, lh);
+
+			if (scan == TEXD_VQ)
+			{
+				first = lv->data + t0 / div;
+				last = lv->data + t1 / div + 1;
+			}
+			else
+			{
+				first = lv->data + t0 / div * 8;
+				last = lv->data + (t1 / div + 1) * 8;
+			}
+		}
+		first &= ~3u;
+		if (last > plan->bytes)
+			last = plan->bytes;
+		if (last < first)
+			last = first;
+		part->from[i] = first;
+		part->bytes[i] = last - first;
+		part->at[i] = at;
+		part->data[i] = lv->data + at - first;
+		at += (part->bytes[i] + 3) & ~3u;
+	}
+	part->pal = at;
+	part->total = at + plan->pal_entries * 4;
+	return true;
+}
+
+/* The converter of @out (TEXD_OUT8, 16 or 32) over @width by @height
+ * texels from @src, into @dst in rows of @pitch texels */
+static void part_convert(const BaseTextureCacheData *t, u32 out, void *dst, u32 pitch, u8 *src, u32 width, u32 height)
+{
+	if (out == TEXD_OUT32)
+	{
+		PixelBuffer<u32> pb;
+		pb.init(pitch, height, false, dst);
+		t->texconv32(&pb, src, width, height);
+	}
+	else if (out == TEXD_OUT8)
+	{
+		PixelBuffer<u8> pb;
+		pb.init(pitch, height, false, dst);
+		t->texconv8(&pb, src, width, height);
+	}
+	else
+	{
+		PixelBuffer<u16> pb;
+		pb.init(pitch, height, false, dst);
+		t->texconv(&pb, src, width, height);
+	}
+}
+
+/* The regions the changed pieces are in made again, the rest of the image
+ * left as it is: on the GPU, as a whole update would be made there, or
+ * converted here. False if the texture is to be made whole. */
+bool BaseTextureCacheData::UpdatePart(u32 stride, u32 rows, bool mipmapped, bool need_32bit_buffer)
+{
+	const bool planar = tcw.ScanOrder && (tex->PL || tex->PL32);
+	const TextureType before = tex_type;
+	TexRegion regions[TEXP_REGIONS];
+	size_t offset[TEXP_REGIONS];
+	size_t bytes = 0;
+	TextureType type = tex_type;
+	texd_plan plan;
+	void *memory = NULL;
+	u32 count, out, pixel, i;
+
+	if (made_type == 0 || made_mips != mipmapped)
+		return false;
+	/* the converter a whole update takes, and the texture type it makes */
+	if (texconv32 != NULL && need_32bit_buffer)
+	{
+		out = TEXD_OUT32;
+		type = TextureType::_8888;
+	}
+	else if (texconv8 != NULL && tex_type == TextureType::_8)
+		out = TEXD_OUT8;
+	else if (texconv != NULL)
+		out = TEXD_OUT16;
+	else
+		return false;
+	if ((u32)type + 1 != made_type)
+		return false;
+	count = ChangedRegions(regions, stride, rows, mipmapped);
+	if (count == 0)
+		return false;
+
+	tex_type = type;
+	if (PlanDecode(plan, stride, rows, out, mipmapped) && (settings.rend.GpuTextureDecode || plan.native))
+	{
+		const int done = GpuDecodePart(plan, regions, count);
+		if (done == TEXP_DONE)
+			return true;
+		if (done == TEXP_WHOLE)
+		{
+			tex_type = before;
+			return false;
+		}
+	}
+
+	pixel = out == TEXD_OUT32 ? 4 : out == TEXD_OUT8 ? 1 : 2;
+	for (i = 0; i < count; i++)
+	{
+		offset[i] = bytes;
+		bytes += ((size_t)regions[i].w * regions[i].h * pixel + 15) & ~(size_t)15;
+	}
+	/* (where a stride wider than the texture runs on past the last row) */
+	if (planar && stride > w)
+		bytes += (size_t)(stride - w) * pixel;
+	if (!PartMemory(bytes, &memory))
+	{
+		tex_type = before;
+		return false;
+	}
+	if (memory == NULL)
+		memory = texcache_scratch(bytes);
+
+	for (i = 0; i < count; i++)
+	{
+		const TexRegion *r = &regions[i];
+		u8 * const dst = (u8 *)memory + offset[i];
+
+		if (planar)
+		{
+			const u32 made = r->y >= rows ? 0 : r->y + r->h > rows ? rows - r->y : r->h;
+			u32 y;
+
+			if (made != 0)
+				part_convert(this, out, dst, w, &vram[sa + r->y * (tcw.VQ_Comp ? stride / 4 : stride * 2)], stride, made);
+			if (made < r->h)
+				memset(dst + (size_t)made * w * pixel, 0, (size_t)(r->h - made) * w * pixel);
+			if (stride < w)
+				for (y = 0; y < made; y++)
+					memset(dst + ((size_t)y * w + stride) * pixel, 0, (size_t)(w - stride) * pixel);
+		}
+		else
+		{
+			/* in the squares the texture is laid out in, each one a
+			 * twiddled picture of its own from where the square starts */
+			const u32 l = mipmapped ? tsp.TexU + 3 - r->level : 0;
+			const u32 lw = mipmapped ? l : bitscanrev(w);
+			const u32 lh = mipmapped ? l : bitscanrev(h);
+			const u32 n = lw < lh ? lw : lh;
+			const u32 t = n < 4 ? 8 : 16;
+			const u32 B = block_texels(tex->bpp);
+			u32 data, x, y;
+
+			if (tcw.VQ_Comp)
+				data = mipmapped ? sa_tex + VQMipPoint[l] : sa;
+			else
+				data = mipmapped ? sa_tex + OtherMipPoint[l] * tex->bpp / 8 : sa;
+			for (y = r->y; y < r->y + r->h; y += t)
+				for (x = r->x; x < r->x + r->w; x += t)
+				{
+					const u32 at = detwiddle[0][lh][x] + detwiddle[1][lw][y];
+					part_convert(this, out, dst + ((size_t)(y - r->y) * r->w + (x - r->x)) * pixel, r->w,
+							&vram[data + (tcw.VQ_Comp ? at / B : at / B * 8)], t, t);
+				}
+		}
+	}
+	UploadPart(regions, count, (u8 *)memory, offset);
+	return true;
+}
+
 void BaseTextureCacheData::Update()
 {
+	/* only what NeedsUpdate() just hashed is known to be the rest of it */
+	const bool part = changed_pieces;
+	bool watched = false;
+	u32 changed;
+
+	changed_pieces = false;
 	//texture state tracking stuff
 	Updates++;
 	dirty=0;
@@ -920,7 +1439,17 @@ void BaseTextureCacheData::Update()
 	if (settings.rend.CustomTextures)
 		custom_texture.LoadCustomTextureAsync(this);
 
+	/* Watched by its hashes from now on: of what is converted, before it
+	 * is (NeedsUpdate()'s, if it has just hashed it) */
+	if (Updates >= FREQUENT_UPDATE_COUNT)
+	{
+		watched = part || HashPieces(&changed);
+		hash_frame = FrameCount;
+		hash_epoch = vram_write_epoch;
+	}
+
 	void *temp_tex_buffer = NULL;
+	bool converted = true;
 	u32 upscaled_w = w;
 	u32 upscaled_h = h;
 
@@ -956,6 +1485,14 @@ void BaseTextureCacheData::Update()
 	 * the scaler's own; nor when textures are dumped, which reads them back. */
 	const bool direct = !textureUpscaling && !settings.rend.DumpTextures;
 
+	/* Only the pieces that changed made again, where they can be */
+	if (part && direct && !settings.rend.CustomTextures && UpdatePart(stride, rows, mipmapped, need_32bit_buffer))
+	{
+		PrintTextureName();
+		return;
+	}
+	made_type = 0;
+
 	/* Or made from its bytes on the GPU, where the renderer can: with the
 	 * converter, the format and the levels it would have here. Not a
 	 * texture scaled up or dumped, which need its texels on this side. A
@@ -980,19 +1517,16 @@ void BaseTextureCacheData::Update()
 		{
 			const TextureType before = tex_type;
 			tex_type = type;
+			made_type = (u8)type + 1;
+			made_mips = plan.mipmapped != 0;
 			if (GpuDecode(plan))
 			{
-				if (Updates < FREQUENT_UPDATE_COUNT)
+				if (!watched)
 					libCore_vramlock_Lock(sa_tex, sa + size - 1, this);
-				else
-				{
-					vram_hash = ComputeVramHash();
-					hash_frame = FrameCount;
-					hash_epoch = vram_write_epoch;
-				}
 				PrintTextureName();
 				return;
 			}
+			made_type = 0;
 			tex_type = before;
 		}
 	}
@@ -1138,6 +1672,7 @@ void BaseTextureCacheData::Update()
 	{
 		//fill it in with a temp color
 		WARN_LOG(RENDERER, "UNHANDLED TEXTURE");
+		converted = false;
 		pb16.init(w, h, false, texcache_scratch(PixelBuffer<u16>::bytes(w, h, false)));
 		memset(pb16.data(), 0x80, w * h * 2);
 		temp_tex_buffer = pb16.data();
@@ -1152,15 +1687,15 @@ void BaseTextureCacheData::Update()
 	//hash at lookup time instead (see NeedsUpdate): a hash over the same range
 	//is cheaper than the fault path, and when the game rewrites identical
 	//content it avoids the re-upload entirely.
-	if (Updates < FREQUENT_UPDATE_COUNT)
+	if (!watched)
 		libCore_vramlock_Lock(sa_tex, sa + size - 1, this);
-	else
-	{
-		vram_hash = ComputeVramHash();
-		hash_frame = FrameCount;
-		hash_epoch = vram_write_epoch;
-	}
 
+	/* (an image a part of is made again: not scaled up, not grey) */
+	if (direct && converted)
+	{
+		made_type = (u8)tex_type + 1;
+		made_mips = mipmapped;
+	}
 	UploadToGPU(upscaled_w, upscaled_h, (u8*)temp_tex_buffer, IsMipmapped(), mipmapped);
 	if (settings.rend.DumpTextures)
 	{
@@ -1175,6 +1710,7 @@ void BaseTextureCacheData::CheckCustomTexture()
 {
 	if (IsCustomTextureAvailable())
 	{
+		made_type = 0;
 		tex_type = TextureType::_8888;
 		UploadToGPU(custom_width, custom_height, custom_image_data, IsMipmapped(), false);
 		free(custom_image_data);
