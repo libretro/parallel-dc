@@ -40,6 +40,17 @@ static const char PsoFileMagic[8] = { 'F', 'C', 'D', '1', '2', 'P', 'S', 'O' };
 static const u32 PsoFileVersion = 2;
 static const u32 MaxKeys = 8192;
 
+/* What a build did (DX12Pipelines::BuildDesc()): counted by the thread
+ * that renders */
+enum
+{
+	DX12_BUILT_LIBRARY = 1,		// handed back by the library
+	DX12_BUILT_STORED = 2,		// stored in it
+	DX12_BUILT_POSTZ = 4,		// with NVAPI's post-depth coverage
+	DX12_BUILT_OWNTEST = 8,		// SSAA's lists testing their samples themselves
+	DX12_BUILT_NOPOSTZ = 16,	// NVAPI made none: it is not asked again
+};
+
 static const D3D12_COMPARISON_FUNC depthFuncs[] =
 {
 	D3D12_COMPARISON_FUNC_NEVER,			//0	Never
@@ -175,13 +186,14 @@ static void stencilDesc(DX12Stencil stencil, D3D12_DEPTH_STENCIL_DESC& desc)
 	desc.BackFace = desc.FrontFace;
 }
 
-bool DX12Pipelines::Build(u64 packed, ID3D12PipelineState **out)
+bool DX12Pipelines::BuildDesc(u64 packed, bool postZCoverage, bool useLibrary, ID3D12PipelineState **out, u32 *flags) const
 {
 	const DX12PsoKey key = DX12PsoKey::Unpack(packed);
 	D3D12_GRAPHICS_PIPELINE_STATE_DESC desc{};
 	desc.pRootSignature = root;
 	DX12Shader vs, ps;
 	bool postZ = false;
+	*flags = 0;
 	/* SSAA's shaders: by rate, then smooth or flat (dx12_shaders.h) */
 	const int rateShader = (key.gouraud ? 0 : 1) + (key.rate == DX12_RATE_PIXEL ? 2 : 0);
 	switch (key.kind)
@@ -313,21 +325,21 @@ bool DX12Pipelines::Build(u64 packed, ID3D12PipelineState **out)
 		// (not through the library: NVAPI's pipelines have no cached blob)
 		if (dx12_nvapi_create_post_z_pipeline(device, &desc, out))
 		{
-			statPostZ++;
+			*flags |= DX12_BUILT_POSTZ;
 			return true;
 		}
-		WARN_LOG(RENDERER, "DX12: NVAPI made no pipeline with post-depth coverage: SSAA's lists test their samples themselves");
-		postZCoverage = false;
+		*flags |= DX12_BUILT_NOPOSTZ;
 		desc.PS = dx12_shader((DX12Shader)((int)DX12Shader::SsaaOITListPS + (key.gouraud ? 0 : 1)));
 	}
 	if (key.kind == DX12_PSO_OIT && key.pass >= DX12_PASS_OIT && key.rate != DX12_RATE_NONE)
-		statOwnTest++;
+		*flags |= DX12_BUILT_OWNTEST;
 
 	wchar_t name[24];
 	swprintf(name, 24, L"fc%016llx", (unsigned long long)packed);
-	if (library != nullptr && SUCCEEDED(library->LoadGraphicsPipeline(name, &desc, __uuidof(ID3D12PipelineState), (void **)out)))
+	if (useLibrary && library != nullptr
+			&& SUCCEEDED(library->LoadGraphicsPipeline(name, &desc, __uuidof(ID3D12PipelineState), (void **)out)))
 	{
-		statFromLibrary++;
+		*flags |= DX12_BUILT_LIBRARY;
 		return true;
 	}
 	if (FAILED(device->CreateGraphicsPipelineState(&desc, __uuidof(ID3D12PipelineState), (void **)out)))
@@ -335,9 +347,43 @@ bool DX12Pipelines::Build(u64 packed, ID3D12PipelineState **out)
 		*out = nullptr;
 		return false;
 	}
-	if (library != nullptr && SUCCEEDED(library->StorePipeline(name, *out)))
-		storedSinceLoad++;
+	if (useLibrary && library != nullptr && SUCCEEDED(library->StorePipeline(name, *out)))
+		*flags |= DX12_BUILT_STORED;
 	return true;
+}
+
+void DX12Pipelines::Count(u32 flags)
+{
+	if (flags & DX12_BUILT_LIBRARY)
+		statFromLibrary++;
+	if (flags & DX12_BUILT_STORED)
+		storedSinceLoad++;
+	if (flags & DX12_BUILT_POSTZ)
+		statPostZ++;
+	if (flags & DX12_BUILT_OWNTEST)
+		statOwnTest++;
+}
+
+/* (the thread that renders: the library is its own when the thread ahead
+ * is not building) */
+bool DX12Pipelines::Build(u64 packed, ID3D12PipelineState **out)
+{
+	u32 flags;
+	const bool ok = BuildDesc(packed, postZCoverage, !d3d_warm_busy(warm), out, &flags);
+	if (flags & DX12_BUILT_NOPOSTZ)
+	{
+		WARN_LOG(RENDERER, "DX12: NVAPI made no pipeline with post-depth coverage: SSAA's lists test their samples themselves");
+		postZCoverage = false;
+	}
+	Count(flags);
+	return ok;
+}
+
+/* The lists' pipelines NVAPI would make: never the thread's to make */
+bool DX12Pipelines::WantsPostZ(const DX12PsoKey& key) const
+{
+	return postZCoverage && key.kind == DX12_PSO_OIT && key.rate != DX12_RATE_NONE && key.pass >= DX12_PASS_OIT
+			&& key.samples != 0 && key.depthBound && key.depthTest && !key.depthWrite && key.depthFunc == 6;
 }
 
 ID3D12PipelineState *DX12Pipelines::Make(u64 key, u32 slot, bool inFrame)
@@ -362,8 +408,129 @@ ID3D12PipelineState *DX12Pipelines::Make(u64 key, u32 slot, bool inFrame)
 	return pso;
 }
 
+/* A frame wants @key, not in the table: what the thread made, then
+ * made here if it still is not there */
+ID3D12PipelineState *DX12Pipelines::Missed(u64 key)
+{
+	TakeBuilt();
+	u32 i = Hash(key);
+	for (;;)
+	{
+		Slot& s = slots[i];
+		if (s.key == key)
+			return s.pso;
+		if (s.key == 0)
+			break;
+		i = (i + 1) & (SLOTS - 1);
+	}
+	Request(key);
+	return Make(key, i, true);
+}
+
+void DX12Pipelines::TakeBuilt()
+{
+	d3d_warm_result_t r;
+	while (d3d_warm_take(warm, &r))
+		Insert(r.key, (ID3D12PipelineState *)r.obj, r.aux);
+}
+
+void DX12Pipelines::Insert(u64 key, ID3D12PipelineState *pso, u32 flags)
+{
+	u32 i = Hash(key);
+	for (;;)
+	{
+		Slot& s = slots[i];
+		if (s.key == key)
+		{
+			// (made here meanwhile)
+			pso->Release();
+			return;
+		}
+		if (s.key == 0)
+			break;
+		i = (i + 1) & (SLOTS - 1);
+	}
+	if (used >= SLOTS * 3 / 4)
+	{
+		pso->Release();
+		return;
+	}
+	slots[i].key = key;
+	slots[i].pso = pso;
+	used++;
+	statMade++;
+	statAhead++;
+	Count(flags);
+	if (keys.size() < MaxKeys)
+		keys.push_back(key);
+}
+
+bool DX12Pipelines::Requested(u64 key)
+{
+	u32 i = Hash(key) * 2;
+	for (;;)
+	{
+		const u64 k = requested[i];
+		if (k == key)
+			return true;
+		if (k == 0)
+			return false;
+		i = (i + 1) & (SLOTS * 2 - 1);
+	}
+}
+
+void DX12Pipelines::Request(u64 key)
+{
+	u32 i = Hash(key) * 2;
+	for (;;)
+	{
+		const u64 k = requested[i];
+		if (k == key)
+			return;
+		if (k == 0)
+			break;
+		i = (i + 1) & (SLOTS * 2 - 1);
+	}
+	// (kept from filling: one not recorded is at worst queued twice)
+	if (requestedUsed >= SLOTS * 2 * 3 / 4)
+		return;
+	requested[i] = key;
+	requestedUsed++;
+}
+
+/* @key to be made: queued for the thread, or made here when there is none
+ * (and those NVAPI makes, always here) */
+void DX12Pipelines::Want(u64 key)
+{
+	if (Requested(key))
+		return;
+	if (warm == nullptr || WantsPostZ(DX12PsoKey::Unpack(key)))
+	{
+		Add(key);
+		return;
+	}
+	Request(key);
+	d3d_warm_job_t job;
+	job.key = key;
+	job.kind = 0;
+	job.aux = 0;
+	batch.push_back(job);
+}
+
+/* What is queued goes to the thread; what it cannot take is made here, as
+ * it was before there was one */
+void DX12Pipelines::SubmitBatch()
+{
+	const size_t taken = batch.empty() ? 0 : d3d_warm_submit(warm, batch.data(), batch.size());
+	for (size_t i = taken; i < batch.size(); i++)
+		Add(batch[i].key);
+	batch.clear();
+}
+
 void DX12Pipelines::Add(u64 key)
 {
+	// (made here: wanted, whether or not the thread has it queued)
+	Request(key);
 	u32 i = Hash(key);
 	for (;;)
 	{
@@ -379,13 +546,39 @@ void DX12Pipelines::Add(u64 key)
 	}
 }
 
+/* The thread's: a pipeline made from its key alone (never NVAPI's: those
+ * are not queued), through the library, which is the thread's alone while
+ * it builds */
+static bool dx12WarmBuild(void *ctx, const d3d_warm_job_t *job, d3d_warm_result_t *res)
+{
+	const DX12Pipelines *p = (const DX12Pipelines *)ctx;
+	ID3D12PipelineState *pso = nullptr;
+	u32 flags = 0;
+	if (!p->BuildDesc(job->key, false, true, &pso, &flags) || pso == nullptr)
+		return false;
+	res->obj = pso;
+	res->aux = flags;
+	return true;
+}
+
+static void dx12WarmRelease(void *ctx, d3d_warm_result_t *res)
+{
+	(void)ctx;
+	if (res->obj != nullptr)
+		((ID3D12PipelineState *)res->obj)->Release();
+	res->obj = nullptr;
+}
+
 bool DX12Pipelines::Init(ID3D12Device *device, ID3D12RootSignature *root, UINT vendor)
 {
 	Term();
 	this->device = device;
 	this->root = root;
 	slots = new Slot[SLOTS]();
+	requested = new u64[SLOTS * 2]();
+	requestedUsed = 0;
 	used = 0;
+	statAhead = 0;
 	statMade = statMadeInFrame = statFromLibrary = 0;
 	statPostZ = statOwnTest = 0;
 	// (NVIDIA's PCI vendor id)
@@ -397,6 +590,9 @@ bool DX12Pipelines::Init(ID3D12Device *device, ID3D12RootSignature *root, UINT v
 	if (FAILED(device->QueryInterface(__uuidof(ID3D12Device1), (void **)&device1)))
 		device1 = nullptr;
 	LoadFile();
+	// (after the library: the thread uses it)
+	warm = d3d_warm_new(dx12WarmBuild, dx12WarmRelease, this, MaxKeys * 2);
+	batch.reserve(1024);
 	return true;
 }
 
@@ -417,21 +613,21 @@ void DX12Pipelines::MakeAtStart()
 		k.depthWrite = false;
 		k.depthFunc = 4;
 		k.stencil = DX12Stencil::Or;
-		Add(k.Pack());
+		Want(k.Pack());
 		k.stencil = DX12Stencil::Xor;
-		Add(k.Pack());
+		Want(k.Pack());
 		k.depthTest = false;
 		k.depthFunc = 7;
 		k.stencil = DX12Stencil::Inclusion;
-		Add(k.Pack());
+		Want(k.Pack());
 		k.stencil = DX12Stencil::Exclusion;
-		Add(k.Pack());
+		Want(k.Pack());
 		// the depth of sorted polygons for a later render pass
 		k.depthTest = true;
 		k.depthWrite = true;
 		k.depthFunc = 6;
 		k.stencil = DX12Stencil::None;
-		Add(k.Pack());
+		Want(k.Pack());
 	}
 	k = DX12PsoKey{};
 	k.kind = DX12_PSO_MODVOL;
@@ -440,7 +636,7 @@ void DX12Pipelines::MakeAtStart()
 	k.writeColor = true;
 	k.depthFunc = 7;
 	k.stencil = DX12Stencil::Final;
-	Add(k.Pack());
+	Want(k.Pack());
 	// the depth prepass of sorted polygons
 	k = DX12PsoKey{};
 	k.kind = DX12_PSO_POLY;
@@ -453,7 +649,7 @@ void DX12Pipelines::MakeAtStart()
 		{
 			k.gouraud = g != 0;
 			k.cull = cull;
-			Add(k.Pack());
+			Want(k.Pack());
 		}
 	/* The polygons' pipelines games mostly draw with (DX12Renderer::DrawPoly()):
 	 * opaque ones with every depth mode, punch-through and translucent ones
@@ -478,7 +674,7 @@ void DX12Pipelines::MakeAtStart()
 				{
 					k.depthFunc = func;
 					k.depthWrite = w != 0;
-					Add(k.Pack());
+					Want(k.Pack());
 				}
 			// punch-through: blended, depth written, greater or equal
 			k.blend = true;
@@ -488,7 +684,7 @@ void DX12Pipelines::MakeAtStart()
 			{
 				k.src = b[0];
 				k.dst = b[1];
-				Add(k.Pack());
+				Want(k.Pack());
 			}
 			// translucent, sorted: no depth write; and unsorted with the depth modes seen most
 			k.stencil = DX12Stencil::None;
@@ -498,22 +694,22 @@ void DX12Pipelines::MakeAtStart()
 				k.dst = b[1];
 				k.depthFunc = 6;
 				k.depthWrite = false;
-				Add(k.Pack());
+				Want(k.Pack());
 				k.depthFunc = 7;
-				Add(k.Pack());
+				Want(k.Pack());
 				k.depthWrite = true;
-				Add(k.Pack());
+				Want(k.Pack());
 				k.depthFunc = 6;
-				Add(k.Pack());
+				Want(k.Pack());
 			}
 			// the shadow passes: where the polygon is (equal), nothing written but the colour
 			k.blend = false;
 			k.depthWrite = false;
 			k.depthFunc = 2;
 			k.stencil = DX12Stencil::ShadowLaterWins;
-			Add(k.Pack());
+			Want(k.Pack());
 			k.stencil = DX12Stencil::ShadowEarlierWins;
-			Add(k.Pack());
+			Want(k.Pack());
 		}
 	// the quads
 	k = DX12PsoKey{};
@@ -524,17 +720,19 @@ void DX12Pipelines::MakeAtStart()
 		{
 			k.depthBound = d != 0;
 			k.special = s;
-			Add(k.Pack());
+			Want(k.Pack());
 		}
 	// what earlier runs made (SSAA's, when it is taken up: MakeForSamples())
 	fileKeys = fromFile;
 	std::vector<u64> kept(keys.begin(), keys.begin() + fromFile);
 	for (u64 key : kept)
 		if (DX12PsoKey::Valid(key) && DX12PsoKey::Unpack(key).samples == 0)
-			Add(key);
+			Want(key);
+	const u32 queued = (u32)batch.size();
+	SubmitBatch();
 	started = true;
-	NOTICE_LOG(RENDERER, "DX12: %u pipelines made at the start (%u from the library, %u keys from earlier runs)",
-			statMade, statFromLibrary, (u32)fromFile);
+	NOTICE_LOG(RENDERER, "DX12: %u pipelines made at the start, %u to be made ahead (%u from the library, %u keys from earlier runs)",
+			statMade, queued, statFromLibrary, (u32)fromFile);
 }
 
 void DX12Pipelines::MakeForSamples(u32 log2n, bool hdr)
@@ -545,12 +743,12 @@ void DX12Pipelines::MakeForSamples(u32 log2n, bool hdr)
 	started = false;
 	const u32 before = statMade;
 	const u32 listsBefore = statPostZ + statOwnTest;
-	// (the table's keys of one sample now: what is made below goes into it too)
+	// (the keys of one sample made or queued now: what is wanted below is added to them too)
 	std::vector<u64> single;
 	single.reserve(used);
-	for (u32 i = 0; i < SLOTS; i++)
-		if (slots[i].key != 0 && DX12PsoKey::Unpack(slots[i].key).samples == 0)
-			single.push_back(slots[i].key);
+	for (u32 i = 0; i < SLOTS * 2; i++)
+		if (requested[i] != 0 && DX12PsoKey::Unpack(requested[i]).samples == 0)
+			single.push_back(requested[i]);
 	std::sort(single.begin(), single.end());
 	for (u64 packed : single)
 	{
@@ -560,42 +758,42 @@ void DX12Pipelines::MakeForSamples(u32 log2n, bool hdr)
 		{
 		case DX12_PSO_POLY:
 			k.rate = DX12_RATE_SAMPLE;
-			Add(k.Pack());
+			Want(k.Pack());
 			k.rate = DX12_RATE_PIXEL;
-			Add(k.Pack());
+			Want(k.Pack());
 			break;
 		case DX12_PSO_OIT:
 			if (k.pass != DX12_PASS_OIT)
 			{
 				k.rate = DX12_RATE_SAMPLE;
-				Add(k.Pack());
+				Want(k.Pack());
 			}
 			k.rate = DX12_RATE_PIXEL;
-			Add(k.Pack());
+			Want(k.Pack());
 			break;
 		case DX12_PSO_OIT_FINAL:
 			// into the next render pass's samples; resolved into the picture, of one sample
 			k.rate = DX12_RATE_SAMPLE;
-			Add(k.Pack());
+			Want(k.Pack());
 			k.samples = 0;
 			k.rate = DX12_RATE_PIXEL;
-			Add(k.Pack());
+			Want(k.Pack());
 			if (hdr)
 			{
 				k.rate = DX12_RATE_PIXEL_SUMS;
-				Add(k.Pack());
+				Want(k.Pack());
 			}
 			break;
 		case DX12_PSO_OIT_MODVOL:
 			k.rate = DX12_RATE_PIXEL;
-			Add(k.Pack());
+			Want(k.Pack());
 			break;
 		case DX12_PSO_SSAA_RESOLVE:
 		case DX12_PSO_MOTION:	// (never with SSAA: the upscaler is the anti-aliasing then)
 			break;
 		default:
 			// the volumes, the quads: shaded once a pixel, written to every sample covered
-			Add(k.Pack());
+			Want(k.Pack());
 			break;
 		}
 	}
@@ -604,13 +802,15 @@ void DX12Pipelines::MakeForSamples(u32 log2n, bool hdr)
 	r.kind = DX12_PSO_SSAA_RESOLVE;
 	r.writeColor = true;
 	r.depthFunc = 7;
-	Add(r.Pack());
+	Want(r.Pack());
 	// what earlier runs made with this many
 	for (size_t i = 0; i < fileKeys && i < keys.size(); i++)
 		if (DX12PsoKey::Valid(keys[i]) && DX12PsoKey::Unpack(keys[i]).samples == log2n)
-			Add(keys[i]);
+			Want(keys[i]);
+	const u32 queued = (u32)batch.size();
+	SubmitBatch();
 	started = true;
-	NOTICE_LOG(RENDERER, "DX12: %u pipelines made for SSAA %u (%u from library)", statMade - before, 1u << log2n, statFromLibrary);
+	NOTICE_LOG(RENDERER, "DX12: %u pipelines made for SSAA %u, %u to be made ahead (%u from library)", statMade - before, 1u << log2n, queued, statFromLibrary);
 	if (statPostZ + statOwnTest != listsBefore)
 		NOTICE_LOG(RENDERER, "DX12 per-pixel renderer: with SSAA, a translucent fragment takes the samples %s",
 				statPostZ != 0 && postZCoverage ? "the depth test passed (NVAPI post-depth coverage)" : "its own depth test passes, at each sample");
@@ -700,9 +900,19 @@ void DX12Pipelines::SaveFile()
 
 void DX12Pipelines::Term()
 {
+	// (the thread stopped first: what it made is kept, and the library is ours again)
+	if (warm != nullptr)
+	{
+		d3d_warm_stop(warm);
+		if (slots != nullptr)
+			TakeBuilt();
+		d3d_warm_free(warm);
+		warm = nullptr;
+	}
+	batch.clear();
 	if (slots != nullptr)
 	{
-		NOTICE_LOG(RENDERER, "DX12: %u pipelines made, %u of them in a frame, %u from the library", statMade, statMadeInFrame, statFromLibrary);
+		NOTICE_LOG(RENDERER, "DX12: %u pipelines made, %u of them in a frame, %u ahead, %u from the library", statMade, statMadeInFrame, statAhead, statFromLibrary);
 		SaveFile();
 		for (u32 i = 0; i < SLOTS; i++)
 			if (slots[i].pso != nullptr)
@@ -710,6 +920,8 @@ void DX12Pipelines::Term()
 		delete [] slots;
 		slots = nullptr;
 	}
+	delete [] requested;
+	requested = nullptr;
 	if (library != nullptr)
 		library->Release();
 	library = nullptr;

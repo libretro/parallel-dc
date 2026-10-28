@@ -49,12 +49,20 @@
  *
  * The table is looked up by key for every draw: open addressing, made with
  * the context; nothing is allocated to find or add a pipeline. Only the
- * thread that renders touches it. */
+ * thread that renders touches it.
+ *
+ * Ahead (rend/d3d_warm.h): what the start and SSAA make goes to a thread
+ * of its own, which hands each pipeline back as it is made; a frame that
+ * wants one not handed back yet takes what is, then makes it itself if it
+ * still is not there - nothing is drawn without its pipeline. The thread
+ * alone uses the library while it builds. Those NVAPI makes (post-depth
+ * coverage) are made where they always were, by the thread that renders. */
 #include "rend/d3d_system.h"
 #include <windows.h>
 #include <d3d12.h>
 #include "types.h"
 #include "dx12_shader_flags.h"
+#include "rend/d3d_warm.h"
 #include <vector>
 
 /* (mingw-w64's d3d12.h has ID3D12Device1, which makes them, and not the
@@ -182,7 +190,7 @@ public:
 	/* Everything a frame can need, and the keys kept from earlier runs */
 	void MakeAtStart();
 	/* One more a renderer wants made before a game draws */
-	void Prepare(const DX12PsoKey& key) { Add(key.Pack()); }
+	void Prepare(const DX12PsoKey& key) { Want(key.Pack()); SubmitBatch(); }
 	/* SSAA of 2^@log2n samples taken up: every pipeline of one sample made
 	 * for that many, at each rate it can be drawn at, and the keys of that
 	 * many kept from earlier runs (those made already are found made) */
@@ -200,10 +208,14 @@ public:
 			if (s.key == k)
 				return s.pso;
 			if (s.key == 0)
-				return Make(k, i, true);
+				return Missed(k);
 			i = (i + 1) & (SLOTS - 1);
 		}
 	}
+
+	/* (the build itself, which changes nothing of the table's: the
+	 * thread's as well as the renderer's; @flags what it did, DX12_BUILT_) */
+	bool BuildDesc(u64 key, bool postZ, bool useLibrary, ID3D12PipelineState **out, u32 *flags) const;
 
 	// what has been done so far, for measuring
 	u32 statMade = 0;			// all of them
@@ -211,6 +223,7 @@ public:
 	u32 statFromLibrary = 0;	// handed back by the library, not compiled
 	u32 statPostZ = 0;			// SSAA's lists' made with post-depth coverage (NVAPI)
 	u32 statOwnTest = 0;		// ...made to test their samples themselves
+	u32 statAhead = 0;			// made by the thread ahead of a frame wanting them
 
 private:
 	enum { SLOTS = 8192 };	// (SSAA makes each pipeline of a polygon again at two rates)
@@ -221,8 +234,19 @@ private:
 	};
 	static u32 Hash(u64 k) { k ^= k >> 29; k *= 0x9E3779B97F4A7C15ull; return (u32)(k >> 40) & (SLOTS - 1); }
 	ID3D12PipelineState *Make(u64 key, u32 slot, bool inFrame);
+	ID3D12PipelineState *Missed(u64 key);
 	void Add(u64 key);
 	bool Build(u64 key, ID3D12PipelineState **out);
+	/* Ahead: @key wanted (made, or queued to be); a batch handed over */
+	bool Requested(u64 key);
+	void Request(u64 key);
+	void Want(u64 key);
+	void SubmitBatch();
+	bool WantsPostZ(const DX12PsoKey& key) const;
+	/* What the thread handed back, into the table */
+	void TakeBuilt();
+	void Insert(u64 key, ID3D12PipelineState *pso, u32 flags);
+	void Count(u32 flags);
 	void LoadFile();
 	void SaveFile();
 
@@ -237,6 +261,10 @@ private:
 	size_t fileKeys = 0;				// how many of them are the file's
 	u32 storedSinceLoad = 0;
 	bool started = false;
+	d3d_warm_t *warm = nullptr;
+	u64 *requested = nullptr;			// every key made or queued, open addressing
+	u32 requestedUsed = 0;
+	std::vector<d3d_warm_job_t> batch;	// queued by Request(), handed over by SubmitBatch()
 	/* SSAA's lists' pipelines made with NVIDIA's post-depth coverage
 	 * (dx12_nvapi.h): on an NVIDIA GPU whose driver has NVAPI, until it
 	 * would not make one */
