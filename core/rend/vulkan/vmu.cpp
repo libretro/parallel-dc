@@ -51,8 +51,16 @@ const std::vector<vk::CommandBuffer>* VulkanOSD::PrepareOSD(CommandPool *command
 		else if (!lcd_changed && !vmu_screen_param.vmu_screen_needs_update)
 			continue;
 
+		texture->tex_type = TextureType::_8888;
+		texture->SetDevice(context->GetDevice());
+		texture->SetPhysicalDevice(context->GetPhysicalDevice());
+		/* (made straight in the upload ring's piece for it, which the
+		 * upload then takes as it is; on the stack if it has no room) */
 		u8 temp_tex_buffer[VMU_SCREEN_HEIGHT * VMU_SCREEN_WIDTH * 4];
-		u8 *dst = temp_tex_buffer;
+		u8 *pixels = (u8 *)texture->UploadMemory(VMU_SCREEN_WIDTH, VMU_SCREEN_HEIGHT, sizeof(temp_tex_buffer), 4, false);
+		if (pixels == nullptr)
+			pixels = temp_tex_buffer;
+		u8 *dst = pixels;
 		const u8 *src = vmu_lcd_pixels(i);
 
 		for (int y = 0; y < VMU_SCREEN_HEIGHT; y++)
@@ -75,12 +83,9 @@ const std::vector<vk::CommandBuffer>* VulkanOSD::PrepareOSD(CommandPool *command
 			}
 		}
 
-		texture->tex_type = TextureType::_8888;
-		texture->SetDevice(context->GetDevice());
-		texture->SetPhysicalDevice(context->GetPhysicalDevice());
 		commandBuffers[context->GetCurrentImageIndex()].push_back(commandPool->Allocate());
 		texture->SetCommandBuffer(commandBuffers[context->GetCurrentImageIndex()].back());
-		texture->UploadToGPU(VMU_SCREEN_WIDTH, VMU_SCREEN_HEIGHT, temp_tex_buffer, false);
+		texture->UploadToGPU(VMU_SCREEN_WIDTH, VMU_SCREEN_HEIGHT, pixels, false);
 		texture->SetCommandBuffer(nullptr);
 		vmu_screen_param.vmu_screen_needs_update = false;
 	}
@@ -98,8 +103,15 @@ const std::vector<vk::CommandBuffer>* VulkanOSD::PrepareOSD(CommandPool *command
 		else if (!lightgun_params[i].dirty)
 			continue;
 
+		texture->tex_type = TextureType::_8888;
+		texture->SetDevice(context->GetDevice());
+		texture->SetPhysicalDevice(context->GetPhysicalDevice());
+		// (as the VMUs')
 		u8 temp_tex_buffer[LIGHTGUN_CROSSHAIR_SIZE * LIGHTGUN_CROSSHAIR_SIZE * 4];
-		u8 *dst = temp_tex_buffer;
+		u8 *pixels = (u8 *)texture->UploadMemory(LIGHTGUN_CROSSHAIR_SIZE, LIGHTGUN_CROSSHAIR_SIZE, sizeof(temp_tex_buffer), 4, false);
+		if (pixels == nullptr)
+			pixels = temp_tex_buffer;
+		u8 *dst = pixels;
 		u8* colour = &lightgun_palette[lightgun_params[i].colour * 3];
 		u8 *src = lightgun_img_crosshair;
 
@@ -123,12 +135,9 @@ const std::vector<vk::CommandBuffer>* VulkanOSD::PrepareOSD(CommandPool *command
 				}
 			}
 		}
-		texture->tex_type = TextureType::_8888;
-		texture->SetDevice(context->GetDevice());
-		texture->SetPhysicalDevice(context->GetPhysicalDevice());
 		commandBuffers[context->GetCurrentImageIndex()].push_back(commandPool->Allocate());
 		texture->SetCommandBuffer(commandBuffers[context->GetCurrentImageIndex()].back());
-		texture->UploadToGPU(LIGHTGUN_CROSSHAIR_SIZE, LIGHTGUN_CROSSHAIR_SIZE, temp_tex_buffer, false);
+		texture->UploadToGPU(LIGHTGUN_CROSSHAIR_SIZE, LIGHTGUN_CROSSHAIR_SIZE, pixels, false);
 		texture->SetCommandBuffer(nullptr);
 		lightgun_params[i].dirty = false;
 	}
