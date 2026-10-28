@@ -995,6 +995,10 @@ public:
 	u32 Updates;
 	u32 vram_hash;				// content hash of the locked vram range, used instead of
 								// write-protection for frequently-updated textures
+	/* The render vram_hash was last found to hold in, and vram_write_epoch
+	 * then: the texture is not hashed again until one of them moves. */
+	u32 hash_frame;
+	u32 hash_epoch;
 
 	u32 palette_index;
 	u8 area = 0;				// 1 if it was first asked for as a second volume's texture: see IsGpuHandledPaletted()

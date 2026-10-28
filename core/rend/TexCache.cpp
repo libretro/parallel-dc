@@ -206,6 +206,12 @@ void vramlock_list_add(vram_block* block)
  * it is not, a mark is on its way that takes those locks off again. */
 static cMarkSet<VRAM_SIZE_MAX / PAGE_SIZE> vram_writes;
 
+/* Render thread: moved for every written page it collects. In a render
+ * nothing else changes video memory under a texture already hashed in it:
+ * a picture rendered to a texture is packed in when a read first touches
+ * it, and the hash is such a read. */
+static u32 vram_write_epoch;
+
 static void libCore_vramlock_Unlock_block_wb(vram_block* block);
 
 /* Render thread: apply the writes the emulation thread has marked. */
@@ -213,6 +219,8 @@ static void vramlock_collect()
 {
 	vram_writes.Collect([](unsigned page) {
 		std::vector<vram_block *>& list = VramLocks[page];
+
+		vram_write_epoch++;
 
 		for (auto& lock : list)
 		{
@@ -514,10 +522,20 @@ bool BaseTextureCacheData::NeedsUpdate() {
 			rc = true;
 	}
 	/* Frequently-updated texture running unprotected (see Update): compare the
-	 * content hash of the vram range instead of relying on a write fault. */
+	 * content hash of the vram range instead of relying on a write fault.
+	 * Once a render: its parse asks for a texture for every polygon that
+	 * uses it. */
 	if (!rc && lock_block == nullptr && Updates >= FREQUENT_UPDATE_COUNT
-			&& ComputeVramHash() != vram_hash)
-		rc = true;
+			&& (hash_frame != FrameCount || hash_epoch != vram_write_epoch))
+	{
+		if (ComputeVramHash() != vram_hash)
+			rc = true;
+		else
+		{
+			hash_frame = FrameCount;
+			hash_epoch = vram_write_epoch;
+		}
+	}
 
 	return rc;
 }
@@ -967,7 +985,11 @@ void BaseTextureCacheData::Update()
 				if (Updates < FREQUENT_UPDATE_COUNT)
 					libCore_vramlock_Lock(sa_tex, sa + size - 1, this);
 				else
+				{
 					vram_hash = ComputeVramHash();
+					hash_frame = FrameCount;
+					hash_epoch = vram_write_epoch;
+				}
 				PrintTextureName();
 				return;
 			}
@@ -1133,7 +1155,11 @@ void BaseTextureCacheData::Update()
 	if (Updates < FREQUENT_UPDATE_COUNT)
 		libCore_vramlock_Lock(sa_tex, sa + size - 1, this);
 	else
+	{
 		vram_hash = ComputeVramHash();
+		hash_frame = FrameCount;
+		hash_epoch = vram_write_epoch;
+	}
 
 	UploadToGPU(upscaled_w, upscaled_h, (u8*)temp_tex_buffer, IsMipmapped(), mipmapped);
 	if (settings.rend.DumpTextures)

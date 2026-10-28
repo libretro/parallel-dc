@@ -1,5 +1,6 @@
 #!/bin/sh
-# The texture converters, byte for byte against upstream's.
+# The texture converters, byte for byte against upstream's; and the texture
+# cache's checks for change, against a full upload (texconv_test cache).
 #
 #   sh tools/rend/texconv_test.sh
 #
@@ -11,10 +12,12 @@ cd "$(dirname "$0")/../.."
 WORK=${TMPDIR:-/tmp}/texconv_test.$$
 mkdir -p "$WORK"
 trap 'rm -rf "$WORK"' EXIT
+# (its hash under another name: the test's own counts what is hashed)
+${CC:-cc} -O2 -DXXH_NAMESPACE=texconv_ -c -o "$WORK/xxhash.o" core/deps/xxhash/xxhash.c
 ${CXX:-g++} -I./core/libretro -I./core -I./core/deps -I./core/libretro-common/include -I./core/deps/khronos \
    -DTARGET_LINUX_x64 -DHOST_CPU=0x20000004 -D__LIBRETRO__ -DHAVE_GLSYM_PRIVATE -DNO_VERIFY -DNDEBUG \
-   -DHAVE_GL3 -DHAVE_GL4 -DCORE -DHAVE_TEXUPSCALE -DHAVE_OPENGL -DHAVE_VULKAN -O2 -fpermissive -fopenmp -w \
-   -o "$WORK/texconv_test" tools/rend/texconv_test.cpp core/rend/TexCache.o -Wl,--unresolved-symbols=ignore-all
+   -DHAVE_GL3 -DHAVE_GL4 -DCORE -DHAVE_TEXUPSCALE -DHAVE_OPENGL -DHAVE_VULKAN -DPVR_REGS_FOR_RENDERER -O2 -fpermissive -fopenmp -w \
+   -o "$WORK/texconv_test" tools/rend/texconv_test.cpp core/rend/TexCache.o "$WORK/xxhash.o" -Wl,--unresolved-symbols=ignore-all
 (echo "# random"; "$WORK/texconv_test"; echo "# ramp"; "$WORK/texconv_test" ramp) > "$WORK/out.txt"
 if cmp -s "$WORK/out.txt" tools/rend/texconv_expected.txt; then
    echo "texture converters: $(grep -vc '^#' "$WORK/out.txt") results, all as upstream's"
@@ -23,3 +26,4 @@ else
    diff "$WORK/out.txt" tools/rend/texconv_expected.txt | head -20 >&2
    exit 1
 fi
+"$WORK/texconv_test" cache
