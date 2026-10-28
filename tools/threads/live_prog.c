@@ -27,8 +27,8 @@
  * and paste the bytes of live_prog.bin into PROGRAM; the same again with
  * -DNO_REGION_ARRAY for PROGRAM_NO_REGION_ARRAY, with -DLIVE_MMU_ALIGN
  * for PROGRAM_MMU_ALIGN, with -DLIVE_SLANT for PROGRAM_SLANT, and with
- * -DLIVE_SLANT -DLIVE_HSCALE for PROGRAM_HSCALE, and with -DLIVE_CULL for
- * PROGRAM_CULL. */
+ * -DLIVE_SLANT -DLIVE_HSCALE for PROGRAM_HSCALE, with -DLIVE_CULL for
+ * PROGRAM_CULL, and with -DLIVE_ATLAS for PROGRAM_ATLAS. */
 typedef unsigned int u32;
 typedef unsigned short u16;
 #define PVR(off) (*(volatile u32 *)(0xA05F8000 + (off)))
@@ -504,6 +504,105 @@ static void ta_volume(u32 x0, u32 y0, u32 x1, u32 y1, u32 near)
    ta_send(0, 0, 0, 0, 0, 0, 0, 0);                    /* end of the volume list */
 }
 
+#ifdef LIVE_ATLAS
+/* With -DLIVE_ATLAS, over the top of the screen: textures of every
+ * layout, each drawn texel for texel at an internal resolution of 2x, a
+ * few bytes of every one of them written every frame from frame 64 on and
+ * now and then much of it, as a game writes into an atlas. Twiddled 565,
+ * 4444 512 by 512 and YUV; compressed; planar 4444 with a stride of 320
+ * (TEXT_CONTROL) and planar compressed 1555; 8-bit palette indices;
+ * mipmapped 565, drawn at five sizes for its levels. Not starting where
+ * the pieces of video memory a texture cache may watch them by start. */
+static const u32 atlas[][4] = {
+   /* address,  bytes,  texture control word (address apart),  texture size bits */
+   { 0x180000, 0x80000, (2u << 27),                           (6u << 3) | 6u },
+   { 0x100238, 0x20000, (1u << 27),                           (5u << 3) | 5u },
+   { 0x121828, 0x04800, (1u << 30) | (1u << 27),              (5u << 3) | 5u },
+   { 0x126f98, 0x0a000, (2u << 27) | (1u << 26) | (1u << 25), (5u << 3) | 3u },
+   { 0x14a000, 0x02800, (1u << 30) | (1u << 26),              (5u << 3) | 4u },
+   { 0x131000, 0x04000, (6u << 27),                           (4u << 3) | 4u },
+   { 0x141108, 0x08000, (3u << 27),                           (4u << 3) | 4u },
+   { 0x135040, 0x0aab0, (1u << 31) | (1u << 27),              (4u << 3) | 4u },
+};
+#define ATLAS_TEXTURES (sizeof(atlas) / sizeof(atlas[0]))
+/* Where each is drawn, and the mipmapped one (the last) four times more,
+ * smaller and smaller */
+static const u32 atlas_of[] = { 0, 1, 2, 3, 4, 5, 6, 7, 7, 7, 7, 7 };
+static const float atlas_at[][4] = {
+   /* x0, y0, x1, y1 */
+   {   0.0f,   0.0f, 128.0f, 128.0f },
+   { 128.0f,   0.0f, 192.0f,  64.0f },
+   { 192.0f,   0.0f, 256.0f,  64.0f },
+   { 128.0f,  64.0f, 192.0f,  80.0f },
+   { 192.0f,  64.0f, 256.0f,  96.0f },
+   { 256.0f,   0.0f, 288.0f,  32.0f },
+   { 256.0f,  32.0f, 288.0f,  64.0f },
+   { 256.0f,  64.0f, 288.0f,  96.0f },
+   { 256.0f,  96.0f, 272.0f, 112.0f },
+   { 272.0f,  96.0f, 280.0f, 104.0f },
+   { 280.0f,  96.0f, 284.0f, 100.0f },
+   { 284.0f,  96.0f, 286.0f,  98.0f },
+};
+static u32 atlas_seed = 0x2545F491;
+
+static u32 atlas_rnd(void)
+{
+   atlas_seed ^= atlas_seed << 13;
+   atlas_seed ^= atlas_seed >> 17;
+   atlas_seed ^= atlas_seed << 5;
+   return atlas_seed;
+}
+
+/* @n halves of texture @i from its byte @at on */
+static void atlas_write(u32 i, u32 at, u32 n)
+{
+   volatile u16 *texel = (volatile u16 *)(0xA4000000 + atlas[i][0]);
+   u32 k;
+
+   at /= 2;
+   if (at + n > atlas[i][1] / 2)
+      n = atlas[i][1] / 2 - at;
+   for (k = 0; k < n; k++)
+      texel[at + k] = (u16)atlas_rnd();
+}
+
+/* A byte of texture @i (with no division: the program has none) */
+static u32 atlas_at_random(u32 i)
+{
+   return ((atlas_rnd() >> 16) * (atlas[i][1] >> 4)) >> 12;
+}
+
+static void atlas_frame(u32 frame)
+{
+   u32 i;
+
+   for (i = 0; i < ATLAS_TEXTURES; i++)
+   {
+      if (frame == 0)
+         atlas_write(i, 0, atlas[i][1] / 2);
+      else if ((frame & 31) == 31)
+         atlas_write(i, atlas_at_random(i), atlas[i][1] / 4);
+      else
+      {
+         atlas_write(i, atlas_at_random(i), 1 + (atlas_rnd() & 255));
+         atlas_write(i, atlas_at_random(i), 1 + (atlas_rnd() & 7));
+      }
+   }
+}
+
+static void ta_atlas(void)
+{
+   u32 q;
+
+   for (q = 0; q < sizeof(atlas_of) / sizeof(atlas_of[0]); q++)
+   {
+      const u32 i = atlas_of[q];
+      ta_quad(TA_TEXTURED, TSP_PLAIN | (4u << 8) | atlas[i][3], atlas[i][2] | (atlas[i][0] >> 3), 0xFFFFFFFF, F(0.95f),
+            F(atlas_at[q][0]), F(atlas_at[q][1]), F(atlas_at[q][2]), F(atlas_at[q][3]));
+   }
+}
+#endif
+
 /* What every render draws on top of the background: three polygons that
  * take shadows and a modifier volume that crosses them all.
  *
@@ -611,6 +710,9 @@ static void ta_scene(void)
    ta_send(TA_VERTEX, F(150.1f), F(205.9f), F(0.92f), 0, 0, 0xFF10E010, 0);
    ta_send(TA_VERTEX | TA_LAST, F(290.6f), F(130.2f), F(0.92f), 0, 0, 0xFF1010E0, 0);
 #endif
+#ifdef LIVE_ATLAS
+   ta_atlas();
+#endif
 #ifdef LIVE_CULL
    /* With -DLIVE_CULL, on the left: two white polygons that take shadows,
     * under the two volumes below, which differ only in their cull modes */
@@ -655,6 +757,7 @@ static void ta_scene(void)
 #endif
    ta_send(0, 0, 0, 0, 0, 0, 0, 0);                    /* end of the translucent list */
 }
+
 
 /* A render to a texture: 128 by 128, at 0x700000 in video memory, orange
  * with its top left quarter blue. The screen's scene then has a polygon
@@ -1791,6 +1894,10 @@ void cmain(void)
           * of two buffers in turn */
          if (frame >= 64)
          {
+#ifdef LIVE_ATLAS
+            atlas_frame(frame - 64);
+            PVR(0xE4) = 10;                            /* TEXT_CONTROL: a stride of 320 */
+#endif
             PVR(0x60) = (frame & 1) ? 0x400000 : 0x200000;   /* FB_W_SOF1 */
             render_to_texture();
             scene_in_part = frame >= 260;
