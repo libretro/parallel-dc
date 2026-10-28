@@ -40,10 +40,17 @@ struct RttWatch
 	bool used;
 };
 
+/* What a renderer hands the picture over to: w by h pixels of R, G, B, A
+ * bytes from @rgba on, first line first, lines @pitch bytes apart; NULL
+ * when there is none. Each byte is read once, in order, before it returns. */
+typedef void (*RttWatchTake)(const RttWatch *watch, const u8 *rgba, size_t pitch);
+
 struct RttWatchBackend
 {
-	/* The picture as w by h pixels of R, G, B, A bytes, first line first. */
-	void (*read)(const RttWatch *watch, u8 *rgba);
+	/* The picture handed to @take, once: where the renderer has it (its
+	 * readback memory, mapped), or written to @scratch (w * h * 4 bytes)
+	 * and handed over from there. Not handed over: as NULL. */
+	void (*read)(const RttWatch *watch, u8 *scratch, RttWatchTake take);
 	void (*release)(uintptr_t tex);
 };
 

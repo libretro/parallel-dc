@@ -635,7 +635,14 @@ static void rtt_gl_release(uintptr_t tex)
 		glcache.DeleteTextures(1, &id);
 }
 
-static const RttWatchBackend rtt_gl_backend = { rtt_gl_read, rtt_gl_release };
+/* (read back to memory of this side's: handed over from there) */
+static void rtt_gl_take(const RttWatch *watch, u8 *scratch, RttWatchTake take)
+{
+	rtt_gl_read(watch, scratch);
+	take(watch, scratch, (size_t)watch->w * 4);
+}
+
+static const RttWatchBackend rtt_gl_backend = { rtt_gl_take, rtt_gl_release };
 
 /* rend/last_picture.h: the context is going, and the screen's last picture
  * is in the framebuffer the frontend gave to draw in. */

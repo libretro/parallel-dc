@@ -571,7 +571,14 @@ static void dx9_rtt_release(uintptr_t)
 {
 }
 
-static const RttWatchBackend dx9_rtt_backend = { dx9_rtt_read, dx9_rtt_release };
+/* (read back through a surface locked a line at a time: handed over from @scratch) */
+static void dx9_rtt_take(const RttWatch *watch, u8 *scratch, RttWatchTake take)
+{
+	dx9_rtt_read(watch, scratch);
+	take(watch, scratch, (size_t)watch->w * 4);
+}
+
+static const RttWatchBackend dx9_rtt_backend = { dx9_rtt_take, dx9_rtt_release };
 
 /* What the render covers of video memory: the clip's pixels, from (x0, y0)
  * of the frame at addr, which moves to the first of them. (As the Vulkan

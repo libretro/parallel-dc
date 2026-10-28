@@ -538,15 +538,20 @@ void dx12_make_samplers()
 
 /* @width by @height from (@x, @y) of @texture (in @state) into @rgba,
  * through the context's readback buffer: what is recorded is submitted,
- * and waited for */
-static bool readBack(ID3D12Resource *texture, D3D12_RESOURCE_STATES& state, u32 x, u32 y, u32 width, u32 height, u8 *rgba)
+ * and waited for - or, with @take, handed to it where the readback buffer
+ * is mapped (NULL if it cannot be) */
+static bool readBack(ID3D12Resource *texture, D3D12_RESOURCE_STATES& state, u32 x, u32 y, u32 width, u32 height, u8 *rgba,
+		const RttWatch *watch = nullptr, RttWatchTake take = nullptr)
 {
 	DX12Context *context = DX12Context::Instance();
 	const u32 pitch = (width * 4 + D3D12_TEXTURE_DATA_PITCH_ALIGNMENT - 1) & ~(D3D12_TEXTURE_DATA_PITCH_ALIGNMENT - 1);
 	ID3D12Resource *buffer = context->ReadbackBuffer((u64)pitch * height);
 	if (buffer == nullptr || texture == nullptr)
 	{
-		memset(rgba, 0, (size_t)width * height * 4);
+		if (take != nullptr)
+			take(watch, nullptr, 0);
+		else
+			memset(rgba, 0, (size_t)width * height * 4);
 		return false;
 	}
 	const D3D12_RESOURCE_STATES was = state;
@@ -572,11 +577,18 @@ static bool readBack(ID3D12Resource *texture, D3D12_RESOURCE_STATES& state, u32 
 	if (FAILED(buffer->Map(0, &range, &p)))
 	{
 		WARN_LOG(RENDERER, "A picture could not be read back from the card");
-		memset(rgba, 0, (size_t)width * height * 4);
+		if (take != nullptr)
+			take(watch, nullptr, 0);
+		else
+			memset(rgba, 0, (size_t)width * height * 4);
 		return false;
 	}
-	for (u32 l = 0; l < height; l++)
-		memcpy(rgba + (size_t)l * width * 4, (const u8 *)p + (size_t)l * pitch, (size_t)width * 4);
+	// (a readback heap's: the host's cache is in front of it)
+	if (take != nullptr)
+		take(watch, (const u8 *)p, pitch);
+	else
+		for (u32 l = 0; l < height; l++)
+			memcpy(rgba + (size_t)l * width * 4, (const u8 *)p + (size_t)l * pitch, (size_t)width * 4);
 	const D3D12_RANGE none = { 0, 0 };
 	buffer->Unmap(0, &none);
 	return true;
@@ -588,7 +600,7 @@ bool dx12_read_picture(ID3D12Resource *texture, D3D12_RESOURCE_STATES& state, u3
 }
 
 /* The picture as the console would have it: w by h, R G B A. */
-static void dx12_rtt_read(const RttWatch *watch, u8 *rgba)
+static void dx12_rtt_read(const RttWatch *watch, u8 *, RttWatchTake take)
 {
 	DX12Context *context = DX12Context::Instance();
 	DX12Texture *texture = (DX12Texture *)watch->tex;
@@ -598,12 +610,12 @@ static void dx12_rtt_read(const RttWatch *watch, u8 *rgba)
 
 	if (context->GetDevice() == nullptr || image == nullptr || !image->resource)
 	{
-		memset(rgba, 0, (size_t)w * h * 4);
+		take(watch, nullptr, 0);
 		return;
 	}
 	if (scale == 1)
 	{
-		readBack(image->resource, image->state, x0, y0, w, h, rgba);
+		readBack(image->resource, image->state, x0, y0, w, h, nullptr, watch, take);
 		return;
 	}
 	/* Made the console's size on the card, filtered, and read at that: the
@@ -618,7 +630,7 @@ static void dx12_rtt_read(const RttWatch *watch, u8 *rgba)
 	if (small == nullptr)
 	{
 		WARN_LOG(RENDERER, "Render to texture read back: no %ux%u picture", pw, ph);
-		memset(rgba, 0, (size_t)w * h * 4);
+		take(watch, nullptr, 0);
 		return;
 	}
 	context->Transition(small->resource, small->state, D3D12_RESOURCE_STATE_RENDER_TARGET);
@@ -630,7 +642,7 @@ static void dx12_rtt_read(const RttWatch *watch, u8 *rgba)
 			(float)x0 / image->width, (float)y0 / image->height,
 			(float)(x0 + w * scale) / image->width, (float)(y0 + h * scale) / image->height);
 	context->SetTargets(~0u, ~0u);
-	readBack(small->resource, small->state, 0, 0, w, h, rgba);
+	readBack(small->resource, small->state, 0, 0, w, h, nullptr, watch, take);
 	pool->Give(small);
 }
 

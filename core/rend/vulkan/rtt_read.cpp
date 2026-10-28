@@ -14,7 +14,7 @@ static std::unique_ptr<FramebufferAttachment> staging;   /* the console's size, 
 
 /* The picture as the console would have it: w by h, R G B A. Waits for the
  * card - which is what not doing this until the game asks saves. */
-static void vk_rtt_read(const RttWatch *watch, u8 *rgba)
+static void vk_rtt_read(const RttWatch *watch, u8 *scratch, RttWatchTake take)
 {
 	Texture *texture = (Texture *)watch->tex;
 	VulkanContext *context = VulkanContext::Instance();
@@ -64,7 +64,17 @@ static void vk_rtt_read(const RttWatch *watch, u8 *rgba)
 
 	vk::Fence fence = read_pool.GetCurrentFence();
 	device.waitForFences(1, &fence, true, UINT64_MAX);
-	staging->GetBufferData()->download(w * h * 4, rgba);
+	const BufferData *data = staging->GetBufferData();
+	/* Read where the copy put it, with the host's cache in front of it (as
+	 * the heap prefers for what is read back); memory without is slow to
+	 * read a byte at a time, and is copied out first. */
+	if (data->allocation.PropertyFlags() & VK_MEMORY_PROPERTY_HOST_CACHED_BIT)
+		take(watch, (const u8 *)data->allocation.MapMemory(), (size_t)w * 4);
+	else
+	{
+		data->download(w * h * 4, scratch);
+		take(watch, scratch, (size_t)w * 4);
+	}
 }
 
 void vk_read_picture(vk::Image image, vk::Format format, u32 width, u32 height, u8 *rgba)

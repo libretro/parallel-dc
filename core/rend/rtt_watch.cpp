@@ -85,12 +85,13 @@ static inline u32 dithered(u32 colour, u32 add)
 	return colour > 255 ? 255 : colour;
 }
 
-static void pack_dithered(const RttWatch& s, const u8 *p, u16 *dst)
+static void pack_dithered(const RttWatch& s, const u8 *rgba, size_t pitch, u16 *dst)
 {
 	const u32 skip = (s.stride - s.w * 2) / 2;
 
-	for (u32 l = 0; l < s.h; l++, dst += skip)
+	for (u32 l = 0; l < s.h; l++, dst += skip, rgba += pitch)
 	{
+		const u8 *p = rgba;
 		// (the pattern goes by the pixel's place in the frame)
 		const u8 *row = dither_pattern[(l + s.y0) & 3];
 
@@ -126,17 +127,18 @@ static void pack_dithered(const RttWatch& s, const u8 *p, u16 *dst)
 }
 
 /* As the console packs a pixel into the framebuffer it renders to. */
-static void pack(const RttWatch& s, const u8 *p, u16 *dst)
+static void pack(const RttWatch& s, const u8 *rgba, size_t pitch, u16 *dst)
 {
 	const u32 skip = (s.stride - s.w * 2) / 2;
 
 	if (s.dither)
 	{
-		pack_dithered(s, p, dst);
+		pack_dithered(s, rgba, pitch, dst);
 		return;
 	}
-	for (u32 l = 0; l < s.h; l++, dst += skip)
+	for (u32 l = 0; l < s.h; l++, dst += skip, rgba += pitch)
 	{
+		const u8 *p = rgba;
 		switch (s.packmode)
 		{
 		case 0:
@@ -160,13 +162,38 @@ static void pack(const RttWatch& s, const u8 *p, u16 *dst)
 	}
 }
 
+static bool take_opens;          /* the watch's pages are opened first (fill()) */
+
+/* The picture as the renderer hands it over, read once - where the
+ * renderer has it, its readback memory, as often as not - packed into
+ * video memory. (None: what the console would have found, nothing.) */
+static void take(const RttWatch *watch, const u8 *rgba, size_t pitch)
+{
+	const RttWatch& s = *watch;
+
+	if (rgba == NULL)
+	{
+		memset(pixels, 0, (size_t)s.w * s.h * 4);
+		rgba = pixels;
+		pitch = (size_t)s.w * 4;
+	}
+	if (take_opens)
+	{
+		_vmem_open_watched_vram(first_page(s) * PAGE_SIZE, (last_page(s) - first_page(s) + 1) * PAGE_SIZE);
+		take_opens = false;
+	}
+	pack(s, rgba, pitch, (u16 *)&vram[s.addr]);
+}
+
 /* Render thread, and the machine is not running: the picture goes into
  * video memory. */
 static void fill(RttWatch& s)
 {
-	backend.read(&s, pixels);
-	_vmem_open_watched_vram(first_page(s) * PAGE_SIZE, (last_page(s) - first_page(s) + 1) * PAGE_SIZE);
-	pack(s, pixels, (u16 *)&vram[s.addr]);
+	take_opens = true;
+	backend.read(&s, pixels, take);
+	// (a read that handed nothing over leaves what a failed one does)
+	if (take_opens)
+		take(&s, NULL, 0);
 	close_slot(s, true);
 	if (s.owned)
 		backend.release(s.tex);
@@ -256,8 +283,7 @@ void rtt_watch_add(const RttWatch *watch, const RttWatchBackend *b)
 		if (watch->bytes != 0 && watch->addr + watch->bytes <= VRAM_SIZE)
 		{
 			drop_range(watch->addr, watch->bytes);
-			backend.read(watch, pixels);
-			pack(*watch, pixels, (u16 *)&vram[watch->addr]);
+			backend.read(watch, pixels, take);
 		}
 		if (watch->owned)
 			backend.release(watch->tex);

@@ -556,15 +556,20 @@ static bool makeStaging(ID3D11Device *device, u32 width, u32 height)
 }
 
 /* @width by @height from (@x, @y) of @texture into @rgba, through the
- * staging picture */
-static bool readBack(ID3D11Texture2D *texture, u32 x, u32 y, u32 width, u32 height, u8 *rgba)
+ * staging picture - or, with @take, handed to it where the staging picture
+ * is mapped (NULL if it cannot be) */
+static bool readBack(ID3D11Texture2D *texture, u32 x, u32 y, u32 width, u32 height, u8 *rgba,
+		const RttWatch *watch = nullptr, RttWatchTake take = nullptr)
 {
 	DX11Context *context = DX11Context::Instance();
 	ID3D11DeviceContext *deviceContext = context->GetDeviceContext();
 
 	if (!context->CanReadBack() || !makeStaging(context->GetDevice(), width, height))
 	{
-		memset(rgba, 0, (size_t)width * height * 4);
+		if (take != nullptr)
+			take(watch, nullptr, 0);
+		else
+			memset(rgba, 0, (size_t)width * height * 4);
 		return false;
 	}
 	const D3D11_BOX box = { x, y, 0, x + width, y + height, 1 };
@@ -573,11 +578,17 @@ static bool readBack(ID3D11Texture2D *texture, u32 x, u32 y, u32 width, u32 heig
 	if (FAILED(deviceContext->Map(staging, 0, D3D11_MAP_READ, 0, &mapped)))
 	{
 		WARN_LOG(RENDERER, "A picture could not be read back from the card");
-		memset(rgba, 0, (size_t)width * height * 4);
+		if (take != nullptr)
+			take(watch, nullptr, 0);
+		else
+			memset(rgba, 0, (size_t)width * height * 4);
 		return false;
 	}
-	for (u32 l = 0; l < height; l++)
-		memcpy(rgba + (size_t)l * width * 4, (const u8 *)mapped.pData + (size_t)l * mapped.RowPitch, (size_t)width * 4);
+	if (take != nullptr)
+		take(watch, (const u8 *)mapped.pData, mapped.RowPitch);
+	else
+		for (u32 l = 0; l < height; l++)
+			memcpy(rgba + (size_t)l * width * 4, (const u8 *)mapped.pData + (size_t)l * mapped.RowPitch, (size_t)width * 4);
 	deviceContext->Unmap(staging, 0);
 	return true;
 }
@@ -589,7 +600,7 @@ bool dx11_read_picture(ID3D11Texture2D *texture, u32 width, u32 height, u8 *rgba
 }
 
 /* The picture as the console would have it: w by h, R G B A. */
-static void dx11_rtt_read(const RttWatch *watch, u8 *rgba)
+static void dx11_rtt_read(const RttWatch *watch, u8 *, RttWatchTake take)
 {
 	DX11Lock lock;
 	DX11Context *context = DX11Context::Instance();
@@ -601,12 +612,12 @@ static void dx11_rtt_read(const RttWatch *watch, u8 *rgba)
 
 	if (device == nullptr || !texture->texture)
 	{
-		memset(rgba, 0, (size_t)w * h * 4);
+		take(watch, nullptr, 0);
 		return;
 	}
 	if (scale == 1)
 	{
-		readBack(texture->texture, x0, y0, w, h, rgba);
+		readBack(texture->texture, x0, y0, w, h, nullptr, watch, take);
 		return;
 	}
 	/* Made the console's size on the card, filtered, and read at that: the
@@ -637,7 +648,7 @@ static void dx11_rtt_read(const RttWatch *watch, u8 *rgba)
 		{
 			WARN_LOG(RENDERER, "Render to texture read back: target creation failed");
 			small.reset();
-			memset(rgba, 0, (size_t)w * h * 4);
+			take(watch, nullptr, 0);
 			return;
 		}
 	}
@@ -649,7 +660,7 @@ static void dx11_rtt_read(const RttWatch *watch, u8 *rgba)
 			-1.f, -1.f, 2.f, 2.f,
 			(float)x0 / src.Width, (float)y0 / src.Height,
 			(float)(x0 + w * scale) / src.Width, (float)(y0 + h * scale) / src.Height);
-	readBack(small, 0, 0, w, h, rgba);
+	readBack(small, 0, 0, w, h, nullptr, watch, take);
 }
 
 /* The texture cache's, never this module's to delete. */
