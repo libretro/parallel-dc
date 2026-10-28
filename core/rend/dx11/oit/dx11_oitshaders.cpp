@@ -742,18 +742,111 @@ static std::string pixelSource(const char *source)
 	return std::string("#define MAX_PIXELS_PER_FRAGMENT " MAX_PIXELS_PER_FRAGMENT "\n") + OITShaderHeader + DX11FogFunction + source;
 }
 
+bool DX11OITShaders::Describe(u32 family, u32 variant, DX11ShaderDesc& d) const
+{
+	D3D_SHADER_MACRO *m = d.macros;
+	switch (family)
+	{
+	case VS:
+		d.source = std::string(DX11VertexTransform) + OITVertexShaderSource;
+		d.profile = "vs_5_0";
+		*m++ = { "pp_Gouraud", MacroValues[variant & 1] };
+		break;
+	case PS:
+		/* (the variant is FragmentShaderParams::hash()) */
+		d.source = pixelSource(OITPixelShaderSource);
+		d.profile = "ps_5_0";
+		*m++ = { "cp_AlphaTest", MacroValues[variant & 1] };
+		*m++ = { "pp_ClipInside", MacroValues[(variant >> 1) & 1] };
+		*m++ = { "pp_UseAlpha", MacroValues[(variant >> 2) & 1] };
+		*m++ = { "pp_Texture", MacroValues[(variant >> 3) & 1] };
+		*m++ = { "pp_IgnoreTexA", MacroValues[(variant >> 4) & 1] };
+		*m++ = { "pp_ShadInstr", MacroValues[(variant >> 5) & 3] };
+		*m++ = { "pp_Offset", MacroValues[(variant >> 7) & 1] };
+		*m++ = { "pp_FogCtrl", MacroValues[(variant >> 8) & 3] };
+		*m++ = { "pp_TwoVolumes", MacroValues[(variant >> 10) & 1] };
+		*m++ = { "pp_Gouraud", MacroValues[(variant >> 11) & 1] };
+		*m++ = { "pp_BumpMap", MacroValues[(variant >> 12) & 1] };
+		*m++ = { "ColorClamping", MacroValues[(variant >> 13) & 1] };
+		*m++ = { "pp_Palette", MacroValues[(variant >> 14) & 1] };
+		*m++ = { "PASS", MacroValues[(variant >> 15) & 3] };
+		break;
+	case ModVolVS:
+		d.source = std::string(DX11VertexTransform) + DX11ModVolVertexShader;
+		d.profile = "vs_5_0";
+		break;
+	case ModVolPS:
+		d.source = pixelSource(OITModVolPixelShaderSource);
+		d.profile = "ps_5_0";
+		break;
+	case TrModVolPS:
+		d.source = pixelSource(OITTranslucentModvolShaderSource);
+		d.profile = "ps_5_0";
+		*m++ = { "MV_MODE", MacroValues[variant & 3] };
+		break;
+	case FinalVS:
+		d.source = OITFinalVertexShaderSource;
+		d.profile = "vs_5_0";
+		break;
+	case FinalPS:
+		d.source = pixelSource(OITFinalShaderSource);
+		d.profile = "ps_5_0";
+		break;
+	default:
+		return false;
+	}
+	*m = { nullptr, nullptr };
+	return true;
+}
+
+void DX11OITShaders::Adopt(u32 family, u32 variant, ID3D11PixelShader *shader)
+{
+	ComPtr<ID3D11PixelShader> *slot = nullptr;
+	switch (family)
+	{
+	case PS:
+		slot = &pixelShaders[variant];
+		break;
+	case ModVolPS:
+		slot = &modVolPixelShader;
+		break;
+	case TrModVolPS:
+		slot = &trModVolShaders[variant & 3];
+		break;
+	case FinalPS:
+		slot = &finalPixelShader;
+		break;
+	}
+	if (slot != nullptr && !*slot)
+		slot->reset(shader);
+	else
+		shader->Release();
+}
+
+void DX11OITShaders::Fixed(std::vector<d3d_warm_job_t>& jobs) const
+{
+	d3d_warm_job_t j;
+	j.key = 0;
+	j.kind = FinalPS;
+	j.aux = 0;
+	jobs.push_back(j);
+	j.kind = ModVolPS;
+	jobs.push_back(j);
+	j.kind = TrModVolPS;
+	for (u32 mode = 0; mode < 4; mode++)
+	{
+		j.aux = mode;
+		jobs.push_back(j);
+	}
+}
+
 ID3D11VertexShader *DX11OITShaders::GetVertexShader(bool gouraud)
 {
 	ComPtr<ID3D11VertexShader>& shader = vertexShaders[gouraud];
 	if (!shader)
 	{
-		const D3D_SHADER_MACRO macros[] = {
-				{ "pp_Gouraud", MacroValues[gouraud] },
-				{ nullptr, nullptr }
-		};
-		std::string source = std::string(DX11VertexTransform) + OITVertexShaderSource;
 		ComPtr<ID3DBlob> blob;
-		shader = CompileVS(source.c_str(), "main", "vs_5_0", macros, &blob);
+		MakeVS(VS, gouraud, shader, &blob);
 		if (!vertexBlob)
 			vertexBlob = blob;
 	}
@@ -768,27 +861,7 @@ ID3D11PixelShader *DX11OITShaders::GetPixelShader(const FragmentShaderParams& pa
 		return m.shader;
 	ComPtr<ID3D11PixelShader>& shader = pixelShaders[key];
 	if (!shader)
-	{
-		const D3D_SHADER_MACRO macros[] = {
-				{ "cp_AlphaTest", MacroValues[params.alphaTest] },
-				{ "pp_ClipInside", MacroValues[params.insideClipTest] },
-				{ "pp_UseAlpha", MacroValues[params.useAlpha] },
-				{ "pp_Texture", MacroValues[params.texture] },
-				{ "pp_IgnoreTexA", MacroValues[params.ignoreTexAlpha] },
-				{ "pp_ShadInstr", MacroValues[params.shaderInstr & 3] },
-				{ "pp_Offset", MacroValues[params.offset] },
-				{ "pp_FogCtrl", MacroValues[params.fog & 3] },
-				{ "pp_TwoVolumes", MacroValues[params.twoVolume] },
-				{ "pp_Gouraud", MacroValues[params.gouraud] },
-				{ "pp_BumpMap", MacroValues[params.bumpmap] },
-				{ "ColorClamping", MacroValues[params.clamping] },
-				{ "pp_Palette", MacroValues[params.palette] },
-				{ "PASS", MacroValues[(int)params.pass] },
-				{ nullptr, nullptr }
-		};
-		std::string source = pixelSource(OITPixelShaderSource);
-		shader = CompilePS(source.c_str(), "main", "ps_5_0", macros);
-	}
+		MissedPS(PS, key, shader);
 	m.key = key;
 	m.shader = shader;
 	return shader;
@@ -797,20 +870,14 @@ ID3D11PixelShader *DX11OITShaders::GetPixelShader(const FragmentShaderParams& pa
 ID3D11VertexShader *DX11OITShaders::GetModVolVertexShader()
 {
 	if (!modVolVertexShader)
-	{
-		std::string source = std::string(DX11VertexTransform) + DX11ModVolVertexShader;
-		modVolVertexShader = CompileVS(source.c_str(), "main", "vs_5_0", nullptr, &modVolVertexBlob);
-	}
+		MakeVS(ModVolVS, 0, modVolVertexShader, &modVolVertexBlob);
 	return modVolVertexShader;
 }
 
 ID3D11PixelShader *DX11OITShaders::GetModVolPixelShader()
 {
 	if (!modVolPixelShader)
-	{
-		std::string source = pixelSource(OITModVolPixelShaderSource);
-		modVolPixelShader = CompilePS(source.c_str(), "main", "ps_5_0", nullptr);
-	}
+		MissedPS(ModVolPS, 0, modVolPixelShader);
 	return modVolPixelShader;
 }
 
@@ -818,36 +885,27 @@ ID3D11PixelShader *DX11OITShaders::GetTrModVolPixelShader(ModVolMode mode)
 {
 	ComPtr<ID3D11PixelShader>& shader = trModVolShaders[mode & 3];
 	if (!shader)
-	{
-		const D3D_SHADER_MACRO macros[] = {
-				{ "MV_MODE", MacroValues[mode & 3] },
-				{ nullptr, nullptr }
-		};
-		std::string source = pixelSource(OITTranslucentModvolShaderSource);
-		shader = CompilePS(source.c_str(), "main", "ps_5_0", macros);
-	}
+		MissedPS(TrModVolPS, mode & 3, shader);
 	return shader;
 }
 
 ID3D11VertexShader *DX11OITShaders::GetFinalVertexShader()
 {
 	if (!finalVertexShader)
-		finalVertexShader = CompileVS(OITFinalVertexShaderSource, "main", "vs_5_0", nullptr);
+		MakeVS(FinalVS, 0, finalVertexShader, nullptr);
 	return finalVertexShader;
 }
 
 ID3D11PixelShader *DX11OITShaders::GetFinalPixelShader()
 {
 	if (!finalPixelShader)
-	{
-		std::string source = pixelSource(OITFinalShaderSource);
-		finalPixelShader = CompilePS(source.c_str(), "main", "ps_5_0", nullptr);
-	}
+		MissedPS(FinalPS, 0, finalPixelShader);
 	return finalPixelShader;
 }
 
 void DX11OITShaders::Term()
 {
+	TermCompiler();
 	for (auto& shader : vertexShaders)
 		shader.reset();
 	vertexBlob.reset();

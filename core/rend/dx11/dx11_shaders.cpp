@@ -21,8 +21,13 @@
  * shaders have. What a pixel comes out as is what the Vulkan and OpenGL
  * renderers make of it, bit for bit where the two languages allow. */
 #include "dx11_shaders.h"
+#include <streams/file_stream.h>
+#include <algorithm>
+#include <cstdlib>
 #include <cstring>
 #include <string>
+
+extern std::string get_writable_data_path(const std::string& filename);
 
 const char * const DX11VertexTransform = R"(
 cbuffer VertexConstants : register(b0)
@@ -416,20 +421,476 @@ ComPtr<ID3D11PixelShader> DX11ShaderCompiler::CompilePS(const char *source, cons
 	return shader;
 }
 
+/* ---- The file, the thread ---- */
+
+/* Bytecode from the file, for an input layout: a blob of its own */
+class DX11FileBlob : public ID3DBlob
+{
+public:
+	DX11FileBlob(const void *code, size_t size) : size(size)
+	{
+		data = malloc(size);
+		if (data != nullptr)
+			memcpy(data, code, size);
+	}
+	virtual ~DX11FileBlob() { free(data); }
+	HRESULT STDMETHODCALLTYPE QueryInterface(REFIID riid, void **out) override
+	{
+		if (riid == __uuidof(IUnknown) || riid == __uuidof(ID3D10Blob))
+		{
+			AddRef();
+			*out = this;
+			return S_OK;
+		}
+		*out = nullptr;
+		return E_NOINTERFACE;
+	}
+	ULONG STDMETHODCALLTYPE AddRef() override { return ++refs; }
+	ULONG STDMETHODCALLTYPE Release() override
+	{
+		const ULONG n = --refs;
+		if (n == 0)
+			delete this;
+		return n;
+	}
+	LPVOID STDMETHODCALLTYPE GetBufferPointer() override { return data; }
+	SIZE_T STDMETHODCALLTYPE GetBufferSize() override { return size; }
+
+private:
+	void *data = nullptr;
+	size_t size;
+	ULONG refs = 1;
+};
+
+u64 DX11ShaderCompiler::HashOf(const DX11ShaderDesc& d)
+{
+	u64 h = d3d_shcache_hash(D3D_SHCACHE_HASH_INIT, d.source.c_str(), d.source.size() + 1);
+	h = d3d_shcache_hash(h, d.profile, strlen(d.profile) + 1);
+	for (const D3D_SHADER_MACRO *m = d.macros; m->Name != nullptr; m++)
+	{
+		h = d3d_shcache_hash(h, m->Name, strlen(m->Name) + 1);
+		h = d3d_shcache_hash(h, m->Definition, strlen(m->Definition) + 1);
+	}
+	return h;
+}
+
+const u8 *DX11ShaderCompiler::FromFile(u64 hash, u32 *size) const
+{
+	size_t lo = 0, hi = fileIndex.size();
+	while (lo < hi)
+	{
+		const size_t mid = (lo + hi) / 2;
+		if (fileIndex[mid].hash < hash)
+			lo = mid + 1;
+		else
+			hi = mid;
+	}
+	if (lo == fileIndex.size() || fileIndex[lo].hash != hash)
+		return nullptr;
+	*size = fileIndex[lo].size;
+	return &file[fileBlobs + fileIndex[lo].offset];
+}
+
+void DX11ShaderCompiler::Keep(u64 hash, u32 family, u32 variant, const void *code, size_t size)
+{
+	if (keptByHash.count(hash) != 0 || size == 0)
+		return;
+	Kept k;
+	k.hash = hash;
+	k.family = family;
+	k.variant = variant;
+	k.code.assign((const u8 *)code, (const u8 *)code + size);
+	keptByHash[hash] = kept.size();
+	kept.push_back(std::move(k));
+	fileChanged = true;
+}
+
+bool DX11ShaderCompiler::Bytecode(u32 family, u32 variant, const DX11ShaderDesc& d, ComPtr<ID3DBlob>& hold,
+		const void **code, size_t *size, bool *fromFile)
+{
+	const u64 hash = HashOf(d);
+	u32 bytes = 0;
+	const u8 *p = FromFile(hash, &bytes);
+	*fromFile = p != nullptr;
+	if (p != nullptr)
+	{
+		*code = p;
+		*size = bytes;
+		return true;
+	}
+	auto it = keptByHash.find(hash);
+	if (it != keptByHash.end())
+	{
+		*code = kept[it->second].code.data();
+		*size = kept[it->second].code.size();
+		return true;
+	}
+	hold = Compile(d.source.c_str(), "main", d.profile, d.macros);
+	if (!hold)
+		return false;
+	statCompiled++;
+	*code = hold->GetBufferPointer();
+	*size = hold->GetBufferSize();
+	Keep(hash, family, variant, *code, *size);
+	return true;
+}
+
+/* The thread's: the pixel shader of @job (kind the family, aux the
+ * variant), from the file or compiled; key handed back the hash, extra
+ * the bytecode compiled */
+bool DX11ShaderCompiler::WarmBuild(void *ctx, const d3d_warm_job_t *job, d3d_warm_result_t *res)
+{
+	const DX11ShaderCompiler *self = (const DX11ShaderCompiler *)ctx;
+	DX11ShaderDesc d;
+	if (!self->Describe(job->kind, job->aux, d))
+		return false;
+	const u64 hash = HashOf(d);
+	u32 size = 0;
+	const void *code = self->FromFile(hash, &size);
+	ID3DBlob *blob = nullptr;
+	if (code == nullptr)
+	{
+		ID3DBlob *errors = nullptr;
+		if (self->compile == nullptr
+				|| FAILED(self->compile(d.source.c_str(), d.source.size(), nullptr, d.macros, nullptr, "main", d.profile, 0, 0, &blob, &errors)))
+		{
+			if (errors != nullptr)
+				errors->Release();
+			if (blob != nullptr)
+				blob->Release();
+			return false;
+		}
+		if (errors != nullptr)
+			errors->Release();
+		code = blob->GetBufferPointer();
+		size = (u32)blob->GetBufferSize();
+	}
+	ID3D11PixelShader *shader = nullptr;
+	if (FAILED(self->device->CreatePixelShader(code, size, nullptr, &shader)))
+	{
+		if (blob != nullptr)
+			blob->Release();
+		return false;
+	}
+	res->key = hash;
+	res->obj = shader;
+	res->extra = blob;
+	return true;
+}
+
+void DX11ShaderCompiler::WarmRelease(void *ctx, d3d_warm_result_t *res)
+{
+	(void)ctx;
+	if (res->obj != nullptr)
+		((ID3D11PixelShader *)res->obj)->Release();
+	if (res->extra != nullptr)
+		((ID3DBlob *)res->extra)->Release();
+	res->obj = res->extra = nullptr;
+}
+
+void DX11ShaderCompiler::TakeBuilt()
+{
+	d3d_warm_result_t r;
+	while (d3d_warm_take(warm, &r))
+	{
+		if (r.extra != nullptr)
+		{
+			ID3DBlob *blob = (ID3DBlob *)r.extra;
+			Keep(r.key, r.kind, r.aux, blob->GetBufferPointer(), blob->GetBufferSize());
+			blob->Release();
+			statCompiledAhead++;
+		}
+		statAhead++;
+		Adopt(r.kind, r.aux, (ID3D11PixelShader *)r.obj);
+	}
+}
+
+ID3D11PixelShader *DX11ShaderCompiler::MissedPS(u32 family, u32 variant, ComPtr<ID3D11PixelShader>& slot)
+{
+	TakeBuilt();
+	if (slot)
+		return slot;
+	DX11ShaderDesc d;
+	ComPtr<ID3DBlob> hold;
+	const void *code;
+	size_t size;
+	bool fromFile;
+	if (!Describe(family, variant, d) || !Bytecode(family, variant, d, hold, &code, &size, &fromFile))
+		return nullptr;
+	if (fromFile)
+		statFromFile++;
+	if (FAILED(device->CreatePixelShader(code, size, nullptr, slot.put())))
+		ERROR_LOG(RENDERER, "Pixel shader creation failed");
+	return slot;
+}
+
+ID3D11VertexShader *DX11ShaderCompiler::MakeVS(u32 family, u32 variant, ComPtr<ID3D11VertexShader>& slot, ComPtr<ID3DBlob> *blob)
+{
+	DX11ShaderDesc d;
+	ComPtr<ID3DBlob> hold;
+	const void *code;
+	size_t size;
+	bool fromFile;
+	if (!Describe(family, variant, d) || !Bytecode(family, variant, d, hold, &code, &size, &fromFile))
+		return nullptr;
+	if (fromFile)
+		statFromFile++;
+	if (FAILED(device->CreateVertexShader(code, size, nullptr, slot.put())))
+		ERROR_LOG(RENDERER, "Vertex shader creation failed");
+	if (blob != nullptr)
+	{
+		if (!hold)
+			hold.reset(new DX11FileBlob(code, size));
+		*blob = hold;
+	}
+	return slot;
+}
+
+void DX11ShaderCompiler::LoadFile()
+{
+	file.clear();
+	fileIndex.clear();
+	fileBlobs = 0;
+	const std::string path = get_writable_data_path(FileName());
+	void *data = nullptr;
+	int64_t size = 0;
+	if (filestream_read_file(path.c_str(), &data, &size) && data != nullptr && size > 0)
+	{
+		d3d_shcache_entry_t *entries = nullptr;
+		size_t count = 0;
+		if (d3d_shcache_parse((const u8 *)data, (size_t)size, &entries, &count, &fileBlobs))
+		{
+			file.assign((const u8 *)data, (const u8 *)data + size);
+			fileIndex.assign(entries, entries + count);
+			std::sort(fileIndex.begin(), fileIndex.end(),
+					[](const d3d_shcache_entry_t& a, const d3d_shcache_entry_t& b) { return a.hash < b.hash; });
+		}
+		else
+			WARN_LOG(RENDERER, "DX11: shader file %s is not one: ignored", path.c_str());
+		free(entries);
+	}
+	free(data);
+}
+
+/* What the file had and what this run compiled, by family and variant:
+ * this run's where both have one */
+void DX11ShaderCompiler::SaveFile()
+{
+	if (!fileChanged)
+		return;
+	std::vector<d3d_shcache_entry_t> entries;
+	std::vector<const void *> blobs;
+	std::unordered_map<u64, size_t> byName;
+	for (const Kept& k : kept)
+	{
+		const u64 name = ((u64)k.family << 32) | k.variant;
+		if (byName.count(name) != 0 || entries.size() >= D3D_SHCACHE_MAX_ENTRIES)
+			continue;
+		byName[name] = entries.size();
+		d3d_shcache_entry_t e{};
+		e.hash = k.hash;
+		e.family = k.family;
+		e.variant = k.variant;
+		e.size = (u32)k.code.size();
+		entries.push_back(e);
+		blobs.push_back(k.code.data());
+	}
+	for (const d3d_shcache_entry_t& f : fileIndex)
+	{
+		const u64 name = ((u64)f.family << 32) | f.variant;
+		if (byName.count(name) != 0 || entries.size() >= D3D_SHCACHE_MAX_ENTRIES)
+			continue;
+		byName[name] = entries.size();
+		entries.push_back(f);
+		blobs.push_back(&file[fileBlobs + f.offset]);
+	}
+	if (entries.empty())
+		return;
+	std::vector<u8> out(d3d_shcache_file_size(entries.data(), entries.size()));
+	if (!d3d_shcache_write(out.data(), out.size(), entries.data(), entries.size(), blobs.data()))
+		return;
+	// (written beside it, then put in its place: a write cut short leaves the one there was)
+	const std::string path = get_writable_data_path(FileName());
+	const std::string tmpPath = path + ".tmp";
+	RFILE *f = filestream_open(tmpPath.c_str(), RETRO_VFS_FILE_ACCESS_WRITE, RETRO_VFS_FILE_ACCESS_HINT_NONE);
+	if (f == nullptr)
+		return;
+	bool written = filestream_write(f, out.data(), (int64_t)out.size()) == (int64_t)out.size();
+	filestream_close(f);
+	if (written)
+	{
+		filestream_delete(path.c_str());
+		written = filestream_rename(tmpPath.c_str(), path.c_str()) == 0;
+	}
+	if (!written)
+		filestream_delete(tmpPath.c_str());
+	else
+		NOTICE_LOG(RENDERER, "DX11: shader file saved: %u shaders", (u32)entries.size());
+}
+
+void DX11ShaderCompiler::Init(ID3D11Device *device, pD3DCompile compile)
+{
+	// (made again without being ended: the last thread's work is not kept)
+	if (warm != nullptr)
+	{
+		d3d_warm_free(warm);
+		warm = nullptr;
+	}
+	this->device = device;
+	this->compile = compile;
+	statCompiled = statFromFile = statAhead = statCompiledAhead = 0;
+	kept.clear();
+	keptByHash.clear();
+	fileChanged = false;
+	LoadFile();
+	/* (a device made for one thread only is used from the one that renders
+	 * only: the file still spares it compiling) */
+	if (device == nullptr || (device->GetCreationFlags() & D3D11_CREATE_DEVICE_SINGLETHREADED) != 0)
+		return;
+	std::vector<d3d_warm_job_t> jobs;
+	Fixed(jobs);
+	const size_t fixed = jobs.size();
+	for (const d3d_shcache_entry_t& e : fileIndex)
+		if (PixelFamily(e.family))
+		{
+			// (one of a kind, queued already; the file has each once)
+			size_t i = 0;
+			while (i < fixed && (jobs[i].kind != e.family || jobs[i].aux != e.variant))
+				i++;
+			if (i < fixed)
+				continue;
+			d3d_warm_job_t j;
+			j.key = 0;
+			j.kind = e.family;
+			j.aux = e.variant;
+			jobs.push_back(j);
+		}
+	if (jobs.empty())
+		return;
+	warm = d3d_warm_new(WarmBuild, WarmRelease, this, jobs.size());
+	const size_t taken = d3d_warm_submit(warm, jobs.data(), jobs.size());
+	NOTICE_LOG(RENDERER, "DX11: %u shaders in %s, %u pixel shaders to be made ahead",
+			(u32)fileIndex.size(), FileName(), (u32)taken);
+}
+
+void DX11ShaderCompiler::TermCompiler()
+{
+	if (warm != nullptr)
+	{
+		d3d_warm_stop(warm);
+		TakeBuilt();
+		d3d_warm_free(warm);
+		warm = nullptr;
+	}
+	if (device != nullptr)
+		NOTICE_LOG(RENDERER, "DX11: %s: %u compiled, %u from the file, %u made ahead (%u of them compiled)",
+				FileName(), statCompiled, statFromFile, statAhead, statCompiledAhead);
+	SaveFile();
+	file.clear();
+	file.shrink_to_fit();
+	fileIndex.clear();
+	kept.clear();
+	keptByHash.clear();
+	fileChanged = false;
+}
+
+/* ---- The per-triangle renderer's ---- */
+
 static const char * const MacroValues[] = { "0", "1", "2", "3" };
+
+bool DX11Shaders::Describe(u32 family, u32 variant, DX11ShaderDesc& d) const
+{
+	D3D_SHADER_MACRO *m = d.macros;
+	switch (family)
+	{
+	case VS:
+		d.source = std::string(DX11VertexTransform) + VertexShaderSource;
+		d.profile = "vs_4_0";
+		*m++ = { "pp_Gouraud", MacroValues[variant & 1] };
+		break;
+	case PS:
+		/* (the variant is DX11FragmentShaderParams::hash()) */
+		d.source = std::string(PixelShaderHeader) + DX11FogFunction + PixelShaderSource;
+		d.profile = "ps_4_0";
+		*m++ = { "cp_AlphaTest", MacroValues[variant & 1] };
+		*m++ = { "pp_ClipInside", MacroValues[(variant >> 1) & 1] };
+		*m++ = { "pp_UseAlpha", MacroValues[(variant >> 2) & 1] };
+		*m++ = { "pp_Texture", MacroValues[(variant >> 3) & 1] };
+		*m++ = { "pp_IgnoreTexA", MacroValues[(variant >> 4) & 1] };
+		*m++ = { "pp_ShadInstr", MacroValues[(variant >> 5) & 3] };
+		*m++ = { "pp_Offset", MacroValues[(variant >> 7) & 1] };
+		*m++ = { "pp_FogCtrl", MacroValues[(variant >> 8) & 3] };
+		*m++ = { "pp_Gouraud", MacroValues[(variant >> 10) & 1] };
+		*m++ = { "pp_BumpMap", MacroValues[(variant >> 11) & 1] };
+		*m++ = { "ColorClamping", MacroValues[(variant >> 12) & 1] };
+		*m++ = { "pp_TriLinear", MacroValues[(variant >> 13) & 1] };
+		*m++ = { "pp_Palette", MacroValues[(variant >> 14) & 1] };
+		*m++ = { "pp_Shadowed", MacroValues[(variant >> 15) & 1] };
+		break;
+	case ModVolVS:
+		d.source = std::string(DX11VertexTransform) + DX11ModVolVertexShader;
+		d.profile = "vs_4_0";
+		break;
+	case ModVolPS:
+		d.source = std::string(PixelShaderHeader) + DX11FogFunction + ModVolPixelShaderSource;
+		d.profile = "ps_4_0";
+		break;
+	case QuadVS:
+		d.source = QuadVertexShaderSource;
+		d.profile = "vs_4_0";
+		break;
+	case QuadPS:
+		d.source = QuadPixelShaderSource;
+		d.profile = "ps_4_0";
+		break;
+	default:
+		return false;
+	}
+	*m = { nullptr, nullptr };
+	return true;
+}
+
+void DX11Shaders::Adopt(u32 family, u32 variant, ID3D11PixelShader *shader)
+{
+	ComPtr<ID3D11PixelShader> *slot = nullptr;
+	switch (family)
+	{
+	case PS:
+		slot = &pixelShaders[variant];
+		break;
+	case ModVolPS:
+		slot = &modVolPixelShader;
+		break;
+	case QuadPS:
+		slot = &quadPixelShader;
+		break;
+	}
+	if (slot != nullptr && !*slot)
+		slot->reset(shader);
+	else
+		shader->Release();
+}
+
+void DX11Shaders::Fixed(std::vector<d3d_warm_job_t>& jobs) const
+{
+	static const u32 fixed[] = { ModVolPS, QuadPS };
+	for (u32 f : fixed)
+	{
+		d3d_warm_job_t j;
+		j.key = 0;
+		j.kind = f;
+		j.aux = 0;
+		jobs.push_back(j);
+	}
+}
 
 ID3D11VertexShader *DX11Shaders::GetVertexShader(bool gouraud)
 {
 	ComPtr<ID3D11VertexShader>& shader = vertexShaders[gouraud];
 	if (!shader)
 	{
-		const D3D_SHADER_MACRO macros[] = {
-				{ "pp_Gouraud", MacroValues[gouraud] },
-				{ nullptr, nullptr }
-		};
-		std::string source = std::string(DX11VertexTransform) + VertexShaderSource;
 		ComPtr<ID3DBlob> blob;
-		shader = CompileVS(source.c_str(), "main", "vs_4_0", macros, &blob);
+		MakeVS(VS, gouraud, shader, &blob);
 		if (!vertexBlob)
 			vertexBlob = blob;
 	}
@@ -444,27 +905,7 @@ ID3D11PixelShader *DX11Shaders::GetPixelShader(const DX11FragmentShaderParams& p
 		return m.shader;
 	ComPtr<ID3D11PixelShader>& shader = pixelShaders[key];
 	if (!shader)
-	{
-		const D3D_SHADER_MACRO macros[] = {
-				{ "cp_AlphaTest", MacroValues[params.alphaTest] },
-				{ "pp_ClipInside", MacroValues[params.insideClipTest] },
-				{ "pp_UseAlpha", MacroValues[params.useAlpha] },
-				{ "pp_Texture", MacroValues[params.texture] },
-				{ "pp_IgnoreTexA", MacroValues[params.ignoreTexAlpha] },
-				{ "pp_ShadInstr", MacroValues[params.shaderInstr & 3] },
-				{ "pp_Offset", MacroValues[params.offset] },
-				{ "pp_FogCtrl", MacroValues[params.fog & 3] },
-				{ "pp_Gouraud", MacroValues[params.gouraud] },
-				{ "pp_BumpMap", MacroValues[params.bumpmap] },
-				{ "ColorClamping", MacroValues[params.clamping] },
-				{ "pp_TriLinear", MacroValues[params.trilinear] },
-				{ "pp_Palette", MacroValues[params.palette] },
-				{ "pp_Shadowed", MacroValues[params.shadowed] },
-				{ nullptr, nullptr }
-		};
-		std::string source = std::string(PixelShaderHeader) + DX11FogFunction + PixelShaderSource;
-		shader = CompilePS(source.c_str(), "main", "ps_4_0", macros);
-	}
+		MissedPS(PS, key, shader);
 	m.key = key;
 	m.shader = shader;
 	return shader;
@@ -473,39 +914,34 @@ ID3D11PixelShader *DX11Shaders::GetPixelShader(const DX11FragmentShaderParams& p
 ID3D11VertexShader *DX11Shaders::GetModVolVertexShader()
 {
 	if (!modVolVertexShader)
-	{
-		std::string source = std::string(DX11VertexTransform) + DX11ModVolVertexShader;
-		modVolVertexShader = CompileVS(source.c_str(), "main", "vs_4_0", nullptr, &modVolVertexBlob);
-	}
+		MakeVS(ModVolVS, 0, modVolVertexShader, &modVolVertexBlob);
 	return modVolVertexShader;
 }
 
 ID3D11PixelShader *DX11Shaders::GetModVolPixelShader()
 {
 	if (!modVolPixelShader)
-	{
-		std::string source = std::string(PixelShaderHeader) + DX11FogFunction + ModVolPixelShaderSource;
-		modVolPixelShader = CompilePS(source.c_str(), "main", "ps_4_0", nullptr);
-	}
+		MissedPS(ModVolPS, 0, modVolPixelShader);
 	return modVolPixelShader;
 }
 
 ID3D11VertexShader *DX11Shaders::GetQuadVertexShader()
 {
 	if (!quadVertexShader)
-		quadVertexShader = CompileVS(QuadVertexShaderSource, "main", "vs_4_0", nullptr, &quadVertexBlob);
+		MakeVS(QuadVS, 0, quadVertexShader, &quadVertexBlob);
 	return quadVertexShader;
 }
 
 ID3D11PixelShader *DX11Shaders::GetQuadPixelShader()
 {
 	if (!quadPixelShader)
-		quadPixelShader = CompilePS(QuadPixelShaderSource, "main", "ps_4_0", nullptr);
+		MissedPS(QuadPS, 0, quadPixelShader);
 	return quadPixelShader;
 }
 
 void DX11Shaders::Term()
 {
+	TermCompiler();
 	for (auto& shader : vertexShaders)
 		shader.reset();
 	vertexBlob.reset();

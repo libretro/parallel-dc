@@ -32,6 +32,8 @@ class DX11OITShaders : public DX11ShaderCompiler
 {
 public:
 	enum Pass { Depth, Color, OIT };
+	/* Their families (DX11ShaderCompiler) */
+	enum { VS, PS, ModVolVS, ModVolPS, TrModVolPS, FinalVS, FinalPS };
 	// Must match the order of the modifier volume modes in the shader
 	enum ModVolMode { Xor, Or, Inclusion, Exclusion };
 
@@ -83,4 +85,14 @@ private:
 	ComPtr<ID3D11PixelShader> trModVolShaders[4];
 	ComPtr<ID3D11VertexShader> finalVertexShader;
 	ComPtr<ID3D11PixelShader> finalPixelShader;
+
+protected:
+	bool Describe(u32 family, u32 variant, DX11ShaderDesc& d) const override;
+	void Adopt(u32 family, u32 variant, ID3D11PixelShader *shader) override;
+	const char *FileName() const override { return "d3d11_oit_shaders.bin"; }
+	bool PixelFamily(u32 family) const override
+	{
+		return family == PS || family == ModVolPS || family == TrModVolPS || family == FinalPS;
+	}
+	void Fixed(std::vector<d3d_warm_job_t>& jobs) const override;
 };
