@@ -1007,10 +1007,10 @@ bool DX11Renderer::UploadFramebuffer()
 	if (FB_R_SIZE.fb_x_size == 0 || FB_R_SIZE.fb_y_size == 0)
 		return false;
 
-	PixelBuffer<u32> pb;
-	int width;
-	int height;
-	ReadFramebuffer(pb, width, height);
+	FramebufferRead fb;
+	ReadFramebufferGeometry(&fb);
+	const int width = fb.width;
+	const int height = fb.height;
 
 	if (!fbTexture || width != fbWidth || height != fbHeight)
 	{
@@ -1042,13 +1042,8 @@ bool DX11Renderer::UploadFramebuffer()
 	D3D11_MAPPED_SUBRESOURCE mapped;
 	if (FAILED(deviceContext->Map(fbTexture, 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped)))
 		return false;
-	const u8 *src = (const u8 *)pb.data();
-	u8 *dst = (u8 *)mapped.pData;
-	if (mapped.RowPitch == (UINT)width * 4)
-		memcpy(dst, src, (size_t)width * height * 4);
-	else
-		for (int y = 0; y < height; y++)
-			memcpy(dst + (size_t)y * mapped.RowPitch, src + (size_t)y * width * 4, (size_t)width * 4);
+	// converted straight into the texture the card reads
+	ReadFramebufferTo(&fb, (u8 *)mapped.pData, mapped.RowPitch);
 	deviceContext->Unmap(fbTexture, 0);
 	return true;
 }

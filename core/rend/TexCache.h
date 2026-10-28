@@ -1204,6 +1204,21 @@ protected:
 	const TCW TCWTextureCacheMask = { { 0x1FFFFF, 0, 0, 1, 7, 1, 1 } };
 };
 
+/* The framebuffer the game wrote, as RGBA8: its geometry first, so that a
+ * renderer can find room of that size where the card reads it, then
+ * converted straight there at that room's pitch. ReadFramebuffer() does
+ * both into the texture cache's memory. */
+struct FramebufferRead
+{
+	u32 addr;      /* first texel, in the 32-bit area */
+	int width;     /* pixels */
+	int height;
+	u32 skip;      /* bytes from the end of one row to the next */
+	u32 depth;     /* FB_R_CTRL.fb_depth */
+	u32 concat;    /* FB_R_CTRL.fb_concat */
+};
+void ReadFramebufferGeometry(FramebufferRead *fb);
+void ReadFramebufferTo(const FramebufferRead *fb, u8 *dst, size_t pitch);
 void ReadFramebuffer(PixelBuffer<u32>& pb, int& width, int& height);
 
 static inline void MakeFogTexture(u8 *tex_data)

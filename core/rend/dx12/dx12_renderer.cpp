@@ -121,21 +121,20 @@ static bool makeSamples(DX12Image& image, u32 width, u32 height, u32 samples, bo
 	return true;
 }
 
-/* Rows into the ring and then into @image, which is left to be sampled */
-static bool uploadImage(DX12Image& image, const void *pixels, u32 width, u32 height, u32 bpp)
+/* Room in the ring for @image's rows, at the pitch a copy to a texture wants */
+static u8 *reserveImage(DX12Upload& upload, u32 width, u32 height, u32 bpp, u32 *pitch)
 {
 	DX12Context *context = DX12Context::Instance();
-	if (!image.resource)
-		return false;
-	const u32 pitch = (width * bpp + D3D12_TEXTURE_DATA_PITCH_ALIGNMENT - 1) & ~(D3D12_TEXTURE_DATA_PITCH_ALIGNMENT - 1);
-	DX12Upload upload;
-	if (!context->Upload(pitch * height, D3D12_TEXTURE_DATA_PLACEMENT_ALIGNMENT, upload))
-		return false;
-	if (pitch == width * bpp)
-		memcpy(upload.cpu, pixels, (size_t)pitch * height);
-	else
-		for (u32 y = 0; y < height; y++)
-			memcpy(upload.cpu + (size_t)y * pitch, (const u8 *)pixels + (size_t)y * width * bpp, (size_t)width * bpp);
+	*pitch = (width * bpp + D3D12_TEXTURE_DATA_PITCH_ALIGNMENT - 1) & ~(D3D12_TEXTURE_DATA_PITCH_ALIGNMENT - 1);
+	if (!context->Upload(*pitch * height, D3D12_TEXTURE_DATA_PLACEMENT_ALIGNMENT, upload))
+		return nullptr;
+	return upload.cpu;
+}
+
+/* The rows written to @upload into @image, which is left to be sampled */
+static void recordImage(DX12Image& image, const DX12Upload& upload, u32 width, u32 height, u32 pitch)
+{
+	DX12Context *context = DX12Context::Instance();
 	context->Transition(image, D3D12_RESOURCE_STATE_COPY_DEST);
 	D3D12_TEXTURE_COPY_LOCATION dst{};
 	dst.pResource = image.resource;
@@ -152,6 +151,24 @@ static bool uploadImage(DX12Image& image, const void *pixels, u32 width, u32 hei
 	src.PlacedFootprint.Footprint.RowPitch = pitch;
 	context->Cmd()->CopyTextureRegion(&dst, 0, 0, 0, &src, nullptr);
 	context->Transition(image, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
+}
+
+/* Rows into the ring and then into @image, which is left to be sampled */
+static bool uploadImage(DX12Image& image, const void *pixels, u32 width, u32 height, u32 bpp)
+{
+	if (!image.resource)
+		return false;
+	DX12Upload upload;
+	u32 pitch;
+	u8 *out = reserveImage(upload, width, height, bpp, &pitch);
+	if (out == nullptr)
+		return false;
+	if (pitch == width * bpp)
+		memcpy(out, pixels, (size_t)pitch * height);
+	else
+		for (u32 y = 0; y < height; y++)
+			memcpy(out + (size_t)y * pitch, (const u8 *)pixels + (size_t)y * width * bpp, (size_t)width * bpp);
+	recordImage(image, upload, width, height, pitch);
 	return true;
 }
 
@@ -1578,10 +1595,10 @@ bool DX12Renderer::UploadFramebuffer()
 	if (FB_R_SIZE.fb_x_size == 0 || FB_R_SIZE.fb_y_size == 0)
 		return false;
 
-	PixelBuffer<u32> pb;
-	int width;
-	int height;
-	ReadFramebuffer(pb, width, height);
+	FramebufferRead fb;
+	ReadFramebufferGeometry(&fb);
+	const int width = fb.width;
+	const int height = fb.height;
 
 	if (!fbTexture.resource || (u32)width != fbTexture.width || (u32)height != fbTexture.height)
 	{
@@ -1590,7 +1607,15 @@ bool DX12Renderer::UploadFramebuffer()
 		if (!makeImage(fbTexture, width, height, DXGI_FORMAT_R8G8B8A8_UNORM, false))
 			return false;
 	}
-	return uploadImage(fbTexture, pb.data(), width, height, 4);
+	// converted where the copy to the texture reads it: the upload ring
+	DX12Upload upload;
+	u32 pitch;
+	u8 *out = reserveImage(upload, width, height, 4, &pitch);
+	if (out == nullptr)
+		return false;
+	ReadFramebufferTo(&fb, out, pitch);
+	recordImage(fbTexture, upload, width, height, pitch);
+	return true;
 }
 
 /* Into the screen's picture, where the game's 640x480 is, as the OpenGL

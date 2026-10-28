@@ -1156,13 +1156,15 @@ void BaseTextureCacheData::CheckCustomTexture()
 	}
 }
 
-void ReadFramebuffer(PixelBuffer<u32>& pb, int& width, int& height)
+/* Where the framebuffer is, its format and size, as the registers have it */
+void ReadFramebufferGeometry(FramebufferRead *fb)
 {
-	width = (FB_R_SIZE.fb_x_size + 1) << 1;     // in 16-bit words
-	height = FB_R_SIZE.fb_y_size + 1;
+	int width = (FB_R_SIZE.fb_x_size + 1) << 1;     // in 16-bit words
+	int height = FB_R_SIZE.fb_y_size + 1;
 	int modulus = (FB_R_SIZE.fb_modulus - 1) << 1;
-
 	int bpp;
+	u32 addr;
+
 	switch (FB_R_CTRL.fb_depth)
 	{
 		case FBDE_0555:
@@ -1185,7 +1187,7 @@ void ReadFramebuffer(PixelBuffer<u32>& pb, int& width, int& height)
 			break;
 	}
 
-   u32 addr = FB_R_SOF1;
+	addr = FB_R_SOF1;
 	if (SPG_CONTROL.interlace)
 	{
 		if (width == modulus && FB_R_SOF2 == FB_R_SOF1 + width * bpp)
@@ -1207,96 +1209,116 @@ void ReadFramebuffer(PixelBuffer<u32>& pb, int& width, int& height)
 		height = std::min(height, 240);
 	}
 
-	// handed to the GPU at once by whoever asked: converted where textures are, nothing allocated
-	pb.init(width, height, false, texcache_scratch(PixelBuffer<u32>::bytes(width, height, false)));
-	u8 *dst = (u8*)pb.data();
+	fb->addr = addr;
+	fb->width = width;
+	fb->height = height;
+	fb->skip = modulus * bpp;
+	fb->depth = FB_R_CTRL.fb_depth;
+	fb->concat = FB_R_CTRL.fb_concat;
+}
 
-	switch (FB_R_CTRL.fb_depth)
+#define FB_RGBX(r, g, b) ((u32)(u8)(r) | ((u32)(u8)(g) << 8) | ((u32)(u8)(b) << 16) | 0xFF000000u)
+
+/* The picture as RGBA8, rows @pitch bytes apart from @dst on: each texel
+ * stored once, whole and in order, so @dst may be memory the card reads
+ * (write-combined, never read back) */
+void ReadFramebufferTo(const FramebufferRead *fb, u8 *dst, size_t pitch)
+{
+	const int width = fb->width;
+	const int height = fb->height;
+	const u32 skip = fb->skip;
+	const u32 c = fb->concat;
+	u32 addr = fb->addr;
+	int x;
+	int y;
+
+	switch (fb->depth)
 	{
 		case FBDE_0555:    // 555 RGB
-			for (int y = 0; y < height; y++)
+			for (y = 0; y < height; y++, dst += pitch)
 			{
-				for (int i = 0; i < width; i++)
+				u32 *out = (u32 *)dst;
+				for (x = 0; x < width; x++, addr += 2)
 				{
-					u16 src = pvr_read_area1<u16>(addr);
-					*dst++ = (((src >> 10) & 0x1F) << 3) + FB_R_CTRL.fb_concat;
-					*dst++ = (((src >> 5) & 0x1F) << 3) + FB_R_CTRL.fb_concat;
-					*dst++ = (((src >> 0) & 0x1F) << 3) + FB_R_CTRL.fb_concat;
-					*dst++ = 0xFF;
-					addr += bpp;
+					u32 src = pvr_read_area1<u16>(addr);
+					out[x] = FB_RGBX((((src >> 10) & 0x1F) << 3) + c,
+							(((src >> 5) & 0x1F) << 3) + c,
+							((src & 0x1F) << 3) + c);
 				}
-				addr += modulus * bpp;
+				addr += skip;
 			}
 			break;
 
 		case FBDE_565:    // 565 RGB
-			for (int y = 0; y < height; y++)
+			for (y = 0; y < height; y++, dst += pitch)
 			{
-				for (int i = 0; i < width; i++)
+				u32 *out = (u32 *)dst;
+				for (x = 0; x < width; x++, addr += 2)
 				{
-					u16 src = pvr_read_area1<u16>(addr);
-					*dst++ = (((src >> 11) & 0x1F) << 3) + FB_R_CTRL.fb_concat;
-					*dst++ = (((src >> 5) & 0x3F) << 2) + (FB_R_CTRL.fb_concat & 3);
-					*dst++ = (((src >> 0) & 0x1F) << 3) + FB_R_CTRL.fb_concat;
-					*dst++ = 0xFF;
-					addr += bpp;
+					u32 src = pvr_read_area1<u16>(addr);
+					out[x] = FB_RGBX((((src >> 11) & 0x1F) << 3) + c,
+							(((src >> 5) & 0x3F) << 2) + (c & 3),
+							((src & 0x1F) << 3) + c);
 				}
-				addr += modulus * bpp;
+				addr += skip;
 			}
 			break;
-		case FBDE_888:		// 888 RGB
-			for (int y = 0; y < height; y++)
+
+		case FBDE_888:		// 888 RGB: four pixels in three words
+			for (y = 0; y < height; y++, dst += pitch)
 			{
-				for (int i = 0; i < width; i += 4)
+				u32 *out = (u32 *)dst;
+				for (x = 0; x < width; x += 4)
 				{
 					u32 src = pvr_read_area1<u32>(addr);
-					*dst++ = src >> 16;
-					*dst++ = src >> 8;
-					*dst++ = src;
-					*dst++ = 0xFF;
+					u32 src2;
+					u32 src3;
 					addr += 4;
-					if (i + 1 >= width)
+					*out++ = FB_RGBX(src >> 16, src >> 8, src);
+					if (x + 1 >= width)
 						break;
-					u32 src2 = pvr_read_area1<u32>(addr);
-					*dst++ = src2 >> 8;
-					*dst++ = src2;
-					*dst++ = src >> 24;
-					*dst++ = 0xFF;
+					src2 = pvr_read_area1<u32>(addr);
 					addr += 4;
-					if (i + 2 >= width)
+					*out++ = FB_RGBX(src2 >> 8, src2, src >> 24);
+					if (x + 2 >= width)
 						break;
-					u32 src3 = pvr_read_area1<u32>(addr);
-					*dst++ = src3;
-					*dst++ = src2 >> 24;
-					*dst++ = src2 >> 16;
-					*dst++ = 0xFF;
+					src3 = pvr_read_area1<u32>(addr);
 					addr += 4;
-					if (i + 3 >= width)
+					*out++ = FB_RGBX(src3, src2 >> 24, src2 >> 16);
+					if (x + 3 >= width)
 						break;
-					*dst++ = src3 >> 24;
-					*dst++ = src3 >> 16;
-					*dst++ = src3 >> 8;
-					*dst++ = 0xFF;
+					*out++ = FB_RGBX(src3 >> 24, src3 >> 16, src3 >> 8);
 				}
-				addr += modulus * bpp;
+				addr += skip;
 			}
 			break;
+
 		case FBDE_C888:     // 0888 RGB
-			for (int y = 0; y < height; y++)
+			for (y = 0; y < height; y++, dst += pitch)
 			{
-				for (int i = 0; i < width; i++)
+				u32 *out = (u32 *)dst;
+				for (x = 0; x < width; x++, addr += 4)
 				{
 					u32 src = pvr_read_area1<u32>(addr);
-					*dst++ = src >> 16;
-					*dst++ = src >> 8;
-					*dst++ = src;
-					*dst++ = 0xFF;
-					addr += bpp;
+					out[x] = FB_RGBX(src >> 16, src >> 8, src);
 				}
-				addr += modulus * bpp;
+				addr += skip;
 			}
 			break;
 	}
+}
+
+#undef FB_RGBX
+
+/* For a renderer with nowhere of its own to convert to: where textures are converted */
+void ReadFramebuffer(PixelBuffer<u32>& pb, int& width, int& height)
+{
+	FramebufferRead fb;
+	ReadFramebufferGeometry(&fb);
+	width = fb.width;
+	height = fb.height;
+	pb.init(width, height, false, texcache_scratch(PixelBuffer<u32>::bytes(width, height, false)));
+	ReadFramebufferTo(&fb, (u8 *)pb.data(), (size_t)width * 4);
 }
 
 static void rend_text_invl(vram_block* bl)

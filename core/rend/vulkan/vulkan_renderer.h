@@ -238,14 +238,28 @@ protected:
 			return false;
 		}
 
-		PixelBuffer<u32> pb;
-		int width;
-		int height;
-		ReadFramebuffer(pb, width, height);
+		FramebufferRead fb;
+		ReadFramebufferGeometry(&fb);
+		const int width = fb.width;
+		const int height = fb.height;
+		const size_t bytes = (size_t)width * height * 4;
 
 		std::unique_ptr<Texture>& curTexture = FramebufferTexture();
 		curTexture->SetCommandBuffer(texCommandPool.Allocate());
-		curTexture->UploadToGPU(width, height, (u8*)pb.data(), false);
+		/* converted where the copy to the image reads it: the upload ring */
+		u8 *pixels = (u8 *)curTexture->UploadMemory(width, height, bytes, 4, false);
+		PixelBuffer<u32> pb;
+		if (pixels != nullptr)
+			ReadFramebufferTo(&fb, pixels, (size_t)width * 4);
+		else
+		{
+			// (no room in the ring, or an image written where it is)
+			int w;
+			int h;
+			ReadFramebuffer(pb, w, h);
+			pixels = (u8 *)pb.data();
+		}
+		curTexture->UploadToGPU(width, height, pixels, false);
 		curTexture->SetCommandBuffer(nullptr);
 		PresentTexture(*curTexture, width, height, { 640, 480 });
 
