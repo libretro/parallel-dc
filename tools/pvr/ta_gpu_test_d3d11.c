@@ -7,7 +7,7 @@
  * a dynamic buffer - the data at an offset into it (TAG_T_TA_BASE) every
  * other decode, as the renderers' ring puts them - the dispatches that go
  * by strips DispatchIndirect() of a copy of the frame's words, the sorted
- * indices given to their buffer with UpdateSubresource() and changed in
+ * indices written to a dynamic buffer, copied to theirs and changed in
  * place by the prepass's kernel, eight views bound and the two kernels'
  * own at u1. Not NVAPI's multi-draw, nor its UAV
  * overlap: what the draws are given, the commands and the translucent
@@ -38,7 +38,7 @@ enum { R_SRT = 9 };
 static ID3D11Device *device;
 static ID3D11DeviceContext *dc;
 static ID3D11ComputeShader *kernels[TAG_KERNELS + 1];
-static ID3D11Buffer *bufs[B_COUNT], *input, *groups_cb, *readback;
+static ID3D11Buffer *bufs[B_COUNT], *input, *groups_cb, *readback, *sort_upload;
 /* (u0 to u7 bound, the polygon words and the sorted indices at u1 for the
  * kernel that writes them: see dx11_ta_decoder.cpp) */
 enum { UAV_SLOTS = 8 };
@@ -191,6 +191,7 @@ static void init(const char *dir)
    free(words);
    bufs[B_SORT] = make_buffer(sizes[B_SORT], D3D11_BIND_INDEX_BUFFER | D3D11_BIND_UNORDERED_ACCESS, 0, D3D11_USAGE_DEFAULT, NULL);
    sort_uav = make_uav(bufs[B_SORT], sizes[B_SORT]);
+   sort_upload = make_buffer(sizes[B_SORT], D3D11_BIND_SHADER_RESOURCE, 0, D3D11_USAGE_DYNAMIC, NULL);
    {
       static const unsigned zero[4];
       groups_cb = make_buffer(16, D3D11_BIND_CONSTANT_BUFFER, 0, D3D11_USAGE_DEFAULT, zero);
@@ -237,12 +238,15 @@ static void decode(unsigned call, const unsigned *head, const unsigned char *ta,
       copy(bufs[B_TRD], 0, bufs[B_ZERO], 0, trd * TAG_C_WORDS * 4);
    if (checks != 0)
    {
-      D3D11_BOX part;
-      part.left = 0;
-      part.right = srt_words * 4;
-      part.top = part.front = 0;
-      part.bottom = part.back = 1;
-      ID3D11DeviceContext_UpdateSubresource(dc, (ID3D11Resource *)bufs[B_SORT], 0, &part, srt, 0, 0);
+      D3D11_MAPPED_SUBRESOURCE s;
+      if (FAILED(ID3D11DeviceContext_Map(dc, (ID3D11Resource *)sort_upload, 0, D3D11_MAP_WRITE_DISCARD, 0, &s)))
+      {
+         errors++;
+         return;
+      }
+      memcpy(s.pData, srt, (size_t)srt_words * 4);
+      ID3D11DeviceContext_Unmap(dc, (ID3D11Resource *)sort_upload, 0);
+      copy(bufs[B_SORT], 0, sort_upload, 0, srt_words * 4);
    }
 
    inputs[0] = ring_view;

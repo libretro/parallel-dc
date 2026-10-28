@@ -93,9 +93,11 @@ struct DX11TaDecoder::Resources
 	 * which HLSL does not tell them */
 	ComPtr<ID3D11Buffer> groups;
 	u32 groupsSet = 0;
-	/* (TA_GPU_SORT) the CPU's sort's words, written here and given to the
-	 * buffer the prepass's kernel changes in place */
-	std::vector<u32> sortWords;
+	/* (TA_GPU_SORT) the CPU's sort's words, written where this maps it
+	 * (discarded each frame), and copied by the GPU to the buffer the
+	 * prepass's kernel changes in place */
+	ComPtr<ID3D11Buffer> sortUpload;
+	u32 sortWords = 0;
 	bool overlap = false;		// NVAPI's UAV overlap for the last kernels
 };
 
@@ -263,19 +265,21 @@ bool DX11TaDecoder::Init()
 	if (!ok)
 		return no("its kernels could not be made");
 
-	/* The sorted indices, in video memory the CPU's words are given to
-	 * (UpdateSubresource()) and the prepass's kernel changes in place */
+	/* The sorted indices, in video memory the prepass's kernel changes in
+	 * place, copied there from the dynamic buffer the CPU writes them in */
 	if (sortWanted)
 	{
-		r->sortWords.assign(sortWords, 0);
+		r->sortWords = (u32)sortWords;
+		// (a dynamic buffer has to be bound to something: never bound)
 		if (!makeBuffer(device, r->sizes[B_SORT], D3D11_BIND_INDEX_BUFFER | D3D11_BIND_UNORDERED_ACCESS, 0, D3D11_USAGE_DEFAULT,
 					nullptr, r->buffers[B_SORT])
-				|| !makeUav(device, r->buffers[B_SORT], r->sizes[B_SORT], r->sortUav))
+				|| !makeUav(device, r->buffers[B_SORT], r->sizes[B_SORT], r->sortUav)
+				|| !makeBuffer(device, r->sizes[B_SORT], D3D11_BIND_SHADER_RESOURCE, 0, D3D11_USAGE_DYNAMIC, nullptr, r->sortUpload))
 		{
 			r->buffers[B_SORT].reset();
 			r->sortUav.reset();
-			r->sortWords.clear();
-			r->sortWords.shrink_to_fit();
+			r->sortUpload.reset();
+			r->sortWords = 0;
 		}
 	}
 
@@ -490,10 +494,22 @@ void DX11TaDecoder::Record(TA_context *ctx)
 	const u32 checks = sorted ? ta_gpu_prepass_checks() : 0;
 	if (sorted)
 	{
-		const u32 words = std::min<u32>(ta_gpu_sorted_words(), (u32)r.sortWords.size());
-		ta_gpu_sorted_write(r.sortWords.data());
+		const u32 words = std::min<u32>(ta_gpu_sorted_words(), r.sortWords);
 		const D3D11_BOX part{ 0, 0, 0, words * 4, 1, 1 };
-		dc->UpdateSubresource(r.buffers[B_SORT], 0, &part, r.sortWords.data(), 0, 0);
+		D3D11_MAPPED_SUBRESOURCE mapped;
+		if (SUCCEEDED(dc->Map(r.sortUpload, 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped)))
+		{
+			ta_gpu_sorted_write((u32 *)mapped.pData);
+			dc->Unmap(r.sortUpload, 0);
+			dc->CopySubresourceRegion(r.buffers[B_SORT], 0, 0, 0, 0, r.sortUpload, 0, &part);
+		}
+		else
+		{
+			// (as it was given before there was a buffer to map)
+			std::vector<u32> staged(r.sortWords);
+			ta_gpu_sorted_write(staged.data());
+			dc->UpdateSubresource(r.buffers[B_SORT], 0, &part, staged.data(), 0, 0);
+		}
 	}
 
 	ID3D11ShaderResourceView * const inputs[2] = { r.ringView, r.tableViews[r.piece] };
