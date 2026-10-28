@@ -49,6 +49,7 @@
  * Runs the HDR post effects the options ask for on the 24-bit picture on
  * the CPU (tools/hdr/hdr_post_ref.c) and fails where the scRGB picture is
  * not what they make of it. */
+#define _GNU_SOURCE 1 /* dladdr */
 #include <math.h>
 #include <stdarg.h>
 #include <stdint.h>
@@ -60,6 +61,8 @@
 #include "libretro.h"
 #include "libretro_vulkan.h"
 #include <dlfcn.h>
+#include <pthread.h>
+#include <time.h>
 #include "../hdr/hdr_post_ref.h"
 
 #define VKH_SYNC_IMAGES 3
@@ -81,6 +84,122 @@ static unsigned frame_w, frame_h;
 
 static PFN_vkGetInstanceProcAddr gipa;
 static PFN_vkGetDeviceProcAddr gdpa;
+
+/* VKH_COUNT_PIPELINES: the core's pipelines counted by where they are made -
+ * on this, the frontend's thread, while the context is made ("load") or in
+ * retro_run ("play"), or on a thread of the core's ("other", its pipeline
+ * worker). The core's lookups go through these wrappers. */
+static pthread_t vkh_main_thread;
+static int vkh_in_run;
+static long vkh_pipes_load, vkh_pipes_play, vkh_pipes_other;
+/* the core's threads that made pipelines, and the one that hands the
+ * frames over (its renderer's); a pipeline made on that one in a frame is
+ * a frame waiting for it */
+#define VKH_THREADS 8
+static pthread_t vkh_threads[VKH_THREADS];
+static long vkh_thread_pipes[VKH_THREADS];
+static int vkh_nthreads;
+static pthread_t vkh_present_thread;
+static int vkh_have_present;
+static long vkh_pipes_present_after_first;
+static unsigned vkh_frames_handed;
+static pthread_mutex_t vkh_lock = PTHREAD_MUTEX_INITIALIZER;
+static PFN_vkGetDeviceProcAddr       vkh_real_gdpa;
+static PFN_vkCreateGraphicsPipelines vkh_real_cgp;
+static PFN_vkCreateComputePipelines  vkh_real_ccp;
+
+static void vkh_count(uint32_t n)
+{
+   if (!pthread_equal(pthread_self(), vkh_main_thread))
+   {
+      int i;
+      pthread_mutex_lock(&vkh_lock);
+      vkh_pipes_other += n;
+      for (i = 0; i < vkh_nthreads; i++)
+         if (pthread_equal(vkh_threads[i], pthread_self()))
+            break;
+      if (i == vkh_nthreads && i < VKH_THREADS)
+         vkh_threads[vkh_nthreads++] = pthread_self();
+      if (i < VKH_THREADS)
+         vkh_thread_pipes[i] += n;
+      if (vkh_have_present && pthread_equal(pthread_self(), vkh_present_thread) && vkh_frames_handed > 1)
+         vkh_pipes_present_after_first += n;
+      pthread_mutex_unlock(&vkh_lock);
+   }
+   else if (vkh_in_run)
+      vkh_pipes_play += n;
+   else
+      vkh_pipes_load += n;
+}
+
+/* VKH_PIPELINE_CALLERS: where on the frontend's thread each was asked for
+ * (the caller's address in the core; addr2line resolves it) */
+static void vkh_caller(void *ret)
+{
+   Dl_info info;
+   if (getenv("VKH_PIPELINE_CALLERS") && pthread_equal(pthread_self(), vkh_main_thread)
+         && dladdr(ret, &info) && info.dli_fname)
+      fprintf(stderr, "vk_hdr: pipeline asked for at %s+0x%lx (%s, frame %u)\n", info.dli_fname,
+            (unsigned long)((char *)ret - (char *)info.dli_fbase),
+            vkh_in_run ? "in retro_run" : "context", vkh_frames_handed);
+}
+
+static VKAPI_ATTR VkResult VKAPI_CALL vkh_cgp(VkDevice d, VkPipelineCache c, uint32_t n,
+      const VkGraphicsPipelineCreateInfo *ci, const VkAllocationCallbacks *a, VkPipeline *out)
+{
+   vkh_caller(__builtin_return_address(0));
+   vkh_count(n);
+   return vkh_real_cgp(d, c, n, ci, a, out);
+}
+
+static VKAPI_ATTR VkResult VKAPI_CALL vkh_ccp(VkDevice d, VkPipelineCache c, uint32_t n,
+      const VkComputePipelineCreateInfo *ci, const VkAllocationCallbacks *a, VkPipeline *out)
+{
+   vkh_caller(__builtin_return_address(0));
+   vkh_count(n);
+   return vkh_real_ccp(d, c, n, ci, a, out);
+}
+
+static VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL vkh_count_gdpa(VkDevice d, const char *name);
+
+static PFN_vkVoidFunction vkh_wrap(PFN_vkVoidFunction real, const char *name)
+{
+   if (!real)
+      return NULL;
+   if (!strcmp(name, "vkCreateGraphicsPipelines"))
+   {
+      vkh_real_cgp = (PFN_vkCreateGraphicsPipelines)real;
+      return (PFN_vkVoidFunction)vkh_cgp;
+   }
+   if (!strcmp(name, "vkCreateComputePipelines"))
+   {
+      vkh_real_ccp = (PFN_vkCreateComputePipelines)real;
+      return (PFN_vkVoidFunction)vkh_ccp;
+   }
+   if (!strcmp(name, "vkGetDeviceProcAddr"))
+   {
+      vkh_real_gdpa = (PFN_vkGetDeviceProcAddr)real;
+      return (PFN_vkVoidFunction)vkh_count_gdpa;
+   }
+   return real;
+}
+
+static VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL vkh_count_gdpa(VkDevice d, const char *name)
+{
+   return vkh_wrap(vkh_real_gdpa(d, name), name);
+}
+
+static VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL vkh_count_gipa(VkInstance inst, const char *name)
+{
+   return inst ? vkh_wrap(gipa(inst, name), name) : gipa(inst, name);
+}
+
+static double vkh_now_ms(void)
+{
+   struct timespec t;
+   clock_gettime(CLOCK_MONOTONIC, &t);
+   return (double)t.tv_sec * 1000.0 + (double)t.tv_nsec / 1e6;
+}
 
 /* the upscaler: the sizes VKH_UPSCALER names, and what the core handed over */
 static unsigned up_out_w, up_out_h, up_render_w, up_render_h;
@@ -284,6 +403,11 @@ static void set_image(void *h, const struct retro_vulkan_image *image, uint32_t 
       const VkSemaphore *sem, uint32_t family)
 {
    (void)h; (void)n; (void)sem; (void)family;
+   pthread_mutex_lock(&vkh_lock);
+   vkh_present_thread = pthread_self();
+   vkh_have_present   = 1;
+   vkh_frames_handed++;
+   pthread_mutex_unlock(&vkh_lock);
    if (image == NULL)
    {
       have_handed = 0;
@@ -826,6 +950,7 @@ int main(int argc, char **argv)
    PFN_vkEnumerateInstanceLayerProperties p_vkEnumerateInstanceLayerProperties;
    PFN_vkEnumeratePhysicalDevices p_vkEnumeratePhysicalDevices;
    unsigned frames;
+   PFN_vkGetInstanceProcAddr core_gipa;
    const char *fe = getenv("VKH_FRONTEND");
    VkFormat expect;
 
@@ -953,12 +1078,14 @@ int main(int argc, char **argv)
       return finish(2);
    }
    memset(&ctx, 0, sizeof(ctx));
-   if (!neg->create_device2(&ctx, instance, gpu, VK_NULL_HANDLE, gipa, NULL, NULL))
+   vkh_main_thread = pthread_self();
+   core_gipa = getenv("VKH_COUNT_PIPELINES") ? vkh_count_gipa : gipa;
+   if (!neg->create_device2(&ctx, instance, gpu, VK_NULL_HANDLE, core_gipa, NULL, NULL))
    {
       fprintf(stderr, "vk_hdr: create_device2 failed\n");
       return finish(1);
    }
-   gdpa = (PFN_vkGetDeviceProcAddr)gipa(instance, "vkGetDeviceProcAddr");
+   gdpa = (PFN_vkGetDeviceProcAddr)core_gipa(instance, "vkGetDeviceProcAddr");
 
    memset(&iface, 0, sizeof(iface));
    iface.interface_type        = RETRO_HW_RENDER_INTERFACE_VULKAN;
@@ -967,7 +1094,7 @@ int main(int argc, char **argv)
    iface.gpu                   = gpu;
    iface.device                = ctx.device;
    iface.get_device_proc_addr  = gdpa;
-   iface.get_instance_proc_addr = gipa;
+   iface.get_instance_proc_addr = core_gipa;
    iface.queue                 = ctx.queue;
    iface.queue_index           = ctx.queue_family_index;
    iface.set_image             = set_image;
@@ -978,11 +1105,50 @@ int main(int argc, char **argv)
    iface.lock_queue            = lock_queue;
    iface.unlock_queue          = unlock_queue;
    iface.set_signal_semaphore  = set_signal_semaphore;
-   hw.context_reset();
    {
       CORE_FN(run_t, retro_run);
+      double t0 = vkh_now_ms(), reset_ms, first = 0.0, longest = 0.0;
+      hw.context_reset();
+      reset_ms = vkh_now_ms() - t0;
+      /* VKH_LOAD_PAUSE_MS: what a frontend spends between the context and
+       * the first frame (its own loading) */
+      if (getenv("VKH_LOAD_PAUSE_MS"))
+      {
+         struct timespec p;
+         long ms = atol(getenv("VKH_LOAD_PAUSE_MS"));
+         p.tv_sec  = ms / 1000;
+         p.tv_nsec = (ms % 1000) * 1000000L;
+         nanosleep(&p, NULL);
+      }
       for (frame_no = 0; frame_no < frames; frame_no++)
+      {
+         double dt;
+         t0 = vkh_now_ms();
+         vkh_in_run = 1;
          retro_run();
+         vkh_in_run = 0;
+         dt = vkh_now_ms() - t0;
+         if (frame_no == 0)
+            first = dt;
+         else if (dt > longest)
+            longest = dt;
+      }
+      if (getenv("VKH_COUNT_PIPELINES"))
+      {
+         int i;
+         pthread_mutex_lock(&vkh_lock);
+         for (i = 0; i < vkh_nthreads; i++)
+            printf("vk_hdr: thread %d: %ld pipelines%s\n", i, vkh_thread_pipes[i],
+                  vkh_have_present && pthread_equal(vkh_threads[i], vkh_present_thread) ? " (hands the frames over)" : "");
+         printf("vk_hdr: pipelines made by the thread that hands the frames over after its first frame: %ld\n",
+               vkh_pipes_present_after_first);
+         pthread_mutex_unlock(&vkh_lock);
+      }
+      if (getenv("VKH_COUNT_PIPELINES"))
+         printf("vk_hdr: pipelines: %ld made on the frontend's thread while the context was made, "
+               "%ld in retro_run, %ld on the core's threads; context %.2f ms, first frame %.2f ms, "
+               "longest after it %.2f ms\n", vkh_pipes_load, vkh_pipes_play,
+               __sync_fetch_and_add(&vkh_pipes_other, 0), reset_ms, first, longest);
    }
    if (!have_handed || frame_w == 0)
    {
@@ -1020,6 +1186,16 @@ int main(int argc, char **argv)
       }
       if (!check_upscaler_inputs(argv[3]))
          return finish(1);
+   }
+   /* VKH_UNLOAD: the core's own teardown after the frames, as a frontend
+    * closing the content does (it saves what it keeps, e.g. the pipeline
+    * cache) */
+   if (getenv("VKH_UNLOAD"))
+   {
+      CORE_FN(init_t, retro_unload_game);
+      CORE_FN(init_t, retro_deinit);
+      retro_unload_game();
+      retro_deinit();
    }
    if (validation_errors)
       return finish(1);
