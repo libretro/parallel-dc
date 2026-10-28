@@ -13,7 +13,12 @@
 #  - a third, with the file's driver data spoiled (as a new driver would
 #    find it): the keys are still taken (the core's log says how many it
 #    loaded), none made there either;
-#  - the three pictures are the same, to the byte.
+#  - a fourth, without the cache file, on the device with
+#    VK_EXT_extended_dynamic_state hidden (VKH_HIDE_EXT): the pipelines
+#    made then have their cull modes in them, a pipeline each; the first
+#    three set it with the draws where the device has it (the core's log
+#    says), and made some with it dynamic;
+#  - the four pictures are the same, to the byte.
 #
 # How many a frame made itself (the pipeline thread had not got to them)
 # is shown; with VKP_STRICT=1 the second and third runs must have made
@@ -37,7 +42,8 @@ ${CC:-cc} -O1 -g -Wall -I./core/libretro-common/include -I./core/deps/khronos \
    -DTARGET_NO_THREADS -o "$WORK/vk_hdr" tools/vulkan/vk_hdr.c tools/hdr/hdr_post_ref.c \
    core/rend/hdr/hdr_output.c core/rend/hdr/hdr_transform.c core/rend/hdr/hdr_aces2.c \
    core/rend/hdr/hdr_libretro.c core/rend/hdr/hdr_display.c -ldl -lm -lpthread
-python3 tools/threads/live_disc.py "$WORK/test.gdi"
+# (the build with modifier volumes and translucent polygons of each cull mode)
+python3 tools/threads/live_disc.py "$WORK/test.gdi" --cull
 FRAMES=${VKP_FRAMES:-70}
 PAUSE=${VKP_PAUSE:-5000}
 fails=0
@@ -45,10 +51,17 @@ fails=0
 # run <dir> <name> <options...>: prints the counts' line
 run() {
    dir=$1; name=$2; shift 2
-   VKH_VERBOSE=1 VKH_DIR=$dir VKH_FRONTEND=sdr VKH_COUNT_PIPELINES=1 VKH_UNLOAD=1 VKH_LOAD_PAUSE_MS=$PAUSE \
+   env ${HIDE:+VKH_HIDE_EXT=$HIDE} VKH_VERBOSE=1 VKH_DIR=$dir VKH_FRONTEND=sdr VKH_COUNT_PIPELINES=1 VKH_UNLOAD=1 VKH_LOAD_PAUSE_MS=$PAUSE \
       "$WORK/vk_hdr" "$CORE" "$WORK/test.gdi" "$dir/$name.raw" $FRAMES "$@" > "$dir/$name.log" 2>&1 || {
       { echo "  FAIL: the $name run failed:"; grep -v '^vk_hdr: pipeline' "$dir/$name.log" | tail -5; } >&2; return 1; }
    grep 'vk_hdr: pipelines: [0-9]' "$dir/$name.log" | sed 's/vk_hdr: pipelines: //'
+}
+# the graphics pipelines made with the cull mode dynamic, and whether the core drew with it dynamic
+dynamic_made() {
+   sed -n 's/.*by cull mode: .* none, .* front, .* back, \([0-9]*\) dynamic.*/\1/p' "$1"
+}
+dynamic_drawn() {
+   grep -q 'general pipelines drawn with dynamic depth, stencil, cull' "$1" && echo 1 || echo 0
 }
 # the cache file's keys (-1 if there is no file, or it is not one)
 keys() {
@@ -105,7 +118,24 @@ EOF
          echo "  FAIL: $name took no keys from the cache file"; fails=$((fails + 1))
       fi
    done
-   for name in warm driver; do
+   if [ -f "$dir/cold.log" ]; then
+      echo "  cold: $(sed -n 's/vk_hdr: graphics pipelines by cull mode: //p' "$dir/cold.log")"
+      if [ "$(dynamic_drawn "$dir/cold.log")" = 1 ] && [ "$(dynamic_made "$dir/cold.log")" = 0 ]; then
+         echo "  FAIL: the device sets the cull mode with the draws, and no pipeline has it dynamic"; fails=$((fails + 1))
+      fi
+   fi
+   fixed="$WORK/fixed"; rm -rf "$fixed"; mkdir -p "$fixed"
+   if line=$(HIDE=VK_EXT_extended_dynamic_state run "$fixed" cold "$@"); then
+      echo "  without the extension: $line"
+      echo "  without the extension: $(sed -n 's/vk_hdr: graphics pipelines by cull mode: //p' "$fixed/cold.log")"
+      if [ "$(dynamic_drawn "$fixed/cold.log")" = 1 ] || [ "$(dynamic_made "$fixed/cold.log")" != 0 ]; then
+         echo "  FAIL: without the extension, the cull mode was dynamic"; fails=$((fails + 1))
+      fi
+      cp "$fixed/cold.raw" "$dir/fixed.raw"
+   else
+      fails=$((fails + 1))
+   fi
+   for name in warm driver fixed; do
       if ! cmp -s "$dir/cold.raw" "$dir/$name.raw"; then
          echo "  FAIL: the $name picture is not the first run's"; fails=$((fails + 1))
       fi

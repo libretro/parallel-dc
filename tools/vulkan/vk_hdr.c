@@ -144,12 +144,73 @@ static void vkh_caller(void *ret)
             vkh_in_run ? "in retro_run" : "context", vkh_frames_handed);
 }
 
+/* ...and the graphics ones by their cull mode: none, front, back, or set
+ * with the draws (VK_DYNAMIC_STATE_CULL_MODE); and the draws' settings of
+ * it (vkCmdSetCullModeEXT) */
+#define VKH_DYNAMIC_STATE_CULL_MODE 1000267000
+static long vkh_culls[4];
+static long vkh_cull_sets;
+static PFN_vkVoidFunction vkh_real_set_cull;
+
 static VKAPI_ATTR VkResult VKAPI_CALL vkh_cgp(VkDevice d, VkPipelineCache c, uint32_t n,
       const VkGraphicsPipelineCreateInfo *ci, const VkAllocationCallbacks *a, VkPipeline *out)
 {
+   uint32_t i, j;
    vkh_caller(__builtin_return_address(0));
    vkh_count(n);
+   for (i = 0; i < n; i++)
+   {
+      int kind = ci[i].pRasterizationState ? (int)(ci[i].pRasterizationState->cullMode & 3) : 0;
+      if (ci[i].pDynamicState)
+         for (j = 0; j < ci[i].pDynamicState->dynamicStateCount; j++)
+            if ((int)ci[i].pDynamicState->pDynamicStates[j] == VKH_DYNAMIC_STATE_CULL_MODE)
+               kind = 3;
+      __sync_fetch_and_add(&vkh_culls[kind], 1);
+   }
    return vkh_real_cgp(d, c, n, ci, a, out);
+}
+
+static VKAPI_ATTR void VKAPI_CALL vkh_set_cull(VkCommandBuffer cmd, VkCullModeFlags mode)
+{
+   __sync_fetch_and_add(&vkh_cull_sets, 1);
+   ((void (VKAPI_PTR *)(VkCommandBuffer, VkCullModeFlags))vkh_real_set_cull)(cmd, mode);
+}
+
+/* VKH_HIDE_EXT=<name>: the device without that extension, as far as the
+ * core can tell (a device that does not have it) */
+static PFN_vkEnumerateDeviceExtensionProperties vkh_real_enum_ext;
+
+static VKAPI_ATTR VkResult VKAPI_CALL vkh_enum_ext(VkPhysicalDevice gpu, const char *layer,
+      uint32_t *count, VkExtensionProperties *props)
+{
+   const char *hide = getenv("VKH_HIDE_EXT");
+   VkExtensionProperties *all;
+   uint32_t n = 0, i, kept = 0;
+   VkResult res;
+   if (!hide || layer)
+      return vkh_real_enum_ext(gpu, layer, count, props);
+   res = vkh_real_enum_ext(gpu, NULL, &n, NULL);
+   if (res != VK_SUCCESS)
+      return res;
+   all = (VkExtensionProperties *)calloc(n ? n : 1, sizeof(*all));
+   vkh_real_enum_ext(gpu, NULL, &n, all);
+   for (i = 0; i < n; i++)
+      if (strcmp(all[i].extensionName, hide))
+      {
+         if (props && kept < *count)
+            props[kept] = all[i];
+         kept++;
+      }
+   free(all);
+   if (!props)
+   {
+      *count = kept;
+      return VK_SUCCESS;
+   }
+   res = kept > *count ? VK_INCOMPLETE : VK_SUCCESS;
+   if (kept < *count)
+      *count = kept;
+   return res;
 }
 
 static VKAPI_ATTR VkResult VKAPI_CALL vkh_ccp(VkDevice d, VkPipelineCache c, uint32_t n,
@@ -180,6 +241,16 @@ static PFN_vkVoidFunction vkh_wrap(PFN_vkVoidFunction real, const char *name)
    {
       vkh_real_gdpa = (PFN_vkGetDeviceProcAddr)real;
       return (PFN_vkVoidFunction)vkh_count_gdpa;
+   }
+   if (!strcmp(name, "vkCmdSetCullModeEXT") || !strcmp(name, "vkCmdSetCullMode"))
+   {
+      vkh_real_set_cull = real;
+      return (PFN_vkVoidFunction)vkh_set_cull;
+   }
+   if (!strcmp(name, "vkEnumerateDeviceExtensionProperties"))
+   {
+      vkh_real_enum_ext = (PFN_vkEnumerateDeviceExtensionProperties)real;
+      return (PFN_vkVoidFunction)vkh_enum_ext;
    }
    return real;
 }
@@ -1079,7 +1150,7 @@ int main(int argc, char **argv)
    }
    memset(&ctx, 0, sizeof(ctx));
    vkh_main_thread = pthread_self();
-   core_gipa = getenv("VKH_COUNT_PIPELINES") ? vkh_count_gipa : gipa;
+   core_gipa = getenv("VKH_COUNT_PIPELINES") || getenv("VKH_HIDE_EXT") ? vkh_count_gipa : gipa;
    if (!neg->create_device2(&ctx, instance, gpu, VK_NULL_HANDLE, core_gipa, NULL, NULL))
    {
       fprintf(stderr, "vk_hdr: create_device2 failed\n");
@@ -1149,6 +1220,11 @@ int main(int argc, char **argv)
                "%ld in retro_run, %ld on the core's threads; context %.2f ms, first frame %.2f ms, "
                "longest after it %.2f ms\n", vkh_pipes_load, vkh_pipes_play,
                __sync_fetch_and_add(&vkh_pipes_other, 0), reset_ms, first, longest);
+      if (getenv("VKH_COUNT_PIPELINES"))
+         printf("vk_hdr: graphics pipelines by cull mode: %ld none, %ld front, %ld back, %ld dynamic; "
+               "cull mode set %ld times, %.2f a frame\n", __sync_fetch_and_add(&vkh_culls[0], 0),
+               __sync_fetch_and_add(&vkh_culls[1], 0), __sync_fetch_and_add(&vkh_culls[2], 0),
+               __sync_fetch_and_add(&vkh_culls[3], 0), vkh_cull_sets, frames ? (double)vkh_cull_sets / frames : 0.0);
    }
    if (!have_handed || frame_w == 0)
    {

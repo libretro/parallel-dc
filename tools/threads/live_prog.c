@@ -27,7 +27,8 @@
  * and paste the bytes of live_prog.bin into PROGRAM; the same again with
  * -DNO_REGION_ARRAY for PROGRAM_NO_REGION_ARRAY, with -DLIVE_MMU_ALIGN
  * for PROGRAM_MMU_ALIGN, with -DLIVE_SLANT for PROGRAM_SLANT, and with
- * -DLIVE_SLANT -DLIVE_HSCALE for PROGRAM_HSCALE. */
+ * -DLIVE_SLANT -DLIVE_HSCALE for PROGRAM_HSCALE, and with -DLIVE_CULL for
+ * PROGRAM_CULL. */
 typedef unsigned int u32;
 typedef unsigned short u16;
 #define PVR(off) (*(volatile u32 *)(0xA05F8000 + (off)))
@@ -472,6 +473,31 @@ static void ta_volume_part(u32 pcw, u32 x0, u32 y0, u32 x1, u32 y1, u32 near)
    ta_volume_triangle(x1, y0, x0, y1, x1, y1, F(0.25f));
 }
 
+#ifdef LIVE_CULL
+/* The same slab, its triangles all wound the same way, under the ISP cull
+ * mode @cull (2: culled if negative, 3: if positive): one of the two culls
+ * every triangle of it, and it shadows nothing; the other none. */
+static void ta_volume_culled(u32 cull, u32 x0, u32 y0, u32 x1, u32 y1, u32 near)
+{
+   ta_send(TA_POLYGON | TA_MODIFIER, cull << 27, 0, 0, 0, 0, 0, 0);
+   ta_volume_triangle(x0, y0, x0, y1, x1, y0, near);
+   ta_volume_triangle(x1, y0, x0, y1, x1, y1, near);
+   ta_volume_triangle(x0, y0, x0, y1, x1, y0, F(0.25f));
+   ta_send(TA_POLYGON | TA_MODIFIER, (1u << 29) | (1u << 26) | (cull << 27), 0, 0, 0, 0, 0, 0);
+   ta_volume_triangle(x1, y0, x0, y1, x1, y1, F(0.25f));
+}
+
+/* A translucent rectangle as ta_quad() sends one, under the ISP cull mode @cull */
+static void ta_quad_culled(u32 cull, u32 white, u32 z, u32 x0, u32 y0, u32 x1, u32 y1)
+{
+   ta_send(TA_POLYGON | TA_TRANSLUCENT, ISP_GEQUAL | (cull << 27), TSP_BLEND, 0, 0, 0, 0, 0);
+   ta_send(TA_VERTEX, x0, y0, z, 0, 0, white, 0);
+   ta_send(TA_VERTEX, x0, y1, z, 0, 0, white, 0);
+   ta_send(TA_VERTEX, x1, y0, z, 0, 0, white, 0);
+   ta_send(TA_VERTEX | TA_LAST, x1, y1, z, 0, 0, white, 0);
+}
+#endif
+
 static void ta_volume(u32 x0, u32 y0, u32 x1, u32 y1, u32 near)
 {
    ta_volume_part(0, x0, y0, x1, y1, near);
@@ -585,8 +611,18 @@ static void ta_scene(void)
    ta_send(TA_VERTEX, F(150.1f), F(205.9f), F(0.92f), 0, 0, 0xFF10E010, 0);
    ta_send(TA_VERTEX | TA_LAST, F(290.6f), F(130.2f), F(0.92f), 0, 0, 0xFF1010E0, 0);
 #endif
+#ifdef LIVE_CULL
+   /* With -DLIVE_CULL, on the left: two white polygons that take shadows,
+    * under the two volumes below, which differ only in their cull modes */
+   ta_quad(TA_SHADOW, TSP_PLAIN, 0, 0xFFFFFFFF, F(0.5f), F(8.0f), F(150.0f), F(40.0f), F(170.0f));
+   ta_quad(TA_SHADOW, TSP_PLAIN, 0, 0xFFFFFFFF, F(0.5f), F(8.0f), F(176.0f), F(40.0f), F(196.0f));
+#endif
    ta_send(0, 0, 0, 0, 0, 0, 0, 0);                    /* end of the opaque list */
 
+#ifdef LIVE_CULL
+   ta_volume_culled(2, F(4.0f), F(146.0f), F(44.0f), F(174.0f), F(0.75f));
+   ta_volume_culled(3, F(4.0f), F(174.0f), F(44.0f), F(200.0f), F(0.75f));
+#endif
    ta_volume_part(0, x0, y0, x1, y1, F(0.75f));
    ta_volume_part(0, F(220.0f), F(210.0f), F(244.0f), F(239.0f), F(0.75f));
    ta_send(1u << 29, 0, 0, 0, 2, 6, 2, 6);             /* the clipping rectangle: tile column 2, row 6 */
@@ -610,6 +646,13 @@ static void ta_scene(void)
     * do. The other way round the overlap comes out reddish, not purple. */
    ta_quad(TA_TRANSLUCENT, TSP_BLEND, 0, 0x800000FF, F(0.6f), F(140.0f), F(130.0f), F(200.0f), F(170.0f));
    ta_quad(TA_TRANSLUCENT, TSP_BLEND, 0, 0x80FF0000, F(0.3f), F(120.0f), F(130.0f), F(180.0f), F(170.0f));
+#ifdef LIVE_CULL
+   /* ...and on the right, a green one far behind two near ones that differ
+    * only in their cull modes: one of the two is drawn */
+   ta_quad(TA_TRANSLUCENT, TSP_BLEND, 0, 0x8000FF00, F(0.3f), F(250.0f), F(140.0f), F(310.0f), F(175.0f));
+   ta_quad_culled(2, 0x80FFFF00, F(0.6f), F(255.0f), F(145.0f), F(280.0f), F(170.0f));
+   ta_quad_culled(3, 0x80FF00FF, F(0.6f), F(282.0f), F(145.0f), F(306.0f), F(170.0f));
+#endif
    ta_send(0, 0, 0, 0, 0, 0, 0, 0);                    /* end of the translucent list */
 }
 
