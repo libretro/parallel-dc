@@ -226,10 +226,14 @@ public:
 	// the dynamic states of a general pipeline's draw, after it is bound
 	void SetDynamicState(vk::CommandBuffer cmdBuffer, u64 key) const;
 
+	/* @cullMode: the ISP's. With the cull mode dynamic (CullSetter()) one
+	 * pipeline draws them all, the cull mode set with PsoCull. */
 	vk::Pipeline GetModifierVolumePipeline(ModVolMode mode, int cullMode) const
 	{
-		return vk::Pipeline(PsoGet(modVolSlots[ModVolIndex(mode, cullMode)]));
+		return vk::Pipeline(PsoGet(modVolSlots[(u32)mode * 3 + (PsoCullIndex(cullMode) & cullKept)]));
 	}
+	// what sets the cull mode of the modifier volumes' and prepass's pipelines (PsoCull), or null
+	void (VKAPI_PTR *CullSetter() const)(VkCommandBuffer, VkCullModeFlags) { return cullSetter; }
 
 	/* The depth prepass of a sorted translucent list (rend/sorter.h): the
 	 * pipeline a polygon is drawn with there. They are all made with the
@@ -238,7 +242,7 @@ public:
 	vk::Pipeline GetPrepassPipeline(const PolyParam& pp) const
 	{
 		const bool sampleRate = samples > 1 && !SsaaSingleRate(pp);
-		return vk::Pipeline(PsoGet(prepassSlots[pp.pcw.Texture][pp.pcw.Gouraud][pp.isp.CullMode == 3 ? 2 : pp.isp.CullMode == 2 ? 1 : 0][sampleRate]));
+		return vk::Pipeline(PsoGet(prepassSlots[pp.pcw.Texture][pp.pcw.Gouraud][PsoCullIndex(pp.isp.CullMode) & cullKept][sampleRate]));
 	}
 
 	/* Everything made dropped: what the worker has of it first. (A new
@@ -291,10 +295,9 @@ private:
 	}
 	void Prepare();
 	VkPipeline BuildPoly(u64 key, bool general, vk::PipelineCache cache);
-	VkPipeline BuildModVol(ModVolMode mode, int cullMode, vk::PipelineCache cache);
+	// @cull: PsoCullIndex()'s (none where it is dynamic)
+	VkPipeline BuildModVol(ModVolMode mode, u32 cull, vk::PipelineCache cache);
 	VkPipeline BuildPrepass(int texture, int gouraud, int cull, int rate, vk::PipelineCache cache);
-	// cull modes 0 and 1 are both none
-	static u32 ModVolIndex(ModVolMode mode, int cullMode) { return (u32)mode * 3 + (cullMode < 2 ? 0 : cullMode - 1); }
 
 	vk::PipelineVertexInputStateCreateInfo GetMainVertexInputStateCreateInfo(bool full = true) const
 	{
@@ -324,11 +327,16 @@ private:
 
 	PsoTable pipelines;		// the polygons' own
 	PsoTable general;		// the general ones
-	// the modifier volumes': by mode and cull mode (ModVolIndex()), made with the general ones
+	// the modifier volumes': by mode and cull mode (mode * 3 + PsoCullIndex()), made with the general ones
 	// (mutable: a draw's getter may make one, PsoGet())
 	mutable PsoSlot modVolSlots[(int)ModVolMode::Depth * 3 + 3] = {};
 	// the depth prepass's: [textured][Gouraud][no culling, front, back][SSAA: shaded at each sample]
 	mutable PsoSlot prepassSlots[2][2][3][2] = {};
+	/* Prepare()'s, for the device: with VK_EXT_extended_dynamic_state the
+	 * cull mode is not in those pipelines (only their none slots are made)
+	 * but set with the draws (cullSetter); otherwise a pipeline each */
+	u32 cullKept = 3;
+	void (VKAPI_PTR *cullSetter)(VkCommandBuffer, VkCullModeFlags) = nullptr;
 	u64 lastKey = ~0ull;
 	PsoChoice lastChoice = {};
 

@@ -336,14 +336,18 @@ public:
 	// the dynamic states of a general pipeline's draw, after it is bound
 	void SetDynamicState(vk::CommandBuffer cmdBuffer, u64 key) const;
 
+	/* @cullMode: the ISP's. With the cull mode dynamic (CullSetter()) one
+	 * pipeline draws them all, the cull mode set with PsoCull. */
 	vk::Pipeline GetModifierVolumePipeline(ModVolMode mode, int cullMode) const
 	{
-		return vk::Pipeline(PsoGet(fixedSlots[FIXED_MODVOL + ModVolIndex(mode, cullMode)]));
+		return vk::Pipeline(PsoGet(fixedSlots[FIXED_MODVOL + (u32)mode * 3 + (PsoCullIndex(cullMode) & cullKept)]));
 	}
 	vk::Pipeline GetTrModifierVolumePipeline(ModVolMode mode, int cullMode) const
 	{
-		return vk::Pipeline(PsoGet(fixedSlots[FIXED_TRMODVOL + ModVolIndex(mode, cullMode)]));
+		return vk::Pipeline(PsoGet(fixedSlots[FIXED_TRMODVOL + (u32)mode * 3 + (PsoCullIndex(cullMode) & cullKept)]));
 	}
+	// what sets the modifier volumes' pipelines' cull mode (PsoCull), or null
+	void (VKAPI_PTR *CullSetter() const)(VkCommandBuffer, VkCullModeFlags) { return cullSetter; }
 	/* @perSample: SSAA's for a render pass that is not the last; @sums: the
 	 * last one's, which also stores the channel sums, when there is one
 	 * (OITShaderManager::GetFinalShader(), Sums()) */
@@ -410,15 +414,14 @@ private:
 	}
 	void Prepare();
 	VkPipeline BuildPoly(u64 key, bool general, vk::PipelineCache cache);
-	VkPipeline CreateModVolPipeline(ModVolMode mode, int cullMode, vk::PipelineCache cache);
-	VkPipeline CreateTrModVolPipeline(ModVolMode mode, int cullMode, vk::PipelineCache cache);
+	// @cull: PsoCullIndex()'s (none where it is dynamic)
+	VkPipeline CreateModVolPipeline(ModVolMode mode, u32 cull, vk::PipelineCache cache);
+	VkPipeline CreateTrModVolPipeline(ModVolMode mode, u32 cull, vk::PipelineCache cache);
 	VkPipeline CreateFinalPipeline(bool perSample, bool sums, vk::PipelineCache cache);
 	VkPipeline CreateClearPipeline(vk::PipelineCache cache);
 
 	// the fixed pipelines' slots: the modifier volumes' by mode and cull mode, the last subpass's, the lists'
 	enum { FIXED_MODVOL = 0, FIXED_TRMODVOL = 12, FIXED_FINAL = 24, FIXED_FINAL_PER_SAMPLE, FIXED_CLEAR, FIXED_FINAL_SUMS, FIXED_COUNT };
-	// (Xor to Exclusion; cull modes 0 and 1 are both none)
-	static u32 ModVolIndex(ModVolMode mode, int cullMode) { return (u32)mode * 3 + (cullMode < 2 ? 0 : cullMode - 1); }
 
 	vk::PipelineVertexInputStateCreateInfo GetMainVertexInputStateCreateInfo(bool full = true) const
 	{
@@ -453,6 +456,12 @@ private:
 	PsoTable general;		// the general ones
 	// (mutable: a draw's getter may make one, PsoGet())
 	mutable PsoSlot fixedSlots[FIXED_COUNT] = {};
+	/* Prepare()'s, for the device: with VK_EXT_extended_dynamic_state the
+	 * cull mode is not in the modifier volumes' pipelines (only their none
+	 * slots are made) but set with the draws (cullSetter); otherwise a
+	 * pipeline each */
+	u32 cullKept = 3;
+	void (VKAPI_PTR *cullSetter)(VkCommandBuffer, VkCullModeFlags) = nullptr;
 	bool sums = false;
 	bool prepared = false;
 	// what the pipelines are made for (one of a kind: all of them work with any)

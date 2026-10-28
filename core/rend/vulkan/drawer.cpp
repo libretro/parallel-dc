@@ -277,6 +277,7 @@ void Drawer::DrawSorted(const vk::CommandBuffer& cmdBuffer, const SortTrigDrawPa
 		// Sorted translucent polygons are drawn without writing depth. Where
 		// a later render pass needs their depth (Cosmic Smash), it is written
 		// now, for those that do not have Z write disabled.
+		PsoCull cull(cmdBuffer, pipelineManager->CullSetter());
 		for (u32 i = 0; i < count; i++)
 		{
 			const SortTrigDrawParam& param = polys[i];
@@ -286,6 +287,7 @@ void Drawer::DrawSorted(const vk::CommandBuffer& cmdBuffer, const SortTrigDrawPa
 			SetScissor(cmdBuffer, SetTileClip(param.ppid->tileclip, scissorRect) == TileClipping::Outside ? scissorRect : baseScissor);
 			cmdBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics,
 					pipelineManager->GetModifierVolumePipeline(ModVolMode::Depth, param.ppid->isp.CullMode));
+			cull.Set(PsoCullIndex(param.ppid->isp.CullMode));
 			cmdBuffer.drawIndexed(param.count, 1, base + param.first, 0, 0);
 		}
 	}
@@ -308,6 +310,7 @@ void Drawer::DrawPrepass(const vk::CommandBuffer& cmdBuffer, const SortTrigDrawP
 		cmdBuffer.bindIndexBuffer(gpuDraw->sorted, gpuDraw->sortedOffset, vk::IndexType::eUint32);
 		gpuDraws = GpuDraws::Sorted;
 	}
+	PsoCull cull(cmdBuffer, pipelineManager->CullSetter());
 	for (u32 i = 0; i < count; i++)
 	{
 		const PolyParam& poly = *polys[i].ppid;
@@ -347,6 +350,7 @@ void Drawer::DrawPrepass(const vk::CommandBuffer& cmdBuffer, const SortTrigDrawP
 		if (poly.pcw.Texture)
 			GetCurrentDescSet().SetTexture(poly.texid, poly.tsp);
 		cmdBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, pipelineManager->GetPrepassPipeline(poly));
+		cull.Set(PsoCullIndex(poly.isp.CullMode));
 		if (poly.pcw.Texture)
 			GetCurrentDescSet().BindPerPolyDescriptorSets(cmdBuffer, poly.texid, poly.tsp);
 		DrawIndices(cmdBuffer, ListType_Translucent, base + polys[i].first, polys[i].count);
@@ -381,6 +385,7 @@ void Drawer::DrawModVols(const vk::CommandBuffer& cmdBuffer, int first, int coun
 
 	int mod_base = -1;
 	vk::Pipeline pipeline;
+	PsoCull cull(cmdBuffer, pipelineManager->CullSetter());
 
 	for (int cmv = 0; cmv < count; cmv++)
 	{
@@ -410,6 +415,7 @@ void Drawer::DrawModVols(const vk::CommandBuffer& cmdBuffer, int first, int coun
 		else
 			pipeline = pipelineManager->GetModifierVolumePipeline(ModVolMode::Xor, param.isp.CullMode);	// XOR'ing (closed volume)
 		cmdBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, pipeline);
+		cull.Set(PsoCullIndex(param.isp.CullMode));
 		cmdBuffer.draw(mvCount * 3, 1, mvFirst * 3, 0);
 
 		if (mv_mode == 1 || mv_mode == 2)
@@ -417,6 +423,7 @@ void Drawer::DrawModVols(const vk::CommandBuffer& cmdBuffer, int first, int coun
 			// Sum the area
 			pipeline = pipelineManager->GetModifierVolumePipeline(mv_mode == 1 ? ModVolMode::Inclusion : ModVolMode::Exclusion, param.isp.CullMode);
 			cmdBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, pipeline);
+			cull.Set(PsoCullIndex(param.isp.CullMode));
 			cmdBuffer.draw((mvFirst + mvCount - mod_base) * 3, 1, mod_base * 3, 0);
 			mod_base = -1;
 		}

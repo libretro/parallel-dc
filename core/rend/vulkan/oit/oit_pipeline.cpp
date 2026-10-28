@@ -233,8 +233,14 @@ void OITPipelineManager::Prepare()
 		return ((key >> KEY_KIND) & 15) == KIND_POLY && (samples > 1 ? rate == 1 || rate == 2 : rate == 0);
 	};
 	/* The fixed ones first: every frame draws with them */
+	const pso_ext::Functions& dynamic = GetContext()->DynamicState();
+	cullSetter = dynamic.depthStencil ? dynamic.CmdSetCullMode : nullptr;
+	cullKept = cullSetter != nullptr ? 0 : 3;
 	for (u32 i = 0; i < FIXED_COUNT; i++)
 	{
+		// (with the cull mode dynamic, the modifier volumes' none ones draw them all)
+		if (i < FIXED_FINAL && cullSetter != nullptr && i % 3 != 0)
+			continue;
 		if (i == FIXED_FINAL_PER_SAMPLE && samples <= 1)
 			continue;
 		if (i == FIXED_FINAL_SUMS && !sums)
@@ -290,11 +296,10 @@ VkPipeline OITPipelineManager::BuildPipeline(u64 key, vk::PipelineCache cache)
 		{
 			const u32 i = (u32)(key & 0xff);
 			// (the modifier volumes': Xor, Or, Inclusion, Exclusion, by cull mode none, front, back)
-			static const int culls[3] = { 0, 2, 3 };
 			if (i < FIXED_TRMODVOL)
-				return CreateModVolPipeline((ModVolMode)(i / 3), culls[i % 3], cache);
+				return CreateModVolPipeline((ModVolMode)(i / 3), i % 3, cache);
 			if (i < FIXED_FINAL)
-				return CreateTrModVolPipeline((ModVolMode)((i - FIXED_TRMODVOL) / 3), culls[(i - FIXED_TRMODVOL) % 3], cache);
+				return CreateTrModVolPipeline((ModVolMode)((i - FIXED_TRMODVOL) / 3), (i - FIXED_TRMODVOL) % 3, cache);
 			if (i == FIXED_FINAL || i == FIXED_FINAL_PER_SAMPLE || i == FIXED_FINAL_SUMS)
 				return CreateFinalPipeline(i == FIXED_FINAL_PER_SAMPLE, i == FIXED_FINAL_SUMS, cache);
 			if (i == FIXED_CLEAR)
@@ -621,7 +626,7 @@ VkPipeline OITPipelineManager::CreateClearPipeline(vk::PipelineCache cache)
 	return PsoCreate(GetContext()->GetDevice(), cache, graphicsPipelineCreateInfo);
 }
 
-VkPipeline OITPipelineManager::CreateModVolPipeline(ModVolMode mode, int cullMode, vk::PipelineCache cache)
+VkPipeline OITPipelineManager::CreateModVolPipeline(ModVolMode mode, u32 cull, vk::PipelineCache cache)
 {
 	verify(mode != ModVolMode::Final);
 
@@ -654,9 +659,7 @@ VkPipeline OITPipelineManager::CreateModVolPipeline(ModVolMode mode, int cullMod
 	  false,                                        // depthClampEnable
 	  false,                                        // rasterizerDiscardEnable
 	  vk::PolygonMode::eFill,                       // polygonMode
-	  cullMode == 3 ? vk::CullModeFlagBits::eBack
-  			  : cullMode == 2 ? vk::CullModeFlagBits::eFront
-  			  : vk::CullModeFlagBits::eNone,        // cullMode
+	  CullMode(cull),                               // cullMode
 	  vk::FrontFace::eCounterClockwise,             // frontFace
 	  false,                                        // depthBiasEnable
 	  0.0f,                                         // depthBiasConstantFactor
@@ -710,8 +713,11 @@ VkPipeline OITPipelineManager::CreateModVolPipeline(ModVolMode mode, int cullMod
 		{ { 1.0f, 1.0f, 1.0f, 1.0f } }              // blendConstants
 	);
 
-	vk::DynamicState dynamicStates[2] = { vk::DynamicState::eViewport, vk::DynamicState::eScissor };
-	vk::PipelineDynamicStateCreateInfo pipelineDynamicStateCreateInfo(vk::PipelineDynamicStateCreateFlags(), 2, dynamicStates);
+	// (the cull mode set with the draws, where it can be: PsoCull)
+	vk::DynamicState dynamicStates[3] = { vk::DynamicState::eViewport, vk::DynamicState::eScissor,
+			(vk::DynamicState)pso_ext::DYNAMIC_STATE_CULL_MODE };
+	vk::PipelineDynamicStateCreateInfo pipelineDynamicStateCreateInfo(vk::PipelineDynamicStateCreateFlags(),
+			cullSetter != nullptr ? 3 : 2, dynamicStates);
 
 	vk::ShaderModule vertex_module = shaderManager->GetModVolVertexShader();
 	vk::ShaderModule fragment_module = shaderManager->GetModVolShader();
@@ -742,7 +748,7 @@ VkPipeline OITPipelineManager::CreateModVolPipeline(ModVolMode mode, int cullMod
 	return PsoCreate(GetContext()->GetDevice(), cache, graphicsPipelineCreateInfo);
 }
 
-VkPipeline OITPipelineManager::CreateTrModVolPipeline(ModVolMode mode, int cullMode, vk::PipelineCache cache)
+VkPipeline OITPipelineManager::CreateTrModVolPipeline(ModVolMode mode, u32 cull, vk::PipelineCache cache)
 {
 	verify(mode != ModVolMode::Final);
 
@@ -775,9 +781,7 @@ VkPipeline OITPipelineManager::CreateTrModVolPipeline(ModVolMode mode, int cullM
 	  false,                                        // depthClampEnable
 	  false,                                        // rasterizerDiscardEnable
 	  vk::PolygonMode::eFill,                       // polygonMode
-	  cullMode == 3 ? vk::CullModeFlagBits::eBack
-  			  : cullMode == 2 ? vk::CullModeFlagBits::eFront
-  			  : vk::CullModeFlagBits::eNone,        // cullMode
+	  CullMode(cull),                               // cullMode
 	  vk::FrontFace::eCounterClockwise,             // frontFace
 	  false,                                        // depthBiasEnable
 	  0.0f,                                         // depthBiasConstantFactor
@@ -803,8 +807,11 @@ VkPipeline OITPipelineManager::CreateTrModVolPipeline(ModVolMode mode, int cullM
 		{ { 1.0f, 1.0f, 1.0f, 1.0f } }              // blendConstants
 	);
 
-	vk::DynamicState dynamicStates[2] = { vk::DynamicState::eViewport, vk::DynamicState::eScissor };
-	vk::PipelineDynamicStateCreateInfo pipelineDynamicStateCreateInfo(vk::PipelineDynamicStateCreateFlags(), 2, dynamicStates);
+	// (the cull mode set with the draws, where it can be: PsoCull)
+	vk::DynamicState dynamicStates[3] = { vk::DynamicState::eViewport, vk::DynamicState::eScissor,
+			(vk::DynamicState)pso_ext::DYNAMIC_STATE_CULL_MODE };
+	vk::PipelineDynamicStateCreateInfo pipelineDynamicStateCreateInfo(vk::PipelineDynamicStateCreateFlags(),
+			cullSetter != nullptr ? 3 : 2, dynamicStates);
 
 	vk::ShaderModule vertex_module = shaderManager->GetModVolVertexShader();
 	vk::ShaderModule fragment_module = shaderManager->GetTrModVolShader(mode);

@@ -260,14 +260,18 @@ void PipelineManager::Prepare()
 		for (u64 rate = samples > 1 ? 1 : 0; rate <= (samples > 1 ? 2u : 0u); rate++)
 			addGeneral((gouraud << KEY_GOURAUD) | (rate << KEY_RATE));
 	GetContext()->PsoKeys().ForEach(who, [&](u64 key) { if (fits(key)) addGeneral(key); });
+	const pso_ext::Functions& dynamic = GetContext()->DynamicState();
+	cullSetter = dynamic.depthStencil ? dynamic.CmdSetCullMode : nullptr;
+	cullKept = cullSetter != nullptr ? 0 : 3;
+	const int culls = cullSetter != nullptr ? 1 : 3;
 	// the modifier volumes'
 	for (int mode = 0; mode <= (int)ModVolMode::Depth; mode++)
-		for (int cull = 0; cull < 3; cull++)
+		for (int cull = 0; cull < culls; cull++)
 		{
 			if ((ModVolMode)mode == ModVolMode::Final && cull != 0)
 				continue;
 			PsoSlot& slot = modVolSlots[mode * 3 + cull];
-			slot.key = ((u64)KIND_MODVOL << KEY_KIND) | ((u64)mode << 2) | (u64)(cull == 0 ? 0 : cull + 1);
+			slot.key = ((u64)KIND_MODVOL << KEY_KIND) | ((u64)mode << 2) | (u64)cull;
 			slot.owner = this;
 			slot.pipeline = VK_NULL_HANDLE;
 			now.push_back(&slot);
@@ -275,7 +279,7 @@ void PipelineManager::Prepare()
 	// the depth prepass's (rend/sorter.h)
 	for (int texture = 0; texture < 2; texture++)
 		for (int gouraud = 0; gouraud < 2; gouraud++)
-			for (int cull = 0; cull < 3; cull++)
+			for (int cull = 0; cull < culls; cull++)
 				for (int rate = 0; rate < (samples > 1 ? 2 : 1); rate++)
 				{
 					PsoSlot& slot = prepassSlots[texture][gouraud][cull][rate];
@@ -307,7 +311,7 @@ VkPipeline PipelineManager::BuildPipeline(u64 key, vk::PipelineCache cache)
 	case KIND_GENERAL:
 		return BuildPoly(key, true, cache);
 	case KIND_MODVOL:
-		return BuildModVol((ModVolMode)((key >> 2) & 7), (int)(key & 3), cache);
+		return BuildModVol((ModVolMode)((key >> 2) & 7), (u32)(key & 3), cache);
 	case KIND_PREPASS:
 		return BuildPrepass((int)((key >> 4) & 1), (int)((key >> 3) & 1), (int)((key >> 1) & 3), (int)(key & 1), cache);
 	default:
@@ -315,7 +319,7 @@ VkPipeline PipelineManager::BuildPipeline(u64 key, vk::PipelineCache cache)
 	}
 }
 
-VkPipeline PipelineManager::BuildModVol(ModVolMode mode, int cullMode, vk::PipelineCache cache)
+VkPipeline PipelineManager::BuildModVol(ModVolMode mode, u32 cull, vk::PipelineCache cache)
 {
 	// Vertex input state
 	vk::PipelineVertexInputStateCreateInfo pipelineVertexInputStateCreateInfo;
@@ -358,9 +362,7 @@ VkPipeline PipelineManager::BuildModVol(ModVolMode mode, int cullMode, vk::Pipel
 	  false,                                        // depthClampEnable
 	  false,                                        // rasterizerDiscardEnable
 	  vk::PolygonMode::eFill,                       // polygonMode
-	  cullMode == 3 ? vk::CullModeFlagBits::eBack
-			  : cullMode == 2 ? vk::CullModeFlagBits::eFront
-			  : vk::CullModeFlagBits::eNone,        // cullMode
+	  CullMode(cull),                               // cullMode
 	  vk::FrontFace::eCounterClockwise,             // frontFace
 	  false,                                        // depthBiasEnable
 	  0.0f,                                         // depthBiasConstantFactor
@@ -431,8 +433,11 @@ VkPipeline PipelineManager::BuildModVol(ModVolMode mode, int cullMode, vk::Pipel
 		{ { 1.0f, 1.0f, 1.0f, 1.0f } }              // blendConstants
 	);
 
-	vk::DynamicState dynamicStates[2] = { vk::DynamicState::eViewport, vk::DynamicState::eScissor };
-	vk::PipelineDynamicStateCreateInfo pipelineDynamicStateCreateInfo(vk::PipelineDynamicStateCreateFlags(), 2, dynamicStates);
+	// (the cull mode set with the draws, where it can be: PsoCull)
+	vk::DynamicState dynamicStates[3] = { vk::DynamicState::eViewport, vk::DynamicState::eScissor,
+			(vk::DynamicState)pso_ext::DYNAMIC_STATE_CULL_MODE };
+	vk::PipelineDynamicStateCreateInfo pipelineDynamicStateCreateInfo(vk::PipelineDynamicStateCreateFlags(),
+			cullSetter != nullptr && mode != ModVolMode::Final ? 3 : 2, dynamicStates);
 
 	vk::ShaderModule vertex_module = shaderManager->GetModVolVertexShader();
 	vk::ShaderModule fragment_module = shaderManager->GetModVolShader();
@@ -625,8 +630,11 @@ VkPipeline PipelineManager::BuildPrepass(int texture, int gouraud, int cull, int
 			vk::BlendOp::eAdd, vk::BlendFactor::eZero, vk::BlendFactor::eZero, vk::BlendOp::eAdd, vk::ColorComponentFlags());
 	vk::PipelineColorBlendStateCreateInfo pipelineColorBlendStateCreateInfo(vk::PipelineColorBlendStateCreateFlags(), false,
 			vk::LogicOp::eNoOp, 1, &pipelineColorBlendAttachmentState, { { 1.0f, 1.0f, 1.0f, 1.0f } });
-	vk::DynamicState dynamicStates[2] = { vk::DynamicState::eViewport, vk::DynamicState::eScissor };
-	vk::PipelineDynamicStateCreateInfo pipelineDynamicStateCreateInfo(vk::PipelineDynamicStateCreateFlags(), 2, dynamicStates);
+	// (the cull mode set with the draws, where it can be: PsoCull)
+	vk::DynamicState dynamicStates[3] = { vk::DynamicState::eViewport, vk::DynamicState::eScissor,
+			(vk::DynamicState)pso_ext::DYNAMIC_STATE_CULL_MODE };
+	vk::PipelineDynamicStateCreateInfo pipelineDynamicStateCreateInfo(vk::PipelineDynamicStateCreateFlags(),
+			cullSetter != nullptr ? 3 : 2, dynamicStates);
 	vk::PipelineRasterizationStateCreateInfo pipelineRasterizationStateCreateInfo(vk::PipelineRasterizationStateCreateFlags(),
 			false, false, vk::PolygonMode::eFill, CullMode(cull), vk::FrontFace::eCounterClockwise, false, 0.0f, 0.0f, 0.0f, 1.0f);
 	vk::PipelineMultisampleStateCreateInfo pipelineMultisampleStateCreateInfo = SsaaMultisample(samples, rate == 1);

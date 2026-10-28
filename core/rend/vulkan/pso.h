@@ -367,3 +367,41 @@ struct Functions
 	bool blend;			// VK_EXT_extended_dynamic_state3: blend enable, equation, write mask
 };
 }
+
+/* The cull mode of the fixed pipelines made with it dynamic: the modifier
+ * volumes' and the depth prepass's, where the device has
+ * VK_EXT_extended_dynamic_state (one pipeline then for the three modes).
+ * PsoCullIndex(): a polygon's ISP cull mode as 0 none, 1 front, 2 back,
+ * which is VkCullModeFlags too. */
+static inline u32 PsoCullIndex(u32 ispCullMode)
+{
+	return ispCullMode >= 2 ? ispCullMode - 1 : 0;
+}
+
+/* Set with the draws of one block of those pipelines, only when it changes.
+ * Made at the block's start: what was set before is not known (the general
+ * pipelines set their own). @set null (the device has no dynamic cull
+ * mode, and the pipelines one each): it never sets any - the same compare,
+ * never true. */
+class PsoCull
+{
+public:
+	PsoCull(vk::CommandBuffer cmd, void (VKAPI_PTR *set)(VkCommandBuffer, VkCullModeFlags))
+		: cmd((VkCommandBuffer)cmd), set(set), mask(set != nullptr ? 3 : 0), last(set != nullptr ? ~0u : 0) {}
+	// @cull: PsoCullIndex()'s
+	void Set(u32 cull)
+	{
+		const u32 c = cull & mask;
+		if (c != last)
+		{
+			last = c;
+			set(cmd, (VkCullModeFlags)c);
+		}
+	}
+
+private:
+	VkCommandBuffer cmd;
+	void (VKAPI_PTR *set)(VkCommandBuffer, VkCullModeFlags);
+	u32 mask;
+	u32 last;
+};

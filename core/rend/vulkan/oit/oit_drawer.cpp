@@ -41,23 +41,25 @@ struct ListDraws
 {
 	OITDrawer& drawer;
 	const vk::CommandBuffer& cmd;
+	PsoCull& cull;
 #ifdef RACE_TEST
-	struct Held { vk::Pipeline pipeline; vk::Rect2D scissor; u32 vertices, first; };
+	struct Held { vk::Pipeline pipeline; u32 cullIndex; vk::Rect2D scissor; u32 vertices, first; };
 	Held held[256];
 	u32 count = 0;
 #endif
 
-	ListDraws(OITDrawer& drawer, const vk::CommandBuffer& cmd) : drawer(drawer), cmd(cmd) {}
+	ListDraws(OITDrawer& drawer, const vk::CommandBuffer& cmd, PsoCull& cull) : drawer(drawer), cmd(cmd), cull(cull) {}
 	~ListDraws() { Flush(); }
 
-	void Draw(vk::Pipeline pipeline, const vk::Rect2D& scissor, u32 vertices, u32 first)
+	// @cullIndex: PsoCullIndex()'s
+	void Draw(vk::Pipeline pipeline, u32 cullIndex, const vk::Rect2D& scissor, u32 vertices, u32 first)
 	{
 #ifdef RACE_TEST
 		if (count == ARRAY_SIZE(held))
 			Flush();
-		held[count++] = { pipeline, scissor, vertices, first };
+		held[count++] = { pipeline, cullIndex, scissor, vertices, first };
 #else
-		Record(pipeline, scissor, vertices, first);
+		Record(pipeline, cullIndex, scissor, vertices, first);
 #endif
 	}
 	/* what the draws before did to the lists is done before the draws after start */
@@ -77,7 +79,7 @@ struct ListDraws
 			for (u32 i = count; i-- > 0; )
 				if (v < held[i].vertices)
 				{
-					Record(held[i].pipeline, held[i].scissor, 3, held[i].first + v);
+					Record(held[i].pipeline, held[i].cullIndex, held[i].scissor, 3, held[i].first + v);
 					more++;
 				}
 		}
@@ -86,10 +88,11 @@ struct ListDraws
 	}
 
 private:
-	void Record(vk::Pipeline pipeline, const vk::Rect2D& scissor, u32 vertices, u32 first)
+	void Record(vk::Pipeline pipeline, u32 cullIndex, const vk::Rect2D& scissor, u32 vertices, u32 first)
 	{
 		drawer.SetScissor(cmd, scissor);
 		cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, pipeline);
+		cull.Set(cullIndex);
 		cmd.draw(vertices, 1, first, 0);
 	}
 };
@@ -205,7 +208,8 @@ void OITDrawer::DrawModifierVolumes(const vk::CommandBuffer& cmdBuffer, int firs
 
 	int mod_base = -1;
 	vk::Pipeline pipeline;
-	ListDraws listDraws(*this, cmdBuffer);
+	PsoCull cull(cmdBuffer, pipelineManager->CullSetter());
+	ListDraws listDraws(*this, cmdBuffer, cull);
 
 	for (int cmv = 0; cmv < count; cmv++)
 	{
@@ -248,11 +252,12 @@ void OITDrawer::DrawModifierVolumes(const vk::CommandBuffer& cmdBuffer, int firs
 				pipeline = pipelineManager->GetModifierVolumePipeline(ModVolMode::Xor, param.isp.CullMode);
 		}
 		if (Translucent)
-			listDraws.Draw(pipeline, scissor, mvCount * 3, mvFirst * 3);
+			listDraws.Draw(pipeline, PsoCullIndex(param.isp.CullMode), scissor, mvCount * 3, mvFirst * 3);
 		else
 		{
 			SetScissor(cmdBuffer, scissor);
 			cmdBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, pipeline);
+			cull.Set(PsoCullIndex(param.isp.CullMode));
 			cmdBuffer.draw(mvCount * 3, 1, mvFirst * 3, 0);
 		}
 
@@ -263,7 +268,7 @@ void OITDrawer::DrawModifierVolumes(const vk::CommandBuffer& cmdBuffer, int firs
 			{
 				listDraws.Barrier();
 				pipeline = pipelineManager->GetTrModifierVolumePipeline(mv_mode == 1 ? ModVolMode::Inclusion : ModVolMode::Exclusion, param.isp.CullMode);
-				listDraws.Draw(pipeline, scissor, (mvFirst + mvCount - mod_base) * 3, mod_base * 3);
+				listDraws.Draw(pipeline, PsoCullIndex(param.isp.CullMode), scissor, (mvFirst + mvCount - mod_base) * 3, mod_base * 3);
 				/* ...and done before the next volume's draws start: this
 				 * draw clears the stencil bit the next volume's toggle, and
 				 * sets the fragments it finds inside from what it read */
@@ -273,6 +278,7 @@ void OITDrawer::DrawModifierVolumes(const vk::CommandBuffer& cmdBuffer, int firs
 			{
 				pipeline = pipelineManager->GetModifierVolumePipeline(mv_mode == 1 ? ModVolMode::Inclusion : ModVolMode::Exclusion, param.isp.CullMode);
 				cmdBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, pipeline);
+				cull.Set(PsoCullIndex(param.isp.CullMode));
 				cmdBuffer.draw((mvFirst + mvCount - mod_base) * 3, 1, mod_base * 3, 0);
 			}
 
