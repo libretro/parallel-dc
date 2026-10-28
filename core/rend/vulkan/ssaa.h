@@ -16,6 +16,7 @@
 #pragma once
 #include "vulkan_context.h"
 #include "commandpool.h"
+#include "pso.h"
 #include "hw/pvr/ta.h"
 #include "hw/pvr/Renderer_if.h"
 #include "rend/tile/pvr_tile.h"
@@ -34,19 +35,23 @@ static inline vk::PipelineMultisampleStateCreateInfo SsaaMultisample(u32 samples
 
 /* The resolve of an attachment of N samples into the subpass's single
  * sample colour attachment, as its input attachment 0: a triangle over
- * the whole framebuffer. Everything made in Init(). */
-class SsaaResolve
+ * the whole framebuffer. Everything made in Init() but its pipeline, which
+ * Init() hands to the pipeline thread (pso.h); the first Draw() takes it,
+ * or makes it there and fails there as Init() did when the device cannot. */
+class SsaaResolve : public PsoBuilder
 {
 public:
+	SsaaResolve();
+	~SsaaResolve() override { Drop(); }
 	void Init(vk::RenderPass renderPass, u32 subpass, u32 samples, vk::ImageView samplesView);
 	void Draw(vk::CommandBuffer cmd, vk::Extent2D extent) const;
-	bool Ready() const { return (bool)pipeline; }
+	bool Ready() const { return (bool)descSet; }
 	/* The attachment of samples made again: a new descriptor set for it, the
 	 * old one kept until the frames that use it are done */
 	void SetSamplesView(vk::ImageView samplesView, CommandPool *commandPool);
 	void Term()
 	{
-		pipeline.reset();
+		Drop();
 		descSet.reset();
 		pipelineLayout.reset();
 		setLayout.reset();
@@ -54,13 +59,19 @@ public:
 		fragmentShader.reset();
 		samples = 0;
 	}
+	VkPipeline BuildPipeline(u64 key, vk::PipelineCache cache) override;
 
 private:
+	VkPipeline Create(vk::PipelineCache cache, bool orThrow) const;
+	void Drop();
+
 	vk::UniqueDescriptorSetLayout setLayout;
 	vk::UniquePipelineLayout pipelineLayout;
 	vk::UniqueDescriptorSet descSet;
 	vk::UniqueShaderModule vertexShader;
 	vk::UniqueShaderModule fragmentShader;
-	vk::UniquePipeline pipeline;
+	vk::RenderPass renderPass;
+	u32 subpass = 0;
+	mutable PsoSlot slot;	// (Draw() may make it)
 	u32 samples = 0;
 };

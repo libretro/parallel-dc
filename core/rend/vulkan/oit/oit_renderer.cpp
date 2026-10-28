@@ -43,6 +43,9 @@ public:
 		oitBuffers.SetSums(samples > 1 && GetContext()->HdrSumsReady());
 		oitBuffers.Init(0, 0, &texCommandPool);
 		oitShaderManager.SetSamples(samples);
+		// (the compute renderer's slots are the pool's: made now, BaseInit() finds them made)
+		texCommandPool.Init();
+		MakeCompute();
 		NOTICE_LOG(RENDERER, "Vulkan per-pixel renderer: with SSAA, a translucent fragment takes the samples %s",
 				GetContext()->postDepthCoverage ? "the depth test passed (VK_EXT_post_depth_coverage)" : "its own depth test passes, at each sample");
 		textureDrawer.SetCommandPool(&texCommandPool);
@@ -63,7 +66,7 @@ public:
 		// (a quad pipeline is for one subpass: the one above is the last subpass's, this the colour one's)
 		lastPicturePipeline.Init(&shaderManager, screenDrawer.GetRenderPass(), 1, samples);
 		screenDrawer.SetLastPicturePipeline(&lastPicturePipeline);
-		InitCompute();
+		InitComputeMotion();
 
 		return true;
 	}
@@ -90,7 +93,8 @@ public:
 		// (a quad pipeline is for one subpass: the one above is the last subpass's, this the colour one's)
 		lastPicturePipeline.Init(&shaderManager, screenDrawer.GetRenderPass(), 1, samples);
 		screenDrawer.SetLastPicturePipeline(&lastPicturePipeline);
-		InitCompute();
+		MakeCompute();
+		InitComputeMotion();
 		// what this size no longer needs is given back once the frames that used it are done
 		GetContext()->GetHeap().TrimSoon();
 	}
@@ -202,20 +206,24 @@ public:
 	}
 
 private:
-	// the compute renderer, when it is the rendering method: made with the screen's drawer
-	void InitCompute()
+	/* The compute renderer, when it is the rendering method; then the
+	 * screen's drawer's motion vector pass over it. (Made before the
+	 * drawers when the renderer starts: its kernels are the first the
+	 * pipeline thread is given, as every frame draws with them.) */
+	void MakeCompute()
 	{
 		if (rend_compute_wanted)
-		{
-			// (for the temporal upscaler, with the depth stored, and the motion vector pass over it)
+			// (for the temporal upscaler, with the depth stored)
 			computeDrawer.Init(GetContext()->GetViewPort(), samples, &texCommandPool, &samplerManager, upscaler_active() && samples == 1);
-			computeDrawer.SetMotionPass(screenDrawer.ComputeMotionPass(computeDrawer.DepthViews()));
-		}
 		else
-		{
 			computeDrawer.Term();
+	}
+	void InitComputeMotion()
+	{
+		if (rend_compute_wanted)
+			computeDrawer.SetMotionPass(screenDrawer.ComputeMotionPass(computeDrawer.DepthViews()));
+		else
 			screenDrawer.ComputeMotionPass(std::vector<vk::ImageView>());
-		}
 	}
 
 	/* SSAA's samples a pixel, for the screen: as far as the device and

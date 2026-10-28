@@ -784,6 +784,7 @@ void VulkanContext::Term()
 	if (pipelineCache)
 		device.destroyPipelineCache(pipelineCache);
 	pipelineCache = nullptr;
+	VkPsoWorker::Instance().SetDrawCache(nullptr);
 	psoKeys.Term();
 	extendedDynamicState = false;
 	extendedDynamicState3 = false;
@@ -854,7 +855,8 @@ void VulkanContext::LoadPipelineCache()
 			cache = VK_NULL_HANDLE;
 	}
 	pipelineCache = vk::PipelineCache(cache);
-	// the worker's, from the same data
+	// the worker's, from the same data; the fixed pipelines a draw makes itself, in this one
+	VkPsoWorker::Instance().SetDrawCache(pipelineCache);
 	VkPsoWorker::Instance().Start(device, data, dataSize, pipelineCacheControl);
 	savedBuilt = 0;
 	u32 keyCount = 0;

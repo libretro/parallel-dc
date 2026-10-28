@@ -79,7 +79,7 @@ void MotionVectorPass::Init(vk::Extent2D size, vk::Format depthFormat, vk::Image
 		framebuffers.push_back(device.createFramebufferUnique(vk::FramebufferCreateInfo(vk::FramebufferCreateFlags(),
 				*renderPass, ARRAY_SIZE(views), views, size.width, size.height, 1)));
 	}
-	if (!pipelines[0])
+	if (retro_atomic_load_relaxed_int(&pipelines[0].state) == PSO_EMPTY)
 		MakePipelines(pipelineLayout, vertexShader, fragmentShader, true);
 }
 
@@ -166,14 +166,23 @@ void MotionVectorPass::InitSampled(vk::Extent2D size, const std::vector<vk::Imag
 		framebuffers.push_back(device.createFramebufferUnique(vk::FramebufferCreateInfo(vk::FramebufferCreateFlags(),
 				*renderPass, 1, views, size.width, size.height, 1)));
 	}
-	if (!pipelines[0])
+	if (retro_atomic_load_relaxed_int(&pipelines[0].state) == PSO_EMPTY)
 		MakePipelines(*ownLayout, vertexShader, fragmentShader, false);
 }
 
 void MotionVectorPass::MakePipelines(vk::PipelineLayout pipelineLayout, vk::ShaderModule vertexShader, vk::ShaderModule fragmentShader, bool depthTest)
 {
-	VulkanContext *context = VulkanContext::Instance();
-	vk::Device device = context->GetDevice();
+	this->pipelineLayout = pipelineLayout;
+	this->vertexShader = vertexShader;
+	this->fragmentShader = fragmentShader;
+	this->depthTest = depthTest;
+	PsoSlot *all[] = { &pipelines[0], &pipelines[1], &pipelines[2] };
+	VkPsoWorker::Instance().BuildSoon(all, 3, VulkanContext::Instance()->GetPipelineCache());
+}
+
+VkPipeline MotionVectorPass::Make(int cull, vk::PipelineCache cache, bool orThrow) const
+{
+	vk::Device device = VulkanContext::Instance()->GetDevice();
 	// the vertex as the colour pass has it, and where it was: its own stream
 	static const vk::VertexInputBindingDescription bindings[] = {
 			{ 0, sizeof(Vertex) },
@@ -209,17 +218,25 @@ void MotionVectorPass::MakePipelines(vk::PipelineLayout pipelineLayout, vk::Shad
 			{ vk::PipelineShaderStageCreateFlags(), vk::ShaderStageFlagBits::eVertex, vertexShader, "main", &specialization },
 			{ vk::PipelineShaderStageCreateFlags(), vk::ShaderStageFlagBits::eFragment, fragmentShader, "main" },
 	};
-	for (int cull = 0; cull < 3; cull++)
-	{
-		vk::PipelineRasterizationStateCreateInfo rasterization(vk::PipelineRasterizationStateCreateFlags(), false, false,
-				vk::PolygonMode::eFill,
-				cull == 2 ? vk::CullModeFlagBits::eBack : cull == 1 ? vk::CullModeFlagBits::eFront : vk::CullModeFlagBits::eNone,
-				vk::FrontFace::eCounterClockwise, false, 0.f, 0.f, 0.f, 1.f);
-		vk::GraphicsPipelineCreateInfo createInfo(vk::PipelineCreateFlags(), ARRAY_SIZE(stages), stages,
-				&vertexInput, &inputAssembly, nullptr, &viewportState, &rasterization, &multisample,
-				depthTest ? &depthStencil : nullptr, &blend, &dynamic, pipelineLayout, *renderPass, 0);
-		pipelines[cull] = device.createGraphicsPipelineUnique(context->GetPipelineCache(), createInfo);
-	}
+	vk::PipelineRasterizationStateCreateInfo rasterization(vk::PipelineRasterizationStateCreateFlags(), false, false,
+			vk::PolygonMode::eFill,
+			cull == 2 ? vk::CullModeFlagBits::eBack : cull == 1 ? vk::CullModeFlagBits::eFront : vk::CullModeFlagBits::eNone,
+			vk::FrontFace::eCounterClockwise, false, 0.f, 0.f, 0.f, 1.f);
+	vk::GraphicsPipelineCreateInfo createInfo(vk::PipelineCreateFlags(), ARRAY_SIZE(stages), stages,
+			&vertexInput, &inputAssembly, nullptr, &viewportState, &rasterization, &multisample,
+			depthTest ? &depthStencil : nullptr, &blend, &dynamic, pipelineLayout, *renderPass, 0);
+	if (!orThrow)
+		return PsoCreate(device, cache, createInfo);
+	return (VkPipeline)device.createGraphicsPipelineUnique(cache, createInfo).release();
+}
+
+// (one the pipeline thread could not make: made here, or thrown for as Init() did)
+vk::Pipeline MotionVectorPass::Pipeline(int cull)
+{
+	const VkPipeline made = PsoGet(pipelines[cull]);
+	if (made != VK_NULL_HANDLE)
+		return vk::Pipeline(made);
+	return vk::Pipeline(PsoOwnMade(pipelines[cull], Make(cull, VulkanContext::Instance()->GetPipelineCache(), true)));
 }
 
 void MotionVectorPass::Term(CommandPool *commandPool)
@@ -235,8 +252,8 @@ void MotionVectorPass::Term(CommandPool *commandPool)
 	}
 	attachments.clear();
 	framebuffers.clear();
-	for (auto& pipeline : pipelines)
-		pipeline.reset();
+	// (the pipeline thread done with what it has of them before what they are made of goes)
+	PsoOwnDrop(this, pipelines, 3, VulkanContext::Instance() != nullptr ? VulkanContext::Instance()->GetDevice() : vk::Device());
 	renderPass.reset();
 	prevXyBuffers.clear();
 	sets.clear();
@@ -289,7 +306,7 @@ void MotionVectorPass::Record(vk::CommandBuffer commandBuffer, int image, vk::Bu
 			const int cull = pp.isp.CullMode == 3 ? 2 : pp.isp.CullMode == 2 ? 1 : 0;
 			if (cull != bound)
 			{
-				commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, *pipelines[cull]);
+				commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, Pipeline(cull));
 				bound = cull;
 			}
 			commandBuffer.drawIndexed(pp.count, 1, pp.first, 0, 0);

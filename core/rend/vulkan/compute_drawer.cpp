@@ -94,8 +94,36 @@ struct SlotTable : public ComputeFrame::Slots
 	}
 };
 
-struct ComputeDrawer::Resources
+/* (its kernels' pipelines: asked of the pipeline thread by Init(), pso.h;
+ * the first frame takes them, or makes them there and fails there as Init()
+ * did when the device cannot) */
+struct ComputeDrawer::Resources : public PsoBuilder
 {
+	enum { KINDS = PVRC_KERNELS + 2 };
+	Resources() { PsoOwnInit(this, kernels, 2 * KINDS); }
+	// (the pipeline thread done with what it has of them before the modules go)
+	~Resources() override { PsoOwnDrop(this, kernels, 2 * KINDS, VulkanContext::Instance()->GetDevice()); }
+	/* @key: the set's (0 the screen's, 1 for renders to a texture) times
+	 * KINDS, and the kernel */
+	VkPipeline Make(u64 key, vk::PipelineCache cache, bool orThrow) const;
+	VkPipeline BuildPipeline(u64 key, vk::PipelineCache cache) override { return Make(key, cache, false); }
+	// (one the pipeline thread could not make: made here, or thrown for as Init() did)
+	VkPipeline Kernel(int set, int k)
+	{
+		PsoSlot& slot = kernels[set * KINDS + k];
+		const VkPipeline made = PsoGet(slot);
+		if (made != VK_NULL_HANDLE)
+			return made;
+		return PsoOwnMade(slot, Make(slot.key, VulkanContext::Instance()->GetPipelineCache(), true));
+	}
+	bool Has(int set, int k) const { return retro_atomic_load_relaxed_int(&kernels[set * KINDS + k].state) != PSO_EMPTY; }
+
+	// what the kernels are made of
+	vk::UniqueShaderModule modules[KINDS];
+	u32 samples = 1;
+	bool depth = false;
+	PsoSlot kernels[2 * KINDS];
+
 	std::unique_ptr<BufferData> ring;	// a piece for each slot of the pool
 	u32 ringWords = 0;
 	u32 *ringMap = nullptr;
@@ -110,11 +138,11 @@ struct ComputeDrawer::Resources
 	bool binsZero = false;
 	vk::UniqueDescriptorSetLayout setLayout;
 	vk::UniquePipelineLayout pipelineLayout;
-	vk::UniquePipeline pipelines[PVRC_KERNELS + 2];	// (and the walk's unsorted variant last: WalkUnsorted)
-	/* with SSAA, the kernels for renders to a texture, at one sample a
-	 * pixel; with the HDR output, the walks for them (which store no sums:
-	 * the screen's do) - null where they are the screen's */
-	vk::UniquePipeline rttPipelines[PVRC_KERNELS + 2];
+	/* (kernels: the screen's, and the walk's unsorted variant last:
+	 * WalkUnsorted; then with SSAA, the kernels for renders to a texture,
+	 * at one sample a pixel, and with the HDR output, the walks for them,
+	 * which store no sums: the screen's do - empty where they are the
+	 * screen's) */
 	/* With the HDR output, each pixel's channel sums, which the screen's
 	 * walk stores (hdr_encode_vk.h: of HDR_VK_SUMS_SAMPLES); otherwise an
 	 * image of one pixel, for the binding */
@@ -148,6 +176,23 @@ struct ComputeDrawer::Resources
 	u64 skipped = 0, dropped = 0, hiz = 0, clipped = 0;
 	u32 peels = 0;
 };
+
+VkPipeline ComputeDrawer::Resources::Make(u64 key, vk::PipelineCache cache, bool orThrow) const
+{
+	const int set = (int)(key / KINDS), k = (int)(key % KINDS);
+	const u32 n = set == 0 ? samples : 1;
+	const u32 spec[7] = { n, SSAA_LOG2(n), k == WalkUnsorted ? 1u : keep, 0,
+			k == WalkUnsorted ? PVRC_V_UNSORTED : k == PVRC_K_WALK ? PVRC_V_SORTED : PVRC_V_ALL,
+			set == 0 && sumsOn ? 1u : 0u, set == 0 && depth ? 1u : 0u };
+	const vk::SpecializationMapEntry entries[7] = { { 0, 0, 4 }, { 1, 4, 4 }, { 2, 8, 4 }, { 3, 12, 4 }, { 4, 16, 4 }, { 5, 20, 4 }, { 6, 24, 4 } };
+	const vk::SpecializationInfo specInfo(7, entries, sizeof(spec), spec);
+	const vk::PipelineShaderStageCreateInfo stage(vk::PipelineShaderStageCreateFlags(), vk::ShaderStageFlagBits::eCompute, *modules[k], "main", &specInfo);
+	const vk::ComputePipelineCreateInfo info(vk::PipelineCreateFlags(), stage, *pipelineLayout);
+	const vk::Device device = VulkanContext::Instance()->GetDevice();
+	if (!orThrow)
+		return PsoCreateCompute(device, cache, info);
+	return (VkPipeline)device.createComputePipelineUnique(cache, info).release();
+}
 
 ComputeDrawer::ComputeDrawer() {}
 ComputeDrawer::~ComputeDrawer() {}
@@ -268,35 +313,35 @@ bool ComputeDrawer::Init(vk::Extent2D extent, u32 samples, CommandPool *pool, Sa
 	r->setLayout = device.createDescriptorSetLayoutUnique(vk::DescriptorSetLayoutCreateInfo(vk::DescriptorSetLayoutCreateFlags(), B_COUNT, bindings));
 	r->pipelineLayout = device.createPipelineLayoutUnique(vk::PipelineLayoutCreateInfo(vk::PipelineLayoutCreateFlags(), 1, &r->setLayout.get()));
 
-	/* every kernel, now, for this many samples, and for one when that is
-	 * not one (renders to a texture): none is made while a game runs. The
-	 * walk in its two variants (pvr_compute.h: PVRC_V_*), the one for the
-	 * tiles without sorted translucent fragments keeping none. (With the
-	 * HDR output, the screen's walks store the channel sums; at one sample
-	 * a pixel, renders to a texture have walks of their own, which do not.) */
-	for (int set = 0; set < (this->samples > 1 || r->sumsOn || depth ? 2 : 1); set++)
+	/* every kernel, asked for now (of the pipeline thread), for this many
+	 * samples, and for one when that is not one (renders to a texture):
+	 * none is made while a game runs. The walk in its two variants
+	 * (pvr_compute.h: PVRC_V_*), the one for the tiles without sorted
+	 * translucent fragments keeping none. (With the HDR output, the
+	 * screen's walks store the channel sums; at one sample a pixel, renders
+	 * to a texture have walks of their own, which do not.) */
+	r->samples = this->samples;
+	r->depth = depth;
+	PsoSlot *asked[2 * Resources::KINDS];
+	u32 n = 0;
+	for (int k = 1; k <= WalkUnsorted; k++)
 	{
-		const u32 n = set == 0 ? this->samples : 1;
+		const bool walk = k == PVRC_K_WALK || k == WalkUnsorted;
+		// (the walk's textures taken in turns where the device cannot index them non-uniformly)
+		const bool waterfall = walk && !context->SupportsNonUniformTextureIndexing();
+		r->modules[k] = device.createShaderModuleUnique(vk::ShaderModuleCreateInfo(vk::ShaderModuleCreateFlags(),
+				waterfall ? sizeof(compute_spv_walk_waterfall) : compute_spv_size[walk ? PVRC_K_WALK : k],
+				waterfall ? compute_spv_walk_waterfall : compute_spv[walk ? PVRC_K_WALK : k]));
+	}
+	for (int set = 0; set < (this->samples > 1 || r->sumsOn || depth ? 2 : 1); set++)
 		for (int k = 1; k <= WalkUnsorted; k++)
 		{
 			const bool walk = k == PVRC_K_WALK || k == WalkUnsorted;
 			if (set == 1 && this->samples <= 1 && !walk)
 				continue;
-			const u32 spec[7] = { n, SSAA_LOG2(n), k == WalkUnsorted ? 1u : r->keep, 0,
-					k == WalkUnsorted ? PVRC_V_UNSORTED : k == PVRC_K_WALK ? PVRC_V_SORTED : PVRC_V_ALL,
-					set == 0 && r->sumsOn ? 1u : 0u, set == 0 && depth ? 1u : 0u };
-			const vk::SpecializationMapEntry entries[7] = { { 0, 0, 4 }, { 1, 4, 4 }, { 2, 8, 4 }, { 3, 12, 4 }, { 4, 16, 4 }, { 5, 20, 4 }, { 6, 24, 4 } };
-			const vk::SpecializationInfo specInfo(7, entries, sizeof(spec), spec);
-			// (the walk's textures taken in turns where the device cannot index them non-uniformly)
-			const bool waterfall = walk && !context->SupportsNonUniformTextureIndexing();
-			vk::UniqueShaderModule module = device.createShaderModuleUnique(vk::ShaderModuleCreateInfo(vk::ShaderModuleCreateFlags(),
-					waterfall ? sizeof(compute_spv_walk_waterfall) : compute_spv_size[walk ? PVRC_K_WALK : k],
-					waterfall ? compute_spv_walk_waterfall : compute_spv[walk ? PVRC_K_WALK : k]));
-			const vk::PipelineShaderStageCreateInfo stage(vk::PipelineShaderStageCreateFlags(), vk::ShaderStageFlagBits::eCompute, *module, "main", &specInfo);
-			(set == 0 ? r->pipelines : r->rttPipelines)[k] = device.createComputePipelineUnique(context->GetPipelineCache(),
-					vk::ComputePipelineCreateInfo(vk::PipelineCreateFlags(), stage, *r->pipelineLayout));
+			asked[n++] = &r->kernels[set * Resources::KINDS + k];
 		}
-	}
+	VkPsoWorker::Instance().BuildSoon(asked, n, context->GetPipelineCache());
 
 	const vk::DescriptorPoolSize sizes[] = {
 		{ vk::DescriptorType::eStorageBuffer, (3u + GpuBindings) * slots },
@@ -602,7 +647,7 @@ void ComputeDrawer::Record(vk::Image image, vk::ImageView view, vk::ImageView la
 	/* (a render to a texture is drawn at one sample a pixel, and stores no
 	 * sums: the kernels of its own, where there are) */
 	auto pipeline = [&](int kernel) {
-		return r.rtt && r.rttPipelines[kernel] ? *r.rttPipelines[kernel] : *r.pipelines[kernel];
+		return vk::Pipeline(r.rtt && r.Has(1, kernel) ? r.Kernel(1, kernel) : r.Kernel(0, kernel));
 	};
 	const u32 n = r.rtt ? 1 : samples;
 	auto step = [&](int kernel, u32 x, u32 y) {

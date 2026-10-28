@@ -161,9 +161,13 @@ PsoChoice PipelineManager::Choose(u64 key)
 		if (slotGeneral != nullptr)
 			VkPsoWorker::BuildSync(slotGeneral, GetContext()->GetPipelineCache());
 	}
+	if (slotGeneral == nullptr)
+		return { VK_NULL_HANDLE, key, false };
 	if (PsoReady(slotGeneral))
 		return { slotGeneral->pipeline, key, true };
-	return { VK_NULL_HANDLE, key, false };
+	// (one handed to the worker at the start, not made yet: taken, made or waited for)
+	const VkPipeline general = VkPsoWorker::Need(slotGeneral);
+	return { general, key, general != VK_NULL_HANDLE };
 }
 
 void PipelineManager::SetDynamicState(vk::CommandBuffer cmdBuffer, u64 key) const
@@ -208,6 +212,7 @@ void PipelineManager::Reset()
 {
 	// (nothing of it is to be made any more; what is being made, finished)
 	NewGeneration();
+	VkPsoWorker::Instance().EndBatch(this);
 	VkPsoWorker::Instance().WaitIdle();
 	if (GetContext() != nullptr && GetContext()->GetDevice())
 	{
@@ -279,7 +284,7 @@ void PipelineManager::Prepare()
 					slot.pipeline = VK_NULL_HANDLE;
 					now.push_back(&slot);
 				}
-	worker.BuildNow(now.data(), (u32)now.size(), GetContext()->GetPipelineCache());
+	worker.BuildSoon(now.data(), (u32)now.size(), GetContext()->GetPipelineCache());
 	/* The polygons' own pipelines made in earlier runs: asked for now, made
 	 * while nothing more pressing is */
 	if (worker.Running())

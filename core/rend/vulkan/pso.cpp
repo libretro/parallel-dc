@@ -2,6 +2,7 @@
 #include "pso.h"
 #include <algorithm>
 #include <cstring>
+#include <vector>
 #if defined(__linux__)
 #include <sys/resource.h>
 #include <sys/syscall.h>
@@ -71,6 +72,44 @@ void PsoTable::Clear(vk::Device device)
 	used = 0;
 }
 
+void PsoOwnInit(PsoBuilder *owner, PsoSlot *slots, u32 n)
+{
+	for (u32 i = 0; i < n; i++)
+	{
+		slots[i].key = (u64)i;
+		slots[i].owner = owner;
+		slots[i].gen = 0;
+		slots[i].pipeline = VK_NULL_HANDLE;
+		slots[i].next = nullptr;
+		retro_atomic_int_init(&slots[i].state, PSO_EMPTY);
+	}
+}
+
+void PsoOwnDrop(PsoBuilder *owner, PsoSlot *slots, u32 n, vk::Device device)
+{
+	u32 i;
+	for (i = 0; i < n; i++)
+		if (retro_atomic_load_relaxed_int(&slots[i].state) != PSO_EMPTY)
+			break;
+	if (i == n)
+		return;
+	VkPsoWorker::Instance().EndBatch(owner);
+	for (i = 0; i < n; i++)
+	{
+		if (slots[i].pipeline != VK_NULL_HANDLE)
+			device.destroyPipeline(vk::Pipeline(slots[i].pipeline));
+		slots[i].pipeline = VK_NULL_HANDLE;
+		retro_atomic_store_relaxed_int(&slots[i].state, PSO_EMPTY);
+	}
+}
+
+VkPipeline PsoOwnMade(PsoSlot& slot, VkPipeline pipeline)
+{
+	slot.pipeline = pipeline;
+	retro_atomic_store_release_int(&slot.state, PSO_READY);
+	return pipeline;
+}
+
 void PsoKeyLog::Init()
 {
 	if (!keys)
@@ -109,9 +148,9 @@ VkPsoWorker::VkPsoWorker()
 	retro_atomic_int_init(&requested, 0);
 	retro_atomic_int_init(&answered, 0);
 	retro_atomic_int_init(&built, 0);
+	retro_atomic_int_init(&batchSize, 0);
 	retro_atomic_int_init(&batchActive, 0);
 	retro_atomic_int_init(&batchNext, 0);
-	retro_atomic_int_init(&batchDone, 0);
 	retro_atomic_int_init(&batchInside, 0);
 }
 
@@ -150,6 +189,8 @@ void VkPsoWorker::Start(vk::Device device, const void *initialData, size_t size,
 
 void VkPsoWorker::Stop(vk::PipelineCache into)
 {
+	// (what is left of the batch is not to be made any more)
+	EndBatch(nullptr);
 #ifndef TARGET_NO_THREADS
 	if (thread != nullptr)
 	{
@@ -206,14 +247,19 @@ bool VkPsoWorker::AllAnswered() const
 	return retro_atomic_load_acquire_int(&answered) == retro_atomic_load_relaxed_int(&requested);
 }
 
-bool VkPsoWorker::BatchDone() const
-{
-	return (u32)retro_atomic_load_acquire_int(&batchDone) == batchSize;
-}
-
 bool VkPsoWorker::BatchLeft() const
 {
 	return retro_atomic_load_seq_cst_int(&batchInside) == 0;
+}
+
+bool VkPsoWorker::BatchWaiting() const
+{
+	return retro_atomic_load_acquire_int(&batchNext) < retro_atomic_load_acquire_int(&batchSize);
+}
+
+bool VkPsoWorker::NotBuilding() const
+{
+	return retro_atomic_load_acquire_int(&waitingFor->state) != PSO_BUILDING;
 }
 
 void VkPsoWorker::Wait(bool (VkPsoWorker::*done)() const)
@@ -240,38 +286,105 @@ void VkPsoWorker::WaitIdle()
 		Wait(&VkPsoWorker::AllAnswered);
 }
 
-void VkPsoWorker::BuildNow(PsoSlot *const *slots, u32 n, vk::PipelineCache cache)
+// the next entry of the batch nobody has taken, or -1
+int VkPsoWorker::ClaimIndex()
+{
+	for (;;)
+	{
+		const int i = retro_atomic_load_acquire_int(&batchNext);
+		if (i >= retro_atomic_load_acquire_int(&batchSize))
+			return -1;
+		if (retro_atomic_cas_int(&batchNext, i, i + 1))
+			return i;
+	}
+}
+
+void VkPsoWorker::BuildSoon(PsoSlot *const *slots, u32 n, vk::PipelineCache cache)
 {
 	if (n == 0)
 		return;
-	for (u32 i = 0; i < n; i++)
-		retro_atomic_store_relaxed_int(&slots[i]->state, PSO_QUEUED);
-	batch = slots;
-	batchSize = n;
-	retro_atomic_store_relaxed_int(&batchNext, 0);
-	retro_atomic_store_relaxed_int(&batchDone, 0);
-	retro_atomic_fetch_add_seq_cst_int(&batchActive, 1);
-#ifndef TARGET_NO_THREADS
-	if (thread != nullptr)
-		work.Notify();
-#endif
-	for (;;)
+	if (!Running())
 	{
-		const u32 i = (u32)retro_atomic_fetch_add_int(&batchNext, 1);
-		if (i >= n)
-			break;
-		Build(slots[i], cache);
-		retro_atomic_fetch_add_int(&batchDone, 1);
+		for (u32 i = 0; i < n; i++)
+			Build(slots[i], cache);
+		return;
 	}
-	Wait(&VkPsoWorker::BatchDone);
-	retro_atomic_fetch_add_seq_cst_int(&batchActive, -1);
-	// (the worker may still be looking at the batch: not to be changed before it has gone)
-	Wait(&VkPsoWorker::BatchLeft);
-	batch = nullptr;
-	batchSize = 0;
+	if (batch == nullptr)
+		batch = new PsoSlot *[BATCH_CAPACITY];
+	int size = retro_atomic_load_relaxed_int(&batchSize);
+	for (u32 i = 0; i < n; i++)
+	{
+		if (size >= BATCH_CAPACITY)
+		{
+			// (more than the batch holds: made now, as all of them were once)
+			Build(slots[i], cache);
+			continue;
+		}
+		retro_atomic_store_relaxed_int(&slots[i]->state, PSO_QUEUED);
+		batch[size++] = slots[i];
+	}
+	retro_atomic_store_release_int(&batchSize, size);
+	if (retro_atomic_load_relaxed_int(&batchActive) == 0)
+		retro_atomic_fetch_add_seq_cst_int(&batchActive, 1);
+#ifndef TARGET_NO_THREADS
+	work.Notify();
+#endif
 }
 
-// the worker's part of BuildNow()'s slots: whether it made any
+VkPipeline VkPsoWorker::Need(PsoSlot *slot)
+{
+	for (;;)
+	{
+		const int state = retro_atomic_load_acquire_int(&slot->state);
+		if (state == PSO_READY)
+			return slot->pipeline;
+		if (state == PSO_QUEUED)
+		{
+			if (!retro_atomic_cas_int(&slot->state, PSO_QUEUED, PSO_BUILDING))
+				continue;
+			instance.syncBuilt++;
+			slot->pipeline = slot->owner->BuildPipeline(slot->key, instance.drawCache);
+			retro_atomic_store_release_int(&slot->state, slot->pipeline != VK_NULL_HANDLE ? PSO_READY : PSO_FAILED);
+			return slot->pipeline;
+		}
+		if (state != PSO_BUILDING)
+			return VK_NULL_HANDLE;
+		// the worker is making it
+		instance.waitingFor = slot;
+		instance.Wait(&VkPsoWorker::NotBuilding);
+	}
+}
+
+void VkPsoWorker::EndBatch(const PsoBuilder *owner)
+{
+	if (batch == nullptr || retro_atomic_load_relaxed_int(&batchActive) == 0)
+		return;
+	// what nobody has taken: @owner's dropped, the others' kept to be given again
+	std::vector<PsoSlot *> keep;
+	for (;;)
+	{
+		const int i = ClaimIndex();
+		if (i < 0)
+			break;
+		PsoSlot *slot = batch[i];
+		if (owner == nullptr || slot->owner == owner)
+			retro_atomic_cas_int(&slot->state, PSO_QUEUED, PSO_FAILED);
+		else if (retro_atomic_load_acquire_int(&slot->state) == PSO_QUEUED)
+			keep.push_back(slot);
+	}
+	// the worker out of the batch, with what it was making made
+	retro_atomic_fetch_add_seq_cst_int(&batchActive, -1);
+#ifndef TARGET_NO_THREADS
+	work.Notify();
+#endif
+	Wait(&VkPsoWorker::BatchLeft);
+	retro_atomic_store_relaxed_int(&batchNext, 0);
+	retro_atomic_store_release_int(&batchSize, 0);
+	if (!keep.empty())
+		BuildSoon(keep.data(), (u32)keep.size(), drawCache);
+}
+
+// the worker's part of the batch: whether it made any
 bool VkPsoWorker::HelpBatch()
 {
 	if (retro_atomic_load_acquire_int(&batchActive) == 0)
@@ -280,15 +393,19 @@ bool VkPsoWorker::HelpBatch()
 	bool any = false;
 	if (retro_atomic_load_seq_cst_int(&batchActive) != 0)
 	{
-		const u32 n = batchSize;
 		for (;;)
 		{
-			const u32 i = (u32)retro_atomic_fetch_add_int(&batchNext, 1);
-			if (i >= n)
+			const int i = ClaimIndex();
+			if (i < 0)
 				break;
-			Build(batch[i], vk::PipelineCache(cache));
-			retro_atomic_fetch_add_int(&batchDone, 1);
-			any = true;
+			PsoSlot *slot = batch[i];
+			// (a draw may have taken it already)
+			if (retro_atomic_cas_int(&slot->state, PSO_QUEUED, PSO_BUILDING))
+			{
+				Build(slot, vk::PipelineCache(cache));
+				retro_atomic_fetch_add_int(&built, 1);
+				any = true;
+			}
 #ifndef TARGET_NO_THREADS
 			idle.Notify();
 #endif
@@ -354,7 +471,7 @@ void VkPsoWorker::Loop()
 			PsoSlot *u = urgent.TakeAll();
 			PsoSlot *b = background.TakeAll();
 			if (u != nullptr || b != nullptr || retro_atomic_load_acquire_int(&stop) != 0
-					|| retro_atomic_load_acquire_int(&batchActive) != 0)
+					|| (retro_atomic_load_acquire_int(&batchActive) != 0 && BatchWaiting()))
 			{
 				work.Cancel();
 				append(u, urgentHead, urgentTail);

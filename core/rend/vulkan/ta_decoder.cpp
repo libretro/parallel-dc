@@ -2,6 +2,7 @@
 #include "ta_decoder.h"
 #include "commandpool.h"
 #include "vulkan_context.h"
+#include "pso.h"
 #include "rend/ta_gpu.h"
 
 #include <algorithm>
@@ -22,8 +23,35 @@ static_assert(TAG_C_WORDS * 4 == sizeof(VkDrawIndexedIndirectCommand), "a record
  * piece of the sorted indices (B_SRT: the prepass's kernel's) */
 enum { B_TAB, B_VTX, B_MOD, B_IDX, B_WORK, B_REC, B_CMD, B_FRM, B_TRD, B_TRP, B_COUNT, B_SRT = B_COUNT };
 
-struct TaDecoder::Resources
+/* (its kernels' pipelines: asked of the pipeline thread by Init(), pso.h;
+ * the first frame takes them, or makes them there and fails there as Init()
+ * did when the device cannot) */
+struct TaDecoder::Resources : public PsoBuilder
 {
+	Resources() { PsoOwnInit(this, kernels, TAG_KERNELS + 1); }
+	// (the pipeline thread done with what it has of them before the modules go)
+	~Resources() override { PsoOwnDrop(this, kernels, TAG_KERNELS + 1, VulkanContext::Instance()->GetDevice()); }
+	VkPipeline Make(u64 k, vk::PipelineCache cache, bool orThrow) const
+	{
+		const vk::PipelineShaderStageCreateInfo stage(vk::PipelineShaderStageCreateFlags(), vk::ShaderStageFlagBits::eCompute, *modules[k], "main");
+		const vk::ComputePipelineCreateInfo info(vk::PipelineCreateFlags(), stage, *pipelineLayout);
+		const vk::Device device = VulkanContext::Instance()->GetDevice();
+		if (!orThrow)
+			return PsoCreateCompute(device, cache, info);
+		return (VkPipeline)device.createComputePipelineUnique(cache, info).release();
+	}
+	VkPipeline BuildPipeline(u64 key, vk::PipelineCache cache) override { return Make(key, cache, false); }
+	// (one the pipeline thread could not make: made here, or thrown for as Init() did)
+	vk::Pipeline Kernel(int k)
+	{
+		const VkPipeline made = PsoGet(kernels[k]);
+		if (made != VK_NULL_HANDLE)
+			return vk::Pipeline(made);
+		return vk::Pipeline(PsoOwnMade(kernels[k], Make((u64)k, VulkanContext::Instance()->GetPipelineCache(), true)));
+	}
+	vk::UniqueShaderModule modules[TAG_KERNELS + 1];
+	PsoSlot kernels[TAG_KERNELS + 1];
+
 	std::unique_ptr<BufferData> pool;	// the TA contexts' data
 	std::unique_ptr<BufferData> buffers[B_COUNT];
 	u32 *tables = nullptr;			// mapped: a piece for each frame
@@ -32,7 +60,6 @@ struct TaDecoder::Resources
 	TaGpuLayout layout;
 	vk::UniqueDescriptorSetLayout setLayouts[2];
 	vk::UniquePipelineLayout pipelineLayout;
-	vk::UniquePipeline pipelines[TAG_KERNELS + 1];
 	vk::UniqueDescriptorPool descriptorPool;
 	std::vector<vk::DescriptorSet> sliceSets, tableSets;
 	vk::UniqueQueryPool queries;		// two timestamps a frame, if the queue has them
@@ -174,15 +201,15 @@ bool TaDecoder::Init(CommandPool& pool)
 	const vk::DescriptorSetLayout layouts[] = { *r->setLayouts[0], *r->setLayouts[1] };
 	r->pipelineLayout = device.createPipelineLayoutUnique(vk::PipelineLayoutCreateInfo(vk::PipelineLayoutCreateFlags(), 2, layouts));
 
-	// every kernel, now: none is made while a game runs
+	// every kernel, asked for now (of the pipeline thread): none is made while a game runs
+	PsoSlot *asked[TAG_KERNELS];
 	for (int k = 1; k <= TAG_KERNELS; k++)
 	{
-		vk::UniqueShaderModule module = device.createShaderModuleUnique(vk::ShaderModuleCreateInfo(vk::ShaderModuleCreateFlags(),
+		r->modules[k] = device.createShaderModuleUnique(vk::ShaderModuleCreateInfo(vk::ShaderModuleCreateFlags(),
 				ta_gpu_spv_size[k], ta_gpu_spv[k]));
-		const vk::PipelineShaderStageCreateInfo stage(vk::PipelineShaderStageCreateFlags(), vk::ShaderStageFlagBits::eCompute, *module, "main");
-		r->pipelines[k] = device.createComputePipelineUnique(context->GetPipelineCache(),
-				vk::ComputePipelineCreateInfo(vk::PipelineCreateFlags(), stage, *r->pipelineLayout));
+		asked[k - 1] = &r->kernels[k];
 	}
+	VkPsoWorker::Instance().BuildSoon(asked, TAG_KERNELS, context->GetPipelineCache());
 
 	const vk::DescriptorPoolSize poolSize(vk::DescriptorType::eStorageBuffer, r->slices + (B_COUNT + 1) * frames);
 	r->descriptorPool = device.createDescriptorPoolUnique(vk::DescriptorPoolCreateInfo(vk::DescriptorPoolCreateFlags(), r->slices + frames, 1, &poolSize));
@@ -463,13 +490,13 @@ void TaDecoder::Record(TA_context *ctx, CommandPool& pool)
 			vk::AccessFlagBits::eShaderRead | vk::AccessFlagBits::eShaderWrite | vk::AccessFlagBits::eIndirectCommandRead);
 	const vk::PipelineStageFlags next = vk::PipelineStageFlagBits::eComputeShader | vk::PipelineStageFlagBits::eDrawIndirect;
 	auto dispatch = [&](int k, u32 groups) {
-		cmd.bindPipeline(vk::PipelineBindPoint::eCompute, *r.pipelines[k]);
+		cmd.bindPipeline(vk::PipelineBindPoint::eCompute, r.Kernel(k));
 		if (groups != 0)
 			cmd.dispatch(groups, 1, 1);
 		cmd.pipelineBarrier(vk::PipelineStageFlagBits::eComputeShader, next, {}, step, nullptr, nullptr);
 	};
 	auto indirect = [&](int k, u32 at) {
-		cmd.bindPipeline(vk::PipelineBindPoint::eCompute, *r.pipelines[k]);
+		cmd.bindPipeline(vk::PipelineBindPoint::eCompute, r.Kernel(k));
 		cmd.dispatchIndirect(frm, (vk::DeviceSize)at * 4);
 		cmd.pipelineBarrier(vk::PipelineStageFlagBits::eComputeShader, next, {}, step, nullptr, nullptr);
 	};

@@ -9,8 +9,12 @@
  * them (VK_EXT_extended_dynamic_state and _state3), the depth, stencil,
  * cull, topology and blend states set with the draw. It draws the same
  * pixels. The general pipelines, the modifier volumes' and the other fixed
- * ones are made when the renderer starts, by this thread and the worker
- * together, so no draw ever waits for one.
+ * ones are handed to the worker when the renderer starts (BuildSoon()),
+ * without waiting for them: a draw that needs one first takes it made, or
+ * makes it there and then if the worker has not started on it, or waits for
+ * the worker if it is making it (PsoGet()). So the renderer starts at once,
+ * and a draw waits only for a fixed pipeline it needs before the worker got
+ * to it.
  *
  * A device without the dynamic states has a general pipeline for each of
  * those states it is drawn with; one not made yet (a state not seen in the
@@ -29,7 +33,9 @@
 
 class PsoBuilder;
 
-enum PsoState { PSO_EMPTY, PSO_QUEUED, PSO_READY, PSO_FAILED };
+/* BUILDING: taken by one thread to make - the worker or a draw - so that it
+ * is made once */
+enum PsoState { PSO_EMPTY, PSO_QUEUED, PSO_READY, PSO_FAILED, PSO_BUILDING };
 
 struct PsoSlot
 {
@@ -117,6 +123,20 @@ static inline VkPipeline PsoCreate(vk::Device device, vk::PipelineCache cache, c
 	return pipeline;
 }
 
+// a compute pipeline, or VK_NULL_HANDLE (and a line in the log)
+static inline VkPipeline PsoCreateCompute(vk::Device device, vk::PipelineCache cache, const vk::ComputePipelineCreateInfo& info)
+{
+	VkPipeline pipeline = VK_NULL_HANDLE;
+	const VkResult res = vkCreateComputePipelines((VkDevice)device, (VkPipelineCache)cache, 1,
+			reinterpret_cast<const VkComputePipelineCreateInfo *>(&info), nullptr, &pipeline);
+	if (res != VK_SUCCESS)
+	{
+		WARN_LOG(RENDERER, "Vulkan: a pipeline could not be made (%d)", (int)res);
+		return VK_NULL_HANDLE;
+	}
+	return pipeline;
+}
+
 /* (tests: every polygon drawn with the general pipelines, to see they draw
  * what the polygons' own ones do) */
 #ifdef VK_PSO_TEST_GENERAL
@@ -180,9 +200,22 @@ public:
 	void Request(PsoSlot *slot) { Ask(slot, urgent); }
 	// made when nothing more pressing is asked
 	void Prefetch(PsoSlot *slot) { Ask(slot, background); }
-	/* @n slots made now, by this thread (with @cache) and the worker
-	 * together; back when all are */
-	void BuildNow(PsoSlot *const *slots, u32 n, vk::PipelineCache cache);
+	/* @n slots given to the worker to make before anything else, not waited
+	 * for: a draw takes each with PsoGet(). (Without the worker: made now,
+	 * with @cache.) Slots stay the batch's until EndBatch(). */
+	void BuildSoon(PsoSlot *const *slots, u32 n, vk::PipelineCache cache);
+	/* The batch done with, before @owner's slots go: what is left of @owner's
+	 * is dropped, what is left of the others' made now with the draw cache
+	 * (@owner nullptr: everything left dropped); back when the worker has
+	 * left the batch. */
+	void EndBatch(const PsoBuilder *owner);
+	/* The cache a draw that makes a fixed pipeline itself makes it with: the
+	 * context's (only the drawing thread uses it) */
+	void SetDrawCache(vk::PipelineCache cache) { drawCache = cache; }
+	/* A slot of the batch not made yet, for a draw: made now on this thread
+	 * if the worker has not taken it, else waited for. Its pipeline, or
+	 * VK_NULL_HANDLE if it was never asked for or could not be made. */
+	static VkPipeline Need(PsoSlot *slot);
 	// until all that was asked so far is made or dropped
 	void WaitIdle();
 	// the worker's cache merged into @into (the worker idle)
@@ -205,10 +238,12 @@ private:
 	static void Entry(void *p) { ((VkPsoWorker *)p)->Loop(); }
 	void Loop();
 	bool HelpBatch();
+	int ClaimIndex();
+	bool BatchWaiting() const;
 	void Wait(bool (VkPsoWorker::*done)() const);
 	bool AllAnswered() const;
-	bool BatchDone() const;
 	bool BatchLeft() const;
+	bool NotBuilding() const;
 
 	static VkPsoWorker instance;
 
@@ -227,17 +262,40 @@ private:
 	retro_atomic_int_t built;
 	u32 syncBuilt = 0;
 
-	// BuildNow()'s slots, shared out between the two threads
-	PsoSlot *const *batch = nullptr;
-	u32 batchSize = 0;
+	/* BuildSoon()'s slots, shared out between the two
+	 * threads: entries [0, batchSize) are published (the drawing thread
+	 * appends them), [batchNext, batchSize) not taken yet */
+	enum { BATCH_CAPACITY = 4096 };
+	PsoSlot **batch = nullptr;
+	retro_atomic_int_t batchSize;
 	retro_atomic_int_t batchActive;
 	retro_atomic_int_t batchNext;
-	retro_atomic_int_t batchDone;
 	retro_atomic_int_t batchInside;
+	vk::PipelineCache drawCache;
+	PsoSlot *waitingFor = nullptr;	// Need()'s, for NotBuilding()
 
 public:
 	VkPsoWorker();
 };
+
+/* Slots of a builder's own, not a table's: the device's utility pipelines
+ * (quad.h, ssaa.h, tex_decoder.h, compute_drawer.cpp), handed to the worker
+ * with BuildSoon() where the device made them before. Init: @n of them,
+ * empty, keyed 0 to @n - 1. Drop: what the worker has of them dropped, the
+ * pipelines destroyed, empty again (nothing done if they are). Made: a
+ * pipeline the drawing thread made itself, published. */
+void PsoOwnInit(PsoBuilder *owner, PsoSlot *slots, u32 n);
+void PsoOwnDrop(PsoBuilder *owner, PsoSlot *slots, u32 n, vk::Device device);
+VkPipeline PsoOwnMade(PsoSlot& slot, VkPipeline pipeline);
+
+/* A fixed slot's pipeline for a draw (VkPsoWorker::BuildSoon()): once it is
+ * made, an acquire load and a compare more than reading it */
+static inline VkPipeline PsoGet(PsoSlot& slot)
+{
+	if (retro_atomic_load_acquire_int(&slot.state) == PSO_READY)
+		return slot.pipeline;
+	return VkPsoWorker::Need(&slot);
+}
 
 /* Device functions of VK_EXT_extended_dynamic_state and _state3 the general
  * pipelines are drawn with (VulkanContext has them when the device does);

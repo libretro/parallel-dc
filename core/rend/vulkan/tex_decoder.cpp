@@ -94,18 +94,20 @@ void TexDecoder::Init()
 	const vk::PushConstantRange pushRange(vk::ShaderStageFlagBits::eCompute, 0, sizeof(Level::pc));
 	pipelineLayout = device.createPipelineLayoutUnique(vk::PipelineLayoutCreateInfo(vk::PipelineLayoutCreateFlags(), 2, layouts, 1, &pushRange));
 
-	// every kernel there is, now: none is made while a game runs
+	/* every kernel there is, asked for now (of the pipeline thread): none is
+	 * made while a game runs */
 	const bool wanted[3] = { takes8, takes16[0] || takes16[1] || takes16[2], takes32 };
+	PsoSlot *asked[3];
+	u32 n = 0;
 	for (u32 out = 0; out < 3; out++)
 	{
 		if (!wanted[out])
 			continue;
-		vk::UniqueShaderModule module = device.createShaderModuleUnique(vk::ShaderModuleCreateInfo(vk::ShaderModuleCreateFlags(),
+		modules[out] = device.createShaderModuleUnique(vk::ShaderModuleCreateInfo(vk::ShaderModuleCreateFlags(),
 				texdecode_spv_size[out], texdecode_spv[out]));
-		const vk::PipelineShaderStageCreateInfo stage(vk::PipelineShaderStageCreateFlags(), vk::ShaderStageFlagBits::eCompute, *module, "main");
-		pipelines[out] = device.createComputePipelineUnique(context->GetPipelineCache(),
-				vk::ComputePipelineCreateInfo(vk::PipelineCreateFlags(), stage, *pipelineLayout));
+		asked[n++] = &pipelines[out];
 	}
+	VkPsoWorker::Instance().BuildSoon(asked, n, context->GetPipelineCache());
 
 	const vk::DescriptorPoolSize ringSize(vk::DescriptorType::eStorageBuffer, 1);
 	ringPool = device.createDescriptorPoolUnique(vk::DescriptorPoolCreateInfo(vk::DescriptorPoolCreateFlags(), 1, 1, &ringSize));
@@ -143,8 +145,10 @@ void TexDecoder::Term()
 	pools.clear();
 	ringSet = vk::DescriptorSet();
 	ringPool.reset();
-	for (auto& p : pipelines)
-		p.reset();
+	// (the pipeline thread done with what it has of them before the modules go)
+	PsoOwnDrop(this, pipelines, 3, VulkanContext::Instance() != nullptr ? VulkanContext::Instance()->GetDevice() : vk::Device());
+	for (auto& m : modules)
+		m.reset();
 	pipelineLayout.reset();
 	imageLayout.reset();
 	ringLayout.reset();
@@ -154,6 +158,32 @@ void TexDecoder::Term()
 	takes32 = takes8 = false;
 	takes16[0] = takes16[1] = takes16[2] = false;
 	native[0] = native[1] = native[2] = vk::Format::eUndefined;
+}
+
+/* @orThrow: as vulkan.hpp does when the device cannot make it, else
+ * VK_NULL_HANDLE */
+static VkPipeline MakeKernel(vk::ShaderModule module, vk::PipelineLayout layout, vk::PipelineCache cache, bool orThrow)
+{
+	const vk::Device device = VulkanContext::Instance()->GetDevice();
+	const vk::PipelineShaderStageCreateInfo stage(vk::PipelineShaderStageCreateFlags(), vk::ShaderStageFlagBits::eCompute, module, "main");
+	const vk::ComputePipelineCreateInfo info(vk::PipelineCreateFlags(), stage, layout);
+	if (!orThrow)
+		return PsoCreateCompute(device, cache, info);
+	return (VkPipeline)device.createComputePipelineUnique(cache, info).release();
+}
+
+VkPipeline TexDecoder::BuildPipeline(u64 key, vk::PipelineCache cache)
+{
+	return MakeKernel(*modules[key], *pipelineLayout, cache, false);
+}
+
+// (one the pipeline thread could not make: made here, or thrown for as Init() did)
+VkPipeline TexDecoder::Pipeline(u32 out)
+{
+	const VkPipeline made = PsoGet(pipelines[out]);
+	if (made != VK_NULL_HANDLE)
+		return made;
+	return PsoOwnMade(pipelines[out], MakeKernel(*modules[out], *pipelineLayout, VulkanContext::Instance()->GetPipelineCache(), true));
 }
 
 bool TexDecoder::Takes(vk::Format format) const
@@ -363,7 +393,7 @@ void TexDecoder::Flush(CommandPool& pool)
 				}
 				if (!bound && job.count > 0)
 				{
-					cmd.bindPipeline(vk::PipelineBindPoint::eCompute, *pipelines[out]);
+					cmd.bindPipeline(vk::PipelineBindPoint::eCompute, vk::Pipeline(Pipeline(out)));
 					bound = true;
 				}
 				for (u32 d = job.first; d < job.first + job.count; d++, s++)

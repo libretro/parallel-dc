@@ -21,6 +21,7 @@
 #include "buffer.h"
 #include "texture.h"
 #include "commandpool.h"
+#include "pso.h"
 #include "rend/upscaler.h"
 #include <memory>
 #include <vector>
@@ -32,10 +33,14 @@
  * colour. The vectors are of the strips rend/upscaler.cpp matched with
  * the frame before's. The pipelines are made with the drawer's layout,
  * whose per-frame descriptor set (the vertex uniforms) is bound when
- * Record() is called. */
-class MotionVectorPass
+ * Record() is called. Its three pipelines are asked of the pipeline
+ * thread when it is made (pso.h): the first Record() takes them, or makes
+ * them there and fails there as Init() did when the device cannot. */
+class MotionVectorPass : public PsoBuilder
 {
 public:
+	MotionVectorPass() { PsoOwnInit(this, pipelines, 3); }
+	~MotionVectorPass() override { Term(nullptr); }
 	/* Made for a size and the frame's depth images (one a frame slot,
 	 * which the vectors' images are too), in the layout the frame leaves
 	 * them in; made again when any of that changes */
@@ -62,12 +67,18 @@ public:
 	// the vectors and the frame's depth, to the upscaler
 	void Submit(int image, vk::Image depthImage, vk::ImageView depthView, vk::Format depthFormat);
 	bool Recorded() const { return recorded; }
+	// the pipeline thread's: @key the cull mode's
+	VkPipeline BuildPipeline(u64 key, vk::PipelineCache cache) override { return Make((int)key, cache, false); }
 
 private:
 	vk::Extent2D size;
 	vk::ImageLayout depthLayout = vk::ImageLayout::eUndefined;
 	vk::UniqueRenderPass renderPass;
-	vk::UniquePipeline pipelines[3];
+	PsoSlot pipelines[3];	// by cull mode
+	// what they are made of
+	vk::PipelineLayout pipelineLayout;
+	vk::ShaderModule vertexShader, fragmentShader;
+	bool depthTest = false;
 	std::vector<std::unique_ptr<FramebufferAttachment>> attachments;
 	std::vector<vk::UniqueFramebuffer> framebuffers;
 	std::vector<std::unique_ptr<BufferData>> prevXyBuffers;
@@ -82,4 +93,7 @@ private:
 	vk::UniqueSampler depthSampler;
 
 	void MakePipelines(vk::PipelineLayout pipelineLayout, vk::ShaderModule vertexShader, vk::ShaderModule fragmentShader, bool depthTest);
+	// @orThrow: as vulkan.hpp does when the device cannot make it, else VK_NULL_HANDLE
+	VkPipeline Make(int cull, vk::PipelineCache cache, bool orThrow) const;
+	vk::Pipeline Pipeline(int cull);
 };

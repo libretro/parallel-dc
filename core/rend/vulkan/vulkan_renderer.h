@@ -39,10 +39,11 @@ public:
 	{
 		ta_set_flat_strips(false);
 		ta_set_modvol_clip(false);
-		shaderManager.Term();
-		vmus.reset();
+		// (the quad pipelines before the modules they may be being made with)
 		quadPipeline.Term();
 		overlayQuadPipeline.Term();
+		shaderManager.Term();
+		vmus.reset();
 		vk_rtt_term();
 		textureCache.Clear();
 		Texture::SetDecoder(nullptr);
@@ -350,7 +351,6 @@ protected:
 		if (pass)
 		{
 			overlayQuadPipeline.Init(&shaderManager, pass, 0);
-			overlayQuadPipeline.Make();
 		}
 	}
 	std::unique_ptr<VulkanOSD> vmus;

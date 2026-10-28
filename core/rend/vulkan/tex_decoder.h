@@ -25,6 +25,7 @@
 #pragma once
 #include "vulkan.h"
 #include "buffer.h"
+#include "pso.h"
 #include "rend/texdecode.h"
 #include "rend/TexCache.h"
 
@@ -33,9 +34,14 @@
 
 class CommandPool;
 
-class TexDecoder
+/* (its kernels' pipelines: asked of the pipeline thread by Init(), pso.h;
+ * the first frame that decodes takes them, or makes them there and fails
+ * there as Init() did when the device cannot) */
+class TexDecoder : public PsoBuilder
 {
 public:
+	TexDecoder() { PsoOwnInit(this, pipelines, 3); }
+	~TexDecoder() override { Term(); }
 	/* Everything made, for the swap chain the context has; again if that
 	 * changed, nothing done otherwise. Nothing is decoded here when the
 	 * device cannot. */
@@ -83,6 +89,9 @@ public:
 	u64 statCopies = 0;
 	u64 statFull = 0;		// textures that found no room
 
+	// the pipeline thread's: @key TEXD_OUT8, 16 or 32
+	VkPipeline BuildPipeline(u64 key, vk::PipelineCache cache) override;
+
 private:
 	enum { MAX_JOBS = 1024, MAX_DISPATCHES = 4096 };
 
@@ -117,7 +126,9 @@ private:
 
 	vk::UniqueDescriptorSetLayout ringLayout, imageLayout;
 	vk::UniquePipelineLayout pipelineLayout;
-	vk::UniquePipeline pipelines[3];	// by TEXD_OUT8, 16, 32
+	vk::UniqueShaderModule modules[3];	// by TEXD_OUT8, 16, 32
+	PsoSlot pipelines[3];
+	VkPipeline Pipeline(u32 out);
 	vk::UniqueDescriptorPool ringPool;
 	vk::DescriptorSet ringSet;
 	std::vector<vk::UniqueDescriptorPool> pools;	// by frame

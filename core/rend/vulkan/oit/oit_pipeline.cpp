@@ -140,9 +140,13 @@ OITPsoChoice OITPipelineManager::Choose(u64 key)
 		if (slotGeneral != nullptr)
 			VkPsoWorker::BuildSync(slotGeneral, GetContext()->GetPipelineCache());
 	}
+	if (slotGeneral == nullptr)
+		return { VK_NULL_HANDLE, key, false };
 	if (PsoReady(slotGeneral))
 		return { slotGeneral->pipeline, key, true };
-	return { VK_NULL_HANDLE, key, false };
+	// (one handed to the worker at the start, not made yet: taken, made or waited for)
+	const VkPipeline general = VkPsoWorker::Need(slotGeneral);
+	return { general, key, general != VK_NULL_HANDLE };
 }
 
 void OITPipelineManager::SetDynamicState(vk::CommandBuffer cmdBuffer, u64 key) const
@@ -188,6 +192,7 @@ void OITPipelineManager::Reset()
 {
 	// (nothing of it is to be made any more; what is being made, finished)
 	NewGeneration();
+	VkPsoWorker::Instance().EndBatch(this);
 	VkPsoWorker::Instance().WaitIdle();
 	if (GetContext() != nullptr && GetContext()->GetDevice())
 	{
@@ -227,6 +232,19 @@ void OITPipelineManager::Prepare()
 		const u32 rate = (key >> KEY_RATE) & 3;
 		return ((key >> KEY_KIND) & 15) == KIND_POLY && (samples > 1 ? rate == 1 || rate == 2 : rate == 0);
 	};
+	/* The fixed ones first: every frame draws with them */
+	for (u32 i = 0; i < FIXED_COUNT; i++)
+	{
+		if (i == FIXED_FINAL_PER_SAMPLE && samples <= 1)
+			continue;
+		if (i == FIXED_FINAL_SUMS && !sums)
+			continue;
+		PsoSlot& slot = fixedSlots[i];
+		slot.key = ((u64)KIND_FIXED << KEY_KIND) | i;
+		slot.owner = this;
+		slot.pipeline = VK_NULL_HANDLE;
+		now.push_back(&slot);
+	}
 	/* The general pipelines: of each module and subpass, and of each fixed
 	 * state the device must have made with them. The depth pass draws the
 	 * opaque polygons in subpass 0, the translucent ones in 2; the colour
@@ -245,20 +263,7 @@ void OITPipelineManager::Prepare()
 				}
 			}
 	GetContext()->PsoKeys().ForEach(who, [&](u64 key) { if (fits(key)) addGeneral(key); });
-	// the fixed ones
-	for (u32 i = 0; i < FIXED_COUNT; i++)
-	{
-		if (i == FIXED_FINAL_PER_SAMPLE && samples <= 1)
-			continue;
-		if (i == FIXED_FINAL_SUMS && !sums)
-			continue;
-		PsoSlot& slot = fixedSlots[i];
-		slot.key = ((u64)KIND_FIXED << KEY_KIND) | i;
-		slot.owner = this;
-		slot.pipeline = VK_NULL_HANDLE;
-		now.push_back(&slot);
-	}
-	worker.BuildNow(now.data(), (u32)now.size(), GetContext()->GetPipelineCache());
+	worker.BuildSoon(now.data(), (u32)now.size(), GetContext()->GetPipelineCache());
 	/* The polygons' own pipelines made in earlier runs: asked for now, made
 	 * while nothing more pressing is */
 	if (worker.Running())

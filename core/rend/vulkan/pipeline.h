@@ -228,7 +228,7 @@ public:
 
 	vk::Pipeline GetModifierVolumePipeline(ModVolMode mode, int cullMode) const
 	{
-		return vk::Pipeline(modVolSlots[ModVolIndex(mode, cullMode)].pipeline);
+		return vk::Pipeline(PsoGet(modVolSlots[ModVolIndex(mode, cullMode)]));
 	}
 
 	/* The depth prepass of a sorted translucent list (rend/sorter.h): the
@@ -238,7 +238,7 @@ public:
 	vk::Pipeline GetPrepassPipeline(const PolyParam& pp) const
 	{
 		const bool sampleRate = samples > 1 && !SsaaSingleRate(pp);
-		return vk::Pipeline(prepassSlots[pp.pcw.Texture][pp.pcw.Gouraud][pp.isp.CullMode == 3 ? 2 : pp.isp.CullMode == 2 ? 1 : 0][sampleRate].pipeline);
+		return vk::Pipeline(PsoGet(prepassSlots[pp.pcw.Texture][pp.pcw.Gouraud][pp.isp.CullMode == 3 ? 2 : pp.isp.CullMode == 2 ? 1 : 0][sampleRate]));
 	}
 
 	/* Everything made dropped: what the worker has of it first. (A new
@@ -325,9 +325,10 @@ private:
 	PsoTable pipelines;		// the polygons' own
 	PsoTable general;		// the general ones
 	// the modifier volumes': by mode and cull mode (ModVolIndex()), made with the general ones
-	PsoSlot modVolSlots[(int)ModVolMode::Depth * 3 + 3] = {};
+	// (mutable: a draw's getter may make one, PsoGet())
+	mutable PsoSlot modVolSlots[(int)ModVolMode::Depth * 3 + 3] = {};
 	// the depth prepass's: [textured][Gouraud][no culling, front, back][SSAA: shaded at each sample]
-	PsoSlot prepassSlots[2][2][3][2] = {};
+	mutable PsoSlot prepassSlots[2][2][3][2] = {};
 	u64 lastKey = ~0ull;
 	PsoChoice lastChoice = {};
 

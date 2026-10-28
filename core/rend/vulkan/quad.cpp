@@ -50,7 +50,29 @@ vk::PipelineVertexInputStateCreateInfo GetQuadInputStateCreateInfo(bool uv)
 			vertexInputAttributeDescriptions);
 }
 
-void QuadPipeline::CreatePipeline(bool alpha)
+QuadPipeline::QuadPipeline()
+{
+	PsoOwnInit(this, slots, 2);
+}
+
+VkPipeline QuadPipeline::BuildPipeline(u64 key, vk::PipelineCache cache)
+{
+	return Create(key != 0, cache, false);
+}
+
+vk::Pipeline QuadPipeline::MakeHere(bool alpha)
+{
+	return vk::Pipeline(PsoOwnMade(slots[alpha ? 1 : 0], Create(alpha, GetContext()->GetPipelineCache(), true)));
+}
+
+void QuadPipeline::Drop()
+{
+	PsoOwnDrop(this, slots, 2, GetContext() != nullptr ? GetContext()->GetDevice() : vk::Device());
+}
+
+/* @orThrow: as vulkan.hpp does when the device cannot make it, else
+ * VK_NULL_HANDLE */
+VkPipeline QuadPipeline::Create(bool alpha, vk::PipelineCache cache, bool orThrow)
 {
 	vk::PipelineVertexInputStateCreateInfo pipelineVertexInputStateCreateInfo = GetQuadInputStateCreateInfo(true);
 
@@ -118,7 +140,9 @@ void QuadPipeline::CreatePipeline(bool alpha)
 	  subpass                                     // subpass
 	);
 
-	(alpha ? alphaPipeline : pipeline) = GetContext()->GetDevice().createGraphicsPipelineUnique(GetContext()->GetPipelineCache(), graphicsPipelineCreateInfo);
+	if (!orThrow)
+		return PsoCreate(GetContext()->GetDevice(), cache, graphicsPipelineCreateInfo);
+	return (VkPipeline)GetContext()->GetDevice().createGraphicsPipelineUnique(cache, graphicsPipelineCreateInfo).release();
 }
 
 void QuadPipeline::Init(ShaderManager *shaderManager, vk::RenderPass renderPass, int subpass, u32 samples)
@@ -169,14 +193,13 @@ void QuadPipeline::Init(ShaderManager *shaderManager, vk::RenderPass renderPass,
 	}
 	if (this->renderPass != renderPass || this->subpass != subpass || this->samples != samples)
 	{
+		Drop();
 		this->renderPass = renderPass;
 		this->subpass = subpass;
 		this->samples = samples;
-		pipeline.reset();
-		alphaPipeline.reset();
-		// (both made now, not when first drawn: what the VMUs and the OSD are drawn with, the last picture)
-		CreatePipeline(false);
-		CreatePipeline(true);
+		// (both asked for now, not when first drawn: what the VMUs and the OSD are drawn with, the last picture)
+		PsoSlot *both[] = { &slots[0], &slots[1] };
+		VkPsoWorker::Instance().BuildSoon(both, 2, GetContext()->GetPipelineCache());
 	}
 }
 
@@ -236,10 +259,21 @@ void QuadDrawer::Draw(vk::CommandBuffer commandBuffer, vk::ImageView imageView, 
 	buffer->Draw(commandBuffer);
 }
 
+SsaaResolve::SsaaResolve()
+{
+	PsoOwnInit(this, &slot, 1);
+}
+
+void SsaaResolve::Drop()
+{
+	PsoOwnDrop(this, &slot, 1, VulkanContext::Instance() != nullptr ? VulkanContext::Instance()->GetDevice() : vk::Device());
+}
+
 void SsaaResolve::Init(vk::RenderPass renderPass, u32 subpass, u32 samples, vk::ImageView samplesView)
 {
 	VulkanContext *context = VulkanContext::Instance();
 	vk::Device device = context->GetDevice();
+	Drop();
 	if (!setLayout)
 	{
 		vk::DescriptorSetLayoutBinding binding(0, vk::DescriptorType::eInputAttachment, 1, vk::ShaderStageFlagBits::eFragment);
@@ -249,15 +283,30 @@ void SsaaResolve::Init(vk::RenderPass renderPass, u32 subpass, u32 samples, vk::
 		vertexShader = MakeRasterModule(RSPV_SSAA_RESOLVE_VERT);
 		fragmentShader = MakeRasterModule(RSPV_SSAA_RESOLVE_FRAG);
 	}
+	this->renderPass = renderPass;
+	this->subpass = subpass;
 	this->samples = samples;
-	const PsoSpecialization specialization(0, samples);
 	if (!descSet)
 		descSet = std::move(device.allocateDescriptorSetsUnique(
 				vk::DescriptorSetAllocateInfo(context->GetDescriptorPool(), 1, &setLayout.get())).front());
 	vk::DescriptorImageInfo imageInfo(vk::Sampler(), samplesView, vk::ImageLayout::eShaderReadOnlyOptimal);
 	vk::WriteDescriptorSet write(*descSet, 0, 0, 1, vk::DescriptorType::eInputAttachment, &imageInfo, nullptr, nullptr);
 	device.updateDescriptorSets(write, nullptr);
+	PsoSlot *one = &slot;
+	VkPsoWorker::Instance().BuildSoon(&one, 1, context->GetPipelineCache());
+}
 
+VkPipeline SsaaResolve::BuildPipeline(u64 key, vk::PipelineCache cache)
+{
+	return Create(cache, false);
+}
+
+/* @orThrow: as vulkan.hpp does when the device cannot make it, else
+ * VK_NULL_HANDLE */
+VkPipeline SsaaResolve::Create(vk::PipelineCache cache, bool orThrow) const
+{
+	vk::Device device = VulkanContext::Instance()->GetDevice();
+	const PsoSpecialization specialization(0, samples);
 	vk::PipelineVertexInputStateCreateInfo vertexInput;
 	vk::PipelineInputAssemblyStateCreateInfo inputAssembly(vk::PipelineInputAssemblyStateCreateFlags(), vk::PrimitiveTopology::eTriangleList);
 	vk::PipelineViewportStateCreateInfo viewportState(vk::PipelineViewportStateCreateFlags(), 1, nullptr, 1, nullptr);
@@ -277,14 +326,20 @@ void SsaaResolve::Init(vk::RenderPass renderPass, u32 subpass, u32 samples, vk::
 	};
 	vk::GraphicsPipelineCreateInfo info(vk::PipelineCreateFlags(), 2, stages, &vertexInput, &inputAssembly, nullptr, &viewportState,
 			&rasterization, &multisample, &depthStencil, &blend, &dynamic, *pipelineLayout, renderPass, subpass);
-	pipeline = device.createGraphicsPipelineUnique(context->GetPipelineCache(), info);
+	if (!orThrow)
+		return PsoCreate(device, cache, info);
+	return (VkPipeline)device.createGraphicsPipelineUnique(cache, info).release();
 }
 
 void SsaaResolve::Draw(vk::CommandBuffer cmd, vk::Extent2D extent) const
 {
+	VkPipeline pipeline = PsoGet(slot);
+	// (the pipeline thread could not make it: made here, or thrown for as Init() did)
+	if (pipeline == VK_NULL_HANDLE)
+		pipeline = PsoOwnMade(slot, Create(VulkanContext::Instance()->GetPipelineCache(), true));
 	cmd.setViewport(0, vk::Viewport(0.f, 0.f, (float)extent.width, (float)extent.height, 0.f, 1.f));
 	cmd.setScissor(0, vk::Rect2D(vk::Offset2D(0, 0), extent));
-	cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, *pipeline);
+	cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, vk::Pipeline(pipeline));
 	cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, *pipelineLayout, 0, 1, &descSet.get(), 0, nullptr);
 	cmd.draw(3, 1, 0, 0);
 }

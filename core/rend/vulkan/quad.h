@@ -22,6 +22,7 @@
 #include "vulkan.h"
 #include "buffer.h"
 #include "shaders.h"
+#include "pso.h"
 
 struct QuadVertex
 {
@@ -67,14 +68,20 @@ private:
 	std::unique_ptr<BufferData> buffer;
 };
 
-class QuadPipeline
+/* Its two pipelines are handed to the pipeline thread by Init() (pso.h): a
+ * draw takes one made, or makes it there and then. One the device cannot
+ * make is made again where it is drawn, and fails there as it always did. */
+class QuadPipeline : public PsoBuilder
 {
 public:
+	QuadPipeline();
+	~QuadPipeline() override { Drop(); }
 	// @samples: of the subpass's attachments (SSAA)
 	void Init(ShaderManager *shaderManager, vk::RenderPass renderPass, int subpass = 0, u32 samples = 1);
+	/* Before the shader manager's Term(): the pipeline thread may be making
+	 * one of them with its modules */
 	void Term() {
-		pipeline.reset();
-		alphaPipeline.reset();
+		Forget();
 		linearSampler.reset();
 		nearestSampler.reset();
 		pipelineLayout.reset();
@@ -84,42 +91,31 @@ public:
 	 * next Init() names (one destroyed may have the same handle) */
 	void Forget()
 	{
-		pipeline.reset();
-		alphaPipeline.reset();
+		Drop();
 		renderPass = nullptr;
 	}
 	void BindPipeline(vk::CommandBuffer commandBuffer, bool alpha = false) { commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, GetPipeline(alpha)); }
-	// its pipeline made now, not when it is first drawn with
-	void Make() { GetPipeline(false); }
 	vk::DescriptorSetLayout GetDescSetLayout() const { return *descSetLayout; }
 	vk::PipelineLayout GetPipelineLayout() const { return *pipelineLayout; }
 	vk::Sampler GetLinearSampler() const { return *linearSampler; }
 	vk::Sampler GetNearestSampler() const { return *nearestSampler; }
+	// the pipeline thread's: @key 1 the alpha-blended one
+	VkPipeline BuildPipeline(u64 key, vk::PipelineCache cache) override;
 
 private:
 	vk::Pipeline GetPipeline(bool alpha)
 	{
-		if (alpha)
-		{
-			if (!alphaPipeline)
-				CreatePipeline(true);
-			return *alphaPipeline;
-
-		}
-		else
-		{
-			if (!pipeline)
-				CreatePipeline(false);
-			return *pipeline;
-		}
+		const VkPipeline made = PsoGet(slots[alpha ? 1 : 0]);
+		return made != VK_NULL_HANDLE ? vk::Pipeline(made) : MakeHere(alpha);
 	}
-	void CreatePipeline(bool alpha);
+	vk::Pipeline MakeHere(bool alpha);
+	VkPipeline Create(bool alpha, vk::PipelineCache cache, bool orThrow);
+	void Drop();
 
 	vk::RenderPass renderPass;
 	int subpass = 0;
 	u32 samples = 1;
-	vk::UniquePipeline pipeline;
-	vk::UniquePipeline alphaPipeline;
+	PsoSlot slots[2];
 	vk::UniqueSampler linearSampler;
 	vk::UniqueSampler nearestSampler;
 	vk::UniquePipelineLayout pipelineLayout;

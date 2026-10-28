@@ -338,18 +338,18 @@ public:
 
 	vk::Pipeline GetModifierVolumePipeline(ModVolMode mode, int cullMode) const
 	{
-		return vk::Pipeline(fixedSlots[FIXED_MODVOL + ModVolIndex(mode, cullMode)].pipeline);
+		return vk::Pipeline(PsoGet(fixedSlots[FIXED_MODVOL + ModVolIndex(mode, cullMode)]));
 	}
 	vk::Pipeline GetTrModifierVolumePipeline(ModVolMode mode, int cullMode) const
 	{
-		return vk::Pipeline(fixedSlots[FIXED_TRMODVOL + ModVolIndex(mode, cullMode)].pipeline);
+		return vk::Pipeline(PsoGet(fixedSlots[FIXED_TRMODVOL + ModVolIndex(mode, cullMode)]));
 	}
 	/* @perSample: SSAA's for a render pass that is not the last; @sums: the
 	 * last one's, which also stores the channel sums, when there is one
 	 * (OITShaderManager::GetFinalShader(), Sums()) */
 	vk::Pipeline GetFinalPipeline(bool perSample = false, bool sums = false) const
 	{
-		return vk::Pipeline(fixedSlots[perSample ? FIXED_FINAL_PER_SAMPLE : sums && this->sums ? FIXED_FINAL_SUMS : FIXED_FINAL].pipeline);
+		return vk::Pipeline(PsoGet(fixedSlots[perSample ? FIXED_FINAL_PER_SAMPLE : sums && this->sums ? FIXED_FINAL_SUMS : FIXED_FINAL]));
 	}
 	// the last pass stores SSAA's channel sums (OITBuffers::SetSums(), with samples)
 	bool Sums() const { return sums; }
@@ -357,7 +357,7 @@ public:
 	u32 GetSamples() const { return renderPasses->GetSamples(); }
 	vk::Pipeline GetClearPipeline() const
 	{
-		return vk::Pipeline(fixedSlots[FIXED_CLEAR].pipeline);
+		return vk::Pipeline(PsoGet(fixedSlots[FIXED_CLEAR]));
 	}
 	vk::PipelineLayout GetPipelineLayout() const { return *pipelineLayout; }
 	vk::DescriptorSetLayout GetPerFrameDSLayout() const { return *perFrameLayout; }
@@ -451,7 +451,8 @@ private:
 
 	PsoTable pipelines;		// the polygons' own
 	PsoTable general;		// the general ones
-	PsoSlot fixedSlots[FIXED_COUNT] = {};
+	// (mutable: a draw's getter may make one, PsoGet())
+	mutable PsoSlot fixedSlots[FIXED_COUNT] = {};
 	bool sums = false;
 	bool prepared = false;
 	// what the pipelines are made for (one of a kind: all of them work with any)
