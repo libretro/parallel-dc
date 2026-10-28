@@ -334,26 +334,28 @@ void OITDrawer::UploadMainBuffer(const OITDescriptorSets::FragmentShaderUniforms
 	chunks.push_back(nullptr);
 	chunkSizes.push_back(padding);
 
-	std::vector<u32> trPolyParams(pvrrc.gpu ? 0 : pvrrc.global_param_tr.used() * 2);
-	if (pvrrc.gpu || pvrrc.global_param_tr.used() == 0)
-		trPolyParams.push_back(0);	// makes the validation layers happy
-	else
-	{
-		const PolyParam *pp_end = pvrrc.global_param_tr.LastPtr(0);
-		const PolyParam *pp = pvrrc.global_param_tr.head();
-		for (int i = 0; pp != pp_end; i += 2, pp++)
-		{
-			trPolyParams[i] = (pp->tsp.full & 0xffff00c0) | ((pp->isp.full >> 16) & 0xe400) | ((pp->pcw.full >> 7) & 1);
-			trPolyParams[i + 1] = pp->tsp1.full;
-		}
-	}
-	offsets.polyParamsSize = trPolyParams.size() * 4;
-	chunks.push_back(trPolyParams.data());
+	/* (written below, straight into the buffer: two words a translucent
+	 * polygon, or the one the validation layers want when there is none) */
+	const u32 trPolys = pvrrc.gpu ? 0 : (u32)pvrrc.global_param_tr.used();
+	offsets.polyParamsSize = (trPolys != 0 ? trPolys * 2 : 1) * 4;
+	chunks.push_back(nullptr);
 	chunkSizes.push_back(offsets.polyParamsSize);
 	u32 totalSize = offsets.polyParamsOffset + offsets.polyParamsSize;
 
 	BufferData *buffer = GetMainBuffer(totalSize);
 	buffer->upload(chunks.size(), &chunkSizes[0], &chunks[0]);
+	u32 *trPolyParams = (u32 *)((u8 *)buffer->MapMemory() + offsets.polyParamsOffset);
+	if (trPolys == 0)
+		trPolyParams[0] = 0;
+	else
+	{
+		const PolyParam *pp = pvrrc.global_param_tr.head();
+		for (u32 i = 0; i < trPolys; i++, pp++)
+		{
+			trPolyParams[i * 2] = (pp->tsp.full & 0xffff00c0) | ((pp->isp.full >> 16) & 0xe400) | ((pp->pcw.full >> 7) & 1);
+			trPolyParams[i * 2 + 1] = pp->tsp1.full;
+		}
+	}
 }
 
 bool OITDrawer::Draw(const Texture *fogTexture, const Texture *paletteTexture)
