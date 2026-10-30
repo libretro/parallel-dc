@@ -21,6 +21,10 @@ HAVE_CLANG    ?= 0
 HAVE_CDROM    := 0
 ENABLE_MODEM  := 1
 
+ifeq ($(ECHO),1)
+    E := 1
+endif
+
 TARGET_NAME   := parallel_dc
 
 ifeq ($(HAVE_CLANG),1)
@@ -1353,16 +1357,20 @@ DEPFLAGS = -MMD -MP
 endif
 
 %.o: %.cpp
+	@$(if $(E), $(shell echo echo CXX $<),)
+	$(CXX) $(INCFLAGS) $(CFLAGS) $(MFLAGS) $(CXXFLAGS) $(DEPFLAGS) $< -o $@
+
+%.o: %.cc
+	@$(if $(E), $(shell echo echo CXX $<),)
 	$(CXX) $(INCFLAGS) $(CFLAGS) $(MFLAGS) $(CXXFLAGS) $(DEPFLAGS) $< -o $@
 	
 %.o: %.c
+	@$(if $(E), $(shell echo echo CC $<),)
 	$(CC) $(INCFLAGS) $(CFLAGS) $(MFLAGS) $(DEPFLAGS) $< -o $@
 
 %.o: %.S
+	@$(if $(E), $(shell echo echo CC $<),)
 	$(CC_AS) $(ASFLAGS) $(INCFLAGS) $< -o $@
-
-%.o: %.cc
-	$(CXX) $(INCFLAGS) $(CFLAGS) $(MFLAGS) $(CXXFLAGS) $(DEPFLAGS) $< -o $@
 
 clean:
 	rm -f $(OBJECTS) $(OBJECTS:.o=.d) $(TARGET)
