@@ -375,7 +375,7 @@ Disc* chd_parse(const char* file)
 {
 	// Only try to open .chd files
 	size_t len = strlen(file);
-	if (len > 4 && stricmp( &file[len - 4], ".chd"))
+	if (len > 3 && stricmp(&file[len - 3], "chd"))
 		return nullptr;
 
 	CHDDisc* rv = new CHDDisc();
