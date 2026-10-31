@@ -518,7 +518,7 @@ bool VulkanContext::Init(retro_hw_render_interface_vulkan *retro_render_if)
 				code.bloom[i] = RasterSpvWords(bloom[i], &code.bloom_size[i]);
 		}
 		code.post = RasterSpvWords(RSPV_HDR_POST_FRAG, &code.post_size);
-		hdr = hdr_vk_new(retro_render_if, heap.Raw(), pipelineCache, hdrFormat, (unsigned)swapChainSize, &code);
+		hdr = hdr_vk_new(retro_render_if, heap.Raw(), (VkPipelineCache)pipelineCache, hdrFormat, (unsigned)swapChainSize, &code);
 		if (hdr == nullptr)
 			ERROR_LOG(RENDERER, "Vulkan: the HDR output could not be set up; the picture goes out as 24-bit");
 		else
