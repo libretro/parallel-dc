@@ -480,6 +480,9 @@ GLuint gl4MakePipelineProgram(const gl4PipelineShader* s, bool general, bool bac
 void gl4PipelineLocations(gl4PipelineShader* s, bool general)
 {
 	glcache.UseProgram(s->program);
+	/* (a program just linked: none of its uniforms set yet) */
+	s->ownUniforms.set = 0;
+	s->uniforms = &s->ownUniforms;
 
 	//setup texture 0 as the input for the shader
 	GLint gu = glGetUniformLocation(s->program, "tex0");

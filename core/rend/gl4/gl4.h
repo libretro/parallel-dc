@@ -51,9 +51,37 @@ void gl4OitFrameEnd(u32 bands, bool rtt);
 
 enum class Pass { Depth, Color, OIT };
 
+/* What a program's uniforms that change by the polygon were last set to:
+ * set again only when another value is (gl4ShaderUniformsT::Set()). A
+ * uniform is a program's, so every record drawn with the program has its
+ * program's (gl4PipelineShader::uniforms); one made anew has none. */
+struct gl4UniformShadow
+{
+	enum { U_ALPHA_TEST, U_FOG_DENSITY, U_FOG_COL_RAM, U_FOG_COL_VERT, U_SHADE_SCALE, U_BLEND_MODE, U_USE_ALPHA, U_IGNORE_TEX_ALPHA,
+		U_SHADING_INSTR, U_FOG_CONTROL, U_PP_NUMBER, U_TRILINEAR_ALPHA, U_FOG_CLAMP_MIN, U_FOG_CLAMP_MAX, U_NORMAL_MATRIX,
+		U_PALETTE_INDEX, U_KEY_BITS, U_COUNT };
+	u32 set;            /* which of them have been set, a bit each */
+	u32 words[U_COUNT][16];
+
+	/* true, and @words kept, if @count words at @value are not what the
+	 * uniform was last set to (bit for bit: -0 is not 0) */
+	bool Changed(int which, const void *value, u32 count)
+	{
+		if ((set & (1u << which)) && memcmp(words[which], value, count * 4) == 0)
+			return false;
+		memcpy(words[which], value, count * 4);
+		set |= 1u << which;
+		return true;
+	}
+};
+
 struct gl4PipelineShader
 {
 	GLuint program;
+	/* the program's uniforms as last set: its own, or the general program's
+	 * whose record it is drawn with (gl4PipelineLocations()) */
+	gl4UniformShadow *uniforms = nullptr;
+	gl4UniformShadow ownUniforms;
 
 	GLint pp_ClipTest;
 	GLint cp_AlphaTestValue;
@@ -342,23 +370,43 @@ extern struct gl4ShaderUniforms_t
 		int array[] = { v0, v1 };
 		glUniform1iv(location, 2, array);
 	}
+	void setUniformArray(gl4UniformShadow *u, int which, GLint location, int v0, int v1)
+	{
+		int array[] = { v0, v1 };
+		if (u->Changed(which, array, 2))
+			glUniform1iv(location, 2, array);
+	}
 
 	void Set(gl4PipelineShader* s)
 	{
-		if (s->cp_AlphaTestValue!=-1)
-			glUniform1f(s->cp_AlphaTestValue,PT_ALPHA);
+		gl4UniformShadow *u = s->uniforms;
+		/* (a record without one, as ever: every uniform set) */
+		gl4UniformShadow none;
+		if (u == nullptr)
+		{
+			none.set = 0;
+			u = &none;
+		}
+		typedef gl4UniformShadow U;
 
-		if (s->sp_FOG_DENSITY!=-1)
+		if (s->cp_AlphaTestValue != -1 && u->Changed(U::U_ALPHA_TEST, &PT_ALPHA, 1))
+			glUniform1f(s->cp_AlphaTestValue, PT_ALPHA);
+
+		if (s->sp_FOG_DENSITY != -1 && u->Changed(U::U_FOG_DENSITY, &fog_den_float, 1))
 			glUniform1f( s->sp_FOG_DENSITY,fog_den_float);
 
-		if (s->sp_FOG_COL_RAM!=-1)
+		if (s->sp_FOG_COL_RAM != -1 && u->Changed(U::U_FOG_COL_RAM, ps_FOG_COL_RAM, 3))
 			glUniform3fv( s->sp_FOG_COL_RAM, 1, ps_FOG_COL_RAM);
 
-		if (s->sp_FOG_COL_VERT!=-1)
+		if (s->sp_FOG_COL_VERT != -1 && u->Changed(U::U_FOG_COL_VERT, ps_FOG_COL_VERT, 3))
 			glUniform3fv( s->sp_FOG_COL_VERT, 1, ps_FOG_COL_VERT);
 
 		if (s->shade_scale_factor != -1)
-			glUniform1f(s->shade_scale_factor, FPU_SHAD_SCALE.scale_factor / 256.f);
+		{
+			const float scale = FPU_SHAD_SCALE.scale_factor / 256.f;
+			if (u->Changed(U::U_SHADE_SCALE, &scale, 1))
+				glUniform1f(s->shade_scale_factor, scale);
+		}
 
 		if (s->blend_mode != -1) {
 			// The per-pixel pass drops a fragment whose blend would leave the
@@ -368,41 +416,50 @@ extern struct gl4ShaderUniforms_t
 			// together: those get a blend (8) that none of its cases take.
 			bool keep = tsp0.SrcSelect || tsp1.full != (u32)-1 || tcw1.full != (u32)-1;
 			u32 blend_mode[] = { keep ? 8u : (u32)tsp0.SrcInstr, keep ? 8u : (u32)tsp0.DstInstr, tsp1.SrcInstr, tsp1.DstInstr };
-			glUniform2iv(s->blend_mode, 2, (GLint *)blend_mode);
+			if (u->Changed(U::U_BLEND_MODE, blend_mode, 4))
+				glUniform2iv(s->blend_mode, 2, (GLint *)blend_mode);
 		}
 
 		if (s->use_alpha != -1)
-			setUniformArray(s->use_alpha, tsp0.UseAlpha, tsp1.UseAlpha);
+			setUniformArray(u, U::U_USE_ALPHA, s->use_alpha, tsp0.UseAlpha, tsp1.UseAlpha);
 
 		if (s->ignore_tex_alpha != -1)
-			setUniformArray(s->ignore_tex_alpha, tsp0.IgnoreTexA, tsp1.IgnoreTexA);
+			setUniformArray(u, U::U_IGNORE_TEX_ALPHA, s->ignore_tex_alpha, tsp0.IgnoreTexA, tsp1.IgnoreTexA);
 
 		if (s->shading_instr != -1)
-			setUniformArray(s->shading_instr, tsp0.ShadInstr, tsp1.ShadInstr);
+			setUniformArray(u, U::U_SHADING_INSTR, s->shading_instr, tsp0.ShadInstr, tsp1.ShadInstr);
 
 		if (s->fog_control != -1)
-			setUniformArray(s->fog_control, tsp0.FogCtrl, tsp1.FogCtrl);
+			setUniformArray(u, U::U_FOG_CONTROL, s->fog_control, tsp0.FogCtrl, tsp1.FogCtrl);
 
 		if (s->pp_Number != -1)
-			glUniform1i(s->pp_Number, poly_number);
+		{
+			const GLint number = poly_number;
+			if (u->Changed(U::U_PP_NUMBER, &number, 1))
+				glUniform1i(s->pp_Number, number);
+		}
 
-		if (s->trilinear_alpha != -1)
+		if (s->trilinear_alpha != -1 && u->Changed(U::U_TRILINEAR_ALPHA, &trilinear_alpha, 1))
 			glUniform1f(s->trilinear_alpha, trilinear_alpha);
 		
-		if (s->fog_clamp_min != -1)
+		if (s->fog_clamp_min != -1 && u->Changed(U::U_FOG_CLAMP_MIN, fog_clamp_min, 4))
 			glUniform4fv(s->fog_clamp_min, 1, fog_clamp_min);
-		if (s->fog_clamp_max != -1)
+		if (s->fog_clamp_max != -1 && u->Changed(U::U_FOG_CLAMP_MAX, fog_clamp_max, 4))
 			glUniform4fv(s->fog_clamp_max, 1, fog_clamp_max);
 
-		if (s->normal_matrix != -1)
+		if (s->normal_matrix != -1 && u->Changed(U::U_NORMAL_MATRIX, normal_mat, 16))
 			glUniformMatrix4fv(s->normal_matrix, 1, GL_FALSE, normal_mat);
 
-		if (s->palette_index != -1)
+		if (s->palette_index != -1 && u->Changed(U::U_PALETTE_INDEX, &palette_index, 1))
 			glUniform1f(s->palette_index, palette_index);
 
 		// (a polygon drawn with a general program: its key)
 		if (s->key_bits != -1)
-			glUniform1i(s->key_bits, (GLint)s->key);
+		{
+			const GLint key = (GLint)s->key;
+			if (u->Changed(U::U_KEY_BITS, &key, 1))
+				glUniform1i(s->key_bits, key);
+		}
 	}
 
 } gl4ShaderUniforms;

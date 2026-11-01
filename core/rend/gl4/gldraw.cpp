@@ -227,12 +227,38 @@ void gl4MakePrograms()
 	}
 }
 
+/* What the two samplers' parameters were last set to: each set again only
+ * when a polygon wants another value (a sampler earlier draws still use
+ * that is changed has the driver keep a copy of it). Forgotten when they
+ * are made again. */
+enum { SAMP_WRAP_S, SAMP_WRAP_T, SAMP_MIN, SAMP_MAG, SAMP_LOD_BIAS, SAMP_ANISO, SAMP_COUNT };
+static u32 samplerSet[2];
+static u32 samplerValue[2][SAMP_COUNT];
+
+static void samplerInt(int index, int which, GLenum pname, GLint value)
+{
+	if ((samplerSet[index] & (1u << which)) && samplerValue[index][which] == (u32)value)
+		return;
+	samplerSet[index] |= 1u << which;
+	samplerValue[index][which] = (u32)value;
+	glSamplerParameteri(texSamplers[index], pname, value);
+}
+
+static void samplerFloat(int index, int which, GLenum pname, float value)
+{
+	u32 bits;
+	memcpy(&bits, &value, 4);
+	if ((samplerSet[index] & (1u << which)) && samplerValue[index][which] == bits)
+		return;
+	samplerSet[index] |= 1u << which;
+	samplerValue[index][which] = bits;
+	glSamplerParameterf(texSamplers[index], pname, value);
+}
+
 static void SetTextureRepeatMode(int index, GLuint dir, u32 clamp, u32 mirror)
 {
-	if (clamp)
-		glSamplerParameteri(texSamplers[index], dir, GL_CLAMP_TO_EDGE);
-	else
-		glSamplerParameteri(texSamplers[index], dir, mirror ? GL_MIRRORED_REPEAT : GL_REPEAT);
+	samplerInt(index, dir == GL_TEXTURE_WRAP_S ? SAMP_WRAP_S : SAMP_WRAP_T, dir,
+			clamp ? GL_CLAMP_TO_EDGE : mirror ? GL_MIRRORED_REPEAT : GL_REPEAT);
 }
 
 static void SetBaseClipping()
@@ -383,38 +409,32 @@ static void SetGPState(const PolyParam* gp)
 				const bool mipmapped = !index_texture && tcw.MipMapped != 0 && !settings.rend.ForceTextureLOD0
 						&& (tcw.ScanOrder == 0 || tcw.PixelFmt == PixelPal4 || tcw.PixelFmt == PixelPal8);
 				// the two samplers are shared by every texture: what one polygon set, the next has unless it is set again
-				glSamplerParameterf(texSamplers[i], GL_TEXTURE_LOD_BIAS, mipmapped ? D_Adjust_LoD_Bias[tsp.MipMapD] : 0.f);
+				samplerFloat(i, SAMP_LOD_BIAS, GL_TEXTURE_LOD_BIAS, mipmapped ? D_Adjust_LoD_Bias[tsp.MipMapD] : 0.f);
 				if (tsp.FilterMode == 0)
 				{
 					/* No filtering - the level is still picked. And no
 					 * anisotropy: left on from a filtered polygon, it had
 					 * these filtered all the same, a texture of palette
 					 * indices included. */
-					glSamplerParameteri(texSamplers[i], GL_TEXTURE_MIN_FILTER, mipmapped ? GL_NEAREST_MIPMAP_NEAREST : GL_NEAREST);
-					glSamplerParameteri(texSamplers[i], GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+					samplerInt(i, SAMP_MIN, GL_TEXTURE_MIN_FILTER, mipmapped ? GL_NEAREST_MIPMAP_NEAREST : GL_NEAREST);
+					samplerInt(i, SAMP_MAG, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
 					if (gl.max_anisotropy > 1.f)
-						glSamplerParameterf(texSamplers[i], GL_TEXTURE_MAX_ANISOTROPY_EXT, 1.f);
+						samplerFloat(i, SAMP_ANISO, GL_TEXTURE_MAX_ANISOTROPY_EXT, 1.f);
 				}
 				else
 				{
 					//bilinear filtering
 					//PowerVR supports also trilinear via two passes, but we ignore that for now
-					glSamplerParameteri(texSamplers[i], GL_TEXTURE_MIN_FILTER, mipmapped ? GL_LINEAR_MIPMAP_NEAREST : GL_LINEAR);
-					glSamplerParameteri(texSamplers[i], GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+					const bool trilinear = gl.max_anisotropy > 1.f && settings.rend.AnisotropicFiltering > 1
+							&& mipmapped && Type != ListType_Punch_Through;
+					// Set the recommended minification filter for best results with anisotropy - not
+					// for a punch-through polygon, whose alpha two levels blended would spoil
+					samplerInt(i, SAMP_MIN, GL_TEXTURE_MIN_FILTER,
+							trilinear ? GL_LINEAR_MIPMAP_LINEAR : mipmapped ? GL_LINEAR_MIPMAP_NEAREST : GL_LINEAR);
+					samplerInt(i, SAMP_MAG, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
 					if (gl.max_anisotropy > 1.f)
-					{
-						if (settings.rend.AnisotropicFiltering > 1)
-						{
-							glSamplerParameterf(texSamplers[i], GL_TEXTURE_MAX_ANISOTROPY_EXT,
-									std::min((f32)settings.rend.AnisotropicFiltering, gl.max_anisotropy));
-							// Set the recommended minification filter for best results - not for
-							// a punch-through polygon, whose alpha two levels blended would spoil
-							if (mipmapped && Type != ListType_Punch_Through)
-								glSamplerParameteri(texSamplers[i], GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
-						}
-						else
-							glSamplerParameterf(texSamplers[i], GL_TEXTURE_MAX_ANISOTROPY_EXT, 1.f);
-					}
+						samplerFloat(i, SAMP_ANISO, GL_TEXTURE_MAX_ANISOTROPY_EXT, settings.rend.AnisotropicFiltering > 1
+								? std::min((f32)settings.rend.AnisotropicFiltering, gl.max_anisotropy) : 1.f);
 
 				}
 			}
@@ -711,7 +731,10 @@ void gl4DrawStrips(GLuint output_fbo, int width, int height)
 {
 	glBindFramebuffer(GL_FRAMEBUFFER, geom_fbo);
 	if (texSamplers[0] == 0)
+	{
 		glGenSamplers(2, texSamplers);
+		samplerSet[0] = samplerSet[1] = 0;
+	}
 
 	if (!pvrrc.isRTT && pvrrc.clearFramebuffer)
 	{
