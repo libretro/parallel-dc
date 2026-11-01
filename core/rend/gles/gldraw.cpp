@@ -142,19 +142,41 @@ __forceinline
 								  shadowed);
 
 	UsePipelineShader(CurrentShader);
-	if (CurrentShader->trilinear_alpha != -1)
+	/* (the uniforms are the program's: those of the record whose program it is) */
+	PipelineShader *owner = CurrentShader->general != nullptr ? CurrentShader->general : CurrentShader;
+	if (CurrentShader->trilinear_alpha != -1
+			&& (!(owner->shadow_set & PIPELINE_SHADOW_TRILINEAR)
+				|| memcmp(&owner->shadow_trilinear, &ShaderUniforms.trilinear_alpha, sizeof(float)) != 0))
+	{
 		glUniform1f(CurrentShader->trilinear_alpha, ShaderUniforms.trilinear_alpha);
+		owner->shadow_trilinear = ShaderUniforms.trilinear_alpha;
+		owner->shadow_set |= PIPELINE_SHADOW_TRILINEAR;
+	}
 	if (palette)
 	{
 		if (gp->tcw.PixelFmt == PixelPal4)
 			ShaderUniforms.palette_index = gp->tcw.PalSelect << 4;
 		else
 			ShaderUniforms.palette_index = (gp->tcw.PalSelect >> 4) << 8;
-		glUniform1i(CurrentShader->palette_index, ShaderUniforms.palette_index);
+		if (!(owner->shadow_set & PIPELINE_SHADOW_PALETTE) || owner->shadow_palette != ShaderUniforms.palette_index)
+		{
+			glUniform1i(CurrentShader->palette_index, ShaderUniforms.palette_index);
+			owner->shadow_palette = ShaderUniforms.palette_index;
+			owner->shadow_set |= PIPELINE_SHADOW_PALETTE;
+		}
 	}
 
 	if (clipmode == TileClipping::Inside)
-		glUniform4f(CurrentShader->pp_ClipTest, clip_rect[0], clip_rect[1], clip_rect[0] + clip_rect[2], clip_rect[1] + clip_rect[3]);
+	{
+		const float clip[4] = { (float)clip_rect[0], (float)clip_rect[1],
+				(float)(clip_rect[0] + clip_rect[2]), (float)(clip_rect[1] + clip_rect[3]) };
+		if (!(owner->shadow_set & PIPELINE_SHADOW_CLIP) || memcmp(owner->shadow_clip, clip, sizeof(clip)) != 0)
+		{
+			glUniform4f(CurrentShader->pp_ClipTest, clip[0], clip[1], clip[2], clip[3]);
+			memcpy(owner->shadow_clip, clip, sizeof(clip));
+			owner->shadow_set |= PIPELINE_SHADOW_CLIP;
+		}
+	}
 	if (clipmode == TileClipping::Outside)
 	{
 		if (ShaderUniforms.base_clipping.enabled)
@@ -186,7 +208,7 @@ __forceinline
 			&& (gp->tcw.ScanOrder == 0 || gp->tcw.PixelFmt == PixelPal4 || gp->tcw.PixelFmt == PixelPal8);
 #ifdef GL_TEXTURE_LOD_BIAS
 	if (!gl.is_gles && gl.gl_major >= 3 && mipmapped)
-		glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_LOD_BIAS, D_Adjust_LoD_Bias[gp->tsp.MipMapD]);
+		glcache.TexParameterf(GL_TEXTURE_2D, GL_TEXTURE_LOD_BIAS, D_Adjust_LoD_Bias[gp->tsp.MipMapD]);
 #endif
 	if (gp->tsp.FilterMode == 0 || palette)
 	{
@@ -197,7 +219,7 @@ __forceinline
 		glcache.TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, mipmapped ? GL_NEAREST_MIPMAP_NEAREST : GL_NEAREST);
 		glcache.TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
 		if (gl.max_anisotropy > 1.f)
-			glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MAX_ANISOTROPY_EXT, 1.f);
+			glcache.TexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MAX_ANISOTROPY_EXT, 1.f);
 	}
 	else
 	{
@@ -209,7 +231,7 @@ __forceinline
 		{
 			if (settings.rend.AnisotropicFiltering > 1)
 			{
-				glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MAX_ANISOTROPY_EXT,
+				glcache.TexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MAX_ANISOTROPY_EXT,
 						std::min((f32)settings.rend.AnisotropicFiltering, gl.max_anisotropy));
 				/* Set the recommended minification filter for best results.
 				 * Not for a punch-through polygon: blending two levels
@@ -220,7 +242,7 @@ __forceinline
 					glcache.TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
 			}
 			else
-				glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MAX_ANISOTROPY_EXT, 1.f);
+				glcache.TexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MAX_ANISOTROPY_EXT, 1.f);
 		}
 	}
 

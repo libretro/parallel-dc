@@ -594,9 +594,9 @@ static void gl_term(void)
 				glDeleteProgram(g.program);
 			g.program = 0;
 		}
-	glDeleteTextures(1, &fbTextureId);
+	glcache.DeleteTextures(1, &fbTextureId);
 	fbTextureId = 0;
-	glDeleteTextures(1, &fogTextureId);
+	glcache.DeleteTextures(1, &fogTextureId);
 	fogTextureId = 0;
 	glcache.DeleteTextures(1, &paletteTextureId);
 	paletteTextureId = 0;

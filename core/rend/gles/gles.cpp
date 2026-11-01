@@ -304,7 +304,7 @@ mediump vec4 palettePixel(highp vec2 coords)
 void main()
 {
 	// Clip inside the box
-	if (pp_ClipInside==-1)
+	if (pp_ClipInside == 1)
 	{
 		if (gl_FragCoord.x >= pp_ClipTest.x && gl_FragCoord.x <= pp_ClipTest.z
 				&& gl_FragCoord.y >= pp_ClipTest.y && gl_FragCoord.y <= pp_ClipTest.w)
@@ -587,6 +587,7 @@ static void pipeline_locations(PipelineShader *s, bool general)
 	s->prepass_alpha = glGetUniformLocation(s->program, "prepass_alpha");
 	s->key_bits = general ? glGetUniformLocation(s->program, "key_bits") : -1;
 	s->key_now = ~0u;
+	s->shadow_set = 0;
 
 	ShaderUniforms.Set(s);
 	s->uniforms_set = gl.uniforms_frame;
@@ -1088,9 +1089,9 @@ static void gl_term(void)
 	if (gl.depth_ubo != 0)
 		glDeleteBuffers(1, &gl.depth_ubo);
 	gl.depth_ubo = 0;
-	glDeleteTextures(1, &fbTextureId);
+	glcache.DeleteTextures(1, &fbTextureId);
 	fbTextureId = 0;
-	glDeleteTextures(1, &fogTextureId);
+	glcache.DeleteTextures(1, &fogTextureId);
 	fogTextureId = 0;
 	glcache.DeleteTextures(1, &paletteTextureId);
 	paletteTextureId = 0;

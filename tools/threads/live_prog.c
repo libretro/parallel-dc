@@ -28,8 +28,8 @@
  * -DNO_REGION_ARRAY for PROGRAM_NO_REGION_ARRAY, with -DLIVE_MMU_ALIGN
  * for PROGRAM_MMU_ALIGN, with -DLIVE_SLANT for PROGRAM_SLANT, and with
  * -DLIVE_SLANT -DLIVE_HSCALE for PROGRAM_HSCALE, with -DLIVE_CULL for
- * PROGRAM_CULL, with -DLIVE_ATLAS for PROGRAM_ATLAS, and with -DLIVE_DMA
- * for PROGRAM_DMA. */
+ * PROGRAM_CULL, with -DLIVE_ATLAS for PROGRAM_ATLAS, with -DLIVE_DMA
+ * for PROGRAM_DMA, and with -DLIVE_CLIP for PROGRAM_CLIP. */
 typedef unsigned int u32;
 typedef unsigned short u16;
 #define PVR(off) (*(volatile u32 *)(0xA05F8000 + (off)))
@@ -405,6 +405,34 @@ static void ta_quad(u32 pcw, u32 tsp, u32 tcw, u32 white, u32 z, u32 x0, u32 y0,
    ta_send(TA_VERTEX | pcw, x1, y0, z, F(1.0f), 0, white, 0);
    ta_send(TA_VERTEX | pcw | TA_LAST, x1, y1, z, F(1.0f), F(1.0f), white, 0);
 }
+
+#ifdef LIVE_CLIP
+/* An untextured rectangle drawn only outside the clipping rectangle (user
+ * clip "outside": PCW bits 16-17 = 3) of tiles @tx0..@tx1, @ty0..@ty1 */
+static void ta_quad_outside(u32 tx0, u32 ty0, u32 tx1, u32 ty1, u32 colour, u32 x0, u32 y0, u32 x1, u32 y1)
+{
+   ta_send(1u << 29, 0, 0, 0, tx0, ty0, tx1, ty1);    /* the clipping rectangle */
+   ta_send(TA_POLYGON | (3u << 16), ISP_GEQUAL, TSP_PLAIN, 0, 0, 0, 0, 0);
+   ta_send(TA_VERTEX, x0, y0, F(0.5f), 0, 0, colour, 0);
+   ta_send(TA_VERTEX, x0, y1, F(0.5f), 0, 0, colour, 0);
+   ta_send(TA_VERTEX, x1, y0, F(0.5f), 0, 0, colour, 0);
+   ta_send(TA_VERTEX | TA_LAST, x1, y1, F(0.5f), 0, 0, colour, 0);
+}
+
+/* With -DLIVE_CLIP, on the left: three rectangles of one kind, each
+ * drawn outside a clipping rectangle, which leaves a hole in each. Yellow
+ * with its hole at tile 1, 4 (x 32-63, y 128-159); green with its hole at
+ * tile 3, 4 (x 96-127); and cyan over the yellow one with the yellow
+ * one's hole again. A renderer that kept the green one's rectangle for the
+ * cyan one (one program, its clipping a uniform it sets only when it
+ * changes) fills the yellow one's hole. */
+static void ta_clipped(void)
+{
+   ta_quad_outside(1, 4, 1, 4, 0xFFFFFF00, F(24.0f), F(120.0f), F(72.0f), F(168.0f));
+   ta_quad_outside(3, 4, 3, 4, 0xFF00FF00, F(88.0f), F(120.0f), F(120.0f), F(168.0f));
+   ta_quad_outside(1, 4, 1, 4, 0xFF00FFFF, F(24.0f), F(120.0f), F(72.0f), F(168.0f));
+}
+#endif
 
 /* A screen-aligned rectangle with two textures: the first is what it is
  * drawn with, the second what it is drawn with inside a modifier volume
@@ -784,6 +812,9 @@ static void ta_scene(void)
     * under the two volumes below, which differ only in their cull modes */
    ta_quad(TA_SHADOW, TSP_PLAIN, 0, 0xFFFFFFFF, F(0.5f), F(8.0f), F(150.0f), F(40.0f), F(170.0f));
    ta_quad(TA_SHADOW, TSP_PLAIN, 0, 0xFFFFFFFF, F(0.5f), F(8.0f), F(176.0f), F(40.0f), F(196.0f));
+#endif
+#ifdef LIVE_CLIP
+   ta_clipped();
 #endif
    ta_send(0, 0, 0, 0, 0, 0, 0, 0);                    /* end of the opaque list */
 

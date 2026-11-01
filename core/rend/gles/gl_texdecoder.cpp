@@ -294,7 +294,7 @@ void GLTexDecoder::Term()
 	if (ring != 0)
 		glDeleteBuffers(1, &ring);
 	if (ringTexture != 0)
-		glDeleteTextures(1, &ringTexture);
+		glcache.DeleteTextures(1, &ringTexture);
 	if (framebuffer != 0)
 		glDeleteFramebuffers(1, &framebuffer);
 	if (vertexArray != 0)

@@ -1,5 +1,6 @@
 #pragma once
-#include <map>
+#include <string.h>
+#include "rend/grow_buf.h"
 
 #define TEXTURE_ID_CACHE_SIZE 32
 
@@ -46,7 +47,9 @@ public:
 	void DeleteTextures(GLsizei n, const GLuint *textures) {
 		for (int i = 0; i < n; i++)
 		{
-			_texture_params.erase(textures[i]);
+			TextureParameters *params = Params(textures[i]);
+			if (params != nullptr)
+				memset(params, 0xFF, sizeof(*params));
 			if (textures[i] == _texture)
 				_texture = 0;
 		}
@@ -185,33 +188,49 @@ public:
 
 	void TexParameteri(GLenum target,  GLenum pname,  GLint param)
 	{
-		if (target == GL_TEXTURE_2D && !_disable_cache)
+		TextureParameters *cur_params = target == GL_TEXTURE_2D ? Params(_texture) : nullptr;
+		if (cur_params != nullptr)
 		{
-			TextureParameters &cur_params = _texture_params[_texture];
+			GLenum *field = nullptr;
 			switch (pname) {
-			case GL_TEXTURE_MIN_FILTER:
-				if (cur_params._min_filter == (GLenum)param)
+			case GL_TEXTURE_MIN_FILTER: field = &cur_params->_min_filter; break;
+			case GL_TEXTURE_MAG_FILTER: field = &cur_params->_mag_filter; break;
+			case GL_TEXTURE_WRAP_S: field = &cur_params->_wrap_s; break;
+			case GL_TEXTURE_WRAP_T: field = &cur_params->_wrap_t; break;
+			}
+			if (field != nullptr)
+			{
+				if (*field == (GLenum)param)
 					return;
-				cur_params._min_filter = param;
-				break;
-			case GL_TEXTURE_MAG_FILTER:
-				if (cur_params._mag_filter == (GLenum)param)
-					return;
-				cur_params._mag_filter = param;
-				break;
-			case GL_TEXTURE_WRAP_S:
-				if (cur_params._wrap_s == (GLenum)param)
-					return;
-				cur_params._wrap_s = param;
-				break;
-			case GL_TEXTURE_WRAP_T:
-				if (cur_params._wrap_t == (GLenum)param)
-					return;
-				cur_params._wrap_t = param;
-				break;
+				*field = param;
 			}
 		}
 		glTexParameteri(target, pname, param);
+	}
+
+	/* The same for the parameters that are floats (bit for bit) */
+	void TexParameterf(GLenum target,  GLenum pname,  GLfloat param)
+	{
+		TextureParameters *cur_params = target == GL_TEXTURE_2D ? Params(_texture) : nullptr;
+		if (cur_params != nullptr)
+		{
+			GLfloat *field = nullptr;
+#ifdef GL_TEXTURE_LOD_BIAS
+			if (pname == GL_TEXTURE_LOD_BIAS)
+				field = &cur_params->_lod_bias;
+#endif
+#ifdef GL_TEXTURE_MAX_ANISOTROPY_EXT
+			if (pname == GL_TEXTURE_MAX_ANISOTROPY_EXT)
+				field = &cur_params->_max_anisotropy;
+#endif
+			if (field != nullptr)
+			{
+				if (memcmp(field, &param, sizeof(param)) == 0)
+					return;
+				*field = param;
+			}
+		}
+		glTexParameterf(target, pname, param);
 	}
 
 	GLuint GenTexture() {
@@ -224,7 +243,8 @@ public:
 
 	void Reset() {
 		_texture = 0xFFFFFFFFu;
-		_texture_params.clear();
+		if (_texture_params.data != nullptr)
+			memset(_texture_params.data, 0xFF, _texture_params.size);
 		_src_blend_factor = 0xFFFFFFFFu;
 		_dst_blend_factor = 0xFFFFFFFFu;
 		_clear_r = -1.f;
@@ -271,15 +291,37 @@ public:
 	}
 
 private:
-	class TextureParameters {
-	public:
-		TextureParameters() : _min_filter(0xFFFFFFFFu), _mag_filter(0xFFFFFFFFu), _wrap_s(0xFFFFFFFFu), _wrap_t(0xFFFFFFFFu) {}
-
+	/* A texture's parameters as last set: by its name, in a table that
+	 * grows (names are small numbers; one past MaxCachedName is not cached).
+	 * All bits set is none yet: no enum is that, and the floats are NaN,
+	 * which compares with nothing. */
+	struct TextureParameters {
 		GLenum _min_filter;
 		GLenum _mag_filter;
 		GLenum _wrap_s;
 		GLenum _wrap_t;
+		GLfloat _lod_bias;
+		GLfloat _max_anisotropy;
 	};
+	enum { MaxCachedName = 1 << 20 };
+	TextureParameters *Params(GLuint texture)
+	{
+		if (_disable_cache || texture >= MaxCachedName)
+			return nullptr;
+		const size_t had = _texture_params.size / sizeof(TextureParameters);
+		if (texture >= had)
+		{
+			size_t want = had != 0 ? had : 256;
+			while (want <= texture)
+				want *= 2;
+			if (grow_buf_reserve_keep(&_texture_params, want * sizeof(TextureParameters)) == nullptr)
+				return nullptr;
+			/* (the buffer may have grown past what was asked: all of it marked) */
+			memset((TextureParameters *)_texture_params.data + had, 0xFF,
+					_texture_params.size - had * sizeof(TextureParameters));
+		}
+		return (TextureParameters *)_texture_params.data + texture;
+	}
 	GLuint _array_buffer;
 	GLuint _element_array_buffer;
 	GLuint _texture;
@@ -313,7 +355,7 @@ private:
 	} _scissor;
 	GLuint _texture_ids[TEXTURE_ID_CACHE_SIZE];
 	GLuint _texture_cache_size;
-	std::map<GLuint, TextureParameters> _texture_params;
+	grow_buf_t _texture_params = GROW_BUF_INIT;
 	bool _disable_cache;
 };
 

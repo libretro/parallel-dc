@@ -76,6 +76,8 @@ extern xform ViewportMatrix;
 
 void DrawStrips(void);
 
+enum { PIPELINE_SHADOW_TRILINEAR = 1, PIPELINE_SHADOW_PALETTE = 2, PIPELINE_SHADOW_CLIP = 4 };
+
 struct PipelineShader
 {
 	GLuint program;
@@ -91,6 +93,14 @@ struct PipelineShader
 	GLint palette_index;
 	GLint shade_scale_factor;
 	GLint prepass_alpha;	// -1 where there is no depth prepass (GLES2): rend/sorter.h
+	/* What the program's per-polygon uniforms were last set to, a bit in
+	 * shadow_set each (SetGPState()): set again only when another value
+	 * is. A record drawn with its general program uses the general one's;
+	 * a program given its locations has none. */
+	u32 shadow_set;
+	float shadow_trilinear;
+	GLint shadow_palette;
+	float shadow_clip[4];
 
 	//
 	bool cp_AlphaTest;
@@ -262,7 +272,7 @@ extern struct ShaderUniforms_t
 	int palette_index;
 	float shade_scale_factor;
 
-	void Set(const PipelineShader* s)
+	void Set(PipelineShader* s)
 	{
 		if (s->shade_scale_factor != -1)
 			glUniform1f(s->shade_scale_factor, shade_scale_factor);
@@ -291,7 +301,11 @@ extern struct ShaderUniforms_t
 			glUniformMatrix4fv(s->normal_matrix, 1, GL_FALSE, normal_mat);
 
 		if (s->palette_index != -1)
+		{
 			glUniform1i(s->palette_index, palette_index);
+			s->shadow_palette = palette_index;
+			s->shadow_set |= PIPELINE_SHADOW_PALETTE;
+		}
 	}
 
 } ShaderUniforms;
