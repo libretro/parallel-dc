@@ -42,13 +42,18 @@ public:
 	virtual std::string GetGameId() override;
 
 	void SetGDRomName(const char *name) { this->gdrom_name = name; }
-	// The board answers as a DIMM board (firmware 1.02, no network) at
-	// 5f703c-5f704c. Without it, those answer as they do for a ROM cartridge.
-	void SetDimmBoard(bool on);
+	// The board answers as a DIMM board at 5f703c-5f704c: the plain one
+	// (firmware 1.02) or the network one (firmware 3.17, with no network
+	// behind it). Without it, those answer as they do for a ROM cartridge.
+	void SetDimmBoard(bool on, bool net);
 
-	void SerializeV25(void **data, unsigned int *total_size);
-	void UnserializeV25(void **data, unsigned int *total_size);
-	void StateBeforeV25();
+	// The board's part of the save state: from V25 for the plain board,
+	// with the ROM board's serial EEPROM; from V31 for the network board,
+	// whose serial EEPROM is in the V26 part.
+	void SerializeBoard(void **data, unsigned int *total_size);
+	void UnserializeBoard(void **data, unsigned int *total_size);
+	void StateBeforeBoard();
+	bool IsNetBoard() const { return dimm_net; }
 
 private:
 	void dimm_reset();
@@ -58,9 +63,11 @@ private:
 	static int dimm_sched(int tag, int cycles, int jitter);
 	int dimm_poll();
 
-	// the set has a DIMM board, and it answers (see StateBeforeV25())
+	// the set has a DIMM board, and it answers (see StateBeforeBoard());
+	// the board is the network one
 	bool dimm_board = false;
 	bool dimm_on = false;
+	bool dimm_net = false;
 
 	enum { FILENAME_LENGTH=24 };
 
@@ -96,10 +103,14 @@ private:
 	void read_gdrom(Disc *gdrom, u32 sector, u8* dst, u32 count = 1);
 };
 
-// the DIMM board's part of the save state from V25 (gdcartridge.cpp)
+// the DIMM board's part of the save state, from V25 for the plain board and
+// from V31 for the network board (gdcartridge.cpp)
 void naomi_gd_serialize_v25(void **data, unsigned int *total_size);
 bool naomi_gd_unserialize_v25(void **data, unsigned int *total_size);
 void naomi_gd_state_before_v25(void);
 bool naomi_gd_serial_in_v25(void);
+void naomi_gd_serialize_v31(void **data, unsigned int *total_size);
+bool naomi_gd_unserialize_v31(void **data, unsigned int *total_size);
+void naomi_gd_state_before_v31(void);
 
 #endif /* CORE_HW_NAOMI_GDCARTRIDGE_H_ */

@@ -174,6 +174,9 @@ SOURCES_C += $(CORE_DIR)/core/hw/pvr/elan.c
 # The ROMs of a NAOMI cartridge that share a range a word each in turn
 SOURCES_C += $(CORE_DIR)/core/hw/naomi/naomi_interleave.c
 
+# What a GD-ROM game's DIMM board leaves in the NAOMI's memory
+SOURCES_C += $(CORE_DIR)/core/hw/naomi/naomi_dimm.c
+
 SOURCES_ASM :=
 
 ifeq ($(SYSTEM_PICOTCP), 1)

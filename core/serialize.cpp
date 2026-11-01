@@ -366,6 +366,11 @@ void aica_sb_state_before_v29(void);
 void naomi_cards_serialize_v30(void **data, unsigned int *total_size);
 bool naomi_cards_unserialize_v30(void **data, unsigned int *total_size);
 void naomi_cards_state_before_v30(void);
+/* and since V31: the network DIMM board of a NAOMI GD-ROM game
+ * (gdcartridge.cpp) */
+void naomi_gd_serialize_v31(void **data, unsigned int *total_size);
+bool naomi_gd_unserialize_v31(void **data, unsigned int *total_size);
+void naomi_gd_state_before_v31(void);
 void tmu_state_loaded(void);
 
 /* The modem's part is this long on a Dreamcast (modem_serialize_v21() in
@@ -976,6 +981,8 @@ bool dc_serialize(void **data, unsigned int *total_size)
 	STATE_PART("aica_sb_serialize_v29"), aica_sb_serialize_v29(data, total_size);
 	// V30
 	STATE_PART("naomi_cards_serialize_v30"), naomi_cards_serialize_v30(data, total_size);
+	// V31
+	STATE_PART("naomi_gd_serialize_v31"), naomi_gd_serialize_v31(data, total_size);
 
 	return true ;
 }
@@ -1828,6 +1835,13 @@ bool dc_unserialize(void **data, unsigned int *total_size, size_t actual_data_si
 	}
 	else
 		naomi_cards_state_before_v30();
+	if (version >= V31)
+	{
+		if (!naomi_gd_unserialize_v31(data, total_size))
+			ra_unserialize_fail();
+	}
+	else
+		naomi_gd_state_before_v31();
 	sched_events_loaded();
 	/* A sound DMA is under way only while its end is to come: a start is
 	 * not taken while one is, and SB_ADST set with no end on its way would

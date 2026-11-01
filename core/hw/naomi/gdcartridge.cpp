@@ -14,6 +14,7 @@
 #include "naomi.h"
 #include "naomi_periph.h"
 #include "naomi_regs.h"
+#include "naomi_dimm.h"
 #include "hw/holly/sb.h"
 #include "hw/holly/holly_intc.h"
 #include "hw/sh4/sh4_mem.h"
@@ -667,8 +668,8 @@ std::string GDCartridge::GetGameId()
 	return game_id;
 }
 
-/* The DIMM board, as its firmware 1.02 without the network answers the
- * NAOMI: the BIOS finds a GD-ROM system, and the board puts its memory
+/* The DIMM board, as its firmware answers the NAOMI (naomi_dimm.c says
+ * what it leaves in the NAOMI's memory): the BIOS finds a GD-ROM system, and the board puts its memory
  * size, firmware version and the ROM board's serial number where the
  * BIOS and the games look for them (a game that finds no serial number
  * there stops with error 04). The registers are reg_dimm_command,
@@ -684,13 +685,23 @@ static int dimm_sched_id = -1;
 // the board's interrupt to the NAOMI is waiting
 static const u32 DIMM_STATUS = 0x111;
 
+static void dimm_write32(uint32_t addr, uint32_t value)
+{
+	WriteMem32_nommu(addr, value);
+}
+
+static void dimm_write8(uint32_t addr, uint8_t value)
+{
+	WriteMem8_nommu(addr, value);
+}
+
 GDCartridge::~GDCartridge()
 {
-	SetDimmBoard(false);
+	SetDimmBoard(false, false);
 	free(dimm_data);
 }
 
-void GDCartridge::SetDimmBoard(bool on)
+void GDCartridge::SetDimmBoard(bool on, bool net)
 {
 	if (on)
 	{
@@ -704,6 +715,7 @@ void GDCartridge::SetDimmBoard(bool on)
 	}
 	dimm_board = on;
 	dimm_on = on;
+	dimm_net = on && net;
 }
 
 void GDCartridge::dimm_reset()
@@ -802,25 +814,7 @@ void GDCartridge::dimm_system_command(u32 cmd)
 	{
 	case 0xf:	// start up
 		{
-			/* At 0c01fc04, the board's configuration: bits 16-17 the size
-			 * of DIMM 0 (128, 256 or 512 MB), bit 29 set, bit 30 a GD-ROM
-			 * drive, the low bits the size in MB of the memory the game
-			 * takes. At 0c01fc0c the firmware version, at 0c01fc40 the
-			 * serial number. */
-			u32 dimm_size = 1 << 16;
-			if (dimm_data_size == 0x20000000)
-				dimm_size = 3 << 16;
-			else if (dimm_data_size == 0x10000000)
-				dimm_size = 2 << 16;
-			WriteMem32_nommu(0x0c01fc04, dimm_size | 0x60000000 | (dimm_data_size >> 20));
-			WriteMem32_nommu(0x0c01fc0c, 0x01020264);
-			const u8 *serial = naomi_rom_serial_data() + 0x20;
-			for (u32 i = 0; i < 16; i += 4)
-			{
-				u32 v;
-				memcpy(&v, serial + i, 4);
-				WriteMem32_nommu(0x0c01fc40 + i, v);
-			}
+			naomi_dimm_startup(dimm_net, dimm_data_size, naomi_rom_serial_data() + 0x20, dimm_write32);
 			// the board asks the NAOMI to set its base address to 0c000000
 			reg_dimm_command = 0x8600;
 			reg_dimm_offsetl = 0;
@@ -872,28 +866,14 @@ int GDCartridge::dimm_poll()
 	reg_dimm_parameterh = 0;
 	asic_RaiseInterrupt(holly_EXP_PCI);
 
-	const u32 request = ReadMem32_nommu(0x0c01fc08);
-	if (request & 1)
-	{
-		// the DIMM test of the BIOS
-		static const char lines[] = "CHECKING DIMM BD" "DIMM0 - GOOD    " "DIMM1 - GOOD    " "--- COMPLETED---";
-		WriteMem32_nommu(0x0c01fc08, request & ~1);
-		for (u32 i = 0; i < 64; i++)
-			WriteMem8_nommu(0x0c01fd00 + i, lines[i]);
-		WriteMem32_nommu(0x0c01fc0c, 0x0102a264);
-	}
-	else if (request != 0)
-	{
-		WriteMem32_nommu(0x0c01fc08, 0);
-		WriteMem32_nommu(0x0c01fc0c, 0x03170100);
-		INFO_LOG(NAOMI, "DIMM: test request %x", request);
-	}
+	naomi_dimm_answer(dimm_net, ReadMem32_nommu(NAOMI_DIMM_REQUEST), dimm_write32, dimm_write8);
 	return SH4_MAIN_CLOCK;
 }
 
-/* In the save state from V25, on a NAOMI with a DIMM board only (151
- * bytes): whether it answers, when it next polls, and its serial EEPROM. */
-void GDCartridge::SerializeV25(void **data, unsigned int *total_size)
+/* In the save state, on a NAOMI with a DIMM board only: whether it
+ * answers, when it next polls (9 bytes), and for the plain board its
+ * serial EEPROM (142). */
+void GDCartridge::SerializeBoard(void **data, unsigned int *total_size)
 {
 	u8 on = dimm_on;
 	s32 start = sch_list[dimm_sched_id].start;
@@ -902,10 +882,11 @@ void GDCartridge::SerializeV25(void **data, unsigned int *total_size)
 	LIBRETRO_S(on);
 	LIBRETRO_S(start);
 	LIBRETRO_S(end);
-	naomi_rom_serial_serialize(data, total_size);
+	if (!dimm_net)
+		naomi_rom_serial_serialize(data, total_size);
 }
 
-void GDCartridge::UnserializeV25(void **data, unsigned int *total_size)
+void GDCartridge::UnserializeBoard(void **data, unsigned int *total_size)
 {
 	u8 on = 0;
 	s32 start = -1, end = -1;
@@ -913,42 +894,76 @@ void GDCartridge::UnserializeV25(void **data, unsigned int *total_size)
 	LIBRETRO_US(on);
 	LIBRETRO_US(start);
 	LIBRETRO_US(end);
-	naomi_rom_serial_unserialize(data, total_size);
+	if (!dimm_net)
+		naomi_rom_serial_unserialize(data, total_size);
 	dimm_on = on != 0;
 	periph_sched_restore(dimm_sched_id, start, end);
 }
 
-/* A state from before: the board did not answer in it, and it goes on not
- * answering till the machine is reset. */
-void GDCartridge::StateBeforeV25()
+/* A state from before the board's part: the board did not answer in it,
+ * and it goes on not answering till the machine is reset. */
+void GDCartridge::StateBeforeBoard()
 {
 	dimm_on = false;
-	naomi_rom_serial_reset();
+	if (!dimm_net)
+		naomi_rom_serial_reset();
 	sh4_sched_request(dimm_sched_id, -1);
+}
+
+static GDCartridge *dimm_cart_current(int net)
+{
+	if (dimm_cart == NULL || dimm_cart != CurrentCartridge || dimm_cart->IsNetBoard() != (net != 0))
+		return NULL;
+	return dimm_cart;
 }
 
 void naomi_gd_serialize_v25(void **data, unsigned int *total_size)
 {
-	if (dimm_cart != NULL && dimm_cart == CurrentCartridge)
-		dimm_cart->SerializeV25(data, total_size);
+	GDCartridge *cart = dimm_cart_current(0);
+	if (cart != NULL)
+		cart->SerializeBoard(data, total_size);
 }
 
 bool naomi_gd_unserialize_v25(void **data, unsigned int *total_size)
 {
-	if (dimm_cart != NULL && dimm_cart == CurrentCartridge)
-		dimm_cart->UnserializeV25(data, total_size);
+	GDCartridge *cart = dimm_cart_current(0);
+	if (cart != NULL)
+		cart->UnserializeBoard(data, total_size);
 	return true;
-}
-
-/* The ROM board's serial EEPROM is in the V25 part of the state, not the
- * V26 one, when there is a DIMM board. */
-bool naomi_gd_serial_in_v25(void)
-{
-	return dimm_cart != NULL && dimm_cart == CurrentCartridge;
 }
 
 void naomi_gd_state_before_v25(void)
 {
-	if (dimm_cart != NULL && dimm_cart == CurrentCartridge)
-		dimm_cart->StateBeforeV25();
+	GDCartridge *cart = dimm_cart_current(0);
+	if (cart != NULL)
+		cart->StateBeforeBoard();
+}
+
+void naomi_gd_serialize_v31(void **data, unsigned int *total_size)
+{
+	GDCartridge *cart = dimm_cart_current(1);
+	if (cart != NULL)
+		cart->SerializeBoard(data, total_size);
+}
+
+bool naomi_gd_unserialize_v31(void **data, unsigned int *total_size)
+{
+	GDCartridge *cart = dimm_cart_current(1);
+	if (cart != NULL)
+		cart->UnserializeBoard(data, total_size);
+	return true;
+}
+
+void naomi_gd_state_before_v31(void)
+{
+	GDCartridge *cart = dimm_cart_current(1);
+	if (cart != NULL)
+		cart->StateBeforeBoard();
+}
+
+/* The ROM board's serial EEPROM is in the V25 part of the state, not the
+ * V26 one, when there is a plain DIMM board. */
+bool naomi_gd_serial_in_v25(void)
+{
+	return dimm_cart_current(0) != NULL;
 }
