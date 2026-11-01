@@ -317,6 +317,11 @@ int main(int argc, char **argv)
    if (last_w == 0 || last_h == 0)
    {
       fprintf(stderr, "gl_frames: no frame was drawn\n");
+      /* (the core let go all the same, as a frontend does) */
+      if (hw.context_destroy)
+         hw.context_destroy();
+      retro_unload_game();
+      retro_deinit();
       return 1;
    }
    pixels = malloc((size_t)last_w * last_h * 4);

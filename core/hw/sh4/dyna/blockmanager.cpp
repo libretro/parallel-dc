@@ -531,6 +531,37 @@ void bm_Init()
 	bm_Reset();
 }
 
+/* Every block let go, and with it what it holds. A block that another
+ * jumps to holds that one (pre_refs), so two that jump to each other hold
+ * each other: dropped from the tables as they are, neither was ever freed.
+ * The tables are the core's statics, and the blocks in them went when the
+ * core was unloaded - unloaded by a frontend, with its memory lost for as
+ * long as the frontend ran - or at the process's exit. Nothing runs
+ * recompiled code now, so the code is not touched: the links are cut and
+ * the blocks freed as their last holder lets go. */
+static void bm_ReleaseBlocks()
+{
+	for (const auto& it : blkmap)
+	{
+		it.second->pre_refs.clear();
+		it.second->pNextBlock = NULL;
+		it.second->pBranchBlock = NULL;
+	}
+	for (const auto& block : del_blocks)
+	{
+		block->pre_refs.clear();
+		block->pNextBlock = NULL;
+		block->pBranchBlock = NULL;
+	}
+	for (const auto& block : all_temp_blocks)
+		block->pre_refs.clear();
+	bm_ForgetVaddrs();
+	all_temp_blocks.clear();
+	blkmap.clear();
+	for (auto& block_list : blocks_per_page)
+		block_list.clear();
+}
+
 void bm_Term()
 {
 #ifdef DYNA_OPROF
@@ -538,6 +569,7 @@ void bm_Term()
 	
 	oprofHandle=0;
 #endif
+	bm_ReleaseBlocks();
 	bm_Reset();
 }
 
