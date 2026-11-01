@@ -6,6 +6,7 @@
 #include <libretro.h>
 
 #include "gles.h"
+#include "rend/grow_buf.h"
 #include "ta_decoder_gl.h"
 #include "glprogram_cache.h"
 
@@ -1206,14 +1207,16 @@ static void upload_vertex_indices()
 {
 	if (gl.index_type == GL_UNSIGNED_SHORT)
 	{
-		static bool overrun;
-		static List<u16> short_idx;
-		if (short_idx.daty != NULL)
-			short_idx.Free();
-		short_idx.Init(pvrrc.idx.used(), &overrun, NULL);
-		for (u32 *p = pvrrc.idx.head(); p < pvrrc.idx.LastPtr(0); p++)
-			*(short_idx.Append()) = *p;
-		glBufferData(GL_ELEMENT_ARRAY_BUFFER, short_idx.bytes(), short_idx.head(), GL_STREAM_DRAW);
+		/* (kept from one frame to the next: grown, never made again) */
+		static grow_buf_t short_idx;
+		const u32 count = pvrrc.idx.used();
+		u16 *to = (u16 *)grow_buf_reserve(&short_idx, (size_t)count * sizeof(u16) + 2);
+		const u32 *p = pvrrc.idx.head();
+		if (to == nullptr)
+			return;
+		for (u32 i = 0; i < count; i++)
+			to[i] = (u16)p[i];
+		glBufferData(GL_ELEMENT_ARRAY_BUFFER, count * sizeof(u16), to, GL_STREAM_DRAW);
 	}
 	else
 		glBufferData(GL_ELEMENT_ARRAY_BUFFER,pvrrc.idx.bytes(),pvrrc.idx.head(),GL_STREAM_DRAW);

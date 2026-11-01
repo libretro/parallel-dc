@@ -7,6 +7,7 @@
 #include <libretro.h>
 
 #include "gles.h"
+#include "rend/grow_buf.h"
 #include "gl_texdecoder.h"
 #include "hw/pvr/pvr_mem.h"
 
@@ -222,6 +223,7 @@ void gl_tex_init(bool depth)
 }
 
 static void rtt_gl_term(void);
+static void fb_texture_term(void);
 
 void gl_tex_term()
 {
@@ -243,6 +245,7 @@ void gl_tex_term()
 	glTexPool.Term();
 	glTexDecoder.Term();
 	rtt_gl_term();
+	fb_texture_term();
 }
 
 void gl_tex_flush()
@@ -1267,29 +1270,88 @@ u64 gl_GetTexture(TSP tsp, TCW tcw, int area)
 
 
 GLuint fbTextureId;
+/* the picture's size the texture was made for; the buffer it is converted
+ * into, mapped (OpenGL 3, OpenGL ES 3), and how large; or, without one,
+ * memory of this side's, kept */
+static int fbTextureW, fbTextureH;
+static GLuint fbUnpack;
+static size_t fbUnpackSize;
+static grow_buf_t fbScratch;
 
+/* The framebuffer the game wrote, converted straight into the memory the
+ * texture is made from: a buffer of the card's, mapped, where there is one.
+ * The texture is kept from one frame to the next and made again only for
+ * another size. */
 void RenderFramebuffer()
 {
 	if (FB_R_SIZE.fb_x_size == 0 || FB_R_SIZE.fb_y_size == 0)
 		return;
 
-	PixelBuffer<u32> pb;
-	int width;
-	int height;
-	ReadFramebuffer(pb, width, height);
-	
+	FramebufferRead fb;
+	ReadFramebufferGeometry(&fb);
+	const int width = fb.width, height = fb.height;
+	const size_t bytes = (size_t)width * height * 4;
+
 	if (fbTextureId == 0)
+	{
 		fbTextureId = glcache.GenTexture();
-	
+		fbTextureW = fbTextureH = 0;
+	}
 	glcache.BindTexture(GL_TEXTURE_2D, fbTextureId);
-	
-	//set texture repeat mode
-	glcache.TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-	glcache.TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-	glcache.TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-	glcache.TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-	
-	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, pb.data());
+	if (fbTextureW != width || fbTextureH != height)
+	{
+		//set texture repeat mode
+		glcache.TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+		glcache.TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+		glcache.TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+		glcache.TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+		glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+		fbTextureW = width;
+		fbTextureH = height;
+	}
+#ifndef HAVE_OPENGLES2
+	if (gl.gl_major >= 3)
+	{
+		if (fbUnpack == 0)
+			glGenBuffers(1, &fbUnpack);
+		glBindBuffer(GL_PIXEL_UNPACK_BUFFER, fbUnpack);
+		if (fbUnpackSize < bytes)
+		{
+			glBufferData(GL_PIXEL_UNPACK_BUFFER, bytes, nullptr, GL_STREAM_DRAW);
+			fbUnpackSize = bytes;
+		}
+		/* (whatever the card still reads of the last one is its own: the
+		 * buffer's memory is new) */
+		u8 *p = (u8 *)glMapBufferRange(GL_PIXEL_UNPACK_BUFFER, 0, (GLsizeiptr)bytes,
+				GL_MAP_WRITE_BIT | GL_MAP_INVALIDATE_BUFFER_BIT);
+		if (p != nullptr)
+		{
+			ReadFramebufferTo(&fb, p, (size_t)width * 4);
+			glUnmapBuffer(GL_PIXEL_UNPACK_BUFFER);
+			glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, width, height, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+			glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
+			return;
+		}
+		glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
+	}
+#endif
+	u8 *scratch = (u8 *)grow_buf_reserve(&fbScratch, bytes);
+	if (scratch == nullptr)
+		return;
+	ReadFramebufferTo(&fb, scratch, (size_t)width * 4);
+	glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, width, height, GL_RGBA, GL_UNSIGNED_BYTE, scratch);
+}
+
+/* the context is going: what RenderFramebuffer() kept (the texture goes
+ * with the renderer's) */
+static void fb_texture_term(void)
+{
+	if (fbUnpack != 0)
+		glDeleteBuffers(1, &fbUnpack);
+	fbUnpack = 0;
+	fbUnpackSize = 0;
+	fbTextureW = fbTextureH = 0;
+	grow_buf_free(&fbScratch);
 }
 
 #if 0

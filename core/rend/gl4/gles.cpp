@@ -624,8 +624,8 @@ static bool gl_create_resources(void)
 	{
 		TaGpuSizes sz;
 		ta_gpu_sizes(&sz);
-		// (the most translucent polygons a frame can have: two words each, kept from frame to frame)
-		gl4.trPolyWords.assign((size_t)sz.list[2] * 2, 0);
+		// (the most translucent polygons a frame can have)
+		gl4.trPolyMax = sz.list[2];
 	}
 
 	char vshader[16384];
@@ -884,18 +884,26 @@ static bool RenderFrame()
 		}
 
 		/* The translucent polygons' words: two each (see PolyParam in
-		 * SHADER_HEADER), made into memory kept for them */
-		const u32 trCount = std::min<u32>(pvrrc.global_param_tr.used(), (u32)gl4.trPolyWords.size() / 2);
+		 * SHADER_HEADER), made where the GPU reads them - the buffer's
+		 * memory, new each frame and mapped - or, where it cannot be
+		 * mapped, into memory kept for them and copied there */
+		const u32 trCount = std::min<u32>(pvrrc.global_param_tr.used(), gl4.trPolyMax);
 		const PolyParam *pp = pvrrc.global_param_tr.head();
-		u32 *words = gl4.trPolyWords.data();
-		for (u32 i = 0; i < trCount; i++, pp++, words += 2)
+		glBindBuffer(GL_SHADER_STORAGE_BUFFER, gl4.vbo.tr_poly_params);
+		glBufferData(GL_SHADER_STORAGE_BUFFER, trCount * 8, nullptr, GL_STREAM_DRAW);
+		u32 *mapped = trCount == 0 ? nullptr
+				: (u32 *)glMapBufferRange(GL_SHADER_STORAGE_BUFFER, 0, trCount * 8, GL_MAP_WRITE_BIT | GL_MAP_INVALIDATE_BUFFER_BIT);
+		u32 *words = mapped != nullptr ? mapped : (u32 *)grow_buf_reserve(&gl4.trPolyWords, (size_t)trCount * 8 + 8);
+		for (u32 i = 0; words != nullptr && i < trCount; i++, pp++, words += 2)
 		{
 			words[0] = (pp->tsp.full & 0xffff00c0) | ((pp->isp.full >> 16) & 0xe400) | ((pp->pcw.full >> 7) & 1)
 					| (pp->tsp1.full != (u32)-1 || pp->tcw1.full != (u32)-1 ? TAG_P_TWOVOL : 0u);
 			words[1] = pp->tsp1.full;
 		}
-		glBindBuffer(GL_SHADER_STORAGE_BUFFER, gl4.vbo.tr_poly_params);
-		glBufferData(GL_SHADER_STORAGE_BUFFER, trCount * 8, gl4.trPolyWords.data(), GL_STATIC_DRAW);
+		if (mapped != nullptr)
+			glUnmapBuffer(GL_SHADER_STORAGE_BUFFER);
+		else if (trCount != 0 && gl4.trPolyWords.data != nullptr)
+			glBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, trCount * 8, gl4.trPolyWords.data);
 		glCheck();
 	}
 	/* The volumes' triangles with those far off the screen cut
@@ -1151,6 +1159,7 @@ struct gl4rend : Renderer
 		TexCache.Clear();
 		rtt_watch_term();
 		gl_tex_term();
+		grow_buf_free(&gl4.trPolyWords);
 
 		gl_term();
 	}

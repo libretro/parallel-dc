@@ -1812,6 +1812,17 @@ void ReadFramebufferGeometry(FramebufferRead *fb)
 	fb->concat = FB_R_CTRL.fb_concat;
 }
 
+/* The framebuffer's words, read where pvr_read_area1() would, without a
+ * call each (rend/TexCache.cpp has a few hundred thousand of them a frame) */
+static inline u32 fb_read16(u32 addr)
+{
+	return *(const u16 *)&vram[pvr_map32(addr) & ~1u];
+}
+static inline u32 fb_read32(u32 addr)
+{
+	return *(const u32 *)&vram[pvr_map32(addr) & ~3u];
+}
+
 #define FB_RGBX(r, g, b) ((u32)(u8)(r) | ((u32)(u8)(g) << 8) | ((u32)(u8)(b) << 16) | 0xFF000000u)
 
 /* The picture as RGBA8, rows @pitch bytes apart from @dst on: each texel
@@ -1835,7 +1846,7 @@ void ReadFramebufferTo(const FramebufferRead *fb, u8 *dst, size_t pitch)
 				u32 *out = (u32 *)dst;
 				for (x = 0; x < width; x++, addr += 2)
 				{
-					u32 src = pvr_read_area1<u16>(addr);
+					u32 src = fb_read16(addr);
 					out[x] = FB_RGBX((((src >> 10) & 0x1F) << 3) + c,
 							(((src >> 5) & 0x1F) << 3) + c,
 							((src & 0x1F) << 3) + c);
@@ -1850,7 +1861,7 @@ void ReadFramebufferTo(const FramebufferRead *fb, u8 *dst, size_t pitch)
 				u32 *out = (u32 *)dst;
 				for (x = 0; x < width; x++, addr += 2)
 				{
-					u32 src = pvr_read_area1<u16>(addr);
+					u32 src = fb_read16(addr);
 					out[x] = FB_RGBX((((src >> 11) & 0x1F) << 3) + c,
 							(((src >> 5) & 0x3F) << 2) + (c & 3),
 							((src & 0x1F) << 3) + c);
@@ -1865,19 +1876,19 @@ void ReadFramebufferTo(const FramebufferRead *fb, u8 *dst, size_t pitch)
 				u32 *out = (u32 *)dst;
 				for (x = 0; x < width; x += 4)
 				{
-					u32 src = pvr_read_area1<u32>(addr);
+					u32 src = fb_read32(addr);
 					u32 src2;
 					u32 src3;
 					addr += 4;
 					*out++ = FB_RGBX(src >> 16, src >> 8, src);
 					if (x + 1 >= width)
 						break;
-					src2 = pvr_read_area1<u32>(addr);
+					src2 = fb_read32(addr);
 					addr += 4;
 					*out++ = FB_RGBX(src2 >> 8, src2, src >> 24);
 					if (x + 2 >= width)
 						break;
-					src3 = pvr_read_area1<u32>(addr);
+					src3 = fb_read32(addr);
 					addr += 4;
 					*out++ = FB_RGBX(src3, src2 >> 24, src2 >> 16);
 					if (x + 3 >= width)
@@ -1894,7 +1905,7 @@ void ReadFramebufferTo(const FramebufferRead *fb, u8 *dst, size_t pitch)
 				u32 *out = (u32 *)dst;
 				for (x = 0; x < width; x++, addr += 4)
 				{
-					u32 src = pvr_read_area1<u32>(addr);
+					u32 src = fb_read32(addr);
 					out[x] = FB_RGBX(src >> 16, src >> 8, src);
 				}
 				addr += skip;

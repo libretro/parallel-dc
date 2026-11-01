@@ -1039,9 +1039,8 @@ static void gl4_draw_quad_texture(GLuint texture, float w, float h)
 
 void gl4DrawFramebuffer(float w, float h)
 {
+	/* (the texture is kept for the next: see RenderFramebuffer()) */
 	gl4_draw_quad_texture(fbTextureId, w, h);
-	glcache.DeleteTextures(1, &fbTextureId);
-	fbTextureId = 0;
 }
 
 void gl4DrawVmuTexture(u8 vmu_screen_number)

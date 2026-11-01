@@ -1,5 +1,6 @@
 #define PVR_REGS_FOR_RENDERER	// see hw/pvr/pvr_regs.h
 #include "gles.h"
+#include "rend/grow_buf.h"
 #include "ta_decoder_gl.h"
 #include "rend/shadows.h"
 #include "rend/modvol_clip.h"
@@ -337,14 +338,16 @@ static void SortTriangles(int first, int count, bool sortTriangles, bool lastPas
 		glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, gl.vbo.idxs2); glCheck();
 		if (gl.index_type == GL_UNSIGNED_SHORT)
 		{
-			static bool overrun;
-			static List<u16> short_vidx;
-			if (short_vidx.daty != NULL)
-				short_vidx.Free();
-			short_vidx.Init(vidx_sort.size(), &overrun, NULL);
-			for (u32 i = 0; i < vidx_sort.size(); i++)
-				*(short_vidx.Append()) = vidx_sort[i];
-			glBufferData(GL_ELEMENT_ARRAY_BUFFER, short_vidx.bytes(), short_vidx.head(), GL_STREAM_DRAW);
+			/* (kept from one frame to the next: grown, never made again) */
+			static grow_buf_t short_vidx;
+			const size_t count = vidx_sort.size();
+			u16 *to = (u16 *)grow_buf_reserve(&short_vidx, count * sizeof(u16) + 2);
+			if (to != nullptr)
+			{
+				for (size_t i = 0; i < count; i++)
+					to[i] = (u16)vidx_sort[i];
+				glBufferData(GL_ELEMENT_ARRAY_BUFFER, count * sizeof(u16), to, GL_STREAM_DRAW);
+			}
 		}
 		else
 			glBufferData(GL_ELEMENT_ARRAY_BUFFER, vidx_sort.size() * sizeof(u32), &vidx_sort[0], GL_STREAM_DRAW);
@@ -899,9 +902,8 @@ static void DrawQuad(GLuint texId, float x, float y, float w, float h, float u0,
 
 void DrawFramebuffer()
 {
+	/* (the texture is kept for the next: see RenderFramebuffer()) */
 	DrawQuad(fbTextureId, 0, 0, 640.f, 480.f, 0, 0, 1, 1);
-	glcache.DeleteTextures(1, &fbTextureId);
-	fbTextureId = 0;
 }
 
 void UpdateVmuTexture(int vmu_screen_number)

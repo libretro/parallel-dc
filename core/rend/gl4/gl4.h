@@ -1,5 +1,6 @@
 #pragma once
 #include "rend/gles/gles.h"
+#include "rend/grow_buf.h"
 #include <unordered_map>
 #include <vector>
 
@@ -123,7 +124,8 @@ struct gl4_ctx
 	} vbo;
 	/* (made with the resources) the translucent polygons' words of a frame
 	 * the CPU parsed, made here (see PolyParam in SHADER_HEADER) */
-	std::vector<u32> trPolyWords;
+	u32 trPolyMax;                  /* translucent polygons there is room for */
+	grow_buf_t trPolyWords;         /* their words where the buffer cannot be mapped */
 	// what the state manager (glsm) has no function for
 	void (APIENTRYP vertexAttribDivisor)(GLuint index, GLuint divisor);
 	void (APIENTRYP vertexAttribI4ui)(GLuint index, GLuint x, GLuint y, GLuint z, GLuint w);
