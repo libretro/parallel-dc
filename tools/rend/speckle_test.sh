@@ -16,6 +16,13 @@
 #        Direct3D 12 vertex shaders place it with the precise
 #        transformVertex(), the Direct3D 11 ones' position is precise
 #
+# 3. The screen's picture cleared and drawn into while the frontend still
+#    reads the one it was handed in that image before: the frontend shows
+#    tiles of the next frame with its translucent polygons not drawn yet.
+#    Checked in the sources: the raster renderer's screen render pass has a
+#    dependency into its first subpass from the fragment shader and the
+#    transfer stages, as the per-pixel and SSAA ones have.
+#
 # 2. The per-pixel renderers' translucent modifier volumes change the
 #    fragments in the lists from their shaders: one draw toggles a stencil
 #    bit, the draw that closes a volume reads and clears it. Nothing orders
@@ -117,6 +124,19 @@ closing() {
 closing $R/vulkan/oit/oit_drawer.cpp 'GetTrModifierVolumePipeline[(]mv_mode == 1' Vulkan
 closing $R/gl4/abuffer.cpp 'g_abuffer_tr_modvol_shaders[[]mv_mode == 1' "OpenGL 4"
 closing $R/dx12/oit/dx12_oitrenderer.cpp 'DX12_OF_MV_INCLUSION : DX12_OF_MV_EXCLUSION' "Direct3D 12"
+
+# ---- 3. the picture the frontend reads, in the sources ------------------
+# (the screen's render pass clears and draws into an image the frontend was
+# handed before, on the queue the two share: a dependency into its first
+# subpass from the stages that read it there, or the frontend shows the next
+# frame's tiles with only its opaque polygons drawn yet. The per-pixel and
+# SSAA render passes have the fragment shader in theirs.)
+awk '
+   /emplace_back\(VK_SUBPASS_EXTERNAL, 0,/ { on = 1; text = "" }
+   on { text = text $0 }
+   on && /\);/ { on = 0; if (text ~ /eFragmentShader/ && text ~ /eTransfer/ && text ~ /eColorAttachmentWrite/) found = 1 }
+   END { exit !found }' $R/vulkan/drawer.cpp \
+   || bad "$R/vulkan/drawer.cpp: the screen's render pass clears its picture with no dependency on the frontend's reading of it"
 
 if [ $# -lt 2 ]; then
    [ $fail = 0 ] && echo "speckle_test: PASS (the sources; give CONTENT STATE for the device runs)"

@@ -927,6 +927,14 @@ void ScreenDrawer::Init(SamplerManager *samplerManager, ShaderManager *shaderMan
 				vk::AccessFlagBits::eDepthStencilAttachmentWrite | vk::AccessFlagBits::eColorAttachmentWrite,
 				vk::AccessFlagBits::eDepthStencilAttachmentRead | vk::AccessFlagBits::eDepthStencilAttachmentWrite
 					| vk::AccessFlagBits::eColorAttachmentRead | vk::AccessFlagBits::eColorAttachmentWrite);
+		/* The picture is cleared and drawn into an image the frontend was
+		 * handed before, on the queue the two share: whatever read it there -
+		 * a shader, a compute upscaler, a copy - is done before this clears it,
+		 * or a GPU that draws in tiles shows tiles of the next frame with only
+		 * its opaque polygons drawn yet. */
+		dependencies.emplace_back(VK_SUBPASS_EXTERNAL, 0,
+				vk::PipelineStageFlagBits::eFragmentShader | vk::PipelineStageFlagBits::eComputeShader | vk::PipelineStageFlagBits::eTransfer,
+				vk::PipelineStageFlagBits::eColorAttachmentOutput, vk::AccessFlags(), vk::AccessFlagBits::eColorAttachmentWrite);
 		// the depth the frame leaves, for the motion vector pass and the upscaler
 		if (upscaled)
 			dependencies.emplace_back(0, VK_SUBPASS_EXTERNAL,
