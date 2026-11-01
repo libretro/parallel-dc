@@ -95,6 +95,7 @@ struct PooledImage : TexPoolEntry
 	vk::UniqueImage image;
 	Allocation allocation;
 	vk::UniqueImageView view;
+	u64 viewSerial = 0;     /* view's (Texture::ReadOnlyViewSerial()) */
 	vk::UniqueImageView storageViews[TEXD_MAX_LEVELS];
 	vk::ImageUsageFlags usage;
 	vk::Format format = vk::Format::eUndefined;
@@ -173,8 +174,17 @@ public:
 	std::string GetId() override { char s[20]; sprintf(s, "%p", this); return s; }
 	bool IsNew() const { return !image.get() && pooled == nullptr; }
 	vk::ImageView GetImageView() const { return pooled != nullptr ? *pooled->view : *imageView; }
+	u64 GetViewSerial() const { return pooled != nullptr ? pooled->viewSerial : ownSerial; }
 	vk::Image GetImage() const { return pooled != nullptr ? *pooled->image : *image; }
 	vk::ImageView GetReadOnlyImageView() const { return readOnlyImageView ? readOnlyImageView : GetImageView(); }
+	/* Which view GetReadOnlyImageView() is, of every one made: a number no
+	 * other view ever has, which a handle - made again at the same value
+	 * once its view is gone - is not. What a descriptor set is kept by. */
+	u64 ReadOnlyViewSerial() const { return readOnlyImageView ? readOnlySerial : pooled != nullptr ? pooled->viewSerial : ownSerial; }
+	/* The view the frames in flight sample, kept while a new image is made */
+	void KeepReadOnlyView() { readOnlyImageView = GetImageView(); readOnlySerial = pooled != nullptr ? pooled->viewSerial : ownSerial; }
+	/* A serial for a view just made */
+	static u64 NewViewSerial() { return ++viewSerials; }
 	void SetCommandBuffer(vk::CommandBuffer commandBuffer) { this->commandBuffer = commandBuffer; }
 	/* Where a command buffer comes from when an upload needs one: a
 	 * texture made on the GPU records nothing of its own */
@@ -254,7 +264,10 @@ private:
 	Allocation allocation;
 	vk::UniqueImage image;
 	vk::UniqueImageView imageView;
+	u64 ownSerial = 0;          /* imageView's */
 	vk::ImageView readOnlyImageView;
+	u64 readOnlySerial = 0;     /* readOnlyImageView's */
+	static u64 viewSerials;
 
 	vk::PhysicalDevice physicalDevice;
 	vk::Device device;
@@ -316,6 +329,8 @@ public:
 	const BufferData* GetBufferData() const { return stagingBufferData.get(); }
 	vk::ImageView GetStencilView() const { return *stencilView; }
 	vk::Extent2D getExtent() const { return extent; }
+	/* GetImageView()'s serial (Texture::ReadOnlyViewSerial()) */
+	u64 GetViewSerial() const { return viewSerial; }
 
 private:
 	vk::Format format;
@@ -326,9 +341,43 @@ private:
 	vk::UniqueImage image;
 	vk::UniqueImageView imageView;
 	vk::UniqueImageView stencilView;
+	u64 viewSerial = 0;
 
 	vk::PhysicalDevice physicalDevice;
 	vk::Device device;
+};
+
+/* A framebuffer kept for the attachments it was made of, known by their
+ * views' serials: made again only when one of them, the render pass or the
+ * size is another. (Made again in a frame slot whose last frame is done.) */
+class KeptFramebuffer
+{
+public:
+	vk::Framebuffer Get(vk::RenderPass pass, u32 count, const vk::ImageView *views, const u64 *serials, u32 width, u32 height)
+	{
+		bool same = framebuffer && pass == this->pass && count == this->count && width == this->width && height == this->height;
+		for (u32 i = 0; same && i < count; i++)
+			same = serials[i] == this->serials[i] && serials[i] != 0;
+		if (!same)
+		{
+			framebuffer = VulkanContext::Instance()->GetDevice().createFramebufferUnique(vk::FramebufferCreateInfo(
+					vk::FramebufferCreateFlags(), pass, count, views, width, height, 1));
+			this->pass = pass;
+			this->count = count;
+			this->width = width;
+			this->height = height;
+			for (u32 i = 0; i < count && i < 3; i++)
+				this->serials[i] = serials[i];
+		}
+		return *framebuffer;
+	}
+	vk::Framebuffer Handle() const { return *framebuffer; }
+
+private:
+	vk::UniqueFramebuffer framebuffer;
+	vk::RenderPass pass;
+	u32 count = 0, width = 0, height = 0;
+	u64 serials[3] = {};
 };
 
 class TextureCache : public BaseTextureCache<Texture>

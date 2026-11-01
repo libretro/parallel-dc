@@ -1335,13 +1335,12 @@ bool DX12Renderer::UpscalerJitter()
 bool DX12Renderer::UpscalerMatch()
 {
 	// the frame's strips matched with the frame before's: where each vertex was, in the ring
-	upscaler_match(pvrrc, prevXy);
-	const u32 bytes = (u32)std::max<size_t>(prevXy.size() * sizeof(float), 2 * sizeof(float));
+	const u32 bytes = (u32)std::max<size_t>((size_t)pvrrc.verts.used() * 2 * sizeof(float), 2 * sizeof(float));
 	DX12Upload upload;
 	if (!context->Upload(bytes, 16, upload))
 		return false;
-	if (!prevXy.empty())
-		memcpy(upload.cpu, prevXy.data(), prevXy.size() * sizeof(float));
+	/* (written where the GPU reads them: the upload ring) */
+	upscaler_match(pvrrc, (float *)upload.cpu);
 	prevXyView.BufferLocation = upload.gpu;
 	prevXyView.SizeInBytes = bytes;
 	prevXyView.StrideInBytes = 2 * sizeof(float);

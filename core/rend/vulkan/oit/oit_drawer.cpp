@@ -173,14 +173,15 @@ void OITDrawer::DrawPoly(const vk::CommandBuffer& cmdBuffer, u32 listType, bool 
 			pso.general ? (u32)sizeof(pushConstants) : (u32)OIT_PUSH_KEY_OFFSET, &pushConstants);
 
 	bool needTexture = poly.pcw.Texture;
+	vk::DescriptorSet texSet;
 	if (needTexture)
-		GetCurrentDescSet().SetTexture(poly.texid, poly.tsp, poly.texid1, poly.tsp1);
+		texSet = GetCurrentDescSet().SetTexture(poly.texid, poly.tsp, poly.texid1, poly.tsp1);
 
 	cmdBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, vk::Pipeline(pso.pipeline));
 	if (pso.general)
 		pipelineManager->SetDynamicState(cmdBuffer, pso.key);
 	if (needTexture)
-		GetCurrentDescSet().BindPerPolyDescriptorSets(cmdBuffer, poly.texid, poly.tsp, poly.texid1, poly.tsp1);
+		GetCurrentDescSet().BindPerPolyDescriptorSets(cmdBuffer, texSet);
 
 	DrawIndices(cmdBuffer, listType, first, count);
 }
@@ -294,9 +295,10 @@ void OITDrawer::UploadMainBuffer(const OITDescriptorSets::FragmentShaderUniforms
 {
 	using FragmentShaderUniforms = OITDescriptorSets::FragmentShaderUniforms;
 
-	// TODO Put this logic in an allocator
-	std::vector<const void *> chunks;
-	std::vector<u32> chunkSizes;
+	/* (on the stack: nothing allocated for them) */
+	const void *chunks[10];
+	u32 chunkSizes[10];
+	u32 nchunks = 0;
 
 	// (a frame decoded on the GPU has its geometry and translucent polygon parameters there)
 	const u32 vertexBytes = pvrrc.gpu ? 0 : pvrrc.verts.bytes();
@@ -304,52 +306,52 @@ void OITDrawer::UploadMainBuffer(const OITDescriptorSets::FragmentShaderUniforms
 	const u32 indexBytes = pvrrc.gpu ? 0 : pvrrc.idx.bytes();
 
 	// Vertex
-	chunks.push_back(pvrrc.verts.head());
-	chunkSizes.push_back(vertexBytes);
+	chunks[nchunks] = (pvrrc.verts.head());
+	chunkSizes[nchunks++] = (vertexBytes);
 
 	u32 padding = align(vertexBytes, 4);
 	offsets.modVolOffset = vertexBytes + padding;
-	chunks.push_back(nullptr);
-	chunkSizes.push_back(padding);
+	chunks[nchunks] = (nullptr);
+	chunkSizes[nchunks++] = (padding);
 
 	// Modifier Volumes
-	chunks.push_back(ModVolList().head());
-	chunkSizes.push_back(modVolBytes);
+	chunks[nchunks] = (ModVolList().head());
+	chunkSizes[nchunks++] = (modVolBytes);
 	padding = align(offsets.modVolOffset + modVolBytes, 4);
 	offsets.indexOffset = offsets.modVolOffset + modVolBytes + padding;
-	chunks.push_back(nullptr);
-	chunkSizes.push_back(padding);
+	chunks[nchunks] = (nullptr);
+	chunkSizes[nchunks++] = (padding);
 
 	// Index
-	chunks.push_back(pvrrc.idx.head());
-	chunkSizes.push_back(indexBytes);
+	chunks[nchunks] = (pvrrc.idx.head());
+	chunkSizes[nchunks++] = (indexBytes);
 
 	// Fragment uniform buffer (the vertex one is its own: WriteVertexUniforms())
 	u32 indexSize = indexBytes;
 	padding = align(offsets.indexOffset + indexSize, std::max(4, (int)GetContext()->GetUniformBufferAlignment()));
 	offsets.fragmentUniformOffset = offsets.indexOffset + indexSize + padding;
-	chunks.push_back(nullptr);
-	chunkSizes.push_back(padding);
+	chunks[nchunks] = (nullptr);
+	chunkSizes[nchunks++] = (padding);
 
-	chunks.push_back(&fragmentUniforms);
-	chunkSizes.push_back(sizeof(fragmentUniforms));
+	chunks[nchunks] = (&fragmentUniforms);
+	chunkSizes[nchunks++] = (sizeof(fragmentUniforms));
 
 	// Translucent poly params
 	padding = align(offsets.fragmentUniformOffset + sizeof(FragmentShaderUniforms), std::max(4, (int)GetContext()->GetStorageBufferAlignment()));
 	offsets.polyParamsOffset = offsets.fragmentUniformOffset + sizeof(FragmentShaderUniforms) + padding;
-	chunks.push_back(nullptr);
-	chunkSizes.push_back(padding);
+	chunks[nchunks] = (nullptr);
+	chunkSizes[nchunks++] = (padding);
 
 	/* (written below, straight into the buffer: two words a translucent
 	 * polygon, or the one the validation layers want when there is none) */
 	const u32 trPolys = pvrrc.gpu ? 0 : (u32)pvrrc.global_param_tr.used();
 	offsets.polyParamsSize = (trPolys != 0 ? trPolys * 2 : 1) * 4;
-	chunks.push_back(nullptr);
-	chunkSizes.push_back(offsets.polyParamsSize);
+	chunks[nchunks] = (nullptr);
+	chunkSizes[nchunks++] = (offsets.polyParamsSize);
 	u32 totalSize = offsets.polyParamsOffset + offsets.polyParamsSize;
 
 	BufferData *buffer = GetMainBuffer(totalSize);
-	buffer->upload(chunks.size(), &chunkSizes[0], &chunks[0]);
+	buffer->upload(nchunks, chunkSizes, chunks);
 	u32 *trPolyParams = (u32 *)((u8 *)buffer->MapMemory() + offsets.polyParamsOffset);
 	if (trPolys == 0)
 		trPolyParams[0] = 0;
@@ -925,7 +927,7 @@ vk::ImageLayout OITTextureDrawer::TakeTexture(const Size& size, const vk::ImageU
 	}
 	else if (textureCache->IsInFlight(texture))
 	{
-		texture->readOnlyImageView = texture->GetImageView();
+		texture->KeepReadOnlyView();
 		textureCache->DestroyLater(texture);
 	}
 	textureCache->SetInFlight(texture);
@@ -991,9 +993,16 @@ vk::CommandBuffer OITTextureDrawer::NewFrame()
 		colorAttachments[0]->GetImageView(),
 		depthAttachment->GetImageView(),
 	};
+	const u64 viewSerials[] = {
+		texture->GetViewSerial(),
+		colorAttachments[0]->GetViewSerial(),
+		depthAttachment->GetViewSerial(),
+	};
+	/* (made again only for other attachments: a texture rendered to every
+	 * frame is the same one) */
 	framebuffers.resize(GetContext()->GetSwapChainSize());
-	framebuffers[GetCurrentImage()] = device.createFramebufferUnique(vk::FramebufferCreateInfo(vk::FramebufferCreateFlags(),
-			rttPipelineManager->GetRenderPass(true, true), ARRAY_SIZE(imageViews), imageViews, widthPow2, heightPow2, 1));
+	framebuffers[GetCurrentImage()].Get(rttPipelineManager->GetRenderPass(true, true), ARRAY_SIZE(imageViews), imageViews,
+			viewSerials, widthPow2, heightPow2);
 
 	commandBuffer.setViewport(0, vk::Viewport(0.0f, 0.0f, (float)upscaledWidth, (float)upscaledHeight, 0.0f, 1.0f));
 	{

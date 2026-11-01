@@ -20,6 +20,7 @@
 */
 #pragma once
 #include "vulkan_context.h"
+#include "rend/grow_buf.h"
 #include <memory>
 
 class CommandPool
@@ -53,6 +54,7 @@ public:
 
 	void Term()
 	{
+		grow_buf_free(&submitList);
 		deferredDeletes.clear();
 		freeBuffers.clear();
 		inFlightBuffers.clear();
@@ -62,8 +64,13 @@ public:
 
 	void EndFrame()
 	{
-		std::vector<vk::CommandBuffer> commandBuffers = vk::uniqueToRaw(inFlightBuffers[index]);
-		VulkanContext::Instance()->SubmitCommandBuffers(commandBuffers.size(), commandBuffers.data(), *fences[index]);
+		/* (into memory kept for it: nothing allocated a submit) */
+		const std::vector<vk::UniqueCommandBuffer>& inFlight = inFlightBuffers[index];
+		vk::CommandBuffer *list = (vk::CommandBuffer *)grow_buf_reserve(&submitList, (inFlight.size() + 1) * sizeof(vk::CommandBuffer));
+		u32 count = 0;
+		for (size_t i = 0; list != nullptr && i < inFlight.size(); i++)
+			list[count++] = *inFlight[i];
+		VulkanContext::Instance()->SubmitCommandBuffers(count, list, *fences[index]);
 	}
 
 	void BeginFrame()
@@ -79,7 +86,9 @@ public:
 		std::vector<vk::UniqueCommandBuffer>& freeBuf = freeBuffers[index];
 		std::move(inFlight.begin(), inFlight.end(), std::back_inserter(freeBuf));
 		inFlight.clear();
-		VulkanContext::Instance()->GetDevice().resetCommandPool(*commandPools[index], vk::CommandPoolResetFlagBits::eReleaseResources);
+		/* (the memory the commands were recorded in stays the pool's, for the
+		 * next frame's: given back to the driver, it was taken again) */
+		VulkanContext::Instance()->GetDevice().resetCommandPool(*commandPools[index], vk::CommandPoolResetFlags());
 	}
 
 	vk::CommandBuffer Allocate()
@@ -163,4 +172,5 @@ private:
 	std::vector<vk::UniqueCommandPool> commandPools;
 	std::vector<vk::UniqueFence> fences;
 	std::vector<std::vector<std::shared_ptr<void>>> deferredDeletes;
+	grow_buf_t submitList = GROW_BUF_INIT;
 };

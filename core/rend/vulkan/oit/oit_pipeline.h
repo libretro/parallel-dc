@@ -28,6 +28,7 @@
 #include "../texture.h"
 #include "../ssaa.h"
 #include "../pso.h"
+#include "../desc_cache.h"
 #include "hw/pvr/ta_ctx.h"
 
 class OITDescriptorSets
@@ -84,6 +85,7 @@ public:
 		this->pipelineLayout = pipelineLayout;
 		this->perFrameLayout = perFrameLayout;
 		this->perPolyLayout = perPolyLayout;
+		perPoly.SetLayout(perPolyLayout);
 		this->colorInputLayout = colorInputLayout;
 	}
 	// FIXME way too many params
@@ -98,13 +100,16 @@ public:
 			perFrameDescSet = std::move(GetContext()->GetDevice().allocateDescriptorSetsUnique(
 					vk::DescriptorSetAllocateInfo(GetContext()->GetDescriptorPool(), 1, &perFrameLayout)).front());
 		}
-		std::vector<vk::DescriptorBufferInfo> bufferInfos;
-		bufferInfos.push_back(vk::DescriptorBufferInfo(vertexUniformBuffer, 0, sizeof(VertexShaderUniforms)));
-		bufferInfos.push_back(vk::DescriptorBufferInfo(buffer, fragmentUniformOffset, sizeof(FragmentShaderUniforms)));
+		const vk::DescriptorBufferInfo bufferInfos[2] = {
+			vk::DescriptorBufferInfo(vertexUniformBuffer, 0, sizeof(VertexShaderUniforms)),
+			vk::DescriptorBufferInfo(buffer, fragmentUniformOffset, sizeof(FragmentShaderUniforms)),
+		};
 
-		std::vector<vk::WriteDescriptorSet> writeDescriptorSets;
-		writeDescriptorSets.push_back(vk::WriteDescriptorSet(*perFrameDescSet, 0, 0, 1, vk::DescriptorType::eUniformBuffer, nullptr, &bufferInfos[0], nullptr));
-		writeDescriptorSets.push_back(vk::WriteDescriptorSet(*perFrameDescSet, 1, 0, 1, vk::DescriptorType::eUniformBuffer, nullptr, &bufferInfos[1], nullptr));
+		/* (on the stack: nothing allocated for them) */
+		vk::WriteDescriptorSet writeDescriptorSets[12];
+		u32 writes = 0;
+		writeDescriptorSets[writes++] = (vk::WriteDescriptorSet(*perFrameDescSet, 0, 0, 1, vk::DescriptorType::eUniformBuffer, nullptr, &bufferInfos[0], nullptr));
+		writeDescriptorSets[writes++] = (vk::WriteDescriptorSet(*perFrameDescSet, 1, 0, 1, vk::DescriptorType::eUniformBuffer, nullptr, &bufferInfos[1], nullptr));
 		if (fogImageView)
 		{
 			TSP fogTsp = {};
@@ -115,7 +120,7 @@ public:
 			vk::Sampler fogSampler = samplerManager->GetSampler(fogTsp);
 			static vk::DescriptorImageInfo imageInfo;
 			imageInfo = { fogSampler, fogImageView, vk::ImageLayout::eShaderReadOnlyOptimal };
-			writeDescriptorSets.push_back(vk::WriteDescriptorSet(*perFrameDescSet, 2, 0, 1, vk::DescriptorType::eCombinedImageSampler, &imageInfo, nullptr, nullptr));
+			writeDescriptorSets[writes++] = (vk::WriteDescriptorSet(*perFrameDescSet, 2, 0, 1, vk::DescriptorType::eCombinedImageSampler, &imageInfo, nullptr, nullptr));
 			/* What an untextured polygon has as its textures: the general
 			 * pipelines read them only for a textured polygon, but have them
 			 * in their shader (pso.h) */
@@ -125,8 +130,8 @@ public:
 			if (noTextureView != fogImageView)
 			{
 				noTextureView = fogImageView;
-				writeDescriptorSets.push_back(vk::WriteDescriptorSet(*noTextureDescSet, 0, 0, 1, vk::DescriptorType::eCombinedImageSampler, &imageInfo, nullptr, nullptr));
-				writeDescriptorSets.push_back(vk::WriteDescriptorSet(*noTextureDescSet, 1, 0, 1, vk::DescriptorType::eCombinedImageSampler, &imageInfo, nullptr, nullptr));
+				writeDescriptorSets[writes++] = (vk::WriteDescriptorSet(*noTextureDescSet, 0, 0, 1, vk::DescriptorType::eCombinedImageSampler, &imageInfo, nullptr, nullptr));
+				writeDescriptorSets[writes++] = (vk::WriteDescriptorSet(*noTextureDescSet, 1, 0, 1, vk::DescriptorType::eCombinedImageSampler, &imageInfo, nullptr, nullptr));
 			}
 		}
 		if (paletteImageView)
@@ -138,7 +143,7 @@ public:
 			vk::Sampler palSampler = samplerManager->GetSampler(palTsp);
 			static vk::DescriptorImageInfo imageInfo;
 			imageInfo = { palSampler, paletteImageView, vk::ImageLayout::eShaderReadOnlyOptimal };
-			writeDescriptorSets.push_back(vk::WriteDescriptorSet(*perFrameDescSet, 6, 0, 1, vk::DescriptorType::eCombinedImageSampler, &imageInfo, nullptr, nullptr));
+			writeDescriptorSets[writes++] = (vk::WriteDescriptorSet(*perFrameDescSet, 6, 0, 1, vk::DescriptorType::eCombinedImageSampler, &imageInfo, nullptr, nullptr));
 		}
 		if (polyParamsSize > 0)
 		{
@@ -147,14 +152,14 @@ public:
 			 * parameters are the GPU's: see TaGpuDraw) */
 			polyParamsBufferInfo = gpuPolyParams ? vk::DescriptorBufferInfo(gpuPolyParams, 0, gpuPolyParamsSize)
 					: vk::DescriptorBufferInfo(buffer, polyParamsOffset, polyParamsSize);
-			writeDescriptorSets.push_back(vk::WriteDescriptorSet(*perFrameDescSet, 3, 0, 1, vk::DescriptorType::eStorageBuffer, nullptr, &polyParamsBufferInfo, nullptr));
+			writeDescriptorSets[writes++] = (vk::WriteDescriptorSet(*perFrameDescSet, 3, 0, 1, vk::DescriptorType::eStorageBuffer, nullptr, &polyParamsBufferInfo, nullptr));
 		}
 		vk::DescriptorImageInfo stencilImageInfo(vk::Sampler(), stencilImageView, depthInputLayout);
-		writeDescriptorSets.push_back(vk::WriteDescriptorSet(*perFrameDescSet, 4, 0, 1, vk::DescriptorType::eInputAttachment, &stencilImageInfo, nullptr, nullptr));
+		writeDescriptorSets[writes++] = (vk::WriteDescriptorSet(*perFrameDescSet, 4, 0, 1, vk::DescriptorType::eInputAttachment, &stencilImageInfo, nullptr, nullptr));
 		vk::DescriptorImageInfo depthImageInfo(vk::Sampler(), depthImageView, depthInputLayout);
-		writeDescriptorSets.push_back(vk::WriteDescriptorSet(*perFrameDescSet, 5, 0, 1, vk::DescriptorType::eInputAttachment, &depthImageInfo, nullptr, nullptr));
+		writeDescriptorSets[writes++] = (vk::WriteDescriptorSet(*perFrameDescSet, 5, 0, 1, vk::DescriptorType::eInputAttachment, &depthImageInfo, nullptr, nullptr));
 
-		GetContext()->GetDevice().updateDescriptorSets(writeDescriptorSets, nullptr);
+		GetContext()->GetDevice().updateDescriptorSets(writes, writeDescriptorSets, 0, nullptr);
 	}
 
 	// @layout: the colour attachment's where it is read (SSAA's are in the general one)
@@ -163,43 +168,38 @@ public:
 		if (!colorInputDescSets[index])
 			colorInputDescSets[index] = std::move(GetContext()->GetDevice().allocateDescriptorSetsUnique(
 					vk::DescriptorSetAllocateInfo(GetContext()->GetDescriptorPool(), 1, &colorInputLayout)).front());
-		std::vector<vk::WriteDescriptorSet> writeDescriptorSets;
+		/* (on the stack: nothing allocated for them) */
+		vk::WriteDescriptorSet writeDescriptorSets[12];
+		u32 writes = 0;
 		vk::DescriptorImageInfo colorImageInfo(vk::Sampler(), colorImageView, layout);
-		writeDescriptorSets.push_back(vk::WriteDescriptorSet(*colorInputDescSets[index], 0, 0, 1, vk::DescriptorType::eInputAttachment, &colorImageInfo, nullptr, nullptr));
+		writeDescriptorSets[writes++] = (vk::WriteDescriptorSet(*colorInputDescSets[index], 0, 0, 1, vk::DescriptorType::eInputAttachment, &colorImageInfo, nullptr, nullptr));
 
-		GetContext()->GetDevice().updateDescriptorSets(writeDescriptorSets, nullptr);
+		GetContext()->GetDevice().updateDescriptorSets(writes, writeDescriptorSets, 0, nullptr);
 	}
 
-	void SetTexture(u64 textureId0, TSP tsp0, u64 textureId1, TSP tsp1)
+	/* The set a polygon with these textures is drawn with: written once,
+	 * and kept while it is drawn with (desc_cache.h) */
+	vk::DescriptorSet SetTexture(u64 textureId0, TSP tsp0, u64 textureId1, TSP tsp1)
 	{
-		auto index = std::make_tuple(textureId0, tsp0.full & SamplerManager::TSP_Mask,
-				textureId1, tsp1.full & SamplerManager::TSP_Mask);
-		if (perPolyDescSetsInFlight.find(index) != perPolyDescSetsInFlight.end())
-			return;
-
-		if (perPolyDescSets.empty())
-		{
-			std::vector<vk::DescriptorSetLayout> layouts(10, perPolyLayout);
-			perPolyDescSets = GetContext()->GetDevice().allocateDescriptorSetsUnique(
-					vk::DescriptorSetAllocateInfo(GetContext()->GetDescriptorPool(), layouts.size(), &layouts[0]));
-		}
 		Texture *texture = reinterpret_cast<Texture *>(textureId0);
-		vk::DescriptorImageInfo imageInfo0(samplerManager->GetSampler(tsp0), texture->GetReadOnlyImageView(), vk::ImageLayout::eShaderReadOnlyOptimal);
-
-		std::vector<vk::WriteDescriptorSet> writeDescriptorSets;
-		writeDescriptorSets.push_back(vk::WriteDescriptorSet(*perPolyDescSets.back(), 0, 0, 1, vk::DescriptorType::eCombinedImageSampler, &imageInfo0, nullptr, nullptr));
-
+		Texture *texture1 = textureId1 != (u64)-1 ? reinterpret_cast<Texture *>(textureId1) : nullptr;
+		const TexDescKey key = { texture->ReadOnlyViewSerial(), texture1 != nullptr ? texture1->ReadOnlyViewSerial() : 0,
+				tsp0.full & SamplerManager::TSP_Mask, texture1 != nullptr ? tsp1.full & SamplerManager::TSP_Mask : 0 };
+		vk::DescriptorSet set = perPoly.Find(key);
+		if (set)
+			return set;
+		set = perPoly.Add(key);
+		const vk::DescriptorImageInfo imageInfo0(samplerManager->GetSampler(tsp0), texture->GetReadOnlyImageView(), vk::ImageLayout::eShaderReadOnlyOptimal);
 		// (a polygon with one volume has the first texture as its second: the general pipelines' shader has both)
 		vk::DescriptorImageInfo imageInfo1 = imageInfo0;
-		if (textureId1 != (u64)-1)
-		{
-			Texture *texture1 = reinterpret_cast<Texture *>(textureId1);
+		if (texture1 != nullptr)
 			imageInfo1 = vk::DescriptorImageInfo(samplerManager->GetSampler(tsp1), texture1->GetReadOnlyImageView(), vk::ImageLayout::eShaderReadOnlyOptimal);
-		}
-		writeDescriptorSets.push_back(vk::WriteDescriptorSet(*perPolyDescSets.back(), 1, 0, 1, vk::DescriptorType::eCombinedImageSampler, &imageInfo1, nullptr, nullptr));
-		GetContext()->GetDevice().updateDescriptorSets(writeDescriptorSets, nullptr);
-		perPolyDescSetsInFlight[index] = std::move(perPolyDescSets.back());
-		perPolyDescSets.pop_back();
+		const vk::WriteDescriptorSet writes[2] = {
+			vk::WriteDescriptorSet(set, 0, 0, 1, vk::DescriptorType::eCombinedImageSampler, &imageInfo0, nullptr, nullptr),
+			vk::WriteDescriptorSet(set, 1, 0, 1, vk::DescriptorType::eCombinedImageSampler, &imageInfo1, nullptr, nullptr),
+		};
+		GetContext()->GetDevice().updateDescriptorSets(2, writes, 0, nullptr);
+		return set;
 	}
 
 	void BindPerFrameDescriptorSets(vk::CommandBuffer cmdBuffer)
@@ -215,19 +215,14 @@ public:
 		cmdBuffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, pipelineLayout, 2, 1, &colorInputDescSets[index].get(), 0, nullptr);
 	}
 
-	void BindPerPolyDescriptorSets(vk::CommandBuffer cmdBuffer, u64 textureId0, TSP tsp0, u64 textureId1, TSP tsp1)
+	void BindPerPolyDescriptorSets(vk::CommandBuffer cmdBuffer, vk::DescriptorSet set)
 	{
-		auto index = std::make_tuple(textureId0, tsp0.full & SamplerManager::TSP_Mask, textureId1, tsp1.full & SamplerManager::TSP_Mask);
-		cmdBuffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, pipelineLayout, 1, 1,
-				&perPolyDescSetsInFlight[index].get(), 0, nullptr);
+		cmdBuffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, pipelineLayout, 1, 1, &set, 0, nullptr);
 	}
 
 	void Reset()
 	{
-		for (auto& pair : perPolyDescSetsInFlight)
-			perPolyDescSets.emplace_back(std::move(pair.second));
-		perPolyDescSetsInFlight.clear();
-
+		perPoly.NextUse();
 	}
 
 private:
@@ -242,8 +237,7 @@ private:
 	vk::UniqueDescriptorSet noTextureDescSet;
 	vk::ImageView noTextureView;
 	std::array<vk::UniqueDescriptorSet, 2> colorInputDescSets;
-	std::vector<vk::UniqueDescriptorSet> perPolyDescSets;
-	std::map<std::tuple<u64, u32, u64, u32>, vk::UniqueDescriptorSet> perPolyDescSetsInFlight;
+	TexDescCache perPoly;
 
 	SamplerManager* samplerManager;
 };

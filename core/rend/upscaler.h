@@ -58,9 +58,12 @@ void upscaler_jitter(float *x, float *y);
 
 /* The motion vector pass's second vertex stream: for each of @ctx's
  * vertices, where it was in the frame before (x, y, in the game's
- * screen space, as Vertex::x and y are). A vertex with no match is
- * where it is now. Remembers this frame's strips for the next. */
-void upscaler_match(const rend_context& ctx, std::vector<float>& prev_xy);
+ * screen space, as Vertex::x and y are), written into @prev_xy - two
+ * floats a vertex, as many as @ctx has: the memory the GPU reads them
+ * from, as often as not, for they are written there in order and then
+ * again where a strip matched. A vertex with no match is where it is now.
+ * Remembers this frame's strips for the next. */
+void upscaler_match(const rend_context& ctx, float *prev_xy);
 
 /* The frame's inputs, after its picture was handed over: the motion
  * vectors (two floats a pixel, in pixels of the render size, from each

@@ -290,7 +290,6 @@ protected:
 	u32 depthCopySrv = ~0u;
 	ID3D12Resource *depthCopyViewed = nullptr;
 	bool upscaled = false;		// the frame being drawn is drawn for the upscaler
-	std::vector<float> prevXy;	// the pass's second stream: where each vertex was
 	D3D12_VERTEX_BUFFER_VIEW prevXyView{};
 	/* A frame the compute renderer drew (dx12_compute.h): its walk stored
 	 * the depth in the slot's own image, which the pass's pixel shader tests

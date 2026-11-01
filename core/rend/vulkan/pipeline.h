@@ -27,6 +27,7 @@
 #include "vulkan_context.h"
 #include "ssaa.h"
 #include "pso.h"
+#include "desc_cache.h"
 
 class DescriptorSets
 {
@@ -37,7 +38,7 @@ public:
 		this->pipelineLayout = pipelineLayout;
 		this->perFrameLayout = perFrameLayout;
 		this->perPolyLayout = perPolyLayout;
-
+		perPoly.SetLayout(perPolyLayout);
 	}
 	// (the vertex uniforms are a buffer of their own: BaseDrawer::WriteVertexUniforms())
 	void UpdateUniforms(vk::Buffer vertexUniformBuffer, vk::Buffer buffer, u32 fragmentUniformOffset, vk::ImageView fogImageView, vk::ImageView paletteImageView)
@@ -47,13 +48,16 @@ public:
 			perFrameDescSet = std::move(GetContext()->GetDevice().allocateDescriptorSetsUnique(
 					vk::DescriptorSetAllocateInfo(GetContext()->GetDescriptorPool(), 1, &perFrameLayout)).front());
 		}
-		std::vector<vk::DescriptorBufferInfo> bufferInfos;
-		bufferInfos.push_back(vk::DescriptorBufferInfo(vertexUniformBuffer, 0, sizeof(VertexShaderUniforms)));
-		bufferInfos.push_back(vk::DescriptorBufferInfo(buffer, fragmentUniformOffset, sizeof(FragmentShaderUniforms)));
+		const vk::DescriptorBufferInfo bufferInfos[2] = {
+			vk::DescriptorBufferInfo(vertexUniformBuffer, 0, sizeof(VertexShaderUniforms)),
+			vk::DescriptorBufferInfo(buffer, fragmentUniformOffset, sizeof(FragmentShaderUniforms)),
+		};
 
-		std::vector<vk::WriteDescriptorSet> writeDescriptorSets;
-		writeDescriptorSets.push_back(vk::WriteDescriptorSet(*perFrameDescSet, 0, 0, 1, vk::DescriptorType::eUniformBuffer, nullptr, &bufferInfos[0], nullptr));
-		writeDescriptorSets.push_back(vk::WriteDescriptorSet(*perFrameDescSet, 1, 0, 1, vk::DescriptorType::eUniformBuffer, nullptr, &bufferInfos[1], nullptr));
+		/* (on the stack: nothing allocated for them) */
+		vk::WriteDescriptorSet writeDescriptorSets[12];
+		u32 writes = 0;
+		writeDescriptorSets[writes++] = (vk::WriteDescriptorSet(*perFrameDescSet, 0, 0, 1, vk::DescriptorType::eUniformBuffer, nullptr, &bufferInfos[0], nullptr));
+		writeDescriptorSets[writes++] = (vk::WriteDescriptorSet(*perFrameDescSet, 1, 0, 1, vk::DescriptorType::eUniformBuffer, nullptr, &bufferInfos[1], nullptr));
 		if (fogImageView)
 		{
 			TSP fogTsp = {};
@@ -64,7 +68,7 @@ public:
 			vk::Sampler fogSampler = samplerManager->GetSampler(fogTsp);
 			static vk::DescriptorImageInfo imageInfo;
 			imageInfo = { fogSampler, fogImageView, vk::ImageLayout::eShaderReadOnlyOptimal };
-			writeDescriptorSets.push_back(vk::WriteDescriptorSet(*perFrameDescSet, 2, 0, 1, vk::DescriptorType::eCombinedImageSampler, &imageInfo, nullptr, nullptr));
+			writeDescriptorSets[writes++] = (vk::WriteDescriptorSet(*perFrameDescSet, 2, 0, 1, vk::DescriptorType::eCombinedImageSampler, &imageInfo, nullptr, nullptr));
 			/* What an untextured polygon has as its texture: the general
 			 * pipelines read one only for a textured polygon, but have it in
 			 * their shader (pso.h) */
@@ -74,7 +78,7 @@ public:
 			if (noTextureView != fogImageView)
 			{
 				noTextureView = fogImageView;
-				writeDescriptorSets.push_back(vk::WriteDescriptorSet(*noTextureDescSet, 0, 0, 1, vk::DescriptorType::eCombinedImageSampler, &imageInfo, nullptr, nullptr));
+				writeDescriptorSets[writes++] = (vk::WriteDescriptorSet(*noTextureDescSet, 0, 0, 1, vk::DescriptorType::eCombinedImageSampler, &imageInfo, nullptr, nullptr));
 			}
 		}
 		if (paletteImageView)
@@ -86,33 +90,25 @@ public:
 			vk::Sampler palSampler = samplerManager->GetSampler(palTsp);
 			static vk::DescriptorImageInfo imageInfo;
 			imageInfo = { palSampler, paletteImageView, vk::ImageLayout::eShaderReadOnlyOptimal };
-			writeDescriptorSets.push_back(vk::WriteDescriptorSet(*perFrameDescSet, 3, 0, 1, vk::DescriptorType::eCombinedImageSampler, &imageInfo, nullptr, nullptr));
+			writeDescriptorSets[writes++] = (vk::WriteDescriptorSet(*perFrameDescSet, 3, 0, 1, vk::DescriptorType::eCombinedImageSampler, &imageInfo, nullptr, nullptr));
 		}
-		GetContext()->GetDevice().updateDescriptorSets(writeDescriptorSets, nullptr);
+		GetContext()->GetDevice().updateDescriptorSets(writes, writeDescriptorSets, 0, nullptr);
 	}
 
-	void SetTexture(u64 textureId, TSP tsp)
+	/* The set a polygon with this texture is drawn with: written once, and
+	 * kept while it is drawn with (desc_cache.h) */
+	vk::DescriptorSet SetTexture(u64 textureId, TSP tsp)
 	{
-		auto& inFlight = perPolyDescSetsInFlight;
-		std::pair<u64, u32> index = std::make_pair(textureId, tsp.full & SamplerManager::TSP_Mask);
-		if (inFlight.find(index) != inFlight.end())
-			return;
-
-		if (perPolyDescSets.empty())
-		{
-			std::vector<vk::DescriptorSetLayout> layouts(10, perPolyLayout);
-			perPolyDescSets = GetContext()->GetDevice().allocateDescriptorSetsUnique(
-					vk::DescriptorSetAllocateInfo(GetContext()->GetDescriptorPool(), layouts.size(), &layouts[0]));
-		}
 		Texture *texture = reinterpret_cast<Texture *>(textureId);
-		vk::DescriptorImageInfo imageInfo(samplerManager->GetSampler(tsp), texture->GetReadOnlyImageView(), vk::ImageLayout::eShaderReadOnlyOptimal);
-
-		std::vector<vk::WriteDescriptorSet> writeDescriptorSets;
-		writeDescriptorSets.push_back(vk::WriteDescriptorSet(*perPolyDescSets.back(), 0, 0, 1, vk::DescriptorType::eCombinedImageSampler, &imageInfo, nullptr, nullptr));
-
-		GetContext()->GetDevice().updateDescriptorSets(writeDescriptorSets, nullptr);
-		inFlight[index] = std::move(perPolyDescSets.back());
-		perPolyDescSets.pop_back();
+		const TexDescKey key = { texture->ReadOnlyViewSerial(), 0, tsp.full & SamplerManager::TSP_Mask, 0 };
+		vk::DescriptorSet set = perPoly.Find(key);
+		if (set)
+			return set;
+		set = perPoly.Add(key);
+		const vk::DescriptorImageInfo imageInfo(samplerManager->GetSampler(tsp), texture->GetReadOnlyImageView(), vk::ImageLayout::eShaderReadOnlyOptimal);
+		const vk::WriteDescriptorSet write(set, 0, 0, 1, vk::DescriptorType::eCombinedImageSampler, &imageInfo, nullptr, nullptr);
+		GetContext()->GetDevice().updateDescriptorSets(1, &write, 0, nullptr);
+		return set;
 	}
 
 	void BindPerFrameDescriptorSets(vk::CommandBuffer cmdBuffer)
@@ -123,18 +119,14 @@ public:
 			cmdBuffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, pipelineLayout, 1, 1, &noTextureDescSet.get(), 0, nullptr);
 	}
 
-	void BindPerPolyDescriptorSets(vk::CommandBuffer cmdBuffer, u64 textureId, TSP tsp)
+	void BindPerPolyDescriptorSets(vk::CommandBuffer cmdBuffer, vk::DescriptorSet set)
 	{
-		cmdBuffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, pipelineLayout, 1, 1,
-				&perPolyDescSetsInFlight[std::make_pair(textureId, tsp.full & SamplerManager::TSP_Mask)].get(), 0, nullptr);
+		cmdBuffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, pipelineLayout, 1, 1, &set, 0, nullptr);
 	}
 
 	void Reset()
 	{
-		for (auto& pair : perPolyDescSetsInFlight)
-			perPolyDescSets.emplace_back(std::move(pair.second));
-		perPolyDescSetsInFlight.clear();
-
+		perPoly.NextUse();
 	}
 
 private:
@@ -147,8 +139,7 @@ private:
 	vk::UniqueDescriptorSet perFrameDescSet;
 	vk::UniqueDescriptorSet noTextureDescSet;
 	vk::ImageView noTextureView;
-	std::vector<vk::UniqueDescriptorSet> perPolyDescSets;
-	std::map<std::pair<u64, u32>, vk::UniqueDescriptorSet> perPolyDescSetsInFlight;
+	TexDescCache perPoly;
 
 	SamplerManager* samplerManager;
 };

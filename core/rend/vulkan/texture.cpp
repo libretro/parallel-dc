@@ -154,6 +154,7 @@ void setImageLayout(vk::CommandBuffer const& commandBuffer, vk::Image image, vk:
 
 TexDecoder *Texture::decoder;
 TexturePool *Texture::pool;
+u64 Texture::viewSerials;
 
 Texture::~Texture()
 {
@@ -295,6 +296,7 @@ PooledImage *TexturePool::Make(int cls, bool late)
 	if (flags & vk::ImageCreateFlagBits::eExtendedUsage)
 		viewInfo.pNext = &viewUsage;
 	pi->view = device.createImageViewUnique(viewInfo);
+	pi->viewSerial = Texture::NewViewSerial();
 	if (pi->storage)
 	{
 		const vk::Format viewFormat = format == vk::Format::eR8G8B8A8Unorm ? vk::Format::eR32Uint
@@ -883,6 +885,7 @@ void Texture::CreateImage(vk::ImageTiling tiling, const vk::ImageUsageFlags& usa
 	if (flags & vk::ImageCreateFlagBits::eExtendedUsage)
 		imageViewCreateInfo.pNext = &viewUsage;
 	imageView = device.createImageViewUnique(imageViewCreateInfo);
+	ownSerial = NewViewSerial();
 }
 
 void Texture::Defer(bool isNew)
@@ -1092,6 +1095,7 @@ void FramebufferAttachment::Init(u32 width, u32 height, vk::Format format, const
 	vk::ImageViewCreateInfo imageViewCreateInfo(vk::ImageViewCreateFlags(), image.get(), vk::ImageViewType::e2D,
 			format, vk::ComponentMapping(),	vk::ImageSubresourceRange(depth ? vk::ImageAspectFlagBits::eDepth : vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1));
 	imageView = device.createImageViewUnique(imageViewCreateInfo);
+	viewSerial = Texture::NewViewSerial();
 
 	if ((usage & vk::ImageUsageFlagBits::eDepthStencilAttachment) && (usage & vk::ImageUsageFlagBits::eInputAttachment))
 	{

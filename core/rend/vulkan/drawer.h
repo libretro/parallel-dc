@@ -410,7 +410,7 @@ private:
 	std::unique_ptr<RttPipelineManager> rttPipelineManager;
 
 	Texture *texture = nullptr;
-	std::vector<vk::UniqueFramebuffer> framebuffers;
+	std::vector<KeptFramebuffer> framebuffers;
 	std::unique_ptr<FramebufferAttachment> depthAttachment;
 	std::unique_ptr<FramebufferAttachment> samplesAttachment;	// SSAA's colour
 	TextureCache *textureCache = nullptr;

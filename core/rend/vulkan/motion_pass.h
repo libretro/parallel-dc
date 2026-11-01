@@ -82,7 +82,6 @@ private:
 	std::vector<std::unique_ptr<FramebufferAttachment>> attachments;
 	std::vector<vk::UniqueFramebuffer> framebuffers;
 	std::vector<std::unique_ptr<BufferData>> prevXyBuffers;
-	std::vector<float> prevXy;
 	bool recorded = false;
 	// the sampled-depth mode's own layout and sets
 	bool sampled = false;

@@ -142,7 +142,8 @@ int main()
    strip(ctx.global_param_op, 0x22, 0x200, 6, 300.f, 100.f);
    strip(ctx.global_param_op, 0x11, 0x100, 4, 100.f, 300.f);   /* the same header again */
    strip(ctx.global_param_pt, 0x33, 0x300, 3, 500.f, 300.f);
-   upscaler_match(ctx, prev);
+   prev.resize((size_t)ctx.verts.used() * 2);
+   upscaler_match(ctx, prev.data());
    CHECK(prev.size() == (size_t)ctx.verts.used() * 2);
    for (int i = 0; i < ctx.verts.used(); i++)
       CHECK(prev[i * 2] == ctx.verts.head()[i].x && prev[i * 2 + 1] == ctx.verts.head()[i].y);
@@ -164,7 +165,8 @@ int main()
    strip(ctx.global_param_op, 0x11, 0x100, 4, 100.f, 310.f);
    strip(ctx.global_param_op, 0x44, 0x400, 4, 400.f, 400.f);
    strip(ctx.global_param_pt, 0x33, 0x300, 3, 100.f, 100.f);
-   upscaler_match(ctx, prev);
+   prev.resize((size_t)ctx.verts.used() * 2);
+   upscaler_match(ctx, prev.data());
    {
       const PolyParam *op = ctx.global_param_op.head();
       const PolyParam *pt = ctx.global_param_pt.head();
@@ -193,7 +195,8 @@ int main()
    /* A strip whose vertex count changed is another strip */
    frame_begin();
    strip(ctx.global_param_op, 0x11, 0x100, 5, 110.f, 110.f);
-   upscaler_match(ctx, prev);
+   prev.resize((size_t)ctx.verts.used() * 2);
+   upscaler_match(ctx, prev.data());
    CHECK(prev_x(prev, ctx.global_param_op.head()[0], 0) == 110.f);
    upscaler_submit(mv, depth, 0);
 
@@ -201,13 +204,15 @@ int main()
    frame_begin();
    strip(ctx.global_param_op, 0x11, 0x100, 5, 120.f, 110.f);
    upscaler_reset();
-   upscaler_match(ctx, prev);
+   prev.resize((size_t)ctx.verts.used() * 2);
+   upscaler_match(ctx, prev.data());
    CHECK(prev_x(prev, ctx.global_param_op.head()[0], 0) == 120.f);
    upscaler_submit(mv, depth, 0);
    CHECK(got_count == 4 && (got.flags & RETRO_HW_UPSCALER_RESET));
    frame_begin();
    strip(ctx.global_param_op, 0x11, 0x100, 5, 125.f, 110.f);
-   upscaler_match(ctx, prev);
+   prev.resize((size_t)ctx.verts.used() * 2);
+   upscaler_match(ctx, prev.data());
    CHECK(prev_x(prev, ctx.global_param_op.head()[0], 0) == 120.f);
    upscaler_submit(mv, depth, 0);
    CHECK(got_count == 5 && !(got.flags & RETRO_HW_UPSCALER_RESET));

@@ -228,14 +228,15 @@ void Drawer::DrawPoly(const vk::CommandBuffer& cmdBuffer, u32 listType, bool sor
 			pushed[i] = pushConstants.f[i];
 	}
 
+	vk::DescriptorSet texSet;
 	if (poly.pcw.Texture)
-		GetCurrentDescSet().SetTexture(poly.texid, poly.tsp);
+		texSet = GetCurrentDescSet().SetTexture(poly.texid, poly.tsp);
 
 	cmdBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, vk::Pipeline(pso.pipeline));
 	if (pso.general)
 		pipelineManager->SetDynamicState(cmdBuffer, pso.key);
 	if (poly.pcw.Texture)
-		GetCurrentDescSet().BindPerPolyDescriptorSets(cmdBuffer, poly.texid, poly.tsp);
+		GetCurrentDescSet().BindPerPolyDescriptorSets(cmdBuffer, texSet);
 
 	DrawIndices(cmdBuffer, listType, first, count);
 }
@@ -347,12 +348,13 @@ void Drawer::DrawPrepass(const vk::CommandBuffer& cmdBuffer, const SortTrigDrawP
 		};
 		cmdBuffer.pushConstants<float>(pipelineManager->GetPipelineLayout(), vk::ShaderStageFlagBits::eFragment, 0, pushConstants);
 
+		vk::DescriptorSet texSet;
 		if (poly.pcw.Texture)
-			GetCurrentDescSet().SetTexture(poly.texid, poly.tsp);
+			texSet = GetCurrentDescSet().SetTexture(poly.texid, poly.tsp);
 		cmdBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, pipelineManager->GetPrepassPipeline(poly));
 		cull.Set(PsoCullIndex(poly.isp.CullMode));
 		if (poly.pcw.Texture)
-			GetCurrentDescSet().BindPerPolyDescriptorSets(cmdBuffer, poly.texid, poly.tsp);
+			GetCurrentDescSet().BindPerPolyDescriptorSets(cmdBuffer, texSet);
 		DrawIndices(cmdBuffer, ListType_Translucent, base + polys[i].first, polys[i].count);
 	}
 	cmdBuffer.pushConstants<float>(pipelineManager->GetPipelineLayout(), vk::ShaderStageFlagBits::eFragment, 0, pushed);
@@ -731,7 +733,7 @@ vk::CommandBuffer TextureDrawer::BeginRenderPass()
 	}
 	else if (textureCache->IsInFlight(texture))
 	{
-		texture->readOnlyImageView = texture->GetImageView();
+		texture->KeepReadOnlyView();
 		textureCache->DestroyLater(texture);
 	}
 	textureCache->SetInFlight(texture);
@@ -767,13 +769,20 @@ vk::CommandBuffer TextureDrawer::BeginRenderPass()
 		samples > 1 ? samplesAttachment->GetImageView() : depthAttachment->GetImageView(),
 		depthAttachment->GetImageView(),
 	};
+	const u64 viewSerials[] = {
+		texture->GetViewSerial(),
+		samples > 1 ? samplesAttachment->GetViewSerial() : depthAttachment->GetViewSerial(),
+		depthAttachment->GetViewSerial(),
+	};
+	/* (made again only for other attachments: a texture rendered to every
+	 * frame is the same one) */
 	framebuffers.resize(GetContext()->GetSwapChainSize());
-	framebuffers[GetCurrentImage()] = device.createFramebufferUnique(vk::FramebufferCreateInfo(vk::FramebufferCreateFlags(),
-			rttPipelineManager->GetRenderPass(), samples > 1 ? 3 : 2, imageViews, widthPow2, heightPow2, 1));
+	const vk::Framebuffer framebuffer = framebuffers[GetCurrentImage()].Get(rttPipelineManager->GetRenderPass(),
+			samples > 1 ? 3 : 2, imageViews, viewSerials, widthPow2, heightPow2);
 
 	const vk::ClearValue clear_colors[] = { vk::ClearColorValue(std::array<float, 4> { 0.f, 0.f, 0.f, 1.f }), vk::ClearDepthStencilValue { 0.f, 0 } };
 	const vk::ClearValue ssaa_clear_colors[] = { clear_colors[0], clear_colors[0], clear_colors[1] };
-	commandBuffer.beginRenderPass(vk::RenderPassBeginInfo(rttPipelineManager->GetRenderPass(),	*framebuffers[GetCurrentImage()],
+	commandBuffer.beginRenderPass(vk::RenderPassBeginInfo(rttPipelineManager->GetRenderPass(), framebuffer,
 			vk::Rect2D( { 0, 0 }, { width, height }), samples > 1 ? 3 : 2, samples > 1 ? ssaa_clear_colors : clear_colors),
 			vk::SubpassContents::eInline);
 	commandBuffer.setViewport(0, vk::Viewport(0.0f, 0.0f, (float)upscaledWidth, (float)upscaledHeight, 0.0f, 1.0f));

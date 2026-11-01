@@ -268,15 +268,14 @@ bool MotionVectorPass::Begin(int image)
 	if (pvrrc.gpu || framebuffers.empty())
 		return false;
 	// the frame's strips matched with the frame before's: where each vertex was
-	upscaler_match(pvrrc, prevXy);
-	const u32 bytes = (u32)std::max<size_t>(prevXy.size() * sizeof(float), 1024);
+	const u32 bytes = (u32)std::max<size_t>((size_t)pvrrc.verts.used() * 2 * sizeof(float), 1024);
 	while (prevXyBuffers.size() <= (size_t)image)
 		prevXyBuffers.emplace_back();
 	std::unique_ptr<BufferData>& buffer = prevXyBuffers[image];
 	if (!buffer || buffer->bufferSize < bytes)
 		buffer = std::unique_ptr<BufferData>(new BufferData(bytes, vk::BufferUsageFlagBits::eVertexBuffer));
-	if (!prevXy.empty())
-		buffer->upload((u32)(prevXy.size() * sizeof(float)), prevXy.data());
+	/* (written where the pass reads them: the buffer, mapped) */
+	upscaler_match(pvrrc, (float *)buffer->MapMemory());
 	recorded = true;
 	return true;
 }

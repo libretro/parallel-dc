@@ -485,7 +485,7 @@ public:
 
 protected:
 	virtual vk::CommandBuffer NewFrame() override;
-	virtual vk::Framebuffer GetFinalFramebuffer() const override { return *framebuffers[GetCurrentImage()]; }
+	virtual vk::Framebuffer GetFinalFramebuffer() const override { return framebuffers[GetCurrentImage()].Handle(); }
 	virtual vk::Format GetColorFormat() const override { return vk::Format::eR8G8B8A8Unorm; }
 
 private:
@@ -511,7 +511,7 @@ private:
 
 	Texture *texture = nullptr;
 	vk::Image colorImage;
-	std::vector<vk::UniqueFramebuffer> framebuffers;
+	std::vector<KeptFramebuffer> framebuffers;
 	std::unique_ptr<RttOITPipelineManager> rttPipelineManager;
 
 	TextureCache *textureCache = nullptr;
