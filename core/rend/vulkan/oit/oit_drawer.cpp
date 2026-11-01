@@ -463,7 +463,7 @@ bool OITDrawer::Draw(const Texture *fogTexture, const Texture *paletteTexture)
 	 * last band's final render pass is the whole picture's, as the frame's
 	 * final render pass always is: what is drawn after it (the screen's
 	 * VMUs, the texture's copy) is drawn over the whole of it. */
-	ChooseBands();
+	bands = oitBuffers->ChooseBands(commandPool->GetIndex(), pvrrc.isRTT);
 	const u32 height = std::max(viewport.extent.height, 1u);
 	const u32 bandHeight = (height + std::min(bands, height) - 1) / std::min(bands, height);
 	const u32 bandCount = (height + bandHeight - 1) / bandHeight;
@@ -643,43 +643,6 @@ bool OITDrawer::Draw(const Texture *fogTexture, const Texture *paletteTexture)
 	band = vk::Rect2D();
 
 	return !pvrrc.isRTT;
-}
-
-/* The bands this frame is drawn in, from the counts of the frame drawn
- * in this frame slot before (OITBuffers::Poll()): never this frame's, which
- * nothing waits for. More at once when that one had fragments that found no
- * room; fewer when a second of frames in a row would have fitted in fewer.
- * Each band is taken to need what the fullest one did, with a quarter more
- * room. */
-void OITDrawer::ChooseBands()
-{
-	constexpr u32 MaxBands = 64;
-	u32 fragments, drawnIn;
-	if (oitBuffers->Poll(commandPool->GetIndex(), this, fragments, drawnIn))
-	{
-		const u64 room = std::max(oitBuffers->GetCapacity(), 1u);
-		const u64 frame = (u64)fragments * std::max(drawnIn, 1u);
-		const u32 wanted = (u32)std::max<u64>(std::min<u64>((frame + frame / 4 + room - 1) / room, MaxBands), 1);
-		const u32 was = bands;
-		if (fragments > room)
-		{
-			bands = std::min(std::max({ bands, wanted, drawnIn + 1 }), MaxBands);
-			roomyFrames = 0;
-		}
-		else if (wanted < bands)
-		{
-			if (++roomyFrames >= 60)
-			{
-				bands = wanted;
-				roomyFrames = 0;
-			}
-		}
-		else
-			roomyFrames = 0;
-		if (bands != was)
-			NOTICE_LOG(RENDERER, "Vulkan per-pixel renderer: %u translucent fragments in a band of %u, room for %u: %u band%s",
-					fragments, drawnIn, (u32)room, bands, bands > 1 ? "s" : "");
-	}
 }
 
 void OITDrawer::MakeBuffers(int width, int height)

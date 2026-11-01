@@ -122,7 +122,6 @@ protected:
 	void MakeBuffers(int width, int height);
 	void MakeSampleAttachments();
 	vk::DeviceSize GetIndexOffset() const { return offsets.indexOffset; }
-	void ChooseBands();
 	// (what the lists of fragments a render pass asked for: OITBuffers::CountPass())
 	void CountPass(vk::CommandBuffer cmdBuffer) { oitBuffers->CountPass(cmdBuffer); }
 	void SetScreenSize(int width, int height) { oitBuffers->SetScreenSize(width, height); }
@@ -138,9 +137,8 @@ protected:
 	 * (OITBuffers) are not dropped: the frame is drawn in this many
 	 * horizontal bands, all of it once a band, clipped to the band. Each
 	 * band's lists start empty, so they need the room of one band's
-	 * fragments. How many is told by the frames before (see Draw()). */
+	 * fragments. How many is told by the frames before (OITBuffers::ChooseBands()). */
 	u32 bands = 1;
-	u32 roomyFrames = 0;	// frames in a row that would have fitted in fewer
 	vk::Rect2D band;	// the one being drawn; no height when not in bands
 	std::array<std::unique_ptr<FramebufferAttachment>, 2> colorAttachments;
 	std::unique_ptr<FramebufferAttachment> depthAttachment;

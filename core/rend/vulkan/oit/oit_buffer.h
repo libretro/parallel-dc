@@ -25,6 +25,7 @@
 #include "../texture.h"
 #include "../commandpool.h"
 #include "rend/oit_size.h"
+#include "rend/oit_bands.h"
 
 class OITBuffers
 {
@@ -35,7 +36,7 @@ public:
 	/* Render passes of a frame whose fragments are counted (OITDrawer::Draw()) */
 	static constexpr u32 Counts = 64;
 	// Frame slots counted: the command pool's, which are the swap chain's
-	static constexpr u32 CountSlots = 8;
+	static constexpr u32 CountSlots = OIT_BANDS_SLOTS;
 
 	/* The fragment buffer for a picture of @width x @height: rend/oit_size.h,
 	 * no more than the device can bind. One storage buffer is no larger
@@ -111,7 +112,7 @@ public:
 		}
 		if (!counts)
 		{
-			// (read by the CPU once a frame's fence has passed: see Poll())
+			// (read by the CPU once a frame's fence has passed: see ChooseBands())
 			counts = std::unique_ptr<BufferData>(new BufferData(CountSlots * Counts * sizeof(u32), vk::BufferUsageFlagBits::eTransferDst));
 			std::fill(std::begin(written), std::end(written), 0);
 		}
@@ -236,7 +237,7 @@ public:
 
 	/* How many fragments the render pass just ended asked for, those that
 	 * found no room too (the shaders count them all), copied out for the
-	 * CPU to read when this frame slot comes round again: see Poll().
+	 * CPU to read when this frame slot comes round again: see ChooseBands().
 	 * Nothing waits for it. */
 	void CountPass(vk::CommandBuffer commandBuffer)
 	{
@@ -257,39 +258,38 @@ public:
 		written[countSlot]++;
 	}
 
-	/* For a frame about to be drawn in frame slot @slot, whose fence the
-	 * command pool has waited for: what the last frame drawn in that slot
-	 * counted, if @owner drew it - the most fragments one of its render
-	 * passes asked for, and the bands it was drawn in. A frame two or three
-	 * back, then: never this one, which nothing waits for. */
-	bool Poll(int slot, const void *owner, u32& fragments, u32& bands)
+	/* The bands a frame about to be drawn in frame slot @slot is drawn in,
+	 * a render to a texture's if @rtt (rend/oit_bands.h), the slot's fence
+	 * waited for by the command pool: what the frame drawn there before
+	 * counted goes to the bands of its kind, whichever drawer drew it */
+	u32 ChooseBands(int slot, bool rtt)
 	{
 		countSlot = slot >= 0 && slot < (int)CountSlots ? (u32)slot : CountSlots;
 		if (countSlot == CountSlots)
-			return false;
-		bool counted = false;
-		fragments = 0;
-		bands = countBands[countSlot];
-		if (countOwner[countSlot] == owner && written[countSlot] != 0)
+			return bandState.bands[rtt ? 1 : 0];
+		if (written[countSlot] != 0)
 		{
 			const u32 *count = (const u32 *)counts->MapMemory() + countSlot * Counts;
+			const u32 kind = bandState.rtt[countSlot];
+			u32 fragments = 0;
+
 			for (u32 i = 0; i < written[countSlot]; i++)
 				fragments = std::max(fragments, count[i]);
-			counted = true;
+			if (oit_bands_count(&bandState, countSlot, fragments, capacity))
+				NOTICE_LOG(RENDERER, "Vulkan per-pixel renderer: %u translucent fragments in a band of %u%s, room for %u: %u band%s",
+						fragments, std::max(bandState.drawn_in[countSlot], 1u), kind ? " (a render to a texture)" : "",
+						capacity, bandState.bands[kind], bandState.bands[kind] > 1 ? "s" : "");
 		}
 		written[countSlot] = 0;
-		countOwner[countSlot] = owner;
-		return counted;
+		return oit_bands_begin(&bandState, countSlot, rtt);
 	}
 	// ...and the bands this one is drawn in
 	void SetBands(u32 bands)
 	{
 		if (countSlot < CountSlots)
-			countBands[countSlot] = bands;
+			bandState.drawn_in[countSlot] = bands;
 	}
 
-	// How many fragments there is room for
-	u32 GetCapacity() const { return capacity; }
 	vk::DeviceSize GetSize() const { return bufferSize; }
 
 	void Term()
@@ -304,12 +304,19 @@ public:
 		sumsAttachment.reset();
 		descSet.reset();
 		maxWidth = maxHeight = 0;
+		oit_bands_init(&bandState);
 	}
 
 	vk::DescriptorSetLayout GetDescriptorSetLayout() const { return *descSetLayout; }
 	bool isFirstFrameAfterInit() const { return firstFrameAfterInit; }
 
 private:
+	static oit_bands_t MakeBandState()
+	{
+		oit_bands_t b;
+		oit_bands_init(&b);
+		return b;
+	}
 	static vk::DeviceSize BindingLimit()
 	{
 		const VulkanContext *context = VulkanContext::Instance();
@@ -372,7 +379,7 @@ private:
 	// the counts copied out, Counts for each frame slot; CPU side
 	std::unique_ptr<BufferData> counts;
 	u32 written[CountSlots] = {};
-	const void *countOwner[CountSlots] = {};
-	u32 countBands[CountSlots] = {};
 	u32 countSlot = CountSlots;
+	// the bands of the screen's frames and of renders to a texture, and what each slot's was drawn in
+	oit_bands_t bandState = MakeBandState();
 };
