@@ -21,7 +21,9 @@
 #    tiles of the next frame with its translucent polygons not drawn yet.
 #    Checked in the sources: the raster renderer's screen render pass has a
 #    dependency into its first subpass from the fragment shader and the
-#    transfer stages, as the per-pixel and SSAA ones have.
+#    transfer stages, as the per-pixel and SSAA ones have; and no
+#    dependency out to what reads the picture after the render pass is by
+#    region, which orders only within the render pass's own tiles.
 #
 # 2. The per-pixel renderers' translucent modifier volumes change the
 #    fragments in the lists from their shaders: one draw toggles a stencil
@@ -137,6 +139,19 @@ awk '
    on && /\);/ { on = 0; if (text ~ /eFragmentShader/ && text ~ /eTransfer/ && text ~ /eColorAttachmentWrite/) found = 1 }
    END { exit !found }' $R/vulkan/drawer.cpp \
    || bad "$R/vulkan/drawer.cpp: the screen's render pass clears its picture with no dependency on the frontend's reading of it"
+
+# (and no render pass's dependency out to what reads its pictures after it
+# is by region: that reader is in another render pass, or a copy, and reads
+# anywhere; by region it may read tiles not drawn yet)
+for f in $R/vulkan/drawer.cpp $R/vulkan/pipeline.h $R/vulkan/pipeline.cpp $R/vulkan/oit/oit_renderpass.h \
+      $R/vulkan/oit/oit_renderpass.cpp $R/vulkan/motion_pass.cpp; do
+   [ -f "$f" ] || continue
+   awk '
+      /(emplace_back|SubpassDependency)\( *[0-9a-z]+, *VK_SUBPASS_EXTERNAL *,/ { on = 1; text = "" }
+      on { text = text $0 }
+      on && /\)[,;][[:space:]]*$/ { on = 0; if (text ~ /eByRegion/) bad = 1 }
+      END { exit bad }' "$f" || bad "$f: a dependency out of a render pass to what reads its picture is by region"
+done
 
 if [ $# -lt 2 ]; then
    [ $fail = 0 ] && echo "speckle_test: PASS (the sources; give CONTENT STATE for the device runs)"

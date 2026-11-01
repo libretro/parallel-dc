@@ -911,8 +911,11 @@ void ScreenDrawer::Init(SamplerManager *samplerManager, ShaderManager *shaderMan
 		};
 
 		std::vector<vk::SubpassDependency> dependencies;
-		dependencies.emplace_back(0, VK_SUBPASS_EXTERNAL, vk::PipelineStageFlagBits::eColorAttachmentOutput, vk::PipelineStageFlagBits::eFragmentShader,
-				vk::AccessFlagBits::eColorAttachmentWrite, vk::AccessFlagBits::eShaderRead, vk::DependencyFlagBits::eByRegion);
+		/* (the frontend reads the picture anywhere, from a render pass of its
+		 * own or a copy: not by region, or it reads tiles not drawn yet) */
+		dependencies.emplace_back(0, VK_SUBPASS_EXTERNAL, vk::PipelineStageFlagBits::eColorAttachmentOutput,
+				vk::PipelineStageFlagBits::eFragmentShader | vk::PipelineStageFlagBits::eComputeShader | vk::PipelineStageFlagBits::eTransfer,
+				vk::AccessFlagBits::eColorAttachmentWrite, vk::AccessFlagBits::eShaderRead | vk::AccessFlagBits::eTransferRead);
 		/* The depth attachment is the same one every frame: the frame before
 		 * has to be done with it before this one clears it. Nothing said
 		 * so. (The per-pixel renderer's render pass has the same, from
