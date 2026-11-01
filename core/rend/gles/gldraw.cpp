@@ -306,9 +306,9 @@ static void DrawList(const List<PolyParam>& gply, int first, int count)
 	}
 }
 
-static std::vector<SortTrigDrawParam> pidx_sort;
-// The depth prepass of the sorted list (rend/sorter.h), its indices after the sorted ones
-static std::vector<SortTrigDrawParam> pidx_prepass;
+/* The sorted triangles' draws and the depth prepass's (rend/sorter.h),
+ * its indices after the sorted ones; kept from one frame to the next */
+static SortList sortedDraws, prepassDraws;
 
 // (where the shaders write the depth: OpenGL ES 2 has them leave it, and a discard there would cost every polygon)
 static bool PrepassSupported()
@@ -320,38 +320,37 @@ static bool PrepassSupported()
  * are drawn by triangle, and its depth prepass's: both uploaded */
 static void SortTriangles(int first, int count, bool sortTriangles, bool lastPass)
 {
-	// (kept from one frame to the next: no allocation once it has grown)
-	static std::vector<u32> vidx_sort;
-	vidx_sort.clear();
+	/* (kept from one frame to the next: grown, never made again) */
+	static grow_buf_t indices;
+	sortedDraws.count = 0;
+	prepassDraws.count = 0;
+	const bool prepass = PrepassSupported();
+	if (!sortTriangles && !prepass)
+		return;
+	/* room for both, made u16 in place if the indices are */
+	u32 *out = (u32 *)grow_buf_reserve(&indices, (size_t)(6 * SortedTriangles(first, count) + 1) * sizeof(u32));
+	if (out == nullptr)
+		return;
+	u32 n = 0;
 	if (sortTriangles)
-		GenSorted(first, count, pidx_sort, vidx_sort);
-	else
-		pidx_sort.clear();
-	pidx_prepass.clear();
-	if (PrepassSupported())
-		GenPrepass(first, count, lastPass, pidx_prepass, vidx_sort);
+		n = GenSortedTo(first, count, &sortedDraws, out, false);
+	if (prepass)
+		n += GenPrepassTo(first, count, lastPass, &prepassDraws, out + n, n, false);
+	if (n == 0)
+		return;
 
-	//Upload to GPU if needed
-	if (!vidx_sort.empty())
+	//Bind and upload sorted index buffer
+	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, gl.vbo.idxs2); glCheck();
+	if (gl.index_type == GL_UNSIGNED_SHORT)
 	{
-		//Bind and upload sorted index buffer
-		glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, gl.vbo.idxs2); glCheck();
-		if (gl.index_type == GL_UNSIGNED_SHORT)
-		{
-			/* (kept from one frame to the next: grown, never made again) */
-			static grow_buf_t short_vidx;
-			const size_t count = vidx_sort.size();
-			u16 *to = (u16 *)grow_buf_reserve(&short_vidx, count * sizeof(u16) + 2);
-			if (to != nullptr)
-			{
-				for (size_t i = 0; i < count; i++)
-					to[i] = (u16)vidx_sort[i];
-				glBufferData(GL_ELEMENT_ARRAY_BUFFER, count * sizeof(u16), to, GL_STREAM_DRAW);
-			}
-		}
-		else
-			glBufferData(GL_ELEMENT_ARRAY_BUFFER, vidx_sort.size() * sizeof(u32), &vidx_sort[0], GL_STREAM_DRAW);
+		/* (narrowed where they are: each u16 is written at or before the u32 it is read from) */
+		u16 *to = (u16 *)out;
+		for (u32 i = 0; i < n; i++)
+			to[i] = (u16)out[i];
+		glBufferData(GL_ELEMENT_ARRAY_BUFFER, n * sizeof(u16), to, GL_STREAM_DRAW);
 	}
+	else
+		glBufferData(GL_ELEMENT_ARRAY_BUFFER, n * sizeof(u32), out, GL_STREAM_DRAW);
 }
 
 /* The depth prepass of a sorted list: rend/sorter.h (with the sorted
@@ -841,18 +840,18 @@ void DrawStrips()
 				else if (settings.pvr.Emulation.AlphaSortMode == 0)
 				{
 					SortTriangles(previous_pass.tr_count, current_pass.tr_count - previous_pass.tr_count, true, lastPass);
-					DrawPrepass(pidx_prepass.data(), (u32)pidx_prepass.size(), 0);
-					DrawSorted(pidx_sort.data(), (u32)pidx_sort.size(), !lastPass, 0);
+					DrawPrepass(SortDraws(&prepassDraws), prepassDraws.count, 0);
+					DrawSorted(SortDraws(&sortedDraws), sortedDraws.count, !lastPass, 0);
 					// (the main indices again, after sorted triangles or a prepass)
-					if (!pidx_sort.empty() || !pidx_prepass.empty())
+					if (sortedDraws.count != 0 || prepassDraws.count != 0)
 						glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, gl.vbo.idxs);
 				}
 				else
 				{
 					SortTriangles(previous_pass.tr_count, current_pass.tr_count - previous_pass.tr_count, false, lastPass);
-					if (!pidx_prepass.empty())
+					if (prepassDraws.count != 0)
 					{
-						DrawPrepass(pidx_prepass.data(), (u32)pidx_prepass.size(), 0);
+						DrawPrepass(SortDraws(&prepassDraws), prepassDraws.count, 0);
 						glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, gl.vbo.idxs);
 					}
 					SortPParams(previous_pass.tr_count, current_pass.tr_count - previous_pass.tr_count);

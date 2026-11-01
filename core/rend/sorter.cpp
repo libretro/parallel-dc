@@ -14,8 +14,12 @@
 	 You should have received a copy of the GNU General Public License
 	 along with reicast.  If not, see <https://www.gnu.org/licenses/>.
  */
-#include <algorithm>
+#include <string.h>
 #include "sorter.h"
+#include "sort_pairs.h"
+
+/* (sorting: in memory kept from one frame to the next) */
+static grow_buf_t sortPairs, sortPairsTmp;
 
 struct IndexTrig
 {
@@ -24,34 +28,17 @@ struct IndexTrig
 	f32 z;
 };
 
-#if 0
-static float min3(float v0, float v1, float v2)
+/* (as std::min(): the first when neither is less) */
+static INLINE float min2(float a, float b)
 {
-	return std::min(std::min(v0,v1),v2);
+	return b < a ? b : a;
 }
-
-static float max3(float v0, float v1, float v2)
-{
-	return std::max(std::max(v0,v1),v2);
-}
-#endif
 
 static float minZ(const Vertex *v, const u32 *mod)
 {
-	return std::min(std::min(v[mod[0]].z, v[mod[1]].z), v[mod[2]].z);
+	return min2(min2(v[mod[0]].z, v[mod[1]].z), v[mod[2]].z);
 }
 
-static bool operator<(const IndexTrig& left, const IndexTrig& right)
-{
-	return left.z<right.z;
-}
-
-static bool operator<(const PolyParam& left, const PolyParam& right)
-{
-/* put any condition you want to sort on here */
-	return left.zvZ<right.zvZ;
-	//return left.zMin<right.zMax;
-}
 
 void SortPParams(int first, int count)
 {
@@ -80,7 +67,8 @@ void SortPParams(int first, int count)
 			u32 zv=0xFFFFFFFF;
 			while(vtx!=vtx_end)
 			{
-				zv = std::min(zv,(u32&)vtx->z);
+				if ((u32&)vtx->z < zv)
+					zv = (u32&)vtx->z;
 				vtx++;
 			}
 
@@ -89,104 +77,27 @@ void SortPParams(int first, int count)
 		pp++;
 	}
 
-	std::stable_sort(pvrrc.global_param_tr.head() + first, pvrrc.global_param_tr.head() + first + count);
-}
-
-const static Vertex *vtx_sort_base;
-
-#if 0
-/*
-
-	Per triangle sorting experiments
-
-*/
-
-//approximate the triangle area
-float area_x2(Vertex* v)
-{
-	return 2/3*fabs( (v[0].x-v[2].x)*(v[1].y-v[0].y) - (v[0].x-v[1].x)*(v[2].y-v[0].y)) ;
-}
-
-//approximate the distance ^2
-float distance_apprx(Vertex* a, Vertex* b)
-{
-	float xd=a->x-b->x;
-	float yd=a->y-b->y;
-
-	return xd*xd+yd*yd;
-}
-
-//was good idea, but not really working ..
-bool Intersect(Vertex* a, Vertex* b)
-{
-	float a1=area_x2(a);
-	float a2=area_x2(b);
-
-	float d = distance_apprx(a,b);
-
-	return (a1+a1)>d;
-}
-
-//root for quick-union
-u16 rid(std::vector<u16>& v, u16 id)
-{
-	while(id!=v[id]) id=v[id];
-	return id;
-}
-
-struct TrigBounds
-{
-	float xs,xe;
-	float ys,ye;
-	float zs,ze;
-};
-
-//find 3d bounding box for triangle
-TrigBounds bound(Vertex* v)
-{
-	TrigBounds rv = {	std::min(std::min(v[0].x,v[1].x),v[2].x), std::max(std::max(v[0].x,v[1].x),v[2].x),
-						std::min(std::min(v[0].y,v[1].y),v[2].y), std::max(std::max(v[0].y,v[1].y),v[2].y),
-						std::min(std::min(v[0].z,v[1].z),v[2].z), std::max(std::max(v[0].z,v[1].z),v[2].z),
-					};
-
-	return rv;
-}
-
-//bounding box 2d intersection
-bool Intersect(TrigBounds& a, TrigBounds& b)
-{
-	return  ( !(a.xe<b.xs || a.xs>b.xe) && !(a.ye<b.ys || a.ys>b.ye) /*&& !(a.ze<b.zs || a.zs>b.ze)*/ );
-}
-
-
-bool operator<(const IndexTrig &left, const IndexTrig &right)
-{
-	/*
-	TrigBounds l=bound(vtx_sort_base+left.id);
-	TrigBounds r=bound(vtx_sort_base+right.id);
-
-	if (!Intersect(l,r))
+	/* sorted by zvZ, stably: the polygons gathered in that order, and put back */
+	PolyParam * const base = pvrrc.global_param_tr.head() + first;
+	sort_pair_t *pairs = (sort_pair_t *)grow_buf_reserve(&sortPairs, (size_t)count * sizeof(sort_pair_t));
+	static grow_buf_t gathered;
+	PolyParam *to = (PolyParam *)grow_buf_reserve(&gathered, (size_t)count * sizeof(PolyParam));
+	if (pairs == NULL || to == NULL)
+		return;
+	for (int i = 0; i < count; i++)
 	{
-		return true;
+		pairs[i].key = sort_key(base[i].zvZ);
+		pairs[i].index = (u32)i;
 	}
-	else
-	{
-		return (l.zs + l.ze) < (r.zs + r.ze);
-	}*/
-
-	return minZ(&vtx_sort_base[left.id])<minZ(&vtx_sort_base[right.id]);
+	pairs = sort_pairs(pairs, (u32)count, &sortPairsTmp);
+	if (pairs == NULL)
+		return;
+	for (int i = 0; i < count; i++)
+		to[i] = base[pairs[i].index];
+	memcpy(base, to, (size_t)count * sizeof(PolyParam));
 }
 
-//Not really working cuz of broken intersect
-bool Intersect(const IndexTrig &left, const IndexTrig &right)
-{
-	TrigBounds l=bound(vtx_sort_base+left.id);
-	TrigBounds r=bound(vtx_sort_base+right.id);
 
-	return Intersect(l,r);
-}
-
-#endif
 
 //are two poly params the same?
 static bool PP_EQ(const PolyParam *pp0, const PolyParam *pp1)
@@ -213,13 +124,30 @@ u32 SortedTriangles(int first, int count)
 	return tris;
 }
 
-/* GenSorted(), its indices to @out or, if NULL, to @grow made their size */
-static u32 gen_sorted(int first, int count, std::vector<SortTrigDrawParam>& pidx_sort, u32 *out,
-		std::vector<u32> *grow, bool firstProvoking)
+SortList *SortPasses(grow_buf_t *lists, u32 passes)
 {
-	u32 tess_gen=0;
+	const size_t had = lists->size / sizeof(SortList);
+	if (passes > had)
+	{
+		if (grow_buf_reserve_keep(lists, (size_t)passes * sizeof(SortList)) == NULL)
+			return NULL;
+		/* (the new ones empty: zeroed) */
+		memset((SortList *)lists->data + had, 0, lists->size - had * sizeof(SortList));
+	}
+	return (SortList *)lists->data;
+}
 
-	pidx_sort.clear();
+void SortPassesFree(grow_buf_t *lists)
+{
+	SortList *list = (SortList *)lists->data;
+	for (size_t i = 0; i < lists->size / sizeof(SortList); i++)
+		grow_buf_free(&list[i].buf);
+	grow_buf_free(lists);
+}
+
+u32 GenSortedTo(int first, int count, SortList *draws, u32 *out, bool firstProvoking)
+{
+	draws->count = 0;
 
 	if (pvrrc.verts.used() == 0 || count == 0)
 		return 0;
@@ -235,28 +163,21 @@ static u32 gen_sorted(int first, int count, std::vector<SortTrigDrawParam>& pidx
 	if (pp == pp_end)
 		return 0;
 
-	vtx_sort_base=vtx_base;
-
-	static u32 vtx_cnt;
-
-	int vtx_count = pvrrc.verts.used() - idx_base[pp->first];
-	if ((u32)vtx_count > vtx_cnt)
-		vtx_cnt=vtx_count;
-
-#if PRINT_SORT_STATS
-	printf("TVTX: %d || %d\n",vtx_cnt,vtx_count);
-#endif
-
+	const int vtx_count = pvrrc.verts.used() - idx_base[pp->first];
 	if (vtx_count<=0)
 		return 0;
 
-	//make lists of all triangles, with their pid and vid
-	static std::vector<IndexTrig> lst;
+	/* every triangle, with its polygon and its vertices; and a pair of its
+	 * depth and its place, which is what is sorted. (Kept from one frame to
+	 * the next: nothing allocated once they have grown.) */
+	static grow_buf_t lstBuf;
+	const u32 tris = SortedTriangles(first, count);
+	IndexTrig *lst = (IndexTrig *)grow_buf_reserve(&lstBuf, (size_t)(tris ? tris : 1) * sizeof(IndexTrig));
+	sort_pair_t *pairs = (sort_pair_t *)grow_buf_reserve(&sortPairs, (size_t)(tris ? tris : 1) * sizeof(sort_pair_t));
+	if (lst == NULL || pairs == NULL)
+		return 0;
 
-	lst.resize(vtx_count*4);
-
-
-	int pfsti=0;
+	u32 pfsti=0;
 
 	while(pp!=pp_end)
 	{
@@ -290,12 +211,12 @@ static u32 gen_sorted(int first, int count, std::vector<SortTrigDrawParam>& pidx
 					v1 = vtx_base + idx[i + 1];
 					v2 = vtx_base + idx[i + 2];
 				}
-				{
-					fill_id(lst[pfsti].id,v0,v1,v2,vtx_base);
-					lst[pfsti].pid= ppid ;
-					lst[pfsti].z = minZ(vtx_base,lst[pfsti].id);
-					pfsti++;
-				}
+				fill_id(lst[pfsti].id,v0,v1,v2,vtx_base);
+				lst[pfsti].pid= ppid ;
+				lst[pfsti].z = minZ(vtx_base,lst[pfsti].id);
+				pairs[pfsti].key = sort_key(lst[pfsti].z);
+				pairs[pfsti].index = pfsti;
+				pfsti++;
 
 				flip ^= 1;
 			}
@@ -303,121 +224,56 @@ static u32 gen_sorted(int first, int count, std::vector<SortTrigDrawParam>& pidx
 		pp++;
 	}
 
-	u32 aused=pfsti;
+	const u32 aused=pfsti;
 
-	lst.resize(aused);
-
-	//sort them
-#if 1
-	std::stable_sort(lst.begin(),lst.end());
+	//sort them: by depth, those at the same depth in the order sent
+	pairs = sort_pairs(pairs, aused, &sortPairsTmp);
+	if (pairs == NULL)
+		return 0;
 
 	//Merge pids/draw cmds if two different pids are actually equal
-	if (true)
+	for (u32 k=1;k<aused;k++)
 	{
-		for (u32 k=1;k<aused;k++)
-		{
-			if (lst[k].pid!=lst[k-1].pid)
-			{
-				if (PP_EQ(&pp_base[lst[k].pid],&pp_base[lst[k-1].pid]))
-				{
-					lst[k].pid=lst[k-1].pid;
-				}
-			}
-		}
-	}
-#endif
-
-
-#if 0
-	//tries to optimise draw calls by reordering non-intersecting polygons
-	//uber slow and not very effective
-	{
-		int opid=lst[0].pid;
-
-		for (int k=1;k<aused;k++)
-		{
-			if (lst[k].pid!=opid)
-			{
-				if (opid>lst[k].pid)
-				{
-					//MOVE UP
-					for (int j=k;j>0 && lst[j].pid!=lst[j-1].pid && !Intersect(lst[j],lst[j-1]);j--)
-					{
-						swap(lst[j],lst[j-1]);
-					}
-				}
-				else
-				{
-					//move down
-					for (int j=k+1;j<aused && lst[j].pid!=lst[j-1].pid && !Intersect(lst[j],lst[j-1]);j++)
-					{
-						swap(lst[j],lst[j-1]);
-					}
-				}
-			}
-
-			opid=lst[k].pid;
-		}
-	}
-#endif
-
-	//re-assemble them into drawing commands
-	if (out == NULL)
-	{
-		grow->resize(aused*3);
-		out = grow->data();
+		IndexTrig& cur = lst[pairs[k].index];
+		const IndexTrig& prev = lst[pairs[k - 1].index];
+		if (cur.pid!=prev.pid && PP_EQ(&pp_base[cur.pid],&pp_base[prev.pid]))
+			cur.pid=prev.pid;
 	}
 
+	//re-assemble them into drawing commands: at most one a triangle
+	SortTrigDrawParam *list = (SortTrigDrawParam *)grow_buf_reserve(&draws->buf, (size_t)(aused ? aused : 1) * sizeof(SortTrigDrawParam));
+	if (list == NULL)
+		return 0;
+	u32 n = 0;
 	int idx=-1;
 
 	for (u32 i=0; i<aused; i++, out += 3)
 	{
-		int pid=lst[i].pid;
-		const u32* midx = lst[i].id;
+		const IndexTrig& t = lst[pairs[i].index];
+		const int pid=t.pid;
 
 		// (stored in order, whole: @out may be memory the card reads)
-		out[0]=midx[0];
-		out[1]=midx[1];
-		out[2]=midx[2];
+		out[0]=t.id[0];
+		out[1]=t.id[1];
+		out[2]=t.id[2];
 
-		if (idx!=pid /* && !PP_EQ(&pp_base[pid],&pp_base[idx]) */ )
+		if (idx!=pid)
 		{
-			SortTrigDrawParam stdp = { pp_base + pid, i * 3, 0 };
-
 			if (idx!=-1)
-			{
-				SortTrigDrawParam& last = pidx_sort.back();
-				last.count = stdp.first - last.first;
-			}
-
-			pidx_sort.push_back(stdp);
+				list[n - 1].count = i * 3 - list[n - 1].first;
+			list[n].ppid = pp_base + pid;
+			list[n].first = i * 3;
+			list[n].count = 0;
+			n++;
 			idx=pid;
 		}
 	}
 
-	if (!pidx_sort.empty())
-	{
-		SortTrigDrawParam& last = pidx_sort.back();
-		last.count = aused * 3 - last.first;
-	}
+	if (n != 0)
+		list[n - 1].count = aused * 3 - list[n - 1].first;
+	draws->count = n;
 
-#if PRINT_SORT_STATS
-	printf("Reassembled into %d from %d\n",pidx_sort.size(),pp_end-pp_base);
-#endif
-
-	if (tess_gen) DEBUG_LOG(RENDERER, "Generated %.2fK Triangles !", tess_gen / 1000.0);
 	return aused * 3;
-}
-
-void GenSorted(int first, int count, std::vector<SortTrigDrawParam>& pidx_sort, std::vector<u32>& vidx_sort,
-		bool firstProvoking)
-{
-	gen_sorted(first, count, pidx_sort, NULL, &vidx_sort, firstProvoking);
-}
-
-u32 GenSortedTo(int first, int count, std::vector<SortTrigDrawParam>& pidx_sort, u32 *out, bool firstProvoking)
-{
-	return gen_sorted(first, count, pidx_sort, out, NULL, firstProvoking);
 }
 
 /* Whether a polygon that blends with one minus its alpha can have a pixel
@@ -434,23 +290,48 @@ static bool PrepassVerticesOpaque(const PolyParam *pp, const Vertex *vtx_base, c
 	return false;
 }
 
-/* GenPrepass(), its indices to @out, the @base'th of the pass's, or, if
- * NULL, to the end of @grow, which is @base long */
-static u32 gen_prepass(int first, int count, bool lastPass, std::vector<SortTrigDrawParam>& draws, u32 *out, u32 base,
-		std::vector<u32> *grow, bool firstProvoking)
+/* The polygons that can hide, in their order (order), in runs of
+ * neighbours drawn alike (runs): a model's polygons come one after the
+ * other, so it is the runs that are sorted, few of them. */
+struct PrepassRun
 {
-	/* The polygons that can hide, in their order (order), in runs of
-	 * neighbours drawn alike (runs): a model's polygons come one after the
-	 * other, so it is the runs that are sorted, few of them. (Kept from one
-	 * frame to the next: no allocation once they have grown.) */
-	struct Run
+	PrepassKey key;
+	u32 start, count;	// in order
+	u32 tris;		// the most triangles they make
+};
+
+/* @n runs sorted by key, stably (so those of a key keep the order they
+ * were made in, by start): merged from runs of one up, through @tmp; where
+ * they are, after */
+static PrepassRun *sort_runs(PrepassRun *runs, PrepassRun *tmp, u32 n)
+{
+	PrepassRun *from = runs, *to = tmp;
+	for (u32 width = 1; width < n; width *= 2)
 	{
-		PrepassKey key;
-		u32 start, count;	// in order
-		u32 tris;		// the most triangles they make
-	};
-	static std::vector<u32> order;
-	static std::vector<Run> runs;
+		for (u32 lo = 0; lo < n; lo += 2 * width)
+		{
+			const u32 mid = lo + width < n ? lo + width : n;
+			const u32 hi = lo + 2 * width < n ? lo + 2 * width : n;
+			u32 a = lo, b = mid, k = lo;
+			while (a < mid && b < hi)
+				to[k++] = from[b].key < from[a].key ? from[b++] : from[a++];
+			while (a < mid)
+				to[k++] = from[a++];
+			while (b < hi)
+				to[k++] = from[b++];
+		}
+		PrepassRun *t = from;
+		from = to;
+		to = t;
+	}
+	return from;
+}
+
+u32 GenPrepassTo(int first, int count, bool lastPass, SortList *draws, u32 *out, u32 base,
+		bool firstProvoking)
+{
+	/* (kept from one frame to the next: no allocation once they have grown) */
+	static grow_buf_t orderBuf, runsBuf, runsTmp;
 
 	if (count <= 0 || pvrrc.verts.used() == 0 || !PrepassWanted(lastPass))
 		return 0;
@@ -458,51 +339,60 @@ static u32 gen_prepass(int first, int count, bool lastPass, std::vector<SortTrig
 	const u32 * const idx_base = pvrrc.idx.head();
 	const PolyParam * const pp_base = pvrrc.global_param_tr.head();
 
-	order.clear();
-	runs.clear();
-	u32 tris = 0;
+	/* at most a run and an entry of order a polygon */
+	u32 *order = (u32 *)grow_buf_reserve(&orderBuf, (size_t)count * sizeof(u32));
+	PrepassRun *runs = (PrepassRun *)grow_buf_reserve(&runsBuf, (size_t)count * sizeof(PrepassRun));
+	PrepassRun *tmp = (PrepassRun *)grow_buf_reserve(&runsTmp, (size_t)count * sizeof(PrepassRun));
+	if (order == NULL || runs == NULL || tmp == NULL)
+		return 0;
+	u32 norder = 0, nruns = 0;
 	for (int n = first; n < first + count; n++)
 	{
 		const PolyParam *pp = pp_base + n;
 		if (!PrepassCandidate(pp, lastPass) || !PrepassVerticesOpaque(pp, vtx_base, idx_base))
 			continue;
 		const PrepassKey key = PrepassMakeKey(pp, pp->texid);
-		if (!runs.empty() && runs.back().start + runs.back().count == order.size() && runs.back().key == key)
+		if (nruns != 0 && runs[nruns - 1].start + runs[nruns - 1].count == norder && runs[nruns - 1].key == key)
 		{
-			runs.back().count++;
-			runs.back().tris += pp->count - 2;
+			runs[nruns - 1].count++;
+			runs[nruns - 1].tris += pp->count - 2;
 		}
 		else
 		{
-			const Run r = { key, (u32)order.size(), 1, pp->count - 2 };
-			runs.push_back(r);
+			runs[nruns].key = key;
+			runs[nruns].start = norder;
+			runs[nruns].count = 1;
+			runs[nruns].tris = pp->count - 2;
+			nruns++;
 		}
-		order.push_back((u32)n);
-		tris += pp->count - 2;
+		order[norder++] = (u32)n;
 	}
-	if (runs.empty())
+	if (nruns == 0)
 		return 0;
-	std::sort(runs.begin(), runs.end(), [](const Run& a, const Run& b) {
-		return a.key < b.key || (a.key == b.key && a.start < b.start);
-	});
+	runs = sort_runs(runs, tmp, nruns);
 
-	// the triangles, as GenSorted() makes them of a strip, written in place
-	if (out == NULL)
-	{
-		grow->resize(base + (size_t)tris * 3);
-		out = grow->data() + base;
-	}
+	/* the draws: at most one a run more than there are */
+	SortTrigDrawParam *list = (SortTrigDrawParam *)grow_buf_reserve_keep(&draws->buf,
+			((size_t)draws->count + nruns) * sizeof(SortTrigDrawParam));
+	if (list == NULL)
+		return 0;
+	u32 nd = draws->count;
+	const u32 had = nd;
+
+	// the triangles, as GenSortedTo() makes them of a strip, written in place
 	u32 *dst = out;
-	for (size_t k = 0; k < runs.size(); k++)
+	for (u32 k = 0; k < nruns; k++)
 	{
-		const Run& r = runs[k];
+		const PrepassRun& r = runs[k];
 		if (k == 0 || !(r.key == runs[k - 1].key))
 		{
 			// (a group before it all of whose triangles drew nothing is not kept)
-			if (k != 0 && draws.back().count == 0)
-				draws.pop_back();
-			const SortTrigDrawParam d = { pp_base + order[r.start], (u32)(base + (dst - out)), 0 };
-			draws.push_back(d);
+			if (k != 0 && list[nd - 1].count == 0)
+				nd--;
+			list[nd].ppid = pp_base + order[r.start];
+			list[nd].first = (u32)(base + (dst - out));
+			list[nd].count = 0;
+			nd++;
 		}
 		u32 * const runStart = dst;
 		for (u32 j = r.start; j < r.start + r.count; j++)
@@ -536,24 +426,67 @@ static u32 gen_prepass(int first, int count, bool lastPass, std::vector<SortTrig
 				dst += 3;
 			}
 		}
-		draws.back().count += (u32)(dst - runStart);
+		list[nd - 1].count += (u32)(dst - runStart);
 	}
-	if (draws.back().count == 0)
-		draws.pop_back();
+	if (nd > had && list[nd - 1].count == 0)
+		nd--;
+	draws->count = nd;
 	return (u32)(dst - out);
 }
 
-void GenPrepass(int first, int count, bool lastPass, std::vector<SortTrigDrawParam>& draws, std::vector<u32>& vidx,
-		bool firstProvoking)
+u32 SortPassesTo(grow_buf_t *sortedLists, grow_buf_t *prepassLists, u32 *out, bool prepasses, bool firstProvoking)
 {
-	const u32 base = (u32)vidx.size();
-	const u32 n = gen_prepass(first, count, lastPass, draws, NULL, base, &vidx, firstProvoking);
-	if (vidx.size() != base)
-		vidx.resize(base + n);
+	const u32 passes = (u32)pvrrc.render_passes.used();
+	SortList * const sorted = SortPasses(sortedLists, passes);
+	SortList * const prepass = SortPasses(prepassLists, passes);
+	if (sorted == NULL || prepass == NULL)
+	{
+		/* (no memory: nothing drawn sorted, rather than the last frame's) */
+		for (u32 i = 0; sorted != NULL && i < passes; i++)
+			sorted[i].count = 0;
+		for (u32 i = 0; prepass != NULL && i < passes; i++)
+			prepass[i].count = 0;
+		return 0;
+	}
+	u32 total = 0;
+	int previous = 0;
+
+	for (u32 pass = 0; pass < passes; pass++)
+	{
+		const RenderPass& current = pvrrc.render_passes.head()[pass];
+		sorted[pass].count = 0;
+		prepass[pass].count = 0;
+		if (current.autosort)
+		{
+			const int count = current.tr_count - previous;
+			u32 n = GenSortedTo(previous, count, &sorted[pass], out, firstProvoking);
+			if (prepasses)
+				n += GenPrepassTo(previous, count, pass == passes - 1, &prepass[pass], out + n, n, firstProvoking);
+			SortTrigDrawParam *draw = SortDraws(&sorted[pass]);
+			for (u32 i = 0; i < sorted[pass].count; i++)
+				draw[i].first += total;
+			draw = SortDraws(&prepass[pass]);
+			for (u32 i = 0; i < prepass[pass].count; i++)
+				draw[i].first += total;
+			total += n;
+			out += n;
+		}
+		previous = current.tr_count;
+	}
+	return total;
 }
 
-u32 GenPrepassTo(int first, int count, bool lastPass, std::vector<SortTrigDrawParam>& draws, u32 *out, u32 base,
-		bool firstProvoking)
+u32 SortPassesRoom(void)
 {
-	return gen_prepass(first, count, lastPass, draws, out, base, NULL, firstProvoking);
+	u32 tris = 0;
+	int previous = 0;
+
+	for (int pass = 0; pass < pvrrc.render_passes.used(); pass++)
+	{
+		const RenderPass& current = pvrrc.render_passes.head()[pass];
+		if (current.autosort)
+			tris += SortedTriangles(previous, current.tr_count - previous);
+		previous = current.tr_count;
+	}
+	return tris * 6;
 }

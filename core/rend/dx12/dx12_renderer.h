@@ -161,7 +161,7 @@ protected:
 	virtual u32 TaFlags() const
 	{
 		/* sorted translucent triangles sorted from the frame's depths, as
-		 * GenSorted() sorts them (TA_GPU_SORT); sorted by strip, the polygons
+		 * GenSortedTo() sorts them (TA_GPU_SORT); sorted by strip, the polygons
 		 * are sorted from their vertices, which a frame decoded on the GPU
 		 * has there alone: such a frame is parsed */
 		return TA_GPU_DRAW | TA_GPU_PROVOKE | TA_GPU_SHADOWS
@@ -359,12 +359,11 @@ protected:
 	virtual D3D12_RECT CutScissor(const D3D12_RECT& rect) const { return rect; }
 
 	// Per-triangle sort results
-	std::vector<std::vector<SortTrigDrawParam>> sortedPolys;
+	grow_buf_t sortedPasses = GROW_BUF_INIT;	/* SortPasses(): a SortList a pass */
 	// (their indices: in the upload ring, sorted there by UploadGeometry())
 	u32 sortedIndexCount = 0;
 	// ...and the depth prepasses of the sorted lists (rend/sorter.h), their indexes after each pass's sorted ones
-	std::vector<std::vector<SortTrigDrawParam>> prepassPolys;
-	u32 SortedIndexRoom() const;
+	grow_buf_t prepassPasses = GROW_BUF_INIT;
 	void SortTriangles(u32 *out);
 
 	/* ---- The draws, batched ----

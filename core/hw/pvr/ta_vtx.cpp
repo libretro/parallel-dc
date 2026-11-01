@@ -3703,20 +3703,20 @@ static bool ta_gpu_any_autosort(const TA_context *ctx)
 /* ---- TA_GPU_SORT: the translucent triangles of the sorted render passes ----
  *
  * The per-triangle renderer draws a sorted pass's translucent triangles in
- * the order GenSorted() gives them, one draw for each run of them drawn the
+ * the order GenSortedTo() gives them, one draw for each run of them drawn the
  * same way, and only the CPU can choose the pipeline and texture of a draw.
  * So the order is worked out here, from the frame's own blocks: of each
  * translucent vertex of a sorted pass, only its position (whether it is an
  * infinite vertex, is_vertex_inf(), and its depth) and its end-of-strip
  * bit are read, and a sprite's fourth corner is solved as the parse solves
  * it. Each strip's indices are what make_index() gives it (the translucent
- * lists are never joined), its triangles are GenSorted()'s, with the
+ * lists are never joined), its triangles are GenSortedTo()'s, with the
  * winding of the renderer's provoking vertex (the first, Vulkan's, with
  * TA_GPU_PROVOKE; else the last, OpenGL's), and their depths are each the
  * least of its three vertices'. A stable radix sort of those depths as
  * integers that order as the floats do (tag_fkey(); no vertex that makes
  * an index has a depth that is not a number) gives std::stable_sort()'s
- * order; the draws are made as GenSorted() makes them. The vertices,
+ * order; the draws are made as GenSortedTo() makes them. The vertices,
  * colours, indices and the rest are the GPU's: the indices written here
  * name the GPU decode's vertices, by their number. Nothing
  * is allocated: the room, made by ta_gpu_sort_reserve(), is for as many
@@ -3732,7 +3732,7 @@ static struct TaGpuSortState
 	u32 pass_run[TAG_MAX_PASS], pass_runs[TAG_MAX_PASS];
 	u32 tris;
 	u64 ns;
-	bool first_provoking;		// (TA_GPU_PROVOKE) GenSorted()'s firstProvoking
+	bool first_provoking;		// (TA_GPU_PROVOKE) GenSortedTo()'s firstProvoking
 	/* Each sorted pass's depth prepass (rend/sorter.h): the triangles of
 	 * its polygons that can hide what is behind them, by polygon and the
 	 * polygons by what they are drawn with (porder: triangle numbers, ptris
@@ -3901,7 +3901,7 @@ u64 ta_gpu_sorted_ns(void)
 
 /* make_index() of one strip at a time, an index at a time (no strip is
  * joined to another in a translucent list), with each index's depth key,
- * and GenSorted()'s triangles of the indices as they come */
+ * and GenSortedTo()'s triangles of the indices as they come */
 struct TaGpuSortStrip
 {
 	TaGpuSortState &g;
@@ -3955,7 +3955,7 @@ struct TaGpuSortStrip
 				full = true;
 			else
 			{
-				/* GenSorted(), firstProvoking: every other triangle starts
+				/* GenSortedTo(), firstProvoking: every other triangle starts
 				 * with the vertex that holds its colour; without it, the
 				 * first two of every other one change places */
 				u32 *d = &g.tri[t * 4];
@@ -4150,7 +4150,7 @@ static u32 ta_gpu_sort_keys(u64 *k[2], u32 first, u32 n)
 /* The prepass's checks (TAG_K_PREPASS): each strip with triangles in the
  * prepass whose alpha is its vertices' (PrepassAlphaFromVertices()), for
  * the GPU to look at the vertices of and to leave out if none has an alpha
- * of 255, as GenPrepass() does. A strip's triangles there are one after
+ * of 255, as GenPrepassTo() does. A strip's triangles there are one after
  * the other (its header's are, in the order they were made). */
 static void ta_gpu_prepass_make_checks(const TaWalkFrame &f)
 {
@@ -4195,7 +4195,7 @@ static void ta_gpu_prepass_make_checks(const TaWalkFrame &f)
 		g.checks = 0;
 }
 
-/* The depth prepass of each sorted pass, as GenPrepass() makes it but for
+/* The depth prepass of each sorted pass, as GenPrepassTo() makes it but for
  * the vertices, which are the GPU's: the polygons whose alpha is their
  * vertices' are drawn, and the GPU makes nothing of those of them none of
  * whose vertices has an alpha of 255 (ta_gpu_prepass_checks()). The
@@ -4312,7 +4312,7 @@ static bool ta_gpu_sort_frame(TaWalkFrame &f, const u8 *root)
 	if (!ta_gpu_sort_strips(f, root, sorted))
 		return false;
 
-	// each pass: sorted, and its draws made as GenSorted() makes them
+	// each pass: sorted, and its draws made as GenSortedTo() makes them
 	u32 nrun = 0;
 	for (p = 0; p < f.passes; p++)
 	{

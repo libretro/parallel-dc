@@ -211,7 +211,15 @@ protected:
 class Drawer : public BaseDrawer
 {
 public:
-	virtual ~Drawer() = default;
+	Drawer() = default;
+	/* (its sort lists are its own) */
+	Drawer(const Drawer&) = delete;
+	Drawer& operator=(const Drawer&) = delete;
+	virtual ~Drawer()
+	{
+		SortPassesFree(&sortedPasses);
+		SortPassesFree(&prepassPasses);
+	}
 	bool Draw(const Texture *fogTexture, const Texture *paletteTexture);
 	virtual void EndRenderPass() = 0;
 
@@ -274,7 +282,6 @@ protected:
 	virtual vk::Extent2D ResolveExtent() const = 0;
 
 private:
-	u32 SortedIndexRoom() const;
 	void SortTriangles(u32 *out);
 	void DrawPoly(const vk::CommandBuffer& cmdBuffer, u32 listType, bool sortTriangles, const PolyParam& poly, u32 first, u32 count,
 			PipelineManager::ShadowPass shadowPass = PipelineManager::ShadowPass::None, const vk::Rect2D *within = nullptr);
@@ -294,11 +301,11 @@ private:
 	PipelineManager *pipelineManager = nullptr;
 
 	// Per-triangle sort results
-	std::vector<std::vector<SortTrigDrawParam>> sortedPolys;
+	grow_buf_t sortedPasses = GROW_BUF_INIT;	/* SortPasses(): a SortList a pass */
 	// (their indices: in the main buffer, sorted there)
 	u32 sortedIndexCount = 0;
 	// ...and the depth prepasses of the sorted lists (rend/sorter.h), their indexes after each pass's sorted ones
-	std::vector<std::vector<SortTrigDrawParam>> prepassPolys;
+	grow_buf_t prepassPasses = GROW_BUF_INIT;
 	/* The push constants last pushed for the colours: the prepass pushes
 	 * its own, and puts these back for the polygons after it that push none */
 	std::array<float, 6> pushed = {};

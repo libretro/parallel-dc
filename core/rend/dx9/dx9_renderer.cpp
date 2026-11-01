@@ -132,6 +132,8 @@ bool DX9Renderer::Init()
 
 void DX9Renderer::Term()
 {
+	SortPassesFree(&sortedPasses);
+	SortPassesFree(&prepassPasses);
 	DX9Lock lock;
 	if (device != nullptr)
 		context->SetFrame(nullptr);
@@ -387,42 +389,13 @@ void DX9Renderer::SetProvokingVertices()
 	setProvokingVertex(pvrrc.global_param_tr);
 }
 
-void DX9Renderer::SortTriangles()
-{
-	sortedPolys.resize(pvrrc.render_passes.used());
-	sortedIndexes.resize(pvrrc.render_passes.used());
-	prepassPolys.resize(pvrrc.render_passes.used());
-	sortedIndexCount = 0;
-	RenderPass previousPass = {};
-
-	for (int render_pass = 0; render_pass < pvrrc.render_passes.used(); render_pass++)
-	{
-		const RenderPass& current_pass = pvrrc.render_passes.head()[render_pass];
-		sortedIndexes[render_pass].clear();
-		prepassPolys[render_pass].clear();
-		if (current_pass.autosort)
-		{
-			GenSorted(previousPass.tr_count, current_pass.tr_count - previousPass.tr_count, sortedPolys[render_pass], sortedIndexes[render_pass], true);
-			GenPrepass(previousPass.tr_count, current_pass.tr_count - previousPass.tr_count,
-					render_pass == pvrrc.render_passes.used() - 1, prepassPolys[render_pass], sortedIndexes[render_pass], true);
-			for (auto& poly : sortedPolys[render_pass])
-				poly.first += sortedIndexCount;
-			for (auto& poly : prepassPolys[render_pass])
-				poly.first += sortedIndexCount;
-			sortedIndexCount += sortedIndexes[render_pass].size();
-		}
-		else
-			sortedPolys[render_pass].clear();
-		previousPass = current_pass;
-	}
-}
-
 /* ---- Buffers ---- */
 
 bool DX9Renderer::UploadGeometry()
 {
 	const u32 vertexBytes = pvrrc.verts.bytes();
-	const u32 indexBytes = pvrrc.idx.bytes() + sortedIndexCount * sizeof(u32);
+	/* (room for the sorted passes' triangles, sorted into it: SortPassesTo()) */
+	const u32 indexBytes = pvrrc.idx.bytes() + SortPassesRoom() * sizeof(u32);
 	// (the volumes' triangles with those far off the screen cut, when the frame has them: rend/modvol_clip.h)
 	const List<ModTriangle>& modVolList = pvrrc.mv_clip.used() != 0 ? pvrrc.mv_clip : pvrrc.modtrig;
 	const u32 modVolBytes = modVolList.bytes();
@@ -476,19 +449,15 @@ bool DX9Renderer::UploadGeometry()
 	{
 		if (FAILED(indexBuffer->Lock(indexStart, indexBytes, &data, indexFlags)))
 			return false;
-		u8 *dst = (u8 *)data;
-		memcpy(dst, pvrrc.idx.head(), pvrrc.idx.bytes());
-		dst += pvrrc.idx.bytes();
-		for (const std::vector<u32>& idx : sortedIndexes)
-			if (!idx.empty())
-			{
-				memcpy(dst, idx.data(), idx.size() * sizeof(u32));
-				dst += idx.size() * sizeof(u32);
-			}
+		memcpy(data, pvrrc.idx.head(), pvrrc.idx.bytes());
+		sortedIndexCount = SortPassesTo(&sortedPasses, &prepassPasses,
+				(u32 *)((u8 *)data + pvrrc.idx.bytes()), true, true);
 		indexBuffer->Unlock();
 	}
+	else
+		sortedIndexCount = SortPassesTo(&sortedPasses, &prepassPasses, NULL, true, true);
 	vertexBufferUsed = vertexEnd;
-	indexBufferUsed = indexStart + indexBytes;
+	indexBufferUsed = indexStart + pvrrc.idx.bytes() + sortedIndexCount * sizeof(u32);
 
 	vertexBase = (INT)(vertices / sizeof(Vertex));
 	vertexCount = std::max<UINT>(1, pvrrc.verts.used());
@@ -911,7 +880,6 @@ bool DX9Renderer::Render()
 		return true;
 	}
 
-	SortTriangles();
 	SetProvokingVertices();
 	/* (the buffers are written before the scene begins) */
 	if (!UploadGeometry())
@@ -1083,10 +1051,13 @@ void DX9Renderer::DrawShadowed(u32 listType, const List<PolyParam>& polys, u32 f
 					&scissor);
 }
 
-void DX9Renderer::DrawSorted(const std::vector<SortTrigDrawParam>& polys, bool multipass)
+void DX9Renderer::DrawSorted(const SortTrigDrawParam *polys, u32 count, bool multipass)
 {
-	for (const SortTrigDrawParam& param : polys)
+	for (u32 i = 0; i < count; i++)
+	{
+		const SortTrigDrawParam& param = polys[i];
 		DrawPoly(ListType_Translucent, true, *param.ppid, pvrrc.idx.used() + param.first, param.count);
+	}
 
 	if (multipass && settings.rend.TranslucentPolygonDepthMask)
 	{
@@ -1098,8 +1069,9 @@ void DX9Renderer::DrawSorted(const std::vector<SortTrigDrawParam>& polys, bool m
 		context->SetPS(shaders->GetPS(DX9PS_ModVol));
 		context->SetBlend(false, 1, 0, false);
 		context->SetDepthStencil(true, true, 6, DX9Stencil_None, 0);
-		for (const SortTrigDrawParam& param : polys)
+		for (u32 i = 0; i < count; i++)
 		{
+			const SortTrigDrawParam& param = polys[i];
 			if (param.count <= 2 || param.ppid->isp.ZWriteDis)
 				continue;
 			RECT scissorRect;
@@ -1114,16 +1086,16 @@ void DX9Renderer::DrawSorted(const std::vector<SortTrigDrawParam>& polys, bool m
 }
 
 // The depth prepass of a sorted list: rend/sorter.h
-void DX9Renderer::DrawPrepass(const std::vector<SortTrigDrawParam>& polys)
+void DX9Renderer::DrawPrepass(const SortTrigDrawParam *polys, u32 count)
 {
-	if (polys.empty())
+	if (count == 0)
 		return;
 	// (the colour pass's polygons that do not set their constants find what they found before)
 	const PolyConstants saved = polyUploaded;
 	const bool savedValid = polyEpoch == context->Epoch();
 	prepassDraw = true;
-	for (const SortTrigDrawParam& param : polys)
-		DrawPoly(ListType_Translucent, true, *param.ppid, pvrrc.idx.used() + param.first, param.count);
+	for (u32 i = 0; i < count; i++)
+		DrawPoly(ListType_Translucent, true, *polys[i].ppid, pvrrc.idx.used() + polys[i].first, polys[i].count);
 	prepassDraw = false;
 	if (savedValid)
 		SetPolyConstants(saved);
@@ -1247,9 +1219,12 @@ void DX9Renderer::DrawFrame()
 		DrawModVols(previous_pass.mvo_count, current_pass.mvo_count - previous_pass.mvo_count, previous_pass, current_pass);
 		if (current_pass.autosort)
 		{
-			DrawPrepass(prepassPolys[render_pass]);
+			u32 n;
+			const SortTrigDrawParam *draws = SortPassDraws(&prepassPasses, render_pass, &n);
+			DrawPrepass(draws, n);
+			draws = SortPassDraws(&sortedPasses, render_pass, &n);
 			if (!settings.pvr.Emulation.AlphaSortMode)
-				DrawSorted(sortedPolys[render_pass], render_pass < pvrrc.render_passes.used() - 1);
+				DrawSorted(draws, n, render_pass < pvrrc.render_passes.used() - 1);
 			else
 			{
 				SortPParams(previous_pass.tr_count, current_pass.tr_count - previous_pass.tr_count);

@@ -51,7 +51,7 @@ static struct
 	std::vector<double> draw_us;	// the header pass made ready to draw, sort and shadows and all (TA_GPU_DRAW)
 	std::vector<double> flat_us;	// ...of it, the flat strips found (TAG_FLAT)
 	double gpu_ms;
-	// the translucent triangles sorted from the frame's depths (TA_GPU_SORT), against GenSorted()
+	// the translucent triangles sorted from the frame's depths (TA_GPU_SORT), against GenSortedTo()
 	u32 sort_frames, sort_same, sort_differ;
 	u64 sort_tris, sort_runs;
 	/* ...the depth prepass's checks (TAG_K_PREPASS): checks, the prepass's
@@ -74,7 +74,7 @@ static u32 table_room;
 static bool ready;
 /* The device is OpenGL (TAG_GL=1, ta_gpu_test_gl.c): its renderers take a flat
  * triangle's colours from its last vertex, so the frames are made without
- * TA_GPU_PROVOKE, and GenSorted() and the GPU sort wind as for OpenGL */
+ * TA_GPU_PROVOKE, and GenSortedTo() and the GPU sort wind as for OpenGL */
 static bool gl_device;
 // the frame as the header pass takes it, before the parse
 static PolyParam saved_bg;
@@ -122,8 +122,8 @@ static void report(void)
 				mean(st.flat_us), pct(st.flat_us, 0.99), pct(st.flat_us, 1.0));
 	printf("ta_gpu_test: overrun at the exact room: %u frames, %u trials, the parse and the GPU agree on %u\n",
 			st.edge_frames, st.edge_trials, st.edge_agree);
-	printf("ta_gpu_test: sorted from the frame's depths: %u frames, %u the same as GenSorted(), %u different; per frame %.0f triangles, %.0f draws; "
-			"the sort mean %.1f us, p99 %.1f us, max %.1f us; GenSorted() mean %.1f us, p99 %.1f us, max %.1f us\n",
+	printf("ta_gpu_test: sorted from the frame's depths: %u frames, %u the same as GenSortedTo(), %u different; per frame %.0f triangles, %.0f draws; "
+			"the sort mean %.1f us, p99 %.1f us, max %.1f us; GenSortedTo() mean %.1f us, p99 %.1f us, max %.1f us\n",
 			st.sort_frames, st.sort_same, st.sort_differ, st.sort_frames ? (double)st.sort_tris / st.sort_frames : 0.0,
 			st.sort_frames ? (double)st.sort_runs / st.sort_frames : 0.0,
 			mean(st.sort_us), pct(st.sort_us, 0.99), pct(st.sort_us, 1.0), mean(st.gensorted_us), pct(st.gensorted_us, 0.99), pct(st.gensorted_us, 1.0));
@@ -528,7 +528,7 @@ static bool same_draw_rate(const PolyParam &a, const PolyParam &b)
 	return same_draw_state(a, b) && ((a.pcw.full ^ b.pcw.full) & 0x100u) == 0;
 }
 
-/* GenSorted() of the parse's frame, each sorted render pass, the draws'
+/* GenSortedTo() of the parse's frame, each sorted render pass, the draws'
  * first counting from the first pass's first index, as the Vulkan
  * per-triangle renderer has them (Drawer::SortTriangles()); the polygon
  * parameters' words kept, which the header pass's lists then replace */
@@ -537,7 +537,7 @@ struct SortRef
 	std::vector<SortTrigDrawParam> runs;
 	std::vector<PolyParam> pp;
 	std::vector<u32> idx;
-	/* each sorted pass's depth prepass (GenPrepass()), as the header pass
+	/* each sorted pass's depth prepass (GenPrepassTo()), as the header pass
 	 * lays it out: every pass's sorted indices first, then every pass's
 	 * prepass indices, the prepass draws' first counting from the start */
 	std::vector<SortTrigDrawParam> pruns;
@@ -548,7 +548,7 @@ struct SortRef
 
 static void gensorted_ref(TA_context *ctx, SortRef &ref, double *us)
 {
-	static std::vector<SortTrigDrawParam> polys;
+	static SortList polys;
 	static std::vector<u32> idx;
 	TA_context *const saved = _pvrrc;
 	const rend_context &rc = ctx->rend;
@@ -562,7 +562,7 @@ static void gensorted_ref(TA_context *ctx, SortRef &ref, double *us)
 	ref.pidx.clear();
 	ref.prun_pass.clear();
 	*us = 0;
-	/* (GenPrepass() leaves out a polygon none of whose vertices has an
+	/* (GenPrepassTo() leaves out a polygon none of whose vertices has an
 	 * alpha of 255 where its alpha is theirs: PrepassVerticesOpaque(). The
 	 * header pass has not got the vertices; the GPU leaves such a strip
 	 * out, TAG_K_PREPASS) */
@@ -571,33 +571,35 @@ static void gensorted_ref(TA_context *ctx, SortRef &ref, double *us)
 		const RenderPass &cur = rc.render_passes.head()[p];
 		if (cur.autosort)
 		{
-			idx.clear();
+			const int first = prev.tr_count, count = cur.tr_count - prev.tr_count;
+			idx.resize(6 * SortedTriangles(first, count) + 1);
 			const clk::time_point t0 = clk::now();
-			GenSorted(prev.tr_count, cur.tr_count - prev.tr_count, polys, idx, !gl_device);
+			const u32 sorted = GenSortedTo(first, count, &polys, idx.data(), !gl_device);
 			*us += std::chrono::duration<double, std::micro>(clk::now() - t0).count();
-			for (const SortTrigDrawParam &r : polys)
+			for (u32 i = 0; i < polys.count; i++)
 			{
+				const SortTrigDrawParam &r = SortDraws(&polys)[i];
 				SortTrigDrawParam q = r;
 				q.first += (u32)ref.idx.size();
 				ref.runs.push_back(q);
 				ref.pp.push_back(*r.ppid);
 			}
-			ref.idx.insert(ref.idx.end(), idx.begin(), idx.end());
-			/* (the prepass's, kept apart: GenPrepass() adds to idx after the
+			ref.idx.insert(ref.idx.end(), idx.begin(), idx.begin() + sorted);
+			/* (the prepass's, kept apart: GenPrepassTo() writes after the
 			 * sorted indices, its draws' first counting from idx's start) */
-			const size_t sorted = idx.size();
-			polys.clear();
-			GenPrepass(prev.tr_count, cur.tr_count - prev.tr_count,
-					p == rc.render_passes.used() - 1, polys, idx, !gl_device);
-			for (const SortTrigDrawParam &r : polys)
+			polys.count = 0;
+			const u32 n = GenPrepassTo(first, count, p == rc.render_passes.used() - 1, &polys,
+					idx.data() + sorted, sorted, !gl_device);
+			for (u32 i = 0; i < polys.count; i++)
 			{
+				const SortTrigDrawParam &r = SortDraws(&polys)[i];
 				SortTrigDrawParam q = r;
-				q.first = q.first - (u32)sorted + (u32)ref.pidx.size();
+				q.first = q.first - sorted + (u32)ref.pidx.size();
 				ref.pruns.push_back(q);
 				ref.ppp.push_back(*r.ppid);
 				ref.prun_pass.push_back((u32)p);
 			}
-			ref.pidx.insert(ref.pidx.end(), idx.begin() + sorted, idx.end());
+			ref.pidx.insert(ref.pidx.end(), idx.begin() + sorted, idx.begin() + sorted + n);
 		}
 		prev = cur;
 	}
@@ -637,10 +639,10 @@ static double tri_area(const unsigned *vtx, u32 a, u32 b, u32 c)
 	return std::isfinite(s) ? std::fabs(s) / 2 : 0.0;
 }
 
-/* The header pass's sort (TA_GPU_SORT) against GenSorted()'s: the same
+/* The header pass's sort (TA_GPU_SORT) against GenSortedTo()'s: the same
  * indices, and the same draws of them, drawn the same way; then each
- * pass's depth prepass against GenPrepass()'s: the same draws, drawn the
- * same way with the same triangles, in any order (GenPrepass() orders its
+ * pass's depth prepass against GenPrepassTo()'s: the same draws, drawn the
+ * same way with the same triangles, in any order (GenPrepassTo() orders its
  * groups by texture first, which the header pass has not got) */
 static const char *compare_sorted(TA_context *ctx, const SortRef &ref, const TaGpuFrame &gf, char *why, size_t room)
 {
@@ -704,13 +706,13 @@ static const char *compare_sorted(TA_context *ctx, const SortRef &ref, const TaG
 	const size_t sorted = ref.idx.size() - ref.pidx.size();
 	if (gpu_pre > idx.size() || idx.size() - gpu_pre != sorted)
 	{
-		snprintf(why, room, "sorted indices: %zu, GenSorted() %zu", idx.size() - std::min(gpu_pre, idx.size()), sorted);
+		snprintf(why, room, "sorted indices: %zu, GenSortedTo() %zu", idx.size() - std::min(gpu_pre, idx.size()), sorted);
 		return why;
 	}
 	for (size_t i = 0; i < sorted; i++)
 		if (idx[i] != ref.idx[i])
 		{
-			snprintf(why, room, "sorted index %zu of %zu: %u, GenSorted() %u", i, sorted, idx[i], ref.idx[i]);
+			snprintf(why, room, "sorted index %zu of %zu: %u, GenSortedTo() %u", i, sorted, idx[i], ref.idx[i]);
 			return why;
 		}
 	size_t k = 0;
@@ -722,18 +724,18 @@ static const char *compare_sorted(TA_context *ctx, const SortRef &ref, const TaG
 			if (k >= ref.runs.size() || r[j].first != ref.runs[k].first || r[j].count != ref.runs[k].count
 					|| !same_draw_state(*r[j].ppid, ref.pp[k]))
 			{
-				snprintf(why, room, "sorted draw %zu (pass %u): first %u count %u, GenSorted() %s", k, p, r[j].first, r[j].count,
+				snprintf(why, room, "sorted draw %zu (pass %u): first %u count %u, GenSortedTo() %s", k, p, r[j].first, r[j].count,
 						k >= ref.runs.size() ? "has fewer" : "differs");
 				return why;
 			}
 	}
 	if (k != ref.runs.size())
 	{
-		snprintf(why, room, "sorted draws: %zu, GenSorted() %zu", k, ref.runs.size());
+		snprintf(why, room, "sorted draws: %zu, GenSortedTo() %zu", k, ref.runs.size());
 		return why;
 	}
 	/* the depth prepass: its draws cover the indices after the sorted ones,
-	 * each once, and each pass's draws are GenPrepass()'s */
+	 * each once, and each pass's draws are GenPrepassTo()'s */
 	static std::vector<std::pair<u32, u32>> span;
 	static std::vector<std::pair<u64, u32>> a, b;
 	static std::vector<bool> used;
@@ -754,7 +756,7 @@ static const char *compare_sorted(TA_context *ctx, const SortRef &ref, const TaG
 			}
 			span.push_back(std::make_pair(r[j].first, r[j].count));
 			prepass_tris(idx, r[j].first, r[j].count, a);
-			// (a draw all of whose triangles the GPU left out is one GenPrepass() has not got)
+			// (a draw all of whose triangles the GPU left out is one GenPrepassTo() has not got)
 			if (a.empty())
 			{
 				gpu_draws--;
@@ -771,14 +773,14 @@ static const char *compare_sorted(TA_context *ctx, const SortRef &ref, const TaG
 			}
 			if (!found)
 			{
-				snprintf(why, room, "prepass draw %u of pass %u (first %u count %u): not one of GenPrepass()'s", j, p, r[j].first, r[j].count);
+				snprintf(why, room, "prepass draw %u of pass %u (first %u count %u): not one of GenPrepassTo()'s", j, p, r[j].first, r[j].count);
 				return why;
 			}
 		}
 	}
 	if (gpu_draws != ref.pruns.size())
 	{
-		snprintf(why, room, "prepass draws: %zu, GenPrepass() %zu", gpu_draws, ref.pruns.size());
+		snprintf(why, room, "prepass draws: %zu, GenPrepassTo() %zu", gpu_draws, ref.pruns.size());
 		return why;
 	}
 	std::sort(span.begin(), span.end());
@@ -1040,7 +1042,7 @@ static const char *compare_draw(TA_context *ctx, const tgt_out &o, u32 flags, ch
 		else if (d == NULL && (flags & TA_GPU_SORT) && ta_gpu_sorted_indices() != 0)
 		{
 			st.sort_differ++;
-			d = "sorted triangles where GenSorted() has none";
+			d = "sorted triangles where GenSortedTo() has none";
 		}
 		if (d == NULL && gf.shadows != 0)
 		{

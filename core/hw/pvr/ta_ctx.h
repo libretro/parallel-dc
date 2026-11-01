@@ -515,11 +515,11 @@ struct TaGpuFrame
 /* The translucent draw records number each strip as its polygon parameter
  * (firstInstance: the per-pixel renderer's polygon number) */
 #define TA_GPU_INSTANCE 8u
-/* ...by a renderer that sorts translucent triangles as GenSorted() does
+/* ...by a renderer that sorts translucent triangles as GenSortedTo() does
  * (rend/sorter.h; its firstProvoking with TA_GPU_PROVOKE, for Vulkan, and
  * without it for OpenGL): each sorted render pass's
  * translucent triangles are sorted here from the depths of the blocks the
- * game sent - nothing else of a vertex is read - in GenSorted()'s order,
+ * game sent - nothing else of a vertex is read - in GenSortedTo()'s order,
  * ties and all, for ta_gpu_sorted() and ta_gpu_sorted_write(). Needs
  * ta_gpu_sort_reserve(); without it, a frame that may have a sorted pass is
  * left to the full parse as with TA_GPU_NO_SORT. */
@@ -558,15 +558,15 @@ bool ta_gpu_prepare(TA_context *ctx, const TaGpuLayout *layout, u32 *table, u32 
 bool ta_gpu_sort_reserve(bool on);
 struct SortTrigDrawParam;
 /* What the last ta_gpu_prepare() with TA_GPU_SORT sorted, until the next:
- * render pass @pass's draws (GenSorted()'s @pidx_sort, first counting from
+ * render pass @pass's draws (GenSortedTo()'s @draws, first counting from
  * the first pass's first index, as Drawer::SortTriangles() has them), and
  * how many there are; NULL and 0 for a pass that is not sorted. The
  * polygon parameters they point to are the header pass's. */
 const SortTrigDrawParam *ta_gpu_sorted(u32 pass, u32 *count);
-/* ...and its depth prepass's draws (GenPrepass()'s; rend/sorter.h), first
+/* ...and its depth prepass's draws (GenPrepassTo()'s; rend/sorter.h), first
  * counting from the first pass's first sorted index as well */
 const SortTrigDrawParam *ta_gpu_prepass(u32 pass, u32 *count);
-// ...the indices of all of them (GenSorted()'s @vidx_sort, pass after pass, then the prepasses')
+// ...the indices of all of them (GenSortedTo()'s @out, pass after pass, then the prepasses')
 u32 ta_gpu_sorted_indices(void);
 /* ...and the prepass's checks after them (TAG_K_PREPASS, at TAG_T_PREP):
  * how many, for a dispatch of a workgroup each, which the renderer makes

@@ -19,7 +19,8 @@ name: Vulkan negotiation
 # And renders to textures: what is fetched off the card and when
 # (tools/rend/rtt_watch_test.sh), and video memory written by DMA over
 # them, with Vulkan and with OpenGL (tools/vulkan/vk_dma.sh,
-# tools/gl/gl_dma.sh: Mesa's surfaceless EGL).
+# tools/gl/gl_dma.sh: Mesa's surfaceless EGL). And the translucent
+# sorter's sort against a stable sort by < (tools/rend/sort_pairs_test.sh).
 
 on:
   push:
@@ -45,6 +46,10 @@ on:
       - 'core/rend/TexCache.*'
       - 'core/hw/sh4/sh4_mem.cpp'
       - 'tools/rend/rtt_watch_test.*'
+      - 'core/rend/sorter.*'
+      - 'core/rend/sort_pairs.h'
+      - 'core/rend/grow_buf.h'
+      - 'tools/rend/sort_pairs_test.*'
       - 'tools/threads/live_prog.c'
       - 'Makefile*'
       - '.github/workflows/vulkan-negotiation.yml'
@@ -71,6 +76,10 @@ on:
       - 'core/rend/TexCache.*'
       - 'core/hw/sh4/sh4_mem.cpp'
       - 'tools/rend/rtt_watch_test.*'
+      - 'core/rend/sorter.*'
+      - 'core/rend/sort_pairs.h'
+      - 'core/rend/grow_buf.h'
+      - 'tools/rend/sort_pairs_test.*'
       - 'tools/threads/live_prog.c'
       - 'Makefile*'
       - '.github/workflows/vulkan-negotiation.yml'
@@ -100,6 +109,8 @@ jobs:
           sh tools/rend/rtt_watch_test.sh
           VK_DRIVER_FILES=/usr/share/vulkan/icd.d/lvp_icd.json sh tools/vulkan/vk_dma.sh
           sh tools/gl/gl_dma.sh
+      - name: The translucent sorter's sort (radix, stable, as a sort by <)
+        run: sh tools/rend/sort_pairs_test.sh
       - name: The temporal upscaler's side in the core (strips matched, the request, the inputs)
         run: sh tools/rend/upscaler_test.sh
       - name: HDR output (HDR10, scRGB, each renderer, every Display Transform)

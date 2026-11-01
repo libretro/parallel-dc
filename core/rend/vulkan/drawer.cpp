@@ -25,53 +25,12 @@
 #include "drawer.h"
 #include "hw/pvr/pvr_mem.h"
 
-/* The most indices SortTriangles() writes */
-u32 Drawer::SortedIndexRoom() const
-{
-	u32 tris = 0;
-	RenderPass previousPass = {};
-
-	for (int render_pass = 0; render_pass < pvrrc.render_passes.used(); render_pass++)
-	{
-		const RenderPass& current_pass = pvrrc.render_passes.head()[render_pass];
-		if (current_pass.autosort)
-			tris += SortedTriangles(previousPass.tr_count, current_pass.tr_count - previousPass.tr_count);
-		previousPass = current_pass;
-	}
-	return tris * 6;
-}
-
 /* The sorted passes' triangles and their prepasses', their indices written
- * to @out (SortedIndexRoom() of them): the main buffer, which the card
+ * to @out (SortPassesRoom() of them): the main buffer, which the card
  * reads them from */
 void Drawer::SortTriangles(u32 *out)
 {
-	sortedPolys.resize(pvrrc.render_passes.used());
-	prepassPolys.resize(pvrrc.render_passes.used());
-	sortedIndexCount = 0;
-	RenderPass previousPass = {};
-
-	for (int render_pass = 0; render_pass < pvrrc.render_passes.used(); render_pass++)
-	{
-		const RenderPass& current_pass = pvrrc.render_passes.head()[render_pass];
-		prepassPolys[render_pass].clear();
-		if (current_pass.autosort)
-		{
-			const int first = previousPass.tr_count;
-			const int count = current_pass.tr_count - previousPass.tr_count;
-			u32 n = GenSortedTo(first, count, sortedPolys[render_pass], out, true);
-			n += GenPrepassTo(first, count, render_pass == pvrrc.render_passes.used() - 1, prepassPolys[render_pass], out + n, n, true);
-			for (auto& poly : sortedPolys[render_pass])
-				poly.first += sortedIndexCount;
-			for (auto& poly : prepassPolys[render_pass])
-				poly.first += sortedIndexCount;
-			sortedIndexCount += n;
-			out += n;
-		}
-		else
-			sortedPolys[render_pass].clear();
-		previousPass = current_pass;
-	}
+	sortedIndexCount = SortPassesTo(&sortedPasses, &prepassPasses, out, true, true);
 }
 
 TileClipping BaseDrawer::SetTileClip(u32 val, vk::Rect2D& clipRect)
@@ -468,7 +427,7 @@ BufferData *Drawer::SortIntoMainBuffer()
 	const u32 vertexBytes = pvrrc.gpu ? 0 : pvrrc.verts.bytes();
 	const u32 modVolBytes = ModVolsOnCpu() ? ModVolList().bytes() : 0;
 	const u32 indexBytes = pvrrc.gpu ? 0 : pvrrc.idx.bytes();
-	const u32 sortedBytes = pvrrc.gpu ? 0 : SortedIndexRoom() * sizeof(u32);
+	const u32 sortedBytes = pvrrc.gpu ? 0 : SortPassesRoom() * sizeof(u32);
 
 	offsets.modVolOffset = vertexBytes + align(vertexBytes, 4);
 	offsets.indexOffset = offsets.modVolOffset + modVolBytes + align(offsets.modVolOffset + modVolBytes, 4);
@@ -566,13 +525,17 @@ bool Drawer::Draw(const Texture *fogTexture, const Texture *paletteTexture)
 			}
 			else if (!settings.pvr.Emulation.AlphaSortMode)
 			{
-				DrawPrepass(cmdBuffer, prepassPolys[render_pass].data(), (u32)prepassPolys[render_pass].size());
-				DrawSorted(cmdBuffer, sortedPolys[render_pass].data(), (u32)sortedPolys[render_pass].size(),
-						render_pass < pvrrc.render_passes.used() - 1);
+				u32 n;
+				const SortTrigDrawParam *draws = SortPassDraws(&prepassPasses, render_pass, &n);
+				DrawPrepass(cmdBuffer, draws, n);
+				draws = SortPassDraws(&sortedPasses, render_pass, &n);
+				DrawSorted(cmdBuffer, draws, n, render_pass < pvrrc.render_passes.used() - 1);
 			}
 			else
 			{
-				DrawPrepass(cmdBuffer, prepassPolys[render_pass].data(), (u32)prepassPolys[render_pass].size());
+				u32 n;
+				const SortTrigDrawParam *draws = SortPassDraws(&prepassPasses, render_pass, &n);
+				DrawPrepass(cmdBuffer, draws, n);
 				SortPParams(previous_pass.tr_count, current_pass.tr_count - previous_pass.tr_count);
 				DrawList(cmdBuffer, ListType_Translucent, true, pvrrc.global_param_tr, previous_pass.tr_count, current_pass.tr_count);
 			}

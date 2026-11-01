@@ -162,19 +162,17 @@ private:
 	/* What every polygon of the frame is drawn with */
 	void SetupFrame();
 	/* The polygons, the volumes and the indexes, and the sorted triangles'
-	 * indexes after those (sortedIndexes) */
+	 * indexes after those, sorted into the index buffer (SortPassesTo()) */
 	bool UploadGeometry();
 
 	/* The device taken by Process() and kept for the Render() after it */
 	bool heldFromProcess = false;
 
 	// Per-triangle sort results
-	std::vector<std::vector<SortTrigDrawParam>> sortedPolys;
-	std::vector<std::vector<u32>> sortedIndexes;
-	u32 sortedIndexCount = 0;
+	grow_buf_t sortedPasses = GROW_BUF_INIT;	/* SortPasses(): a SortList a pass */
+	u32 sortedIndexCount = 0;	/* (their indices: after the frame's, in the index buffer, sorted there) */
 	// ...and the depth prepasses of the sorted lists (rend/sorter.h), their indexes after each pass's sorted ones
-	std::vector<std::vector<SortTrigDrawParam>> prepassPolys;
-	void SortTriangles();
+	grow_buf_t prepassPasses = GROW_BUF_INIT;
 
 	bool ProcessLocked(TA_context* ctx);
 	bool BeginScreen();
@@ -194,8 +192,8 @@ private:
 			ShadowPass shadowPass = ShadowPass::None, const RECT *within = nullptr);
 	void DrawShadowed(u32 listType, const List<PolyParam>& polys, u32 first, u32 last,
 			const ScreenBounds& area, const RECT& scissor);
-	void DrawSorted(const std::vector<SortTrigDrawParam>& polys, bool multipass);
-	void DrawPrepass(const std::vector<SortTrigDrawParam>& polys);
+	void DrawSorted(const SortTrigDrawParam *polys, u32 count, bool multipass);
+	void DrawPrepass(const SortTrigDrawParam *polys, u32 count);
 	bool prepassDraw = false;	// DrawPoly() draws for the depth prepass
 	void DrawList(u32 listType, bool sortTriangles, const List<PolyParam>& polys, u32 first, u32 last);
 	void DrawModVols(int first, int count, const RenderPass& previous_pass, const RenderPass& current_pass);

@@ -17,8 +17,9 @@
 #pragma once
 #include "types.h"
 #include "hw/pvr/Renderer_if.h"
+#include "grow_buf.h"
 
-/* Whether two polygons are drawn the same way, so that GenSorted() makes
+/* Whether two polygons are drawn the same way, so that GenSortedTo() makes
  * one draw of triangles of both that come one after the other */
 static inline bool SortSameDraw(const PolyParam *pp0, const PolyParam *pp1)
 {
@@ -36,20 +37,57 @@ struct SortTrigDrawParam
 	u32 count;
 };
 
-// Sort based on min-z of each triangle.
-// firstProvoking: the renderer takes a flat triangle's colour from its first
-// vertex (Vulkan), where the strip's colours have been moved one triangle
-// back; otherwise from its last (OpenGL).
-void GenSorted(int first, int count, std::vector<SortTrigDrawParam>& pidx_sort, std::vector<u32>& vidx_sort,
-		bool firstProvoking = false);
-/* The triangles of translucent polygons [first, first + count): GenSorted()
- * makes three indices of each, and GenPrepass() at most as many again, so
+/* A list kept from one frame to the next, in memory only ever grown
+ * (grow_buf.h): of draws, @count of them. Zeroed, it is an empty one. */
+struct SortList
+{
+	grow_buf_t buf;
+	u32 count;
+};
+
+static INLINE SortTrigDrawParam *SortDraws(const SortList *list)
+{
+	return (SortTrigDrawParam *)list->buf.data;
+}
+
+/* A render pass's lists, one each, for as many passes as a frame has: the
+ * @passes first of @lists, made (zeroed) where there were fewer; NULL if
+ * there is no memory. SortPassesFree(): every list's memory and theirs. */
+SortList *SortPasses(grow_buf_t *lists, u32 passes);
+void SortPassesFree(grow_buf_t *lists);
+/* The most indices SortPassesTo() writes of this frame */
+u32 SortPassesRoom(void);
+/* Every render pass's sorted triangles (@sorted, a list a pass) and, if
+ * @prepasses, their depth prepasses' (@prepass), the indices of the one
+ * after the other's to @out (6 * SortedTriangles() of each pass's
+ * translucent polygons at most), the draws' first counting from @out; how
+ * many indices. Those passes not sorted have no draws. */
+u32 SortPassesTo(grow_buf_t *sorted, grow_buf_t *prepass, u32 *out, bool prepasses, bool firstProvoking);
+/* Pass @pass's list of @lists, or NULL if there is none */
+static INLINE SortList *SortPass(const grow_buf_t *lists, u32 pass)
+{
+	return pass < lists->size / sizeof(SortList) ? (SortList *)lists->data + pass : NULL;
+}
+/* ...its draws, @count of them: none if there is no list */
+static INLINE const SortTrigDrawParam *SortPassDraws(const grow_buf_t *lists, u32 pass, u32 *count)
+{
+	const SortList *list = SortPass(lists, pass);
+	*count = list != NULL ? list->count : 0;
+	return list != NULL ? SortDraws(list) : NULL;
+}
+
+/* The triangles of translucent polygons [first, first + count): GenSortedTo()
+ * makes three indices of each, and GenPrepassTo() at most as many again, so
  * 6 times this is the room the two need together. */
 u32 SortedTriangles(int first, int count);
-/* GenSorted(), its indices written to @out (3 * SortedTriangles() of room),
+/* Sorted by the min-z of each triangle, its draws into @draws (emptied
+ * first) and its indices written to @out (3 * SortedTriangles() of room),
  * once each and in order, so that it may be the memory the card reads them
- * from: how many. */
-u32 GenSortedTo(int first, int count, std::vector<SortTrigDrawParam>& pidx_sort, u32 *out, bool firstProvoking);
+ * from: how many.
+ * firstProvoking: the renderer takes a flat triangle's colour from its first
+ * vertex (Vulkan), where the strip's colours have been moved one triangle
+ * back; otherwise from its last (OpenGL). */
+u32 GenSortedTo(int first, int count, SortList *draws, u32 *out, bool firstProvoking);
 
 /* The depth prepass of a sorted translucent list (per triangle or per
  * strip). Sorting by triangle or by strip draws a polygon that is behind
@@ -153,15 +191,13 @@ static inline PrepassKey PrepassMakeKey(const PolyParam *pp, u64 texid)
 }
 
 /* The prepass of render pass list [first, first + count) of the
- * translucent polygons: its draws (ppid: a polygon of the group, which says
- * how all of it is drawn; first and count: of @vidx, triangles) and their
- * triangles' indices, with the provoking vertex as GenSorted() has it.
- * @lastPass: see PrepassWanted(). Neither is cleared when nothing is drawn. */
-void GenPrepass(int first, int count, bool lastPass, std::vector<SortTrigDrawParam>& draws, std::vector<u32>& vidx,
-		bool firstProvoking = false);
-/* GenPrepass(), its indices written to @out as GenSortedTo()'s, where the
- * pass's @base'th index is (what its draws' first count from): how many. */
-u32 GenPrepassTo(int first, int count, bool lastPass, std::vector<SortTrigDrawParam>& draws, u32 *out, u32 base,
+ * translucent polygons: its draws, added to @draws (ppid: a polygon of the
+ * group, which says how all of it is drawn; first and count: of the pass's
+ * indices, triangles), and their triangles' indices written to @out as
+ * GenSortedTo()'s, with the provoking vertex as GenSortedTo() has it, where
+ * the pass's @base'th index is (what its draws' first count from): how
+ * many. @lastPass: see PrepassWanted(). */
+u32 GenPrepassTo(int first, int count, bool lastPass, SortList *draws, u32 *out, u32 base,
 		bool firstProvoking);
 /* (the alpha the prepass compares against: 254.5 / 255, the least that writes as 255) */
 #define PREPASS_ALPHA_MIN 0.998039216f
