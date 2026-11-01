@@ -152,8 +152,30 @@ void palette_update()
 		pal_hash_256[i] = XXH32(&PALETTE_RAM[i << 8], 256 * 4, 7);
 }
 
-static std::vector<vram_block*> VramLocks[VRAM_SIZE_MAX / PAGE_SIZE];
+/* The locks on each page of video memory: a list that grows (nullptr
+ * where a lock has gone, used again), and how many are live, the page
+ * being protected while any is. Render thread only. */
+struct VramLockList
+{
+	vram_block **locks;
+	u32 count, size, live;
+};
+static VramLockList VramLocks[VRAM_SIZE_MAX / PAGE_SIZE];
 VArray2 vram;  // vram 32-64b
+
+/* Locks gone, kept for the next (linked by userdata): a texture rendered
+ * to is locked again each frame, and takes one of these, not new memory */
+static vram_block *vramlock_free_blocks;
+
+static vram_block *vramlock_block_new()
+{
+	vram_block *block = vramlock_free_blocks;
+	if (block != nullptr)
+		vramlock_free_blocks = (vram_block *)block->userdata;
+	else
+		block = (vram_block *)malloc(sizeof(vram_block));
+	return block;
+}
 
 //List functions
 //
@@ -164,11 +186,14 @@ void vramlock_list_remove(vram_block* block)
 
 	for (u32 i = base; i <= end; i++)
 	{
-		std::vector<vram_block*>& list = VramLocks[i];
-		for (auto& lock : list)
+		VramLockList& list = VramLocks[i];
+		for (u32 k = 0; k < list.count; k++)
 		{
-			if (lock == block)
-				lock = nullptr;
+			if (list.locks[k] == block)
+			{
+				list.locks[k] = nullptr;
+				list.live--;
+			}
 		}
 	}
 }
@@ -180,15 +205,29 @@ void vramlock_list_add(vram_block* block)
 
 	for (u32 i = base; i <= end; i++)
 	{
-		std::vector<vram_block*>& list = VramLocks[i];
-		// If the list is empty then we need to protect vram, otherwise it's already been done
-		if (list.empty() || std::all_of(list.begin(), list.end(), [](vram_block *block) { return block == nullptr; }))
+		VramLockList& list = VramLocks[i];
+		// If the list has no lock then we need to protect vram, otherwise it's already been done
+		if (list.live == 0)
 			_vmem_protect_vram(i * PAGE_SIZE, PAGE_SIZE);
-		auto it = std::find(list.begin(), list.end(), nullptr);
-		if (it != list.end())
-			*it = block;
+		u32 k = 0;
+		if (list.live < list.count)
+			while (list.locks[k] != nullptr)
+				k++;
 		else
-			list.push_back(block);
+		{
+			if (list.count == list.size)
+			{
+				const u32 size = list.size != 0 ? list.size * 2 : 4;
+				vram_block **locks = (vram_block **)realloc(list.locks, size * sizeof(vram_block *));
+				if (locks == nullptr)
+					die("Out of memory");
+				list.locks = locks;
+				list.size = size;
+			}
+			k = list.count++;
+		}
+		list.locks[k] = block;
+		list.live++;
 	}
 }
  
@@ -219,24 +258,26 @@ static void libCore_vramlock_Unlock_block_wb(vram_block* block);
 static void vramlock_collect()
 {
 	vram_writes.Collect([](unsigned page) {
-		std::vector<vram_block *>& list = VramLocks[page];
+		VramLockList& list = VramLocks[page];
 
 		vram_write_epoch++;
 
-		for (auto& lock : list)
+		for (u32 k = 0; k < list.count; k++)
 		{
+			vram_block *lock = list.locks[k];
 			if (lock != nullptr)
 			{
-            rend_text_invl(lock);
+				rend_text_invl(lock);
 
-				if (lock != nullptr)
+				if (list.locks[k] != nullptr)
 				{
 					ERROR_LOG(PVR, "Error : pvr is supposed to remove lock");
 					die("Invalid state");
 				}
 			}
 		}
-		list.clear();
+		list.count = 0;
+		list.live = 0;
 	});
 }
 
@@ -259,7 +300,9 @@ void libCore_vramlock_Lock(u32 start_offset64, u32 end_offset64, BaseTextureCach
 
 	if (texture->lock_block == nullptr)
 	{
-		vram_block* block=(vram_block* )malloc(sizeof(vram_block));
+		vram_block* block = vramlock_block_new();
+		if (block == nullptr)
+			return;
 
 		block->end=end_offset64;
 		block->start=start_offset64;
@@ -381,7 +424,8 @@ bool VramLockedWrite(u8* address)
 static void libCore_vramlock_Unlock_block_wb(vram_block* block)
 {
 	vramlock_list_remove(block);
-	free(block);
+	block->userdata = vramlock_free_blocks;
+	vramlock_free_blocks = block;
 }
 
 #ifdef HAVE_TEXUPSCALE

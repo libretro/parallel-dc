@@ -19,8 +19,6 @@
     along with reicast.  If not, see <https://www.gnu.org/licenses/>.
  */
 #pragma once
-#include <map>
-#include <deque>
 #include "types.h"
 #include "decoder.h"
 #include "hw/sh4/modules/mmu.h"
@@ -115,7 +113,7 @@ public:
 			{
 				for (int i = 0; i < op->rd.count(); i++)
 				{
-					verify(reg_alloced.count((Sh4RegType)(op->rd._reg + i)) == 0 || !reg_alloced[(Sh4RegType)(op->rd._reg + i)].write_back);
+					verify(!IsAlloced((Sh4RegType)(op->rd._reg + i)) || !alloced[op->rd._reg + i].write_back);
 					FlushReg((Sh4RegType)(op->rd._reg + i), true);
 				}
 			}
@@ -123,7 +121,7 @@ public:
 			{
 				for (int i = 0; i < op->rd2.count(); i++)
 				{
-					verify(reg_alloced.count((Sh4RegType)(op->rd2._reg + i)) == 0 || !reg_alloced[(Sh4RegType)(op->rd2._reg + i)].write_back);
+					verify(!IsAlloced((Sh4RegType)(op->rd2._reg + i)) || !alloced[op->rd2._reg + i].write_back);
 					FlushReg((Sh4RegType)(op->rd2._reg + i), true);
 				}
 			}
@@ -135,27 +133,28 @@ public:
 
 	void OpEnd(shil_opcode* op)
 	{
-		for (Sh4RegType reg : pending_flushes)
+		for (u32 pi = 0; pi < pending_count; pi++)
 		{
-			verify(!reg_alloced[reg].write_back);
-			reg_alloced.erase(reg);
+			const Sh4RegType reg = pending_flushes[pi];
+			verify(!alloced[reg].write_back);
+			Free(reg);
 		}
-		pending_flushes.clear();
+		pending_count = 0;
 
 		// Flush normally
-		for (auto const& reg : reg_alloced)
+		for (int reg = NextAlloced(-1); reg >= 0; reg = NextAlloced(reg))
 		{
-			FlushReg(reg.first, false);
+			FlushReg((Sh4RegType)reg, false);
 		}
 
 		// Hard flush all dirty regs. Useful for troubleshooting
-//		while (!reg_alloced.empty())
+//		while (!NoneAlloced())
 //		{
-//			auto it = reg_alloced.begin();
+//			const Sh4RegType it = (Sh4RegType)NextAlloced(-1);
 //
-//			if (it->second.dirty)
-//				it->second.write_back = true;
-//			FlushReg(it->first, true);
+//			if (alloced[it].dirty)
+//				alloced[it].write_back = true;
+//			FlushReg(it, true);
 //		}
 
 		// Final writebacks
@@ -242,16 +241,16 @@ public:
 
 	bool reg_used(nreg_t host_reg)
 	{
-		for (auto const& reg : reg_alloced)
-			if ((nreg_t)reg.second.host_reg == host_reg && !IsFloat(reg.first))
+		for (int reg = NextAlloced(-1); reg >= 0; reg = NextAlloced(reg))
+			if ((nreg_t)alloced[reg].host_reg == host_reg && !IsFloat((Sh4RegType)reg))
 				return true;
 		return false;
 	}
 
 	bool regf_used(nregf_t host_reg)
 	{
-		for (auto const& reg : reg_alloced)
-			if ((nregf_t)reg.second.host_reg == host_reg && IsFloat(reg.first))
+		for (int reg = NextAlloced(-1); reg >= 0; reg = NextAlloced(reg))
+			if ((nregf_t)alloced[reg].host_reg == host_reg && IsFloat((Sh4RegType)reg))
 				return true;
 		return false;
 	}
@@ -260,8 +259,8 @@ public:
 		verify(final_opend || block->oplist.empty());
 		final_opend = false;
 		FlushAllRegs(true);
-		verify(reg_alloced.empty());
-		verify(pending_flushes.empty());
+		verify(NoneAlloced());
+		verify(pending_count == 0);
 		block = NULL;
 		host_fregs.clear();
 		host_gregs.clear();
@@ -289,28 +288,28 @@ private:
 
 	nreg_t mapg(Sh4RegType reg)
 	{
-		verify(reg_alloced.count(reg));
-		return (nreg_t)reg_alloced[reg].host_reg;
+		verify(IsAlloced(reg));
+		return (nreg_t)alloced[reg].host_reg;
 	}
 
 	nregf_t mapf(Sh4RegType reg)
 	{
-		verify(reg_alloced.count(reg));
-		return (nregf_t)reg_alloced[reg].host_reg;
+		verify(IsAlloced(reg));
+		return (nregf_t)alloced[reg].host_reg;
 	}
 
 	bool IsAllocf(Sh4RegType reg)
 	{
 		if (!IsFloat(reg))
 			return false;
-		return reg_alloced.find(reg) != reg_alloced.end();
+		return IsAlloced(reg);
 	}
 
 	bool IsAllocg(Sh4RegType reg)
 	{
 		if (IsFloat(reg))
 			return false;
-		return reg_alloced.find(reg) != reg_alloced.end();
+		return IsAlloced(reg);
 	}
 
 	bool IsAllocAny(Sh4RegType reg)
@@ -337,14 +336,13 @@ private:
 
 	void FlushReg(Sh4RegType reg_num, bool hard)
 	{
-		auto reg = reg_alloced.find(reg_num);
-		if (reg != reg_alloced.end())
+		if (IsAlloced(reg_num))
 		{
-			WriteBackReg(reg->first, reg->second);
+			WriteBackReg(reg_num, alloced[reg_num]);
 			if (hard)
 			{
-				u32 host_reg = reg->second.host_reg;
-				reg_alloced.erase(reg);
+				u32 host_reg = alloced[reg_num].host_reg;
+				Free(reg_num);
 				if (IsFloat(reg_num))
 					host_fregs.push_front((nregf_t)host_reg);
 				else
@@ -357,13 +355,13 @@ private:
 	{
 		if (hard)
 		{
-			while (!reg_alloced.empty())
-				FlushReg(reg_alloced.begin()->first, true);
+			while (!NoneAlloced())
+				FlushReg((Sh4RegType)NextAlloced(-1), true);
 		}
 		else
 		{
-			for (auto const& reg : reg_alloced)
-				FlushReg(reg.first, false);
+			for (int reg = NextAlloced(-1); reg >= 0; reg = NextAlloced(reg))
+				FlushReg((Sh4RegType)reg, false);
 		}
 	}
 
@@ -374,8 +372,7 @@ private:
 		for (u32 i = 0; i < param.count(); i++)
 		{
 			const Sh4RegType sh4reg = (Sh4RegType)(param._reg + i);
-			auto it = reg_alloced.find(sh4reg);
-			if (it == reg_alloced.end())
+			if (!IsAlloced(sh4reg))
 			{
 				u32 host_reg;
 				if (param.is_r32i())
@@ -398,7 +395,7 @@ private:
 					host_reg = host_fregs.back();
 					host_fregs.pop_back();
 				}
-				reg_alloced[sh4reg] = { host_reg, param.version[i], false, false };
+				Alloc(sh4reg, { host_reg, (u16)param.version[i], false, false });
 				if (!fast_forwarding)
 				{
 					ssa_printf("PL %s.%d -> %cx", name_reg(sh4reg).c_str(), param.version[i], 'a' + host_reg);
@@ -447,8 +444,7 @@ private:
 		for (u32 i = 0; i < param.count(); i++)
 		{
 			const Sh4RegType sh4reg = (Sh4RegType)(param._reg + i);
-			auto it = reg_alloced.find(sh4reg);
-			if (it == reg_alloced.end())
+			if (!IsAlloced(sh4reg))
 			{
 				u32 host_reg;
 				if (param.is_r32i())
@@ -471,18 +467,18 @@ private:
 					host_reg = host_fregs.back();
 					host_fregs.pop_back();
 				}
-				reg_alloced[sh4reg] = { host_reg, param.version[i], NeedsWriteBack(sh4reg, param.version[i]), true };
-				ssa_printf("   %s.%d -> %cx %s", name_reg(sh4reg).c_str(), param.version[i], 'a' + host_reg, reg_alloced[sh4reg].write_back ? "(wb)" : "");
+				Alloc(sh4reg, { host_reg, (u16)param.version[i], NeedsWriteBack(sh4reg, param.version[i]), true });
+				ssa_printf("   %s.%d -> %cx %s", name_reg(sh4reg).c_str(), param.version[i], 'a' + host_reg, alloced[sh4reg].write_back ? "(wb)" : "");
 			}
 			else
 			{
-				reg_alloc& reg = it->second;
+				reg_alloc& reg = alloced[sh4reg];
 				verify(!reg.write_back);
 				reg.write_back = NeedsWriteBack(sh4reg, param.version[i]);
 				reg.dirty = true;
 				reg.version = param.version[i];
 			}
-			verify(reg_alloced[sh4reg].dirty);
+			verify(alloced[sh4reg].dirty);
 		}
 	}
 
@@ -491,14 +487,16 @@ private:
 		Sh4RegType spilled_reg = Sh4RegType::NoReg;
 		int latest_use = -1;
 
-		for (auto const& reg : reg_alloced)
+		for (int ri = NextAlloced(-1); ri >= 0; ri = NextAlloced(ri))
 		{
-			if (IsFloat(reg.first) != freg)
+			const Sh4RegType reg_first = (Sh4RegType)ri;
+			const reg_alloc& reg_second = alloced[ri];
+			if (IsFloat(reg_first) != freg)
 				continue;
 			// Don't spill already spilled regs
 			bool pending = false;
-			for (auto& pending_reg : pending_flushes)
-				if (pending_reg == reg.first)
+			for (u32 pi = 0; pi < pending_count; pi++)
+				if (pending_flushes[pi] == reg_first)
 				{
 					pending = true;
 					break;
@@ -508,7 +506,7 @@ private:
 
 			// Don't spill current op scalar dest regs
 			shil_opcode* op = &block->oplist[opnum];
-			if (DefsReg(op, reg.first, false))
+			if (DefsReg(op, reg_first, false))
 				continue;
 
 			// Find the first use, but ignore vec ops
@@ -517,7 +515,7 @@ private:
 			{
 				op = &block->oplist[i];
 				// Vector ops don't use reg alloc
-				if (UsesReg(op, reg.first, reg.second.version, false))
+				if (UsesReg(op, reg_first, reg_second.version, false))
 				{
 					first_use = i;
 					break;
@@ -526,13 +524,13 @@ private:
 			if (first_use == -1)
 			{
 				latest_use = -1;
-				spilled_reg = reg.first;
+				spilled_reg = reg_first;
 				break;
 			}
 			if (first_use > latest_use && first_use > opnum)
 			{
 				latest_use = first_use;
-				spilled_reg = reg.first;
+				spilled_reg = reg_first;
 			}
 		}
 		if (latest_use != -1)
@@ -540,8 +538,8 @@ private:
 			ssa_printf("RegAlloc: non optimal alloc? reg %s used in op %d", name_reg(spilled_reg).c_str(), latest_use);
 			spills++;
 			// need to write-back if dirty so reload works
-			if (reg_alloced[spilled_reg].dirty)
-				reg_alloced[spilled_reg].write_back = true;
+			if (alloced[spilled_reg].dirty)
+				alloced[spilled_reg].write_back = true;
 		}
 		verify(spilled_reg != Sh4RegType::NoReg);
 
@@ -553,13 +551,14 @@ private:
 			// It's possible that the same host reg is allocated to a source operand
 			// and to the (future) dest operand. In this case we want to keep both mappings
 			// until the current op is done.
-			WriteBackReg(spilled_reg, reg_alloced[spilled_reg]);
-			u32 host_reg = reg_alloced[spilled_reg].host_reg;
+			WriteBackReg(spilled_reg, alloced[spilled_reg]);
+			u32 host_reg = alloced[spilled_reg].host_reg;
 			if (IsFloat(spilled_reg))
 				host_fregs.push_front((nregf_t)host_reg);
 			else
 				host_gregs.push_front((nreg_t)host_reg);
-			pending_flushes.push_back(spilled_reg);
+			verify(pending_count < sh4_reg_count);
+			pending_flushes[pending_count++] = spilled_reg;
 		}
 	}
 
@@ -599,10 +598,68 @@ private:
 	}
 
 	RuntimeBlockInfo* block = NULL;
-   std::deque<nreg_t> host_gregs;
-   std::deque<nregf_t> host_fregs;
-   std::vector<Sh4RegType> pending_flushes;
-	std::map<Sh4RegType, reg_alloc> reg_alloced;
+	/* The host registers free, the next taken from the back (a ring: one
+	 * given back goes to the front) */
+	template<typename T>
+	struct HostRegs
+	{
+		enum { Max = 64 };
+		T regs[Max];
+		u32 head = 0, n = 0;
+		bool empty() const { return n == 0; }
+		size_t size() const { return n; }
+		void clear() { head = n = 0; }
+		void push_back(T v) { verify(n < Max); regs[(head + n++) % Max] = v; }
+		void push_front(T v) { verify(n < Max); head = (head + Max - 1) % Max; regs[head] = v; n++; }
+		T back() const { return regs[(head + n - 1) % Max]; }
+		void pop_back() { n--; }
+	};
+	HostRegs<nreg_t> host_gregs;
+	HostRegs<nregf_t> host_fregs;
+	/* Registers spilled for a destination, let go at the end of the op */
+	Sh4RegType pending_flushes[sh4_reg_count];
+	u32 pending_count = 0;
+	/* The guest registers in host ones: a register's entry, and a bit each
+	 * for those that have one (in register order, as they are gone through) */
+	static_assert(sh4_reg_count <= 128, "two words of bits");
+	reg_alloc alloced[sh4_reg_count] = {};
+	u64 alloced_bits[2] = {};
+	bool IsAlloced(Sh4RegType reg) const
+	{
+		return reg >= 0 && reg < sh4_reg_count && ((alloced_bits[reg >> 6] >> (reg & 63)) & 1) != 0;
+	}
+	/* the first one with a host register after @after (-1: from the start); -1 if none */
+	int NextAlloced(int after) const
+	{
+		for (int w = (after + 1) >> 6; w < 2; w++)
+		{
+			u64 bits = alloced_bits[w];
+			if (w == (after + 1) >> 6)
+				bits &= ~0ull << ((after + 1) & 63);
+			if (bits != 0)
+			{
+				int b = 0;
+				while ((bits & 1) == 0)
+				{
+					bits >>= 1;
+					b++;
+				}
+				return w * 64 + b;
+			}
+		}
+		return -1;
+	}
+	bool NoneAlloced() const { return (alloced_bits[0] | alloced_bits[1]) == 0; }
+	void Alloc(Sh4RegType reg, const reg_alloc& a)
+	{
+		alloced[reg] = a;
+		alloced_bits[reg >> 6] |= 1ull << (reg & 63);
+	}
+	void Free(Sh4RegType reg)
+	{
+		alloced[reg] = reg_alloc();
+		alloced_bits[reg >> 6] &= ~(1ull << (reg & 63));
+	}
 	int opnum = 0;
 
 	bool final_opend = false;

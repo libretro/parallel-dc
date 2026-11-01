@@ -197,7 +197,7 @@ bool SSAOptimizer::ExecuteConstOp(shil_opcode* op)
 			{
 				u64 res =  op->op == shop_div32u ? shil_opcl_div32u::f1::impl(rs1, rs2, rs3) : shil_opcl_div32s::f1::impl(rs1, rs2, rs3);
 				rd = (u32)res;
-				constprop_values[RegValue(op->rd, 1)] = res >> 32;
+				constprop_values.Set(RegValue(op->rd, 1).key()) = res >> 32;
 
 				shil_param op2_rd =  shil_param((Sh4RegType)(op->rd._reg + 1));
 				op2_rd.version[0] = op->rd.version[1];
@@ -324,7 +324,7 @@ bool SSAOptimizer::ExecuteConstOp(shil_opcode* op)
 				shil_opcl_fsca::fsca_table::impl(tmp, rs1);
 				rd = reinterpret_cast<u32&>(tmp[0]);
 				u32 rd_1 = reinterpret_cast<u32&>(tmp[1]);
-				constprop_values[RegValue(op->rd, 1)] = rd_1;
+				constprop_values.Set(RegValue(op->rd, 1).key()) = rd_1;
 
 				shil_param op2_rd =  shil_param((Sh4RegType)(op->rd._reg + 1));
 				op2_rd.version[0] = op->rd.version[1];
@@ -360,9 +360,9 @@ bool SSAOptimizer::ExecuteConstOp(shil_opcode* op)
 			break;
 		}
 
-		constprop_values[RegValue(op->rd)] = rd;
+		constprop_values.Set(RegValue(op->rd).key()) = rd;
 		if (op->rd2.is_r32())
-			constprop_values[RegValue(op->rd2)] = rd2;
+			constprop_values.Set(RegValue(op->rd2).key()) = rd2;
 		ReplaceByMov32(*op, rd);
 
 		return true;

@@ -19,14 +19,128 @@
     along with reicast.  If not, see <https://www.gnu.org/licenses/>.
  */
 #include <stdio.h>
-#include <set>
-#include <map>
-#include <deque>
 #include <math.h>
 #include "types.h"
 #include "decoder.h"
 #include "hw/sh4/modules/mmu.h"
 #include "hw/sh4/sh4_mem.h"
+#include "rend/grow_buf.h"
+
+/* A map of (register, version) to a value, the keys in order, in memory
+ * kept from one block compiled to the next (a few of these a thread, taken
+ * and given back): a block has a few hundred operations at most, so a
+ * sorted array, searched by halves. Iterated in the order std::map has. */
+class RegValueMap
+{
+public:
+	RegValueMap()
+	{
+		Pool& pool = TakePool();
+		if (pool.count != 0)
+			buf = pool.bufs[--pool.count];
+	}
+	~RegValueMap()
+	{
+		Pool& pool = TakePool();
+		if (pool.count < MaxPooled)
+			pool.bufs[pool.count++] = buf;
+		else
+			grow_buf_free(&buf);
+	}
+	RegValueMap(const RegValueMap&) = delete;
+	RegValueMap& operator=(const RegValueMap&) = delete;
+
+	static u64 Key(Sh4RegType reg, u32 version)
+	{
+		/* (the register signed, as the pair compares it) */
+		return ((u64)((u32)reg ^ 0x80000000u) << 32) | version;
+	}
+	static Sh4RegType KeyReg(u64 key)
+	{
+		return (Sh4RegType)(s32)((u32)(key >> 32) ^ 0x80000000u);
+	}
+	static u32 KeyVersion(u64 key)
+	{
+		return (u32)key;
+	}
+
+	u32 Count() const { return count; }
+	u64 KeyAt(u32 i) const { return Entries()[i].key; }
+	u64 ValueAt(u32 i) const { return Entries()[i].value; }
+	void Clear() { count = 0; }
+
+	/* where @key is, or -1 */
+	int Find(u64 key) const
+	{
+		const u32 i = LowerBound(key);
+		return i < count && Entries()[i].key == key ? (int)i : -1;
+	}
+	bool Contains(u64 key) const { return Find(key) >= 0; }
+
+	/* @key's value, made (0) if it had none */
+	u64& Set(u64 key)
+	{
+		const u32 i = LowerBound(key);
+		if (i < count && Entries()[i].key == key)
+			return Entries()[i].value;
+		Entry *e = (Entry *)grow_buf_reserve_keep(&buf, (count + 1) * sizeof(Entry));
+		if (e == nullptr)
+			die("Out of memory");
+		memmove(&e[i + 1], &e[i], (count - i) * sizeof(Entry));
+		e[i].key = key;
+		e[i].value = 0;
+		count++;
+		return e[i].value;
+	}
+
+	/* those whose key @drop says to, gone; the others in their order */
+	template<typename F>
+	void EraseIf(F drop)
+	{
+		Entry *e = Entries();
+		u32 kept = 0;
+		for (u32 i = 0; i < count; i++)
+			if (!drop(e[i].key))
+				e[kept++] = e[i];
+		count = kept;
+	}
+
+private:
+	struct Entry
+	{
+		u64 key;
+		u64 value;
+	};
+	enum { MaxPooled = 8 };
+	struct Pool
+	{
+		grow_buf_t bufs[MaxPooled];
+		u32 count;
+	};
+	static Pool& TakePool()
+	{
+		static thread_local Pool pool;
+		return pool;
+	}
+	Entry *Entries() const { return (Entry *)buf.data; }
+	u32 LowerBound(u64 key) const
+	{
+		const Entry *e = Entries();
+		u32 lo = 0, hi = count;
+		while (lo < hi)
+		{
+			const u32 mid = (lo + hi) / 2;
+			if (e[mid].key < key)
+				lo = mid + 1;
+			else
+				hi = mid;
+		}
+		return lo;
+	}
+
+	grow_buf_t buf = GROW_BUF_INIT;
+	u32 count = 0;
+};
 
 class SSAOptimizer
 {
@@ -95,6 +209,8 @@ private:
 
 		Sh4RegType get_reg() const { return first; }
 		u32 get_version() const { return second; }
+		u64 key() const { return RegValueMap::Key(first, second); }
+		static RegValue from_key(u64 k) { return RegValue(RegValueMap::KeyReg(k), RegValueMap::KeyVersion(k)); }
 	};
 
 	void PrintBlock()
@@ -145,11 +261,11 @@ private:
 	{
 		if (param.is_r32())
 		{
-			auto it = constprop_values.find(RegValue(param));
-			if (it != constprop_values.end())
+			const int it = constprop_values.Find(RegValue(param).key());
+			if (it >= 0)
 			{
 				param.type = FMT_IMM;
-				param._imm = it->second;
+				param._imm = (u32)constprop_values.ValueAt((u32)it);
 				stats.prop_constants++;
 			}
 		}
@@ -174,41 +290,27 @@ private:
 
 			if (op.op == shop_ifb)
 			{
-				constprop_values.clear();
+				constprop_values.Clear();
 			}
 			else if (op.op == shop_sync_sr)
 			{
-				for (auto it = constprop_values.begin(); it != constprop_values.end(); )
-				{
-					Sh4RegType reg = it->first.get_reg();
-					if (reg == reg_sr_status || reg == reg_old_sr_status || (reg >= reg_r0 && reg <= reg_r7)
-							|| (reg >= reg_r0_Bank && reg <= reg_r7_Bank))
-						it = constprop_values.erase(it);
-					else
-						it++;
-				}
+				constprop_values.EraseIf([](u64 key) {
+					const Sh4RegType reg = RegValueMap::KeyReg(key);
+					return reg == reg_sr_status || reg == reg_old_sr_status || (reg >= reg_r0 && reg <= reg_r7)
+							|| (reg >= reg_r0_Bank && reg <= reg_r7_Bank);
+				});
 			}
 			else if (op.op == shop_div1)
 			{
 				// it changes the status register: what was known of it is not any more
-				for (auto it = constprop_values.begin(); it != constprop_values.end(); )
-				{
-					if (it->first.get_reg() == reg_sr_status)
-						it = constprop_values.erase(it);
-					else
-						it++;
-				}
+				constprop_values.EraseIf([](u64 key) { return RegValueMap::KeyReg(key) == reg_sr_status; });
 			}
 			else if (op.op == shop_sync_fpscr)
 			{
-				for (auto it = constprop_values.begin(); it != constprop_values.end(); )
-				{
-					Sh4RegType reg = it->first.get_reg();
-					if (reg == reg_fpscr || reg == reg_old_fpscr || (reg >= reg_fr_0 && reg <= reg_xf_15))
-						it = constprop_values.erase(it);
-					else
-						it++;
-				}
+				constprop_values.EraseIf([](u64 key) {
+					const Sh4RegType reg = RegValueMap::KeyReg(key);
+					return reg == reg_fpscr || reg == reg_old_fpscr || (reg >= reg_fr_0 && reg <= reg_xf_15);
+				});
 			}
 			else if (op.op == shop_readm || op.op == shop_writem)
 			{
@@ -278,7 +380,7 @@ private:
 								break;
 							}
 							ReplaceByMov32(op, v);
-							constprop_values[RegValue(op.rd)] = v;
+							constprop_values.Set(RegValue(op.rd).key()) = v;
 						}
 					}
 				}
@@ -340,7 +442,7 @@ private:
 	void DeadCodeRemovalPass()
 	{
 		u32 last_versions[sh4_reg_count];
-		std::set<RegValue> uses;
+		RegValueMap uses;	/* (a set: the values unused) */
 
 		memset(last_versions, -1, sizeof(last_versions));
 		for (int opnum = block->oplist.size() - 1; opnum >= 0; opnum--)
@@ -397,12 +499,12 @@ private:
 					{
 						last_versions[op.rd._reg + i] = op.rd.version[i];
 						unused_rd = false;
-						writeback_values.insert(RegValue(op.rd, i));
+						writeback_values.Set(RegValue(op.rd, i).key());
 					}
 					else
 					{
 						verify(op.rd.version[i] < last_versions[op.rd._reg + i]);
-						if (uses.find(RegValue(op.rd, i)) != uses.end())
+						if (uses.Contains(RegValue(op.rd, i).key()))
 						{
 							unused_rd = false;
 						}
@@ -419,12 +521,12 @@ private:
 					{
 						last_versions[op.rd2._reg + i] = op.rd2.version[i];
 						unused_rd = false;
-						writeback_values.insert(RegValue(op.rd2, i));
+						writeback_values.Set(RegValue(op.rd2, i).key());
 					}
 					else
 					{
 						verify(op.rd2.version[i] < last_versions[op.rd2._reg + i]);
-						if (uses.find(RegValue(op.rd2, i)) != uses.end())
+						if (uses.Contains(RegValue(op.rd2, i).key()))
 						{
 							unused_rd = false;
 						}
@@ -443,17 +545,17 @@ private:
 				if (op.rs1.is_reg())
 				{
 					for (int i = 0; i < op.rs1.count(); i++)
-						uses.insert(RegValue(op.rs1, i));
+						uses.Set(RegValue(op.rs1, i).key());
 				}
 				if (op.rs2.is_reg())
 				{
 					for (int i = 0; i < op.rs2.count(); i++)
-						uses.insert(RegValue(op.rs2, i));
+						uses.Set(RegValue(op.rs2, i).key());
 				}
 				if (op.rs3.is_reg())
 				{
 					for (int i = 0; i < op.rs3.count(); i++)
-						uses.insert(RegValue(op.rs3, i));
+						uses.Set(RegValue(op.rs3, i).key());
 				}
 			}
 		}
@@ -575,7 +677,7 @@ private:
 
 	void DeadRegisterPass()
 	{
-		std::map<RegValue, RegValue> aliases;		// (dest reg, version) -> (source reg, version)
+		RegValueMap aliases;		// (dest reg, version) -> (source reg, version), as keys
 
 		// Find aliases
 		for (shil_opcode& op : block->oplist)
@@ -585,19 +687,24 @@ private:
 			{
 				RegValue dest_reg(op.rd);
 				RegValue src_reg(op.rs1);
-				auto it = aliases.find(src_reg);
-				if (it != aliases.end())
+				const int it = aliases.Find(src_reg.key());
+				if (it >= 0)
+				{
 					// use the final value if the src is itself aliased
-					aliases[dest_reg] = it->second;
+					const u64 final_src = aliases.ValueAt((u32)it);
+					aliases.Set(dest_reg.key()) = final_src;
+				}
 				else
-					aliases[dest_reg] = src_reg;
+					aliases.Set(dest_reg.key()) = src_reg.key();
 			}
 		}
 
 		// Attempt to eliminate them
-		for (auto& alias : aliases)
+		for (u32 a = 0; a < aliases.Count(); a++)
 		{
-			if (writeback_values.count(alias.first) > 0)
+			const RegValue alias_from = RegValue::from_key(aliases.KeyAt(a));
+			const RegValue alias_to = RegValue::from_key(aliases.ValueAt(a));
+			if (writeback_values.Contains(alias_from.key()))
 				continue;
 
 			// Do a first pass to check that we can replace the value
@@ -608,17 +715,17 @@ private:
 			{
 				shil_opcode* op = &block->oplist[opnum];
 				// find def
-				if (op->rd.is_r32() && RegValue(op->rd) == alias.first)
+				if (op->rd.is_r32() && RegValue(op->rd) == alias_from)
 					defnum = opnum;
-				else if (op->rd2.is_r32() && RegValue(op->rd2) == alias.first)
+				else if (op->rd2.is_r32() && RegValue(op->rd2) == alias_from)
 					defnum = opnum;
 
 				// find alias redef
 				if (aliasdef == (size_t)-1)
 				{
-					if (DefinesHigherVersion(op->rd, alias.second))
+					if (DefinesHigherVersion(op->rd, alias_to))
 						aliasdef = opnum;
-					else if (DefinesHigherVersion(op->rd2, alias.second))
+					else if (DefinesHigherVersion(op->rd2, alias_to))
 						aliasdef = opnum;
 					/* An instruction left to the interpreter can change any
 					 * register, and none of them is down as written by it:
@@ -629,7 +736,7 @@ private:
 				}
 
 				// find last use
-				if (UsesRegValue(op->rs1, alias.first))
+				if (UsesRegValue(op->rs1, alias_from))
 				{
 					if (op->rs1.count() == 1)
 						usenum = opnum;
@@ -640,7 +747,7 @@ private:
 						break;
 					}
 				}
-				else if (UsesRegValue(op->rs2, alias.first))
+				else if (UsesRegValue(op->rs2, alias_from))
 				{
 					if (op->rs2.count() == 1)
 						usenum = opnum;
@@ -651,7 +758,7 @@ private:
 						break;
 					}
 				}
-				else if (UsesRegValue(op->rs3, alias.first))
+				else if (UsesRegValue(op->rs3, alias_from))
 				{
 					if (op->rs3.count() == 1)
 						usenum = opnum;
@@ -671,9 +778,9 @@ private:
 			for (size_t opnum = defnum + 1; opnum <= usenum && usenum != (size_t)-1; opnum++)
 			{
 				shil_opcode* op = &block->oplist[opnum];
-				ReplaceByAlias(op->rs1, alias.first, alias.second);
-				ReplaceByAlias(op->rs2, alias.first, alias.second);
-				ReplaceByAlias(op->rs3, alias.first, alias.second);
+				ReplaceByAlias(op->rs1, alias_from, alias_to);
+				ReplaceByAlias(op->rs2, alias_from, alias_to);
+				ReplaceByAlias(op->rs3, alias_from, alias_to);
 			}
 			stats.dead_registers++;
 			//printf("%08x DREG %s\n", block->vaddr + block->oplist[defnum].guest_offs, block->oplist[defnum].dissasm().c_str());
@@ -742,7 +849,7 @@ private:
 	}
 
 	RuntimeBlockInfo* block;
-	std::set<RegValue> writeback_values;
+	RegValueMap writeback_values;	/* (a set) */
 
 	struct {
 		u32 prop_constants = 0;
@@ -758,6 +865,6 @@ private:
 	// add version pass
 	u32 reg_versions[sh4_reg_count];
 	// const prop pass
-	std::map<RegValue, u32> constprop_values;	// (reg num, version) -> value
+	RegValueMap constprop_values;	// (reg num, version) -> value
 	int opnum = 0;
 };
