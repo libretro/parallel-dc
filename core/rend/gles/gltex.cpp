@@ -773,7 +773,7 @@ static bool rtt_gl_begin(const RttWatch *watch, GlRttCopy& c)
 	glReadPixels(x0, y0, watch->w, watch->h, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
 	if (c.fence != nullptr)
 		glDeleteSync(c.fence);
-	c.fence = glFenceSync(GL_SYNC_GPU_COMMANDS_COMPLETE, 0);
+	c.fence = (GLsync)glFenceSync(GL_SYNC_GPU_COMMANDS_COMPLETE, 0);
 	c.serial = watch->serial;
 	c.tex = watch->tex;
 	c.w = watch->w;
@@ -788,7 +788,7 @@ static void rtt_gl_copies(const RttWatch *const *watches, unsigned count)
 {
 	GLint was_fbo = 0, was_pack = 4, was_pbo = 0;
 	const u64 since = rtt_stamp;
-	bool any = false;
+	GLsync last = nullptr;
 
 	glGetIntegerv(GL_FRAMEBUFFER_BINDING, &was_fbo);
 	glGetIntegerv(GL_PACK_ALIGNMENT, &was_pack);
@@ -801,13 +801,16 @@ static void rtt_gl_copies(const RttWatch *const *watches, unsigned count)
 		GlRttCopy *c = rtt_gl_copy_free(since);
 		if (c == nullptr)
 			break;
-		any |= rtt_gl_begin(watches[i], *c);
+		if (rtt_gl_begin(watches[i], *c))
+			last = c->fence;
 	}
-	if (any)
+	if (last != nullptr)
 	{
 		rtt_gl_detach();
-		/* (on their way to the card now, not with whatever comes next) */
-		glFlush();
+		/* (on their way to the card now, not with whatever comes next: a
+		 * wait of no time that flushes, which glsm has where it has no
+		 * glFlush) */
+		glClientWaitSync(last, GL_SYNC_FLUSH_COMMANDS_BIT, 0);
 	}
 	glBindBuffer(GL_PIXEL_PACK_BUFFER, was_pbo);
 	glBindFramebuffer(RARCH_GL_FRAMEBUFFER, was_fbo);

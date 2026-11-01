@@ -25,6 +25,8 @@ name: Vulkan negotiation
 # ES, each renderer (tools/gl/gl_clip.sh).
 # And a state saved while a render to a texture is still on the card, every
 # frame run ahead, with OpenGL and OpenGL ES (tools/gl/gl_ahead.sh).
+# And the OpenGL renderers compiled as macOS (clang) and the Switch (libnx)
+# build them, through glsm's own GL functions (tools/gl/gl_shapes.sh).
 
 on:
   push:
@@ -105,7 +107,9 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
             build-essential libgl1-mesa-dev mesa-vulkan-drivers vulkan-validationlayers libvulkan1 \
-            glslang-tools mingw-w64 wine wine64 xvfb libegl1-mesa-dev libgl1-mesa-dri
+            glslang-tools mingw-w64 wine wine64 xvfb libegl1-mesa-dev libgl1-mesa-dri clang
+      - name: The OpenGL renderers as macOS and the Switch compile them
+        run: sh tools/gl/gl_shapes.sh
       - name: Build the core
         run: make -j"$(nproc)"
       - name: Negotiation v2 and v1
