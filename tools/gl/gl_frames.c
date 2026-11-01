@@ -13,7 +13,11 @@
  * an OpenGL core one; GLF_EVERY=1 prints a checksum of every frame the
  * core hands over, "frame N SIZE SUM", for runs to be compared frame for
  * frame (the frames a game writes into its framebuffer itself among them,
- * which a run's last frame seldom is).
+ * which a run's last frame seldom is). GLF_AHEAD=n runs the frames from
+ * the n-th on as a frontend's run-ahead of one frame does: the frame, a
+ * state saved, the frame after it (the one shown) and the state loaded
+ * back. The picture is then the one a plain run of one frame more shows,
+ * for whatever a state carries (tools/gl/gl_ahead.sh).
  *
  * Built with: cc -o gl_frames gl_frames.c -lEGL -lGL -ldl */
 #define _GNU_SOURCE
@@ -179,6 +183,12 @@ int main(int argc, char **argv)
    void (*retro_run)(void);
    void (*retro_unload_game)(void);
    void (*retro_deinit)(void);
+   size_t (*retro_serialize_size)(void);
+   bool (*retro_serialize)(void *, size_t);
+   bool (*retro_unserialize)(const void *, size_t);
+   void *state = NULL;
+   size_t state_size = 0;
+   int ahead_at = getenv("GLF_AHEAD") ? atoi(getenv("GLF_AHEAD")) : -1;
    struct retro_game_info game;
    struct retro_system_av_info av;
    EGLDisplay display;
@@ -262,6 +272,9 @@ int main(int argc, char **argv)
    CORE(retro_load_game);
    CORE(retro_get_system_av_info);
    CORE(retro_run);
+   CORE(retro_serialize_size);
+   CORE(retro_serialize);
+   CORE(retro_unserialize);
    CORE(retro_unload_game);
    CORE(retro_deinit);
 
@@ -312,6 +325,26 @@ int main(int argc, char **argv)
    {
       frame_no = i;
       retro_run();
+      if (ahead_at >= 0 && i >= ahead_at)
+      {
+         /* the state after this frame; the frame after it, shown; back to the state */
+         if (!state)
+         {
+            state_size = retro_serialize_size();
+            state = malloc(state_size);
+         }
+         if (!state || !retro_serialize(state, state_size))
+         {
+            fprintf(stderr, "gl_frames: the state could not be saved (frame %d)\n", i);
+            return 1;
+         }
+         retro_run();
+         if (!retro_unserialize(state, state_size))
+         {
+            fprintf(stderr, "gl_frames: the state could not be loaded (frame %d)\n", i);
+            return 1;
+         }
+      }
    }
 
    if (last_w == 0 || last_h == 0)
@@ -352,5 +385,6 @@ int main(int argc, char **argv)
    retro_unload_game();
    retro_deinit();
    free(pixels);
+   free(state);
    return 0;
 }

@@ -6,7 +6,9 @@ name: Sanitizers
 # the HDR output, the recompiler on: any report fails the run
 # (tools/vulkan/vk_sanitize.sh). And with AddressSanitizer, the core
 # unloaded after its frames with OpenGL and the process ended, with nothing
-# left over for LeakSanitizer (tools/threads/unload_leaks.sh).
+# left over for LeakSanitizer (tools/threads/unload_leaks.sh). And with
+# each, states saved and loaded with every frame run ahead, on OpenGL
+# (tools/gl/gl_ahead.sh).
 
 on:
   push:
@@ -14,6 +16,8 @@ on:
       - 'core/**'
       - 'tools/threads/unload_leaks.sh'
       - 'tools/gl/gl_frames.c'
+      - 'tools/gl/gl_ahead.sh'
+      - 'tools/gl/ahead_check.py'
       - 'tools/vulkan/vk_sanitize.sh'
       - 'tools/vulkan/vk_hdr.c'
       - 'tools/hdr/hdr_post_ref.*'
@@ -25,6 +29,8 @@ on:
       - 'core/**'
       - 'tools/threads/unload_leaks.sh'
       - 'tools/gl/gl_frames.c'
+      - 'tools/gl/gl_ahead.sh'
+      - 'tools/gl/ahead_check.py'
       - 'tools/vulkan/vk_sanitize.sh'
       - 'tools/vulkan/vk_hdr.c'
       - 'tools/hdr/hdr_post_ref.*'
@@ -61,6 +67,8 @@ jobs:
           fi
       - name: Frames on every renderer, 24-bit and HDR
         run: VK_DRIVER_FILES=/usr/share/vulkan/icd.d/lvp_icd.json SANITIZE=${{ matrix.sanitizer }} sh tools/vulkan/vk_sanitize.sh
+      - name: States saved and loaded, every frame run ahead
+        run: SANITIZE=${{ matrix.sanitizer }} sh tools/gl/gl_ahead.sh
       - name: The core unloaded, nothing left over (LeakSanitizer)
         if: matrix.sanitizer == 'address'
         run: sh tools/threads/unload_leaks.sh

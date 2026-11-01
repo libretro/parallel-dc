@@ -23,6 +23,8 @@ name: Vulkan negotiation
 # sorter's sort against a stable sort by < (tools/rend/sort_pairs_test.sh).
 # And polygons drawn outside a clipping rectangle, with OpenGL and OpenGL
 # ES, each renderer (tools/gl/gl_clip.sh).
+# And a state saved while a render to a texture is still on the card, every
+# frame run ahead, with OpenGL and OpenGL ES (tools/gl/gl_ahead.sh).
 
 on:
   push:
@@ -115,6 +117,8 @@ jobs:
           sh tools/gl/gl_dma.sh
       - name: Polygons drawn outside a clipping rectangle, with OpenGL and OpenGL ES (each renderer)
         run: sh tools/gl/gl_clip.sh
+      - name: A state saved while a render to a texture is on the card, every frame run ahead (OpenGL and OpenGL ES)
+        run: sh tools/gl/gl_ahead.sh
       - name: The translucent sorter's sort (radix, stable, as a sort by <)
         run: sh tools/rend/sort_pairs_test.sh
       - name: The temporal upscaler's side in the core (strips matched, the request, the inputs)

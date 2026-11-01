@@ -416,9 +416,12 @@ void ra_unserialize_fail(void)
 	unserialize_failed = true;
 }
 
+/* (Nothing to copy is nothing to do: a part of the machine this one does
+ * not have - the Dreamcast's SRAM - is no memory and a size of 0, and no
+ * memory is no pointer to copy from or to, even for none of it.) */
 bool ra_serialize(const void *src, unsigned int src_size, void **dest, unsigned int *total_size)
 {
-	if ( *dest != NULL )
+	if ( *dest != NULL && src_size != 0 )
 	{
 		memcpy(*dest, src, src_size) ;
 		*dest = ((unsigned char*)*dest) + src_size ;
@@ -430,7 +433,7 @@ bool ra_serialize(const void *src, unsigned int src_size, void **dest, unsigned 
 
 bool ra_unserialize(void *src, unsigned int src_size, void **dest, unsigned int *total_size)
 {
-	if ( *dest != NULL )
+	if ( *dest != NULL && src_size != 0 )
 	{
 		/* Reject any read that would run past the end of the frontend-supplied
 		 * input buffer. base==NULL means the limit is unknown (legacy callers);

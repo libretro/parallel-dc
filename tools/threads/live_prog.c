@@ -29,7 +29,8 @@
  * for PROGRAM_MMU_ALIGN, with -DLIVE_SLANT for PROGRAM_SLANT, and with
  * -DLIVE_SLANT -DLIVE_HSCALE for PROGRAM_HSCALE, with -DLIVE_CULL for
  * PROGRAM_CULL, with -DLIVE_ATLAS for PROGRAM_ATLAS, with -DLIVE_DMA
- * for PROGRAM_DMA, and with -DLIVE_CLIP for PROGRAM_CLIP. */
+ * for PROGRAM_DMA, with -DLIVE_CLIP for PROGRAM_CLIP, and with -DLIVE_KEEP
+ * for PROGRAM_KEEP. */
 typedef unsigned int u32;
 typedef unsigned short u16;
 #define PVR(off) (*(volatile u32 *)(0xA05F8000 + (off)))
@@ -713,6 +714,18 @@ static void ta_atlas(void)
  * which is drawn nearest of all over most of the right, never appears. */
 static u32 scene_in_part;
 
+#ifdef LIVE_KEEP
+/* With -DLIVE_KEEP: a picture rendered to a texture once, at the very end
+ * of a frame, and from the next frame on only drawn with - never read or
+ * written by the program. Nothing in that frame makes the core put it in
+ * video memory, so a state saved right after it is saved while it is
+ * still on its way; loaded, the state has to have it all the same.
+ * 64 by 64, yellow with its top left quarter cyan, drawn in the screen's
+ * top left. */
+#define KEEP_ADDRESS 0x600000
+static u32 keep_done, keep_age;
+#endif
+
 static void ta_scene(void)
 {
    /* The screen is 320 by 240 in the video mode the program is started in. */
@@ -815,6 +828,13 @@ static void ta_scene(void)
 #endif
 #ifdef LIVE_CLIP
    ta_clipped();
+#endif
+#ifdef LIVE_KEEP
+   /* the kept picture, from the frame after the one it was rendered in:
+    * RGB565, not twiddled, 64 by 64 */
+   if (keep_done == 2)
+      ta_quad(TA_TEXTURED, TSP_PLAIN | (3u << 3) | 3u, (1u << 27) | (1u << 26) | (KEEP_ADDRESS >> 3), 0xFFFFFFFF,
+            F(0.95f), F(5.0f), F(5.0f), F(69.0f), F(69.0f));
 #endif
    ta_send(0, 0, 0, 0, 0, 0, 0, 0);                    /* end of the opaque list */
 
@@ -985,6 +1005,29 @@ static void render_to_texture(void)
          for (x = 64; x < 128; x++)
             tex[y * 128 + x] = mark;
    }
+#ifdef LIVE_KEEP
+   if (keep_done)
+      keep_done = 2;
+   else if (++keep_age == 16)
+   {
+      PVR(0x48) = 1;                                   /* FB_W_CTRL: RGB565 */
+      PVR(0x4C) = 64 * 2 / 8;
+      PVR(0x60) = 0x01000000 | KEEP_ADDRESS;
+      PVR(0x68) = 63 << 16;
+      PVR(0x6C) = 63 << 16;
+      PVR(0x144) = 0x80000000;                         /* TA_LIST_INIT */
+      ta_quad(0, TSP_PLAIN, 0, 0xFFFFFF00, F(0.5f), F(0.0f), F(0.0f), F(64.0f), F(64.0f));
+      ta_quad(0, TSP_PLAIN, 0, 0xFF00FFFF, F(0.6f), F(0.0f), F(0.0f), F(32.0f), F(32.0f));
+      ta_send(0, 0, 0, 0, 0, 0, 0, 0);
+      PVR(0x14) = 0xFFFFFFFF;                          /* STARTRENDER */
+      PVR(0x48) = fb_w_ctrl;
+      PVR(0x4C) = linestride;
+      PVR(0x60) = fb_w_sof1;
+      PVR(0x68) = 639 << 16;
+      PVR(0x6C) = 479 << 16;
+      keep_done = 1;
+   }
+#endif
 }
 
 /* A second render pass, drawn over the first: the lists are opened again

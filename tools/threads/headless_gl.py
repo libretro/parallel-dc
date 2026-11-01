@@ -71,8 +71,24 @@ unsigned GL_CC glCheckFramebufferStatus(unsigned target) { return 0x8CD5; }
 unsigned GL_CC glClientWaitSync(void *sync, unsigned flags, unsigned long long timeout) { return 0x911A; }
 static void *scratch;
 static void *map(void) { if (!scratch) scratch = calloc(1, 64 << 20); return scratch; }
-void *GL_CC glMapBufferRange(unsigned target, long offset, long length, unsigned access) { return map(); }
-void *GL_CC glMapBuffer(unsigned target, unsigned access) { return map(); }
+/* What is read back from the card is the same bytes every time, whatever
+ * the core wrote through a mapping before: a picture rendered to a texture
+ * and fetched is then one thing, run after run and from a state loaded (and
+ * not zeros: one that never got to video memory is told from one that did).
+ * Reading through the mapping the core writes through gave whatever it last
+ * wrote there, which is no part of the machine. */
+#define READ_BYTE 0x5A
+static void *read_back;
+static void *read_map(void) { if (!read_back) { read_back = malloc(64 << 20); if (read_back) memset(read_back, READ_BYTE, 64 << 20); } return read_back; }
+void *GL_CC glMapBufferRange(unsigned target, long offset, long length, unsigned access) { return (access & 0x0001 /* GL_MAP_READ_BIT */) && !(access & 0x0002) ? read_map() : map(); }
+void *GL_CC glMapBuffer(unsigned target, unsigned access) { return access == 0x88B8 /* GL_READ_ONLY */ ? read_map() : map(); }
+/* (into the core's own memory: a pixel pack buffer's offset is no pointer) */
+void GL_CC glReadPixels(int x, int y, int w, int h, unsigned format, unsigned type, void *pixels)
+{
+   if (format == 0x1908 /* GL_RGBA */ && type == 0x1401 /* GL_UNSIGNED_BYTE */ && (size_t)pixels >= 0x10000 && w > 0 && h > 0)
+      memset(pixels, READ_BYTE, (size_t)w * (size_t)h * 4);
+}
+void GL_CC glGetBufferSubData(unsigned target, long offset, long size, void *data) { if (data && size > 0) memset(data, 0, (size_t)size); }
 '''
 
 def stack_bytes(prototypes):
@@ -100,6 +116,7 @@ def main():
                for line in SPECIAL.splitlines() if line and not line.startswith((' ', '{', '}', 'static', '/', '#'))}
     print('/* written by tools/threads/headless_gl.py */')
     print('#include <stdlib.h>')
+    print('#include <string.h>')
     print(SPECIAL)
     for name in names:
         if not name.startswith('gl') or name in special:

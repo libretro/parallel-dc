@@ -1,0 +1,43 @@
+name: Headless
+
+# The live test's disc on the core with no display and no GPU: headless.c
+# for a frontend and an OpenGL that does nothing (headless_gl.py). The
+# program's verdicts on itself, its sound sample for sample, both SH4
+# timings and the MMU, states saved and loaded and every frame run ahead
+# (each the same, byte for byte, as the frames run straight), code that
+# rewrites itself, a NAOMI cartridge and romsets: tools/threads/headless.sh.
+
+on:
+  push:
+    paths:
+      - 'core/**'
+      - 'tools/threads/headless*'
+      - 'tools/threads/live_*'
+      - 'Makefile*'
+      - '.github/workflows/headless.yml'
+  pull_request:
+    paths:
+      - 'core/**'
+      - 'tools/threads/headless*'
+      - 'tools/threads/live_*'
+      - 'Makefile*'
+      - '.github/workflows/headless.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  headless:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install the compiler and OpenGL headers
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends build-essential libgl1-mesa-dev python3
+      - name: Build the core
+        run: make -j"$(nproc)"
+      - name: The disc with no display, its states and run-ahead among it
+        run: sh tools/threads/headless.sh parallel_dc_libretro.so
