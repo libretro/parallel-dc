@@ -347,6 +347,36 @@ void VramLockedWriteRange(u32 offset, u32 size)
 		vram_writes.Mark(page);
 }
 
+/* Render thread, the machine standing still: a render to a texture covers
+ * @size bytes from @offset. On the console it writes them, and a texture
+ * made from them - another size, another format, a part of it - shows what
+ * was there before; here the picture is on the graphics card, and video
+ * memory gets it later (rend/rtt_watch.h) without a write that faults. So
+ * every texture made from them is made again now, but @target, the one
+ * rendered to. No page changes protection: a lock dropped leaves its page
+ * as it is. */
+void VramRendered(u32 offset, u32 size, const BaseTextureCacheData *target)
+{
+	if (size == 0 || offset >= VRAM_SIZE)
+		return;
+	if (size > VRAM_SIZE - offset)
+		size = VRAM_SIZE - offset;
+	vramlock_collect();
+
+	const u32 end = offset + size - 1;
+	for (u32 page = offset / PAGE_SIZE; page <= end / PAGE_SIZE; page++)
+	{
+		const VramLockList& list = VramLocks[page];
+		for (u32 k = 0; k < list.count; k++)
+		{
+			vram_block *lock = list.locks[k];
+			/* (dropping one takes it off every page it is on) */
+			if (lock != nullptr && lock->userdata != target && lock->start <= end && lock->end >= offset)
+				rend_text_invl(lock);
+		}
+	}
+}
+
 /* A block copy (a DMA) is about to write every byte of @size from @offset
  * of video memory, on the thread that runs the machine. What its writes
  * would fault on a page at a time is done once for all of it: a picture

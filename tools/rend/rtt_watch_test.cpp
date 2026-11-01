@@ -46,6 +46,7 @@ void _vmem_open_watched_vram(u32, u32) {}
 bool _vmem_vram_page_watched(u32 page) { return watched[page]; }
 u32 _vmem_get_vram_offset(void *) { return (u32)-1; }
 void VramLockedWriteRange(u32, u32) {}
+void VramRendered(u32, u32, const BaseTextureCacheData *) {}
 
 /* the renderer: every read and every batch of copies begun, in order */
 struct Event { char what; u32 serial; unsigned count; };

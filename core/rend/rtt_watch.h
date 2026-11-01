@@ -22,6 +22,8 @@
 #include "types.h"
 #include <cstdint>
 
+class BaseTextureCacheData;
+
 struct RttWatch
 {
 	u32 addr;            /* where in video memory, in bytes */
@@ -39,6 +41,10 @@ struct RttWatch
 	u32 age;             /* frames it has waited */
 	u32 serial;          /* this render's, of every render watched: never 0 */
 	bool used;
+	/* The texture cache's texture rendered to, NULL if none. On the console
+	 * a render writes video memory: every other texture made from what it
+	 * covers is made again (VramRendered()). */
+	const BaseTextureCacheData *target;
 };
 
 /* What a renderer hands the picture over to: w by h pixels of R, G, B, A

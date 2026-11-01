@@ -1225,6 +1225,7 @@ void ReadRTTBuffer() {
 	texture_data->stride_read = 0;	// (rendered, not read)
 	texture_data->made_type = 0;
       libCore_vramlock_Lock(texture_data->sa_tex, texture_data->sa + texture_data->size - 1, texture_data);
+      watch.target = texture_data;
       rtt_watch_add(&watch, &rtt_gl_backend);
     }
     gl.rtt.tex = 0;

@@ -309,6 +309,8 @@ void rtt_watch_add(const RttWatch *watch, const RttWatchBackend *b)
 #if !defined(TARGET_NO_THREADS)
 	render_thread = sthread_get_current_thread_id();
 #endif
+	if (watch->bytes != 0 && watch->addr + watch->bytes <= VRAM_SIZE)
+		VramRendered(watch->addr, watch->bytes, watch->target);
 	release_garbage();
 	if (need > pixels_size)
 	{
