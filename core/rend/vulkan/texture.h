@@ -19,6 +19,7 @@
     along with Flycast.  If not, see <https://www.gnu.org/licenses/>.
 */
 #pragma once
+#include "rend/grow_buf.h"
 #include "vulkan_context.h"
 #include "buffer.h"
 #include "rend/TexCache.h"
@@ -30,7 +31,6 @@
 #include <memory>
 #include <map>
 #include <string>
-#include <unordered_set>
 #include <vector>
 
 void setImageLayout(vk::CommandBuffer const& commandBuffer, vk::Image image, vk::Format format, u32 mipmapLevels, vk::ImageLayout oldImageLayout, vk::ImageLayout newImageLayout);
@@ -266,6 +266,9 @@ private:
 	vk::UniqueImageView imageView;
 	u64 ownSerial = 0;          /* imageView's */
 	vk::ImageView readOnlyImageView;
+	/* The frames (the command pool's places, bit by bit) whose in-flight
+	 * lists have it: TextureCache */
+	u32 inFlightSlots = 0;
 	u64 readOnlySerial = 0;     /* readOnlyImageView's */
 	static u64 viewSerials;
 
@@ -383,17 +386,34 @@ private:
 class TextureCache : public BaseTextureCache<Texture>
 {
 public:
+	TextureCache() = default;
+	TextureCache(const TextureCache&) = delete;
+	TextureCache& operator=(const TextureCache&) = delete;
+	~TextureCache()
+	{
+		for (u32 i = 0; i < inFlightCount; i++)
+			grow_buf_free(&((InFlightList *)inFlightLists.data)[i].textures);
+		grow_buf_free(&inFlightLists);
+	}
+
 	void SetCurrentIndex(int index) {
-		if (settings.rend.TextureDebug && currentIndex < inFlightTextures.size())
-			DebugLog(inFlightTextures[currentIndex]);
-		if (currentIndex < inFlightTextures.size())
-			std::for_each(inFlightTextures[currentIndex].begin(), inFlightTextures[currentIndex].end(),
-				[](Texture *texture) { texture->readOnlyImageView = vk::ImageView(); });
+		InFlightList *lists = (InFlightList *)inFlightLists.data;
+		if (currentIndex < inFlightCount)
+		{
+			Texture **list = InFlight(currentIndex);
+			if (settings.rend.TextureDebug)
+				DebugLog(list, lists[currentIndex].count);
+			for (u32 i = 0; i < lists[currentIndex].count; i++)
+				if (list[i] != nullptr)
+					list[i]->readOnlyImageView = vk::ImageView();
+		}
 		currentIndex = index;
 		Texture::Ring().SetCurrentIndex(index);
 		if (Texture::Pool() != nullptr)
 			Texture::Pool()->Frame(index);
-		EmptyTrash(inFlightTextures);
+		/* the textures this place had: in no frame now but those after it */
+		if (GrowInFlight(currentIndex + 1))
+			EmptyInFlight(currentIndex);
 		EmptyTrash(trashedImageViews);
 		EmptyTrash(trashedImages);
 		EmptyTrash(trashedMem);
@@ -401,15 +421,20 @@ public:
 
 	bool IsInFlight(Texture *texture)
 	{
-		for (u32 i = 0; i < inFlightTextures.size(); i++)
-			if (i != currentIndex && inFlightTextures[i].find(texture) != inFlightTextures[i].end())
-				return true;
-		return false;
+		return (texture->inFlightSlots & ~SlotBit(currentIndex)) != 0;
 	}
 
 	void SetInFlight(Texture *texture)
 	{
-		inFlightTextures[currentIndex].insert(texture);
+		const u32 bit = SlotBit(currentIndex);
+		if ((texture->inFlightSlots & bit) != 0 || !GrowInFlight(currentIndex + 1))
+			return;
+		InFlightList& l = ((InFlightList *)inFlightLists.data)[currentIndex];
+		Texture **list = (Texture **)grow_buf_reserve_keep(&l.textures, (l.count + 1) * sizeof(Texture *));
+		if (list == nullptr)
+			return;
+		list[l.count++] = texture;
+		texture->inFlightSlots |= bit;
 	}
 
 	void DestroyLater(Texture *texture)
@@ -444,19 +469,21 @@ public:
 	{
 		for (auto& pair : cache)
 			DestroyLater(&pair.second);
+		EmptyAllInFlight();
 		BaseTextureCache::Clear();
-		for (auto& set : inFlightTextures)
-			set.clear();
 	}
 
 	/* Empties the cache and destroys everything now, what was retired too.
 	 * For when the renderer is going away and nothing is drawing any more. */
 	void Clear()
 	{
+		EmptyAllInFlight();
 		BaseTextureCache::Clear();
-		for (auto& set : inFlightTextures)
-			set.clear();
-      for (auto& v : trashedImageViews)
+		for (u32 i = 0; i < inFlightCount; i++)
+			grow_buf_free(&((InFlightList *)inFlightLists.data)[i].textures);
+		grow_buf_free(&inFlightLists);
+		inFlightCount = 0;
+		for (auto& v : trashedImageViews)
 			v.clear();
 		for (auto& v : trashedImages)
 			v.clear();
@@ -468,13 +495,65 @@ public:
 private:
 	/* The texture debug log (texture.cpp): the textures of the frame drawn
 	 * last, now and then */
-	void DebugLog(const std::unordered_set<Texture *>& textures);
+	void DebugLog(Texture *const *textures, u32 count);
 	bool clearTexture(Texture *tex)
 	{
-		for (auto& set : inFlightTextures)
-			set.erase(tex);
+		/* (out of the lists that have it: a texture gone is not seen there again) */
+		for (u32 s = 0; s < inFlightCount && tex->inFlightSlots != 0; s++)
+		{
+			if ((tex->inFlightSlots & SlotBit(s)) == 0)
+				continue;
+			Texture **list = InFlight(s);
+			const u32 n = ((InFlightList *)inFlightLists.data)[s].count;
+			for (u32 i = 0; i < n; i++)
+				if (list[i] == tex)
+					list[i] = nullptr;
+			tex->inFlightSlots &= ~SlotBit(s);
+		}
 
 		return tex->Delete();
+	}
+
+	/* The textures each frame (the command pool's place @s) draws with, once
+	 * each: a list that grows, and a texture's bit for the place */
+	struct InFlightList
+	{
+		grow_buf_t textures;	/* Texture *; nullptr where one has gone */
+		u32 count;
+	};
+	/* (a swap chain has a few images: past 31 places, which none has, the last bit is shared) */
+	static u32 SlotBit(u32 s)
+	{
+		return s < 32 ? 1u << s : 0x80000000u;
+	}
+	Texture **InFlight(u32 s)
+	{
+		return (Texture **)((InFlightList *)inFlightLists.data)[s].textures.data;
+	}
+	/* @n places at least, the new ones empty */
+	bool GrowInFlight(u32 n)
+	{
+		if (n <= inFlightCount)
+			return true;
+		if (grow_buf_reserve_keep(&inFlightLists, n * sizeof(InFlightList)) == nullptr)
+			return false;
+		memset((InFlightList *)inFlightLists.data + inFlightCount, 0, (n - inFlightCount) * sizeof(InFlightList));
+		inFlightCount = n;
+		return true;
+	}
+	void EmptyInFlight(u32 s)
+	{
+		InFlightList& l = ((InFlightList *)inFlightLists.data)[s];
+		Texture **list = (Texture **)l.textures.data;
+		for (u32 i = 0; i < l.count; i++)
+			if (list[i] != nullptr)
+				list[i]->inFlightSlots &= ~SlotBit(s);
+		l.count = 0;
+	}
+	void EmptyAllInFlight()
+	{
+		for (u32 s = 0; s < inFlightCount; s++)
+			EmptyInFlight(s);
 	}
 	template<typename T>
 	void EmptyTrash(T& v)
@@ -483,7 +562,8 @@ private:
 			v.resize(currentIndex + 1);
 		v[currentIndex].clear();
 	}
-	std::vector<std::unordered_set<Texture *>> inFlightTextures;
+	grow_buf_t inFlightLists = GROW_BUF_INIT;	/* InFlightList, a place each */
+	u32 inFlightCount = 0;
 	std::vector<std::vector<vk::UniqueImageView>> trashedImageViews;
 	std::vector<std::vector<vk::UniqueImage>> trashedImages;
 	std::vector<std::vector<Allocation>> trashedMem;

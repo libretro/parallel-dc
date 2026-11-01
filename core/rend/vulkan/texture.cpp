@@ -1107,23 +1107,25 @@ void FramebufferAttachment::Init(u32 width, u32 height, vk::Format format, const
 
 void TextureCache::Cleanup()
 {
-	std::vector<u64> list;
+	/* (a few a frame, those not used for 120 frames) */
+	u64 list[6];
+	u32 n = 0;
 
 	u32 TargetFrame = std::max((u32)120, FrameCount) - 120;
 
 	for (const auto& pair : cache)
 	{
 		if (pair.second.dirty && pair.second.dirty < TargetFrame)
-			list.push_back(pair.first);
+			list[n++] = pair.first;
 
-		if (list.size() > 5)
+		if (n == 6)
 			break;
 	}
 
-	for (u64 id : list)
+	for (u32 i = 0; i < n; i++)
 	{
-		if (clearTexture(&cache[id]))
-			cache.erase(id);
+		if (clearTexture(&cache[list[i]]))
+			cache.erase(list[i]);
 	}
 }
 
@@ -1151,10 +1153,10 @@ static u32 DebugTexelBytes(vk::Format format)
  * CPU uploaded into that level (the GPU's own decode and generated levels
  * have none). The read back waits for the GPU, and the buffer for it is made
  * each time: this is a diagnostic, off unless asked for. */
-void TextureCache::DebugLog(const std::unordered_set<Texture *>& textures)
+void TextureCache::DebugLog(Texture *const *textures, u32 count)
 {
 	static u32 lastFrame;
-	if (FrameCount < 300 || (lastFrame != 0 && FrameCount - lastFrame < 600) || textures.empty())
+	if (FrameCount < 300 || (lastFrame != 0 && FrameCount - lastFrame < 600) || count == 0)
 		return;
 	lastFrame = FrameCount;
 	VulkanContext *context = VulkanContext::Instance();
@@ -1162,7 +1164,7 @@ void TextureCache::DebugLog(const std::unordered_set<Texture *>& textures)
 	vk::PhysicalDeviceProperties props;
 	context->GetPhysicalDevice().getProperties(&props);
 	NOTICE_LOG(RENDERER, "TexDebug: frame %u, %u textures; %s (driver %08x); sub-pixel bits %u, sub-texel bits %u, mipmap bits %u, LOD bias max %.1f; force LOD0 %d, anisotropy %d, GPU decode %d, upscale %d",
-			FrameCount, (u32)textures.size(), (const char *)&props.deviceName[0], props.driverVersion, props.limits.subPixelPrecisionBits,
+			FrameCount, count, (const char *)&props.deviceName[0], props.driverVersion, props.limits.subPixelPrecisionBits,
 			props.limits.subTexelPrecisionBits, props.limits.mipmapPrecisionBits, props.limits.maxSamplerLodBias,
 			settings.rend.ForceTextureLOD0, settings.rend.AnisotropicFiltering, settings.rend.GpuTextureDecode, settings.rend.TextureUpscale);
 
@@ -1170,9 +1172,10 @@ void TextureCache::DebugLog(const std::unordered_set<Texture *>& textures)
 	struct Read { Texture *t; u32 level; u32 offset; u32 bytes; };
 	std::vector<Read> reads;
 	vk::DeviceSize total = 0;
-	for (Texture *t : textures)
+	for (u32 k = 0; k < count; k++)
 	{
-		if (t->format == vk::Format::eUndefined || t->fresh || t->decodeJob >= 0 || t->IsNew()
+		Texture *t = textures[k];
+		if (t == nullptr || t->format == vk::Format::eUndefined || t->fresh || t->decodeJob >= 0 || t->IsNew()
 				|| !(t->imageUsage & vk::ImageUsageFlagBits::eTransferSrc) || t->debugPath == Texture::DBG_TARGET)
 			continue;
 		const u32 texel = DebugTexelBytes(t->format);
@@ -1230,8 +1233,11 @@ void TextureCache::DebugLog(const std::unordered_set<Texture *>& textures)
 
 	static const char * const paths[] = { "none", "cpu-staged", "cpu-linear", "gpu-kernel", "gpu-copy", "render-target" };
 	static const char * const filters[] = { "point", "bilinear", "trilinear-a", "trilinear-b" };
-	for (Texture *t : textures)
+	for (u32 k = 0; k < count; k++)
 	{
+		Texture *t = textures[k];
+		if (t == nullptr)
+			continue;
 		char line[1024];
 		const TSP tsp = t->tsp;
 		const char *addr = tsp.ClampU ? "clamp" : tsp.FlipU ? "mirror" : "repeat";

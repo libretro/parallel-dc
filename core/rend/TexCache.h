@@ -1221,23 +1221,25 @@ public:
 
 	void CollectCleanup()
 	{
-		std::vector<u64> list;
+		/* (a few a frame, those not used for 120 frames) */
+		u64 list[6];
+		u32 n = 0;
 
 		u32 TargetFrame = std::max((u32)120, FrameCount) - 120;
 
 		for (const auto& pair : cache)
 		{
 			if (pair.second.dirty && pair.second.dirty < TargetFrame)
-				list.push_back(pair.first);
+				list[n++] = pair.first;
 
-			if (list.size() > 5)
+			if (n == 6)
 				break;
 		}
 
-		for (u64 id : list)
+		for (u32 i = 0; i < n; i++)
 		{
-			if (cache[id].Delete())
-				cache.erase(id);
+			if (cache[list[i]].Delete())
+				cache.erase(list[i]);
 		}
 	}
 
