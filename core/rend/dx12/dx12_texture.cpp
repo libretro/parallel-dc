@@ -685,51 +685,240 @@ bool dx12_read_picture(ID3D12Resource *texture, D3D12_RESOURCE_STATES& state, u3
 	return readBack(texture, state, 0, 0, width, height, rgba);
 }
 
-/* The picture as the console would have it: w by h, R G B A. */
-static void dx12_rtt_read(const RttWatch *watch, u8 *, RttWatchTake take)
+/* Copies of pictures off the card, each into a readback buffer of its own:
+ * recorded ahead of the read where rtt_watch says which (dx12_rtt_prefetch()),
+ * or by the read itself. Each waits for the fence value of the list it was
+ * submitted with - passed by the time it is read, as often as not. */
+#define RTT_COPIES 18
+
+struct Dx12RttCopy
+{
+	u32 serial;         /* the render's (RttWatch::serial), 0 if none */
+	uintptr_t tex;
+	u32 w, h, pitch;
+	u64 value;          /* the fence value its list signals */
+	u64 stamp;          /* when it was last recorded, for the oldest */
+	u64 size;
+	ComPtr<ID3D12Resource> buffer;   /* grown, never shrunk */
+};
+
+static Dx12RttCopy rttCopies[RTT_COPIES];
+static u64 rttStamp;
+
+static Dx12RttCopy *rtt_copy_of(const RttWatch *watch)
+{
+	for (Dx12RttCopy& c : rttCopies)
+		if (c.serial == watch->serial && c.serial != 0 && c.tex == watch->tex)
+			return &c;
+	return nullptr;
+}
+
+/* One to record a copy into: one that holds none, or the one recorded
+ * longest ago - never one the card is still writing, nor one recorded
+ * after @since (in the list being recorded). */
+static Dx12RttCopy *rtt_copy_free(u64 since)
+{
+	DX12Context *context = DX12Context::Instance();
+	const u64 completed = context->Completed();
+	Dx12RttCopy *oldest = nullptr;
+
+	for (Dx12RttCopy& c : rttCopies)
+	{
+		if (c.value > completed && c.buffer)
+			continue;
+		if (c.serial != 0 && c.stamp > since)
+			continue;
+		if (c.serial == 0)
+			return &c;
+		if (oldest == nullptr || c.stamp < oldest->stamp)
+			oldest = &c;
+	}
+	return oldest;
+}
+
+/* The copy of the clip's part of @image, w by h at (x0, y0), into c's
+ * buffer, recorded */
+static bool rtt_record_copy(Dx12RttCopy& c, ID3D12Resource *texture, D3D12_RESOURCE_STATES& state, u32 x0, u32 y0, u32 w, u32 h)
+{
+	DX12Context *context = DX12Context::Instance();
+	const u32 pitch = (w * 4 + D3D12_TEXTURE_DATA_PITCH_ALIGNMENT - 1) & ~(D3D12_TEXTURE_DATA_PITCH_ALIGNMENT - 1);
+	const u64 bytes = (u64)pitch * h;
+
+	if (!c.buffer || c.size < bytes)
+	{
+		D3D12_HEAP_PROPERTIES heap{};
+		heap.Type = D3D12_HEAP_TYPE_READBACK;
+		D3D12_RESOURCE_DESC desc{};
+		desc.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER;
+		desc.Width = (bytes + 0xffff) & ~0xffffull;
+		desc.Height = 1;
+		desc.DepthOrArraySize = 1;
+		desc.MipLevels = 1;
+		desc.SampleDesc.Count = 1;
+		desc.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
+		c.size = 0;
+		if (FAILED(context->GetDevice()->CreateCommittedResource(&heap, D3D12_HEAP_FLAG_NONE, &desc,
+				D3D12_RESOURCE_STATE_COPY_DEST, nullptr, __uuidof(ID3D12Resource), (void **)c.buffer.put())))
+		{
+			WARN_LOG(RENDERER, "DX12: readback buffer creation failed (%u KB)", (u32)(bytes / 1024));
+			c.buffer.reset();
+			return false;
+		}
+		c.size = desc.Width;
+	}
+	const D3D12_RESOURCE_STATES was = state;
+	context->Transition(texture, state, D3D12_RESOURCE_STATE_COPY_SOURCE);
+	D3D12_TEXTURE_COPY_LOCATION dst{};
+	dst.pResource = c.buffer;
+	dst.Type = D3D12_TEXTURE_COPY_TYPE_PLACED_FOOTPRINT;
+	dst.PlacedFootprint.Footprint.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+	dst.PlacedFootprint.Footprint.Width = w;
+	dst.PlacedFootprint.Footprint.Height = h;
+	dst.PlacedFootprint.Footprint.Depth = 1;
+	dst.PlacedFootprint.Footprint.RowPitch = pitch;
+	D3D12_TEXTURE_COPY_LOCATION src{};
+	src.pResource = texture;
+	src.Type = D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX;
+	const D3D12_BOX box = { x0, y0, 0, x0 + w, y0 + h, 1 };
+	context->Cmd()->CopyTextureRegion(&dst, 0, 0, 0, &src, &box);
+	context->Transition(texture, state, was);
+	c.w = w;
+	c.h = h;
+	c.pitch = pitch;
+	return true;
+}
+
+/* The picture as the console would have it, w by h, R G B A, copied into
+ * c's buffer by commands recorded: from the texture at the clip; or made
+ * the console's size on the card first, filtered, where it is finer (the
+ * clip's part of the texture drawn onto one of the pool's pictures). */
+static bool rtt_record(const RttWatch *watch, Dx12RttCopy& c)
 {
 	DX12Context *context = DX12Context::Instance();
 	DX12Texture *texture = (DX12Texture *)watch->tex;
 	DX12PooledTexture *image = texture->Image();
 	const u32 w = watch->w, h = watch->h, scale = watch->scale > 1 ? watch->scale : 1;
 	const u32 x0 = watch->x0 * scale, y0 = watch->y0 * scale;
+	bool done;
 
 	if (context->GetDevice() == nullptr || image == nullptr || !image->resource)
-	{
-		take(watch, nullptr, 0);
-		return;
-	}
+		return false;
 	if (scale == 1)
+		done = rtt_record_copy(c, image->resource, image->state, x0, y0, w, h);
+	else
 	{
-		readBack(image->resource, image->state, x0, y0, w, h, nullptr, watch, take);
-		return;
+		u32 pw = 8, ph = 8;
+		while (pw < w)
+			pw *= 2;
+		while (ph < h)
+			ph *= 2;
+		DX12TexturePool *pool = DX12Texture::Pool();
+		DX12PooledTexture *small = pool != nullptr ? pool->TakeTarget(pw, ph) : nullptr;
+		if (small == nullptr)
+		{
+			WARN_LOG(RENDERER, "Render to texture read back: no %ux%u picture", pw, ph);
+			return false;
+		}
+		context->Transition(small->resource, small->state, D3D12_RESOURCE_STATE_RENDER_TARGET);
+		context->SetTargets(small->rtv, ~0u);
+		context->SetViewport((float)w, (float)h);
+		const D3D12_RECT scissor = { 0, 0, (LONG)w, (LONG)h };
+		context->SetScissor(scissor);
+		DX12Quad::Draw(image->srv, true, -1.f, -1.f, 2.f, 2.f,
+				(float)x0 / image->width, (float)y0 / image->height,
+				(float)(x0 + w * scale) / image->width, (float)(y0 + h * scale) / image->height);
+		context->SetTargets(~0u, ~0u);
+		done = rtt_record_copy(c, small->resource, small->state, 0, 0, w, h);
+		/* (back to the pool: whatever draws on it next comes after the copy
+		 * on the queue) */
+		pool->Give(small);
 	}
-	/* Made the console's size on the card, filtered, and read at that: the
-	 * clip's part of the texture drawn onto one of the pool's pictures. */
-	u32 pw = 8, ph = 8;
-	while (pw < w)
-		pw *= 2;
-	while (ph < h)
-		ph *= 2;
-	DX12TexturePool *pool = DX12Texture::Pool();
-	DX12PooledTexture *small = pool != nullptr ? pool->TakeTarget(pw, ph) : nullptr;
-	if (small == nullptr)
+	if (!done)
+		return false;
+	c.serial = watch->serial;
+	c.tex = watch->tex;
+	c.stamp = ++rttStamp;
+	return true;
+}
+
+/* Copies of @watches recorded, those that have one already left alone, and
+ * submitted together; the fence value they wait for, 0 if none was */
+static u64 rtt_copies(const RttWatch *const *watches, unsigned count)
+{
+	DX12Context *context = DX12Context::Instance();
+	Dx12RttCopy *recorded[RTT_COPIES];
+	unsigned n = 0;
+	const u64 since = rttStamp;
+
+	for (unsigned i = 0; i < count && n < RTT_COPIES; i++)
 	{
-		WARN_LOG(RENDERER, "Render to texture read back: no %ux%u picture", pw, ph);
+		if (rtt_copy_of(watches[i]) != nullptr)
+			continue;
+		Dx12RttCopy *c = rtt_copy_free(since);
+		if (c == nullptr)
+			break;
+		if (rtt_record(watches[i], *c))
+			recorded[n++] = c;
+	}
+	if (n == 0)
+		return 0;
+	const u64 value = context->Submit();
+	for (unsigned i = 0; i < n; i++)
+		recorded[i]->value = value;
+	return value;
+}
+
+/* rtt_watch's: begun now, not waited for */
+static void dx12_rtt_prefetch(const RttWatch *const *watches, unsigned count)
+{
+	if (DX12Context::Instance()->GetDevice() != nullptr)
+		rtt_copies(watches, count);
+}
+
+/* The picture, from its copy - recorded ahead as often as not, and done by
+ * now - or from one recorded here and waited for. */
+static void dx12_rtt_read(const RttWatch *watch, u8 *, RttWatchTake take)
+{
+	DX12Context *context = DX12Context::Instance();
+
+	if (context->GetDevice() == nullptr)
+	{
 		take(watch, nullptr, 0);
 		return;
 	}
-	context->Transition(small->resource, small->state, D3D12_RESOURCE_STATE_RENDER_TARGET);
-	context->SetTargets(small->rtv, ~0u);
-	context->SetViewport((float)w, (float)h);
-	const D3D12_RECT scissor = { 0, 0, (LONG)w, (LONG)h };
-	context->SetScissor(scissor);
-	DX12Quad::Draw(image->srv, true, -1.f, -1.f, 2.f, 2.f,
-			(float)x0 / image->width, (float)y0 / image->height,
-			(float)(x0 + w * scale) / image->width, (float)(y0 + h * scale) / image->height);
-	context->SetTargets(~0u, ~0u);
-	readBack(small->resource, small->state, 0, 0, w, h, nullptr, watch, take);
-	pool->Give(small);
+	Dx12RttCopy *c = rtt_copy_of(watch);
+	if (c == nullptr)
+	{
+		if (rtt_copies(&watch, 1) == 0)
+		{
+			/* every copy is being written: all of them waited for */
+			context->WaitFor(context->LastSubmitted());
+			rtt_copies(&watch, 1);
+		}
+		c = rtt_copy_of(watch);
+		if (c == nullptr)
+		{
+			take(watch, nullptr, 0);
+			return;
+		}
+	}
+	if (context->Completed() < c->value)
+		context->WaitFor(c->value);
+	const D3D12_RANGE range = { 0, (SIZE_T)c->pitch * c->h };
+	void *p = nullptr;
+	if (FAILED(c->buffer->Map(0, &range, &p)))
+	{
+		WARN_LOG(RENDERER, "A picture could not be read back from the card");
+		take(watch, nullptr, 0);
+	}
+	else
+	{
+		/* (a readback heap's: the host's cache is in front of it) */
+		take(watch, (const u8 *)p, c->pitch);
+		const D3D12_RANGE none = { 0, 0 };
+		c->buffer->Unmap(0, &none);
+	}
+	c->serial = 0;
 }
 
 /* The texture cache's, never this module's to delete. */
@@ -737,7 +926,7 @@ static void dx12_rtt_release(uintptr_t)
 {
 }
 
-static const RttWatchBackend dx12_rtt_backend = { dx12_rtt_read, dx12_rtt_release };
+static const RttWatchBackend dx12_rtt_backend = { dx12_rtt_read, dx12_rtt_release, dx12_rtt_prefetch };
 
 /* What the render covers of video memory: the clip's pixels, from (x0, y0)
  * of the frame at addr, which moves to the first of them. (As the Vulkan
@@ -785,7 +974,19 @@ void dx12_rtt_watch(DX12Texture *texture, u32 addr, u32 x0, u32 y0, u32 width, u
 
 void dx12_rtt_term(void)
 {
+	DX12Context *context = DX12Context::Instance();
+
 	rtt_watch_term();
+	for (Dx12RttCopy& c : rttCopies)
+	{
+		/* (the card may still be writing it) */
+		if (c.buffer && context->GetDevice() != nullptr && context->Completed() < c.value)
+			context->WaitFor(c.value);
+		c.buffer.reset();
+		c.serial = 0;
+		c.value = 0;
+		c.size = 0;
+	}
 	turned.clear();
 	turned.shrink_to_fit();
 }

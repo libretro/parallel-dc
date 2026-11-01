@@ -28,7 +28,8 @@
  * -DNO_REGION_ARRAY for PROGRAM_NO_REGION_ARRAY, with -DLIVE_MMU_ALIGN
  * for PROGRAM_MMU_ALIGN, with -DLIVE_SLANT for PROGRAM_SLANT, and with
  * -DLIVE_SLANT -DLIVE_HSCALE for PROGRAM_HSCALE, with -DLIVE_CULL for
- * PROGRAM_CULL, and with -DLIVE_ATLAS for PROGRAM_ATLAS. */
+ * PROGRAM_CULL, with -DLIVE_ATLAS for PROGRAM_ATLAS, and with -DLIVE_DMA
+ * for PROGRAM_DMA. */
 typedef unsigned int u32;
 typedef unsigned short u16;
 #define PVR(off) (*(volatile u32 *)(0xA05F8000 + (off)))
@@ -435,6 +436,62 @@ static void ta_volume_triangle(u32 x0, u32 y0, u32 x1, u32 y1, u32 x2, u32 y2, u
 /* Where in video memory the render to a texture goes: see render_to_texture(). */
 #define RTT_ADDRESS 0x700000
 
+#ifdef LIVE_DMA
+/* With -DLIVE_DMA: video memory written by PVR-DMA over what was rendered
+ * to a texture there and is still on the graphics card, and over a texture
+ * the game drew with (tools/vulkan/vk_dma.sh). Two 64 by 64 RGB565 renders,
+ * yellow at DMA_HALF and red at DMA_WHOLE, made once; two frames later a
+ * DMA writes cyan over the top half of the first and over all of the
+ * second, and a third, at frame 80, green over the 8 by 8 texture at
+ * DMA_TEXTURE that was blue and drawn since frame 64. The top right of the
+ * screen shows the three: cyan over yellow, cyan, green. */
+#define DMA_HALF     (RTT_ADDRESS + 0xE0000)
+#define DMA_WHOLE    (RTT_ADDRESS + 0xE4000)
+#define DMA_TEXTURE  (RTT_ADDRESS + 0xE8000)
+#define DMA_SOURCE   0xAC800000                        /* what the DMAs copy, in main memory */
+static u32 rtt_dma_done;
+
+/* @len bytes from DMA_SOURCE to video memory at @to, by PVR-DMA */
+static void pvr_dma(u32 to, u32 len)
+{
+   *(volatile u32 *)0xFFA00040 = 0x8201;               /* DMAOR: on, channel priority fixed */
+   SB(0x1C00) = 0x04000000 | to;                       /* SB_PDSTAP */
+   SB(0x1C04) = DMA_SOURCE & 0x1FFFFFFF;               /* SB_PDSTAR */
+   SB(0x1C08) = len;                                   /* SB_PDLEN */
+   SB(0x1C0C) = 0;                                     /* SB_PDDIR: to video memory */
+   SB(0x1C14) = 1;                                     /* SB_PDEN */
+   SB(0x1C18) = 1;                                     /* SB_PDST: go */
+}
+
+static void dma_fill(u16 colour, u32 len)
+{
+   u32 i;
+
+   for (i = 0; i < len / 2; i++)
+      ((volatile u16 *)DMA_SOURCE)[i] = colour;
+}
+
+static void dma_frame(u32 frame)
+{
+   u32 i;
+
+   if (frame == 0)
+      for (i = 0; i < 64; i++)
+         ((volatile u16 *)(0xA4000000 + DMA_TEXTURE))[i] = 0x001F;   /* blue */
+   else if (frame == 66)
+   {
+      dma_fill(0x07FF, 8192);                          /* cyan */
+      pvr_dma(DMA_HALF, 4096);                         /* its top 32 lines */
+      pvr_dma(DMA_WHOLE, 8192);
+   }
+   else if (frame == 80)
+   {
+      dma_fill(0x07E0, 128);                           /* green */
+      pvr_dma(DMA_TEXTURE, 128);
+   }
+}
+#endif
+
 /* A screen-aligned rectangle at depth 0.5 whose colour is given the other
  * two ways the Tile Accelerator takes one: as four floats with every
  * vertex (@intensity 0), or as a face colour in the polygon's header and an
@@ -713,6 +770,15 @@ static void ta_scene(void)
 #ifdef LIVE_ATLAS
    ta_atlas();
 #endif
+#ifdef LIVE_DMA
+   /* the three DMA_ textures, RGB565 and not twiddled */
+   ta_quad(TA_TEXTURED, TSP_PLAIN | (3u << 3) | 3u, (1u << 27) | (1u << 26) | (DMA_HALF >> 3), 0xFFFFFFFF, F(0.5f),
+         F(250.0f), F(5.0f), F(280.0f), F(35.0f));
+   ta_quad(TA_TEXTURED, TSP_PLAIN | (3u << 3) | 3u, (1u << 27) | (1u << 26) | (DMA_WHOLE >> 3), 0xFFFFFFFF, F(0.5f),
+         F(285.0f), F(5.0f), F(315.0f), F(35.0f));
+   ta_quad(TA_TEXTURED, TSP_PLAIN, (1u << 27) | (1u << 26) | (DMA_TEXTURE >> 3), 0xFFFFFFFF, F(0.5f),
+         F(250.0f), F(40.0f), F(280.0f), F(70.0f));
+#endif
 #ifdef LIVE_CULL
    /* With -DLIVE_CULL, on the left: two white polygons that take shadows,
     * under the two volumes below, which differ only in their cull modes */
@@ -766,6 +832,7 @@ static void ta_scene(void)
 static u32 rtt_static_done, rtt_static_age, rtt_static_bad;
 static u32 rtt_hscale_age;
 
+
 static void render_to_texture(void)
 {
    const u32 fb_w_ctrl = PVR(0x48), linestride = PVR(0x4C), fb_w_sof1 = PVR(0x60);
@@ -809,6 +876,22 @@ static void render_to_texture(void)
    }
    else if (rtt_static_age < 120)
       rtt_static_age++;
+#ifdef LIVE_DMA
+   if (!rtt_dma_done)
+   {
+      rtt_dma_done = 1;
+      PVR(0x60) = 0x01000000 | DMA_HALF;
+      PVR(0x144) = 0x80000000;                         /* TA_LIST_INIT */
+      ta_quad(0, TSP_PLAIN, 0, 0xFFFFFF00, F(0.5f), F(0.0f), F(0.0f), F(64.0f), F(64.0f));
+      ta_send(0, 0, 0, 0, 0, 0, 0, 0);
+      PVR(0x14) = 0xFFFFFFFF;                          /* STARTRENDER */
+      PVR(0x60) = 0x01000000 | DMA_WHOLE;
+      PVR(0x144) = 0x80000000;                         /* TA_LIST_INIT */
+      ta_quad(0, TSP_PLAIN, 0, 0xFFFF0000, F(0.5f), F(0.0f), F(0.0f), F(64.0f), F(64.0f));
+      ta_send(0, 0, 0, 0, 0, 0, 0, 0);
+      PVR(0x14) = 0xFFFFFFFF;                          /* STARTRENDER */
+   }
+#endif
    else if (*(volatile u16 *)(0xA4000000 + RTT_ADDRESS + 0x80000 + (20 * 64 + 20) * 2) != 0xF81F)
       rtt_static_bad = 1;
 
@@ -1880,6 +1963,9 @@ void cmain(void)
       if (frame == 100)
          set_palette(3 * 256 + 7, 0x7C1F);             /* the fourth bank: magenta */
 
+#ifdef LIVE_DMA
+      dma_frame(frame);
+#endif
       if ((frame & 3) == 3 && frame < 64)
       {
          /* direct framebuffer write: the core renders the framebuffer */

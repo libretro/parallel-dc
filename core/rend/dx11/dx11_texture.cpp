@@ -678,68 +678,187 @@ bool dx11_read_picture(ID3D11Texture2D *texture, u32 width, u32 height, u8 *rgba
 	return readBack(texture, 0, 0, width, height, rgba);
 }
 
-/* The picture as the console would have it: w by h, R G B A. */
-static void dx11_rtt_read(const RttWatch *watch, u8 *, RttWatchTake take)
+/* Copies of pictures off the card, each into a staging picture of its own:
+ * made ahead of the read where rtt_watch says which (dx11_rtt_prefetch()),
+ * or by the read itself, whose Map() waits for the card only if it has not
+ * got there yet. */
+#define RTT_COPIES 18
+
+struct Dx11RttCopy
 {
-	DX11Lock lock;
+	u32 serial;         /* the render's (RttWatch::serial), 0 if none */
+	uintptr_t tex;
+	u32 w, h;
+	u64 stamp;          /* when it was last made, for the oldest */
+	ComPtr<ID3D11Texture2D> staging;   /* grown, never shrunk */
+};
+
+static Dx11RttCopy rttCopies[RTT_COPIES];
+static u64 rttStamp;
+
+static Dx11RttCopy *rtt_copy_of(const RttWatch *watch)
+{
+	for (Dx11RttCopy& c : rttCopies)
+		if (c.serial == watch->serial && c.serial != 0 && c.tex == watch->tex)
+			return &c;
+	return nullptr;
+}
+
+/* One to copy into: one that holds none, or the one made longest ago */
+static Dx11RttCopy *rtt_copy_free(void)
+{
+	Dx11RttCopy *oldest = nullptr;
+
+	for (Dx11RttCopy& c : rttCopies)
+	{
+		if (c.serial == 0)
+			return &c;
+		if (oldest == nullptr || c.stamp < oldest->stamp)
+			oldest = &c;
+	}
+	return oldest;
+}
+
+/* The picture as the console would have it, w by h, R G B A, copied into
+ * c's staging picture: from the texture at the clip; or made the console's
+ * size on the card first, filtered, where it is finer (the clip's part of
+ * the texture drawn onto a picture of w by h). Not waited for. */
+static bool rtt_copy(const RttWatch *watch, Dx11RttCopy& c)
+{
 	DX11Context *context = DX11Context::Instance();
 	ID3D11Device *device = context->GetDevice();
 	ID3D11DeviceContext *deviceContext = context->GetDeviceContext();
 	DX11Texture *texture = (DX11Texture *)watch->tex;
 	const u32 w = watch->w, h = watch->h, scale = watch->scale > 1 ? watch->scale : 1;
 	const u32 x0 = watch->x0 * scale, y0 = watch->y0 * scale;
+	ID3D11Texture2D *source = texture->texture;
+	u32 sx = x0, sy = y0;
 
-	if (device == nullptr || !texture->texture)
-	{
-		take(watch, nullptr, 0);
-		return;
-	}
-	if (scale == 1)
-	{
-		readBack(texture->texture, x0, y0, w, h, nullptr, watch, take);
-		return;
-	}
-	/* Made the console's size on the card, filtered, and read at that: the
-	 * clip's part of the texture drawn onto a picture of w by h. */
-	if (small)
+	if (device == nullptr || !context->CanReadBack() || !texture->texture)
+		return false;
+	if (c.staging)
 	{
 		D3D11_TEXTURE2D_DESC desc;
-		small->GetDesc(&desc);
+		c.staging->GetDesc(&desc);
 		if (desc.Width < w || desc.Height < h)
-		{
-			smallTarget.reset();
-			small.reset();
-		}
+			c.staging.reset();
 	}
-	if (!small)
+	if (!c.staging)
 	{
 		D3D11_TEXTURE2D_DESC desc{};
-		desc.Width = std::max(w, 640u);
-		desc.Height = std::max(h, 480u);
+		desc.Width = w;
+		desc.Height = h;
 		desc.MipLevels = 1;
 		desc.ArraySize = 1;
 		desc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
 		desc.SampleDesc.Count = 1;
-		desc.Usage = D3D11_USAGE_DEFAULT;
-		desc.BindFlags = D3D11_BIND_RENDER_TARGET;
-		if (FAILED(device->CreateTexture2D(&desc, nullptr, small.put()))
-				|| FAILED(device->CreateRenderTargetView(small, nullptr, smallTarget.put())))
+		desc.Usage = D3D11_USAGE_STAGING;
+		desc.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
+		if (FAILED(device->CreateTexture2D(&desc, nullptr, c.staging.put())))
 		{
-			WARN_LOG(RENDERER, "Render to texture read back: target creation failed");
-			small.reset();
+			WARN_LOG(RENDERER, "Staging texture creation failed (%d x %d)", w, h);
+			c.staging.reset();
+			return false;
+		}
+	}
+	if (scale > 1)
+	{
+		if (small)
+		{
+			D3D11_TEXTURE2D_DESC desc;
+			small->GetDesc(&desc);
+			if (desc.Width < w || desc.Height < h)
+			{
+				smallTarget.reset();
+				small.reset();
+			}
+		}
+		if (!small)
+		{
+			D3D11_TEXTURE2D_DESC desc{};
+			desc.Width = std::max(w, 640u);
+			desc.Height = std::max(h, 480u);
+			desc.MipLevels = 1;
+			desc.ArraySize = 1;
+			desc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+			desc.SampleDesc.Count = 1;
+			desc.Usage = D3D11_USAGE_DEFAULT;
+			desc.BindFlags = D3D11_BIND_RENDER_TARGET;
+			if (FAILED(device->CreateTexture2D(&desc, nullptr, small.put()))
+					|| FAILED(device->CreateRenderTargetView(small, nullptr, smallTarget.put())))
+			{
+				WARN_LOG(RENDERER, "Render to texture read back: target creation failed");
+				small.reset();
+				return false;
+			}
+		}
+		D3D11_TEXTURE2D_DESC src;
+		texture->texture->GetDesc(&src);
+		context->SetTargets(smallTarget, nullptr);
+		context->SetViewport((float)w, (float)h);
+		context->GetQuad().Draw(texture->textureView, context->GetSamplers().GetLinearSampler(),
+				-1.f, -1.f, 2.f, 2.f,
+				(float)x0 / src.Width, (float)y0 / src.Height,
+				(float)(x0 + w * scale) / src.Width, (float)(y0 + h * scale) / src.Height);
+		source = small;
+		sx = sy = 0;
+	}
+	const D3D11_BOX box = { sx, sy, 0, sx + w, sy + h, 1 };
+	deviceContext->CopySubresourceRegion(c.staging, 0, 0, 0, 0, source, 0, &box);
+	c.serial = watch->serial;
+	c.tex = watch->tex;
+	c.w = w;
+	c.h = h;
+	c.stamp = ++rttStamp;
+	return true;
+}
+
+/* rtt_watch's: begun now, together, and sent to the card, not waited for */
+static void dx11_rtt_prefetch(const RttWatch *const *watches, unsigned count)
+{
+	DX11Lock lock;
+	bool any = false;
+
+	for (unsigned i = 0; i < count; i++)
+		if (rtt_copy_of(watches[i]) == nullptr)
+		{
+			Dx11RttCopy *c = rtt_copy_free();
+			if (c != nullptr && rtt_copy(watches[i], *c))
+				any = true;
+		}
+	if (any)
+		DX11Context::Instance()->GetDeviceContext()->Flush();
+}
+
+/* The picture, from its copy - made ahead as often as not, and done by
+ * now - or from one made here, which Map() waits for. */
+static void dx11_rtt_read(const RttWatch *watch, u8 *, RttWatchTake take)
+{
+	DX11Lock lock;
+	ID3D11DeviceContext *deviceContext = DX11Context::Instance()->GetDeviceContext();
+	Dx11RttCopy *c = rtt_copy_of(watch);
+
+	if (c == nullptr)
+	{
+		c = rtt_copy_free();
+		if (!rtt_copy(watch, *c))
+		{
 			take(watch, nullptr, 0);
 			return;
 		}
 	}
-	D3D11_TEXTURE2D_DESC src;
-	texture->texture->GetDesc(&src);
-	context->SetTargets(smallTarget, nullptr);
-	context->SetViewport((float)w, (float)h);
-	context->GetQuad().Draw(texture->textureView, context->GetSamplers().GetLinearSampler(),
-			-1.f, -1.f, 2.f, 2.f,
-			(float)x0 / src.Width, (float)y0 / src.Height,
-			(float)(x0 + w * scale) / src.Width, (float)(y0 + h * scale) / src.Height);
-	readBack(small, 0, 0, w, h, nullptr, watch, take);
+	D3D11_MAPPED_SUBRESOURCE mapped;
+	if (FAILED(deviceContext->Map(c->staging, 0, D3D11_MAP_READ, 0, &mapped)))
+	{
+		WARN_LOG(RENDERER, "A picture could not be read back from the card");
+		take(watch, nullptr, 0);
+	}
+	else
+	{
+		take(watch, (const u8 *)mapped.pData, mapped.RowPitch);
+		deviceContext->Unmap(c->staging, 0);
+	}
+	c->serial = 0;
 }
 
 /* The texture cache's, never this module's to delete. */
@@ -747,7 +866,7 @@ static void dx11_rtt_release(uintptr_t)
 {
 }
 
-static const RttWatchBackend dx11_rtt_backend = { dx11_rtt_read, dx11_rtt_release };
+static const RttWatchBackend dx11_rtt_backend = { dx11_rtt_read, dx11_rtt_release, dx11_rtt_prefetch };
 
 /* What the render covers of video memory: the clip's pixels, from (x0, y0)
  * of the frame at addr, which moves to the first of them. (As the Vulkan
@@ -796,6 +915,11 @@ void dx11_rtt_watch(DX11Texture *texture, u32 addr, u32 x0, u32 y0, u32 width, u
 void dx11_rtt_term(void)
 {
 	rtt_watch_term();
+	for (Dx11RttCopy& c : rttCopies)
+	{
+		c.staging.reset();
+		c.serial = 0;
+	}
 	smallTarget.reset();
 	small.reset();
 	staging.reset();

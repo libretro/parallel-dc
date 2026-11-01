@@ -11,6 +11,7 @@
 #include "hw/mem/_vmem.h"
 #include "hw/sh4/modules/mmu.h"
 #include "texdecode.h"
+#include "rtt_watch.h"
 
 #include <algorithm>
 // for a hash state that can be a local: ComputeHash() allocates nothing
@@ -301,6 +302,38 @@ void VramLockedWriteRange(u32 offset, u32 size)
 	_vmem_unprotect_vram(first * PAGE_SIZE, (last - first + 1) * PAGE_SIZE);
 	for (u32 page = first; page <= last; page++)
 		vram_writes.Mark(page);
+}
+
+/* A block copy (a DMA) is about to write every byte of @size from @offset
+ * of video memory, on the thread that runs the machine. What its writes
+ * would fault on a page at a time is done once for all of it: a picture
+ * rendered there that it replaces whole is not fetched off the card first
+ * (rtt_watch_overwrite()), and the protected pages are opened and marked as
+ * written, each run of them with one change of protection - in the order a
+ * fault has it, opened first and marked second. */
+void VramBlockWrite(u32 offset, u32 size)
+{
+	if (size == 0 || offset >= VRAM_SIZE)
+		return;
+	if (size > VRAM_SIZE - offset)
+		size = VRAM_SIZE - offset;
+	rtt_watch_overwrite(offset, size);
+
+	const u32 last = (offset + size - 1) / PAGE_SIZE;
+	for (u32 page = offset / PAGE_SIZE; page <= last; )
+	{
+		if (!_vmem_vram_page_protected(page))
+		{
+			page++;
+			continue;
+		}
+		u32 end = page + 1;
+		while (end <= last && _vmem_vram_page_protected(end))
+			end++;
+		_vmem_unprotect_vram(page * PAGE_SIZE, (end - page) * PAGE_SIZE);
+		for (; page < end; page++)
+			vram_writes.Mark(page);
+	}
 }
 
 /* Video memory from a save state: @from is all of it. Any thread, the

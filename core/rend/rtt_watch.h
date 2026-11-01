@@ -37,6 +37,7 @@ struct RttWatch
 	u32 scale;           /* how many times finer than w by h it is */
 	bool owned;          /* nothing else will delete tex */
 	u32 age;             /* frames it has waited */
+	u32 serial;          /* this render's, of every render watched: never 0 */
 	bool used;
 };
 
@@ -52,6 +53,11 @@ struct RttWatchBackend
 	 * and handed over from there. Not handed over: as NULL. */
 	void (*read)(const RttWatch *watch, u8 *scratch, RttWatchTake take);
 	void (*release)(uintptr_t tex);
+	/* Optional. The copies of these pictures off the card, begun together
+	 * and not waited for: a read() of one later finds it there (by its
+	 * serial), done as often as not. Any that cannot be begun now are left
+	 * to read(). */
+	void (*prefetch)(const RttWatch *const *watches, unsigned count);
 };
 
 /* Render thread, the machine standing still. A new render covers this
@@ -67,6 +73,10 @@ bool rtt_watch_take(uintptr_t tex);
 bool rtt_watch_fault(void *address);
 /* The same for code that knows it is about to touch video memory. */
 void rtt_watch_touch(u32 offset, u32 size);
+/* Code about to write every byte of @size from @offset (a DMA): a picture
+ * wholly inside is never fetched, the write replaces it. One partly inside
+ * is fetched first, as for a touch. */
+void rtt_watch_overwrite(u32 offset, u32 size);
 /* Render thread, the machine standing still: everything that is waiting
  * goes to video memory now (the pictures are about to be destroyed). */
 void rtt_watch_flush(void);
@@ -75,7 +85,8 @@ void rtt_watch_flush(void);
  * it goes to video memory now, once, so that it is there for whoever
  * cannot ask the graphics card - the frontend saving a state from a thread
  * of its own. One that is rendered every frame never gets that old, and
- * costs nothing here. */
+ * costs nothing here. Its copy off the card is begun a frame before, so
+ * that this does not wait for the card. */
 void rtt_watch_frame(void);
 /* Render thread: do what the emulation thread handed over. */
 void rtt_watch_serve(void);

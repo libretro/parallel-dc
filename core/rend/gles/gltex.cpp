@@ -221,6 +221,8 @@ void gl_tex_init(bool depth)
 	gl.rtt.kept = true;
 }
 
+static void rtt_gl_term(void);
+
 void gl_tex_term()
 {
 	if (gl.rtt.kept)
@@ -240,6 +242,7 @@ void gl_tex_term()
 	}
 	glTexPool.Term();
 	glTexDecoder.Term();
+	rtt_gl_term();
 }
 
 void gl_tex_flush()
@@ -600,52 +603,84 @@ bool TextureCacheData::Delete()
 	return true;
 }
 
+/* The framebuffers a read attaches the picture to, kept from one read to
+ * the next, and the picture of the console's size a finer one is brought
+ * down to (grown, never shrunk) */
+static GLuint rtt_read_fbo, rtt_small_fbo, rtt_small_rb;
+static u32 rtt_small_w, rtt_small_h;
+
+/* The framebuffer the picture is read from, bound: @tex's, or - finer than
+ * the console's, made its size on the card, filtered - the small one's.
+ * Where it is in that, at (*x, *y). False if it cannot be made smaller. */
+static bool rtt_gl_source(const RttWatch *watch, u32 *x, u32 *y)
+{
+	const u32 w = watch->w, h = watch->h, scale = watch->scale;
+
+	if (rtt_read_fbo == 0)
+		glGenFramebuffers(1, &rtt_read_fbo);
+	glBindFramebuffer(RARCH_GL_FRAMEBUFFER, rtt_read_fbo);
+	glFramebufferTexture2D(RARCH_GL_FRAMEBUFFER, RARCH_GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, (GLuint)watch->tex, 0);
+	*x = watch->x0 * (scale > 1 ? scale : 1);
+	*y = watch->y0 * (scale > 1 ? scale : 1);
+	if (scale <= 1)
+		return true;
+#if defined(GL_READ_FRAMEBUFFER) && defined(GL_DRAW_FRAMEBUFFER) && defined(GL_RGBA8)
+	if (gl.gl_major < 3)
+		return false;
+	const GLboolean was_scissor = glIsEnabled(GL_SCISSOR_TEST);
+
+	if (rtt_small_rb == 0 || rtt_small_w < w || rtt_small_h < h)
+	{
+		rtt_small_w = std::max(w, rtt_small_w);
+		rtt_small_h = std::max(h, rtt_small_h);
+		if (rtt_small_rb == 0)
+			glGenRenderbuffers(1, &rtt_small_rb);
+		glBindRenderbuffer(RARCH_GL_RENDERBUFFER, rtt_small_rb);
+		glRenderbufferStorage(RARCH_GL_RENDERBUFFER, GL_RGBA8, rtt_small_w, rtt_small_h);
+		if (rtt_small_fbo == 0)
+			glGenFramebuffers(1, &rtt_small_fbo);
+		glBindFramebuffer(RARCH_GL_FRAMEBUFFER, rtt_small_fbo);
+		glFramebufferRenderbuffer(RARCH_GL_FRAMEBUFFER, RARCH_GL_COLOR_ATTACHMENT0, RARCH_GL_RENDERBUFFER, rtt_small_rb);
+	}
+	glBindFramebuffer(GL_READ_FRAMEBUFFER, rtt_read_fbo);
+	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, rtt_small_fbo);
+	if (was_scissor)
+		glDisable(GL_SCISSOR_TEST);
+	glBlitFramebuffer(*x, *y, *x + w * scale, *y + h * scale, 0, 0, w, h, GL_COLOR_BUFFER_BIT, GL_LINEAR);
+	if (was_scissor)
+		glEnable(GL_SCISSOR_TEST);
+	glBindFramebuffer(RARCH_GL_FRAMEBUFFER, rtt_small_fbo);
+	*x = *y = 0;
+	return true;
+#else
+	return false;
+#endif
+}
+
+/* The picture's framebuffer let go of the texture again: a texture attached
+ * to a framebuffer is not deleted when it is (rtt_gl_release()) */
+static void rtt_gl_detach(void)
+{
+	glBindFramebuffer(RARCH_GL_FRAMEBUFFER, rtt_read_fbo);
+	glFramebufferTexture2D(RARCH_GL_FRAMEBUFFER, RARCH_GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, 0, 0);
+}
+
 /* rend/rtt_watch.h asks for a picture it left on the graphics card: w by h
  * pixels, whatever the card has it at. Called wherever the game first
  * touched the memory, the middle of a frame's set-up included, so what it
- * changes it puts back. */
+ * changes it puts back. (OpenGL ES 2: no buffer to read into; the pixels
+ * into @rgba, and waited for.) */
 static void rtt_gl_read(const RttWatch *watch, u8 *rgba)
 {
 	GLint was_fbo = 0, was_pack = 4;
-	GLuint fbo = 0;
 	const u32 w = watch->w, h = watch->h, scale = watch->scale;
-	const u32 x0 = watch->x0 * (scale > 1 ? scale : 1), y0 = watch->y0 * (scale > 1 ? scale : 1);
+	u32 x0, y0;
 
 	glGetIntegerv(GL_FRAMEBUFFER_BINDING, &was_fbo);
 	glGetIntegerv(GL_PACK_ALIGNMENT, &was_pack);
 	glPixelStorei(GL_PACK_ALIGNMENT, 1);
-	glGenFramebuffers(1, &fbo);
-	glBindFramebuffer(RARCH_GL_FRAMEBUFFER, fbo);
-	glFramebufferTexture2D(RARCH_GL_FRAMEBUFFER, RARCH_GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, watch->tex, 0);
-
-	if (scale <= 1)
+	if (rtt_gl_source(watch, &x0, &y0))
 		glReadPixels(x0, y0, w, h, GL_RGBA, GL_UNSIGNED_BYTE, rgba);
-#if defined(GL_READ_FRAMEBUFFER) && defined(GL_DRAW_FRAMEBUFFER) && defined(GL_RGBA8)
-	else if (gl.gl_major >= 3)
-	{
-		/* made the console's size on the card, filtered, and read at that */
-		GLuint small_fbo = 0, small = 0;
-		const GLboolean was_scissor = glIsEnabled(GL_SCISSOR_TEST);
-
-		glGenRenderbuffers(1, &small);
-		glBindRenderbuffer(RARCH_GL_RENDERBUFFER, small);
-		glRenderbufferStorage(RARCH_GL_RENDERBUFFER, GL_RGBA8, w, h);
-		glGenFramebuffers(1, &small_fbo);
-		glBindFramebuffer(RARCH_GL_FRAMEBUFFER, small_fbo);
-		glFramebufferRenderbuffer(RARCH_GL_FRAMEBUFFER, RARCH_GL_COLOR_ATTACHMENT0, RARCH_GL_RENDERBUFFER, small);
-		glBindFramebuffer(GL_READ_FRAMEBUFFER, fbo);
-		glBindFramebuffer(GL_DRAW_FRAMEBUFFER, small_fbo);
-		if (was_scissor)
-			glDisable(GL_SCISSOR_TEST);
-		glBlitFramebuffer(x0, y0, x0 + w * scale, y0 + h * scale, 0, 0, w, h, GL_COLOR_BUFFER_BIT, GL_LINEAR);
-		if (was_scissor)
-			glEnable(GL_SCISSOR_TEST);
-		glBindFramebuffer(RARCH_GL_FRAMEBUFFER, small_fbo);
-		glReadPixels(0, 0, w, h, GL_RGBA, GL_UNSIGNED_BYTE, rgba);
-		glDeleteFramebuffers(1, &small_fbo);
-		glDeleteRenderbuffers(1, &small);
-	}
-#endif
 	else
 	{
 		/* no way to make it smaller on the card: the middle pixel of each */
@@ -658,10 +693,182 @@ static void rtt_gl_read(const RttWatch *watch, u8 *rgba)
 				memcpy(rgba + (y * w + x) * 4, line + (x * scale + scale / 2) * 4, 4);
 		}
 	}
-
+	rtt_gl_detach();
 	glBindFramebuffer(RARCH_GL_FRAMEBUFFER, was_fbo);
-	glDeleteFramebuffers(1, &fbo);
 	glPixelStorei(GL_PACK_ALIGNMENT, was_pack);
+}
+
+#ifndef HAVE_OPENGLES2
+/* OpenGL 3 and OpenGL ES 3: copies of pictures off the card into pixel
+ * buffers, each with a fence - begun ahead of the read where rtt_watch says
+ * which (rtt_gl_prefetch()), or by the read - and handed over from the
+ * buffer mapped, with no copy of this side's. */
+#define RTT_COPIES 18
+
+struct GlRttCopy
+{
+	u32 serial;         /* the render's (RttWatch::serial), 0 if none */
+	uintptr_t tex;
+	u32 w, h;
+	u64 stamp;          /* when it was last begun, for the oldest */
+	GLuint pbo;
+	size_t size;        /* grown, never shrunk */
+	GLsync fence;
+};
+
+static GlRttCopy rtt_copies[RTT_COPIES];
+static u64 rtt_stamp;
+
+static bool rtt_gl_pbo(void)
+{
+	return gl.gl_major >= 3;
+}
+
+static GlRttCopy *rtt_gl_copy_of(const RttWatch *watch)
+{
+	for (GlRttCopy& c : rtt_copies)
+		if (c.serial == watch->serial && c.serial != 0 && c.tex == watch->tex)
+			return &c;
+	return nullptr;
+}
+
+/* One to begin a copy in: one that holds none, or the one begun longest
+ * ago, not after @since (in this batch) */
+static GlRttCopy *rtt_gl_copy_free(u64 since)
+{
+	GlRttCopy *oldest = nullptr;
+
+	for (GlRttCopy& c : rtt_copies)
+	{
+		if (c.serial != 0 && c.stamp > since)
+			continue;
+		if (c.serial == 0)
+			return &c;
+		if (oldest == nullptr || c.stamp < oldest->stamp)
+			oldest = &c;
+	}
+	return oldest;
+}
+
+/* The copy of the picture into c's buffer, begun; false if it cannot be
+ * (made smaller on the card) */
+static bool rtt_gl_begin(const RttWatch *watch, GlRttCopy& c)
+{
+	const size_t bytes = (size_t)watch->w * watch->h * 4;
+	u32 x0, y0;
+
+	if (!rtt_gl_source(watch, &x0, &y0))
+		return false;
+	if (c.pbo == 0)
+		glGenBuffers(1, &c.pbo);
+	glBindBuffer(GL_PIXEL_PACK_BUFFER, c.pbo);
+	if (c.size < bytes)
+	{
+		glBufferData(GL_PIXEL_PACK_BUFFER, bytes, nullptr, GL_STREAM_READ);
+		c.size = bytes;
+	}
+	glReadPixels(x0, y0, watch->w, watch->h, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+	if (c.fence != nullptr)
+		glDeleteSync(c.fence);
+	c.fence = glFenceSync(GL_SYNC_GPU_COMMANDS_COMPLETE, 0);
+	c.serial = watch->serial;
+	c.tex = watch->tex;
+	c.w = watch->w;
+	c.h = watch->h;
+	c.stamp = ++rtt_stamp;
+	return true;
+}
+
+/* Copies of @watches begun, those that have one already left alone; what
+ * a read changes put back */
+static void rtt_gl_copies(const RttWatch *const *watches, unsigned count)
+{
+	GLint was_fbo = 0, was_pack = 4, was_pbo = 0;
+	const u64 since = rtt_stamp;
+	bool any = false;
+
+	glGetIntegerv(GL_FRAMEBUFFER_BINDING, &was_fbo);
+	glGetIntegerv(GL_PACK_ALIGNMENT, &was_pack);
+	glGetIntegerv(GL_PIXEL_PACK_BUFFER_BINDING, &was_pbo);
+	glPixelStorei(GL_PACK_ALIGNMENT, 1);
+	for (unsigned i = 0; i < count; i++)
+	{
+		if (rtt_gl_copy_of(watches[i]) != nullptr)
+			continue;
+		GlRttCopy *c = rtt_gl_copy_free(since);
+		if (c == nullptr)
+			break;
+		any |= rtt_gl_begin(watches[i], *c);
+	}
+	if (any)
+	{
+		rtt_gl_detach();
+		/* (on their way to the card now, not with whatever comes next) */
+		glFlush();
+	}
+	glBindBuffer(GL_PIXEL_PACK_BUFFER, was_pbo);
+	glBindFramebuffer(RARCH_GL_FRAMEBUFFER, was_fbo);
+	glPixelStorei(GL_PACK_ALIGNMENT, was_pack);
+}
+
+static void rtt_gl_prefetch(const RttWatch *const *watches, unsigned count)
+{
+	if (rtt_gl_pbo())
+		rtt_gl_copies(watches, count);
+}
+
+/* The picture, from its copy's buffer mapped: begun ahead as often as not,
+ * and done by now; or begun here and waited for */
+static bool rtt_gl_take_copy(const RttWatch *watch, RttWatchTake take)
+{
+	GlRttCopy *c = rtt_gl_copy_of(watch);
+	GLint was_pbo = 0;
+
+	if (c == nullptr)
+	{
+		rtt_gl_copies(&watch, 1);
+		c = rtt_gl_copy_of(watch);
+		if (c == nullptr)
+			return false;
+	}
+	glClientWaitSync(c->fence, GL_SYNC_FLUSH_COMMANDS_BIT, 0xFFFFFFFFFFFFFFFFull);
+	glDeleteSync(c->fence);
+	c->fence = nullptr;
+	glGetIntegerv(GL_PIXEL_PACK_BUFFER_BINDING, &was_pbo);
+	glBindBuffer(GL_PIXEL_PACK_BUFFER, c->pbo);
+	const u8 *p = (const u8 *)glMapBufferRange(GL_PIXEL_PACK_BUFFER, 0, (GLsizeiptr)c->w * c->h * 4, GL_MAP_READ_BIT);
+	if (p != nullptr)
+	{
+		take(watch, p, (size_t)c->w * 4);
+		glUnmapBuffer(GL_PIXEL_PACK_BUFFER);
+	}
+	glBindBuffer(GL_PIXEL_PACK_BUFFER, was_pbo);
+	c->serial = 0;
+	return p != nullptr;
+}
+#endif
+
+/* the context is going: what the reads kept */
+static void rtt_gl_term(void)
+{
+#ifndef HAVE_OPENGLES2
+	for (GlRttCopy& c : rtt_copies)
+	{
+		if (c.fence != nullptr)
+			glDeleteSync(c.fence);
+		if (c.pbo != 0)
+			glDeleteBuffers(1, &c.pbo);
+		c = GlRttCopy();
+	}
+#endif
+	if (rtt_read_fbo != 0)
+		glDeleteFramebuffers(1, &rtt_read_fbo);
+	if (rtt_small_fbo != 0)
+		glDeleteFramebuffers(1, &rtt_small_fbo);
+	if (rtt_small_rb != 0)
+		glDeleteRenderbuffers(1, &rtt_small_rb);
+	rtt_read_fbo = rtt_small_fbo = rtt_small_rb = 0;
+	rtt_small_w = rtt_small_h = 0;
 }
 
 static void rtt_gl_release(uintptr_t tex)
@@ -675,14 +882,23 @@ static void rtt_gl_release(uintptr_t tex)
 		glcache.DeleteTextures(1, &id);
 }
 
-/* (read back to memory of this side's: handed over from there) */
+/* (from a pixel buffer where there are any; or read back to memory of this
+ * side's, and handed over from there) */
 static void rtt_gl_take(const RttWatch *watch, u8 *scratch, RttWatchTake take)
 {
+#ifndef HAVE_OPENGLES2
+	if (rtt_gl_pbo() && rtt_gl_take_copy(watch, take))
+		return;
+#endif
 	rtt_gl_read(watch, scratch);
 	take(watch, scratch, (size_t)watch->w * 4);
 }
 
+#ifndef HAVE_OPENGLES2
+static const RttWatchBackend rtt_gl_backend = { rtt_gl_take, rtt_gl_release, rtt_gl_prefetch };
+#else
 static const RttWatchBackend rtt_gl_backend = { rtt_gl_take, rtt_gl_release };
+#endif
 
 /* rend/last_picture.h: the context is going, and the screen's last picture
  * is in the framebuffer the frontend gave to draw in. */

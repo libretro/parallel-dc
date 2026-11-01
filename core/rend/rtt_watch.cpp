@@ -22,6 +22,8 @@ static uintptr_t garbage[RTT_WATCH_SLOTS];
 static unsigned garbage_count;
 int rtt_watch_request;
 static u32 request_offset, request_size;
+static bool request_overwrite;    /* the request is rtt_watch_overwrite()'s */
+static u32 next_serial;
 #if !defined(TARGET_NO_THREADS)
 static uintptr_t render_thread, emu_thread_id;
 #endif
@@ -206,17 +208,64 @@ static void drop(RttWatch& s)
 		garbage[garbage_count++] = s.tex;
 }
 
-static void fill_range(u32 offset, u32 size)
+/* Several at once: their copies off the card begun together first, so
+ * that the card is waited for once, not once each. */
+static void fill_many(RttWatch **list, unsigned count)
 {
-	const u32 first = offset / PAGE_SIZE, last = (offset + size - 1) / PAGE_SIZE;
+	if (count > 1 && backend.prefetch != NULL)
+	{
+		const RttWatch *watches[RTT_WATCH_SLOTS];
 
-	for (RttWatch& s : slots)
-		if (s.used && first_page(s) <= last && last_page(s) >= first)
-			fill(s);
-	/* never leave a page that faults with nothing behind it */
+		for (unsigned i = 0; i < count; i++)
+			watches[i] = list[i];
+		backend.prefetch(watches, count);
+	}
+	for (unsigned i = 0; i < count; i++)
+		if (list[i]->used)
+			fill(*list[i]);
+}
+
+/* never leave a page that faults with nothing behind it */
+static void unwatch_unwanted(u32 first, u32 last)
+{
 	for (u32 page = first; page <= last; page++)
 		if (_vmem_vram_page_watched(page) && !page_wanted(page, NULL))
 			_vmem_unwatch_vram(page * PAGE_SIZE, PAGE_SIZE);
+}
+
+static void fill_range(u32 offset, u32 size)
+{
+	const u32 first = offset / PAGE_SIZE, last = (offset + size - 1) / PAGE_SIZE;
+	RttWatch *list[RTT_WATCH_SLOTS];
+	unsigned count = 0;
+
+	for (RttWatch& s : slots)
+		if (s.used && first_page(s) <= last && last_page(s) >= first)
+			list[count++] = &s;
+	fill_many(list, count);
+	unwatch_unwanted(first, last);
+}
+
+/* A write of every byte from @offset to @offset + @size: what it covers
+ * whole is dropped, not fetched, and what it covers in part (or shares a
+ * page with) is fetched. */
+static void overwrite_range(u32 offset, u32 size)
+{
+	const u32 first = offset / PAGE_SIZE, last = (offset + size - 1) / PAGE_SIZE;
+	RttWatch *list[RTT_WATCH_SLOTS];
+	unsigned count = 0;
+
+	for (RttWatch& s : slots)
+	{
+		if (!s.used || first_page(s) > last || last_page(s) < first)
+			continue;
+		if (s.addr >= offset && s.addr + s.bytes <= offset + size)
+			drop(s);
+		else
+			list[count++] = &s;
+	}
+	fill_many(list, count);
+	unwatch_unwanted(first, last);
 }
 
 static void drop_range(u32 offset, u32 size)
@@ -226,9 +275,7 @@ static void drop_range(u32 offset, u32 size)
 	for (RttWatch& s : slots)
 		if (s.used && first_page(s) <= last && last_page(s) >= first)
 			drop(s);
-	for (u32 page = first; page <= last; page++)
-		if (_vmem_vram_page_watched(page) && !page_wanted(page, NULL))
-			_vmem_unwatch_vram(page * PAGE_SIZE, PAGE_SIZE);
+	unwatch_unwanted(first, last);
 }
 
 void rtt_watch_supersede(u32 addr, u32 bytes)
@@ -298,12 +345,19 @@ void rtt_watch_add(const RttWatch *watch, const RttWatchBackend *b)
 		}
 	if (slot == NULL)
 	{
+		/* the one that has waited longest: the likeliest not to be wanted */
 		slot = &slots[0];
+		for (RttWatch& s : slots)
+			if (s.age > slot->age)
+				slot = &s;
 		fill(*slot);
 	}
 	*slot = *watch;
 	slot->used = true;
 	slot->age = 0;
+	if (++next_serial == 0)
+		next_serial = 1;
+	slot->serial = next_serial;
 	_vmem_watch_vram(first_page(*slot) * PAGE_SIZE, (last_page(*slot) - first_page(*slot) + 1) * PAGE_SIZE);
 }
 
@@ -318,12 +372,16 @@ bool rtt_watch_take(uintptr_t tex)
 	return false;
 }
 
-void rtt_watch_touch(u32 offset, u32 size)
+/* rtt_watch_touch() and rtt_watch_overwrite(): fill_range() or
+ * overwrite_range() on the thread that renders */
+static void watched_access(u32 offset, u32 size, bool overwrite)
 {
 	bool any = false;
 
-	if (offset >= VRAM_SIZE)
+	if (size == 0 || offset >= VRAM_SIZE)
 		return;
+	if (size > VRAM_SIZE - offset)
+		size = VRAM_SIZE - offset;
 	for (u32 page = offset / PAGE_SIZE; page <= (offset + size - 1) / PAGE_SIZE && !any; page++)
 		any = _vmem_vram_page_watched(page);
 	if (!any)
@@ -339,6 +397,7 @@ void rtt_watch_touch(u32 offset, u32 size)
 			 * hands over: it fetches the picture while this one sleeps. */
 			request_offset = offset;
 			request_size = size;
+			request_overwrite = overwrite;
 			emu_baton.WaitWorkDone();
 			emu_baton.HandOver(&rtt_watch_request);
 			return;
@@ -351,7 +410,20 @@ void rtt_watch_touch(u32 offset, u32 size)
 		return;
 	}
 #endif
-	fill_range(offset, size);
+	if (overwrite)
+		overwrite_range(offset, size);
+	else
+		fill_range(offset, size);
+}
+
+void rtt_watch_touch(u32 offset, u32 size)
+{
+	watched_access(offset, size, false);
+}
+
+void rtt_watch_overwrite(u32 offset, u32 size)
+{
+	watched_access(offset, size, true);
 }
 
 bool rtt_watch_fault(void *address)
@@ -367,27 +439,51 @@ bool rtt_watch_fault(void *address)
 void rtt_watch_serve(void)
 {
 	release_garbage();
-	fill_range(request_offset, request_size);
+	if (request_overwrite)
+		overwrite_range(request_offset, request_size);
+	else
+		fill_range(request_offset, request_size);
+	request_overwrite = false;
 }
 
 void rtt_watch_flush(void)
 {
+	RttWatch *list[RTT_WATCH_SLOTS];
+	unsigned count = 0;
+
 	if (backend.read == NULL)
 		return;
 	for (RttWatch& s : slots)
 		if (s.used)
-			fill(s);
+			list[count++] = &s;
+	fill_many(list, count);
 }
 
 #define RTT_WATCH_SETTLED 3
 
 void rtt_watch_frame(void)
 {
+	const RttWatch *early[RTT_WATCH_SLOTS];
+	RttWatch *settled[RTT_WATCH_SLOTS];
+	unsigned n_early = 0, n_settled = 0;
+
 	if (backend.read == NULL)
 		return;
 	for (RttWatch& s : slots)
-		if (s.used && ++s.age >= RTT_WATCH_SETTLED)
-			fill(s);
+	{
+		if (!s.used)
+			continue;
+		if (++s.age >= RTT_WATCH_SETTLED)
+			settled[n_settled++] = &s;
+		else if (s.age == RTT_WATCH_SETTLED - 1)
+			early[n_early++] = &s;
+	}
+	/* the copies of the ones that settle next frame, begun now: by then the
+	 * card is done with them, and their fill() waits for nothing. (Begun
+	 * twice, for one already begun: the backend sees it is.) */
+	if (n_early != 0 && backend.prefetch != NULL)
+		backend.prefetch(early, n_early);
+	fill_many(settled, n_settled);
 }
 
 void rtt_watch_forget(void)

@@ -276,6 +276,9 @@ void WriteMemBlock_nommu_dma(u32 dst, u32 src, u32 size)
 		WriteMem32_nommu(dst + i, ReadMem32_nommu(src + i));
 }
 
+/* rend/TexCache.cpp: video memory about to be written whole, by a block */
+void VramBlockWrite(u32 offset, u32 size);
+
 void WriteMemBlock_nommu_ptr(u32 dst, u32* src, u32 size)
 {
 	bool dst_ismem;
@@ -285,7 +288,11 @@ void WriteMemBlock_nommu_ptr(u32 dst, u32* src, u32 size)
 	while (dst_ismem)
 	{
 		const u32 run = mem_run_write(dst, dst_ptr);
+		/* video memory, which every mapping of has at vram.data */
+		const uintptr_t to_vram = (uintptr_t)dst_ptr - (uintptr_t)&vram[0];
 
+		if (to_vram < VRAM_SIZE)
+			VramBlockWrite((u32)to_vram, size <= run ? size : run);
 		if (likely(size <= run))
 		{
 			memcpy(dst_ptr, src, size);
