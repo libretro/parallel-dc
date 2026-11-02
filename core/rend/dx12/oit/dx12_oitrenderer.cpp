@@ -123,7 +123,7 @@ public:
 		InitCompute();
 	}
 
-	bool Render() override;
+	bool RenderFrame() override;
 
 	void Term() override
 	{
@@ -1351,7 +1351,7 @@ void DX12OITRenderer::DrawFrame()
 
 /* ---- Rendering Method: Compute ---- */
 
-bool DX12OITRenderer::Render()
+bool DX12OITRenderer::RenderFrame()
 {
 	/* (a render to a texture with an empty pixel clip writes nothing: Render()'s) */
 	if (compute.Ready() && device != nullptr && !pvrrc.isRenderFramebuffer
@@ -1364,7 +1364,7 @@ bool DX12OITRenderer::Render()
 		else if (pvrrc.isRTT ? RenderComputeRtt() : RenderCompute())
 			return !pvrrc.isRTT;
 	}
-	return DX12Renderer::Render();
+	return DX12Renderer::RenderFrame();
 }
 
 bool DX12OITRenderer::RenderComputeRtt()

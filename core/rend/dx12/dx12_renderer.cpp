@@ -238,6 +238,17 @@ bool DX12Renderer::Init()
 	writeOut.Init(context);
 	writeOutPictures = DX12WriteOut::Wanted();
 	SetupSsaa(screen_width, screen_height);
+	// where frames are parsed when the card can draw them from there: made once
+	if (!parseArena.ready)
+	{
+		size_t room[PARSE_ARENA_PARTS];
+		TA_context::ArenaRooms(room);
+		arenaMissed = false;
+		if (parse_arena_d3d12_init(&parseArena, device, context->GetFence(), room, 4))
+			NOTICE_LOG(RENDERER, "DX12: renders parsed where the card reads them, not copied there");
+		else
+			INFO_LOG(RENDERER, "DX12: renders copied to the card (its memory is not the processor's, cache-coherent)");
+	}
 	SetupUpscaler();
 	/* GPU-side TA processing, if it is on: here, not in a frame; and the
 	 * buffer its frames' vertex constants go to (UploadConstants()) */
@@ -297,6 +308,8 @@ void DX12Renderer::Term()
 		gpuVtxConstants.reset();
 	}
 	gpuVtxConstantsState = D3D12_RESOURCE_STATE_COPY_DEST;
+	// (let go once the frames drawn from it are done)
+	parse_arena_d3d12_term(&parseArena, [](void *c, IUnknown *object) { ((DX12Context *)c)->Release(object); }, context);
 	overlay.Term();
 	DropImage(fbTexture);
 	DropRestored();
@@ -548,7 +561,22 @@ bool DX12Renderer::ProcessLocked(TA_context* ctx)
 	 * recorded now; or it is parsed as ever */
 	bool result;
 	if (!taDecoder.Ready() || !taDecoder.Prepare(ctx, TaFlags(), &result))
+	{
+		/* into a slice of the memory the card reads, where there is one
+		 * free: the draws read it there, uncopied (with the background
+		 * polygon's four vertices FillBGP() wrote, at the head of the list
+		 * the parse empties and takes them back in) */
+		ta_list_t *lists[PARSE_ARENA_PARTS];
+		ctx->ArenaLists(lists);
+		if (!parse_arena_d3d12_attach(&parseArena, lists, 4 * sizeof(Vertex)) && parseArena.ready && !arenaMissed)
+		{
+			arenaMissed = true;
+			NOTICE_LOG(RENDERER, "DX12: a render copied to the card, no slice of the parse's free");
+		}
 		result = ta_parse_vdrc(ctx);
+		if (!result)
+			parse_arena_d3d12_cancel(&parseArena);
+	}
 	else if (result)
 		taDecoder.Record(ctx);
 	// the textures the frame's polygons asked for that are made on the GPU, before the draws
@@ -694,6 +722,28 @@ bool DX12Renderer::UploadGeometry()
 	const u32 indexBytes = pvrrc.idx.bytes() + SortPassesRoom() * sizeof(u32);
 	const List<ModTriangle>& modVolList = pvrrc.mv_clip.used() != 0 ? pvrrc.mv_clip : pvrrc.modtrig;
 	const u32 modVolBytes = modVolList.bytes();
+	/* Parsed where the card reads it (parseArena): drawn from there, the
+	 * sorted passes' indices after the frame's, in the room they have
+	 * there - or, with more of them, copied as below */
+	const D3D12_GPU_VIRTUAL_ADDRESS here = parse_arena_d3d12_gpu(&parseArena, PARSE_ARENA_VERTS);
+	if (here != 0 && indexBytes <= parseArena.arena.space[PARSE_ARENA_IDX])
+	{
+		// sorted from the vertices as the game sent them, then those made for the card, in place
+		SortTriangles(pvrrc.idx.head() + pvrrc.idx.used());
+		SetProvokingVertices();
+		vertexView.BufferLocation = here;
+		vertexView.SizeInBytes = vertexBytes;
+		vertexView.StrideInBytes = sizeof(Vertex);
+		indexView.BufferLocation = parse_arena_d3d12_gpu(&parseArena, PARSE_ARENA_IDX);
+		indexView.SizeInBytes = pvrrc.idx.bytes() + sortedIndexCount * sizeof(u32);
+		indexView.Format = DXGI_FORMAT_R32_UINT;
+		modVolView.BufferLocation = parse_arena_d3d12_gpu(&parseArena,
+				pvrrc.mv_clip.used() != 0 ? PARSE_ARENA_MV_CLIP : PARSE_ARENA_MODTRIG);
+		modVolView.SizeInBytes = modVolBytes;
+		modVolView.StrideInBytes = sizeof(float) * 3;
+		haveModVols = modVolBytes != 0;
+		return UploadConstants();
+	}
 	/* the vertices, the indexes, the volumes' triangles, each at a multiple
 	 * of its size, in one piece of the ring */
 	const u32 indexes = (vertexBytes + 3) & ~3u;
@@ -1627,6 +1677,15 @@ void DX12Renderer::DrawFramebuffer()
 /* ---- The frame ---- */
 
 bool DX12Renderer::Render()
+{
+	const bool rv = RenderFrame();
+	/* (the commands that draw it: submitted already, or in the list the next
+	 * submission executes) */
+	parse_arena_d3d12_drawn(&parseArena, context->IsRecording() ? context->LastSubmitted() + 1 : context->LastSubmitted());
+	return rv;
+}
+
+bool DX12Renderer::RenderFrame()
 {
 	const bool held = heldFromProcess;
 	heldFromProcess = false;

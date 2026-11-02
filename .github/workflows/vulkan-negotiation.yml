@@ -30,8 +30,9 @@ name: Vulkan negotiation
 # And a frame's vertices and indices parsed straight into memory the card
 # reads, none copied, the pictures those of the lists copied, with Vulkan
 # and with OpenGL (tools/vulkan/vk_parse_arena.sh, tools/gl/gl_parse_arena.sh:
-# no OpenGL error either, and OpenGL ES drawing as ever), and the arena's
-# slices (tools/rend/parse_arena_test.sh).
+# no OpenGL error either, and OpenGL ES drawing as ever), and with Direct3D
+# 12 where the adapter's memory is the processor's (tools/rend/d3d_parse_arena.sh,
+# under wine), and the arena's slices (tools/rend/parse_arena_test.sh).
 
 on:
   push:
@@ -66,6 +67,7 @@ on:
       - 'core/hw/pvr/ta_list.*'
       - 'core/hw/pvr/helper_classes.h'
       - 'tools/rend/parse_arena_test.*'
+      - 'tools/rend/d3d_parse_arena.sh'
       - 'tools/rend/clip_check.py'
       - 'tools/threads/live_prog.c'
       - 'Makefile*'
@@ -102,6 +104,7 @@ on:
       - 'core/hw/pvr/ta_list.*'
       - 'core/hw/pvr/helper_classes.h'
       - 'tools/rend/parse_arena_test.*'
+      - 'tools/rend/d3d_parse_arena.sh'
       - 'tools/rend/clip_check.py'
       - 'tools/threads/live_prog.c'
       - 'Makefile*'
@@ -180,3 +183,5 @@ jobs:
         run: VK_DRIVER_FILES=/usr/share/vulkan/icd.d/lvp_icd.json sh tools/hdr/d3d_hdr.sh parallel_dc_libretro.dll
       - name: Direct3D 11 - video memory written by DMA over renders to textures (Direct3D 12 with D3D12_DLLS)
         run: VK_DRIVER_FILES=/usr/share/vulkan/icd.d/lvp_icd.json sh tools/rend/d3d_dma.sh parallel_dc_libretro.dll
+      - name: Direct3D 12 drawing the frame from where it is parsed, every frame the one of the lists copied
+        run: VK_DRIVER_FILES=/usr/share/vulkan/icd.d/lvp_icd.json sh tools/rend/d3d_parse_arena.sh parallel_dc_libretro.dll

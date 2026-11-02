@@ -28,6 +28,7 @@
 #include "rend/transform_matrix.h"
 #include "rend/shadows.h"
 #include "dx12context_lr.h"
+#include "parse_arena_d3d12.h"
 #include "dx12_overlay.h"
 #include "dx12_writeout.h"
 #include "dx12_texdecoder.h"
@@ -98,13 +99,21 @@ public:
 	void Resize(int w, int h) override;
 	void Term() override;
 	bool Process(TA_context* ctx) override;
-	bool Render() override;
+	/* The frame drawn (RenderFrame()), and its lists its own again: what the
+	 * parse wrote where the card reads it (parseArena) the card's till the
+	 * commands that draw it are done */
+	bool Render() final;
 	void KeepPicture() override;
 	u64 GetTexture(TSP tsp, TCW tcw, int area = 0) override;
 	// (TA processing switched on or off)
 	void OptionsChanged() override;
 
 protected:
+	virtual bool RenderFrame();
+	/* Where a frame is parsed when the card can draw it from there: a
+	 * machine whose memory is the processor's (parse_arena_d3d12.h) */
+	parse_arena_d3d12_t parseArena {};
+	bool arenaMissed = false;	// (said once: a render copied, no slice free)
 	struct VertexConstants
 	{
 		float scale[4];		// x, y, z, and the depth's scale (shaders/dx12_raster.hlsl)

@@ -15,6 +15,14 @@
  * frame's motion vectors and depth, which are read back and looked at as
  * vk_hdr.c looks at the Vulkan renderers'.
  *
+ * With D3DH_NOT_UMA=1 (Direct3D 12) the adapter says its memory is not the
+ * processor's (CacheCoherentUMA 0, as a card of its own has it): the core
+ * copies the frame's lists to the card, not parse them where it reads
+ * them (tools/rend/d3d_parse_arena.sh). With D3DH_EVERY=1 (Direct3D 12)
+ * the picture handed over is read back after every frame and its sum
+ * printed, "frame N SUM", for runs to be compared frame for frame (as
+ * gl_frames.c's GLF_EVERY).
+ *
  *   D3DH_API=11|12 D3DH_FRONTEND=sdr|hdr10|scrgb D3DH_DIR=dir \
  *      d3d_hdr core.dll content out.raw frames [key=value ...]
  *
@@ -79,6 +87,29 @@ static struct retro_hw_render_interface_d3d11 iface11;
 /* ---- Direct3D 12, version 1: the frame is handed by set_texture ---- */
 
 static ID3D12Device *d12;
+
+/* D3DH_NOT_UMA: the device's CheckFeatureSupport(), its answer about the
+ * architecture changed, through a copy of its table of methods - a table
+ * the newer interfaces of the object (ID3D12Device1 and on, which the
+ * core asks for) share and go on past ID3D12Device's in: so a good many
+ * more of its methods than the headers here know copied too */
+static void *d12_not_uma[192];
+static HRESULT (STDMETHODCALLTYPE *d12_check)(ID3D12Device *, D3D12_FEATURE, void *, UINT);
+static HRESULT STDMETHODCALLTYPE not_uma_check(ID3D12Device *device, D3D12_FEATURE feature, void *data, UINT size)
+{
+   const HRESULT hr = d12_check(device, feature, data, size);
+   if (SUCCEEDED(hr) && feature == D3D12_FEATURE_ARCHITECTURE && size >= sizeof(D3D12_FEATURE_DATA_ARCHITECTURE))
+   {
+      ((D3D12_FEATURE_DATA_ARCHITECTURE *)data)->UMA = FALSE;
+      ((D3D12_FEATURE_DATA_ARCHITECTURE *)data)->CacheCoherentUMA = FALSE;
+   }
+   if (SUCCEEDED(hr) && feature == D3D12_FEATURE_ARCHITECTURE1 && size >= sizeof(D3D12_FEATURE_DATA_ARCHITECTURE1))
+   {
+      ((D3D12_FEATURE_DATA_ARCHITECTURE1 *)data)->UMA = FALSE;
+      ((D3D12_FEATURE_DATA_ARCHITECTURE1 *)data)->CacheCoherentUMA = FALSE;
+   }
+   return hr;
+}
 static ID3D12CommandQueue *q12;
 static ID3D12Resource *frame12;
 static DXGI_FORMAT frame12_format;
@@ -601,6 +632,13 @@ int main(int argc, char **argv)
          fprintf(stderr, "d3d_hdr: no Direct3D 12 device\n");
          return 2;
       }
+      if (getenv("D3DH_NOT_UMA"))
+      {
+         memcpy(d12_not_uma, d12->lpVtbl, sizeof(d12_not_uma));
+         d12_check = d12->lpVtbl->CheckFeatureSupport;
+         ((ID3D12DeviceVtbl *)d12_not_uma)->CheckFeatureSupport = not_uma_check;
+         d12->lpVtbl = (ID3D12DeviceVtbl *)d12_not_uma;
+      }
       memset(&qd, 0, sizeof(qd));
       qd.Type = D3D12_COMMAND_LIST_TYPE_DIRECT;
       if (FAILED(ID3D12Device_CreateCommandQueue(d12, &qd, &IID_ID3D12CommandQueue, (void**)&q12)))
@@ -656,7 +694,19 @@ int main(int argc, char **argv)
    }
    hw.context_reset();
    for (n = 0; n < frames; n++)
+   {
       retro_run();
+      if (getenv("D3DH_EVERY") && api == 12 && frame12 != NULL)
+      {
+         UINT pitch, y, x;
+         unsigned long sum = 2166136261ul;
+         const unsigned char *rows = copy_out12(frame12, iface12.required_state, frame_w, frame_h, &pitch);
+         for (y = 0; rows != NULL && y < frame_h; y++)
+            for (x = 0; x < frame_w * 4; x++)
+               sum = ((sum ^ rows[(size_t)y * pitch + x]) * 16777619ul) & 0xfffffffful;
+         printf("frame %u %ux%u %08lx\n", n, frame_w, frame_h, sum);
+      }
+   }
 
    if (getenv("D3DH_REFUSED"))
    {

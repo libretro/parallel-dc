@@ -325,7 +325,8 @@ ifeq ($(HAVE_D3D12), 1)
 					$(CORE_DIR)/core/rend/dx12/dx12_texdecoder.cpp \
 					$(CORE_DIR)/core/rend/dx12/dx12_texture.cpp \
 					$(CORE_DIR)/core/rend/dx12/oit/dx12_oitrenderer.cpp
-	SOURCES_C += $(CORE_DIR)/core/rend/hdr/hdr_encode_d3d12.c
+	SOURCES_C += $(CORE_DIR)/core/rend/hdr/hdr_encode_d3d12.c \
+					$(CORE_DIR)/core/rend/dx12/parse_arena_d3d12.c
 endif
 
 # The HDR output's Display Transform (rend/hdr/, Color Format), for the
