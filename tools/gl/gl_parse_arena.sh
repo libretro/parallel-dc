@@ -6,7 +6,9 @@
 # drawn from where it was parsed, with no OpenGL error (MESA_DEBUG), and
 # every frame is the one of the lists copied, as an OpenGL without
 # ARB_buffer_storage has it (GLF_NO_STORAGE) - the test discs' plain one,
-# heavy one and DMA one, with each renderer, threaded rendering on and off,
+# heavy one, DMA one and the one with modifier volumes (--cull: their
+# triangles drawn from there too), the sorted passes' indices written after
+# the frame's, with each renderer, threaded rendering on and off,
 # a VMU's screen drawn over them.
 # And with OpenGL ES, which has no such buffers, the frames are drawn as
 # ever.
@@ -22,7 +24,7 @@ mkdir -p "$WORK"
 [ -n "${KEEP:-}" ] || trap 'rm -rf "$WORK"' EXIT
 ${CC:-cc} -O1 -g -Wall -o "$WORK/gl_frames" tools/gl/gl_frames.c -lEGL -lGL -ldl
 # (a directory a disc: their tracks' names are the same)
-for disc in plain heavy dma; do
+for disc in plain heavy dma cull; do
    mkdir -p "$WORK/$disc"
    case $disc in
       plain) python3 tools/threads/live_disc.py "$WORK/$disc/test.gdi" ;;
@@ -46,7 +48,7 @@ run() {
    fi
 }
 
-for disc in plain heavy dma; do
+for disc in plain heavy dma cull; do
    for r in per-triangle per-pixel; do
       case $r in
          per-triangle) set -- "reicast_alpha_sorting=per-triangle (normal)" ;;

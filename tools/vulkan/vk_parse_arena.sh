@@ -8,7 +8,8 @@
 # copied; told that memory is slow to read (VKH_UNCACHED) the core copies
 # them, as ever - and the pictures of the two are the same, byte for byte:
 # the test discs' plain one, heavy one (more strips than the copy's first
-# guess holds: tools/threads/live_disc.py --heavy) and DMA one, with each
+# guess holds: tools/threads/live_disc.py --heavy), DMA one and the one with
+# modifier volumes (--cull, whose triangles are drawn from there too), with each
 # renderer, threaded rendering on and off, and with a temporal upscaler
 # on the frontend (its motion vectors drawn from the same geometry).
 #
@@ -30,7 +31,7 @@ ${CC:-cc} -O1 -g -Wall -I./core/libretro-common/include -I./core/deps/khronos \
    core/rend/hdr/hdr_output.c core/rend/hdr/hdr_transform.c core/rend/hdr/hdr_aces2.c \
    core/rend/hdr/hdr_libretro.c core/rend/hdr/hdr_display.c -ldl -lm -lpthread
 # (a directory a disc: their tracks' names are the same)
-for disc in plain heavy dma; do
+for disc in plain heavy dma cull; do
    mkdir -p "$WORK/$disc"
    case $disc in
       plain) python3 tools/threads/live_disc.py "$WORK/$disc/test.gdi" ;;
@@ -56,7 +57,7 @@ run() {
    fi
 }
 
-for disc in plain heavy dma; do
+for disc in plain heavy dma cull; do
    for r in per-triangle per-pixel per-triangle-upscaler per-pixel-upscaler; do
       unset VKH_UPSCALER
       case $r in

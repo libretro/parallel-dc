@@ -882,8 +882,8 @@ static bool RenderFrame()
 			glBufferData(GL_ELEMENT_ARRAY_BUFFER,pvrrc.idx.bytes(),pvrrc.idx.head(),GL_STREAM_DRAW); glCheck();
 		}
 
-		//Modvol VBO
-		if (pvrrc.modtrig.used() && !pvrrc.mv_clip.used())
+		//Modvol VBO (but where they were parsed into the buffers the card reads)
+		if (pvrrc.modtrig.used() && !pvrrc.mv_clip.used() && gl_frame_modvol_buffer(0) == 0)
 		{
 			glBindVertexArray(gl4.vbo.modvol_vao);
 			glBindBuffer(GL_ARRAY_BUFFER, gl4.vbo.modvols); glCheck();
@@ -916,7 +916,7 @@ static bool RenderFrame()
 	/* The volumes' triangles with those far off the screen cut
 	 * (rend/modvol_clip.h), however the frame was decoded: the volumes'
 	 * array then draws them, and is set again for the next frame */
-	if (!pvrrc.isRenderFramebuffer && pvrrc.mv_clip.used())
+	if (!pvrrc.isRenderFramebuffer && pvrrc.mv_clip.used() && gl_frame_modvol_buffer(0) == 0)
 	{
 		gl4SetupModvolVBO();
 		glBufferData(GL_ARRAY_BUFFER, pvrrc.mv_clip.bytes(), pvrrc.mv_clip.head(), GL_STREAM_DRAW); glCheck();

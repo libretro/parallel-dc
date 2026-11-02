@@ -429,7 +429,7 @@ BufferData *Drawer::SortIntoMainBuffer()
 	const u32 sortRoom = pvrrc.gpu ? 0 : SortPassesRoom() * sizeof(u32);
 	const bool here = UseParsed(sortRoom);
 	const u32 vertexBytes = pvrrc.gpu || here ? 0 : pvrrc.verts.bytes();
-	const u32 modVolBytes = ModVolsOnCpu() ? ModVolList().bytes() : 0;
+	const u32 modVolBytes = ModVolsOnCpu() && !here ? ModVolList().bytes() : 0;
 	const u32 indexBytes = pvrrc.gpu || here ? 0 : pvrrc.idx.bytes();
 	const u32 sortedBytes = here ? 0 : sortRoom;
 
@@ -462,7 +462,7 @@ void Drawer::UploadMainBuffer(BufferData *buffer, const FragmentShaderUniforms& 
 		buffer->upload(pvrrc.verts.bytes(), pvrrc.verts.head(), 0);
 		buffer->upload(pvrrc.idx.bytes(), pvrrc.idx.head(), offsets.indexOffset);
 	}
-	if (ModVolsOnCpu())
+	if (ModVolsOnCpu() && !geometryParsed)
 		buffer->upload(ModVolList().bytes(), ModVolList().head(), offsets.modVolOffset);
 	buffer->upload(sizeof(fragmentUniforms), &fragmentUniforms, offsets.fragmentUniformOffset);
 }

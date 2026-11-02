@@ -71,26 +71,27 @@ static int reads_fast(unsigned char *map, size_t bytes)
    return (t2 - t1) <= 4 * (t1 - t0) + 200;
 }
 
-int parse_arena_gl_init(parse_arena_gl_t *a, size_t vert_room, size_t idx_room, unsigned slots)
+int parse_arena_gl_init(parse_arena_gl_t *a, const size_t *room, unsigned slots)
 {
-   unsigned i;
+   const size_t probe = room[PARSE_ARENA_VERTS] < ((size_t)1 << 20) ? room[PARSE_ARENA_VERTS] : (size_t)1 << 20;
+   unsigned i, p;
 
    memset(a, 0, sizeof(*a));
-   if (parse_arena_layout(&a->arena, vert_room, idx_room, slots, 1) == 0)
+   if (parse_arena_layout(&a->arena, room, slots, 1) == 0)
       return 0;
    for (i = 0; i < slots; i++)
-   {
-      void *v = NULL, *x = NULL;
-      a->verts[i] = make_buffer(vert_room, &v);
-      a->idx[i] = make_buffer(idx_room, &x);
-      if (v == NULL || x == NULL)
+      for (p = 0; p < PARSE_ARENA_PARTS; p++)
       {
-         parse_arena_gl_term(a);
-         return 0;
+         void *m = NULL;
+         a->buffer[i][p] = make_buffer(a->arena.space[p], &m);
+         if (m == NULL)
+         {
+            parse_arena_gl_term(a);
+            return 0;
+         }
+         parse_arena_bind_slot(&a->arena, i, p, m);
       }
-      parse_arena_bind_slot(&a->arena, i, v, x);
-   }
-   if (!reads_fast(a->arena.slot_verts[0], vert_room < ((size_t)1 << 20) ? vert_room : (size_t)1 << 20))
+   if (!reads_fast(a->arena.part_mem[0][PARSE_ARENA_VERTS], probe))
    {
       parse_arena_gl_term(a);
       return 0;
@@ -101,7 +102,7 @@ int parse_arena_gl_init(parse_arena_gl_t *a, size_t vert_room, size_t idx_room, 
 
 void parse_arena_gl_term(parse_arena_gl_t *a)
 {
-   unsigned i;
+   unsigned i, p;
 
    if (a->ready)
       parse_arena_detach(&a->arena);
@@ -110,10 +111,9 @@ void parse_arena_gl_term(parse_arena_gl_t *a)
       if (a->fence[i] != NULL)
          glDeleteSync(a->fence[i]);
       /* (deleting a buffer unmaps it) */
-      if (a->verts[i] != 0)
-         glDeleteBuffers(1, &a->verts[i]);
-      if (a->idx[i] != 0)
-         glDeleteBuffers(1, &a->idx[i]);
+      for (p = 0; p < PARSE_ARENA_PARTS; p++)
+         if (a->buffer[i][p] != 0)
+            glDeleteBuffers(1, &a->buffer[i][p]);
    }
    memset(a, 0, sizeof(*a));
 }
@@ -134,7 +134,7 @@ static int slot_free(parse_arena_gl_t *a, unsigned s)
    return 1;
 }
 
-int parse_arena_gl_attach(parse_arena_gl_t *a, ta_list_t *verts, size_t vert_head, ta_list_t *idx)
+int parse_arena_gl_attach(parse_arena_gl_t *a, ta_list_t *const *lists, size_t vert_head)
 {
    unsigned i;
 
@@ -145,9 +145,10 @@ int parse_arena_gl_attach(parse_arena_gl_t *a, ta_list_t *verts, size_t vert_hea
       const unsigned s = (a->next + i) % a->arena.slices;
       if (!slot_free(a, s))
          continue;
-      if (!parse_arena_attach(&a->arena, s, verts, vert_head, idx))
+      if (!parse_arena_attach(&a->arena, s, lists, vert_head))
          return 0;
       a->next = (s + 1) % a->arena.slices;
+      a->sorted = 0;
       return 1;
    }
    return 0;
@@ -169,12 +170,18 @@ void parse_arena_gl_cancel(parse_arena_gl_t *a)
       parse_arena_detach(&a->arena);
 }
 
-GLuint parse_arena_gl_vertex_buffer(const parse_arena_gl_t *a)
+GLuint parse_arena_gl_buffer(const parse_arena_gl_t *a, unsigned part)
 {
-   return a->ready && a->arena.slot >= 0 ? a->verts[a->arena.slot] : 0;
+   return a->ready && a->arena.slot >= 0 && part < PARSE_ARENA_PARTS ? a->buffer[a->arena.slot][part] : 0;
 }
 
-GLuint parse_arena_gl_index_buffer(const parse_arena_gl_t *a)
+void *parse_arena_gl_sorted(parse_arena_gl_t *a, size_t bytes, size_t *offset)
 {
-   return a->ready && a->arena.slot >= 0 ? a->idx[a->arena.slot] : 0;
+   const size_t at = a->arena.room[PARSE_ARENA_IDX] + a->sorted;
+
+   if (!a->ready || a->arena.slot < 0 || bytes > a->arena.sort_room - a->sorted)
+      return NULL;
+   a->sorted += bytes;
+   *offset = at;
+   return a->arena.part_mem[a->arena.slot][PARSE_ARENA_IDX] + at;
 }

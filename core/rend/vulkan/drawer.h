@@ -62,6 +62,7 @@ public:
 	{
 		vk::Buffer buffer;
 		vk::DeviceSize vertices = 0, indices = 0;
+		vk::DeviceSize modVols = 0;	// the volumes' triangles drawn (ModVolList()'s)
 		u32 sortRoom = 0;		// bytes
 	};
 	/* This render's frame was parsed there; none (a null buffer): it is
@@ -163,6 +164,9 @@ protected:
 		const vk::DeviceSize zero = 0;
 		if (!ModVolsOnCpu())
 			cmdBuffer.bindVertexBuffers(0, 1, &gpuDraw->modtrig, &zero);
+		// (where the parse wrote them, with the frame's geometry: geometryParsed)
+		else if (geometryParsed)
+			cmdBuffer.bindVertexBuffers(0, 1, &parsed.buffer, &parsed.modVols);
 		else
 			cmdBuffer.bindVertexBuffers(0, 1, &mainBuffer, &modVolOffset);
 	}

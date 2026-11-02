@@ -539,10 +539,11 @@ void gl4SetupMainVBO(GLuint geometry, GLuint idxs)
 	glVertexAttribPointer(VERTEX_UV1_ARRAY, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, u1)); glCheck();
 }
 
-/* What the vertex arrays and storage binding 1 have: -1 not known, -2 the
- * GPU decode's, or the vertex buffer of the renderer's own or of the
- * frame's they have */
+/* What the vertex arrays and storage binding 1 have: frame_buffers -1 not
+ * known, -2 the GPU decode's, or the vertex buffer of the renderer's own
+ * or of the frame's they have; and the volumes' triangles' buffer */
 static long frame_buffers = -1;
+static GLuint frame_modvols;
 
 void gl4ForgetFrameBuffers()
 {
@@ -552,17 +553,19 @@ void gl4ForgetFrameBuffers()
 void gl4BindFrameBuffers(bool gpu, bool own)
 {
 	const GLuint geometry = own ? gl4.vbo.geometry : gl_frame_vertex_buffer(gl4.vbo.geometry);
+	const GLuint modvols = own ? gl4.vbo.modvols : gl_frame_modvol_buffer(gl4.vbo.modvols);
 	const long want = gpu ? -2 : (long)geometry;
-	if (frame_buffers == want)
+	if (frame_buffers == want && (gpu || frame_modvols == modvols))
 		return;
 	frame_buffers = want;
+	frame_modvols = modvols;
 	if (!gpu)
 	{
 		gl4SetupMainVBO(geometry, own ? gl4.vbo.idxs : gl_frame_index_buffer(gl4.vbo.idxs));
 		glDisableVertexAttribArray(VERTEX_PP_ARRAY);
 		// (an attribute without its array: the number is 0)
 		gl4.vertexAttribI4ui(VERTEX_PP_ARRAY, 0, 0, 0, 0);
-		gl4SetupModvolVBO();
+		gl4SetupModvolVBO(modvols);
 		glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, gl4.vbo.tr_poly_params);
 		glBindVertexArray(gl4.vbo.main_vao);
 		return;
@@ -589,11 +592,11 @@ void gl4BindFrameBuffers(bool gpu, bool own)
 	glBindVertexArray(gl4.vbo.main_vao);
 }
 
-void gl4SetupModvolVBO()
+void gl4SetupModvolVBO(GLuint modvols)
 {
 	glBindVertexArray(gl4.vbo.modvol_vao);
 
-	glBindBuffer(GL_ARRAY_BUFFER, gl4.vbo.modvols);
+	glBindBuffer(GL_ARRAY_BUFFER, modvols != 0 ? modvols : gl4.vbo.modvols);
 
 	//setup vertex buffers attrib pointers
 	glEnableVertexAttribArray(VERTEX_POS_ARRAY); glCheck();

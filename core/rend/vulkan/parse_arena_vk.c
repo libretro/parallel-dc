@@ -9,18 +9,17 @@
 #define PARSE_MEMORY (VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT | VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT \
       | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT | VK_MEMORY_PROPERTY_HOST_CACHED_BIT)
 
-int parse_arena_vk_init(parse_arena_vk_t *a, VkDevice device, vk_heap_t *heap, size_t vert_room, size_t idx_room,
-      unsigned slices)
+int parse_arena_vk_init(parse_arena_vk_t *a, VkDevice device, vk_heap_t *heap, const size_t *room, unsigned slices)
 {
    VkBufferCreateInfo info;
    VkMemoryRequirements req;
    size_t bytes;
 
    memset(a, 0, sizeof(*a));
-   /* (a slice's indices 256 bytes aligned: more than an index buffer's
-    * offset needs, and the sorted passes' after them are as aligned as
-    * the frame's indices' end, 4 bytes) */
-   bytes = parse_arena_layout(&a->arena, vert_room, idx_room, slices, 256);
+   /* (a slice's parts 256 bytes aligned: more than a vertex or index
+    * buffer's offset needs, and the sorted passes' after the indices are
+    * as aligned as the frame's indices' end, 4 bytes) */
+   bytes = parse_arena_layout(&a->arena, room, slices, 256);
    if (bytes == 0)
       return 0;
    memset(&info, 0, sizeof(info));

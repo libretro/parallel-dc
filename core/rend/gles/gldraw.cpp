@@ -339,8 +339,11 @@ static bool PrepassSupported()
 }
 
 /* The sorted triangles of the render pass's translucent list, when they
- * are drawn by triangle, and its depth prepass's: both uploaded */
-static void SortTriangles(int first, int count, bool sortTriangles, bool lastPass)
+ * are drawn by triangle, and its depth prepass's: written after the
+ * frame's indices where the frame was parsed into the buffers the card
+ * reads, and bound, or uploaded to a buffer of their own. Where they start
+ * in the buffer bound, in bytes. */
+static uintptr_t SortTriangles(int first, int count, bool sortTriangles, bool lastPass)
 {
 	/* (kept from one frame to the next: grown, never made again) */
 	static grow_buf_t indices;
@@ -348,18 +351,26 @@ static void SortTriangles(int first, int count, bool sortTriangles, bool lastPas
 	prepassDraws.count = 0;
 	const bool prepass = PrepassSupported();
 	if (!sortTriangles && !prepass)
-		return;
+		return 0;
 	/* room for both, made u16 in place if the indices are */
-	u32 *out = (u32 *)grow_buf_reserve(&indices, (size_t)(6 * SortedTriangles(first, count) + 1) * sizeof(u32));
+	const size_t room = (size_t)(6 * SortedTriangles(first, count) + 1) * sizeof(u32);
+	size_t at = 0;
+	u32 *here = gl_frame_sorted(room, &at);
+	u32 *out = here != nullptr ? here : (u32 *)grow_buf_reserve(&indices, room);
 	if (out == nullptr)
-		return;
+		return 0;
 	u32 n = 0;
 	if (sortTriangles)
 		n = GenSortedTo(first, count, &sortedDraws, out, false);
 	if (prepass)
 		n += GenPrepassTo(first, count, lastPass, &prepassDraws, out + n, n, false);
 	if (n == 0)
-		return;
+		return 0;
+	if (here != nullptr)
+	{
+		glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, gl_frame_index_buffer(gl.vbo.idxs)); glCheck();
+		return at;
+	}
 
 	//Bind and upload sorted index buffer
 	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, gl.vbo.idxs2); glCheck();
@@ -373,6 +384,7 @@ static void SortTriangles(int first, int count, bool sortTriangles, bool lastPas
 	}
 	else
 		glBufferData(GL_ELEMENT_ARRAY_BUFFER, n * sizeof(u32), out, GL_STREAM_DRAW);
+	return 0;
 }
 
 /* The depth prepass of a sorted list: rend/sorter.h (with the sorted
@@ -599,7 +611,7 @@ static void SetupModvolVBO(bool gpu)
 	if (gpu)
 		glTaDecoder.BindModVols();
 	else
-		glBindBuffer(GL_ARRAY_BUFFER, gl.vbo.modvols);
+		glBindBuffer(GL_ARRAY_BUFFER, gl_frame_modvol_buffer(gl.vbo.modvols));
 
 	//setup vertex buffers attrib pointers
 	glEnableVertexAttribArray(VERTEX_POS_ARRAY);
@@ -867,19 +879,19 @@ void DrawStrips()
 				}
 				else if (settings.pvr.Emulation.AlphaSortMode == 0)
 				{
-					SortTriangles(previous_pass.tr_count, current_pass.tr_count - previous_pass.tr_count, true, lastPass);
-					DrawPrepass(SortDraws(&prepassDraws), prepassDraws.count, 0);
-					DrawSorted(SortDraws(&sortedDraws), sortedDraws.count, !lastPass, 0);
+					const uintptr_t base = SortTriangles(previous_pass.tr_count, current_pass.tr_count - previous_pass.tr_count, true, lastPass);
+					DrawPrepass(SortDraws(&prepassDraws), prepassDraws.count, base);
+					DrawSorted(SortDraws(&sortedDraws), sortedDraws.count, !lastPass, base);
 					// (the main indices again, after sorted triangles or a prepass)
 					if (sortedDraws.count != 0 || prepassDraws.count != 0)
 						glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, gl_frame_index_buffer(gl.vbo.idxs));
 				}
 				else
 				{
-					SortTriangles(previous_pass.tr_count, current_pass.tr_count - previous_pass.tr_count, false, lastPass);
+					const uintptr_t base = SortTriangles(previous_pass.tr_count, current_pass.tr_count - previous_pass.tr_count, false, lastPass);
 					if (prepassDraws.count != 0)
 					{
-						DrawPrepass(SortDraws(&prepassDraws), prepassDraws.count, 0);
+						DrawPrepass(SortDraws(&prepassDraws), prepassDraws.count, base);
 						glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, gl_frame_index_buffer(gl.vbo.idxs));
 					}
 					SortPParams(previous_pass.tr_count, current_pass.tr_count - previous_pass.tr_count);

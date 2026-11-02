@@ -1,9 +1,11 @@
-/* The parse's arena (core/rend/parse_arena.c): the slices laid out apart
- * and aligned; a frame's lists moved into a slice with what they hold -
- * and the head the parse keeps though the list is empty (the background
+/* The parse's arena (core/rend/parse_arena.c): the slices and their parts
+ * laid out apart and aligned, the indices' part with the sorted passes'
+ * room after; a frame's lists moved into a slice with what they hold - and
+ * the head the parse keeps though the list is empty (the background
  * polygon's vertices: FillBGP()) - their own back after; lists of another
- * size, a second attach, a slot out of range refused; a frame filling its
- * slice's room overruns into its own slice, not the next. C89.
+ * size, a second attach, a slot out of range or with a part unbound
+ * refused; a frame filling its slice's room overruns into its own slice,
+ * not the next; parts bound apart (a buffer each, as OpenGL's). C89.
  *
  *   sh tools/rend/parse_arena_test.sh */
 #include <stdio.h>
@@ -15,123 +17,164 @@ static int fails;
 
 #define CHECK(c) do { if (!(c)) { printf("FAIL line %d: %s\n", __LINE__, #c); fails++; } } while (0)
 
-#define VERT_ROOM 4096
-#define IDX_ROOM  1024
 #define SLICES    3
 #define ALIGN     256
 #define HEAD      64      /* "four vertices" */
 
+static const size_t room[PARSE_ARENA_PARTS] = { 4096, 1024, 360, 540 };
+static const size_t elem[PARSE_ARENA_PARTS] = { 16, 4, 36, 36 };
+
+/* the lists, each with its own memory, and how many bytes each holds */
+static int make_lists(ta_list_t *l, ta_list_t **lp, unsigned char *overrun)
+{
+   unsigned p;
+   for (p = 0; p < PARSE_ARENA_PARTS; p++)
+   {
+      if (!ta_list_init(&l[p], room[p], elem[p], overrun, "list"))
+         return 0;
+      lp[p] = &l[p];
+   }
+   return 1;
+}
+
 int main(void)
 {
    parse_arena_t a;
-   ta_list_t verts, idx, other;
+   ta_list_t l[PARSE_ARENA_PARTS], other;
+   ta_list_t *lp[PARSE_ARENA_PARTS];
+   unsigned char *own[PARSE_ARENA_PARTS];
    unsigned char overrun = 0;
    unsigned char *mem;
-   unsigned char *own_verts, *own_idx;
    size_t bytes, i;
-   unsigned slot;
+   unsigned slot, p;
 
-   bytes = parse_arena_layout(&a, VERT_ROOM, IDX_ROOM, SLICES, ALIGN);
+   bytes = parse_arena_layout(&a, room, SLICES, ALIGN);
    CHECK(bytes == a.slice * SLICES);
-   CHECK(a.slice % ALIGN == 0 && a.idx_at % ALIGN == 0);
-   CHECK(a.idx_at >= VERT_ROOM && a.slice >= a.idx_at + IDX_ROOM + a.sort_room);
-   CHECK(a.sort_room >= IDX_ROOM);
+   CHECK(a.slice % ALIGN == 0);
+   for (p = 0; p < PARSE_ARENA_PARTS; p++)
+   {
+      CHECK(a.at[p] % ALIGN == 0);
+      CHECK(a.room[p] == room[p]);
+      CHECK(a.space[p] == room[p] + (p == PARSE_ARENA_IDX ? a.sort_room : 0));
+      if (p > 0)
+         CHECK(a.at[p] >= a.at[p - 1] + a.space[p - 1]);
+   }
+   CHECK(a.slice >= a.at[PARSE_ARENA_PARTS - 1] + a.space[PARSE_ARENA_PARTS - 1]);
+   CHECK(a.sort_room >= room[PARSE_ARENA_IDX]);
    mem = (unsigned char *)malloc(bytes);
    CHECK(mem != NULL);
-   if (mem == NULL)
+   if (mem == NULL || !make_lists(l, lp, &overrun))
       return 1;
    memset(mem, 0xEE, bytes);
+   for (p = 0; p < PARSE_ARENA_PARTS; p++)
+      own[p] = l[p].base;
 
    /* nothing to attach to before there is memory */
-   CHECK(ta_list_init(&verts, VERT_ROOM, 16, &overrun, "verts"));
-   CHECK(ta_list_init(&idx, IDX_ROOM, 4, &overrun, "idx"));
-   CHECK(!parse_arena_attach(&a, 0, &verts, HEAD, &idx));
+   CHECK(!parse_arena_attach(&a, 0, lp, HEAD));
    parse_arena_bind(&a, mem);
-   own_verts = verts.base;
-   own_idx = idx.base;
 
    for (slot = 0; slot < SLICES; slot++)
    {
-      /* the head written, the list emptied after (as the TA's is) */
+      /* the vertices' head written, the list emptied after (as the TA's
+       * is); the other lists with one element each */
       for (i = 0; i < HEAD; i++)
-         own_verts[i] = (unsigned char)(slot * 16 + i);
-      verts.cur = verts.base;
-      /* one index already there */
-      own_idx[0] = (unsigned char)(0x40 + slot);
-      own_idx[1] = own_idx[2] = own_idx[3] = 0;
-      idx.cur = idx.base + 4;
+         own[PARSE_ARENA_VERTS][i] = (unsigned char)(slot * 16 + i);
+      l[PARSE_ARENA_VERTS].cur = l[PARSE_ARENA_VERTS].base;
+      for (p = 1; p < PARSE_ARENA_PARTS; p++)
+      {
+         memset(own[p], (int)(0x40 + slot * 4 + p), elem[p]);
+         l[p].cur = l[p].base + elem[p];
+      }
 
-      CHECK(parse_arena_attach(&a, slot, &verts, HEAD, &idx));
-      CHECK(verts.base == mem + parse_arena_vert_offset(&a, slot));
-      CHECK(idx.base == mem + parse_arena_idx_offset(&a, slot));
-      CHECK(verts.cur == verts.base && (size_t)(verts.end - verts.base) == VERT_ROOM);
-      CHECK(idx.cur == idx.base + 4 && (size_t)(idx.end - idx.base) == IDX_ROOM);
+      CHECK(parse_arena_attach(&a, slot, lp, HEAD));
+      for (p = 0; p < PARSE_ARENA_PARTS; p++)
+      {
+         CHECK(l[p].base == mem + parse_arena_offset(&a, slot, p));
+         CHECK((size_t)(l[p].end - l[p].base) == room[p]);
+      }
+      CHECK(l[PARSE_ARENA_VERTS].cur == l[PARSE_ARENA_VERTS].base);
       for (i = 0; i < HEAD; i++)
-         CHECK(verts.base[i] == (unsigned char)(slot * 16 + i));
-      CHECK(idx.base[0] == 0x40 + slot);
+         CHECK(l[PARSE_ARENA_VERTS].base[i] == (unsigned char)(slot * 16 + i));
+      for (p = 1; p < PARSE_ARENA_PARTS; p++)
+      {
+         CHECK(l[p].cur == l[p].base + elem[p]);
+         CHECK(l[p].base[0] == (unsigned char)(0x40 + slot * 4 + p) && l[p].base[elem[p] - 1] == l[p].base[0]);
+      }
       /* (one frame at a time) */
-      CHECK(!parse_arena_attach(&a, slot, &verts, HEAD, &idx));
+      CHECK(!parse_arena_attach(&a, slot, lp, HEAD));
 
-      /* the parse fills its room: its slice's only, the others untouched */
-      memset(verts.base, 0x11 * (slot + 1), VERT_ROOM);
-      memset(idx.base, 0x22 * (slot + 1), IDX_ROOM + a.sort_room);
+      /* the parse fills its parts' space: its slice's only, the others untouched */
+      for (p = 0; p < PARSE_ARENA_PARTS; p++)
+         memset(l[p].base, (int)(0x11 * (slot + 1) + p), a.space[p]);
       parse_arena_detach(&a);
-      CHECK(verts.base == own_verts && idx.base == own_idx);
-      CHECK((size_t)(verts.end - verts.base) == VERT_ROOM);
+      for (p = 0; p < PARSE_ARENA_PARTS; p++)
+      {
+         CHECK(l[p].base == own[p]);
+         CHECK((size_t)(l[p].end - l[p].base) == room[p]);
+      }
       parse_arena_detach(&a);   /* (twice: nothing) */
-      CHECK(verts.base == own_verts);
+      CHECK(l[PARSE_ARENA_VERTS].base == own[PARSE_ARENA_VERTS]);
    }
    for (slot = 0; slot < SLICES; slot++)
-   {
-      const unsigned char *v = mem + parse_arena_vert_offset(&a, slot);
-      const unsigned char *x = mem + parse_arena_idx_offset(&a, slot);
-      CHECK(v[0] == 0x11 * (slot + 1) && v[VERT_ROOM - 1] == 0x11 * (slot + 1));
-      CHECK(x[0] == 0x22 * (slot + 1) && x[IDX_ROOM + a.sort_room - 1] == 0x22 * (slot + 1));
-   }
+      for (p = 0; p < PARSE_ARENA_PARTS; p++)
+      {
+         const unsigned char *m = mem + parse_arena_offset(&a, slot, p);
+         CHECK(m[0] == (unsigned char)(0x11 * (slot + 1) + p) && m[a.space[p] - 1] == m[0]);
+      }
 
-   /* refused: a slot out of range, lists of another room, a head past it */
-   CHECK(!parse_arena_attach(&a, SLICES, &verts, HEAD, &idx));
-   CHECK(ta_list_init(&other, VERT_ROOM / 2, 16, &overrun, "verts"));
-   CHECK(!parse_arena_attach(&a, 0, &other, HEAD, &idx));
-   CHECK(!parse_arena_attach(&a, 0, &verts, VERT_ROOM + 1, &idx));
-   CHECK(verts.base == own_verts && idx.base == own_idx && other.base != NULL);
+   /* refused: a slot out of range, a list of another room, a head past it */
+   CHECK(!parse_arena_attach(&a, SLICES, lp, HEAD));
+   CHECK(ta_list_init(&other, room[PARSE_ARENA_MV_CLIP] / 2, 36, &overrun, "other"));
+   lp[PARSE_ARENA_MV_CLIP] = &other;
+   CHECK(!parse_arena_attach(&a, 0, lp, HEAD));
+   lp[PARSE_ARENA_MV_CLIP] = &l[PARSE_ARENA_MV_CLIP];
+   CHECK(!parse_arena_attach(&a, 0, lp, room[PARSE_ARENA_VERTS] + 1));
+   for (p = 0; p < PARSE_ARENA_PARTS; p++)
+      CHECK(l[p].base == own[p]);
    ta_list_free(&other);
 
    /* an overrun in the slice: the list's own flag, and its own slice */
-   CHECK(parse_arena_attach(&a, 1, &verts, 0, &idx));
+   CHECK(parse_arena_attach(&a, 1, lp, 0));
    overrun = 0;
-   verts.cur = verts.end;
-   CHECK(ta_list_append(&verts, 16) == mem + parse_arena_vert_offset(&a, 1));
+   l[PARSE_ARENA_VERTS].cur = l[PARSE_ARENA_VERTS].end;
+   CHECK(ta_list_append(&l[PARSE_ARENA_VERTS], 16) == mem + parse_arena_offset(&a, 1, PARSE_ARENA_VERTS));
    CHECK(overrun == 1);
    parse_arena_detach(&a);
 
-   /* slices bound apart (a buffer of their own each, as OpenGL's): their
-    * memory, wherever it is */
+   /* parts bound apart: their memory, wherever it is; a part unbound,
+    * refused */
    {
-      static unsigned char vmem[2][VERT_ROOM], imem[2][IDX_ROOM];
+      static unsigned char part[2][PARSE_ARENA_PARTS][8192];
       parse_arena_t b;
-      CHECK(parse_arena_layout(&b, VERT_ROOM, IDX_ROOM, 2, 1) != 0);
-      CHECK(!parse_arena_attach(&b, 0, &verts, HEAD, &idx));
-      parse_arena_bind_slot(&b, 0, vmem[0], imem[0]);
-      parse_arena_bind_slot(&b, 1, vmem[1], imem[1]);
-      parse_arena_bind_slot(&b, 2, vmem[0], imem[0]);   /* (no slot 2: nothing) */
+      CHECK(parse_arena_layout(&b, room, 2, 1) != 0);
+      CHECK(!parse_arena_attach(&b, 0, lp, HEAD));
+      for (p = 0; p < PARSE_ARENA_PARTS; p++)
+      {
+         parse_arena_bind_slot(&b, 0, p, part[0][p]);
+         if (p != PARSE_ARENA_MV_CLIP)
+            parse_arena_bind_slot(&b, 1, p, part[1][p]);
+      }
+      parse_arena_bind_slot(&b, 2, 0, part[0][0]);              /* (no slot 2: nothing) */
+      parse_arena_bind_slot(&b, 0, PARSE_ARENA_PARTS, part[0][0]); /* (no such part: nothing) */
+      CHECK(!parse_arena_attach(&b, 1, lp, HEAD));
       for (i = 0; i < HEAD; i++)
-         own_verts[i] = (unsigned char)(0x80 + i);
-      verts.cur = verts.base;
-      idx.cur = idx.base;
-      CHECK(parse_arena_attach(&b, 1, &verts, HEAD, &idx));
-      CHECK(verts.base == vmem[1] && idx.base == imem[1]);
-      CHECK(memcmp(vmem[1], own_verts, HEAD) == 0);
+         own[PARSE_ARENA_VERTS][i] = (unsigned char)(0x80 + i);
+      l[PARSE_ARENA_VERTS].cur = l[PARSE_ARENA_VERTS].base;
+      CHECK(parse_arena_attach(&b, 0, lp, HEAD));
+      for (p = 0; p < PARSE_ARENA_PARTS; p++)
+         CHECK(l[p].base == part[0][p]);
+      CHECK(memcmp(part[0][PARSE_ARENA_VERTS], own[PARSE_ARENA_VERTS], HEAD) == 0);
       parse_arena_detach(&b);
-      CHECK(verts.base == own_verts && idx.base == own_idx);
-      CHECK(!parse_arena_attach(&b, 2, &verts, HEAD, &idx));
+      for (p = 0; p < PARSE_ARENA_PARTS; p++)
+         CHECK(l[p].base == own[p]);
+      CHECK(!parse_arena_attach(&b, 2, lp, HEAD));
       /* more slices than there is room for: none */
-      CHECK(parse_arena_layout(&b, VERT_ROOM, IDX_ROOM, PARSE_ARENA_SLOTS + 1, 1) == 0);
+      CHECK(parse_arena_layout(&b, room, PARSE_ARENA_SLOTS + 1, 1) == 0);
       CHECK(b.slot == -1);
    }
 
-   ta_list_free(&verts);
-   ta_list_free(&idx);
+   for (p = 0; p < PARSE_ARENA_PARTS; p++)
+      ta_list_free(&l[p]);
    free(mem);
    if (fails)
    {

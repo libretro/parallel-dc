@@ -738,8 +738,9 @@ static u32 keep_done, keep_age;
 #ifdef LIVE_HEAVY
 /* With -DLIVE_HEAVY: a frame of many vertices, as a game's are, for the
  * parse's speed (tools/pvr/ta_parse_bench.sh): Gouraud strips, tiny, in
- * the bottom left corner. A whole number's float, made without the FPU
- * the program has no code for. */
+ * the bottom left corner; and a shadow volume reaching far off the screen
+ * (below). A whole number's float, made without the FPU the program has
+ * no code for. */
 static u32 int_float(u32 n)
 {
    u32 e = 0;
@@ -894,9 +895,20 @@ static void ta_scene(void)
 #endif
 #ifdef LIVE_HEAVY
    ta_heavy(0, TSP_PLAIN, 0xFF102030, 48, 256);
+   /* a white polygon that takes shadows, half under the volume far off the
+    * screen (after the list) */
+   ta_quad(TA_SHADOW, TSP_PLAIN, 0, 0xFFFFFFFF, F(0.5f), F(230.0f), F(84.0f), F(290.0f), F(96.0f));
 #endif
    ta_send(0, 0, 0, 0, 0, 0, 0, 0);                    /* end of the opaque list */
 
+#ifdef LIVE_HEAVY
+   /* A volume reaching a billion pixels off the screen to the right, as a
+    * game's shadow near the eye does: its triangles are cut to a square
+    * about the screen before they are drawn (core/rend/modvol_clip.h). The
+    * first, so that the triangles of the volumes after it are elsewhere in
+    * the list of those cut than in the volumes' own. */
+   ta_volume_part(0, F(250.0f), F(80.0f), F(1.0e9f), F(100.0f), F(0.75f));
+#endif
 #ifdef LIVE_CULL
    ta_volume_culled(2, F(4.0f), F(146.0f), F(44.0f), F(174.0f), F(0.75f));
    ta_volume_culled(3, F(4.0f), F(174.0f), F(44.0f), F(200.0f), F(0.75f));

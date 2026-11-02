@@ -23,10 +23,9 @@ typedef struct parse_arena_vk
    vk_heap_alloc_t mem;
 } parse_arena_vk_t;
 
-/* Made for @slices frames in flight with lists of @vert_room and
- * @idx_room bytes; false (and nothing kept) without the memory for it */
-int parse_arena_vk_init(parse_arena_vk_t *a, VkDevice device, vk_heap_t *heap, size_t vert_room, size_t idx_room,
-      unsigned slices);
+/* Made for @slices frames in flight with lists of the rooms @room (by
+ * PARSE_ARENA_*); false (and nothing kept) without the memory for it */
+int parse_arena_vk_init(parse_arena_vk_t *a, VkDevice device, vk_heap_t *heap, const size_t *room, unsigned slices);
 /* (the frames that used it done on the card) */
 void parse_arena_vk_term(parse_arena_vk_t *a);
 

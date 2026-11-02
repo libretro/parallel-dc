@@ -1563,15 +1563,15 @@ static bool RenderFrame(void)
 				upload_vertex_indices();
 			}
 
-			//Modvol VBO
-			if (pvrrc.modtrig.used() && !pvrrc.mv_clip.used())
+			//Modvol VBO (but where they were parsed into the buffers the card reads)
+			if (pvrrc.modtrig.used() && !pvrrc.mv_clip.used() && gl_frame_modvol_buffer(0) == 0)
 			{
 				glBindBuffer(GL_ARRAY_BUFFER, gl.vbo.modvols); glCheck();
 				glBufferData(GL_ARRAY_BUFFER,pvrrc.modtrig.bytes(),pvrrc.modtrig.head(),GL_STREAM_DRAW); glCheck();
 			}
 		}
 		// the volumes' triangles with those far off the screen cut (rend/modvol_clip.h), however the frame was decoded
-		if (pvrrc.mv_clip.used())
+		if (pvrrc.mv_clip.used() && gl_frame_modvol_buffer(0) == 0)
 		{
 			glBindBuffer(GL_ARRAY_BUFFER, gl.vbo.modvols); glCheck();
 			glBufferData(GL_ARRAY_BUFFER, pvrrc.mv_clip.bytes(), pvrrc.mv_clip.head(), GL_STREAM_DRAW); glCheck();
@@ -1698,24 +1698,39 @@ static parse_arena_gl_t parse_arena;
 static bool parse_arena_tried;
 #endif
 
-GLuint gl_frame_vertex_buffer(GLuint own)
+// (the buffer of part @part of the arena's the frame was parsed into, or @own)
+static GLuint frame_buffer(unsigned part, GLuint own)
 {
 #ifdef HAVE_GL4
-	const GLuint b = parse_arena_gl_vertex_buffer(&parse_arena);
+	const GLuint b = parse_arena_gl_buffer(&parse_arena, part);
 	if (b != 0)
 		return b;
 #endif
 	return own;
 }
 
+GLuint gl_frame_vertex_buffer(GLuint own)
+{
+	return frame_buffer(PARSE_ARENA_VERTS, own);
+}
+
 GLuint gl_frame_index_buffer(GLuint own)
 {
+	return frame_buffer(PARSE_ARENA_IDX, own);
+}
+
+GLuint gl_frame_modvol_buffer(GLuint own)
+{
+	return frame_buffer(pvrrc.mv_clip.used() != 0 ? PARSE_ARENA_MV_CLIP : PARSE_ARENA_MODTRIG, own);
+}
+
+u32 *gl_frame_sorted(size_t bytes, size_t *offset)
+{
 #ifdef HAVE_GL4
-	const GLuint b = parse_arena_gl_index_buffer(&parse_arena);
-	if (b != 0)
-		return b;
+	return (u32 *)parse_arena_gl_sorted(&parse_arena, bytes, offset);
+#else
+	return nullptr;
 #endif
-	return own;
 }
 
 void gl_frame_drawn()
@@ -1743,15 +1758,18 @@ static void parse_where_drawn(TA_context* ctx)
 	if (!parse_arena_tried)
 	{
 		parse_arena_tried = true;
-		if (parse_arena_gl_init(&parse_arena, TA_context::VertRoom(), TA_context::IdxRoom(), 3))
+		size_t room[PARSE_ARENA_PARTS];
+		TA_context::ArenaRooms(room);
+		if (parse_arena_gl_init(&parse_arena, room, 3))
 			NOTICE_LOG(RENDERER, "OpenGL: renders parsed where the card reads them, not copied there");
 		else
 			INFO_LOG(RENDERER, "OpenGL: renders copied to the card (the buffers for them could not be had, or read slowly)");
 	}
 	/* (four vertices at the head the parse keeps: the background's, FillBGP()'s) */
 	static bool copied;
-	if (!parse_arena_gl_attach(&parse_arena, &ctx->rend.verts.l, 4 * sizeof(Vertex), &ctx->rend.idx.l)
-			&& parse_arena.ready && !copied)
+	ta_list_t *lists[PARSE_ARENA_PARTS];
+	ctx->ArenaLists(lists);
+	if (!parse_arena_gl_attach(&parse_arena, lists, 4 * sizeof(Vertex)) && parse_arena.ready && !copied)
 	{
 		copied = true;
 		NOTICE_LOG(RENDERER, "OpenGL: a render copied to the card, no slot of the parse's free");

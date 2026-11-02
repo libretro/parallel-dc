@@ -305,7 +305,7 @@ void OITDrawer::UploadMainBuffer(const OITDescriptorSets::FragmentShaderUniforms
 	 * geometry there) */
 	const bool here = UseParsed(0);
 	const u32 vertexBytes = pvrrc.gpu || here ? 0 : pvrrc.verts.bytes();
-	const u32 modVolBytes = ModVolsOnCpu() ? ModVolList().bytes() : 0;
+	const u32 modVolBytes = ModVolsOnCpu() && !here ? ModVolList().bytes() : 0;
 	const u32 indexBytes = pvrrc.gpu || here ? 0 : pvrrc.idx.bytes();
 
 	// Vertex

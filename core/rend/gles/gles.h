@@ -223,6 +223,12 @@ bool ProcessFrame(TA_context* ctx, u32 taFlags = 0);
  * @own, which the lists are copied into */
 GLuint gl_frame_vertex_buffer(GLuint own);
 GLuint gl_frame_index_buffer(GLuint own);
+// ...the volumes' triangles drawn (those cut where there are: rend/modvol_clip.h)
+GLuint gl_frame_modvol_buffer(GLuint own);
+/* Room for @bytes of a sorted pass's indices after the frame's in its index
+ * buffer (gl_frame_index_buffer()), and their @offset there; nullptr: none,
+ * and they go to a buffer of their own */
+u32 *gl_frame_sorted(size_t bytes, size_t *offset);
 // ...and the frame's draws issued: the buffers the card's until they are done
 void gl_frame_drawn();
 // (the context going)

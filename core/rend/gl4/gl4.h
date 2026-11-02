@@ -328,7 +328,8 @@ bool isTwoVolumes(const PolyParam pp) \n\
 
 // (the vertex and index buffers: 0, the renderer's own)
 void gl4SetupMainVBO(GLuint geometry = 0, GLuint idxs = 0);
-void gl4SetupModvolVBO();
+// (the volumes' triangles' buffer: 0, the renderer's own)
+void gl4SetupModvolVBO(GLuint modvols = 0);
 /* A frame decoded on the GPU (pvrrc.gpu, rend/gles/ta_decoder_gl.h): its
  * vertices, indices, modifier volume triangles and translucent polygons'
  * words bound in their places (the vertex arrays' and binding 1), and each

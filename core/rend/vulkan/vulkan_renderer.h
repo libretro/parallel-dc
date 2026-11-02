@@ -174,8 +174,10 @@ public:
 			 * there is one: the draws read it there, uncopied (with the
 			 * background polygon's four vertices FillBGP() wrote, at the
 			 * head of the list the parse empties and takes them back in) */
+			ta_list_t *lists[PARSE_ARENA_PARTS];
+			ctx->ArenaLists(lists);
 			if (parseArenaOk && parse_arena_attach(&parseArena.arena, (unsigned)texCommandPool.GetIndex(),
-					&ctx->rend.verts.l, 4 * sizeof(Vertex), &ctx->rend.idx.l))
+					lists, 4 * sizeof(Vertex)))
 				parsedSlot = texCommandPool.GetIndex();
 			result = ta_parse_vdrc(ctx);
 			if (!result)
@@ -222,9 +224,12 @@ protected:
 		{
 			const parse_arena_t& a = parseArena.arena;
 			parsed.buffer = vk::Buffer(parseArena.buffer);
-			parsed.vertices = parse_arena_vert_offset(&a, (unsigned)parsedSlot);
-			parsed.indices = parse_arena_idx_offset(&a, (unsigned)parsedSlot);
-			parsed.sortRoom = (u32)(a.idx_room + a.sort_room - pvrrc.idx.bytes());
+			parsed.vertices = parse_arena_offset(&a, (unsigned)parsedSlot, PARSE_ARENA_VERTS);
+			parsed.indices = parse_arena_offset(&a, (unsigned)parsedSlot, PARSE_ARENA_IDX);
+			parsed.sortRoom = (u32)(a.space[PARSE_ARENA_IDX] - pvrrc.idx.bytes());
+			// (the volumes' triangles drawn: those cut where there are, rend/modvol_clip.h)
+			parsed.modVols = parse_arena_offset(&a, (unsigned)parsedSlot,
+					pvrrc.mv_clip.used() != 0 ? PARSE_ARENA_MV_CLIP : PARSE_ARENA_MODTRIG);
 			if (parsedHere++ == 0)
 				NOTICE_LOG(RENDERER, "Vulkan: renders parsed where the card reads them, not copied there");
 		}
@@ -251,8 +256,10 @@ protected:
 		 * (Made once: a change of size comes back here, the frames on the
 		 * card done, and keeps it while it has as many slices as there are
 		 * slots, of the machine's lists' room.) */
+		size_t room[PARSE_ARENA_PARTS];
+		TA_context::ArenaRooms(room);
 		if (parseArenaOk && (parseArena.arena.slices != (unsigned)texCommandPool.GetSize()
-				|| parseArena.arena.vert_room != TA_context::VertRoom() || parseArena.arena.idx_room != TA_context::IdxRoom()))
+				|| memcmp(parseArena.arena.room, room, sizeof(room)) != 0))
 		{
 			parse_arena_vk_term(&parseArena);
 			parseArenaOk = false;
@@ -260,8 +267,7 @@ protected:
 		if (!parseArenaOk)
 		{
 			parseArenaOk = parse_arena_vk_init(&parseArena, (VkDevice)GetContext()->GetDevice(),
-					GetContext()->GetHeap().Raw(), TA_context::VertRoom(), TA_context::IdxRoom(),
-					(unsigned)texCommandPool.GetSize()) != 0;
+					GetContext()->GetHeap().Raw(), room, (unsigned)texCommandPool.GetSize()) != 0;
 			parsedHere = parsedCopied = 0;
 		}
 		DetachParse();

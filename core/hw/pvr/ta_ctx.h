@@ -3,6 +3,7 @@
 #include "pvr_regs.h"
 #include "helper_classes.h"
 #include "ta_index.h"
+#include "../../rend/parse_arena.h"
 
 // helper for 32 byte aligned memory allocation
 void* OS_aligned_malloc(size_t align, size_t size);
@@ -338,6 +339,31 @@ struct TA_context
 	{
 		return (size_t)120 * 1024 * (ta_data_size() / TA_DATA_SIZE) * sizeof(u32);	// (indices have the strips' joins)
 	}
+	// the modifier volumes' triangles', and those cut's (a third of them as fans of three more)
+	static size_t ModTrigRoom()
+	{
+		return (size_t)16384 * (ta_data_size() / TA_DATA_SIZE) * sizeof(ModTriangle);
+	}
+	static size_t MvClipRoom()
+	{
+		return ModTrigRoom() + ModTrigRoom() / sizeof(ModTriangle) / 2 * sizeof(ModTriangle);
+	}
+	/* The lists a frame's parse can write where the card reads them
+	 * (rend/parse_arena.h's parts), their rooms and the lists themselves */
+	static void ArenaRooms(size_t *room)
+	{
+		room[PARSE_ARENA_VERTS] = VertRoom();
+		room[PARSE_ARENA_IDX] = IdxRoom();
+		room[PARSE_ARENA_MODTRIG] = ModTrigRoom();
+		room[PARSE_ARENA_MV_CLIP] = MvClipRoom();
+	}
+	void ArenaLists(ta_list_t **lists)
+	{
+		lists[PARSE_ARENA_VERTS] = &rend.verts.l;
+		lists[PARSE_ARENA_IDX] = &rend.idx.l;
+		lists[PARSE_ARENA_MODTRIG] = &rend.modtrig.l;
+		lists[PARSE_ARENA_MV_CLIP] = &rend.mv_clip.l;
+	}
 	/* false: there was not the memory for it, and it holds nothing (a
 	 * NAOMI 2's frame takes about 60 megabytes). @data: the data goes
 	 * there, a slice of ta_data_size() bytes of the GPU pool's (@slot),
@@ -346,7 +372,7 @@ struct TA_context
 	{
       data_size = ta_data_size();
       const unsigned scale = data_size / TA_DATA_SIZE;
-      unsigned modtrig_size = 16384 * scale;
+      const unsigned modtrig_size = (unsigned)(ModTrigRoom() / sizeof(ModTriangle));
       pool = data != NULL ? slot : -1;
       gpu_serial = 0;
       tad.Reset(data != NULL ? data : (u8*)OS_aligned_malloc(32, data_size));

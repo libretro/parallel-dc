@@ -7,44 +7,46 @@ static size_t round_up(size_t n, size_t align)
    return (n + align - 1) / align * align;
 }
 
-size_t parse_arena_layout(parse_arena_t *a, size_t vert_room, size_t idx_room, unsigned slices, size_t align)
+size_t parse_arena_layout(parse_arena_t *a, const size_t *room, unsigned slices, size_t align)
 {
+   size_t at = 0;
+   unsigned p;
+
    memset(a, 0, sizeof(*a));
    a->slot = -1;
    if (slices > PARSE_ARENA_SLOTS)
       return 0;
    if (align == 0)
       align = 1;
-   a->vert_room = vert_room;
-   a->idx_room = idx_room;
    /* (the sorted passes': as much again as the indices, which is room for
     * more translucent triangles than a frame has; more, and that frame is
     * drawn from a copy) */
-   a->sort_room = idx_room;
-   a->idx_at = round_up(vert_room, align);
-   a->slice = round_up(a->idx_at + idx_room + a->sort_room, align);
+   a->sort_room = room[PARSE_ARENA_IDX];
+   for (p = 0; p < PARSE_ARENA_PARTS; p++)
+   {
+      a->room[p] = room[p];
+      a->space[p] = room[p] + (p == PARSE_ARENA_IDX ? a->sort_room : 0);
+      a->at[p] = at;
+      at = round_up(at + a->space[p], align);
+   }
+   a->slice = at;
    a->slices = slices;
-   a->slot = -1;
    return a->slice * slices;
 }
 
 void parse_arena_bind(parse_arena_t *a, void *mem)
 {
-   unsigned i;
+   unsigned i, p;
    a->mem = (unsigned char *)mem;
    for (i = 0; i < a->slices; i++)
-   {
-      a->slot_verts[i] = mem != NULL ? a->mem + a->slice * i : NULL;
-      a->slot_idx[i] = mem != NULL ? a->mem + a->slice * i + a->idx_at : NULL;
-   }
+      for (p = 0; p < PARSE_ARENA_PARTS; p++)
+         a->part_mem[i][p] = mem != NULL ? a->mem + a->slice * i + a->at[p] : NULL;
 }
 
-void parse_arena_bind_slot(parse_arena_t *a, unsigned slot, void *verts, void *idx)
+void parse_arena_bind_slot(parse_arena_t *a, unsigned slot, unsigned part, void *mem)
 {
-   if (slot >= a->slices)
-      return;
-   a->slot_verts[slot] = (unsigned char *)verts;
-   a->slot_idx[slot] = (unsigned char *)idx;
+   if (slot < a->slices && part < PARSE_ARENA_PARTS)
+      a->part_mem[slot][part] = (unsigned char *)mem;
 }
 
 /* @l pointed at @room bytes at @at, with what it holds - and at least its
@@ -58,38 +60,40 @@ static void move_into(ta_list_t *l, unsigned char *at, size_t room, size_t head)
    l->end = at + room;
 }
 
-int parse_arena_attach(parse_arena_t *a, unsigned slot, ta_list_t *verts, size_t vert_head, ta_list_t *idx)
+int parse_arena_attach(parse_arena_t *a, unsigned slot, ta_list_t *const *lists, size_t vert_head)
 {
-   if (slot >= a->slices || a->slot_verts[slot] == NULL || a->slot_idx[slot] == NULL || a->slot >= 0
-         || (size_t)(verts->end - verts->base) != a->vert_room || (size_t)(idx->end - idx->base) != a->idx_room
-         || vert_head > a->vert_room)
+   unsigned p;
+
+   if (slot >= a->slices || a->slot >= 0 || vert_head > a->room[PARSE_ARENA_VERTS])
       return 0;
-   a->own_verts = *verts;
-   a->own_idx = *idx;
-   a->verts = verts;
-   a->idx = idx;
+   for (p = 0; p < PARSE_ARENA_PARTS; p++)
+      if (a->part_mem[slot][p] == NULL || (size_t)(lists[p]->end - lists[p]->base) != a->room[p])
+         return 0;
    a->slot = (int)slot;
-   move_into(verts, a->slot_verts[slot], a->vert_room, vert_head);
-   move_into(idx, a->slot_idx[slot], a->idx_room, 0);
+   for (p = 0; p < PARSE_ARENA_PARTS; p++)
+   {
+      a->own[p] = *lists[p];
+      a->lists[p] = lists[p];
+      move_into(lists[p], a->part_mem[slot][p], a->room[p], p == PARSE_ARENA_VERTS ? vert_head : 0);
+   }
    return 1;
 }
 
 void parse_arena_detach(parse_arena_t *a)
 {
+   unsigned p;
+
    if (a->slot < 0)
       return;
-   *a->verts = a->own_verts;
-   *a->idx = a->own_idx;
-   a->verts = a->idx = NULL;
+   for (p = 0; p < PARSE_ARENA_PARTS; p++)
+   {
+      *a->lists[p] = a->own[p];
+      a->lists[p] = NULL;
+   }
    a->slot = -1;
 }
 
-size_t parse_arena_vert_offset(const parse_arena_t *a, unsigned slot)
+size_t parse_arena_offset(const parse_arena_t *a, unsigned slot, unsigned part)
 {
-   return a->slice * slot;
-}
-
-size_t parse_arena_idx_offset(const parse_arena_t *a, unsigned slot)
-{
-   return a->slice * slot + a->idx_at;
+   return a->slice * slot + a->at[part];
 }
