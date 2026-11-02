@@ -246,6 +246,8 @@ ifeq ($(HAVE_GL), 1)
 							$(CORE_DIR)/core/rend/gl4/gltex.cpp \
 							$(CORE_DIR)/core/rend/gl4/abuffer.cpp \
 							$(CORE_DIR)/core/rend/gles/ta_decoder_gl.cpp
+		# (where a frame is parsed when the card draws it from there: gles/parse_arena_gl.h)
+		SOURCES_C += $(CORE_DIR)/core/rend/gles/parse_arena_gl.c
 	endif
 	SOURCES_C += $(LIBRETRO_COMM_DIR)/glsym/rglgen.c \
 						$(LIBRETRO_COMM_DIR)/glsm/glsm.c

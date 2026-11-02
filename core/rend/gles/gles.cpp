@@ -916,6 +916,7 @@ void findGLVersion()
 #ifndef HAVE_OPENGLES2
 	// (a build with the OpenGL ES 2 headers has no uniform buffer functions: the uniform, on any context)
 	ubo = gl.is_gles ? gl.gl_major >= 3 : gl.gl_major * 10 + gl.gl_minor >= 31;
+	gl.buffer_storage = false;
 	// (by the extension, which every driver with it lists, 4.5's or not: the other path can then be tried by turning the extension off)
 	if (gl.gl_major >= 3)
 	{
@@ -934,6 +935,9 @@ void findGLVersion()
 				ubo = true;
 			else if (!strcmp(extension, "GL_ARB_clip_control") && !gl.is_gles)
 				clip_control = true;
+			// (by the extension too, which every driver with OpenGL 4.4 lists)
+			else if (!strcmp(extension, "GL_ARB_buffer_storage") && !gl.is_gles)
+				gl.buffer_storage = true;
 		}
 	}
 	else
@@ -947,6 +951,7 @@ void findGLVersion()
 		}
 	}
 	gl.clipControl = nullptr;
+	gl.clearDepthf = nullptr;
 	gl.copyBufferSubData = nullptr;
 	{
 		glsm_ctx_proc_address_t proc = { nullptr };
@@ -954,6 +959,11 @@ void findGLVersion()
 		{
 			if (clip_control)
 				gl.clipControl = (void (APIENTRYP)(GLenum, GLenum))proc.addr("glClipControl");
+#ifndef HAVE_OPENGLES
+			// (an ES build has glsm's, which is ES's)
+			if (gl.is_gles)
+				gl.clearDepthf = (void (APIENTRYP)(GLfloat))proc.addr("glClearDepthf");
+#endif
 			if (ubo)
 				gl.copyBufferSubData = (void (APIENTRYP)(GLenum, GLenum, GLintptr, GLintptr, GLsizeiptr))proc.addr("glCopyBufferSubData");
 		}
@@ -1077,6 +1087,7 @@ static void own_target_term(void);	// (RenderFrame()'s framebuffer)
 
 static void gl_term(void)
 {
+	gl_frame_buffers_term();
 	glcache.DeleteTextures(ARRAY_SIZE(vmuTextureId), vmuTextureId);
 	memset(vmuTextureId, 0, sizeof(vmuTextureId));
 	glcache.DeleteTextures(ARRAY_SIZE(lightgunTextureId), lightgunTextureId);
@@ -1514,7 +1525,12 @@ static bool RenderFrame(void)
 	glcache.Disable(GL_SCISSOR_TEST);
 
 	glcache.DepthMask(GL_TRUE);
-	glClearDepth(0.0);
+	/* (a desktop build on an OpenGL ES context: glClearDepth() is not ES's,
+	 * and does nothing there) */
+	if (gl.clearDepthf != nullptr)
+		gl.clearDepthf(0.f);
+	else
+		glClearDepth(0.0);
 	glcache.StencilMask(0xFF); glCheck();
 	glClearStencil(0);
 	if (!is_rtt && pvrrc.clearFramebuffer)
@@ -1536,13 +1552,16 @@ static bool RenderFrame(void)
 		// (a frame decoded on the GPU is there already: DrawStrips() draws from the decode's buffers)
 		if (!pvrrc.gpu)
 		{
-			//Main VBO
-			glBindBuffer(GL_ARRAY_BUFFER, gl.vbo.geometry); glCheck();
-			glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, gl.vbo.idxs); glCheck();
+			//Main VBO, but where the frame was parsed into the buffers the card reads
+			if (gl_frame_vertex_buffer(0) == 0)
+			{
+				glBindBuffer(GL_ARRAY_BUFFER, gl.vbo.geometry); glCheck();
+				glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, gl.vbo.idxs); glCheck();
 
-			glBufferData(GL_ARRAY_BUFFER,pvrrc.verts.bytes(),pvrrc.verts.head(),GL_STREAM_DRAW); glCheck();
+				glBufferData(GL_ARRAY_BUFFER,pvrrc.verts.bytes(),pvrrc.verts.head(),GL_STREAM_DRAW); glCheck();
 
-			upload_vertex_indices();
+				upload_vertex_indices();
+			}
 
 			//Modvol VBO
 			if (pvrrc.modtrig.used() && !pvrrc.mv_clip.used())
@@ -1671,6 +1690,82 @@ void rend_set_fb_scale(float x, float y)
 	fb_scale_y = y;
 }
 
+/* Where a frame is parsed when the card can draw it from there: the
+ * parse's arena, made the first time a frame could go there */
+#ifdef HAVE_GL4
+#include "parse_arena_gl.h"
+static parse_arena_gl_t parse_arena;
+static bool parse_arena_tried;
+#endif
+
+GLuint gl_frame_vertex_buffer(GLuint own)
+{
+#ifdef HAVE_GL4
+	const GLuint b = parse_arena_gl_vertex_buffer(&parse_arena);
+	if (b != 0)
+		return b;
+#endif
+	return own;
+}
+
+GLuint gl_frame_index_buffer(GLuint own)
+{
+#ifdef HAVE_GL4
+	const GLuint b = parse_arena_gl_index_buffer(&parse_arena);
+	if (b != 0)
+		return b;
+#endif
+	return own;
+}
+
+void gl_frame_drawn()
+{
+#ifdef HAVE_GL4
+	parse_arena_gl_done(&parse_arena);
+#endif
+}
+
+void gl_frame_buffers_term()
+{
+#ifdef HAVE_GL4
+	if (parse_arena.ready)
+		parse_arena_gl_term(&parse_arena);
+	parse_arena_tried = false;
+#endif
+}
+
+/* The frame's lists into a slot of the arena, where one is free */
+static void parse_where_drawn(TA_context* ctx)
+{
+#ifdef HAVE_GL4
+	if (!gl.buffer_storage || gl.index_type != GL_UNSIGNED_INT)
+		return;
+	if (!parse_arena_tried)
+	{
+		parse_arena_tried = true;
+		if (parse_arena_gl_init(&parse_arena, TA_context::VertRoom(), TA_context::IdxRoom(), 3))
+			NOTICE_LOG(RENDERER, "OpenGL: renders parsed where the card reads them, not copied there");
+		else
+			INFO_LOG(RENDERER, "OpenGL: renders copied to the card (the buffers for them could not be had, or read slowly)");
+	}
+	/* (four vertices at the head the parse keeps: the background's, FillBGP()'s) */
+	static bool copied;
+	if (!parse_arena_gl_attach(&parse_arena, &ctx->rend.verts.l, 4 * sizeof(Vertex), &ctx->rend.idx.l)
+			&& parse_arena.ready && !copied)
+	{
+		copied = true;
+		NOTICE_LOG(RENDERER, "OpenGL: a render copied to the card, no slot of the parse's free");
+	}
+#endif
+}
+
+static void parse_not_drawn()
+{
+#ifdef HAVE_GL4
+	parse_arena_gl_cancel(&parse_arena);
+#endif
+}
+
 bool ProcessFrame(TA_context* ctx, u32 taFlags)
 {
    if (KillTex)
@@ -1691,9 +1786,14 @@ bool ProcessFrame(TA_context* ctx, u32 taFlags)
 		 * decode is dispatched; or it is parsed as ever */
 		bool rv;
 		if (taFlags == 0 || !glTaDecoder.Ready() || !glTaDecoder.Prepare(ctx, taFlags, &rv))
+		{
+			parse_where_drawn(ctx);
 			rv = ta_parse_vdrc(ctx);
+		}
 		else if (rv)
 			glTaDecoder.Record(ctx);
+		if (!rv || ctx->rend.Overrun)
+			parse_not_drawn();
 		if (!rv)
 			return false;
 		// the textures the frame's polygons asked for that are made on the GPU, before the draws
@@ -1794,6 +1894,7 @@ struct glesrend : Renderer
 	bool Render() override
    {
       bool ret = RenderFrame();
+      gl_frame_drawn();
       glTaDecoder.EndFrame();
 #if !defined(TARGET_NO_THREADS)
       if (!settings.rend.ThreadedRendering)

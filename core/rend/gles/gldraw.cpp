@@ -562,16 +562,22 @@ void SetMVS_Mode(ModifierVolumeMode mv_mode, ISP_Modvol ispc)
 	}
 }
 
-/* The frame's vertices and indices: the renderer's own, or (@gpu) those of
- * GPU-side TA processing's decode */
-static void SetupMainVBO(bool gpu = false)
+/* The frame's vertices and indices: where it was parsed or copied to, or
+ * (@gpu) those of GPU-side TA processing's decode; (@own) the renderer's
+ * own buffers, for a quad of its own to be uploaded to and drawn */
+static void SetupMainVBO(bool gpu = false, bool own = false)
 {
 	if (gpu)
 		glTaDecoder.BindGeometry();
-	else
+	else if (own)
 	{
 		glBindBuffer(GL_ARRAY_BUFFER, gl.vbo.geometry);
 		glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, gl.vbo.idxs);
+	}
+	else
+	{
+		glBindBuffer(GL_ARRAY_BUFFER, gl_frame_vertex_buffer(gl.vbo.geometry));
+		glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, gl_frame_index_buffer(gl.vbo.idxs));
 	}
 
 	//setup vertex buffers attrib pointers
@@ -866,7 +872,7 @@ void DrawStrips()
 					DrawSorted(SortDraws(&sortedDraws), sortedDraws.count, !lastPass, 0);
 					// (the main indices again, after sorted triangles or a prepass)
 					if (sortedDraws.count != 0 || prepassDraws.count != 0)
-						glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, gl.vbo.idxs);
+						glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, gl_frame_index_buffer(gl.vbo.idxs));
 				}
 				else
 				{
@@ -874,7 +880,7 @@ void DrawStrips()
 					if (prepassDraws.count != 0)
 					{
 						DrawPrepass(SortDraws(&prepassDraws), prepassDraws.count, 0);
-						glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, gl.vbo.idxs);
+						glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, gl_frame_index_buffer(gl.vbo.idxs));
 					}
 					SortPParams(previous_pass.tr_count, current_pass.tr_count - previous_pass.tr_count);
 					DrawList<ListType_Translucent, true>(pvrrc.global_param_tr, previous_pass.tr_count, current_pass.tr_count - previous_pass.tr_count );
@@ -914,7 +920,7 @@ static void DrawQuad(GLuint texId, float x, float y, float w, float h, float u0,
 	glActiveTexture(GL_TEXTURE0);
 	glcache.BindTexture(GL_TEXTURE_2D, texId);
 
-	SetupMainVBO();
+	SetupMainVBO(false, true);
 	glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_STREAM_DRAW);
 	glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(indices), indices, GL_STREAM_DRAW);
 
@@ -1039,7 +1045,7 @@ void DrawVmuTexture(u8 vmu_screen_number)
 	glcache.Enable(GL_BLEND);
 	glcache.BlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
-	SetupMainVBO();
+	SetupMainVBO(false, true);
 	PipelineShader *shader = GetProgram(0, false, 1, 1, 0, 0, 0, 2, false, false, false, false, false);
 	UsePipelineShader(shader);
 
@@ -1133,7 +1139,7 @@ void DrawGunCrosshair(u8 port)
 	glcache.Enable(GL_BLEND);
 	glcache.BlendFunc(GL_SRC_ALPHA, GL_ONE);
 
-	SetupMainVBO();
+	SetupMainVBO(false, true);
 	PipelineShader *shader = GetProgram(0, false, 1, 1, 0, 0, 0, 2, false, false, false, false, false);
 	UsePipelineShader(shader);
 

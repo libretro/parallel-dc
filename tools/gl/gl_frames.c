@@ -19,7 +19,11 @@
  * back. The picture is then the one a plain run of one frame more shows,
  * for whatever a state carries (tools/gl/gl_ahead.sh). GLF_READS=1 counts
  * what the core reads back from the card - a buffer mapped to be read, a
- * glReadPixels - and prints "reads N" at the end (tools/gl/gl_dma.sh).
+ * glReadPixels - and prints "reads N" at the end (tools/gl/gl_dma.sh); a
+ * buffer mapped once for good (persistently) is not a read of a frame.
+ * GLF_NO_STORAGE=1: no GL_ARB_buffer_storage, as an OpenGL older than 4.4
+ * has it: the frame's lists are copied to the card, not parsed where it
+ * reads them (tools/gl/gl_parse_arena.sh).
  *
  * Built with: cc -o gl_frames gl_frames.c -lEGL -lGL -ldl */
 #define _GNU_SOURCE
@@ -69,7 +73,7 @@ static void *(*real_map_range)(GLenum, GLintptr, GLsizeiptr, GLbitfield);
 static void (*real_read_pixels)(GLint, GLint, GLsizei, GLsizei, GLenum, GLenum, void *);
 static void *count_map_range(GLenum target, GLintptr offset, GLsizeiptr length, GLbitfield access)
 {
-   if (access & GL_MAP_READ_BIT)
+   if ((access & GL_MAP_READ_BIT) && !(access & GL_MAP_PERSISTENT_BIT))
       reads++;
    return real_map_range(target, offset, length, access);
 }
@@ -79,9 +83,23 @@ static void count_read_pixels(GLint x, GLint y, GLsizei w, GLsizei h, GLenum for
    real_read_pixels(x, y, w, h, format, type, pixels);
 }
 
+static const GLubyte *(*real_get_stringi)(GLenum, GLuint);
+static const GLubyte *hide_get_stringi(GLenum name, GLuint i)
+{
+   const GLubyte *e = real_get_stringi(name, i);
+   if (name == GL_EXTENSIONS && e != NULL && !strcmp((const char *)e, "GL_ARB_buffer_storage"))
+      return (const GLubyte *)"GL_hidden_ARB_buffer_storage";
+   return e;
+}
+
 static retro_proc_address_t gl_proc(const char *sym)
 {
    retro_proc_address_t f = (retro_proc_address_t)eglGetProcAddress(sym);
+   if (getenv("GLF_NO_STORAGE") && f != NULL && !strcmp(sym, "glGetStringi"))
+   {
+      *(retro_proc_address_t *)&real_get_stringi = f;
+      return (retro_proc_address_t)hide_get_stringi;
+   }
    if (!getenv("GLF_READS") || f == NULL)
       return f;
    if (!strcmp(sym, "glMapBufferRange"))

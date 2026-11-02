@@ -567,6 +567,7 @@ bool gl4CompilePipelineShader(	gl4PipelineShader* s, const char *pixel_source /*
 
 static void gl_term(void)
 {
+	gl_frame_buffers_term();
 	glDeleteProgram(gl4.modvol_shader.program);
 	glDeleteVertexArrays(1, &gl4.vbo.main_vao);
 	glDeleteVertexArrays(1, &gl4.vbo.modvol_vao);
@@ -869,14 +870,17 @@ static bool RenderFrame()
 	else if (!pvrrc.isRenderFramebuffer)
 	{
 		gl4BindFrameBuffers(false);
-		//Main VBO
-		glBindVertexArray(gl4.vbo.main_vao);
-		glBindBuffer(GL_ARRAY_BUFFER, gl4.vbo.geometry); glCheck();
-		glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, gl4.vbo.idxs); glCheck();
+		//Main VBO, but where the frame was parsed into the buffers the card reads
+		if (gl_frame_vertex_buffer(0) == 0)
+		{
+			glBindVertexArray(gl4.vbo.main_vao);
+			glBindBuffer(GL_ARRAY_BUFFER, gl4.vbo.geometry); glCheck();
+			glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, gl4.vbo.idxs); glCheck();
 
-		glBufferData(GL_ARRAY_BUFFER,pvrrc.verts.bytes(),pvrrc.verts.head(),GL_STREAM_DRAW); glCheck();
+			glBufferData(GL_ARRAY_BUFFER,pvrrc.verts.bytes(),pvrrc.verts.head(),GL_STREAM_DRAW); glCheck();
 
-		glBufferData(GL_ELEMENT_ARRAY_BUFFER,pvrrc.idx.bytes(),pvrrc.idx.head(),GL_STREAM_DRAW); glCheck();
+			glBufferData(GL_ELEMENT_ARRAY_BUFFER,pvrrc.idx.bytes(),pvrrc.idx.head(),GL_STREAM_DRAW); glCheck();
+		}
 
 		//Modvol VBO
 		if (pvrrc.modtrig.used() && !pvrrc.mv_clip.used())
@@ -1180,6 +1184,7 @@ struct gl4rend : Renderer
 	bool Render() override
 	{
 		bool ret = RenderFrame();
+		gl_frame_drawn();
 		glTaDecoder.EndFrame();
 #if !defined(TARGET_NO_THREADS)
 		if (!settings.rend.ThreadedRendering)

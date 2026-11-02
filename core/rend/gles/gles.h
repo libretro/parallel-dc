@@ -181,6 +181,7 @@ struct gl_ctx
 	int gl_major;
 	int gl_minor;
 	bool is_gles;
+	bool buffer_storage;	// immutable buffers mapped persistently (ARB_buffer_storage, OpenGL 4.4)
 	/* The depth (rend/depth_scale.h; findGLVersion()): the format of the
 	 * depth buffers this renderer makes, the uniform buffer the depth scale
 	 * is in (0: a plain uniform), and glClipControl where the context has
@@ -188,6 +189,8 @@ struct gl_ctx
 	GLenum depth_format;
 	GLuint depth_ubo;
 	void (APIENTRYP clipControl)(GLenum origin, GLenum depth);
+	// (OpenGL ES's, for a desktop build on an ES context: glsm has glClearDepth() only)
+	void (APIENTRYP clearDepthf)(GLfloat depth);
 	void (APIENTRYP copyBufferSubData)(GLenum readTarget, GLenum writeTarget, GLintptr readOffset, GLintptr writeOffset, GLsizeiptr size);
 	GLuint single_channel_format;
 	GLenum index_type;
@@ -215,6 +218,15 @@ enum ModifierVolumeMode { Xor, Or, Inclusion, Exclusion, ModeCount };
 /* @taFlags: how the renderer draws a frame GPU-side TA processing decodes
  * (ta_gpu_prepare()'s TA_GPU_*; gles/ta_decoder_gl.h); 0, never */
 bool ProcessFrame(TA_context* ctx, u32 taFlags = 0);
+/* The frame's vertex and index buffers, where its strips are drawn from:
+ * those it was parsed into (gles/parse_arena_gl.h), or the renderer's own
+ * @own, which the lists are copied into */
+GLuint gl_frame_vertex_buffer(GLuint own);
+GLuint gl_frame_index_buffer(GLuint own);
+// ...and the frame's draws issued: the buffers the card's until they are done
+void gl_frame_drawn();
+// (the context going)
+void gl_frame_buffers_term();
 void UpdateFogTexture(u8 *fog_table, GLenum texture_slot, GLint fog_image_format);
 void GetFramebufferScaling(float& scale_x, float& scale_y, float& scissoring_scale_x, float& scissoring_scale_y);
 void GetFramebufferSize(float& dc_width, float& dc_height);

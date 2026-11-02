@@ -105,6 +105,31 @@ int main(void)
    CHECK(overrun == 1);
    parse_arena_detach(&a);
 
+   /* slices bound apart (a buffer of their own each, as OpenGL's): their
+    * memory, wherever it is */
+   {
+      static unsigned char vmem[2][VERT_ROOM], imem[2][IDX_ROOM];
+      parse_arena_t b;
+      CHECK(parse_arena_layout(&b, VERT_ROOM, IDX_ROOM, 2, 1) != 0);
+      CHECK(!parse_arena_attach(&b, 0, &verts, HEAD, &idx));
+      parse_arena_bind_slot(&b, 0, vmem[0], imem[0]);
+      parse_arena_bind_slot(&b, 1, vmem[1], imem[1]);
+      parse_arena_bind_slot(&b, 2, vmem[0], imem[0]);   /* (no slot 2: nothing) */
+      for (i = 0; i < HEAD; i++)
+         own_verts[i] = (unsigned char)(0x80 + i);
+      verts.cur = verts.base;
+      idx.cur = idx.base;
+      CHECK(parse_arena_attach(&b, 1, &verts, HEAD, &idx));
+      CHECK(verts.base == vmem[1] && idx.base == imem[1]);
+      CHECK(memcmp(vmem[1], own_verts, HEAD) == 0);
+      parse_arena_detach(&b);
+      CHECK(verts.base == own_verts && idx.base == own_idx);
+      CHECK(!parse_arena_attach(&b, 2, &verts, HEAD, &idx));
+      /* more slices than there is room for: none */
+      CHECK(parse_arena_layout(&b, VERT_ROOM, IDX_ROOM, PARSE_ARENA_SLOTS + 1, 1) == 0);
+      CHECK(b.slot == -1);
+   }
+
    ta_list_free(&verts);
    ta_list_free(&idx);
    free(mem);

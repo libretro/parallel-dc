@@ -10,6 +10,9 @@ static size_t round_up(size_t n, size_t align)
 size_t parse_arena_layout(parse_arena_t *a, size_t vert_room, size_t idx_room, unsigned slices, size_t align)
 {
    memset(a, 0, sizeof(*a));
+   a->slot = -1;
+   if (slices > PARSE_ARENA_SLOTS)
+      return 0;
    if (align == 0)
       align = 1;
    a->vert_room = vert_room;
@@ -27,7 +30,21 @@ size_t parse_arena_layout(parse_arena_t *a, size_t vert_room, size_t idx_room, u
 
 void parse_arena_bind(parse_arena_t *a, void *mem)
 {
+   unsigned i;
    a->mem = (unsigned char *)mem;
+   for (i = 0; i < a->slices; i++)
+   {
+      a->slot_verts[i] = mem != NULL ? a->mem + a->slice * i : NULL;
+      a->slot_idx[i] = mem != NULL ? a->mem + a->slice * i + a->idx_at : NULL;
+   }
+}
+
+void parse_arena_bind_slot(parse_arena_t *a, unsigned slot, void *verts, void *idx)
+{
+   if (slot >= a->slices)
+      return;
+   a->slot_verts[slot] = (unsigned char *)verts;
+   a->slot_idx[slot] = (unsigned char *)idx;
 }
 
 /* @l pointed at @room bytes at @at, with what it holds - and at least its
@@ -43,20 +60,17 @@ static void move_into(ta_list_t *l, unsigned char *at, size_t room, size_t head)
 
 int parse_arena_attach(parse_arena_t *a, unsigned slot, ta_list_t *verts, size_t vert_head, ta_list_t *idx)
 {
-   unsigned char *s;
-
-   if (a->mem == NULL || slot >= a->slices || a->slot >= 0
+   if (slot >= a->slices || a->slot_verts[slot] == NULL || a->slot_idx[slot] == NULL || a->slot >= 0
          || (size_t)(verts->end - verts->base) != a->vert_room || (size_t)(idx->end - idx->base) != a->idx_room
          || vert_head > a->vert_room)
       return 0;
-   s = a->mem + a->slice * slot;
    a->own_verts = *verts;
    a->own_idx = *idx;
    a->verts = verts;
    a->idx = idx;
    a->slot = (int)slot;
-   move_into(verts, s, a->vert_room, vert_head);
-   move_into(idx, s + a->idx_at, a->idx_room, 0);
+   move_into(verts, a->slot_verts[slot], a->vert_room, vert_head);
+   move_into(idx, a->slot_idx[slot], a->idx_room, 0);
    return 1;
 }
 

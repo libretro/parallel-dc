@@ -22,9 +22,16 @@
 extern "C" {
 #endif
 
+/* (most slices an arena has) */
+#define PARSE_ARENA_SLOTS 8
+
 typedef struct parse_arena
 {
    unsigned char *mem;        /* mapped: the slices one after another */
+   /* ...or a slice's vertices and indices each where a buffer of their
+    * own is mapped (parse_arena_bind_slot()) */
+   unsigned char *slot_verts[PARSE_ARENA_SLOTS];
+   unsigned char *slot_idx[PARSE_ARENA_SLOTS];
    size_t vert_room;          /* a slice's vertices' bytes */
    size_t idx_room;           /* ...its indices' */
    size_t sort_room;          /* ...and the sorted passes', after them */
@@ -38,11 +45,16 @@ typedef struct parse_arena
    ta_list_t own_verts, own_idx;
 } parse_arena_t;
 
-/* The layout for @slices of rooms of @vert_room and @idx_room bytes (a
- * frame's lists'), each part of a slice @align bytes aligned: the bytes it
- * takes. No memory yet (parse_arena_bind()). */
+/* The layout for @slices (PARSE_ARENA_SLOTS at most) of rooms of
+ * @vert_room and @idx_room bytes (a frame's lists'), each part of a slice
+ * @align bytes aligned: the bytes it takes, 0 for too many slices. No
+ * memory yet (parse_arena_bind()). */
 size_t parse_arena_layout(parse_arena_t *a, size_t vert_room, size_t idx_room, unsigned slices, size_t align);
 void parse_arena_bind(parse_arena_t *a, void *mem);
+/* ...or slice @slot's vertices at @verts (vert_room bytes) and its indices
+ * at @idx (idx_room bytes, and sort_room after them where the sorted
+ * passes go there), apart */
+void parse_arena_bind_slot(parse_arena_t *a, unsigned slot, void *verts, void *idx);
 
 /* The frame whose lists these are parsed into slice @slot: what they hold
  * already copied there - and of the vertices, at least the first

@@ -509,12 +509,12 @@ static void DrawList(const List<PolyParam>& gply, int first, int count)
 	}
 }
 
-void gl4SetupMainVBO()
+void gl4SetupMainVBO(GLuint geometry, GLuint idxs)
 {
 	glBindVertexArray(gl4.vbo.main_vao);
 
-	glBindBuffer(GL_ARRAY_BUFFER, gl4.vbo.geometry);
-	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, gl4.vbo.idxs);
+	glBindBuffer(GL_ARRAY_BUFFER, geometry != 0 ? geometry : gl4.vbo.geometry);
+	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, idxs != 0 ? idxs : gl4.vbo.idxs);
 
 	//setup vertex buffers attrib pointers
 	glEnableVertexAttribArray(VERTEX_POS_ARRAY);
@@ -539,23 +539,26 @@ void gl4SetupMainVBO()
 	glVertexAttribPointer(VERTEX_UV1_ARRAY, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, u1)); glCheck();
 }
 
-/* What the vertex arrays and storage binding 1 have: -1 not known, 0 the
- * renderer's own buffers, 1 the GPU decode's */
-static int frame_buffers = -1;
+/* What the vertex arrays and storage binding 1 have: -1 not known, -2 the
+ * GPU decode's, or the vertex buffer of the renderer's own or of the
+ * frame's they have */
+static long frame_buffers = -1;
 
 void gl4ForgetFrameBuffers()
 {
 	frame_buffers = -1;
 }
 
-void gl4BindFrameBuffers(bool gpu)
+void gl4BindFrameBuffers(bool gpu, bool own)
 {
-	if (frame_buffers == (gpu ? 1 : 0))
+	const GLuint geometry = own ? gl4.vbo.geometry : gl_frame_vertex_buffer(gl4.vbo.geometry);
+	const long want = gpu ? -2 : (long)geometry;
+	if (frame_buffers == want)
 		return;
-	frame_buffers = gpu ? 1 : 0;
+	frame_buffers = want;
 	if (!gpu)
 	{
-		gl4SetupMainVBO();
+		gl4SetupMainVBO(geometry, own ? gl4.vbo.idxs : gl_frame_index_buffer(gl4.vbo.idxs));
 		glDisableVertexAttribArray(VERTEX_PP_ARRAY);
 		// (an attribute without its array: the number is 0)
 		gl4.vertexAttribI4ui(VERTEX_PP_ARRAY, 0, 0, 0, 0);
@@ -1041,7 +1044,7 @@ static void gl4_draw_quad_texture(GLuint texture, float w, float h)
 
 	glActiveTexture(GL_TEXTURE0);
 	glBindTexture(GL_TEXTURE_2D, texture);
-	gl4BindFrameBuffers(false);
+	gl4BindFrameBuffers(false, true);
 
 	struct Vertex vertices[] = {
 		{ 0,     0 + h, 1, { 255, 255, 255, 255 }, { 0, 0, 0, 0 }, 0, 1 },
@@ -1117,7 +1120,7 @@ void gl4DrawVmuTexture(u8 vmu_screen_number)
    glcache.Enable(GL_BLEND);
    glcache.BlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
-   gl4BindFrameBuffers(false);
+   gl4BindFrameBuffers(false, true);
    glBindVertexArray(gl4.vbo.main_vao);
 
 	gl4ShaderUniforms.trilinear_alpha = 1.0;
@@ -1231,7 +1234,7 @@ void gl4DrawGunCrosshair(u8 port)
    glcache.Enable(GL_BLEND);
 	glcache.BlendFunc(GL_SRC_ALPHA, GL_ONE);
 
-	gl4BindFrameBuffers(false);
+	gl4BindFrameBuffers(false, true);
 	glBindVertexArray(gl4.vbo.main_vao);
 
 	gl4ShaderUniforms.trilinear_alpha = 1.0;

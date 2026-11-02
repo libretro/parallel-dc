@@ -326,18 +326,20 @@ bool isTwoVolumes(const PolyParam pp) \n\
  \n\
 "
 
-void gl4SetupMainVBO();
+// (the vertex and index buffers: 0, the renderer's own)
+void gl4SetupMainVBO(GLuint geometry = 0, GLuint idxs = 0);
 void gl4SetupModvolVBO();
 /* A frame decoded on the GPU (pvrrc.gpu, rend/gles/ta_decoder_gl.h): its
  * vertices, indices, modifier volume triangles and translucent polygons'
  * words bound in their places (the vertex arrays' and binding 1), and each
  * translucent strip's number given its fragments by the draw
- * (TA_GPU_INSTANCE); or, @gpu false, the renderer's own buffers - for a
- * frame the CPU parsed, and what is drawn from them after (the VMU
- * screens, the crosshairs, the framebuffer). Nothing is done when they are
- * bound already; gl4ForgetFrameBuffers(): the decoder's buffers are made
- * again, and are bound the next time. */
-void gl4BindFrameBuffers(bool gpu);
+ * (TA_GPU_INSTANCE); or, @gpu false, those of a frame the CPU parsed -
+ * where it was parsed or copied to (gl_frame_vertex_buffer()) - or, @own,
+ * the renderer's own buffers, for what is uploaded to them and drawn (the
+ * VMU screens, the crosshairs, the framebuffer). Nothing is done when they
+ * are bound already; gl4ForgetFrameBuffers(): the decoder's buffers are
+ * made again, and are bound the next time. */
+void gl4BindFrameBuffers(bool gpu, bool own = false);
 void gl4ForgetFrameBuffers();
 
 extern struct gl4ShaderUniforms_t

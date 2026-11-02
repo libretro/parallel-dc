@@ -28,9 +28,10 @@ name: Vulkan negotiation
 # And the OpenGL renderers compiled as macOS (clang) and the Switch (libnx)
 # build them, through glsm's own GL functions (tools/gl/gl_shapes.sh).
 # And a frame's vertices and indices parsed straight into memory the card
-# reads, none copied, the pictures those of the lists copied
-# (tools/vulkan/vk_parse_arena.sh), and the arena's slices
-# (tools/rend/parse_arena_test.sh).
+# reads, none copied, the pictures those of the lists copied, with Vulkan
+# and with OpenGL (tools/vulkan/vk_parse_arena.sh, tools/gl/gl_parse_arena.sh:
+# no OpenGL error either, and OpenGL ES drawing as ever), and the arena's
+# slices (tools/rend/parse_arena_test.sh).
 
 on:
   push:
@@ -61,6 +62,7 @@ on:
       - 'core/rend/grow_buf.h'
       - 'tools/rend/sort_pairs_test.*'
       - 'core/rend/parse_arena.*'
+      - 'core/hw/pvr/ta_index.*'
       - 'core/hw/pvr/ta_list.*'
       - 'core/hw/pvr/helper_classes.h'
       - 'tools/rend/parse_arena_test.*'
@@ -96,6 +98,7 @@ on:
       - 'core/rend/grow_buf.h'
       - 'tools/rend/sort_pairs_test.*'
       - 'core/rend/parse_arena.*'
+      - 'core/hw/pvr/ta_index.*'
       - 'core/hw/pvr/ta_list.*'
       - 'core/hw/pvr/helper_classes.h'
       - 'tools/rend/parse_arena_test.*'
@@ -141,6 +144,7 @@ jobs:
         run: |
           sh tools/rend/parse_arena_test.sh
           VK_DRIVER_FILES=/usr/share/vulkan/icd.d/lvp_icd.json sh tools/vulkan/vk_parse_arena.sh
+          sh tools/gl/gl_parse_arena.sh
       - name: The temporal upscaler's side in the core (strips matched, the request, the inputs)
         run: sh tools/rend/upscaler_test.sh
       - name: HDR output (HDR10, scRGB, each renderer, every Display Transform)
