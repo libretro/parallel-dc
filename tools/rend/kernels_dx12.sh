@@ -74,6 +74,7 @@
 #   sh tools/rend/kernels_dx12.sh update   all made again from the sources
 #   sh tools/rend/kernels_dx12.sh update-raster  only the raster shaders' DXBC (dx12_dxbc.inc) made again
 #   sh tools/rend/kernels_dx12.sh update-hdr  only the HDR output's DXBC made again
+#   sh tools/rend/kernels_dx12.sh update-dxil  only the raster and HDR shaders' DXIL (dx12_dxil.inc) made again
 #   sh tools/rend/kernels_dx12.sh update-compute-hdr  ...and its DXIL
 #   sh tools/rend/kernels_dx12.sh update-compute-upscaler  only the upscaler's DXIL made again
 #   sh tools/rend/kernels_dx12.sh check    whether all are the sources' still
@@ -146,6 +147,10 @@ COUNT=43
 # the per-pixel renderer's lists resolved with SSAA (34's) that store the
 # channel sums as well
 HDR_INC=core/rend/dx12/dx12_hdr_dxbc.inc
+# The same shaders, raster and HDR, as DXIL (shader model 6.0, HLSL 2018 as
+# the DXBC's source is written), for a device that takes it
+# (dx12_shaders.cpp): made by dxc, which signs them
+DXIL_INC=core/rend/dx12/dx12_dxil.inc
 HDR_SHADERS="1:ps_5_1:DX12_OIT_FINAL_PS,$S,DX12_MS_TABLE,DX12_OIT_SUMS"
 HDR_COUNT=1
 TA_INC=core/rend/dx12/dx12_ta_dxbc.inc
@@ -599,6 +604,88 @@ hdr_sums() {
    done
 }
 
+# The raster renderers' root signature (dx12/dx12context_lr.cpp's, as it
+# has it), which dxc holds each raster shader's DXIL bindings to
+# (-verifyrootsignature): the polygon's constants, the vertex and fragment
+# constants, the bindless textures and samplers, the per-pixel renderer's
+# table and parameters, the HDR sums, the point and linear samplers
+V="visibility=SHADER_VISIBILITY_PIXEL"
+RASTER_ROOT="RootFlags(ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT), RootConstants(num32BitConstants=14, b1), CBV(b0, visibility=SHADER_VISIBILITY_VERTEX), CBV(b2, $V), DescriptorTable(SRV(t0, space=1, numDescriptors=16384), $V), DescriptorTable(Sampler(s0, space=1, numDescriptors=1024), $V), DescriptorTable(UAV(u1, numDescriptors=3), SRV(t4, offset=3), SRV(t6, offset=4), $V), SRV(t5, $V), DescriptorTable(UAV(u4), $V)"
+RASTER_ROOT="$RASTER_ROOT, StaticSampler(s0, filter=FILTER_MIN_MAG_MIP_POINT, addressU=TEXTURE_ADDRESS_CLAMP, addressV=TEXTURE_ADDRESS_CLAMP, addressW=TEXTURE_ADDRESS_CLAMP, comparisonFunc=COMPARISON_NEVER, borderColor=STATIC_BORDER_COLOR_TRANSPARENT_BLACK, $V)"
+RASTER_ROOT="$RASTER_ROOT, StaticSampler(s1, filter=FILTER_MIN_MAG_MIP_LINEAR, addressU=TEXTURE_ADDRESS_CLAMP, addressV=TEXTURE_ADDRESS_CLAMP, addressW=TEXTURE_ADDRESS_CLAMP, comparisonFunc=COMPARISON_NEVER, borderColor=STATIC_BORDER_COLOR_TRANSPARENT_BLACK, $V)"
+raster_root() {
+   [ -f "$WORK/raster_root.bin" ] && return
+   echo "#define ROOT \"$RASTER_ROOT\"" > "$WORK/raster_root.hlsl"
+   "$DXC" -T rootsig_1_0 -E ROOT -Fo "$WORK/raster_root.bin" "$WORK/raster_root.hlsl" > "$WORK/log" 2>&1 || { cat "$WORK/log" >&2; exit 1; }
+}
+
+# a profile of shader model 5.1 as 6.0's
+dxil_profile() {
+   echo "$1" | sed 's/_5_1$/_6_0/'
+}
+
+dxil_sums() {
+   for k in $SHADERS; do
+      n=${k%%:*}; r=${k#*:}; p=${r%%:*}; d=${r#*:}
+      source_of $d > "$WORK/s.hlsl"
+      echo " * shader $n $(dxil_profile $p) $(sha1sum < "$WORK/s.hlsl" | cut -c1-40)"
+   done
+   for k in $HDR_SHADERS; do
+      n=${k%%:*}; r=${k#*:}; p=${r%%:*}; d=${r#*:}
+      source_of $d > "$WORK/s.hlsl"
+      echo " * shader hdr-$n $(dxil_profile $p) $(sha1sum < "$WORK/s.hlsl" | cut -c1-40)"
+   done
+}
+
+# @1 the source, @2 the profile, @3 the DXIL: bound as the root signature has it
+dxil_compile() {
+   raster_root
+   "$DXC" -T $2 -E main -HV 2018 -O3 -Qstrip_reflect -Qstrip_debug -Fo "$3" "$1" > "$WORK/log" 2>&1 || { cat "$WORK/log" >&2; exit 1; }
+   "$DXC" -dumpbin -verifyrootsignature "$WORK/raster_root.bin" "$3" > "$WORK/log" 2>&1 \
+      || { cat "$WORK/log" >&2; echo "$0: $1 binds what the raster root signature does not have" >&2; exit 1; }
+   [ "$(od -An -v -tx1 -j4 -N16 "$3" | tr -d ' \n')" != "00000000000000000000000000000000" ] \
+      || { echo "$0: $DXC did not sign $3 (no dxil.dll or libdxil.so beside it?)" >&2; exit 1; }
+}
+
+make_dxil_inc() {
+   echo "/* DXIL of the Direct3D 12 renderer's shaders (rend/dx12/shaders/dx12_raster.hlsl,"
+   echo " * each with its defines and rend/dx12/dx12_shader_flags.h), as dx12_dxbc.inc"
+   echo " * and dx12_hdr_dxbc.inc have them, by the same numbers: made by"
+   echo " * tools/rend/kernels_dx12.sh update-dxil from them. Not to be edited."
+   echo " * dxc $(dxc_version)"
+   dxil_sums
+   echo " */"
+   for k in $SHADERS; do
+      n=${k%%:*}; r=${k#*:}; p=${r%%:*}; d=${r#*:}
+      source_of $d > "$WORK/x$n.hlsl"
+      dxil_compile "$WORK/x$n.hlsl" $(dxil_profile $p) "$WORK/x$n.dxil"
+      echo "static const unsigned char dx12_dxil_$n[] = {"
+      od -An -v -tx1 -w16 "$WORK/x$n.dxil" | awk '{ s = ""; for (i = 1; i <= NF; i++) s = s "0x" $i ","; print s }'
+      echo "};"
+   done
+   for k in $HDR_SHADERS; do
+      n=${k%%:*}; r=${k#*:}; p=${r%%:*}; d=${r#*:}
+      source_of $d > "$WORK/y$n.hlsl"
+      dxil_compile "$WORK/y$n.hlsl" $(dxil_profile $p) "$WORK/y$n.dxil"
+      echo "static const unsigned char dx12_hdr_dxil_$n[] = {"
+      od -An -v -tx1 -w16 "$WORK/y$n.dxil" | awk '{ s = ""; for (i = 1; i <= NF; i++) s = s "0x" $i ","; print s }'
+      echo "};"
+   done
+   echo "// by DX12Shader and DX12HdrShader: the bytes, and how many"
+   l="static const unsigned char * const dx12_dxil[] = { 0"
+   z="static const size_t dx12_dxil_size[] = { 0"
+   i=1
+   while [ $i -le $COUNT ]; do l="$l, dx12_dxil_$i"; z="$z, sizeof(dx12_dxil_$i)"; i=$((i + 1)); done
+   echo "$l };"
+   echo "$z };"
+   l="static const unsigned char * const dx12_hdr_dxil[] = { 0"
+   z="static const size_t dx12_hdr_dxil_size[] = { 0"
+   i=1
+   while [ $i -le $HDR_COUNT ]; do l="$l, dx12_hdr_dxil_$i"; z="$z, sizeof(dx12_hdr_dxil_$i)"; i=$((i + 1)); done
+   echo "$l };"
+   echo "$z };"
+}
+
 make_hdr_inc() {
    echo "/* DXBC of the Direct3D 12 renderer's shaders for the HDR output"
    echo " * (rend/dx12/shaders/dx12_raster.hlsl, each with its defines and"
@@ -643,6 +730,12 @@ update-raster)
    cp "$WORK/new.inc" $INC
    echo "made $INC"
    ;;
+update-dxil)
+   [ -n "$(dxc_version)" ] || { echo "$0: DXC=/path/to/dxc is needed to make them" >&2; exit 1; }
+   make_dxil_inc > "$WORK/new.inc"
+   cp "$WORK/new.inc" $DXIL_INC
+   echo "made $DXIL_INC"
+   ;;
 update-hdr)
    [ -n "$(compiler_sum)" ] || { echo "$0: D3DCOMPILER=/path/to/d3dcompiler_47.dll is needed to make them" >&2; exit 1; }
    make_hdr_inc > "$WORK/new.inc"
@@ -666,7 +759,9 @@ update)
    cp "$WORK/new.inc" $COMPUTE_HDR_INC
    make_compute_upscaler_inc > "$WORK/new.inc"
    cp "$WORK/new.inc" $COMPUTE_UPSCALER_INC
-   echo "made $INC, $TA_INC, $TA11_INC, $COMPUTE_INC, $HDR_INC, $COMPUTE_HDR_INC and $COMPUTE_UPSCALER_INC"
+   make_dxil_inc > "$WORK/new.inc"
+   cp "$WORK/new.inc" $DXIL_INC
+   echo "made $INC, $TA_INC, $TA11_INC, $COMPUTE_INC, $HDR_INC, $COMPUTE_HDR_INC, $COMPUTE_UPSCALER_INC and $DXIL_INC"
    ;;
 check)
    check_inc $INC make_inc sums d3dcompiler_47
@@ -674,6 +769,7 @@ check)
    check_inc $TA11_INC make_ta11_inc ta11_sums d3dcompiler_47
    check_inc $COMPUTE_INC make_compute_inc compute_sums dxc
    check_inc $HDR_INC make_hdr_inc hdr_sums d3dcompiler_47
+   check_inc $DXIL_INC make_dxil_inc dxil_sums dxc
    check_inc $COMPUTE_HDR_INC make_compute_hdr_inc compute_hdr_sums dxc
    check_inc $COMPUTE_UPSCALER_INC make_compute_upscaler_inc compute_upscaler_sums dxc
    ;;

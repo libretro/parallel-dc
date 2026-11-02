@@ -568,6 +568,8 @@ bool DX12Pipelines::Init(ID3D12Device *device, ID3D12RootSignature *root, UINT v
 	keys.reserve(MaxKeys);
 	if (FAILED(device->QueryInterface(__uuidof(ID3D12Device1), (void **)&device1)))
 		device1 = nullptr;
+	// (before the file: the library kept is of the shaders chosen)
+	NOTICE_LOG(RENDERER, "DX12: the shaders as %s", dx12_shaders_choose(device) ? "DXIL (shader model 6.0)" : "DXBC (shader model 5.1)");
 	LoadFile();
 	// (after the library: the thread uses it)
 	warm = d3d_warm_new(dx12WarmBuild, dx12WarmRelease, this, MaxKeys * 2);

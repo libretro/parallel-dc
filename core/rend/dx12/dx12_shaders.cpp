@@ -18,13 +18,20 @@
 #include <cstddef>
 #include "dx12_dxbc.inc"
 #include "dx12_hdr_dxbc.inc"
+#include "dx12_dxil.inc"
 #include "rend/texdecode_dxbc.inc"
 #include "deps/xxhash/xxhash.h"
+
+/* DXIL, where the device takes it: the raster shaders all of one kind,
+ * since a pipeline's are */
+static bool useDxil;
 
 D3D12_SHADER_BYTECODE dx12_shader(DX12Shader shader)
 {
 	const int n = (int)shader;
 	D3D12_SHADER_BYTECODE code = { dx12_dxbc[n], dx12_dxbc_size[n] };
+	if (useDxil)
+		code = { dx12_dxil[n], dx12_dxil_size[n] };
 	return code;
 }
 
@@ -32,6 +39,8 @@ D3D12_SHADER_BYTECODE dx12_hdr_shader(DX12HdrShader shader)
 {
 	const int n = (int)shader;
 	D3D12_SHADER_BYTECODE code = { dx12_hdr_dxbc[n], dx12_hdr_dxbc_size[n] };
+	if (useDxil)
+		code = { dx12_hdr_dxil[n], dx12_hdr_dxil_size[n] };
 	return code;
 }
 
@@ -41,17 +50,34 @@ D3D12_SHADER_BYTECODE dx12_texdecode_kernel(int kernel)
 	return code;
 }
 
+static u32 hash;
+
+bool dx12_shaders_choose(ID3D12Device *device)
+{
+	D3D12_FEATURE_DATA_SHADER_MODEL model{};
+	model.HighestShaderModel = D3D_SHADER_MODEL_6_0;
+	useDxil = SUCCEEDED(device->CheckFeatureSupport(D3D12_FEATURE_SHADER_MODEL, &model, sizeof(model)))
+			&& model.HighestShaderModel >= D3D_SHADER_MODEL_6_0;
+	hash = 0;
+	return useDxil;
+}
+
 u32 dx12_shaders_hash()
 {
-	static u32 hash;
 	if (hash == 0)
 	{
 		XXH32_state_t *st = XXH32_createState();
-		XXH32_reset(st, 0);
+		XXH32_reset(st, useDxil ? 1 : 0);
 		for (size_t i = 1; i < sizeof(dx12_dxbc) / sizeof(dx12_dxbc[0]); i++)
-			XXH32_update(st, dx12_dxbc[i], dx12_dxbc_size[i]);
+		{
+			const D3D12_SHADER_BYTECODE code = dx12_shader((DX12Shader)i);
+			XXH32_update(st, code.pShaderBytecode, code.BytecodeLength);
+		}
 		for (size_t i = 1; i < sizeof(dx12_hdr_dxbc) / sizeof(dx12_hdr_dxbc[0]); i++)
-			XXH32_update(st, dx12_hdr_dxbc[i], dx12_hdr_dxbc_size[i]);
+		{
+			const D3D12_SHADER_BYTECODE code = dx12_hdr_shader((DX12HdrShader)i);
+			XXH32_update(st, code.pShaderBytecode, code.BytecodeLength);
+		}
 		for (size_t i = 1; i < sizeof(texdecode_dxbc) / sizeof(texdecode_dxbc[0]); i++)
 			XXH32_update(st, texdecode_dxbc[i], texdecode_dxbc_size[i]);
 		hash = XXH32_digest(st) | 1;	// (never 0: not worked out yet)

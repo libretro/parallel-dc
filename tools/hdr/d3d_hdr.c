@@ -18,7 +18,9 @@
  * With D3DH_NOT_UMA=1 (Direct3D 12) the adapter says its memory is not the
  * processor's (CacheCoherentUMA 0, as a card of its own has it): the core
  * copies the frame's lists to the card, not parse them where it reads
- * them (tools/rend/d3d_parse_arena.sh). With D3DH_EVERY=1 (Direct3D 12)
+ * them (tools/rend/d3d_parse_arena.sh). With D3DH_SM51=1 (Direct3D 12) the
+ * device's highest shader model is 5.1: the core's raster shaders are
+ * DXBC, not DXIL (tools/rend/d3d_dxil.sh). With D3DH_EVERY=1 (Direct3D 12)
  * the picture handed over is read back after every frame and its sum
  * printed, "frame N SUM", for runs to be compared frame for frame (as
  * gl_frames.c's GLF_EVERY).
@@ -108,6 +110,14 @@ static HRESULT STDMETHODCALLTYPE not_uma_check(ID3D12Device *device, D3D12_FEATU
       ((D3D12_FEATURE_DATA_ARCHITECTURE1 *)data)->UMA = FALSE;
       ((D3D12_FEATURE_DATA_ARCHITECTURE1 *)data)->CacheCoherentUMA = FALSE;
    }
+   return hr;
+}
+/* D3DH_SM51: the same copy, and the device's highest shader model 5.1 */
+static HRESULT STDMETHODCALLTYPE sm51_check(ID3D12Device *device, D3D12_FEATURE feature, void *data, UINT size)
+{
+   const HRESULT hr = getenv("D3DH_NOT_UMA") ? not_uma_check(device, feature, data, size) : d12_check(device, feature, data, size);
+   if (SUCCEEDED(hr) && feature == D3D12_FEATURE_SHADER_MODEL && size >= sizeof(D3D12_FEATURE_DATA_SHADER_MODEL))
+      ((D3D12_FEATURE_DATA_SHADER_MODEL *)data)->HighestShaderModel = D3D_SHADER_MODEL_5_1;
    return hr;
 }
 static ID3D12CommandQueue *q12;
@@ -632,12 +642,21 @@ int main(int argc, char **argv)
          fprintf(stderr, "d3d_hdr: no Direct3D 12 device\n");
          return 2;
       }
-      if (getenv("D3DH_NOT_UMA"))
+      if (getenv("D3DH_NOT_UMA") || getenv("D3DH_SM51"))
       {
          memcpy(d12_not_uma, d12->lpVtbl, sizeof(d12_not_uma));
          d12_check = d12->lpVtbl->CheckFeatureSupport;
-         ((ID3D12DeviceVtbl *)d12_not_uma)->CheckFeatureSupport = not_uma_check;
+         ((ID3D12DeviceVtbl *)d12_not_uma)->CheckFeatureSupport = getenv("D3DH_SM51") ? sm51_check : not_uma_check;
          d12->lpVtbl = (ID3D12DeviceVtbl *)d12_not_uma;
+      }
+      {
+         /* (what the device says of its shader models, as the core will be
+          * told: tools/rend/d3d_dxil.sh) */
+         D3D12_FEATURE_DATA_SHADER_MODEL sm;
+         sm.HighestShaderModel = D3D_SHADER_MODEL_6_0;
+         if (FAILED(ID3D12Device_CheckFeatureSupport(d12, D3D12_FEATURE_SHADER_MODEL, &sm, sizeof(sm))))
+            sm.HighestShaderModel = D3D_SHADER_MODEL_5_1;
+         printf("d3d_hdr: highest shader model %x\n", (unsigned)sm.HighestShaderModel);
       }
       memset(&qd, 0, sizeof(qd));
       qd.Type = D3D12_COMMAND_LIST_TYPE_DIRECT;

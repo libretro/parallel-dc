@@ -68,6 +68,7 @@ on:
       - 'core/hw/pvr/helper_classes.h'
       - 'tools/rend/parse_arena_test.*'
       - 'tools/rend/d3d_parse_arena.sh'
+      - 'tools/rend/d3d_dxil.sh'
       - 'tools/rend/dx12_blend_fold_test.*'
       - 'tools/rend/clip_check.py'
       - 'tools/threads/live_prog.c'
@@ -106,6 +107,7 @@ on:
       - 'core/hw/pvr/helper_classes.h'
       - 'tools/rend/parse_arena_test.*'
       - 'tools/rend/d3d_parse_arena.sh'
+      - 'tools/rend/d3d_dxil.sh'
       - 'tools/rend/dx12_blend_fold_test.*'
       - 'tools/rend/clip_check.py'
       - 'tools/threads/live_prog.c'
@@ -189,3 +191,5 @@ jobs:
         run: VK_DRIVER_FILES=/usr/share/vulkan/icd.d/lvp_icd.json sh tools/rend/d3d_dma.sh parallel_dc_libretro.dll
       - name: Direct3D 12 drawing the frame from where it is parsed, every frame the one of the lists copied
         run: VK_DRIVER_FILES=/usr/share/vulkan/icd.d/lvp_icd.json sh tools/rend/d3d_parse_arena.sh parallel_dc_libretro.dll
+      - name: Direct3D 12's shaders as DXIL where the device takes shader model 6.0, as DXBC where it does not
+        run: VK_DRIVER_FILES=/usr/share/vulkan/icd.d/lvp_icd.json sh tools/rend/d3d_dxil.sh parallel_dc_libretro.dll

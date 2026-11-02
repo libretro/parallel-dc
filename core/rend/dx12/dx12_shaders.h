@@ -17,7 +17,8 @@
 #pragma once
 /* The Direct3D 12 renderer's shaders: DXBC made when the core is built
  * (dx12_dxbc.inc, from shaders/dx12_raster.hlsl, by
- * tools/rend/kernels_dx12.sh), and the texture kernels the Direct3D 11
+ * tools/rend/kernels_dx12.sh), the same as DXIL for a device of shader
+ * model 6.0 (dx12_dxil.inc), and the texture kernels the Direct3D 11
  * renderer has (rend/texdecode_dxbc.inc). Nothing is compiled when the
  * core runs, and it needs no compiler. */
 #include "rend/d3d_system.h"
@@ -83,6 +84,10 @@ enum class DX12HdrShader
 D3D12_SHADER_BYTECODE dx12_hdr_shader(DX12HdrShader shader);
 /* rend/texdecode.h's, by TEXD_KERNEL_D3D (1 to 4) */
 D3D12_SHADER_BYTECODE dx12_texdecode_kernel(int kernel);
-/* A sum of all of the bytecode above: a pipeline kept on disk was made with
- * it only if it is the same (dx12_pso.cpp) */
+/* Whether the raster and HDR shaders above are DXIL (shader model 6.0,
+ * dx12_dxil.inc) or DXBC (5.1): DXIL where @device takes it. Before a
+ * pipeline is made with them. */
+bool dx12_shaders_choose(ID3D12Device *device);
+/* A sum of all of the bytecode above, as chosen: a pipeline kept on disk was
+ * made with it only if it is the same (dx12_pso.cpp) */
 u32 dx12_shaders_hash();
