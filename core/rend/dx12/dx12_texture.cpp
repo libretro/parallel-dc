@@ -943,6 +943,44 @@ static void covered(u32& addr, u32 x0, u32 y0, u32& width, u32 height, u32& stri
 	bytes = width == 0 || height == 0 ? 0 : stride * (height - 1) + width * 2;
 }
 
+/* From the texture rendered to: its part drawn onto a picture of the
+ * pool's to render to, which is this texture's then - filtered where the
+ * render is finer, as it is read back (rtt_record()). In the one command
+ * list, after the render and before what draws with this. */
+bool DX12Texture::CopyRender(BaseTextureCacheData *from, u32 x, u32 y, u32 scale, u32 columns)
+{
+	DX12Context *context = DX12Context::Instance();
+	DX12PooledTexture *image = static_cast<DX12Texture *>(from)->Image();
+
+	if (context->GetDevice() == nullptr || pool == nullptr || from == this || image == nullptr || !image->resource
+			|| image->format != DXGI_FORMAT_R8G8B8A8_UNORM || columns != w)
+		return false;
+	if (scale < 1)
+		scale = 1;
+	if ((x + w) * scale > image->width || (y + h) * scale > image->height)
+		return false;
+	DX12PooledTexture *t = pool->TakeTarget(w, h);
+	if (t == nullptr)
+		t = pool->MakeOwn(DX12TexturePool::TARGET, w, h, 1);
+	if (t == nullptr)
+		return false;
+	CancelDecode();
+	ReleasePooled();
+	pooled = t;
+	tex_type = TextureType::_8888;
+	context->Transition(t->resource, t->state, D3D12_RESOURCE_STATE_RENDER_TARGET);
+	context->SetTargets(t->rtv, ~0u);
+	context->SetViewport((float)w, (float)h);
+	const D3D12_RECT scissor = { 0, 0, (LONG)w, (LONG)h };
+	context->SetScissor(scissor);
+	DX12Quad::Draw(image->srv, scale > 1, -1.f, -1.f, 2.f, 2.f,
+			(float)(x * scale) / image->width, (float)(y * scale) / image->height,
+			(float)((x + w) * scale) / image->width, (float)((y + h) * scale) / image->height);
+	context->SetTargets(~0u, ~0u);
+	context->Transition(t->resource, t->state, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
+	return true;
+}
+
 void dx12_rtt_supersede(u32 addr, u32 x0, u32 y0, u32 width, u32 height)
 {
 	u32 stride, bytes;

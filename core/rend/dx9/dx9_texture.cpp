@@ -595,6 +595,48 @@ static void covered(u32& addr, u32 x0, u32 y0, u32& width, u32 height, u32& stri
 	bytes = width == 0 || height == 0 ? 0 : stride * (height - 1) + width * 2;
 }
 
+/* From the texture rendered to: its part stretched onto a texture that
+ * can be rendered to - the pool's, or one made - filtered where the render
+ * is finer. On the device, in order with the render and what draws with
+ * this. */
+bool DX9Texture::CopyRender(BaseTextureCacheData *from, u32 x, u32 y, u32 scale, u32 columns)
+{
+	DX9Context *context = DX9Context::Instance();
+	IDirect3DDevice9 *device = context->GetDevice();
+	DX9Texture *src = static_cast<DX9Texture *>(from);
+	ComPtr<IDirect3DSurface9> from_surface, to_surface;
+	D3DSURFACE_DESC sd;
+
+	if (device == nullptr || src == this || !src->texture || columns != w
+			|| FAILED(src->texture->GetLevelDesc(0, &sd)) || sd.Format != D3DFMT_A8R8G8B8 || (sd.Usage & D3DUSAGE_RENDERTARGET) == 0)
+		return false;
+	if (scale < 1)
+		scale = 1;
+	if ((x + w) * scale > sd.Width || (y + h) * scale > sd.Height)
+		return false;
+	CancelDecode();
+	tex_type = TextureType::_8888;
+	if (!TakePooled(DX9TexturePool::TARGET, w, h, false))
+	{
+		D3DSURFACE_DESC desc;
+		ReleasePooled();
+		if (texture && (FAILED(texture->GetLevelDesc(0, &desc)) || desc.Width != w || desc.Height != h
+				|| desc.Format != D3DFMT_A8R8G8B8 || (desc.Usage & D3DUSAGE_RENDERTARGET) == 0 || texture->GetLevelCount() != 1))
+			context->Recycle(texture);
+		if (!texture)
+			texture = context->MakeTexture(w, h, 1, D3DUSAGE_RENDERTARGET, D3DFMT_A8R8G8B8);
+		if (!texture)
+			return false;
+	}
+	if (FAILED(src->texture->GetSurfaceLevel(0, from_surface.put())) || FAILED(texture->GetSurfaceLevel(0, to_surface.put())))
+		return false;
+	const RECT rect = { (LONG)(x * scale), (LONG)(y * scale), (LONG)((x + w) * scale), (LONG)((y + h) * scale) };
+	if (FAILED(device->StretchRect(from_surface, &rect, to_surface, nullptr, scale > 1 ? D3DTEXF_LINEAR : D3DTEXF_POINT)))
+		return false;
+	swapRB = false;
+	return true;
+}
+
 void dx9_rtt_supersede(u32 addr, u32 x0, u32 y0, u32 width, u32 height)
 {
 	u32 stride, bytes;

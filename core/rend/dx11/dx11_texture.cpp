@@ -719,6 +719,54 @@ static Dx11RttCopy *rtt_copy_free(void)
 	return oldest;
 }
 
+/* The part of @texture from (x0, y0) on, the console's w by h of it,
+ * @scale times finer there, drawn onto the small picture at the console's
+ * size, filtered: what the console would have of it, on the card */
+static bool shrink(DX11Texture *texture, u32 x0, u32 y0, u32 w, u32 h, u32 scale)
+{
+	DX11Context *context = DX11Context::Instance();
+	ID3D11Device *device = context->GetDevice();
+
+	if (small)
+	{
+		D3D11_TEXTURE2D_DESC desc;
+		small->GetDesc(&desc);
+		if (desc.Width < w || desc.Height < h)
+		{
+			smallTarget.reset();
+			small.reset();
+		}
+	}
+	if (!small)
+	{
+		D3D11_TEXTURE2D_DESC desc{};
+		desc.Width = std::max(w, 640u);
+		desc.Height = std::max(h, 480u);
+		desc.MipLevels = 1;
+		desc.ArraySize = 1;
+		desc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+		desc.SampleDesc.Count = 1;
+		desc.Usage = D3D11_USAGE_DEFAULT;
+		desc.BindFlags = D3D11_BIND_RENDER_TARGET;
+		if (FAILED(device->CreateTexture2D(&desc, nullptr, small.put()))
+				|| FAILED(device->CreateRenderTargetView(small, nullptr, smallTarget.put())))
+		{
+			WARN_LOG(RENDERER, "Render to texture read back: target creation failed");
+			small.reset();
+			return false;
+		}
+	}
+	D3D11_TEXTURE2D_DESC src;
+	texture->texture->GetDesc(&src);
+	context->SetTargets(smallTarget, nullptr);
+	context->SetViewport((float)w, (float)h);
+	context->GetQuad().Draw(texture->textureView, context->GetSamplers().GetLinearSampler(),
+			-1.f, -1.f, 2.f, 2.f,
+			(float)x0 / src.Width, (float)y0 / src.Height,
+			(float)(x0 + w * scale) / src.Width, (float)(y0 + h * scale) / src.Height);
+	return true;
+}
+
 /* The picture as the console would have it, w by h, R G B A, copied into
  * c's staging picture: from the texture at the clip; or made the console's
  * size on the card first, filtered, where it is finer (the clip's part of
@@ -763,43 +811,8 @@ static bool rtt_copy(const RttWatch *watch, Dx11RttCopy& c)
 	}
 	if (scale > 1)
 	{
-		if (small)
-		{
-			D3D11_TEXTURE2D_DESC desc;
-			small->GetDesc(&desc);
-			if (desc.Width < w || desc.Height < h)
-			{
-				smallTarget.reset();
-				small.reset();
-			}
-		}
-		if (!small)
-		{
-			D3D11_TEXTURE2D_DESC desc{};
-			desc.Width = std::max(w, 640u);
-			desc.Height = std::max(h, 480u);
-			desc.MipLevels = 1;
-			desc.ArraySize = 1;
-			desc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
-			desc.SampleDesc.Count = 1;
-			desc.Usage = D3D11_USAGE_DEFAULT;
-			desc.BindFlags = D3D11_BIND_RENDER_TARGET;
-			if (FAILED(device->CreateTexture2D(&desc, nullptr, small.put()))
-					|| FAILED(device->CreateRenderTargetView(small, nullptr, smallTarget.put())))
-			{
-				WARN_LOG(RENDERER, "Render to texture read back: target creation failed");
-				small.reset();
-				return false;
-			}
-		}
-		D3D11_TEXTURE2D_DESC src;
-		texture->texture->GetDesc(&src);
-		context->SetTargets(smallTarget, nullptr);
-		context->SetViewport((float)w, (float)h);
-		context->GetQuad().Draw(texture->textureView, context->GetSamplers().GetLinearSampler(),
-				-1.f, -1.f, 2.f, 2.f,
-				(float)x0 / src.Width, (float)y0 / src.Height,
-				(float)(x0 + w * scale) / src.Width, (float)(y0 + h * scale) / src.Height);
+		if (!shrink(texture, x0, y0, w, h, scale))
+			return false;
 		source = small;
 		sx = sy = 0;
 	}
@@ -881,6 +894,70 @@ static void covered(u32& addr, u32 x0, u32 y0, u32& width, u32 height, u32& stri
 		width = x0 * 2 >= stride ? 0 : stride / 2 - x0;
 	addr += y0 * stride + x0 * 2;
 	bytes = width == 0 || height == 0 ? 0 : stride * (height - 1) + width * 2;
+}
+
+/* From the texture rendered to: a copy of its part, or that part drawn
+ * the console's size first where it is finer (shrink()). On the immediate
+ * context, in order with the render and what draws with this. */
+bool DX11Texture::CopyRender(BaseTextureCacheData *from, u32 x, u32 y, u32 scale, u32 columns)
+{
+	DX11Texture *src = static_cast<DX11Texture *>(from);
+	DX11Context *context = DX11Context::Instance();
+	ID3D11Device *device = context->GetDevice();
+	D3D11_TEXTURE2D_DESC sd;
+
+	if (device == nullptr || src == this || !src->texture || columns != w)
+		return false;
+	if (scale < 1)
+		scale = 1;
+	src->texture->GetDesc(&sd);
+	if (sd.Format != DXGI_FORMAT_R8G8B8A8_UNORM || (x + w) * scale > sd.Width || (y + h) * scale > sd.Height)
+		return false;
+	CancelDecode();
+	tex_type = TextureType::_8888;
+	if (!TakePooled(w, h, false))
+	{
+		D3D11_TEXTURE2D_DESC desc{};
+		desc.Width = w;
+		desc.Height = h;
+		desc.MipLevels = 1;
+		desc.ArraySize = 1;
+		desc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+		desc.SampleDesc.Count = 1;
+		desc.Usage = D3D11_USAGE_DEFAULT;
+		desc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
+		ReleasePooled();
+		if (texture)
+		{
+			D3D11_TEXTURE2D_DESC cur;
+			texture->GetDesc(&cur);
+			if (cur.Width != desc.Width || cur.Height != desc.Height || cur.Format != desc.Format
+					|| cur.MipLevels != 1 || cur.BindFlags != desc.BindFlags || cur.MiscFlags != 0)
+			{
+				textureView.reset();
+				texture.reset();
+			}
+		}
+		if (!texture && (FAILED(device->CreateTexture2D(&desc, nullptr, texture.put()))
+				|| FAILED(device->CreateShaderResourceView(texture, nullptr, textureView.put()))))
+		{
+			textureView.reset();
+			texture.reset();
+			return false;
+		}
+	}
+	ID3D11Texture2D *source = src->texture;
+	u32 sx = x, sy = y;
+	if (scale > 1)
+	{
+		if (!shrink(src, x * scale, y * scale, w, h, scale))
+			return false;
+		source = small;
+		sx = sy = 0;
+	}
+	const D3D11_BOX box = { sx, sy, 0, sx + w, sy + h, 1 };
+	context->GetDeviceContext()->CopySubresourceRegion(texture, 0, 0, 0, 0, source, 0, &box);
+	return true;
 }
 
 void dx11_rtt_supersede(u32 addr, u32 x0, u32 y0, u32 width, u32 height)

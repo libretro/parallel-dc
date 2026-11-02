@@ -85,6 +85,7 @@ public:
 	void UploadToGPU(int width, int height, u8 *data, bool mipmapped, bool mipmapsIncluded = false) override;
 	void *UploadMemory(u32 width, u32 height, size_t bytes, u32 pixel, bool mipmaps) override;
 	bool GpuDecode(const texd_plan& plan) override;
+	bool CopyRender(BaseTextureCacheData *from, u32 x, u32 y, u32 scale, u32 columns) override;
 	bool Delete() override;
 	/* The renderer's, while it has them */
 	static void SetDecoder(DX9TexDecoder *decoder) { DX9Texture::decoder = decoder; }

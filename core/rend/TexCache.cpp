@@ -700,8 +700,12 @@ bool BaseTextureCacheData::FromRender(u32 stride, u32 rows)
 	const u32 columns = std::min(stride, w);
 	if (col + columns > watch.w || row + h > watch.h)
 		return false;
+	const TextureType was = tex_type;
 	if (!CopyRender((BaseTextureCacheData *)watch.target, watch.x0 + col, watch.y0 + row, watch.scale, columns))
+	{
+		tex_type = was;
 		return false;
+	}
 	tex_type = TextureType::_8888;
 	made_type = 0;
 	free(piece_hash);

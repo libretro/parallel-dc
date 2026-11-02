@@ -90,6 +90,7 @@ public:
 	bool PartMemory(size_t bytes, void **memory) override;
 	void UploadPart(const TexRegion *regions, u32 count, u8 *data, const size_t *offset) override;
 	int GpuDecodePart(const texd_plan& plan, const TexRegion *regions, u32 count) override;
+	bool CopyRender(BaseTextureCacheData *from, u32 x, u32 y, u32 scale, u32 columns) override;
 	bool Delete() override;
 	/* The renderer's, while it has them */
 	static void SetDecoder(DX11TexDecoder *decoder) { DX11Texture::decoder = decoder; }
