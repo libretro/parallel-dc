@@ -55,15 +55,24 @@ static u32 beam_gen, line_gen = 1;
 static u64 beam_target_at, beam_line_at;
 static u32 beam_span, beam_stay;
 
+/* The clock spg_sync() last brought the beam up to. It stands still for a
+ * time slice, and a game waiting on the beam reads SPG_STATUS many times in
+ * one: until the clock moves, or the event, the registers or the lines are
+ * changed, each of those reads finds it where the last one put it. */
+extern u64 sh4_sched_ffb;
+static u64 synced_at = ~0ull;
+
 void spg_beam_forget()
 {
 	beam_line = ~0u;
+	synced_at = ~0ull;
 }
 
 /* The pending event aimed again: whatever spg_beam() kept is from before. */
 static void spg_aim(int cycles)
 {
 	line_gen++;
+	synced_at = ~0ull;
 	sh4_sched_request(vblank_schid, cycles);
 }
 
@@ -251,6 +260,7 @@ void CalculateSync(bool reschedule)
 	Line_Den = pixel_clock;
 	// (spg_beam()'s lines are another's now)
 	line_gen++;
+	synced_at = ~0ull;
 
 	float scale_x = 1.f, scale_y = 1.f;
 
@@ -510,7 +520,11 @@ static u64 spg_beam()
 // SPG_STATUS is about to be read: its scanline is the one the beam is on
 void spg_sync()
 {
+	const u64 now = sh4_sched_ffb - Sh4cntx.sh4_sched_next;
+	if (now == synced_at)
+		return;
 	spg_beam();
+	synced_at = now;
 }
 
 /* A write to a register that says on which lines things happen. The event
@@ -534,6 +548,8 @@ void spg_write_timing(u32 addr, u32 data)
 //called from sh4 context , should update pvr/ta state and everything else
 int spg_line_sched(int tag, int cycl, int jit)
 {
+	// (the event has come: it is aimed anew, and the lines run)
+	synced_at = ~0ull;
 	/* The event was aimed at the start of a line, spg_next_line(), and the
 	 * scheduler takes how late it called (jit) off the next request: so
 	 * this is that line, however much of the way there a read of SPG_STATUS

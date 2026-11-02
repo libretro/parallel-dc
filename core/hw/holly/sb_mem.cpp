@@ -400,6 +400,12 @@ T DYNACALL ReadMem_area0(u32 addr)
 		return (T)asic_ReadCLXB(addr);
 	const u32 mirror = addr & 0x02000000;
 	addr &= 0x01FFFFFF;//to get rid of non needed bits
+	// a game waiting on the beam reads this one over and over: first
+	if (sz == 4 && addr == 0x005F8000 + SPG_STATUS_addr)
+	{
+		spg_sync();
+		return (T)SPG_STATUS.full;
+	}
 	const u32 base=(addr>>16);
 	//map 0x0000 to 0x01FF to Default handler
 	//mirror 0x0200 to 0x03FF , from 0x0000 to 0x03FFF
