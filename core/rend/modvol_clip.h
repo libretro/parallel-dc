@@ -136,7 +136,7 @@ static inline void mv_clip_build(rend_context& rc, u32 triangles, Get& get)
 	if (!any)
 		return;
 	const u32 lists = rc.global_param_mvo.used() + rc.global_param_mvo_tr.used();
-	if ((u32)rc.mv_clip_range.avail < 2 * lists)
+	if ((u32)rc.mv_clip_range.avail() < 2 * lists)
 		return;
 	for (int l = 0; l < 2; l++)
 	{
@@ -148,7 +148,7 @@ static inline void mv_clip_build(rend_context& rc, u32 triangles, Get& get)
 			range[0] = rc.mv_clip.used();
 			for (u32 t = p->first; t < p->first + p->count && t < triangles; t++)
 			{
-				if (rc.mv_clip.avail < MV_CLIP_MAX + 1)
+				if (rc.mv_clip.avail() < MV_CLIP_MAX + 1)
 				{
 					rc.mv_clip.Clear();
 					rc.mv_clip_range.Clear();
@@ -157,7 +157,7 @@ static inline void mv_clip_build(rend_context& rc, u32 triangles, Get& get)
 				const ModTriangle tri = get(t);
 				if (mv_clip_wanted(tri))
 				{
-					const u32 n = mv_clip_triangle(tri, rc.mv_clip.daty);
+					const u32 n = mv_clip_triangle(tri, rc.mv_clip.cur());
 					rc.mv_clip.Append(n);
 				}
 				else

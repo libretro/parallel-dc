@@ -29,8 +29,8 @@
  * for PROGRAM_MMU_ALIGN, with -DLIVE_SLANT for PROGRAM_SLANT, and with
  * -DLIVE_SLANT -DLIVE_HSCALE for PROGRAM_HSCALE, with -DLIVE_CULL for
  * PROGRAM_CULL, with -DLIVE_ATLAS for PROGRAM_ATLAS, with -DLIVE_DMA
- * for PROGRAM_DMA, with -DLIVE_CLIP for PROGRAM_CLIP, and with -DLIVE_KEEP
- * for PROGRAM_KEEP. */
+ * for PROGRAM_DMA, with -DLIVE_CLIP for PROGRAM_CLIP, with -DLIVE_KEEP for
+ * PROGRAM_KEEP, and with -DLIVE_HEAVY for PROGRAM_HEAVY. */
 typedef unsigned int u32;
 typedef unsigned short u16;
 #define PVR(off) (*(volatile u32 *)(0xA05F8000 + (off)))
@@ -735,6 +735,36 @@ static u32 scene_in_part;
 static u32 keep_done, keep_age;
 #endif
 
+#ifdef LIVE_HEAVY
+/* With -DLIVE_HEAVY: a frame of many vertices, as a game's are, for the
+ * parse's speed (tools/pvr/ta_parse_bench.sh): Gouraud strips, tiny, in
+ * the bottom left corner. A whole number's float, made without the FPU
+ * the program has no code for. */
+static u32 int_float(u32 n)
+{
+   u32 e = 0;
+
+   if (n == 0)
+      return 0;
+   while ((n >> e) > 1)
+      e++;
+   return ((127 + e) << 23) | ((n << (23 - e)) & 0x7FFFFF);
+}
+
+static void ta_heavy(u32 list, u32 tsp, u32 colour, u32 strips, u32 length)
+{
+   u32 s, v;
+
+   for (s = 0; s < strips; s++)
+   {
+      ta_send(TA_POLYGON | list | 2u, ISP_GEQUAL, tsp, 0, 0, 0, 0, 0);
+      for (v = 0; v < length; v++)
+         ta_send(TA_VERTEX | list | (v == length - 1 ? TA_LAST : 0), int_float(1 + (v >> 1) % 16),
+               int_float(224 + (v & 1) * 8 + s % 8), int_float(1), 0, 0, colour + v, 0);
+   }
+}
+#endif
+
 static void ta_scene(void)
 {
    /* The screen is 320 by 240 in the video mode the program is started in. */
@@ -850,6 +880,9 @@ static void ta_scene(void)
       ta_quad(TA_TEXTURED, TSP_PLAIN | (3u << 3) | 3u, (1u << 27) | (1u << 26) | (KEEP_ADDRESS >> 3), 0xFFFFFFFF,
             F(0.95f), F(5.0f), F(5.0f), F(69.0f), F(69.0f));
 #endif
+#ifdef LIVE_HEAVY
+   ta_heavy(0, TSP_PLAIN, 0xFF102030, 48, 256);
+#endif
    ta_send(0, 0, 0, 0, 0, 0, 0, 0);                    /* end of the opaque list */
 
 #ifdef LIVE_CULL
@@ -885,6 +918,9 @@ static void ta_scene(void)
    ta_quad(TA_TRANSLUCENT, TSP_BLEND, 0, 0x8000FF00, F(0.3f), F(250.0f), F(140.0f), F(310.0f), F(175.0f));
    ta_quad_culled(2, 0x80FFFF00, F(0.6f), F(255.0f), F(145.0f), F(280.0f), F(170.0f));
    ta_quad_culled(3, 0x80FF00FF, F(0.6f), F(282.0f), F(145.0f), F(306.0f), F(170.0f));
+#endif
+#ifdef LIVE_HEAVY
+   ta_heavy(TA_TRANSLUCENT, TSP_BLEND, 0x80302010, 16, 128);
 #endif
    ta_send(0, 0, 0, 0, 0, 0, 0, 0);                    /* end of the translucent list */
 }

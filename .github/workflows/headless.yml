@@ -6,6 +6,9 @@ name: Headless
 # timings and the MMU, states saved and loaded and every frame run ahead
 # (each the same, byte for byte, as the frames run straight), code that
 # rewrites itself, a NAOMI cartridge and romsets: tools/threads/headless.sh.
+# And a strip's indices, the parse's C89 kernel, against the loop it
+# replaced (tools/pvr/ta_index_test.sh); and the parse timed on the heavy
+# disc, its lists summed (tools/pvr/ta_parse_bench.sh).
 
 on:
   push:
@@ -13,6 +16,8 @@ on:
       - 'core/**'
       - 'tools/threads/headless*'
       - 'tools/threads/live_*'
+      - 'tools/pvr/ta_index_test.*'
+      - 'tools/pvr/ta_parse_bench.*'
       - 'Makefile*'
       - '.github/workflows/headless.yml'
   pull_request:
@@ -20,6 +25,8 @@ on:
       - 'core/**'
       - 'tools/threads/headless*'
       - 'tools/threads/live_*'
+      - 'tools/pvr/ta_index_test.*'
+      - 'tools/pvr/ta_parse_bench.*'
       - 'Makefile*'
       - '.github/workflows/headless.yml'
   workflow_dispatch:
@@ -41,3 +48,7 @@ jobs:
         run: make -j"$(nproc)"
       - name: The disc with no display, its states and run-ahead among it
         run: sh tools/threads/headless.sh parallel_dc_libretro.so
+      - name: A strip's indices (C89, ASan and UBSan) against the loop they replaced
+        run: sh tools/pvr/ta_index_test.sh
+      - name: The parse timed on the heavy disc
+        run: sh tools/pvr/ta_parse_bench.sh

@@ -10,10 +10,15 @@ mkdir -p "$WORK"
 trap 'rm -rf "$WORK"' EXIT
 FLAGS="-std=c++11 -Wall -Werror -Wno-unused-function -O1 -fno-rtti -fno-operator-names -D__LIBRETRO__ -DNO_VERIFY -DHOST_CPU=0x20000004
    -Icore -Icore/libretro -Icore/deps -Icore/libretro-common/include"
-${CXX:-c++} $FLAGS -o "$WORK/upscaler_test" tools/rend/upscaler_test.cpp core/rend/upscaler.cpp
+# (the frame's lists: List<T> over ta_list.c's C)
+CFLAGS="-std=c89 -Wall -Werror -O1 -Icore/libretro-common/include"
+${CC:-cc} $CFLAGS -c -o "$WORK/ta_list.o" core/hw/pvr/ta_list.c
+${CXX:-c++} $FLAGS -o "$WORK/upscaler_test" tools/rend/upscaler_test.cpp core/rend/upscaler.cpp "$WORK/ta_list.o"
 "$WORK/upscaler_test"
 if command -v x86_64-w64-mingw32-g++ >/dev/null 2>&1; then
-   x86_64-w64-mingw32-g++ $FLAGS -static -o "$WORK/upscaler_test.exe" tools/rend/upscaler_test.cpp core/rend/upscaler.cpp
+   x86_64-w64-mingw32-gcc $CFLAGS -c -o "$WORK/ta_list_w.o" core/hw/pvr/ta_list.c
+   x86_64-w64-mingw32-g++ $FLAGS -static -o "$WORK/upscaler_test.exe" tools/rend/upscaler_test.cpp core/rend/upscaler.cpp \
+      "$WORK/ta_list_w.o"
    if command -v wine >/dev/null 2>&1; then
       WINEDEBUG=-all wine "$WORK/upscaler_test.exe"
    fi

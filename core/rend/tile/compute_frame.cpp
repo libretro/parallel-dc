@@ -416,7 +416,7 @@ u32 ComputeFrame::Pack(const Layout& layout, Slots& slots, u32 *out, u32 room, u
 	 * eye, which the kernels clip there too (pvr_compute.h,
 	 * rec_clip_plane()): their depth scale, over the kernels' 1/w scale */
 	out[PVRC_F_ZCLIP] = fbits(gpu ? 1.f / vp.sz : pvr_depth_scale(rc.fZ_max) * (1.f / vp.sz));
-	out[PVRC_F_GPU] = gpu ? (u32)rc.idx.size : 0;
+	out[PVRC_F_GPU] = gpu ? (u32)rc.idx.capacity() : 0;
 	out[PVRC_F_PRIM_ROOM] = MaxPrims();
 	/* the raster renderers' fragment constants (Vulkan's
 	 * MakeFragmentUniforms(), Direct3D 12's MakeFragmentConstants()) */

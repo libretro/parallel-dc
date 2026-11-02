@@ -132,7 +132,7 @@ public:
 		BaseVulkanRenderer::Term();
 	}
 
-	bool Render() override
+	bool RenderFrame() override
 	{
 		if (pvrrc.isRenderFramebuffer)
 			return true;
@@ -189,6 +189,7 @@ public:
 		else
 			drawer = &screenDrawer;
 
+		SetParsed(*drawer);
 		drawer->Draw(fogTexture.get(), paletteTexture.get());
 
 		if (!pvrrc.isRTT)

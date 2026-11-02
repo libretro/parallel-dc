@@ -390,7 +390,7 @@ void Drawer::DrawModVols(const vk::CommandBuffer& cmdBuffer, int first, int coun
 		}
 	}
 	SetScissor(cmdBuffer, baseScissor);
-	BindVertices(cmdBuffer, buffer);
+	BindVertices(cmdBuffer);
 
 	/* The polygons that take shadows, again, where they are in a volume.
 	 * Of a frame decoded on the GPU, the volumes' bounds are the header
@@ -423,11 +423,15 @@ void Drawer::DrawModVols(const vk::CommandBuffer& cmdBuffer, int first, int coun
  * and the fragment uniforms - with the sorted passes sorted into it */
 BufferData *Drawer::SortIntoMainBuffer()
 {
-	// (a frame decoded on the GPU has its geometry there, and is sorted there: TA_GPU_SORT)
-	const u32 vertexBytes = pvrrc.gpu ? 0 : pvrrc.verts.bytes();
+	/* (a frame decoded on the GPU has its geometry there, and is sorted
+	 * there: TA_GPU_SORT; one the parse wrote where the card reads it has
+	 * its geometry there, and is sorted after its indices) */
+	const u32 sortRoom = pvrrc.gpu ? 0 : SortPassesRoom() * sizeof(u32);
+	const bool here = UseParsed(sortRoom);
+	const u32 vertexBytes = pvrrc.gpu || here ? 0 : pvrrc.verts.bytes();
 	const u32 modVolBytes = ModVolsOnCpu() ? ModVolList().bytes() : 0;
-	const u32 indexBytes = pvrrc.gpu ? 0 : pvrrc.idx.bytes();
-	const u32 sortedBytes = pvrrc.gpu ? 0 : SortPassesRoom() * sizeof(u32);
+	const u32 indexBytes = pvrrc.gpu || here ? 0 : pvrrc.idx.bytes();
+	const u32 sortedBytes = here ? 0 : sortRoom;
 
 	offsets.modVolOffset = vertexBytes + align(vertexBytes, 4);
 	offsets.indexOffset = offsets.modVolOffset + modVolBytes + align(offsets.modVolOffset + modVolBytes, 4);
@@ -436,8 +440,14 @@ BufferData *Drawer::SortIntoMainBuffer()
 			+ align(offsets.indexOffset + indexSize, std::max(4, (int)GetContext()->GetUniformBufferAlignment()));
 
 	BufferData *buffer = GetMainBuffer(offsets.fragmentUniformOffset + sizeof(FragmentShaderUniforms));
+	SetGeometry(buffer->buffer.get());
 	if (pvrrc.gpu)
 		sortedIndexCount = 0;
+	else if (here)
+	{
+		offsets.indexOffset = parsed.indices;
+		SortTriangles(pvrrc.idx.cur());
+	}
 	else
 		SortTriangles((u32 *)((u8 *)buffer->MapMemory() + offsets.indexOffset + indexBytes));
 	return buffer;
@@ -446,7 +456,8 @@ BufferData *Drawer::SortIntoMainBuffer()
 /* ...and the rest of it */
 void Drawer::UploadMainBuffer(BufferData *buffer, const FragmentShaderUniforms& fragmentUniforms)
 {
-	if (!pvrrc.gpu)
+	// (not one the parse wrote where the card reads it: geometryParsed)
+	if (!pvrrc.gpu && !geometryParsed)
 	{
 		buffer->upload(pvrrc.verts.bytes(), pvrrc.verts.head(), 0);
 		buffer->upload(pvrrc.idx.bytes(), pvrrc.idx.head(), offsets.indexOffset);
@@ -491,7 +502,7 @@ bool Drawer::Draw(const Texture *fogTexture, const Texture *paletteTexture)
 	GetCurrentDescSet().Reset();
 
 	// Bind vertex and index buffers
-	BindGeometry(cmdBuffer, GetMainBuffer(0)->buffer.get(), offsets.indexOffset);
+	BindGeometry(cmdBuffer, offsets.indexOffset);
 
 	// Make sure to push constants even if not used
 	const std::array<float, 6> pushConstants = { 0, 0, 0, 0, 0, 0 };
@@ -1168,7 +1179,7 @@ void ScreenDrawer::EndRenderPass()
 	{
 		// (what went over the picture may have bound its own)
 		GetCurrentDescSet().BindPerFrameDescriptorSets(currentCommandBuffer);
-		motionPass.Record(currentCommandBuffer, GetCurrentImage(), GetMainBuffer(0)->buffer.get(), offsets.indexOffset, baseScissor);
+		motionPass.Record(currentCommandBuffer, GetCurrentImage(), geometry, offsets.indexOffset, baseScissor, geometryVertices);
 	}
 	timer.End(currentCommandBuffer, commandPool->GetIndex());
 	currentCommandBuffer.end();

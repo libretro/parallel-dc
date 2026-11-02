@@ -438,11 +438,11 @@ static bool parse_again(TA_context *ctx, int l, int room)
 	rc.Clear();
 	if (l >= 0)
 	{
-		saved = l < 3 ? lists[l]->size : rc.idx.size;
+		saved = l < 3 ? lists[l]->capacity() : rc.idx.capacity();
 		if (l < 3)
-			lists[l]->size = lists[l]->avail = room;
+			lists[l]->set_capacity(room);
 		else
-			rc.idx.size = rc.idx.avail = room;
+			rc.idx.set_capacity(room);
 	}
 	*rc.global_param_op.Append() = pre.bg;
 	memcpy(rc.verts.Append(4), pre.bgv, sizeof(pre.bgv));
@@ -460,12 +460,12 @@ static bool parse_again(TA_context *ctx, int l, int room)
 		if (l < 3)
 		{
 			lists[l]->Clear();
-			lists[l]->size = lists[l]->avail = saved;
+			lists[l]->set_capacity(saved);
 		}
 		else
 		{
 			rc.idx.Clear();
-			rc.idx.size = rc.idx.avail = saved;
+			rc.idx.set_capacity(saved);
 		}
 	}
 	(void)rv;

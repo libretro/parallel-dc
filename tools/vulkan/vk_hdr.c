@@ -69,6 +69,9 @@
 
 static char *opt_keys[64], *opt_vals[64];
 static int nopts;
+/* VKH_OPTS_AT=frame:key=value - the option changed before that frame, as a
+ * frontend's menu does (the core told so: GET_VARIABLE_UPDATE) */
+static int opts_changed;
 static struct retro_hw_render_callback hw;
 static int have_hw;
 static const struct retro_hw_render_context_negotiation_interface_vulkan *neg;
@@ -233,6 +236,50 @@ static VKAPI_ATTR void VKAPI_CALL vkh_copy_to_buffer(VkCommandBuffer cb, VkImage
    vkh_real_copy_to_buffer(cb, image, layout, buffer, count, regions);
 }
 
+/* VKH_UNCACHED: memory the CPU reads back slowly, all of it - no type the
+ * core is told of is HOST_CACHED - as on a card of its own: the frame's
+ * lists are then copied to the card, not parsed where it reads them
+ * (tools/vulkan/vk_parse_arena.sh) */
+static PFN_vkGetPhysicalDeviceMemoryProperties vkh_real_mem_props;
+static PFN_vkGetPhysicalDeviceMemoryProperties2 vkh_real_mem_props2;
+static void vkh_uncache(VkPhysicalDeviceMemoryProperties *p)
+{
+   uint32_t i;
+   for (i = 0; i < p->memoryTypeCount; i++)
+      p->memoryTypes[i].propertyFlags &= ~(VkMemoryPropertyFlags)VK_MEMORY_PROPERTY_HOST_CACHED_BIT;
+}
+static VKAPI_ATTR void VKAPI_CALL vkh_mem_props(VkPhysicalDevice gpu, VkPhysicalDeviceMemoryProperties *p)
+{
+   vkh_real_mem_props(gpu, p);
+   vkh_uncache(p);
+}
+static VKAPI_ATTR void VKAPI_CALL vkh_mem_props2(VkPhysicalDevice gpu, VkPhysicalDeviceMemoryProperties2 *p)
+{
+   vkh_real_mem_props2(gpu, p);
+   vkh_uncache(&p->memoryProperties);
+}
+
+/* VKH_BUFFERS: the core's buffers made and not destroyed, "buffers left N"
+ * printed after its teardown (VKH_UNLOAD): none, or one is lost
+ * (tools/vulkan/vk_parse_arena.sh) */
+static long vkh_buffers;
+static PFN_vkCreateBuffer vkh_real_create_buffer;
+static PFN_vkDestroyBuffer vkh_real_destroy_buffer;
+static VKAPI_ATTR VkResult VKAPI_CALL vkh_create_buffer(VkDevice d, const VkBufferCreateInfo *ci,
+      const VkAllocationCallbacks *a, VkBuffer *out)
+{
+   VkResult r = vkh_real_create_buffer(d, ci, a, out);
+   if (r == VK_SUCCESS)
+      __sync_fetch_and_add(&vkh_buffers, 1);
+   return r;
+}
+static VKAPI_ATTR void VKAPI_CALL vkh_destroy_buffer(VkDevice d, VkBuffer b, const VkAllocationCallbacks *a)
+{
+   if (b != VK_NULL_HANDLE)
+      __sync_fetch_and_sub(&vkh_buffers, 1);
+   vkh_real_destroy_buffer(d, b, a);
+}
+
 static VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL vkh_count_gdpa(VkDevice d, const char *name);
 
 static PFN_vkVoidFunction vkh_wrap(PFN_vkVoidFunction real, const char *name)
@@ -253,6 +300,27 @@ static PFN_vkVoidFunction vkh_wrap(PFN_vkVoidFunction real, const char *name)
    {
       vkh_real_copy_to_buffer = (PFN_vkCmdCopyImageToBuffer)real;
       return (PFN_vkVoidFunction)vkh_copy_to_buffer;
+   }
+   if (getenv("VKH_UNCACHED") && (!strcmp(name, "vkGetPhysicalDeviceMemoryProperties2")
+         || !strcmp(name, "vkGetPhysicalDeviceMemoryProperties2KHR")))
+   {
+      vkh_real_mem_props2 = (PFN_vkGetPhysicalDeviceMemoryProperties2)real;
+      return (PFN_vkVoidFunction)vkh_mem_props2;
+   }
+   if (getenv("VKH_UNCACHED") && !strcmp(name, "vkGetPhysicalDeviceMemoryProperties"))
+   {
+      vkh_real_mem_props = (PFN_vkGetPhysicalDeviceMemoryProperties)real;
+      return (PFN_vkVoidFunction)vkh_mem_props;
+   }
+   if (getenv("VKH_BUFFERS") && !strcmp(name, "vkCreateBuffer"))
+   {
+      vkh_real_create_buffer = (PFN_vkCreateBuffer)real;
+      return (PFN_vkVoidFunction)vkh_create_buffer;
+   }
+   if (getenv("VKH_BUFFERS") && !strcmp(name, "vkDestroyBuffer"))
+   {
+      vkh_real_destroy_buffer = (PFN_vkDestroyBuffer)real;
+      return (PFN_vkVoidFunction)vkh_destroy_buffer;
    }
    if (!strcmp(name, "vkGetDeviceProcAddr"))
    {
@@ -416,7 +484,8 @@ static bool environ_cb(unsigned cmd, void *data)
          *(bool*)data = true;
          return true;
       case RETRO_ENVIRONMENT_GET_VARIABLE_UPDATE:
-         *(bool*)data = false;
+         *(bool*)data = opts_changed != 0;
+         opts_changed = 0;
          return true;
       case RETRO_ENVIRONMENT_GET_VARIABLE:
       {
@@ -1167,7 +1236,8 @@ int main(int argc, char **argv)
    }
    memset(&ctx, 0, sizeof(ctx));
    vkh_main_thread = pthread_self();
-   core_gipa = getenv("VKH_COUNT_PIPELINES") || getenv("VKH_HIDE_EXT") || getenv("VKH_READS") ? vkh_count_gipa : gipa;
+   core_gipa = getenv("VKH_COUNT_PIPELINES") || getenv("VKH_HIDE_EXT") || getenv("VKH_READS")
+         || getenv("VKH_UNCACHED") || getenv("VKH_BUFFERS") ? vkh_count_gipa : gipa;
    if (!neg->create_device2(&ctx, instance, gpu, VK_NULL_HANDLE, core_gipa, NULL, NULL))
    {
       fprintf(stderr, "vk_hdr: create_device2 failed\n");
@@ -1211,6 +1281,26 @@ int main(int argc, char **argv)
       for (frame_no = 0; frame_no < frames; frame_no++)
       {
          double dt;
+         const char *at = getenv("VKH_OPTS_AT");
+         if (at && (unsigned)atoi(at) == frame_no && strchr(at, ':') && strchr(at, '='))
+         {
+            static char kv[256];
+            char *eq;
+            int k;
+            snprintf(kv, sizeof(kv), "%s", strchr(at, ':') + 1);
+            eq = strchr(kv, '=');
+            *eq = '\0';
+            for (k = 0; k < nopts && strcmp(opt_keys[k], kv); k++)
+               ;
+            if (k < 64)
+            {
+               opt_keys[k] = kv;
+               opt_vals[k] = eq + 1;
+               if (k == nopts)
+                  nopts++;
+               opts_changed = 1;
+            }
+         }
          t0 = vkh_now_ms();
          vkh_in_run = 1;
          retro_run();
@@ -1289,8 +1379,13 @@ int main(int argc, char **argv)
    {
       CORE_FN(init_t, retro_unload_game);
       CORE_FN(init_t, retro_deinit);
+      /* (the context first, as RetroArch closing the content does) */
+      if (hw.context_destroy)
+         hw.context_destroy();
       retro_unload_game();
       retro_deinit();
+      if (getenv("VKH_BUFFERS"))
+         printf("buffers left %ld\n", __sync_fetch_and_add(&vkh_buffers, 0));
    }
    if (validation_errors)
       return finish(1);

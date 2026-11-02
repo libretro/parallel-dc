@@ -132,6 +132,13 @@ void FinishRender(TA_context* ctx)
 	}
 }
 
+/* A list of a frame's found full, said in the core's log (ta_list.h) */
+static void ta_list_log(const char *name)
+{
+	WARN_LOG(PVR, "List overrun for list %s", name);
+}
+static struct TaListLog { TaListLog() { ta_list_warn = ta_list_log; } } ta_list_log_set;
+
 /* Spare contexts. Both threads give them back; a slot hands each one to
  * a single taker. */
 static cSlotCache<TA_context, 3> ctx_pool;

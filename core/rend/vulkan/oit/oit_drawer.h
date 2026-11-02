@@ -251,7 +251,7 @@ public:
 		{
 			// the motion vectors over the depth the frame left (what went over the picture may have bound its own)
 			GetCurrentDescSet().BindPerFrameDescriptorSets(currentCommandBuffer);
-			motionPass.Record(currentCommandBuffer, GetCurrentImage(), GetMainBuffer(0)->buffer.get(), GetIndexOffset(), baseScissor);
+			motionPass.Record(currentCommandBuffer, GetCurrentImage(), geometry, GetIndexOffset(), baseScissor, geometryVertices);
 		}
 		CountPass(currentCommandBuffer);
 		timer.End(currentCommandBuffer, commandPool->GetIndex());

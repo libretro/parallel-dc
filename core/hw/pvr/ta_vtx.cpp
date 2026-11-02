@@ -3,6 +3,7 @@
 
 	Parsing of the TA stream and generation of vertex data !
 */
+#include "ta_index.h"
 #include "ta.h"
 #include "bg_plane.h"
 #include "ta_ctx.h"
@@ -415,9 +416,9 @@ case num : {\
 		 * possibly being those very variables). The same vertices come out. */
 		if (poly_size == SZ32
 				&& (poly_type == 0 || poly_type == 2 || poly_type == 3 || poly_type == 4 || poly_type == 7 || poly_type == 8)
-				&& (ptrdiff_t)(data_end - data) < (ptrdiff_t)vdrc.verts.avail)
+				&& (ptrdiff_t)(data_end - data) < (ptrdiff_t)vdrc.verts.avail())
 		{
-			Vertex* const first = vdrc.verts.daty;
+			Vertex* const first = vdrc.verts.cur();
 			Vertex* const head = vdrc.verts.head();
 			Vertex* cv = first;
 			PolyParam* pp = CurrentPP;
@@ -480,8 +481,7 @@ case num : {\
 					break;
 			}
 
-			vdrc.verts.avail -= (int)(cv - first);
-			vdrc.verts.daty = cv;
+			vdrc.verts.set_cur(cv);
 			(s32&)vdrc.fZ_max = z_max;
 			if (flat)
 			{
@@ -1843,46 +1843,8 @@ FifoSplitter TAFifo0;
 int ta_parse_cnt = 0;
 
 //
-// Check if a vertex has NaN or huge x,y,z values
-//
-/* Asked of the bits, not the values: a float's bits with the sign taken off
- * go up as its size does, with infinity and the NaNs above everything, so
- * one integer comparison says "huge, infinite or not a number". And it has
- * to be the bits: on targets built with fast-math the compiler is told
- * there are no NaNs, and the std::isnan() calls that were here were dropped,
- * so that a vertex with a NaN in it went through to the renderer. */
-static bool is_vertex_inf(const Vertex& vtx)
-{
-	// Manic Panic Ghosts needs x and y dropped from 1e25 up
-	const u32 huge_xy = float_bits(1e25f);
-	const u32 huge_z = float_bits(3.4e37f);
-	const u32 z = float_bits(vtx.z);
-
-	return (float_bits(vtx.x) & 0x7fffffff) > huge_xy
-			|| (float_bits(vtx.y) & 0x7fffffff) > huge_xy
-			/* A negative z is drawn (the base runner views in World Series
-			 * Baseball 2K1): only a NaN of either sign, or a huge positive
-			 * value. */
-			|| (z & 0x7fffffff) > 0x7f800000
-			|| (z < 0x80000000 && z > huge_z);
-}
-
-//
 // Create the vertex index, eliminating invalid vertices and merging strips when possible.
 //
-/* The index list ran out (List<>::sig_overrun()): the frame is marked and
- * will not be drawn; what is written from here on only has to stay inside
- * the list, and it starts again at its beginning. */
-static NOINLINE u32 *make_index_overrun(rend_context* ctx, u32 **out_end)
-{
-	u32 *start;
-	ctx->idx.daty = *out_end;
-	ctx->idx.avail = 0;
-	start = ctx->idx.sig_overrun(0);	// (nothing taken: the caller keeps its own place)
-	*out_end = start + ctx->idx.avail;
-	return start;
-}
-
 #include <stddef.h>
 /* (the words poly_same_state() takes two at a time are side by side) */
 typedef char ta_poly_layout[(offsetof(PolyParam, tcw) == offsetof(PolyParam, tsp) + 4
@@ -1953,94 +1915,48 @@ static void flat_groups(const List<PolyParam> *polys, int first, int end)
 
 static void make_index(const List<PolyParam> *polys, int first, int end, bool merge, rend_context* ctx)
 {
-	u32 * const indices = ctx->idx.head();
 	const Vertex *vertices = ctx->verts.head();
-
-	/* Where the next index goes and where the list ends are kept here for
-	 * the whole of it, and given back to the list at the end: appending
-	 * through the list reads and writes both in memory for every index. */
-	u32 *out = ctx->idx.daty;
-	u32 *out_end = out + ctx->idx.avail;
-#define IDX_PUT(v) \
-	do { \
-		if (out == out_end) \
-			out = make_index_overrun(ctx, &out_end); \
-		*out++ = (v); \
-	} while (0)
+	/* Where the next index goes and where the list ends are kept for the
+	 * whole of it, and given back to the list at the end (ta_index.h) */
+	ta_index_out_t o;
+	o.base = ctx->idx.head();
+	o.out = ctx->idx.cur();
+	o.end = o.out + ctx->idx.avail();
+	o.list = &ctx->idx.l;
 
 	PolyParam *last_poly = NULL;
 	const PolyParam *end_poly = &polys->head()[end];
 	for (PolyParam *poly = &polys->head()[first]; poly != end_poly; poly++)
 	{
-		int first_index;
-		bool dupe_next_vtx = false;
+		u32 first_index;
+		int dupe = 0;
 		if (merge
 				&& last_poly != NULL
 				&& last_poly->count != 0	// (one that came to no indices has no last of them to repeat)
 				&& poly_same_state(poly, last_poly))
 		{
-			const u32 last_vtx = indices[last_poly->first + last_poly->count - 1];
-			IDX_PUT(last_vtx);
-			dupe_next_vtx = true;
+			ta_index_put(&o, o.base[last_poly->first + last_poly->count - 1]);
+			dupe = 1;
 			first_index = last_poly->first;
 		}
 		else
 		{
 			last_poly = poly;
-			first_index = (int)(out - indices);
+			first_index = (u32)(o.out - o.base);
 		}
-		int last_good_vtx = -1;
-		const u32 poly_first = poly->first;
-		const u32 poly_count = poly->count;
-		const Vertex *vtx = &vertices[poly_first];
-		for (u32 i = 0; i < poly_count; i++)
-		{
-			if (is_vertex_inf(vtx[i]))
-			{
-				while (i < poly_count - 1)
-				{
-					if (!is_vertex_inf(vtx[i + 1]))
-					{
-						// repeat last and next vertices to link strips
-						if (last_good_vtx >= 0)
-						{
-							verify(!dupe_next_vtx);
-							IDX_PUT(last_good_vtx);
-							dupe_next_vtx = true;
-						}
-						break;
-					}
-					i++;
-				}
-			}
-			else
-			{
-				last_good_vtx = poly_first + i;
-				if (dupe_next_vtx)
-				{
-					IDX_PUT(last_good_vtx);
-					dupe_next_vtx = false;
-				}
-				const u32 count = (u32)(out - indices) - first_index;
-				if ((i ^ count) & 1)
-					IDX_PUT(last_good_vtx);
-				IDX_PUT(last_good_vtx);
-			}
-		}
+		ta_index_strip(&o, &vertices[poly->first], sizeof(Vertex), poly->first, poly->count, dupe, first_index);
 		if (last_poly == poly)
 		{
 			poly->first = first_index;
-			poly->count = (u32)(out - indices) - first_index;
+			poly->count = (u32)(o.out - o.base) - first_index;
 		}
 		else
 		{
-			last_poly->count = (u32)(out - indices) - last_poly->first;
+			last_poly->count = (u32)(o.out - o.base) - last_poly->first;
 			poly->count = 0;
 		}
 	}
-#undef IDX_PUT
-	ctx->idx.avail = (int)(out_end - out);
-	ctx->idx.daty = out;
+	ctx->idx.set_cur(o.out);
 }
 
 static void fix_texture_bleeding(const List<PolyParam> *list)
@@ -3707,7 +3623,7 @@ static bool ta_gpu_any_autosort(const TA_context *ctx)
  * same way, and only the CPU can choose the pipeline and texture of a draw.
  * So the order is worked out here, from the frame's own blocks: of each
  * translucent vertex of a sorted pass, only its position (whether it is an
- * infinite vertex, is_vertex_inf(), and its depth) and its end-of-strip
+ * infinite vertex, ta_index.c's, and its depth) and its end-of-strip
  * bit are read, and a sprite's fourth corner is solved as the parse solves
  * it. Each strip's indices are what make_index() gives it (the translucent
  * lists are never joined), its triangles are GenSortedTo()'s, with the
@@ -4530,8 +4446,8 @@ bool ta_gpu_prepare(TA_context *ctx, const TaGpuLayout *layout, u32 *table, u32 
 	ta_gpu_sizes(&sz);
 	/* What the full parse overruns with is left to it: it drops the frame
 	 * then, as it always has */
-	if (f.verts > (u32)ctx->rend.verts.size || f.verts > sz.verts
-			|| f.modtrig > (u32)ctx->rend.modtrig.size || f.modtrig > sz.modtrig)
+	if (f.verts > (u32)ctx->rend.verts.capacity() || f.verts > sz.verts
+			|| f.modtrig > (u32)ctx->rend.modtrig.capacity() || f.modtrig > sz.modtrig)
 		return false;
 
 	// the headers with vertices, by segment, and the vertices of each
@@ -4592,9 +4508,9 @@ bool ta_gpu_prepare(TA_context *ctx, const TaGpuLayout *layout, u32 *table, u32 
 			if (f.header[i].pp.count != 0)
 				lv[TaWalker<false>::pp_list(f.header[i].list)] += f.header[i].pp.count;
 		lv[0]++;	// (the background)
-		const u32 lroom[3] = { (u32)rc.global_param_op.size, (u32)rc.global_param_pt.size, (u32)rc.global_param_tr.size };
-		if ((u64)f.verts * 4 > (u64)rc.idx.size
-				|| f.mvos[0] > (u32)rc.global_param_mvo.size || f.mvos[1] > (u32)rc.global_param_mvo_tr.size)
+		const u32 lroom[3] = { (u32)rc.global_param_op.capacity(), (u32)rc.global_param_pt.capacity(), (u32)rc.global_param_tr.capacity() };
+		if ((u64)f.verts * 4 > (u64)rc.idx.capacity()
+				|| f.mvos[0] > (u32)rc.global_param_mvo.capacity() || f.mvos[1] > (u32)rc.global_param_mvo_tr.capacity())
 			return false;
 		if ((u64)lv[0] + 1 > lroom[0] || (u64)lv[1] + 1 > lroom[1] || (u64)lv[2] + 1 > lroom[2])
 		{
@@ -4798,10 +4714,10 @@ bool ta_gpu_prepare(TA_context *ctx, const TaGpuLayout *layout, u32 *table, u32 
 	t[TAG_T_NSLOT] = nslots;
 	t[TAG_T_FLAGS] = (screen_height > 480 ? TAG_FLAG_BLEED : 0) | ((flags & TA_GPU_PROVOKE) ? TAG_FLAG_PROVOKE : 0)
 			| ((flags & TA_GPU_INSTANCE) ? TAG_FLAG_INSTANCE : 0);
-	t[TAG_T_ROOM_IDX] = (u32)ctx->rend.idx.size;
-	t[TAG_T_ROOM_OP] = (u32)ctx->rend.global_param_op.size;
-	t[TAG_T_ROOM_PT] = (u32)ctx->rend.global_param_pt.size;
-	t[TAG_T_ROOM_TR] = (u32)ctx->rend.global_param_tr.size;
+	t[TAG_T_ROOM_IDX] = (u32)ctx->rend.idx.capacity();
+	t[TAG_T_ROOM_OP] = (u32)ctx->rend.global_param_op.capacity();
+	t[TAG_T_ROOM_PT] = (u32)ctx->rend.global_param_pt.capacity();
+	t[TAG_T_ROOM_TR] = (u32)ctx->rend.global_param_tr.capacity();
 	t[TAG_T_OFF_RUN] = off_run;
 	t[TAG_T_OFF_HDR] = off_hdr;
 	t[TAG_T_OFF_MVRUN] = off_mvrun;

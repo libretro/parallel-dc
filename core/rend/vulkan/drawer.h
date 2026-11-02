@@ -55,6 +55,18 @@ public:
 	void SetCommandPool(CommandPool *commandPool) { this->commandPool = commandPool; }
 	// what a frame decoded on the GPU is drawn from (pvrrc.gpu)
 	void SetGpuDraw(const TaGpuDraw *gpuDraw) { this->gpuDraw = gpuDraw; }
+	/* Where a frame the parse wrote where the card reads it is
+	 * (rend/parse_arena.h): its vertices, its indices, and the room after
+	 * them for the sorted passes' */
+	struct Parsed
+	{
+		vk::Buffer buffer;
+		vk::DeviceSize vertices = 0, indices = 0;
+		u32 sortRoom = 0;		// bytes
+	};
+	/* This render's frame was parsed there; none (a null buffer): it is
+	 * copied into the main buffer */
+	void SetParsed(const Parsed& parsed) { this->parsed = parsed; }
 
 protected:
 	VulkanContext *GetContext() const { return VulkanContext::Instance(); }
@@ -105,9 +117,10 @@ protected:
 		return fragUniforms;
 	}
 
-	/* The frame's vertices and indices: in the main buffer, or the GPU's
-	 * decode's (pvrrc.gpu) */
-	void BindGeometry(const vk::CommandBuffer& cmdBuffer, vk::Buffer mainBuffer, vk::DeviceSize indexOffset) const
+	/* The frame's vertices and indices: where they are (geometry: the main
+	 * buffer, or where the parse wrote them), or the GPU's decode's
+	 * (pvrrc.gpu) */
+	void BindGeometry(const vk::CommandBuffer& cmdBuffer, vk::DeviceSize indexOffset) const
 	{
 		const vk::DeviceSize zero = 0;
 		if (pvrrc.gpu)
@@ -117,9 +130,30 @@ protected:
 		}
 		else
 		{
-			cmdBuffer.bindVertexBuffers(0, 1, &mainBuffer, &zero);
-			cmdBuffer.bindIndexBuffer(mainBuffer, indexOffset, vk::IndexType::eUint32);
+			cmdBuffer.bindVertexBuffers(0, 1, &geometry, &geometryVertices);
+			cmdBuffer.bindIndexBuffer(geometry, indexOffset, vk::IndexType::eUint32);
 		}
+	}
+	/* Where this render's vertices and indices are drawn from: the main
+	 * buffer, or a frame the parse wrote where the card reads it (parsed).
+	 * Laid out by SortIntoMainBuffer() / UploadMainBuffer(). */
+	vk::Buffer geometry;
+	vk::DeviceSize geometryVertices = 0;
+	bool geometryParsed = false;
+	Parsed parsed;
+	/* The geometry for this render, the main buffer's or the parse's: the
+	 * parse's if it wrote the frame where the card reads it and the sorted
+	 * passes' @sortedBytes fit after its indices */
+	bool UseParsed(u32 sortedBytes)
+	{
+		geometryParsed = !pvrrc.gpu && parsed.buffer && sortedBytes <= parsed.sortRoom;
+		return geometryParsed;
+	}
+	/* ...and with the main buffer laid out, where the draws bind it */
+	void SetGeometry(vk::Buffer mainBuffer)
+	{
+		geometry = geometryParsed ? parsed.buffer : mainBuffer;
+		geometryVertices = geometryParsed ? parsed.vertices : 0;
 	}
 	/* ...the modifier volumes' triangles, as the vertex buffer: the main
 	 * buffer's (ModVolList()), or those of the GPU's decode where the frame
@@ -136,10 +170,10 @@ protected:
 	// the volumes' triangles the main buffer has: the cut ones when the frame has them, else the parse's
 	const List<ModTriangle>& ModVolList() const { return pvrrc.mv_clip.used() != 0 ? pvrrc.mv_clip : pvrrc.modtrig; }
 	// ...and back to the vertices
-	void BindVertices(const vk::CommandBuffer& cmdBuffer, vk::Buffer mainBuffer) const
+	void BindVertices(const vk::CommandBuffer& cmdBuffer) const
 	{
 		const vk::DeviceSize zero = 0;
-		cmdBuffer.bindVertexBuffers(0, 1, pvrrc.gpu ? &gpuDraw->vertices : &mainBuffer, &zero);
+		cmdBuffer.bindVertexBuffers(0, 1, pvrrc.gpu ? &gpuDraw->vertices : &geometry, pvrrc.gpu ? &zero : &geometryVertices);
 	}
 	u32 ModVolTriangles() const { return ModVolsOnCpu() ? (u32)ModVolList().used() : pvrrc.gpu_modtrig; }
 

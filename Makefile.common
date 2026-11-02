@@ -177,6 +177,13 @@ SOURCES_C += $(CORE_DIR)/core/hw/naomi/naomi_interleave.c
 # What a GD-ROM game's DIMM board leaves in the NAOMI's memory
 SOURCES_C += $(CORE_DIR)/core/hw/naomi/naomi_dimm.c
 
+# The lists a frame's parse appends to (List<T>'s, typed: helper_classes.h)
+SOURCES_C += $(CORE_DIR)/core/hw/pvr/ta_list.c
+# ...and a strip's indices (make_index()'s)
+SOURCES_C += $(CORE_DIR)/core/hw/pvr/ta_index.c
+# ...and where a renderer has them parsed to (core/rend/parse_arena.h)
+SOURCES_C += $(CORE_DIR)/core/rend/parse_arena.c
+
 SOURCES_ASM :=
 
 ifeq ($(SYSTEM_PICOTCP), 1)
@@ -255,6 +262,7 @@ ifeq ($(HAVE_VULKAN), 1)
 
 	SOURCES_C += $(LIBRETRO_COMM_DIR)/vulkan/vulkan_symbol_wrapper.c \
 					$(CORE_DIR)/core/rend/vulkan/vk_heap.c \
+					$(CORE_DIR)/core/rend/vulkan/parse_arena_vk.c \
 					$(CORE_DIR)/core/rend/vulkan/hdr_encode_vk.c
 	SOURCES_CXX += \
 					$(CORE_DIR)/core/rend/vulkan/vulkan_context.cpp \

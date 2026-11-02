@@ -1,104 +1,50 @@
 #pragma once
+#include "ta_list.h"
 
+/* A frame's list of T: ta_list.h's, typed. Nothing here but what that is,
+ * said in elements. */
 template <class T>
 struct List
 {
-	T* daty;
-	int avail;
+	ta_list_t l;
 
-	int size;
-	bool* overrun;
-   const char *list_name;
+	/* (the frame's flag is a bool, written as the byte it is) */
+	static_assert(sizeof(bool) == 1, "a bool is a byte");
 
-	__forceinline int used() const { return size-avail; }
-	__forceinline int bytes() const { return used()* sizeof(T); }
+	T* head() const { return (T*)l.base; }
+	/* where the next element goes, and that place set: what is before it
+	 * is used, what is after it is left */
+	T* cur() const { return (T*)l.cur; }
+	void set_cur(T* p) { l.cur = (unsigned char *)p; }
+	int used() const { return (int)((T*)l.cur - (T*)l.base); }
+	int avail() const { return (int)((T*)l.end - (T*)l.cur); }
+	int capacity() const { return (int)((T*)l.end - (T*)l.base); }
+	int bytes() const { return (int)(l.cur - l.base); }
+	/* the room made @n elements from the first (for a test of the edges) */
+	void set_capacity(int n) { l.end = (unsigned char *)((T*)l.base + n); }
 
-	/* The list is full. The frame is marked, to be dropped, and the list
-	 * starts again at its beginning with the @n elements asked for taken
-	 * from there as by any other Append(): whatever the caller goes on to do
-	 * with them - write them all, come back to the last of them through
-	 * LastPtr(), give it back with PopLast() - is then inside the list, where
-	 * with nothing taken LastPtr() was the element below the buffer. (@n is
-	 * 1 or 4, and no list is smaller than that.) */
-	NOINLINE
-	T* sig_overrun(int n)
-	{ 
-		T* rv;
-
-		*overrun |= true;
-		Clear();
-      if (list_name != NULL)
-		   WARN_LOG(PVR, "List overrun for list %s", list_name);
-
-		rv = daty;
-		daty += n;
-		avail -= n;
-		return rv;
-	}
-
-	__forceinline 
-	T* Append(int n = 1)
-	{
-		int ad=avail-n;
-
-		if (ad>=0)
-		{
-			T* rv=daty;
-			daty+=n;
-			avail=ad;
-			return rv;
-		}
-		else
-			return sig_overrun(n);
-	}
-
-	__forceinline 
-	T* LastPtr(int n = 1) const
-	{ 
-		return daty-n; 
-	}
-
+	__forceinline T* Append(int n = 1) { return (T*)ta_list_append(&l, (size_t)n * sizeof(T)); }
+	__forceinline T* LastPtr(int n = 1) const { return (T*)l.cur - n; }
 	T* PopLast()
 	{
-		daty--;
-		avail++;
-
-		return daty;
+		l.cur -= sizeof(T);
+		return (T*)l.cur;
 	}
+	/* Full: the frame is marked, and @n taken from the beginning */
+	T* Full(int n) { return (T*)ta_list_full(&l, (size_t)n * sizeof(T)); }
 
-	T* head() const { return daty-used(); }
-
-	void InitBytes(int maxbytes,bool* ovrn, const char *name)
+	void InitBytes(int maxbytes, bool* ovrn, const char *name)
 	{
-		maxbytes-=maxbytes%sizeof(T);
-
-		daty=(T*)malloc(maxbytes);
-		
-		avail=size=maxbytes/sizeof(T);
-
-		overrun=ovrn;
-
-		Clear();
-      list_name = name;
+		ta_list_init(&l, (size_t)maxbytes, sizeof(T), (unsigned char *)ovrn, name);
 	}
-
-	void Init(int maxsize,bool* ovrn, const char *name)
+	void Init(int maxsize, bool* ovrn, const char *name)
 	{
-		InitBytes(maxsize*sizeof(T),ovrn, name);
+		InitBytes(maxsize * (int)sizeof(T), ovrn, name);
 	}
-
-	void Clear()
-	{
-		daty=head();
-		avail=size;
-	}
-
-	void Free()
-	{
-		Clear();
-		free(daty);
-	}
+	bool Ready() const { return l.base != NULL; }
+	void Clear() { ta_list_clear(&l); }
+	void Free() { ta_list_free(&l); }
 
 	T* begin() const { return head(); }
-	T* end() const { return LastPtr(0); }
+	T* end() const { return cur(); }
 };

@@ -320,6 +320,17 @@ struct TA_context
       rend.proc_end = render_pass == tad.render_pass_count ? tad.End() : 
          tad.render_passes[render_pass];
 	}
+	/* The room a frame's vertex and index lists have, in bytes, as Alloc()
+	 * makes them (rend/parse_arena.h has slices of it) */
+	static size_t VertRoom()
+	{
+		const size_t bytes = (size_t)4 * 1024 * 1024 * (ta_data_size() / TA_DATA_SIZE);	// ~96k vertices a frame
+		return bytes - bytes % sizeof(Vertex);
+	}
+	static size_t IdxRoom()
+	{
+		return (size_t)120 * 1024 * (ta_data_size() / TA_DATA_SIZE) * sizeof(u32);	// (indices have the strips' joins)
+	}
 	/* false: there was not the memory for it, and it holds nothing (a
 	 * NAOMI 2's frame takes about 60 megabytes). @data: the data goes
 	 * there, a slice of ta_data_size() bytes of the GPU pool's (@slot),
@@ -329,14 +340,13 @@ struct TA_context
       data_size = ta_data_size();
       const unsigned scale = data_size / TA_DATA_SIZE;
       unsigned modtrig_size = 16384 * scale;
-      unsigned    vert_size = 4*1024*1024 * scale; //up to 4 mb of vtx data/frame = ~ 96k vtx/frame
       pool = data != NULL ? slot : -1;
       gpu_serial = 0;
       tad.Reset(data != NULL ? data : (u8*)OS_aligned_malloc(32, data_size));
       regs = (u8*)calloc(1, pvr_RegSize);
 
-		rend.verts.InitBytes(vert_size,&rend.Overrun, "verts"); 
-		rend.idx.Init(120*1024 * scale,&rend.Overrun, "idx"); // up to 120K indices (idx have stripification overhead)
+		rend.verts.InitBytes((int)VertRoom(), &rend.Overrun, "verts");
+		rend.idx.InitBytes((int)IdxRoom(), &rend.Overrun, "idx");
 		rend.global_param_op.Init(16384 * scale,&rend.Overrun, "global_param_op");
 		rend.global_param_pt.Init(5120 * scale,&rend.Overrun, "global_param_pt");
 		rend.global_param_mvo.Init(4096 * scale,&rend.Overrun, "global_param_mvo");
@@ -360,12 +370,12 @@ struct TA_context
 		walk_size = TA_WALK_MAX * scale;
 		walk = (u32 *)malloc(walk_size * sizeof(u32));
 
-		if (!tad.thd_root || !regs || !rend.verts.daty || !rend.idx.daty
-				|| !rend.global_param_op.daty || !rend.global_param_pt.daty
-				|| !rend.global_param_mvo.daty || !rend.global_param_mvo_tr.daty
-				|| !rend.global_param_tr.daty || !rend.modtrig.daty
-				|| !rend.mv_clip.daty || !rend.mv_clip_range.daty
-				|| !rend.render_passes.daty || !rend.region_tiles || !walk)
+		if (!tad.thd_root || !regs || !rend.verts.Ready() || !rend.idx.Ready()
+				|| !rend.global_param_op.Ready() || !rend.global_param_pt.Ready()
+				|| !rend.global_param_mvo.Ready() || !rend.global_param_mvo_tr.Ready()
+				|| !rend.global_param_tr.Ready() || !rend.modtrig.Ready()
+				|| !rend.mv_clip.Ready() || !rend.mv_clip_range.Ready()
+				|| !rend.render_passes.Ready() || !rend.region_tiles || !walk)
 		{
 			Free();
 			tad.Reset(NULL);

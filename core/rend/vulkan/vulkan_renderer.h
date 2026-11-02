@@ -29,6 +29,8 @@
 #include "ta_decoder.h"
 #include "rend/rtt_watch.h"
 #include "rend/last_picture.h"
+#include "parse_arena_vk.h"
+#include "drawer.h"
 #include <memory>
 #include <vector>
 
@@ -49,6 +51,14 @@ public:
 		Texture::SetDecoder(nullptr);
 		texDecoder.Term();
 		taDecoder.Term();
+		/* (the derived renderers waited for the card's frames: WaitAll()) */
+		if (parseArenaOk)
+		{
+			NOTICE_LOG(RENDERER, "Vulkan: %u renders parsed where the card reads them, %u copied there",
+					parsedHere, parsedCopied);
+			parse_arena_vk_term(&parseArena);
+			parseArenaOk = false;
+		}
 		keptPicture = nullptr;
 		fogTexture = nullptr;
 		paletteTexture = nullptr;
@@ -159,7 +169,18 @@ public:
 		bool result;
 		// (the upscaler's motion vectors are matched from the parse's strips: rend/upscaler.h)
 		if (!taDecoder.Ready() || upscaler_active() || !taDecoder.Prepare(ctx, TaFlags(), &result))
+		{
+			/* into this frame's slice of the memory the card reads, where
+			 * there is one: the draws read it there, uncopied (with the
+			 * background polygon's four vertices FillBGP() wrote, at the
+			 * head of the list the parse empties and takes them back in) */
+			if (parseArenaOk && parse_arena_attach(&parseArena.arena, (unsigned)texCommandPool.GetIndex(),
+					&ctx->rend.verts.l, 4 * sizeof(Vertex), &ctx->rend.idx.l))
+				parsedSlot = texCommandPool.GetIndex();
 			result = ta_parse_vdrc(ctx);
+			if (!result)
+				DetachParse();
+		}
 		else if (result)
 			taDecoder.Record(ctx, texCommandPool);
 		// the textures the frame's polygons asked for that are made on the GPU, before the draws
@@ -178,14 +199,72 @@ public:
 		return result;
 	}
 
+	/* The frame drawn (RenderFrame()), and its lists its own again before
+	 * it goes back to the TA: what the parse wrote stays in its slice for
+	 * the card, till the slot's next frame (BeginFrame() waits) */
+	bool Render() override
+	{
+		const bool rv = RenderFrame();
+		DetachParse();
+		return rv;
+	}
+
 protected:
+	virtual bool RenderFrame() = 0;
 	VulkanContext *GetContext() const { return VulkanContext::Instance(); }
+
+	/* What @drawer draws this frame from: the slice the parse wrote, or
+	 * (nothing) the main buffer it copies the lists into */
+	void SetParsed(BaseDrawer& drawer)
+	{
+		BaseDrawer::Parsed parsed;
+		if (parsedSlot >= 0 && parsedSlot == texCommandPool.GetIndex())
+		{
+			const parse_arena_t& a = parseArena.arena;
+			parsed.buffer = vk::Buffer(parseArena.buffer);
+			parsed.vertices = parse_arena_vert_offset(&a, (unsigned)parsedSlot);
+			parsed.indices = parse_arena_idx_offset(&a, (unsigned)parsedSlot);
+			parsed.sortRoom = (u32)(a.idx_room + a.sort_room - pvrrc.idx.bytes());
+			if (parsedHere++ == 0)
+				NOTICE_LOG(RENDERER, "Vulkan: renders parsed where the card reads them, not copied there");
+		}
+		else if (!pvrrc.gpu && parsedCopied++ == 0 && parseArenaOk)
+			WARN_LOG(RENDERER, "Vulkan: a render copied to the card though its memory has the parse's room");
+		drawer.SetParsed(parsed);
+	}
+	void DetachParse()
+	{
+		if (parsedSlot >= 0)
+			parse_arena_detach(&parseArena.arena);
+		parsedSlot = -1;
+	}
 	// how the drawers draw a frame decoded on the GPU (ta_gpu_prepare()'s TA_GPU_*)
 	virtual u32 TaFlags() const = 0;
 
 	bool BaseInit(vk::RenderPass renderPass, int subpass = 0)
 	{
 		texCommandPool.Init();
+		/* where the frame's lists are parsed into, one slice a frame in
+		 * flight, where the card can read them as they are: memory the CPU
+		 * reads back fast too, as the parse and the sort do (a machine
+		 * whose video memory is the CPU's) - or none, and they are copied.
+		 * (Made once: a change of size comes back here, the frames on the
+		 * card done, and keeps it while it has as many slices as there are
+		 * slots, of the machine's lists' room.) */
+		if (parseArenaOk && (parseArena.arena.slices != (unsigned)texCommandPool.GetSize()
+				|| parseArena.arena.vert_room != TA_context::VertRoom() || parseArena.arena.idx_room != TA_context::IdxRoom()))
+		{
+			parse_arena_vk_term(&parseArena);
+			parseArenaOk = false;
+		}
+		if (!parseArenaOk)
+		{
+			parseArenaOk = parse_arena_vk_init(&parseArena, (VkDevice)GetContext()->GetDevice(),
+					GetContext()->GetHeap().Raw(), TA_context::VertRoom(), TA_context::IdxRoom(),
+					(unsigned)texCommandPool.GetSize()) != 0;
+			parsedHere = parsedCopied = 0;
+		}
+		DetachParse();
 		/* where the textures converted on the CPU go to the GPU through: one
 		 * buffer, a share of the video memory, between 16 and 64 MB */
 		Texture::Ring().Init((size_t)std::min<u64>(std::max<u64>((u64)GetContext()->GetVramBudget().available_kib() * 1024 / 32,
@@ -368,5 +447,9 @@ protected:
 		}
 	}
 	std::unique_ptr<VulkanOSD> vmus;
+	parse_arena_vk_t parseArena;
+	bool parseArenaOk = false;
+	int parsedSlot = -1;
+	u32 parsedHere = 0, parsedCopied = 0;
 };
 

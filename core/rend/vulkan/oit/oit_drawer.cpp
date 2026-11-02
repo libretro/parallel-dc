@@ -288,7 +288,7 @@ void OITDrawer::DrawModifierVolumes(const vk::CommandBuffer& cmdBuffer, int firs
 	}
 	listDraws.Flush();
 	SetScissor(cmdBuffer, baseScissor);
-	BindVertices(cmdBuffer, buffer);
+	BindVertices(cmdBuffer);
 }
 
 void OITDrawer::UploadMainBuffer(const OITDescriptorSets::FragmentShaderUniforms& fragmentUniforms)
@@ -300,10 +300,13 @@ void OITDrawer::UploadMainBuffer(const OITDescriptorSets::FragmentShaderUniforms
 	u32 chunkSizes[10];
 	u32 nchunks = 0;
 
-	// (a frame decoded on the GPU has its geometry and translucent polygon parameters there)
-	const u32 vertexBytes = pvrrc.gpu ? 0 : pvrrc.verts.bytes();
+	/* (a frame decoded on the GPU has its geometry and translucent polygon
+	 * parameters there; one the parse wrote where the card reads it, its
+	 * geometry there) */
+	const bool here = UseParsed(0);
+	const u32 vertexBytes = pvrrc.gpu || here ? 0 : pvrrc.verts.bytes();
 	const u32 modVolBytes = ModVolsOnCpu() ? ModVolList().bytes() : 0;
-	const u32 indexBytes = pvrrc.gpu ? 0 : pvrrc.idx.bytes();
+	const u32 indexBytes = pvrrc.gpu || here ? 0 : pvrrc.idx.bytes();
 
 	// Vertex
 	chunks[nchunks] = (pvrrc.verts.head());
@@ -352,6 +355,9 @@ void OITDrawer::UploadMainBuffer(const OITDescriptorSets::FragmentShaderUniforms
 
 	BufferData *buffer = GetMainBuffer(totalSize);
 	buffer->upload(nchunks, chunkSizes, chunks);
+	SetGeometry(buffer->buffer.get());
+	if (here)
+		offsets.indexOffset = parsed.indices;
 	u32 *trPolyParams = (u32 *)((u8 *)buffer->MapMemory() + offsets.polyParamsOffset);
 	if (trPolys == 0)
 		trPolyParams[0] = 0;
@@ -437,7 +443,7 @@ bool OITDrawer::Draw(const Texture *fogTexture, const Texture *paletteTexture)
 	GetCurrentDescSet().Reset();
 
 	// Bind vertex and index buffers
-	BindGeometry(cmdBuffer, mainBuffer, offsets.indexOffset);
+	BindGeometry(cmdBuffer, offsets.indexOffset);
 
 	// Make sure to push constants even if not used
 	OITDescriptorSets::PushConstants pushConstants = { };
@@ -479,7 +485,7 @@ bool OITDrawer::Draw(const Texture *fogTexture, const Texture *paletteTexture)
 		currentScissor = vk::Rect2D();
 		if (bandIndex > 0)
 			// (the band before ended with the quad's)
-			BindGeometry(cmdBuffer, mainBuffer, offsets.indexOffset);
+			BindGeometry(cmdBuffer, offsets.indexOffset);
 	}
 	RenderPass previous_pass = {};
     for (int render_pass = 0; render_pass < pvrrc.render_passes.used(); render_pass++)
@@ -528,7 +534,7 @@ bool OITDrawer::Draw(const Texture *fogTexture, const Texture *paletteTexture)
 		{
 			GetCurrentDescSet().BindPerFrameDescriptorSets(cmdBuffer);
 			oitBuffers->BindDescriptorSet(cmdBuffer, pipelineManager->GetPipelineLayout(), 3);
-			BindGeometry(cmdBuffer, mainBuffer, offsets.indexOffset);
+			BindGeometry(cmdBuffer, offsets.indexOffset);
 			cmdBuffer.pushConstants<OITDescriptorSets::PushConstants>(pipelineManager->GetPipelineLayout(), vk::ShaderStageFlagBits::eFragment, 0, pushConstants);
 			SetScissor(cmdBuffer, baseScissor);
 		}
@@ -589,7 +595,7 @@ bool OITDrawer::Draw(const Texture *fogTexture, const Texture *paletteTexture)
 				quadBuffer->Bind(cmdBuffer);
 				quadBuffer->Draw(cmdBuffer);
 				// ...which sees the translucent depth too
-				BindGeometry(cmdBuffer, mainBuffer, offsets.indexOffset);
+				BindGeometry(cmdBuffer, offsets.indexOffset);
 				DrawList(cmdBuffer, ListType_Translucent, current_pass.autosort, Pass::Depth, pvrrc.global_param_tr, previous_pass.tr_count, current_pass.tr_count);
 			}
 			// The picture put together and resolved, by the last render pass, all of it
@@ -615,14 +621,14 @@ bool OITDrawer::Draw(const Texture *fogTexture, const Texture *paletteTexture)
 		if (!finalPass && ssaa)
 		{
 			// (the next render pass draws from the frame's geometry, not the quad)
-			BindGeometry(cmdBuffer, mainBuffer, offsets.indexOffset);
+			BindGeometry(cmdBuffer, offsets.indexOffset);
 			cmdBuffer.endRenderPass();
 			oitBuffers->CountPass(cmdBuffer);
 		}
 		else if (!finalPass)
 		{
 	    	// Re-bind vertex and index buffers
-	    	BindGeometry(cmdBuffer, mainBuffer, offsets.indexOffset);
+			BindGeometry(cmdBuffer, offsets.indexOffset);
 
 			// Tr depth-only pass
 			DrawList(cmdBuffer, ListType_Translucent, current_pass.autosort, Pass::Depth, pvrrc.global_param_tr, previous_pass.tr_count, current_pass.tr_count);
