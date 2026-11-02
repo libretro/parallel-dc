@@ -89,7 +89,7 @@ done
 
 # A change of size mid-run (the renderer made again where it is: Resize()),
 # the core's context let go at the end: the arena kept, not made again and
-# lost - the buffers left after are as many as with the lists copied
+# lost - no buffer is left after, of the core's or the frontend's
 # (VKH_BUFFERS) - and the pictures the same.
 unset VKH_UPSCALER
 for r in per-triangle per-pixel; do
@@ -105,8 +105,8 @@ for r in per-triangle per-pixel; do
    unset VKH_OPTS_AT VKH_BUFFERS VKH_UNLOAD
    left=$(sed -n 's/^buffers left //p' "$WORK/$name.log")
    left_copied=$(sed -n 's/^buffers left //p' "$WORK/$name-copied.log")
-   if [ -z "$left" ] || [ "$left" != "$left_copied" ]; then
-      echo "  FAIL: ${left:-no count of} buffers left after the change of size, ${left_copied:-none counted} with the lists copied"
+   if [ "$left" != 0 ] || [ "$left_copied" != 0 ]; then
+      echo "  FAIL: buffers left after the core let go: ${left:-no count}, ${left_copied:-no count} with the lists copied"
       fails=$((fails + 1))
    fi
    if ! grep -q "renders parsed where the card reads them, [0-9]* copied" "$WORK/$name.log" \

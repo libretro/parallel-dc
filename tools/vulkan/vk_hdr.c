@@ -259,8 +259,9 @@ static VKAPI_ATTR void VKAPI_CALL vkh_mem_props2(VkPhysicalDevice gpu, VkPhysica
    vkh_uncache(&p->memoryProperties);
 }
 
-/* VKH_BUFFERS: the core's buffers made and not destroyed, "buffers left N"
- * printed after its teardown (VKH_UNLOAD): none, or one is lost
+/* VKH_BUFFERS: buffers made and not destroyed - the core's, and the reads
+ * back of this frontend's own - "buffers left N" printed after the core's
+ * teardown (VKH_UNLOAD): none, or one is lost
  * (tools/vulkan/vk_parse_arena.sh) */
 static long vkh_buffers;
 static PFN_vkCreateBuffer vkh_real_create_buffer;
@@ -638,6 +639,9 @@ static int read_back_image(VkImage image, VkImageLayout layout, VkImageAspectFla
    PFN_vkQueueWaitIdle p_wait = (PFN_vkQueueWaitIdle)gdpa(iface.device, "vkQueueWaitIdle");
    PFN_vkGetPhysicalDeviceMemoryProperties p_props = (PFN_vkGetPhysicalDeviceMemoryProperties)
       gipa(iface.instance, "vkGetPhysicalDeviceMemoryProperties");
+   PFN_vkDestroyBuffer p_destroy_buffer = (PFN_vkDestroyBuffer)gdpa(iface.device, "vkDestroyBuffer");
+   PFN_vkFreeMemory p_free = (PFN_vkFreeMemory)gdpa(iface.device, "vkFreeMemory");
+   PFN_vkDestroyCommandPool p_destroy_pool = (PFN_vkDestroyCommandPool)gdpa(iface.device, "vkDestroyCommandPool");
    VkPhysicalDeviceMemoryProperties props;
    VkBufferCreateInfo bci;
    VkMemoryRequirements req;
@@ -648,13 +652,14 @@ static int read_back_image(VkImage image, VkImageLayout layout, VkImageAspectFla
    VkImageMemoryBarrier b;
    VkBufferImageCopy copy;
    VkSubmitInfo submit;
-   VkBuffer buffer;
-   VkDeviceMemory memory;
-   VkCommandPool pool;
+   VkBuffer buffer = VK_NULL_HANDLE;
+   VkDeviceMemory memory = VK_NULL_HANDLE;
+   VkCommandPool pool = VK_NULL_HANDLE;
    VkCommandBuffer cmd;
    void *mapped;
    uint32_t i, header[4];
    FILE *f;
+   int ok = 0;
 
    memset(&bci, 0, sizeof(bci));
    bci.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
@@ -674,12 +679,13 @@ static int read_back_image(VkImage image, VkImageLayout layout, VkImageAspectFla
          break;
    mai.memoryTypeIndex = i;
    if (i == props.memoryTypeCount || p_alloc(iface.device, &mai, NULL, &memory) != VK_SUCCESS)
-      return 0;
+      goto done;
    p_bind(iface.device, buffer, memory, 0);
    memset(&cpi, 0, sizeof(cpi));
    cpi.sType            = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
    cpi.queueFamilyIndex = iface.queue_index;
-   p_pool(iface.device, &cpi, NULL, &pool);
+   if (p_pool(iface.device, &cpi, NULL, &pool) != VK_SUCCESS)
+      goto done;
    memset(&cbi, 0, sizeof(cbi));
    cbi.sType              = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
    cbi.commandPool        = pool;
@@ -725,16 +731,25 @@ static int read_back_image(VkImage image, VkImageLayout layout, VkImageAspectFla
    p_submit(iface.queue, 1, &submit, VK_NULL_HANDLE);
    p_wait(iface.queue);
    p_map(iface.device, memory, 0, VK_WHOLE_SIZE, 0, &mapped);
-   if (!(f = fopen(out, "wb")))
-      return 0;
-   header[0] = 0x52484b56u;    /* "VKHR" */
-   header[1] = (uint32_t)format;
-   header[2] = w;
-   header[3] = h;
-   fwrite(header, sizeof(header), 1, f);
-   fwrite(mapped, 1, (size_t)w * h * bpp, f);
-   fclose(f);
-   return 1;
+   if ((f = fopen(out, "wb")) != NULL)
+   {
+      header[0] = 0x52484b56u;    /* "VKHR" */
+      header[1] = (uint32_t)format;
+      header[2] = w;
+      header[3] = h;
+      fwrite(header, sizeof(header), 1, f);
+      fwrite(mapped, 1, (size_t)w * h * bpp, f);
+      fclose(f);
+      ok = 1;
+   }
+done:
+   /* (all of it given back: VKH_BUFFERS counts what the core leaves) */
+   if (pool != VK_NULL_HANDLE)
+      p_destroy_pool(iface.device, pool, NULL);
+   p_destroy_buffer(iface.device, buffer, NULL);
+   if (memory != VK_NULL_HANDLE)
+      p_free(iface.device, memory, NULL);
+   return ok;
 }
 
 /* ---- the upscaler's inputs back ---- */
