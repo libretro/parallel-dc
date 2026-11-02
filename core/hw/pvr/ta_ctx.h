@@ -2,6 +2,7 @@
 #include "ta.h"
 #include "pvr_regs.h"
 #include "helper_classes.h"
+#include "ta_index.h"
 
 // helper for 32 byte aligned memory allocation
 void* OS_aligned_malloc(size_t align, size_t size);
@@ -163,6 +164,12 @@ struct rend_context
 	 * was not built. */
 	u32 *region_tiles;
 	u32 region_tile_count;
+
+	/* The opaque, punch-through and translucent lists' strips known to
+	 * need no look at their vertices for their indices (ta_index.h), in
+	 * one allocation */
+	ta_strip_ok_t strip_ok[3];
+	u32 *strip_ok_words;
 
 	/* GPU-side TA processing drew it (ta_gpu_prepare(), TA_GPU_DRAW): the
 	 * polygon parameter lists hold draw groups, and the vertices, indices
@@ -367,6 +374,19 @@ struct TA_context
       rend.render_passes.Init(sizeof(RenderPass) * 10, &rend.Overrun, "render_passes");	// 10 render passes
 		rend.region_tiles = (u32 *)malloc(REGION_TILES_MAX * sizeof(u32));
 		rend.region_tile_count = 0;
+		{
+			const u32 polys[3] = { (u32)rend.global_param_op.capacity(), (u32)rend.global_param_pt.capacity(),
+					(u32)rend.global_param_tr.capacity() };
+			u32 at = 0;
+			rend.strip_ok_words = (u32 *)malloc(((polys[0] + 31) / 32 + (polys[1] + 31) / 32 + (polys[2] + 31) / 32)
+					* sizeof(u32));
+			for (int i = 0; i < 3; i++)
+			{
+				ta_strip_ok_bind(&rend.strip_ok[i], rend.strip_ok_words != NULL ? rend.strip_ok_words + at : NULL,
+						rend.strip_ok_words != NULL ? polys[i] : 0);
+				at += (polys[i] + 31) / 32;
+			}
+		}
 		walk_size = TA_WALK_MAX * scale;
 		walk = (u32 *)malloc(walk_size * sizeof(u32));
 
@@ -375,7 +395,7 @@ struct TA_context
 				|| !rend.global_param_mvo.Ready() || !rend.global_param_mvo_tr.Ready()
 				|| !rend.global_param_tr.Ready() || !rend.modtrig.Ready()
 				|| !rend.mv_clip.Ready() || !rend.mv_clip_range.Ready()
-				|| !rend.render_passes.Ready() || !rend.region_tiles || !walk)
+				|| !rend.render_passes.Ready() || !rend.region_tiles || !rend.strip_ok_words || !walk)
 		{
 			Free();
 			tad.Reset(NULL);
@@ -420,6 +440,10 @@ struct TA_context
       rend.render_passes.Free();
 		free(rend.region_tiles);
 		rend.region_tiles = NULL;
+		free(rend.strip_ok_words);
+		rend.strip_ok_words = NULL;
+		for (int i = 0; i < 3; i++)
+			ta_strip_ok_bind(&rend.strip_ok[i], NULL, 0);
 		free(walk);
 		walk = NULL;
 	}

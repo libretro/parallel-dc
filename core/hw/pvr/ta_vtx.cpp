@@ -112,6 +112,8 @@ static ModTriangle* lmr;
 
 static PolyParam* CurrentPP;
 static List<PolyParam>* CurrentPPlist;
+/* ...and its strips the fast vertex loop knows to be whole and drawable */
+static ta_strip_ok_t* CurrentStripOk;
 
 //TA state vars	
 DECL_ALIGN(4) static u8 FaceBaseColor[4];
@@ -425,12 +427,22 @@ case num : {\
 			s32 z_max = (s32&)vdrc.fZ_max;
 			u32 z_and = strip_z_and;
 			u32 z_or = strip_z_or;
+			/* Whether a vertex of the strip is left out of its indices
+			 * (ta_vertex_bad()), from the words in hand: a strip begun here
+			 * with none is marked known good, and make_index() reads none
+			 * of its vertices again. One begun before, by another loop, is
+			 * left to it. */
+			ta_strip_ok_t* const ok = CurrentStripOk;
+			PolyParam* const pp_head = CurrentPPlist != NULL ? CurrentPPlist->head() : NULL;
+			const u32 run_first = (u32)(first - head);
+			ta_bad_t bad = ta_bad_none();
 
 			for (;;)
 			{
 				s32 z;
 				bool end_of_strip;
 
+				bad = ta_bad_add(bad, (const u8*)data + 4);
 				vert_fast<poly_type>(data, cv);
 				z = (s32&)cv->z;
 				if (z_max < z && z < 0x49800000)
@@ -452,6 +464,9 @@ case num : {\
 					const u32 used = (u32)(cv - head);
 					const u32 count = used - pp->first;
 					const u32 pcw = flat ? (pp->pcw.full & ~PVR_PCW_SINGLE_RATE) | PVR_FLAT_RATE_BIT(z_and, z_or) : 0;
+					if (!ta_bad_any(bad) && pp->first >= run_first && ok != NULL)
+						ta_strip_ok_set(ok, (u32)(pp - pp_head));
+					bad = ta_bad_none();
 					if (count > 0)
 					{
 						const PolyParam copy = *pp;
@@ -966,11 +981,11 @@ private:
 		static void StartList(u32 ListType)
 	{
 		if (ListType==ListType_Opaque)
-			CurrentPPlist=&vdrc.global_param_op;
+			CurrentPPlist=&vdrc.global_param_op, CurrentStripOk=&vdrc.strip_ok[0];
 		else if (ListType==ListType_Punch_Through)
-			CurrentPPlist=&vdrc.global_param_pt;
+			CurrentPPlist=&vdrc.global_param_pt, CurrentStripOk=&vdrc.strip_ok[1];
 		else if (ListType==ListType_Translucent)
-			CurrentPPlist=&vdrc.global_param_tr;
+			CurrentPPlist=&vdrc.global_param_tr, CurrentStripOk=&vdrc.strip_ok[2];
 
 		CurrentPP = NULL;
 	}
@@ -982,6 +997,7 @@ private:
 			CurrentPPlist->PopLast();
 		CurrentPP = NULL;
 		CurrentPPlist = NULL;
+		CurrentStripOk = NULL;
 
       if (ListType == ListType_Opaque_Modifier_Volume
             || ListType == ListType_Translucent_Modifier_Volume)
@@ -1790,6 +1806,9 @@ private:
 	static void VDECInit()
 	{
 		vd_rc.Clear();
+		ta_strip_ok_clear(&vd_rc.strip_ok[0]);
+		ta_strip_ok_clear(&vd_rc.strip_ok[1]);
+		ta_strip_ok_clear(&vd_rc.strip_ok[2]);
 
 		//allocate storage for BG poly
 		vd_rc.global_param_op.Append();
@@ -1916,6 +1935,10 @@ static void flat_groups(const List<PolyParam> *polys, int first, int end)
 static void make_index(const List<PolyParam> *polys, int first, int end, bool merge, rend_context* ctx)
 {
 	const Vertex *vertices = ctx->verts.head();
+	/* (the strips the vertex loop found drawable whole: ta_strip_ok) */
+	const ta_strip_ok_t *ok = polys == &ctx->global_param_op ? &ctx->strip_ok[0]
+			: polys == &ctx->global_param_pt ? &ctx->strip_ok[1]
+			: polys == &ctx->global_param_tr ? &ctx->strip_ok[2] : NULL;
 	/* Where the next index goes and where the list ends are kept for the
 	 * whole of it, and given back to the list at the end (ta_index.h) */
 	ta_index_out_t o;
@@ -1944,7 +1967,8 @@ static void make_index(const List<PolyParam> *polys, int first, int end, bool me
 			last_poly = poly;
 			first_index = (u32)(o.out - o.base);
 		}
-		ta_index_strip(&o, &vertices[poly->first], sizeof(Vertex), poly->first, poly->count, dupe, first_index);
+		ta_index_strip(&o, &vertices[poly->first], sizeof(Vertex), poly->first, poly->count, dupe, first_index,
+				ok != NULL && ta_strip_ok_get(ok, (u32)(poly - polys->head())));
 		if (last_poly == poly)
 		{
 			poly->first = first_index;

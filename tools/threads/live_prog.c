@@ -751,6 +751,9 @@ static u32 int_float(u32 n)
    return ((127 + e) << 23) | ((n << (23 - e)) & 0x7FFFFF);
 }
 
+/* Three strips of each list have a vertex the indices leave out, as games
+ * send now and then: one with an infinite x, one with a NaN depth, one with
+ * a huge y - the first, a middle and the last of their strips. */
 static void ta_heavy(u32 list, u32 tsp, u32 colour, u32 strips, u32 length)
 {
    u32 s, v;
@@ -759,8 +762,17 @@ static void ta_heavy(u32 list, u32 tsp, u32 colour, u32 strips, u32 length)
    {
       ta_send(TA_POLYGON | list | 2u, ISP_GEQUAL, tsp, 0, 0, 0, 0, 0);
       for (v = 0; v < length; v++)
-         ta_send(TA_VERTEX | list | (v == length - 1 ? TA_LAST : 0), int_float(1 + (v >> 1) % 16),
-               int_float(224 + (v & 1) * 8 + s % 8), int_float(1), 0, 0, colour + v, 0);
+      {
+         u32 x = int_float(1 + (v >> 1) % 16), y = int_float(224 + (v & 1) * 8 + s % 8), z = int_float(1);
+
+         if (s == 3 && v == 0)
+            x = 0x7F800000;
+         else if (s == 5 && v == length / 2)
+            z = 0x7FC00000;
+         else if (s == 6 && v == length - 1)
+            y = 0x6A000000;
+         ta_send(TA_VERTEX | list | (v == length - 1 ? TA_LAST : 0), x, y, z, 0, 0, colour + v, 0);
+      }
    }
 }
 #endif

@@ -8,7 +8,8 @@ name: Headless
 # rewrites itself, a NAOMI cartridge and romsets: tools/threads/headless.sh.
 # And a strip's indices, the parse's C89 kernel, against the loop it
 # replaced (tools/pvr/ta_index_test.sh); and the parse timed on the heavy
-# disc, its lists summed (tools/pvr/ta_parse_bench.sh).
+# disc, the strips its vertex loop found drawable whole making the indices
+# a look at their vertices does (tools/pvr/ta_parse_bench.sh).
 
 on:
   push:
@@ -43,12 +44,12 @@ jobs:
       - name: Install the compiler and OpenGL headers
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends build-essential libgl1-mesa-dev python3
+          sudo apt-get install -y --no-install-recommends build-essential libgl1-mesa-dev python3 gcc-aarch64-linux-gnu qemu-user-static
       - name: Build the core
         run: make -j"$(nproc)"
       - name: The disc with no display, its states and run-ahead among it
         run: sh tools/threads/headless.sh parallel_dc_libretro.so
-      - name: A strip's indices (C89, ASan and UBSan) against the loop they replaced
+      - name: A strip's indices (C89, ASan and UBSan; SIMD, scalar and NEON) against the loop they replaced
         run: sh tools/pvr/ta_index_test.sh
-      - name: The parse timed on the heavy disc
+      - name: The parse timed on the heavy disc, the strips known good making the indices a look at them does
         run: sh tools/pvr/ta_parse_bench.sh

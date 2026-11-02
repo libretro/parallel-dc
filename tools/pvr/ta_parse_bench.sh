@@ -12,6 +12,8 @@
 # parse made - its indices, vertices and polygons - a line, for two builds'
 # to be compared. PARSE_BENCH_DISC: the disc's live_disc.py option
 # (--heavy). KEEP=1: the program is kept, in $TMPDIR/ta_parse_bench.<pid>.
+# Fails where a frame's parse comes out otherwise with no strip known good
+# to its indices than with them (ta_index.h's ta_strip_ok), or none is.
 set -e
 cd "$(dirname "$0")/../.."
 FRAMES=${1:-160}
@@ -37,3 +39,8 @@ LD_PRELOAD="$WORK/libGLESv2.so.2" HEADLESS_DIR="$WORK/dir" "$WORK/ta_parse_bench
    reicast_threaded_rendering=disabled > "$WORK/out" 2> "$WORK/err" || true
 [ -z "${PARSE_BENCH_SUMS:-}" ] || grep '^sum' "$WORK/out"
 grep '^ta_parse_bench' "$WORK/out" || { echo "ta_parse_bench: no result"; tail -5 "$WORK/err"; exit 1; }
+# the indices of the strips the vertex loop found drawable whole are the
+# ones a look at their vertices makes (ta_strip_ok); and there are such
+grep '^check: ' "$WORK/out"
+grep -q '^check: [1-9][0-9]* strips known good to the indices, 0 renders different' "$WORK/out" || {
+   echo "ta_parse_bench: FAIL: the strips known good made other indices, or there were none"; exit 1; }

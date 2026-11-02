@@ -5,7 +5,9 @@
  * ta_parse_bench.sh. A frame's time is its fastest parse. At the end: the
  * renders timed, and of the screen's (not those to textures) their
  * vertices a frame, and their time a frame and a vertex - the median
- * frame's, and all of them together. */
+ * frame's, and all of them together. And a check: each frame's parse made
+ * once more with no strip known good to the indices (ta_strip_ok_ignored),
+ * and what it made the same; "check: ..." at the end. */
 #include "hw/pvr/Renderer_if.h"
 #include "hw/pvr/ta_ctx.h"
 #include <algorithm>
@@ -26,6 +28,8 @@ extern "C" void *__wrap_dlopen(const char *file, int mode)
 extern int ta_parse_cnt;
 
 static std::vector<double> times;	// ns a screen's frame (its fastest parse)
+static unsigned long long known_good;	// strips the vertex loop found drawable whole
+static unsigned different;		// frames whose parse came out otherwise without them
 static unsigned renders, skip;
 static unsigned long long vertices;
 static double total;
@@ -60,6 +64,27 @@ static void again(TA_context *ctx)
 	rc.clearFramebuffer = pre.clear;
 }
 
+/* What the parse made: its indices, vertices and polygons */
+static u32 sum(const rend_context &rc)
+{
+	const List<PolyParam> *lists[3] = { &rc.global_param_op, &rc.global_param_pt, &rc.global_param_tr };
+	u32 h = 2166136261u;
+	const u8 *p = (const u8 *)rc.idx.head();
+	for (int i = 0; i < rc.idx.bytes(); i++)
+		h = (h ^ p[i]) * 16777619u;
+	p = (const u8 *)rc.verts.head();
+	for (int i = 0; i < rc.verts.bytes(); i++)
+		h = (h ^ p[i]) * 16777619u;
+	for (int l = 0; l < 3; l++)
+		for (const PolyParam *pp = lists[l]->head(); pp != lists[l]->end(); pp++)
+		{
+			h = (h ^ pp->first) * 16777619u;
+			h = (h ^ pp->count) * 16777619u;
+			h = (h ^ pp->pcw.full) * 16777619u;
+		}
+	return h;
+}
+
 extern "C" bool __wrap__Z13ta_parse_vdrcP10TA_context(TA_context *ctx)
 {
 	static const unsigned repeat = getenv("PARSE_BENCH_REPEAT") ? (unsigned)atoi(getenv("PARSE_BENCH_REPEAT")) : 32;
@@ -85,30 +110,26 @@ extern "C" bool __wrap__Z13ta_parse_vdrcP10TA_context(TA_context *ctx)
 		best = std::min(best, now_ns() - t0);
 		ta_parse_cnt = cnt;
 	}
+	// once with no strip known good to the indices, for the check
+	again(ctx);
+	ta_strip_ok_ignored = 1;
+	__real__Z13ta_parse_vdrcP10TA_context(ctx);
+	ta_strip_ok_ignored = 0;
+	ta_parse_cnt = cnt;
+	const u32 looked = sum(rc);
 	// and the one the frame is drawn from
 	again(ctx);
 	const bool rv = __real__Z13ta_parse_vdrcP10TA_context(ctx);
+	const u32 h = sum(rc);
 	renders++;
+	if (h != looked)
+		different++;
+	for (int l = 0; l < 3; l++)
+		for (u32 w = 0; w < rc.strip_ok[l].hi; w++)
+			known_good += (unsigned)__builtin_popcount(rc.strip_ok[l].bits[w]);
+	// what the parse made, for two builds' to be compared frame by frame
 	if (getenv("PARSE_BENCH_SUMS"))
-	{
-		// what the parse made, for two builds' to be compared frame by frame
-		const List<PolyParam> *lists[3] = { &rc.global_param_op, &rc.global_param_pt, &rc.global_param_tr };
-		u32 h = 2166136261u;
-		const u8 *p = (const u8 *)rc.idx.head();
-		for (int i = 0; i < rc.idx.bytes(); i++)
-			h = (h ^ p[i]) * 16777619u;
-		p = (const u8 *)rc.verts.head();
-		for (int i = 0; i < rc.verts.bytes(); i++)
-			h = (h ^ p[i]) * 16777619u;
-		for (int l = 0; l < 3; l++)
-			for (const PolyParam *pp = lists[l]->head(); pp != lists[l]->end(); pp++)
-			{
-				h = (h ^ pp->first) * 16777619u;
-				h = (h ^ pp->count) * 16777619u;
-				h = (h ^ pp->pcw.full) * 16777619u;
-			}
 		printf("sum %u %d %d %08x\n", renders, rc.idx.used(), rc.verts.used(), h);
-	}
 	if (!rc.isRTT)
 	{
 		times.push_back(best);
@@ -130,6 +151,7 @@ static void report(void)
 	const double median = times[times.size() / 2];
 	printf("ta_parse_bench: %u renders, %u of the screen with %.0f vertices a frame; parse: median %.0f ns a frame "
 			"(%.3f a vertex), all %.3f ns a vertex\n", renders, (unsigned)times.size(), v, median, median / v, total / vertices);
+	printf("check: %llu strips known good to the indices, %u renders different without them\n", known_good, different);
 }
 
 /* (headless.c leaves through _exit(), past the destructors) */

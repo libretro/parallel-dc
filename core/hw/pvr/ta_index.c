@@ -2,31 +2,35 @@
 #include <string.h>
 #include "ta_index.h"
 
-/* 1e25 and 3.4e37, as their bits: x and y are dropped from 1e25 up (Manic
- * Panic Ghosts), z is from a NaN of either sign or a huge positive value (a
- * negative one is drawn: the base runner views in World Series Baseball
- * 2K1) */
-#define HUGE_XY 0x69045951u
-#define HUGE_Z  0x7DCCA14Cu
+int ta_strip_ok_ignored = 0;
 
-/* Whether the vertex at @v is left out: 1 or 0, without a branch. Asked of
- * the bits, not the values: a float's bits with the sign taken off go up as
- * its size does, with infinity and the NaNs above everything, so one integer
- * comparison says "huge, infinite or not a number". And it has to be the
- * bits: built with fast-math the compiler is told there are no NaNs, and
- * tests of the values for them are dropped. */
+void ta_strip_ok_bind(ta_strip_ok_t *s, uint32_t *words, uint32_t polys)
+{
+   s->bits = words;
+   s->polys = polys;
+   s->hi = (polys + 31) / 32;
+   ta_strip_ok_clear(s);
+}
+
+void ta_strip_ok_clear(ta_strip_ok_t *s)
+{
+   if (s->hi != 0)
+      memset(s->bits, 0, s->hi * sizeof(uint32_t));
+   s->hi = 0;
+}
+
+/* Whether the vertex at @v is left out (ta_vertex_bad()) */
 static INLINE uint32_t vertex_bad(const unsigned char *v)
 {
    uint32_t x, y, z;
    memcpy(&x, v, 4);
    memcpy(&y, v + 4, 4);
    memcpy(&z, v + 8, 4);
-   return (uint32_t)((x & 0x7FFFFFFFu) > HUGE_XY) | (uint32_t)((y & 0x7FFFFFFFu) > HUGE_XY)
-         | (uint32_t)((z & 0x7FFFFFFFu) > 0x7F800000u) | (uint32_t)(z < 0x80000000u && z > HUGE_Z);
+   return ta_vertex_bad(x, y, z);
 }
 
 void ta_index_strip(ta_index_out_t *o, const void *vtx, size_t stride, uint32_t first, uint32_t count,
-      int dupe, uint32_t first_index)
+      int dupe, uint32_t first_index, int known_good)
 {
    const unsigned char *v = (const unsigned char *)vtx;
    uint32_t bad = 0, i;
@@ -34,8 +38,9 @@ void ta_index_strip(ta_index_out_t *o, const void *vtx, size_t stride, uint32_t 
 
    if (count == 0)
       return;
-   for (i = 0; i < count; i++)
-      bad |= vertex_bad(v + i * stride);
+   if (!known_good)
+      for (i = 0; i < count; i++)
+         bad |= vertex_bad(v + i * stride);
 
    /* As a strip nearly always is: every vertex drawn, in order. The first
     * may be put twice - to join this strip to the one before, or to keep

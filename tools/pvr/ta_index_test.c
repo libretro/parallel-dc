@@ -94,7 +94,7 @@ int main(void)
 {
    static vtx_t v[300];
    static uint32_t a[ROOM], b[ROOM];
-   unsigned long cases = 0, fast = 0, failed = 0;
+   unsigned long cases = 0, fast = 0, failed = 0, known_cases = 0;
    int t;
 
    for (t = 0; t < 1000000 && failed < 5; t++)
@@ -111,6 +111,7 @@ int main(void)
       ta_index_out_t o;
       ref_t r;
       uint32_t i;
+      int known_good;
 
       for (i = 0; i < count; i++)
       {
@@ -123,6 +124,36 @@ int main(void)
       }
       memset(a, 0xEE, sizeof(a));
       memset(b, 0xEE, sizeof(b));
+      /* half the strips with no vertex left out are given as known good
+       * (ta_strip_ok): the same indices without a look at the vertices */
+      known_good = (int)(rnd() & 1);
+      for (i = 0; i < count && known_good; i++)
+         if (ref_inf(&v[i]))
+            known_good = 0;
+      known_cases += known_good;
+      /* the vertex loop's test of many at once, a vertex at a time and
+       * the strip together */
+      {
+         ta_bad_t all = ta_bad_none();
+         int any = 0;
+         for (i = 0; i < count; i++)
+         {
+            const int one = ta_bad_any(ta_bad_add(ta_bad_none(), &v[i].x)) != 0;
+            all = ta_bad_add(all, &v[i].x);
+            any |= ref_inf(&v[i]);
+            if (one != ref_inf(&v[i]) && failed < 5)
+            {
+               printf("ta_index_test: vertex %08x %08x %08x taken as %s\n", (unsigned)v[i].x, (unsigned)v[i].y,
+                     (unsigned)v[i].z, one ? "left out" : "drawn");
+               failed++;
+            }
+         }
+         if ((ta_bad_any(all) != 0) != any && failed < 5)
+         {
+            printf("ta_index_test: a strip of %u vertices taken as %s\n", (unsigned)count, any ? "drawn" : "having one left out");
+            failed++;
+         }
+      }
 
       r.base = a;
       r.out = a + used;
@@ -139,7 +170,7 @@ int main(void)
       o.out = b + used;
       o.end = b + room;
       o.list = &list;
-      ta_index_strip(&o, v, sizeof(vtx_t), first, count, dupe, first_index);
+      ta_index_strip(&o, v, sizeof(vtx_t), first, count, dupe, first_index, known_good);
 
       cases++;
       if (r.overrun == 0)
@@ -152,6 +183,7 @@ int main(void)
          failed++;
       }
    }
-   printf("ta_index_test: %lu strips, %lu of them with room, %lu different\n", cases, fast, failed);
+   printf("ta_index_test: %lu strips, %lu of them with room, %lu given as known good, %lu different\n",
+         cases, fast, known_cases, failed);
    return failed != 0;
 }
