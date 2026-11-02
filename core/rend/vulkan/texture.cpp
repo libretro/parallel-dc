@@ -618,6 +618,57 @@ bool Texture::GpuDecode(const texd_plan& plan)
 	return true;
 }
 
+/* A copy, or a blit where the render is finer, from the render's image -
+ * one that can be copied from, sampled where it is - in the commands the
+ * texture's uploads go in, which the GPU runs after the render's. */
+bool Texture::CopyRender(BaseTextureCacheData *from, u32 x, u32 y, u32 scale, u32 columns)
+{
+	Texture *src = static_cast<Texture *>(from);
+	const vk::Format rgba = vk::Format::eR8G8B8A8Unorm;
+
+	if (commandPool == nullptr || src->IsNew() || src->format != rgba || !(src->imageUsage & vk::ImageUsageFlagBits::eTransferSrc)
+			|| (x + columns) * scale > src->extent.width || (y + h) * scale > src->extent.height)
+		return false;
+	CancelDecode();
+	prepared = false;
+	tex_type = TextureType::_8888;
+	const bool isNew = Prepare(w, h, false, false, COPY, rgba) || fresh;
+	if (!(imageUsage & vk::ImageUsageFlagBits::eTransferDst))
+		return false;
+	if (!commandBuffer)
+		commandBuffer = commandPool->Allocate();
+	commandBuffer.begin(vk::CommandBufferBeginInfo(vk::CommandBufferUsageFlagBits::eOneTimeSubmit));
+	setImageLayout(commandBuffer, src->GetImage(), rgba, 1, vk::ImageLayout::eShaderReadOnlyOptimal, vk::ImageLayout::eTransferSrcOptimal);
+	setImageLayout(commandBuffer, GetImage(), rgba, mipmapLevels, isNew ? vk::ImageLayout::eUndefined : vk::ImageLayout::eShaderReadOnlyOptimal,
+			vk::ImageLayout::eTransferDstOptimal);
+	const vk::ImageSubresourceLayers layers(vk::ImageAspectFlagBits::eColor, 0, 0, 1);
+	if (columns < w)
+	{
+		// (the rest of each row, as a texture read through a narrower stride has it)
+		const vk::ImageSubresourceRange range(vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1);
+		commandBuffer.clearColorImage(GetImage(), vk::ImageLayout::eTransferDstOptimal, vk::ClearColorValue(std::array<float, 4> { 0.f, 0.f, 0.f, 0.f }), range);
+		const vk::MemoryBarrier barrier(vk::AccessFlagBits::eTransferWrite, vk::AccessFlagBits::eTransferWrite);
+		commandBuffer.pipelineBarrier(vk::PipelineStageFlagBits::eTransfer, vk::PipelineStageFlagBits::eTransfer, {}, barrier, nullptr, nullptr);
+	}
+	if (scale <= 1)
+		commandBuffer.copyImage(src->GetImage(), vk::ImageLayout::eTransferSrcOptimal, GetImage(), vk::ImageLayout::eTransferDstOptimal,
+				vk::ImageCopy(layers, vk::Offset3D(x, y, 0), layers, vk::Offset3D(0, 0, 0), vk::Extent3D(columns, h, 1)));
+	else
+	{
+		const std::array<vk::Offset3D, 2> from_box = { vk::Offset3D(x * scale, y * scale, 0), vk::Offset3D((x + columns) * scale, (y + h) * scale, 1) };
+		const std::array<vk::Offset3D, 2> to_box = { vk::Offset3D(0, 0, 0), vk::Offset3D(columns, h, 1) };
+		commandBuffer.blitImage(src->GetImage(), vk::ImageLayout::eTransferSrcOptimal, GetImage(), vk::ImageLayout::eTransferDstOptimal,
+				vk::ImageBlit(layers, from_box, layers, to_box), vk::Filter::eLinear);
+	}
+	setImageLayout(commandBuffer, GetImage(), rgba, mipmapLevels, vk::ImageLayout::eTransferDstOptimal, vk::ImageLayout::eShaderReadOnlyOptimal);
+	setImageLayout(commandBuffer, src->GetImage(), rgba, 1, vk::ImageLayout::eTransferSrcOptimal, vk::ImageLayout::eShaderReadOnlyOptimal);
+	commandBuffer.end();
+	fresh = false;
+	debugPath = DBG_COPY;
+	debugLevels = 0;
+	return true;
+}
+
 /* The image's format for texels of @type */
 static vk::Format type_format(TextureType type)
 {

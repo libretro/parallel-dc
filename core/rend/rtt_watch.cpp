@@ -448,6 +448,23 @@ void rtt_watch_serve(void)
 	request_overwrite = false;
 }
 
+bool rtt_watch_pending(u32 offset, u32 size, RttWatch *watch)
+{
+	const RttWatch *found = NULL;
+
+	for (const RttWatch& s : slots)
+		if (s.used && s.addr < offset + size && s.addr + s.bytes > offset)
+		{
+			if (found != NULL)
+				return false;
+			found = &s;
+		}
+	if (found == NULL)
+		return false;
+	*watch = *found;
+	return true;
+}
+
 void rtt_watch_flush(void)
 {
 	RttWatch *list[RTT_WATCH_SLOTS];

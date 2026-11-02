@@ -11,7 +11,11 @@
 # under the DMA is made again. The top right of the screen has to show cyan
 # over yellow, cyan, and green - for each renderer, threaded rendering on
 # and off, the renders to textures at the console's size and finer - and,
-# given a second core, the same picture as that core's in each.
+# given a second core, the same picture as that core's in each. A render
+# drawn as a texture of another shape is made into it on the card, not
+# read back every frame: no more than 40 reads off the card in the run
+# (GLF_READS), 36 of them the program's own of the render it reads every
+# frame; read back, the view's are 34 more.
 #
 #   sh tools/gl/gl_dma.sh [core.so [other.so]]
 #
@@ -35,7 +39,7 @@ fails=0
 run() {
    run_core=$1; run_name=$2; shift 2
    rm -rf "$WORK/dir"; mkdir -p "$WORK/dir"
-   GLF_DIR="$WORK/dir" "$WORK/gl_frames" "$run_core" "$WORK/test.gdi" "$WORK/$run_name.raw" 100 \
+   GLF_READS=1 GLF_DIR="$WORK/dir" "$WORK/gl_frames" "$run_core" "$WORK/test.gdi" "$WORK/$run_name.raw" 100 \
       "$@" > "$WORK/$run_name.log" 2>&1 || {
       { echo "  FAIL: the $run_name run failed:"; tail -5 "$WORK/$run_name.log"; } >&2; return 1; }
 }
@@ -53,6 +57,11 @@ for r in per-triangle per-pixel; do
          run "$CORE" "$name" "$@" reicast_render_to_texture_upscaling=${scale}x reicast_threaded_rendering=$threaded \
             || { fails=$((fails + 1)); continue; }
          python3 tools/rend/dma_check.py "$WORK/$name.raw" || fails=$((fails + 1))
+         reads=$(sed -n 's/^reads //p' "$WORK/$name.log")
+         if [ "${reads:-999}" -gt 40 ]; then
+            echo "  FAIL: ${reads:-no count of} reads off the card, more than 40"
+            fails=$((fails + 1))
+         fi
          if [ -n "$OTHER" ]; then
             run "$OTHER" "other-$name" "$@" reicast_render_to_texture_upscaling=${scale}x reicast_threaded_rendering=$threaded \
                || { fails=$((fails + 1)); continue; }

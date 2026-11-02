@@ -17,7 +17,9 @@
  * the n-th on as a frontend's run-ahead of one frame does: the frame, a
  * state saved, the frame after it (the one shown) and the state loaded
  * back. The picture is then the one a plain run of one frame more shows,
- * for whatever a state carries (tools/gl/gl_ahead.sh).
+ * for whatever a state carries (tools/gl/gl_ahead.sh). GLF_READS=1 counts
+ * what the core reads back from the card - a buffer mapped to be read, a
+ * glReadPixels - and prints "reads N" at the end (tools/gl/gl_dma.sh).
  *
  * Built with: cc -o gl_frames gl_frames.c -lEGL -lGL -ldl */
 #define _GNU_SOURCE
@@ -62,7 +64,38 @@ static void log_line(enum retro_log_level level, const char *fmt, ...)
 }
 
 static uintptr_t gl_framebuffer(void) { return fbo; }
-static retro_proc_address_t gl_proc(const char *sym) { return (retro_proc_address_t)eglGetProcAddress(sym); }
+static long reads;
+static void *(*real_map_range)(GLenum, GLintptr, GLsizeiptr, GLbitfield);
+static void (*real_read_pixels)(GLint, GLint, GLsizei, GLsizei, GLenum, GLenum, void *);
+static void *count_map_range(GLenum target, GLintptr offset, GLsizeiptr length, GLbitfield access)
+{
+   if (access & GL_MAP_READ_BIT)
+      reads++;
+   return real_map_range(target, offset, length, access);
+}
+static void count_read_pixels(GLint x, GLint y, GLsizei w, GLsizei h, GLenum format, GLenum type, void *pixels)
+{
+   reads++;
+   real_read_pixels(x, y, w, h, format, type, pixels);
+}
+
+static retro_proc_address_t gl_proc(const char *sym)
+{
+   retro_proc_address_t f = (retro_proc_address_t)eglGetProcAddress(sym);
+   if (!getenv("GLF_READS") || f == NULL)
+      return f;
+   if (!strcmp(sym, "glMapBufferRange"))
+   {
+      *(retro_proc_address_t *)&real_map_range = f;
+      return (retro_proc_address_t)count_map_range;
+   }
+   if (!strcmp(sym, "glReadPixels"))
+   {
+      *(retro_proc_address_t *)&real_read_pixels = f;
+      return (retro_proc_address_t)count_read_pixels;
+   }
+   return f;
+}
 
 static bool environment(unsigned cmd, void *data)
 {
@@ -386,5 +419,7 @@ int main(int argc, char **argv)
    retro_deinit();
    free(pixels);
    free(state);
+   if (getenv("GLF_READS"))
+      printf("reads %ld\n", reads);
    return 0;
 }

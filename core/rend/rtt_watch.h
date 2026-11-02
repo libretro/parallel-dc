@@ -86,6 +86,9 @@ void rtt_watch_overwrite(u32 offset, u32 size);
 /* Render thread, the machine standing still: everything that is waiting
  * goes to video memory now (the pictures are about to be destroyed). */
 void rtt_watch_flush(void);
+/* Render thread: the render still on the graphics card that @size bytes
+ * from @offset are in, if it is the only one they are in. */
+bool rtt_watch_pending(u32 offset, u32 size, RttWatch *watch);
 /* Render thread, once a frame, the machine standing still. A render that
  * has waited a few frames is not one the game renders again every frame:
  * it goes to video memory now, once, so that it is there for whoever

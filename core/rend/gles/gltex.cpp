@@ -668,6 +668,58 @@ static void rtt_gl_detach(void)
 	glFramebufferTexture2D(RARCH_GL_FRAMEBUFFER, RARCH_GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, 0, 0);
 }
 
+/* From the texture rendered to, through the framebuffer it is read through,
+ * a blit (OpenGL 3, OpenGL ES 3: glsm has no copy into a texture). Whole
+ * rows only: a narrower stride's rest of the row is not cleared here. What
+ * it changes it puts back. */
+bool TextureCacheData::CopyRender(BaseTextureCacheData *from, u32 x, u32 y, u32 scale, u32 columns)
+{
+#if defined(GL_READ_FRAMEBUFFER) && defined(GL_DRAW_FRAMEBUFFER)
+	const TextureCacheData *src = static_cast<const TextureCacheData *>(from);
+	static GLuint copy_fbo;
+	GLint was_fbo = 0;
+
+	if (gl.gl_major < 3 || texID == 0 || src->texID == 0 || src->texID == texID || columns != w)
+		return false;
+	if (scale < 1)
+		scale = 1;
+	CancelDecode();
+	tex_type = TextureType::_8888;
+	if (!TakePooled(w, h, false))
+	{
+		ReleasePooled();
+		glcache.BindTexture(GL_TEXTURE_2D, texID);
+		glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+	}
+	glGetIntegerv(GL_FRAMEBUFFER_BINDING, &was_fbo);
+	const GLboolean was_scissor = glIsEnabled(GL_SCISSOR_TEST);
+	if (rtt_read_fbo == 0)
+		glGenFramebuffers(1, &rtt_read_fbo);
+	if (copy_fbo == 0)
+		glGenFramebuffers(1, &copy_fbo);
+	glBindFramebuffer(RARCH_GL_FRAMEBUFFER, rtt_read_fbo);
+	glFramebufferTexture2D(RARCH_GL_FRAMEBUFFER, RARCH_GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, src->texID, 0);
+	glBindFramebuffer(RARCH_GL_FRAMEBUFFER, copy_fbo);
+	glFramebufferTexture2D(RARCH_GL_FRAMEBUFFER, RARCH_GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, texID, 0);
+	glBindFramebuffer(GL_READ_FRAMEBUFFER, rtt_read_fbo);
+	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, copy_fbo);
+	if (was_scissor)
+		glDisable(GL_SCISSOR_TEST);
+	glBlitFramebuffer(x * scale, y * scale, (x + w) * scale, (y + h) * scale, 0, 0, w, h, GL_COLOR_BUFFER_BIT,
+			scale > 1 ? GL_LINEAR : GL_NEAREST);
+	if (was_scissor)
+		glEnable(GL_SCISSOR_TEST);
+	/* (a texture attached to a framebuffer is not deleted when it is) */
+	glBindFramebuffer(RARCH_GL_FRAMEBUFFER, copy_fbo);
+	glFramebufferTexture2D(RARCH_GL_FRAMEBUFFER, RARCH_GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, 0, 0);
+	rtt_gl_detach();
+	glBindFramebuffer(RARCH_GL_FRAMEBUFFER, was_fbo);
+	return true;
+#else
+	return false;
+#endif
+}
+
 /* rend/rtt_watch.h asks for a picture it left on the graphics card: w by h
  * pixels, whatever the card has it at. Called wherever the game first
  * touched the memory, the middle of a frame's set-up included, so what it

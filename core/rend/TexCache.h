@@ -1117,6 +1117,7 @@ public:
 	 * many returned. False if there is no memory for the hashes. */
 	bool HashPieces(u32 *changed);
 	bool HashChanged();
+	bool FromRender(u32 stride, u32 rows);
 	void Update();
 	bool PlanDecode(texd_plan& plan, u32 stride, u32 rows, u32 out, bool mipmapped);
 	/* The regions the changed pieces are in, up to TEXP_REGIONS; 0 if the
@@ -1149,6 +1150,11 @@ public:
 	 * from @plan on the GPU, as GpuDecode() would make them (TEXP_*). */
 	virtual bool PartMemory(size_t bytes, void **memory) { return false; }
 	virtual void UploadPart(const TexRegion *regions, u32 count, u8 *data, const size_t *offset) {}
+	/* The image made w by h, RGBA8, from what was rendered to @from: its
+	 * pixels from (@x, @y) on, the console's, @scale times finer there;
+	 * @columns of each row, the rest of the row clear. False if it cannot
+	 * be, and nothing is changed. */
+	virtual bool CopyRender(BaseTextureCacheData *from, u32 x, u32 y, u32 scale, u32 columns) { return false; }
 	virtual int GpuDecodePart(const texd_plan& plan, const TexRegion *regions, u32 count) { return TEXP_CPU; }
 	virtual bool Force32BitTexture(TextureType type) const { return false; }
 	void CheckCustomTexture();

@@ -206,8 +206,10 @@ void vramlock_list_add(vram_block* block)
 	for (u32 i = base; i <= end; i++)
 	{
 		VramLockList& list = VramLocks[i];
-		// If the list has no lock then we need to protect vram, otherwise it's already been done
-		if (list.live == 0)
+		/* If the list has no lock then we need to protect vram, otherwise
+		 * it's already been done - or a lock dropped since left it so
+		 * (rend_text_invl()): no system call for that */
+		if (list.live == 0 && !_vmem_vram_page_protected(i))
 			_vmem_protect_vram(i * PAGE_SIZE, PAGE_SIZE);
 		u32 k = 0;
 		if (list.live < list.count)
@@ -672,6 +674,42 @@ bool BaseTextureCacheData::NeedsUpdate() {
 		rc = HashChanged();
 
 	return rc;
+}
+
+/* A render to a texture still on the graphics card, drawn as a texture of
+ * another shape - fewer lines, through a stride, a part of it: made from
+ * the picture where it is (CopyRender()), not fetched into video memory and
+ * made from that, which waits for the card. Its rows have to be the
+ * render's and all it reads inside what was rendered; in the render's
+ * format, which it is drawn the way the render itself is: RGBA8, as fine.
+ * It stays watched by write-protection - a hash would fetch the picture -
+ * and is made again with the next render there (VramRendered()). */
+bool BaseTextureCacheData::FromRender(u32 stride, u32 rows)
+{
+	RttWatch watch;
+
+	if (!tcw.ScanOrder || tcw.VQ_Comp || tcw.MipMapped || IsPaletted() || rows != h
+			|| (tcw.PixelFmt != Pixel1555 && tcw.PixelFmt != Pixel565 && tcw.PixelFmt != Pixel4444)
+			|| settings.rend.TextureUpscale > 1 || settings.rend.DumpTextures || settings.rend.CustomTextures
+			|| !rtt_watch_pending(sa, size, &watch) || watch.target == nullptr || watch.target == this)
+		return false;
+	const u32 format = watch.packmode == 1 ? Pixel565 : watch.packmode == 2 ? Pixel4444 : Pixel1555;
+	if (tcw.PixelFmt != format || stride * 2 != watch.stride || sa < watch.addr || (sa - watch.addr) % 2 != 0)
+		return false;
+	const u32 col = (sa - watch.addr) % watch.stride / 2, row = (sa - watch.addr) / watch.stride;
+	const u32 columns = std::min(stride, w);
+	if (col + columns > watch.w || row + h > watch.h)
+		return false;
+	if (!CopyRender((BaseTextureCacheData *)watch.target, watch.x0 + col, watch.y0 + row, watch.scale, columns))
+		return false;
+	tex_type = TextureType::_8888;
+	made_type = 0;
+	free(piece_hash);
+	piece_hash = NULL;
+	pieces = 0;
+	Updates = 0;
+	libCore_vramlock_Lock(sa_tex, sa + size - 1, this);
+	return true;
 }
 
 /* (NeedsUpdate()'s, kept out of its way) */
@@ -1542,6 +1580,11 @@ void BaseTextureCacheData::Update()
 			WARN_LOG(RENDERER, "Warning: invalid texture. Address %08X %08X size %d", sa_tex, sa, size);
 			return;
 		}
+	}
+	if (FromRender(stride, rows))
+	{
+		PrintTextureName();
+		return;
 	}
 	if (settings.rend.CustomTextures)
 		custom_texture.LoadCustomTextureAsync(this);

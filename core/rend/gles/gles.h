@@ -372,6 +372,7 @@ public:
 	virtual bool PartMemory(size_t bytes, void **memory) override;
 	virtual void UploadPart(const TexRegion *regions, u32 count, u8 *data, const size_t *offset) override;
 	virtual int GpuDecodePart(const texd_plan& plan, const TexRegion *regions, u32 count) override;
+	virtual bool CopyRender(BaseTextureCacheData *from, u32 x, u32 y, u32 scale, u32 columns) override;
 	virtual bool Delete() override;
 	/* The picture rendered to is the texture now: @tex, the pool's @pooled
 	 * or one of its own */
