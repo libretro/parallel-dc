@@ -906,12 +906,12 @@ bool DX11Texture::CopyRender(BaseTextureCacheData *from, u32 x, u32 y, u32 scale
 	ID3D11Device *device = context->GetDevice();
 	D3D11_TEXTURE2D_DESC sd;
 
-	if (device == nullptr || src == this || !src->texture || columns != w)
+	if (device == nullptr || src == this || !src->texture || columns == 0 || columns > w)
 		return false;
 	if (scale < 1)
 		scale = 1;
 	src->texture->GetDesc(&sd);
-	if (sd.Format != DXGI_FORMAT_R8G8B8A8_UNORM || (x + w) * scale > sd.Width || (y + h) * scale > sd.Height)
+	if (sd.Format != DXGI_FORMAT_R8G8B8A8_UNORM || (x + columns) * scale > sd.Width || (y + h) * scale > sd.Height)
 		return false;
 	CancelDecode();
 	tex_type = TextureType::_8888;
@@ -950,12 +950,23 @@ bool DX11Texture::CopyRender(BaseTextureCacheData *from, u32 x, u32 y, u32 scale
 	u32 sx = x, sy = y;
 	if (scale > 1)
 	{
-		if (!shrink(src, x * scale, y * scale, w, h, scale))
+		if (!shrink(src, x * scale, y * scale, columns, h, scale))
 			return false;
 		source = small;
 		sx = sy = 0;
 	}
-	const D3D11_BOX box = { sx, sy, 0, sx + w, sy + h, 1 };
+	if (columns < w)
+	{
+		// (the rest of each row a narrower stride leaves: clear)
+		static std::vector<u32> clear;
+		const size_t texels = (size_t)(w - columns) * h;
+		const u32 value = ClearOpaque() ? 0xFF000000u : 0u;
+		if (clear.size() < texels || clear[0] != value)
+			clear.assign(std::max(texels, clear.size()), value);
+		const D3D11_BOX rest = { columns, 0, 0, w, h, 1 };
+		context->GetDeviceContext()->UpdateSubresource(texture, 0, &rest, clear.data(), (w - columns) * 4, 0);
+	}
+	const D3D11_BOX box = { sx, sy, 0, sx + columns, sy + h, 1 };
 	context->GetDeviceContext()->CopySubresourceRegion(texture, 0, 0, 0, 0, source, 0, &box);
 	return true;
 }

@@ -477,9 +477,11 @@ static void ta_volume_triangle(u32 x0, u32 y0, u32 x1, u32 y1, u32 x2, u32 y2, u
  *
  * And a fourth, 64 by 64 at DMA_SHAPE, rendered every frame - its top half
  * green, its bottom half red for ten frames and blue after - and drawn as
- * a texture of another shape, its bottom half alone, 64 by 32: a texture
- * made from the memory a render covers is made again when that memory is
- * rendered to again, as when it is written. Blue, beside the green. */
+ * a texture of another shape, its bottom half alone, 128 by 32 through a
+ * stride of 64 (TEXT_CONTROL): a texture made from the memory a render
+ * covers is made again when that memory is rendered to again, as when it
+ * is written. Beside the green: blue on the left, and black on the right,
+ * past the stride. */
 #define DMA_HALF     (RTT_ADDRESS + 0xE0000)
 #define DMA_WHOLE    (RTT_ADDRESS + 0xE4000)
 #define DMA_TEXTURE  (RTT_ADDRESS + 0xE8000)
@@ -826,10 +828,11 @@ static void ta_scene(void)
          F(285.0f), F(5.0f), F(315.0f), F(35.0f));
    ta_quad(TA_TEXTURED, TSP_PLAIN, (1u << 27) | (1u << 26) | (DMA_TEXTURE >> 3), 0xFFFFFFFF, F(0.5f),
          F(250.0f), F(40.0f), F(280.0f), F(70.0f));
-   /* DMA_SHAPE's render's bottom half, as a 64 by 32 texture */
+   /* DMA_SHAPE's render's bottom half, as a 128 by 32 texture through a
+    * stride of 64 */
    if (rtt_shape_frames != 0)
-      ta_quad(TA_TEXTURED, TSP_PLAIN | (3u << 3) | 2u, (1u << 27) | (1u << 26) | ((DMA_SHAPE + 32 * 128) >> 3), 0xFFFFFFFF,
-            F(0.5f), F(285.0f), F(40.0f), F(315.0f), F(70.0f));
+      ta_quad(TA_TEXTURED, TSP_PLAIN | (4u << 3) | 2u, (1u << 27) | (1u << 26) | (1u << 25) | ((DMA_SHAPE + 32 * 128) >> 3),
+            0xFFFFFFFF, F(0.5f), F(285.0f), F(40.0f), F(315.0f), F(70.0f));
 #endif
 #ifdef LIVE_CULL
    /* With -DLIVE_CULL, on the left: two white polygons that take shadows,
@@ -939,6 +942,7 @@ static void render_to_texture(void)
    else if (rtt_static_age < 120)
       rtt_static_age++;
 #ifdef LIVE_DMA
+   PVR(0xE4) = 64 / 32;                                /* TEXT_CONTROL: a stride of 64 */
    PVR(0x60) = 0x01000000 | DMA_SHAPE;
    PVR(0x144) = 0x80000000;                            /* TA_LIST_INIT */
    ta_quad(0, TSP_PLAIN, 0, ++rtt_shape_frames <= 10 ? 0xFFFF0000 : 0xFF0000FF, F(0.5f), F(0.0f), F(0.0f),

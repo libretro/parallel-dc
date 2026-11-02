@@ -607,12 +607,12 @@ bool DX9Texture::CopyRender(BaseTextureCacheData *from, u32 x, u32 y, u32 scale,
 	ComPtr<IDirect3DSurface9> from_surface, to_surface;
 	D3DSURFACE_DESC sd;
 
-	if (device == nullptr || src == this || !src->texture || columns != w
+	if (device == nullptr || src == this || !src->texture || columns == 0 || columns > w
 			|| FAILED(src->texture->GetLevelDesc(0, &sd)) || sd.Format != D3DFMT_A8R8G8B8 || (sd.Usage & D3DUSAGE_RENDERTARGET) == 0)
 		return false;
 	if (scale < 1)
 		scale = 1;
-	if ((x + w) * scale > sd.Width || (y + h) * scale > sd.Height)
+	if ((x + columns) * scale > sd.Width || (y + h) * scale > sd.Height)
 		return false;
 	CancelDecode();
 	tex_type = TextureType::_8888;
@@ -630,8 +630,16 @@ bool DX9Texture::CopyRender(BaseTextureCacheData *from, u32 x, u32 y, u32 scale,
 	}
 	if (FAILED(src->texture->GetSurfaceLevel(0, from_surface.put())) || FAILED(texture->GetSurfaceLevel(0, to_surface.put())))
 		return false;
-	const RECT rect = { (LONG)(x * scale), (LONG)(y * scale), (LONG)((x + w) * scale), (LONG)((y + h) * scale) };
-	if (FAILED(device->StretchRect(from_surface, &rect, to_surface, nullptr, scale > 1 ? D3DTEXF_LINEAR : D3DTEXF_POINT)))
+	const RECT rect = { (LONG)(x * scale), (LONG)(y * scale), (LONG)((x + columns) * scale), (LONG)((y + h) * scale) };
+	const RECT to = { 0, 0, (LONG)columns, (LONG)h };
+	if (columns < w)
+	{
+		// (the rest of each row a narrower stride leaves)
+		const RECT rest = { (LONG)columns, 0, (LONG)w, (LONG)h };
+		if (FAILED(device->ColorFill(to_surface, &rest, D3DCOLOR_ARGB(ClearOpaque() ? 255 : 0, 0, 0, 0))))
+			return false;
+	}
+	if (FAILED(device->StretchRect(from_surface, &rect, to_surface, &to, scale > 1 ? D3DTEXF_LINEAR : D3DTEXF_POINT)))
 		return false;
 	swapRB = false;
 	return true;

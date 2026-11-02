@@ -221,6 +221,18 @@ static VKAPI_ATTR VkResult VKAPI_CALL vkh_ccp(VkDevice d, VkPipelineCache c, uin
    return vkh_real_ccp(d, c, n, ci, a, out);
 }
 
+/* VKH_READS: the core's copies of images into buffers - what it reads back
+ * off the card goes through one - counted as they are recorded, and "reads
+ * N" printed at the end (tools/vulkan/vk_dma.sh) */
+static long vkh_reads;
+static PFN_vkCmdCopyImageToBuffer vkh_real_copy_to_buffer;
+static VKAPI_ATTR void VKAPI_CALL vkh_copy_to_buffer(VkCommandBuffer cb, VkImage image, VkImageLayout layout,
+      VkBuffer buffer, uint32_t count, const VkBufferImageCopy *regions)
+{
+   __sync_fetch_and_add(&vkh_reads, 1);
+   vkh_real_copy_to_buffer(cb, image, layout, buffer, count, regions);
+}
+
 static VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL vkh_count_gdpa(VkDevice d, const char *name);
 
 static PFN_vkVoidFunction vkh_wrap(PFN_vkVoidFunction real, const char *name)
@@ -236,6 +248,11 @@ static PFN_vkVoidFunction vkh_wrap(PFN_vkVoidFunction real, const char *name)
    {
       vkh_real_ccp = (PFN_vkCreateComputePipelines)real;
       return (PFN_vkVoidFunction)vkh_ccp;
+   }
+   if (!strcmp(name, "vkCmdCopyImageToBuffer"))
+   {
+      vkh_real_copy_to_buffer = (PFN_vkCmdCopyImageToBuffer)real;
+      return (PFN_vkVoidFunction)vkh_copy_to_buffer;
    }
    if (!strcmp(name, "vkGetDeviceProcAddr"))
    {
@@ -1150,7 +1167,7 @@ int main(int argc, char **argv)
    }
    memset(&ctx, 0, sizeof(ctx));
    vkh_main_thread = pthread_self();
-   core_gipa = getenv("VKH_COUNT_PIPELINES") || getenv("VKH_HIDE_EXT") ? vkh_count_gipa : gipa;
+   core_gipa = getenv("VKH_COUNT_PIPELINES") || getenv("VKH_HIDE_EXT") || getenv("VKH_READS") ? vkh_count_gipa : gipa;
    if (!neg->create_device2(&ctx, instance, gpu, VK_NULL_HANDLE, core_gipa, NULL, NULL))
    {
       fprintf(stderr, "vk_hdr: create_device2 failed\n");
@@ -1204,6 +1221,8 @@ int main(int argc, char **argv)
          else if (dt > longest)
             longest = dt;
       }
+      if (getenv("VKH_READS"))
+         printf("reads %ld\n", __sync_fetch_and_add(&vkh_reads, 0));
       if (getenv("VKH_COUNT_PIPELINES"))
       {
          int i;

@@ -3,8 +3,9 @@
 the three textures DMA writes into, where the disc draws them at the top
 right of the screen - cyan over the yellow fetched from a render, cyan, and
 green - and beside the green, the bottom half of a render made every frame,
-drawn as a texture of another shape: blue, what it is rendered last, not
-the red of its first frames, nor the green of its top half. The picture is as vk_hdr.c writes one (a 16-byte header: "VKHR", a
+drawn as a texture of another shape, through a stride half its width: blue
+on the left, what it is rendered last, not the red of its first frames nor
+the green of its top half; black on the right, past the stride. The picture is as vk_hdr.c writes one (a 16-byte header: "VKHR", a
 format, the width and the height; then 8-bit R, G, B, A rows, top first).
 Used by tools/vulkan/vk_dma.sh, tools/gl/gl_dma.sh and tools/rend/d3d_dma.sh.
 
@@ -28,7 +29,8 @@ want = [((530, 20), (0, 255, 255), "the half: the DMA's cyan"),
         ((530, 60), (255, 255, 0), "the half: the render's yellow, fetched"),
         ((600, 40), (0, 255, 255), "the whole: the DMA's cyan"),
         ((530, 110), (0, 255, 0), "the texture: the DMA's green"),
-        ((600, 110), (0, 0, 255), "a render's bottom half as another shape: the last one's blue")]
+        ((580, 110), (0, 0, 255), "a render's bottom half as another shape: the last one's blue"),
+        ((620, 110), (0, 0, 0), "...and past its stride: black")]
 bad = 0
 for (x, y), c, what in want:
     got = at(x, y)

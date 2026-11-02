@@ -669,9 +669,9 @@ static void rtt_gl_detach(void)
 }
 
 /* From the texture rendered to, through the framebuffer it is read through,
- * a blit (OpenGL 3, OpenGL ES 3: glsm has no copy into a texture). Whole
- * rows only: a narrower stride's rest of the row is not cleared here. What
- * it changes it puts back. */
+ * a blit (OpenGL 3, OpenGL ES 3: glsm has no copy into a texture); the rest
+ * of each row a narrower stride leaves, cleared. What it changes it puts
+ * back. */
 bool TextureCacheData::CopyRender(BaseTextureCacheData *from, u32 x, u32 y, u32 scale, u32 columns)
 {
 #if defined(GL_READ_FRAMEBUFFER) && defined(GL_DRAW_FRAMEBUFFER)
@@ -679,7 +679,7 @@ bool TextureCacheData::CopyRender(BaseTextureCacheData *from, u32 x, u32 y, u32 
 	static GLuint copy_fbo;
 	GLint was_fbo = 0;
 
-	if (gl.gl_major < 3 || texID == 0 || src->texID == 0 || src->texID == texID || columns != w)
+	if (gl.gl_major < 3 || texID == 0 || src->texID == 0 || src->texID == texID || columns == 0 || columns > w)
 		return false;
 	if (scale < 1)
 		scale = 1;
@@ -705,7 +705,16 @@ bool TextureCacheData::CopyRender(BaseTextureCacheData *from, u32 x, u32 y, u32 
 	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, copy_fbo);
 	if (was_scissor)
 		glDisable(GL_SCISSOR_TEST);
-	glBlitFramebuffer(x * scale, y * scale, (x + w) * scale, (y + h) * scale, 0, 0, w, h, GL_COLOR_BUFFER_BIT,
+	if (columns < w)
+	{
+		GLfloat was_clear[4];
+
+		glGetFloatv(GL_COLOR_CLEAR_VALUE, was_clear);
+		glClearColor(0.f, 0.f, 0.f, ClearOpaque() ? 1.f : 0.f);
+		glClear(GL_COLOR_BUFFER_BIT);
+		glClearColor(was_clear[0], was_clear[1], was_clear[2], was_clear[3]);
+	}
+	glBlitFramebuffer(x * scale, y * scale, (x + columns) * scale, (y + h) * scale, 0, 0, columns, h, GL_COLOR_BUFFER_BIT,
 			scale > 1 ? GL_LINEAR : GL_NEAREST);
 	if (was_scissor)
 		glEnable(GL_SCISSOR_TEST);

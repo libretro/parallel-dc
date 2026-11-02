@@ -1152,9 +1152,13 @@ public:
 	virtual void UploadPart(const TexRegion *regions, u32 count, u8 *data, const size_t *offset) {}
 	/* The image made w by h, RGBA8, from what was rendered to @from: its
 	 * pixels from (@x, @y) on, the console's, @scale times finer there;
-	 * @columns of each row, the rest of the row clear. False if it cannot
-	 * be, and nothing is changed. */
+	 * @columns of each row, the rest of the row what zeros are in the
+	 * texture's format (ClearOpaque()). False if it cannot be, and nothing
+	 * is changed. */
 	virtual bool CopyRender(BaseTextureCacheData *from, u32 x, u32 y, u32 scale, u32 columns) { return false; }
+	/* The alpha of texels of zeros in this texture's format: opaque in
+	 * 565, which has none */
+	bool ClearOpaque() const { return tcw.PixelFmt == Pixel565; }
 	virtual int GpuDecodePart(const texd_plan& plan, const TexRegion *regions, u32 count) { return TEXP_CPU; }
 	virtual bool Force32BitTexture(TextureType type) const { return false; }
 	void CheckCustomTexture();

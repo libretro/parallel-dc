@@ -646,7 +646,8 @@ bool Texture::CopyRender(BaseTextureCacheData *from, u32 x, u32 y, u32 scale, u3
 	{
 		// (the rest of each row, as a texture read through a narrower stride has it)
 		const vk::ImageSubresourceRange range(vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1);
-		commandBuffer.clearColorImage(GetImage(), vk::ImageLayout::eTransferDstOptimal, vk::ClearColorValue(std::array<float, 4> { 0.f, 0.f, 0.f, 0.f }), range);
+		commandBuffer.clearColorImage(GetImage(), vk::ImageLayout::eTransferDstOptimal,
+				vk::ClearColorValue(std::array<float, 4> { 0.f, 0.f, 0.f, ClearOpaque() ? 1.f : 0.f }), range);
 		const vk::MemoryBarrier barrier(vk::AccessFlagBits::eTransferWrite, vk::AccessFlagBits::eTransferWrite);
 		commandBuffer.pipelineBarrier(vk::PipelineStageFlagBits::eTransfer, vk::PipelineStageFlagBits::eTransfer, {}, barrier, nullptr, nullptr);
 	}
