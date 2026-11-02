@@ -40,6 +40,33 @@ u32 sh4_sched_remaining(int id);
 int render_end_schid;
 int vblank_schid;
 
+/* What spg_beam() last found, for the reads of SPG_STATUS a game makes
+ * while the beam is still on the same line - hundreds a line, as it waits
+ * for one: the line, the pending event's end it was aimed by, and
+ * Line_Num's generation; the cycle the event's line starts at, the line's
+ * own, and the cycles the event still has while the beam is before the
+ * next line (more than beam_stay) or still at the line's start (beam_span
+ * or more). Anything else that moves the answer - a register written, a
+ * gun, the run's window - aims the event again, and its end is another. */
+extern std::vector<sched_list> sch_list;
+static u32 beam_line = ~0u;
+static int beam_end;
+static u32 beam_gen, line_gen = 1;
+static u64 beam_target_at, beam_line_at;
+static u32 beam_span, beam_stay;
+
+void spg_beam_forget()
+{
+	beam_line = ~0u;
+}
+
+/* The pending event aimed again: whatever spg_beam() kept is from before. */
+static void spg_aim(int cycles)
+{
+	line_gen++;
+	sh4_sched_request(vblank_schid, cycles);
+}
+
 static u32 lightgun_line = 0xffff;
 static u32 lightgun_hpos;
 static bool maple_int_pending;
@@ -142,7 +169,7 @@ static void frame_window_close()
 	}
 	const u64 beam = spg_beam();
 	frame_window = false;
-	sh4_sched_request(vblank_schid, (int)(line_start(spg_next_line()) - beam));
+	spg_aim((int)(line_start(spg_next_line()) - beam));
 }
 
 static void frame_end()
@@ -222,6 +249,8 @@ void CalculateSync(bool reschedule)
 
 	Line_Num = (u64)SH4_MAIN_CLOCK * (u64)(SPG_LOAD.hcount + 1);
 	Line_Den = pixel_clock;
+	// (spg_beam()'s lines are another's now)
+	line_gen++;
 
 	float scale_x = 1.f, scale_y = 1.f;
 
@@ -253,7 +282,7 @@ void CalculateSync(bool reschedule)
 	if (reschedule)
 	{
 		pvr_cur_scanline = 0;
-		sh4_sched_request(vblank_schid, (int)line_start(spg_next_line()));
+		spg_aim((int)line_start(spg_next_line()));
 	}
 }
 
@@ -435,14 +464,27 @@ static void spg_run_lines(u32 lines)
  * event would have been aimed at one of them. */
 static u64 spg_beam()
 {
+	const u32 remaining = sh4_sched_remaining(vblank_schid);
+	// on the line it was on, by the same event: no division, no line looked for
+	if (beam_line == pvr_cur_scanline && beam_gen == line_gen && remaining != (u32)-1
+			&& beam_end == sch_list[vblank_schid].end)
+	{
+		if (remaining >= beam_span)
+			return beam_line_at;
+		if (remaining > beam_stay)
+			return beam_target_at - remaining;
+	}
+
 	const u32 target = spg_next_line();
 	const u64 target_at = line_start(target);
 	const u64 line_at = line_start(pvr_cur_scanline);
-	const u32 remaining = sh4_sched_remaining(vblank_schid);
 
 	// nothing pending, or the event is due: the beam is where it was put last
 	if (remaining == (u32)-1 || (u64)remaining >= target_at - line_at)
+	{
+		beam_line = ~0u;
 		return line_at;
+	}
 
 	const u64 beam = target_at - remaining;
 	u32 line = (u32)(beam * Line_Den / Line_Num);
@@ -454,6 +496,14 @@ static u64 spg_beam()
 		line = target - 1;
 	if (line > pvr_cur_scanline)
 		spg_run_lines(line - pvr_cur_scanline);
+	// (the line it is on now, and the next line's start, for the reads to come)
+	beam_line = pvr_cur_scanline;
+	beam_end = sch_list[vblank_schid].end;
+	beam_gen = line_gen;
+	beam_target_at = target_at;
+	beam_line_at = line_start(pvr_cur_scanline);
+	beam_span = (u32)(target_at - beam_line_at);
+	beam_stay = pvr_cur_scanline + 1 < target ? (u32)(target_at - line_start(pvr_cur_scanline + 1)) : 0;
 	return beam;
 }
 
@@ -478,7 +528,7 @@ void spg_write_timing(u32 addr, u32 data)
 	const u64 beam = spg_beam();
 
 	PvrReg(addr, u32) = data;
-	sh4_sched_request(vblank_schid, (int)(line_start(spg_next_line()) - beam));
+	spg_aim((int)(line_start(spg_next_line()) - beam));
 }
 
 //called from sh4 context , should update pvr/ta state and everything else
@@ -527,7 +577,7 @@ void read_lightgun_position(int x, int y)
 		lightgun_flip ^= 1;
 	}
    if (pending)
-      sh4_sched_request(vblank_schid, (int)(line_start(spg_next_line()) - beam));
+      spg_aim((int)(line_start(spg_next_line()) - beam));
 }
 
 // The game cancelled the gun's occupation of the bus: its transfer ends in its own time
@@ -567,6 +617,7 @@ void spg_gun_unserialize(void **data, unsigned int *total_size)
 
 	/* A line is at most 479 down from the line the picture starts on, which
 	 * is a 10-bit register; the place goes into ten bits of a register. */
+	spg_beam_forget();
 	lightgun_line     = line > 479 + 1023 ? 0xffff : line;
 	lightgun_hpos     = hpos & 0x3FF;
 	maple_int_pending = (flags & 1) != 0;
@@ -582,6 +633,7 @@ void spg_gun_before_v21(void)
 {
 	extern int maple_sched;
 
+	spg_beam_forget();
 	lightgun_line     = 0xffff;
 	lightgun_hpos     = 0;
 	lightgun_flip     = 0;

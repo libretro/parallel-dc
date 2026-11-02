@@ -12,6 +12,7 @@
 #include "hw/gdrom/gdromv3.h"
 #include "hw/maple/maple_devs.h"
 #include "hw/maple/maple_cfg.h"
+#include "hw/pvr/spg.h"
 #include "hw/pvr/Renderer_if.h"
 #include "hw/pvr/ta_structs.h"
 #include "hw/sh4/sh4_interrupts.h"
@@ -1440,6 +1441,7 @@ bool dc_unserialize(void **data, unsigned int *total_size, size_t actual_data_si
 	LIBRETRO_US(dummy_int) ;	// the tag: what the device registered with, not state
 	LIBRETRO_US(sch_list[vblank_schid].start) ;
 	LIBRETRO_US(sch_list[vblank_schid].end) ;
+	spg_beam_forget();
 
 	if (version < V9)
 	{

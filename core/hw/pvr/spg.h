@@ -12,6 +12,8 @@ void read_lightgun_position(int x, int y);
 void spg_gun_occupy_cancel();
 // Before a read of SPG_STATUS: brings its scanline up to where the beam is
 void spg_sync();
+// The beam's state has been put in place from elsewhere (a save state)
+void spg_beam_forget();
 // A write to SPG_HBLANK_INT, SPG_VBLANK_INT or SPG_VBLANK
 void spg_write_timing(u32 addr, u32 data);
 // Where a run (a retro_run's frame) ends, spg.cpp: a run starts (dc_run())...

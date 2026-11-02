@@ -9,7 +9,9 @@ name: Headless
 # And a strip's indices, the parse's C89 kernel, against the loop it
 # replaced (tools/pvr/ta_index_test.sh); and the parse timed on the heavy
 # disc, the strips its vertex loop found drawable whole making the indices
-# a look at their vertices does (tools/pvr/ta_parse_bench.sh).
+# a look at their vertices does (tools/pvr/ta_parse_bench.sh). And the beam
+# each read of SPG_STATUS sees, kept from the read before on its line,
+# against the beam found afresh (tools/pvr/spg_beam_test.sh).
 
 on:
   push:
@@ -53,3 +55,5 @@ jobs:
         run: NEON=required sh tools/pvr/ta_index_test.sh
       - name: The parse timed on the heavy disc, the strips known good making the indices a look at them does
         run: sh tools/pvr/ta_parse_bench.sh
+      - name: The beam kept from read to read of SPG_STATUS against the beam found afresh, straight and run ahead
+        run: sh tools/pvr/spg_beam_test.sh
