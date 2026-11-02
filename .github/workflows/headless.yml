@@ -44,12 +44,12 @@ jobs:
       - name: Install the compiler and OpenGL headers
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends build-essential libgl1-mesa-dev python3 gcc-aarch64-linux-gnu qemu-user-static
+          sudo apt-get install -y --no-install-recommends build-essential libgl1-mesa-dev python3 gcc-aarch64-linux-gnu libc6-dev-arm64-cross qemu-user-static
       - name: Build the core
         run: make -j"$(nproc)"
       - name: The disc with no display, its states and run-ahead among it
         run: sh tools/threads/headless.sh parallel_dc_libretro.so
       - name: A strip's indices (C89, ASan and UBSan; SIMD, scalar and NEON) against the loop they replaced
-        run: sh tools/pvr/ta_index_test.sh
+        run: NEON=required sh tools/pvr/ta_index_test.sh
       - name: The parse timed on the heavy disc, the strips known good making the indices a look at them does
         run: sh tools/pvr/ta_parse_bench.sh
