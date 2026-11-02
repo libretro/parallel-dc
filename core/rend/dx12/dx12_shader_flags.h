@@ -21,6 +21,23 @@
 #define DX12_PF_TRILINEAR        0x1000u
 #define DX12_PF_PALETTE          0x2000u
 #define DX12_PF_SHADOWED         0x4000u	/* drawn again where it is in a modifier volume */
+/* The blend's factors that do not read the frame, applied by the shader
+ * (dx12_pso.h, DX12PsoKey::Pack()): the source one to the colour, with the
+ * pipeline's source factor one; the destination one as the second colour,
+ * with the pipeline's destination factor that colour. Three bits each: the
+ * TSP's instruction */
+#define DX12_PF_SRC_FOLD_SHIFT   16
+#define DX12_PF_SRC_FOLD         0x00080000u
+#define DX12_PF_DST_FOLD_SHIFT   20
+#define DX12_PF_DST_FOLD         0x00800000u
+/* Those factors, of a channel of the colour as the blender takes it
+ * (clamped to the frame's range), @c, and its alpha, @a: the source's
+ * (zero, one, alpha, one less it), and the destination's (those, the
+ * channel and one less it; of the alpha channel, @c is @a). For the
+ * shader and tools/rend/dx12_blend_fold_test.cpp both. */
+#define DX12_SRC_FOLD_FACTOR(i, a)    ((i) == 0u ? 0.0f : (i) == 1u ? 1.0f : (i) == 4u ? (a) : 1.0f - (a))
+#define DX12_DST_FOLD_FACTOR(i, c, a) ((i) == 0u ? 0.0f : (i) == 1u ? 1.0f : (i) == 2u ? (c) : (i) == 3u ? 1.0f - (c) \
+		: (i) == 4u ? (a) : 1.0f - (a))
 
 /* The quad's: its picture sampled with the linear sampler, not the point one */
 #define DX12_QF_LINEAR           0x0001u

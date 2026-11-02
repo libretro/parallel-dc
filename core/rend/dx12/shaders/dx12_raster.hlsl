@@ -238,7 +238,13 @@ struct Pixel
 #endif
 };
 
-float4 main(in Pixel inpix) : SV_Target
+struct PixelOut
+{
+	float4 color : SV_Target0;
+	float4 factor : SV_Target1;	// the destination's blend factor (DX12_PF_DST_FOLD)
+};
+
+PixelOut main(in Pixel inpix)
 {
 #if defined(DX12_SAMPLE_RATE) && DX12_SAMPLE_RATE == 2
 	// (first, while nothing is discarded: derivatives are defined only then)
@@ -345,7 +351,24 @@ float4 main(in Pixel inpix) : SV_Target
 	// pixels that hide what is behind them. (0 for the colours.)
 	if (color.a < prepassAlpha)
 		discard;
-	return color;
+	// The factors the pipeline leaves to the shader: of the colour clamped
+	// to the frame's range, as the blender would take it
+	PixelOut po;
+	const float4 s = saturate(color);
+	po.color = color;
+	po.factor = 0.0;
+	if ((polyFlags & DX12_PF_SRC_FOLD) != 0)
+	{
+		const uint i = (polyFlags >> DX12_PF_SRC_FOLD_SHIFT) & 7;
+		po.color = s * DX12_SRC_FOLD_FACTOR(i, s.a);
+	}
+	if ((polyFlags & DX12_PF_DST_FOLD) != 0)
+	{
+		const uint i = (polyFlags >> DX12_PF_DST_FOLD_SHIFT) & 7;
+		po.factor = float4(DX12_DST_FOLD_FACTOR(i, s.r, s.a), DX12_DST_FOLD_FACTOR(i, s.g, s.a),
+				DX12_DST_FOLD_FACTOR(i, s.b, s.a), DX12_DST_FOLD_FACTOR(i, s.a, s.a));
+	}
+	return po;
 }
 #endif
 

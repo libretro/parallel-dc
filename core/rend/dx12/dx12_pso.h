@@ -119,6 +119,17 @@ enum { DX12_PSO_POLY = 0, DX12_PSO_MODVOL = 1, DX12_PSO_QUAD = 2, DX12_PSO_OIT =
  * volume: with SSAA.) */
 enum { DX12_RATE_NONE = 0, DX12_RATE_SAMPLE = 1, DX12_RATE_PIXEL = 2, DX12_RATE_PIXEL_SUMS = 3 };
 
+/* Of a polygon's blend, the TSP's factors that read only the source,
+ * which its pixel shader applies (DX12_PF_SRC_FOLD, DX12_PF_DST_FOLD): the
+ * source's zero, one, alpha and one less it, and the destination's those,
+ * the source colour and one less it. Its pipeline then has one for the
+ * first and the shader's second colour for the second (dual), so that
+ * the 64 pairs of instructions are 15 pipelines: those that read the frame
+ * - the other colour or the destination alpha as the source factor, the
+ * destination alpha as the destination's - are the pipeline's still. */
+static inline bool dx12_src_folds(u32 instr) { return instr == 0 || instr == 1 || instr == 4 || instr == 5; }
+static inline bool dx12_dst_folds(u32 instr) { return instr <= 5; }
+
 struct DX12PsoKey
 {
 	u32 kind;			// DX12_PSO_
@@ -136,17 +147,32 @@ struct DX12PsoKey
 	u32 pass;			// DX12_PASS_, of a DX12_PSO_OIT pipeline
 	u32 samples;		// SSAA: log2 of the samples a pixel of what it draws into (0: one)
 	u32 rate;			// SSAA: DX12_RATE_
+	bool dual;			// a polygon's destination factor is its shader's second colour (made by Pack())
 
+	/* (a polygon's blend as its pipeline has it: the factors its shader
+	 * applies are one and the second colour, whatever the instructions) */
 	u64 Pack() const
 	{
-		return (u64)(kind & 7) | ((u64)gouraud << 3) | ((u64)blend << 4) | ((u64)(src & 7) << 5) | ((u64)(dst & 7) << 8)
+		u32 s = src, d = dst;
+		bool two = dual;
+		if (kind == DX12_PSO_POLY && blend)
+		{
+			if (dx12_src_folds(s))
+				s = 1;
+			if (dx12_dst_folds(d))
+			{
+				d = 0;
+				two = true;
+			}
+		}
+		return (u64)(kind & 7) | ((u64)gouraud << 3) | ((u64)blend << 4) | ((u64)(s & 7) << 5) | ((u64)(d & 7) << 8)
 				| ((u64)writeColor << 11) | ((u64)depthTest << 12) | ((u64)depthWrite << 13) | ((u64)(depthFunc & 7) << 14)
 				| ((u64)((u32)stencil & 15) << 17) | ((u64)(cull & 3) << 21) | ((u64)(special & 3) << 23)
 				| ((u64)depthBound << 25) | ((u64)(pass & 3) << 26)
 				// (never 0: an empty slot's)
 				| (1ull << 28)
 				// (after it: a key without SSAA is the one it was before SSAA)
-				| ((u64)(samples & 3) << 29) | ((u64)(rate & 3) << 31);
+				| ((u64)(samples & 3) << 29) | ((u64)(rate & 3) << 31) | ((u64)two << 33);
 	}
 	static DX12PsoKey Unpack(u64 v)
 	{
@@ -167,17 +193,58 @@ struct DX12PsoKey
 		k.pass = (v >> 26) & 3;
 		k.samples = (v >> 29) & 3;
 		k.rate = (v >> 31) & 3;
+		k.dual = (v >> 33) & 1;
 		return k;
 	}
 	/* Whether a key read from a file is one this core makes */
 	static bool Valid(u64 v)
 	{
 		const DX12PsoKey k = Unpack(v);
-		return (v >> 33) == 0 && ((v >> 28) & 1) == 1 && k.kind <= DX12_PSO_MOTION && (u32)k.stencil < (u32)DX12Stencil::Count
+		return (v >> 34) == 0 && ((v >> 28) & 1) == 1 && (!k.dual || (k.kind == DX12_PSO_POLY && k.blend)) && k.kind <= DX12_PSO_MOTION && (u32)k.stencil < (u32)DX12Stencil::Count
 				&& k.cull <= 2 && k.special <= DX12_BLEND_FACTOR && k.pass <= DX12_PASS_OIT
 				&& (k.rate <= DX12_RATE_PIXEL || (k.rate == DX12_RATE_PIXEL_SUMS && k.kind == DX12_PSO_OIT_FINAL));
 	}
 };
+
+/* The TSP's instructions as Direct3D's factors. Those for the alpha
+ * cannot be colours: other colour's alpha is the other's alpha. */
+static const D3D12_BLEND dx12_srcBlend[] =
+{
+	D3D12_BLEND_ZERO, D3D12_BLEND_ONE, D3D12_BLEND_DEST_COLOR, D3D12_BLEND_INV_DEST_COLOR,
+	D3D12_BLEND_SRC_ALPHA, D3D12_BLEND_INV_SRC_ALPHA, D3D12_BLEND_DEST_ALPHA, D3D12_BLEND_INV_DEST_ALPHA,
+};
+static const D3D12_BLEND dx12_dstBlend[] =
+{
+	D3D12_BLEND_ZERO, D3D12_BLEND_ONE, D3D12_BLEND_SRC_COLOR, D3D12_BLEND_INV_SRC_COLOR,
+	D3D12_BLEND_SRC_ALPHA, D3D12_BLEND_INV_SRC_ALPHA, D3D12_BLEND_DEST_ALPHA, D3D12_BLEND_INV_DEST_ALPHA,
+};
+static const D3D12_BLEND dx12_srcBlendAlpha[] =
+{
+	D3D12_BLEND_ZERO, D3D12_BLEND_ONE, D3D12_BLEND_DEST_ALPHA, D3D12_BLEND_INV_DEST_ALPHA,
+	D3D12_BLEND_SRC_ALPHA, D3D12_BLEND_INV_SRC_ALPHA, D3D12_BLEND_DEST_ALPHA, D3D12_BLEND_INV_DEST_ALPHA,
+};
+static const D3D12_BLEND dx12_dstBlendAlpha[] =
+{
+	D3D12_BLEND_ZERO, D3D12_BLEND_ONE, D3D12_BLEND_SRC_ALPHA, D3D12_BLEND_INV_SRC_ALPHA,
+	D3D12_BLEND_SRC_ALPHA, D3D12_BLEND_INV_SRC_ALPHA, D3D12_BLEND_DEST_ALPHA, D3D12_BLEND_INV_DEST_ALPHA,
+};
+
+/* The blend of a pipeline made by its instructions (not DX12_BLEND_ALPHA
+ * or DX12_BLEND_FACTOR): a polygon's destination factor from its shader's
+ * second colour where the key is dual (see dx12_src_folds()) */
+static inline void dx12_blend_desc(const DX12PsoKey& key, D3D12_RENDER_TARGET_BLEND_DESC& rt)
+{
+	rt.BlendEnable = key.blend;
+	rt.SrcBlend = key.blend ? dx12_srcBlend[key.src & 7] : D3D12_BLEND_ONE;
+	rt.DestBlend = key.blend ? dx12_dstBlend[key.dst & 7] : D3D12_BLEND_ZERO;
+	rt.SrcBlendAlpha = key.blend ? dx12_srcBlendAlpha[key.src & 7] : D3D12_BLEND_ONE;
+	rt.DestBlendAlpha = key.blend ? dx12_dstBlendAlpha[key.dst & 7] : D3D12_BLEND_ZERO;
+	if (key.dual)
+	{
+		rt.DestBlend = D3D12_BLEND_SRC1_COLOR;
+		rt.DestBlendAlpha = D3D12_BLEND_SRC1_ALPHA;
+	}
+}
 
 class DX12Pipelines
 {

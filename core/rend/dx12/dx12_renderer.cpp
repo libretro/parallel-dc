@@ -1939,6 +1939,11 @@ void DX12Renderer::DrawPoly(u32 listType, bool sortTriangles, const PolyParam& p
 		key.blend = true;
 		key.src = poly.tsp.SrcInstr;
 		key.dst = poly.tsp.DstInstr;
+		// (the factors the shader applies, and the pipeline has as one and its second colour)
+		if (dx12_src_folds(key.src))
+			constants.flags |= DX12_PF_SRC_FOLD | (key.src << DX12_PF_SRC_FOLD_SHIFT);
+		if (dx12_dst_folds(key.dst))
+			constants.flags |= DX12_PF_DST_FOLD | (key.dst << DX12_PF_DST_FOLD_SHIFT);
 	}
 	key.cull = poly.isp.CullMode == 3 ? 2 : poly.isp.CullMode == 2 ? 1 : 0;
 	// SSAA: shaded at each sample, or once a pixel

@@ -68,6 +68,7 @@ on:
       - 'core/hw/pvr/helper_classes.h'
       - 'tools/rend/parse_arena_test.*'
       - 'tools/rend/d3d_parse_arena.sh'
+      - 'tools/rend/dx12_blend_fold_test.*'
       - 'tools/rend/clip_check.py'
       - 'tools/threads/live_prog.c'
       - 'Makefile*'
@@ -105,6 +106,7 @@ on:
       - 'core/hw/pvr/helper_classes.h'
       - 'tools/rend/parse_arena_test.*'
       - 'tools/rend/d3d_parse_arena.sh'
+      - 'tools/rend/dx12_blend_fold_test.*'
       - 'tools/rend/clip_check.py'
       - 'tools/threads/live_prog.c'
       - 'Makefile*'
@@ -143,6 +145,8 @@ jobs:
         run: sh tools/gl/gl_ahead.sh
       - name: The translucent sorter's sort (radix, stable, as a sort by <)
         run: sh tools/rend/sort_pairs_test.sh
+      - name: Direct3D 12's polygon blends, the factors folded into the shader, against the PowerVR's (wine, no device)
+        run: sh tools/rend/dx12_blend_fold_test.sh
       - name: The frame parsed where the card reads it, not copied (the arena's slices; the pictures those of a copy)
         run: |
           sh tools/rend/parse_arena_test.sh

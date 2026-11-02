@@ -28,16 +28,24 @@ extern std::string get_writable_data_path(const std::string& filename);
 
 static const char *PipelineFileName = "d3d12_pipelines.bin";
 
-/* The file: this header, the keys, then the library's data */
+/* The file: this header, the keys, then the library's data. The library
+ * is only of the shaders it was made with: a pipeline's description names
+ * its bytecode, and one kept for other bytecode is never loaded again, nor
+ * can one of the same name be stored. */
 struct DX12PsoFileHeader
 {
 	char magic[8];
 	u32 version;	// of the keys' layout (DX12PsoKey)
 	u32 keyCount;
 	u64 libraryBytes;
+	// (from version 3)
+	u32 shaders;	// dx12_shaders_hash() of the library's pipelines
+	u32 reserved;
 };
 static const char PsoFileMagic[8] = { 'F', 'C', 'D', '1', '2', 'P', 'S', 'O' };
-static const u32 PsoFileVersion = 2;
+/* 3: a polygon's blend folded into its key (DX12PsoKey::Pack()); a file
+ * of 2 gives its keys, folded, and no library */
+static const u32 PsoFileVersion = 3;
 static const u32 MaxKeys = 8192;
 
 /* What a build did (DX12Pipelines::BuildDesc()): counted by the thread
@@ -61,29 +69,6 @@ static const D3D12_COMPARISON_FUNC depthFuncs[] =
 	D3D12_COMPARISON_FUNC_NOT_EQUAL,		//5	Not Equal
 	D3D12_COMPARISON_FUNC_GREATER_EQUAL,	//6	Greater Or Equal
 	D3D12_COMPARISON_FUNC_ALWAYS,			//7	Always
-};
-
-/* The TSP's instructions as Direct3D's factors. Those for the alpha
- * cannot be colours: other colour's alpha is the other's alpha. */
-static const D3D12_BLEND srcBlend[] =
-{
-	D3D12_BLEND_ZERO, D3D12_BLEND_ONE, D3D12_BLEND_DEST_COLOR, D3D12_BLEND_INV_DEST_COLOR,
-	D3D12_BLEND_SRC_ALPHA, D3D12_BLEND_INV_SRC_ALPHA, D3D12_BLEND_DEST_ALPHA, D3D12_BLEND_INV_DEST_ALPHA,
-};
-static const D3D12_BLEND dstBlend[] =
-{
-	D3D12_BLEND_ZERO, D3D12_BLEND_ONE, D3D12_BLEND_SRC_COLOR, D3D12_BLEND_INV_SRC_COLOR,
-	D3D12_BLEND_SRC_ALPHA, D3D12_BLEND_INV_SRC_ALPHA, D3D12_BLEND_DEST_ALPHA, D3D12_BLEND_INV_DEST_ALPHA,
-};
-static const D3D12_BLEND srcBlendAlpha[] =
-{
-	D3D12_BLEND_ZERO, D3D12_BLEND_ONE, D3D12_BLEND_DEST_ALPHA, D3D12_BLEND_INV_DEST_ALPHA,
-	D3D12_BLEND_SRC_ALPHA, D3D12_BLEND_INV_SRC_ALPHA, D3D12_BLEND_DEST_ALPHA, D3D12_BLEND_INV_DEST_ALPHA,
-};
-static const D3D12_BLEND dstBlendAlpha[] =
-{
-	D3D12_BLEND_ZERO, D3D12_BLEND_ONE, D3D12_BLEND_SRC_ALPHA, D3D12_BLEND_INV_SRC_ALPHA,
-	D3D12_BLEND_SRC_ALPHA, D3D12_BLEND_INV_SRC_ALPHA, D3D12_BLEND_DEST_ALPHA, D3D12_BLEND_INV_DEST_ALPHA,
 };
 
 static const D3D12_INPUT_ELEMENT_DESC MainLayout[] =
@@ -284,13 +269,7 @@ bool DX12Pipelines::BuildDesc(u64 packed, bool postZCoverage, bool useLibrary, I
 		rt.DestBlend = rt.DestBlendAlpha = D3D12_BLEND_INV_BLEND_FACTOR;
 	}
 	else
-	{
-		rt.BlendEnable = key.blend;
-		rt.SrcBlend = key.blend ? srcBlend[key.src] : D3D12_BLEND_ONE;
-		rt.DestBlend = key.blend ? dstBlend[key.dst] : D3D12_BLEND_ZERO;
-		rt.SrcBlendAlpha = key.blend ? srcBlendAlpha[key.src] : D3D12_BLEND_ONE;
-		rt.DestBlendAlpha = key.blend ? dstBlendAlpha[key.dst] : D3D12_BLEND_ZERO;
-	}
+		dx12_blend_desc(key, rt);
 	desc.SampleMask = UINT_MAX;
 
 	D3D12_RASTERIZER_DESC& rs = desc.RasterizerState;
@@ -601,8 +580,29 @@ void DX12Pipelines::MakeAtStart()
 	started = false;
 	const size_t fromFile = keys.size();
 	DX12PsoKey k{};
-	k.depthBound = true;
+	/* What earlier runs made, first: what this game draws with, before what
+	 * games mostly do (SSAA's, when it is taken up: MakeForSamples()). The
+	 * thread makes them in this order, and a frame that wants one not made
+	 * yet makes it itself. */
+	fileKeys = fromFile;
+	std::vector<u64> kept(keys.begin(), keys.begin() + fromFile);
+	for (u64 key : kept)
+		if (DX12PsoKey::Valid(key) && DX12PsoKey::Unpack(key).samples == 0)
+			Want(key);
+	// the quads
+	k = DX12PsoKey{};
+	k.kind = DX12_PSO_QUAD;
+	k.writeColor = true;
+	for (u32 d = 0; d < 2; d++)
+		for (u32 s = 0; s < 3; s++)
+		{
+			k.depthBound = d != 0;
+			k.special = s;
+			Want(k.Pack());
+		}
 	// the modifier volumes: the volumes themselves, the area summed, what is left darkened
+	k = DX12PsoKey{};
+	k.depthBound = true;
 	k.kind = DX12_PSO_MODVOL;
 	for (u32 cull = 0; cull < 3; cull++)
 	{
@@ -651,83 +651,87 @@ void DX12Pipelines::MakeAtStart()
 			k.cull = cull;
 			Want(k.Pack());
 		}
-	/* The polygons' pipelines games mostly draw with (DX12Renderer::DrawPoly()):
-	 * opaque ones with every depth mode, punch-through and translucent ones
-	 * with the blends games use, the sorted translucent ones, and the
-	 * shadow passes. A game's others are made as it first draws with them,
-	 * and are in the key log for its next run. */
-	static const u8 blends[][2] = { { 4, 5 }, { 1, 1 }, { 1, 0 }, { 4, 1 }, { 0, 1 }, { 1, 5 } };
-	for (u32 g = 0; g < 2; g++)
-		for (u32 cull = 0; cull < 3; cull++)
-		{
-			k = DX12PsoKey{};
-			k.kind = DX12_PSO_POLY;
-			k.gouraud = g != 0;
-			k.cull = cull;
-			k.depthBound = true;
-			k.depthTest = true;
-			k.writeColor = true;
-			// opaque: no blend, the shadow stencil
-			k.stencil = DX12Stencil::Shadow;
-			for (u32 func = 1; func < 8; func++)
-				for (u32 w = 0; w < 2; w++)
+	/* The polygons' pipelines games mostly draw with (DX12Renderer::DrawPoly()),
+	 * the commonest first: opaque ones with every depth mode, punch-through
+	 * and translucent ones with the blends that read nothing of the frame
+	 * (one pipeline, dx12_src_folds()), translucent ones with every depth
+	 * mode for those, and the shadow passes. Then the other 14 blends a
+	 * pipeline can have, one pair of instructions standing for each. A
+	 * game's others (a blended opaque polygon, an unusual depth mode with a
+	 * blend that reads the frame) are made as it first draws with them, and
+	 * are in the key log for its next run. */
+	static const u8 srcs[] = { 1, 2, 3, 6, 7 };
+	static const u8 dsts[] = { 0, 6, 7 };
+	for (u32 rare = 0; rare < 2; rare++)
+		for (u32 g = 0; g < 2; g++)
+			for (u32 cull = 0; cull < 3; cull++)
+			{
+				k = DX12PsoKey{};
+				k.kind = DX12_PSO_POLY;
+				k.gouraud = g != 0;
+				k.cull = cull;
+				k.depthBound = true;
+				k.depthTest = true;
+				k.writeColor = true;
+				if (!rare)
 				{
-					k.depthFunc = func;
-					k.depthWrite = w != 0;
+					// opaque: no blend, the shadow stencil
+					k.stencil = DX12Stencil::Shadow;
+					for (u32 func = 1; func < 8; func++)
+						for (u32 w = 0; w < 2; w++)
+						{
+							k.depthFunc = func;
+							k.depthWrite = w != 0;
+							Want(k.Pack());
+						}
+					// the shadow passes: where the polygon is (equal), nothing written but the colour
+					k.depthWrite = false;
+					k.depthFunc = 2;
+					k.stencil = DX12Stencil::ShadowLaterWins;
+					Want(k.Pack());
+					k.stencil = DX12Stencil::ShadowEarlierWins;
 					Want(k.Pack());
 				}
-			// punch-through: blended, depth written, greater or equal
-			k.blend = true;
-			k.depthFunc = 6;
-			k.depthWrite = true;
-			for (const u8 *b : blends)
-			{
-				k.src = b[0];
-				k.dst = b[1];
-				Want(k.Pack());
+				k.blend = true;
+				for (const u8 s : srcs)
+					for (const u8 d : dsts)
+					{
+						// (the blends that read nothing of the frame first, the others after)
+						if ((s == 1 && d == 0) == (rare != 0))
+							continue;
+						k.src = s;
+						k.dst = d;
+						// punch-through: blended, depth written, greater or equal
+						k.stencil = DX12Stencil::Shadow;
+						k.depthFunc = 6;
+						k.depthWrite = true;
+						Want(k.Pack());
+						// translucent, sorted: no depth write; and unsorted with the depth modes seen most
+						k.stencil = DX12Stencil::None;
+						k.depthWrite = false;
+						Want(k.Pack());
+						k.depthFunc = 7;
+						Want(k.Pack());
+						k.depthWrite = true;
+						Want(k.Pack());
+						k.depthFunc = 6;
+						Want(k.Pack());
+					}
+				// translucent, unsorted, with every depth mode: the blends that read nothing of the frame
+				if (!rare)
+				{
+					k.src = 1;
+					k.dst = 0;
+					k.stencil = DX12Stencil::None;
+					for (u32 func = 1; func < 8; func++)
+						for (u32 w = 0; w < 2; w++)
+						{
+							k.depthFunc = func;
+							k.depthWrite = w != 0;
+							Want(k.Pack());
+						}
+				}
 			}
-			// translucent, sorted: no depth write; and unsorted with the depth modes seen most
-			k.stencil = DX12Stencil::None;
-			for (const u8 *b : blends)
-			{
-				k.src = b[0];
-				k.dst = b[1];
-				k.depthFunc = 6;
-				k.depthWrite = false;
-				Want(k.Pack());
-				k.depthFunc = 7;
-				Want(k.Pack());
-				k.depthWrite = true;
-				Want(k.Pack());
-				k.depthFunc = 6;
-				Want(k.Pack());
-			}
-			// the shadow passes: where the polygon is (equal), nothing written but the colour
-			k.blend = false;
-			k.depthWrite = false;
-			k.depthFunc = 2;
-			k.stencil = DX12Stencil::ShadowLaterWins;
-			Want(k.Pack());
-			k.stencil = DX12Stencil::ShadowEarlierWins;
-			Want(k.Pack());
-		}
-	// the quads
-	k = DX12PsoKey{};
-	k.kind = DX12_PSO_QUAD;
-	k.writeColor = true;
-	for (u32 d = 0; d < 2; d++)
-		for (u32 s = 0; s < 3; s++)
-		{
-			k.depthBound = d != 0;
-			k.special = s;
-			Want(k.Pack());
-		}
-	// what earlier runs made (SSAA's, when it is taken up: MakeForSamples())
-	fileKeys = fromFile;
-	std::vector<u64> kept(keys.begin(), keys.begin() + fromFile);
-	for (u64 key : kept)
-		if (DX12PsoKey::Valid(key) && DX12PsoKey::Unpack(key).samples == 0)
-			Want(key);
 	const u32 queued = (u32)batch.size();
 	SubmitBatch();
 	started = true;
@@ -821,20 +825,32 @@ void DX12Pipelines::LoadFile()
 	const std::string path = get_writable_data_path(PipelineFileName);
 	void *file = nullptr;
 	int64_t size = 0;
-	if (filestream_read_file(path.c_str(), &file, &size) && file != nullptr && (size_t)size >= sizeof(DX12PsoFileHeader))
+	const size_t oldHeader = offsetof(DX12PsoFileHeader, shaders);
+	if (filestream_read_file(path.c_str(), &file, &size) && file != nullptr && (size_t)size >= oldHeader)
 	{
-		DX12PsoFileHeader header;
-		memcpy(&header, file, sizeof(header));
+		DX12PsoFileHeader header{};
+		memcpy(&header, file, oldHeader);
+		const bool old = header.version == 2;
+		const size_t headerBytes = old ? oldHeader : sizeof(header);
+		if (!old && (size_t)size >= sizeof(header))
+			memcpy(&header, file, sizeof(header));
 		const u64 keyBytes = (u64)header.keyCount * sizeof(u64);
-		if (!memcmp(header.magic, PsoFileMagic, sizeof(PsoFileMagic)) && header.version == PsoFileVersion
-				&& header.keyCount <= MaxKeys && sizeof(header) + keyBytes <= (u64)size
-				&& header.libraryBytes <= (u64)size - sizeof(header) - keyBytes)
+		if (!memcmp(header.magic, PsoFileMagic, sizeof(PsoFileMagic))
+				&& (old || (header.version == PsoFileVersion && (size_t)size >= sizeof(header)))
+				&& header.keyCount <= MaxKeys && headerBytes + keyBytes <= (u64)size
+				&& header.libraryBytes <= (u64)size - headerBytes - keyBytes)
 		{
-			const u64 *k = (const u64 *)((const u8 *)file + sizeof(header));
+			const u64 *k = (const u64 *)((const u8 *)file + headerBytes);
+			// (a key of an earlier layout as this one has it: its blend folded)
 			for (u32 i = 0; i < header.keyCount; i++)
-				keys.push_back(k[i]);
-			const u8 *lib = (const u8 *)file + sizeof(header) + keyBytes;
-			libraryData.assign(lib, lib + header.libraryBytes);
+				keys.push_back(DX12PsoKey::Valid(k[i]) ? DX12PsoKey::Unpack(k[i]).Pack() : k[i]);
+			if (!old && header.shaders == dx12_shaders_hash())
+			{
+				const u8 *lib = (const u8 *)file + headerBytes + keyBytes;
+				libraryData.assign(lib, lib + header.libraryBytes);
+			}
+			else if (header.libraryBytes != 0)
+				INFO_LOG(RENDERER, "DX12: the pipeline library kept is of other shaders: started again");
 		}
 	}
 	free(file);
@@ -870,6 +886,8 @@ void DX12Pipelines::SaveFile()
 	memcpy(header.magic, PsoFileMagic, sizeof(PsoFileMagic));
 	header.version = PsoFileVersion;
 	header.keyCount = (u32)keys.size();
+	header.shaders = dx12_shaders_hash();
+	header.reserved = 0;
 	std::vector<u8> file(sizeof(header) + keys.size() * sizeof(u64) + libBytes);
 	u8 *lib = &file[sizeof(header) + keys.size() * sizeof(u64)];
 	if (libBytes != 0 && FAILED(library->Serialize(lib, libBytes)))

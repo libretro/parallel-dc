@@ -23,6 +23,7 @@
 #include "rend/d3d_system.h"
 #include <windows.h>
 #include <d3d12.h>
+#include "types.h"
 
 /* By their number in dx12_dxbc.inc */
 enum class DX12Shader
@@ -82,3 +83,6 @@ enum class DX12HdrShader
 D3D12_SHADER_BYTECODE dx12_hdr_shader(DX12HdrShader shader);
 /* rend/texdecode.h's, by TEXD_KERNEL_D3D (1 to 4) */
 D3D12_SHADER_BYTECODE dx12_texdecode_kernel(int kernel);
+/* A sum of all of the bytecode above: a pipeline kept on disk was made with
+ * it only if it is the same (dx12_pso.cpp) */
+u32 dx12_shaders_hash();

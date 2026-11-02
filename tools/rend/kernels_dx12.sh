@@ -72,6 +72,7 @@
 #                                 of the others
 #
 #   sh tools/rend/kernels_dx12.sh update   all made again from the sources
+#   sh tools/rend/kernels_dx12.sh update-raster  only the raster shaders' DXBC (dx12_dxbc.inc) made again
 #   sh tools/rend/kernels_dx12.sh update-hdr  only the HDR output's DXBC made again
 #   sh tools/rend/kernels_dx12.sh update-compute-hdr  ...and its DXIL
 #   sh tools/rend/kernels_dx12.sh update-compute-upscaler  only the upscaler's DXIL made again
@@ -635,6 +636,12 @@ update-compute-hdr)
    make_compute_hdr_inc > "$WORK/new.inc"
    cp "$WORK/new.inc" $COMPUTE_HDR_INC
    echo "made $COMPUTE_HDR_INC"
+   ;;
+update-raster)
+   [ -n "$(compiler_sum)" ] || { echo "$0: D3DCOMPILER=/path/to/d3dcompiler_47.dll is needed to make them" >&2; exit 1; }
+   make_inc > "$WORK/new.inc"
+   cp "$WORK/new.inc" $INC
+   echo "made $INC"
    ;;
 update-hdr)
    [ -n "$(compiler_sum)" ] || { echo "$0: D3DCOMPILER=/path/to/d3dcompiler_47.dll is needed to make them" >&2; exit 1; }
