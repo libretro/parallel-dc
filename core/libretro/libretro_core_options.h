@@ -266,7 +266,7 @@ struct retro_core_option_v2_definition option_defs_us[] = {
       CORE_OPTION_NAME "_widescreen_hack",
       "Widescreen Hack",
       NULL,
-      "",
+      "Force 16:9 when the game does not support widescreen.",
       NULL,
       "hacks",
       {
@@ -366,11 +366,11 @@ struct retro_core_option_v2_definition option_defs_us[] = {
       "enabled",
    },
 #endif
-   {/* TODO: needs explanation */
+   {
       CORE_OPTION_NAME "_custom_textures",
       "Load Custom Textures",
       NULL,
-      "",
+      "Use custom textures if available.",
       NULL,
       "hacks",
       {
@@ -380,11 +380,11 @@ struct retro_core_option_v2_definition option_defs_us[] = {
       },
       "disabled",
    },
-   {/* TODO: probably needs explanation */
+   {
       CORE_OPTION_NAME "_dump_textures",
       "Dump Textures",
       NULL,
-      "",
+      "Save textures for customization.",
       NULL,
       "hacks",
       {
@@ -441,24 +441,10 @@ struct retro_core_option_v2_definition option_defs_us[] = {
       "disabled",
    },
    {
-      CORE_OPTION_NAME "_screen_rotation",
-      "Screen Orientation",
-      NULL,
-      "",
-      NULL,
-      "video",
-      {
-         { "horizontal", "Horizontal" },
-         { "vertical",   "Vertical" },
-         { NULL, NULL },
-      },
-      "horizontal",
-   },
-   {
       CORE_OPTION_NAME "_cable_type",
       "Cable Type",
       NULL,
-      "The output signal type. 'TV (Composite)' is the most widely supported.",
+      "'TV (Composite)' is the most widely supported signal type.",
       NULL,
       "video",
       {
@@ -477,7 +463,7 @@ struct retro_core_option_v2_definition option_defs_us[] = {
       CORE_OPTION_NAME "_broadcast",
       "Broadcast Standard",
       NULL,
-      "",
+      "Force video standard.",
       NULL,
       "video",
       {
@@ -489,6 +475,20 @@ struct retro_core_option_v2_definition option_defs_us[] = {
          { NULL, NULL },
       },
       "Default",
+   },
+   {
+      CORE_OPTION_NAME "_screen_rotation",
+      "Screen Orientation",
+      NULL,
+      "Force screen rotation. Vertical disables widescreen mode. Restart required.",
+      NULL,
+      "video",
+      {
+         { "horizontal", "Horizontal" },
+         { "vertical",   "Vertical" },
+         { NULL, NULL },
+      },
+      "horizontal",
    },
    {
       CORE_OPTION_NAME "_alpha_sorting",
@@ -590,7 +590,7 @@ struct retro_core_option_v2_definition option_defs_us[] = {
       CORE_OPTION_NAME "_color_format",
       "Color Format",
       NULL,
-      "The output's colour depth. '24-bit (Standard)' is the picture as it always was, 8 bits a channel. '30-bit Color (HDR)' hands the frontend 10-bit PQ Rec.2020 (HDR10) for an HDR display, and '64-bit Color (HDR, scRGB)' 16-bit floating point linear Rec.709: the picture is placed at the frontend's paper white and mapped onto the display through the Display Transform below. The Dreamcast's own picture is standard range, so what goes above paper white is what HDR Expansion lifts there. scRGB falls back to 30-bit when the frontend does not take it, and both fall back to 24-bit when the frontend cannot present HDR. Vulkan, Direct3D 11 (feature level 11.0) and Direct3D 12 only. Restart required.",
+      "The output's color depth. '24-bit (Standard)' is the picture as it always was, 8 bits a channel. '30-bit Color (HDR)' hands the frontend 10-bit PQ Rec.2020 (HDR10) for an HDR display, and '64-bit Color (HDR, scRGB)' 16-bit floating point linear Rec.709: the picture is placed at the frontend's paper white and mapped onto the display through the Display Transform below. The Dreamcast's own picture is standard range, so what goes above paper white is what HDR Expansion lifts there. scRGB falls back to 30-bit when the frontend does not take it, and both fall back to 24-bit when the frontend cannot present HDR. Vulkan, Direct3D 11 (feature level 11.0) and Direct3D 12 only. Restart required.",
       NULL,
       "video",
       {
@@ -605,7 +605,7 @@ struct retro_core_option_v2_definition option_defs_us[] = {
       CORE_OPTION_NAME "_hdr_display_transform",
       "Display Transform (Tone Curve)",
       NULL,
-      "How the picture is mapped onto the HDR display. 'Reinhard (Soft Knee)' is the reference: everything up to paper white is the 24-bit picture exactly, and only what HDR Expansion lifts above it eases toward the display's peak. 'Exponential Knee' is the same knee with a faster shoulder. The filmic curves reshape the whole range: ACES, Hejl and Unreal lift mid-tones for a brighter filmic look, GT and Hable stay close to the reference, Lottes is darker and contrastier. Each keeps paper white at paper white. 'ACES 2.0 Tone Scale' is that curve alone, per channel; 'ACES 2.0 (Full Output Transform)' is the whole transform - appearance model, chroma and gamut compression - which desaturates bright colours toward white instead of letting one channel clip. AgX and Khronos PBR Neutral likewise work on the whole colour. Only with Color Format set to 30-bit or 64-bit, on the Vulkan, Direct3D 11 and Direct3D 12 renderers.",
+      "How the picture is mapped onto the HDR display. 'Reinhard (Soft Knee)' is the reference: everything up to paper white is the 24-bit picture exactly, and only what HDR Expansion lifts above it eases toward the display's peak. 'Exponential Knee' is the same knee with a faster shoulder. The filmic curves reshape the whole range: ACES, Hejl and Unreal lift mid-tones for a brighter filmic look, GT and Hable stay close to the reference, Lottes is darker and contrastier. Each keeps paper white at paper white. 'ACES 2.0 Tone Scale' is that curve alone, per channel; 'ACES 2.0 (Full Output Transform)' is the whole transform - appearance model, chroma and gamut compression - which desaturates bright colors toward white instead of letting one channel clip. AgX and Khronos PBR Neutral likewise work on the whole color. Only with Color Format set to 30-bit or 64-bit, on the Vulkan, Direct3D 11 and Direct3D 12 renderers.",
       NULL,
       "video",
       {
@@ -642,7 +642,7 @@ struct retro_core_option_v2_definition option_defs_us[] = {
       CORE_OPTION_NAME "_hdr_expansion",
       "HDR Expansion",
       NULL,
-      "The Dreamcast's picture is standard range: without expansion nothing in it rises above paper white. Expansion lifts the top of the range into the HDR headroom so bright areas read brighter than white; mid-tones below the knee never move. 'Inverse Tonemap' expands each channel on its own and over-saturates bright colours; 'Hue-Preserving' expands the brightest channel and scales the others with it, so a highlight brightens along its own colour. With every Display Transform but the two knees. Only with Color Format set to 30-bit or 64-bit, on the Vulkan, Direct3D 11 and Direct3D 12 renderers.",
+      "The Dreamcast's picture is standard range: without expansion nothing in it rises above paper white. Expansion lifts the top of the range into the HDR headroom so bright areas read brighter than white; mid-tones below the knee never move. 'Inverse Tonemap' expands each channel on its own and over-saturates bright colors; 'Hue-Preserving' expands the brightest channel and scales the others with it, so a highlight brightens along its own color. With every Display Transform but the two knees. Only with Color Format set to 30-bit or 64-bit, on the Vulkan, Direct3D 11 and Direct3D 12 renderers.",
       NULL,
       "video",
       {
@@ -677,7 +677,7 @@ struct retro_core_option_v2_definition option_defs_us[] = {
       CORE_OPTION_NAME "_hdr_highlight_hue",
       "Highlight Hue Preservation",
       NULL,
-      "Keeps the hue of saturated highlights under the per-channel Display Transform curves: a bright colour is mixed toward an achromatic peak by however much that peak was compressed, so it desaturates along its own hue instead of sliding toward whichever channel clips last. ACES 2.0 (Full), AgX and Khronos PBR Neutral already do this. Only with Color Format set to 30-bit or 64-bit, on the Vulkan, Direct3D 11 and Direct3D 12 renderers.",
+      "Keeps the hue of saturated highlights under the per-channel Display Transform curves: a bright color is mixed toward an achromatic peak by however much that peak was compressed, so it desaturates along its own hue instead of sliding toward whichever channel clips last. ACES 2.0 (Full), AgX and Khronos PBR Neutral already do this. Only with Color Format set to 30-bit or 64-bit, on the Vulkan, Direct3D 11 and Direct3D 12 renderers.",
       NULL,
       "video",
       {
@@ -721,7 +721,7 @@ struct retro_core_option_v2_definition option_defs_us[] = {
       CORE_OPTION_NAME "_hdr_aces2_gamut",
       "ACES 2.0: Limiting Gamut",
       NULL,
-      "The gamut the full ACES 2.0 transform compresses colour toward, which should be the one the display has. 'Auto' takes the display's own primaries when the frontend reports them, else P3-D65, which most HDR displays are close to. Only with 'ACES 2.0 (Full Output Transform)'.",
+      "The gamut the full ACES 2.0 transform compresses color toward, which should be the one the display has. 'Auto' takes the display's own primaries when the frontend reports them, else P3-D65, which most HDR displays are close to. Only with 'ACES 2.0 (Full Output Transform)'.",
       NULL,
       "video",
       {
@@ -925,7 +925,7 @@ struct retro_core_option_v2_definition option_defs_us[] = {
       CORE_OPTION_NAME "_pvr2_scaler",
       "PowerVR2 Scaler, Flicker Filter and Dither",
       NULL,
-      "What the PowerVR2 does to the picture as it writes it to video memory. With the game's vertical scale factor above 1 (most of Sega's games, VGA too), each line blended with the lines above and below by the game's coefficients: the flicker filter, which softens the picture vertically. With a framebuffer of 16 bits a pixel (most games), the colours cut to its bits and dithered as the game asks, the bands and the dither pattern of the console's picture. With the game's horizontal scaling (rare), pairs of pixels averaged into one: the compute renderer only. Compute renderer (Vulkan, Direct3D 12) and the rasterizers of Vulkan, Direct3D 12, Direct3D 11 (where the GPU can read its picture back in a compute shader) and OpenGL 4.3 and later; not OpenGL ES, OpenGL 3 or Direct3D 9. Disabled draws the picture without them, as before.",
+      "What the PowerVR2 does to the picture as it writes it to video memory. With the game's vertical scale factor above 1 (most of Sega's games, VGA too), each line blended with the lines above and below by the game's coefficients: the flicker filter, which softens the picture vertically. With a framebuffer of 16 bits a pixel (most games), the colors cut to its bits and dithered as the game asks, the bands and the dither pattern of the console's picture. With the game's horizontal scaling (rare), pairs of pixels averaged into one: the compute renderer only. Compute renderer (Vulkan, Direct3D 12) and the rasterizers of Vulkan, Direct3D 12, Direct3D 11 (where the GPU can read its picture back in a compute shader) and OpenGL 4.3 and later; not OpenGL ES, OpenGL 3 or Direct3D 9. Disabled draws the picture without them, as before.",
       NULL,
       "video",
       {
@@ -952,11 +952,11 @@ struct retro_core_option_v2_definition option_defs_us[] = {
       },
       "disabled",
    },
-   {/* TODO: needs clarification */
+   {
       CORE_OPTION_NAME "_texupscale_max_filtered_texture_size",
       "Texture Upscaling Max. Filtered Size",
       NULL,
-      "",
+      "Texture filtering not applied to textures bigger than this size.",
       NULL,
       "video",
       {
@@ -972,7 +972,7 @@ struct retro_core_option_v2_definition option_defs_us[] = {
       CORE_OPTION_NAME "_render_to_texture_upscaling",
       "Render To Texture Upscaling",
       NULL,
-      "",
+      "Upscale GPU to VRAM rendered textures.",
       NULL,
       "video",
       {
@@ -1022,7 +1022,7 @@ struct retro_core_option_v2_definition option_defs_us[] = {
       CORE_OPTION_NAME "_analog_stick_deadzone",
       "Analog Stick Deadzone",
       NULL,
-      "",
+      "How far the analog stick must be pushed for the input to register.",
       NULL,
       "input",
       {
@@ -1041,7 +1041,7 @@ struct retro_core_option_v2_definition option_defs_us[] = {
       CORE_OPTION_NAME "_trigger_deadzone",
       "Trigger Deadzone",
       NULL,
-      "",
+      "How far the triggers must be pushed for the input to register.",
       NULL,
       "input",
       {
@@ -1060,7 +1060,7 @@ struct retro_core_option_v2_definition option_defs_us[] = {
       CORE_OPTION_NAME "_digital_triggers",
       "Digital Triggers",
       NULL,
-      "",
+      "Treat triggers as buttons.",
       NULL,
       "input",
       {
@@ -1074,7 +1074,7 @@ struct retro_core_option_v2_definition option_defs_us[] = {
       CORE_OPTION_NAME "_enable_purupuru",
       "Purupuru Pack/Vibration Pack",
       NULL,
-      "Enables controller force feedback.",
+      "Enable controller force feedback.",
       NULL,
       "input",
       {
@@ -1116,7 +1116,7 @@ struct retro_core_option_v2_definition option_defs_us[] = {
       CORE_OPTION_NAME "_lightgun1_crosshair",
       "Gun Crosshair 1 Display",
       NULL,
-      "",
+      "Draw light gun crosshair for port 1.",
       NULL,
       "input",
       {
@@ -1133,7 +1133,7 @@ struct retro_core_option_v2_definition option_defs_us[] = {
       CORE_OPTION_NAME "_lightgun2_crosshair",
       "Gun Crosshair 2 Display",
       NULL,
-      "",
+      "Draw light gun crosshair for port 2.",
       NULL,
       "input",
       {
@@ -1150,7 +1150,7 @@ struct retro_core_option_v2_definition option_defs_us[] = {
       CORE_OPTION_NAME "_lightgun3_crosshair",
       "Gun Crosshair 3 Display",
       NULL,
-      "",
+      "Draw light gun crosshair for port 3.",
       NULL,
       "input",
       {
@@ -1167,7 +1167,7 @@ struct retro_core_option_v2_definition option_defs_us[] = {
       CORE_OPTION_NAME "_lightgun4_crosshair",
       "Gun Crosshair 4 Display",
       NULL,
-      "",
+      "Draw lightgun crosshair for port 4.",
       NULL,
       "input",
       {
@@ -1182,8 +1182,8 @@ struct retro_core_option_v2_definition option_defs_us[] = {
    },
    {
       CORE_OPTION_NAME "_per_content_vmus",
-      "Per-Game Visual Memory Units/Systems (VMU)",
       "Per-Game VMUs",
+      NULL,
       "When disabled, all games share 4 VMU save files (A1, B1, C1, D1) located in RetroArch's system directory. The 'VMU A1' setting creates a unique VMU 'A1' file in RetroArch's save directory for each game that is launched. The 'All VMUs' setting creates 4 unique VMU files (A1, B1, C1, D1) for each game that is launched.",
       NULL,
       "vmu",
@@ -1211,8 +1211,8 @@ struct retro_core_option_v2_definition option_defs_us[] = {
    },
    {
       CORE_OPTION_NAME "_show_vmu_screen_settings",
-      "Show Visual Memory Unit/System (VMU) Display Settings",
       "Show VMU Display Settings",
+      NULL,
       "Enable configuration of emulated VMU LCD screen visibility, size, position and color. NOTE: Quick Menu must be toggled for this setting to take effect.",
       NULL,
       "vmu",
