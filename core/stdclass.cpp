@@ -31,8 +31,19 @@ std::string get_writable_vmu_path(const char *logical_port)
    extern unsigned per_content_vmus;
    char filename[512];
 
-   if ((per_content_vmus == 1 && !strcmp("A1", logical_port)) ||
-       (per_content_vmus == 2))
+   if (per_content_vmus == 3 && !strcmp("A1", logical_port))
+   {
+      sprintf(filename, "%s.srm", content_name);
+      return std::string(vmu_dir_no_slash +
+#ifdef _WIN32
+         std::string("\\")
+#else
+         std::string("/")
+#endif
+         + filename);
+   }
+   else if ((per_content_vmus == 1 && !strcmp("A1", logical_port)) ||
+            (per_content_vmus == 2))
    {
       sprintf(filename, "%s.%s.bin", content_name, logical_port);
       return std::string(vmu_dir_no_slash +
