@@ -163,11 +163,21 @@ Done, but for:
 ## Phase 4: Direct3D 12
 
 1. The key made small enough for every reachable one to be made at the
-   start (about 3300 for the per-triangle renderer as it is): the cull
-   mode in the pixel shader (cull none, SV_IsFrontFace and discard), and
-   whatever else a root constant can carry (flat and Gouraud shading in
-   one shader); then every reachable key made before the first frame,
-   with nothing left for `Missed` to make.
+   start. Done: the cull mode, in the polygons' and the per-pixel
+   renderer's pixel shaders (their pipelines cull nothing; SV_IsFrontFace
+   and discard, DX12_PF_CULL_SHIFT), a third of what it was. Left: flat
+   and Gouraud shading in one shader (the vertex shader's colours both
+   ways, the pixel shader choosing by a flag), and the per-pixel
+   renderer's blends folded as the per-triangle one's are.
+2. Then every reachable key made before the first frame, the start held
+   as Vulkan's change of renderer is (`Renderer::Ready()`), with nothing
+   left for `Missed` to make.
+
+Testing under wine: its vkd3d drops draws of the renderer's
+ExecuteIndirect batches (root constants a draw), so the pictures of a
+build that batches differently differ. `d3d_hdr`'s `D3DH_NO_INDIRECT` has
+the core draw one draw at a time: then the per-triangle and per-pixel
+renderers' pictures are Vulkan's on the plain, culling and DMA discs.
 
 ## Phase 5: option changes everywhere
 

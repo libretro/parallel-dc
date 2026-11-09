@@ -30,6 +30,9 @@
 #define DX12_PF_SRC_FOLD         0x00080000u
 #define DX12_PF_DST_FOLD_SHIFT   20
 #define DX12_PF_DST_FOLD         0x00800000u
+/* The cull mode, two bits (0 none, 1 front faces, 2 back faces): a
+ * polygon's pipeline culls nothing, its pixel shader does (DX12PsoKey::Pack()) */
+#define DX12_PF_CULL_SHIFT       24
 /* Those factors, of a channel of the colour as the blender takes it
  * (clamped to the frame's range), @c, and its alpha, @a: the source's
  * (zero, one, alpha, one less it), and the destination's (those, the

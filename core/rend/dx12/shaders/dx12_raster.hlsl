@@ -122,6 +122,16 @@ cbuffer FragmentConstants : register(b2)
 #endif
 };
 
+/* The polygon's cull mode (DX12_PF_CULL_SHIFT: none, its front faces, its
+ * back faces): its pipeline culls nothing, so that one pipeline draws all
+ * three (FrontCounterClockwise, as the pipelines have it) */
+#define CULL_TEST(front) \
+	{ \
+		const uint cullMode = (polyFlags >> DX12_PF_CULL_SHIFT) & 3; \
+		if (cullMode != 0 && (front == (cullMode == 1))) \
+			discard; \
+	}
+
 #if defined(DX12_SSAA) && (defined(DX12_SSAA_RESOLVE_PS) || defined(DX12_OIT_FINAL_PS))
 // (a unorm8 colour's bytes, red lowest, as its picture holds them, and back: exact)
 uint packUnorm8(float4 v)
@@ -244,7 +254,7 @@ struct PixelOut
 	float4 factor : SV_Target1;	// the destination's blend factor (DX12_PF_DST_FOLD)
 };
 
-PixelOut main(in Pixel inpix)
+PixelOut main(in Pixel inpix, bool front : SV_IsFrontFace)
 {
 #if defined(DX12_SAMPLE_RATE) && DX12_SAMPLE_RATE == 2
 	// (first, while nothing is discarded: derivatives are defined only then)
@@ -254,6 +264,7 @@ PixelOut main(in Pixel inpix)
 		uvGrad = float4(ddx(c), ddy(c));
 	}
 #endif
+	CULL_TEST(front);
 	// (the guest's 1/w at this pixel)
 	const float w = inpix.pos.w;
 	const uint shadInstr = (polyFlags >> DX12_PF_SHAD_INSTR_SHIFT) & 3;
@@ -765,7 +776,7 @@ uint getNextPixelIndex()
 #if DX12_OIT_PASS == DX12_PASS_OIT && defined(DX12_SSAA) && defined(DX12_POST_Z_COVERAGE)
 [earlydepthstencil]
 #endif
-float4 main(in OITVertexOut inpix) : SV_Target
+float4 main(in OITVertexOut inpix, bool front : SV_IsFrontFace) : SV_Target
 {
 	// (the guest's 1/w at this pixel, and the depth the rasterizer made of it)
 	const float w = inpix.pos.w;
@@ -791,6 +802,7 @@ float4 main(in OITVertexOut inpix) : SV_Target
 		}
 	}
 #endif
+	CULL_TEST(front);
 
 #if DX12_OIT_PASS == DX12_PASS_OIT && defined(DX12_SSAA)
 	/* Manual depth testing, at each sample the fragment covers, with its

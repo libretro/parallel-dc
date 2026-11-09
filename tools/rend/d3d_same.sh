@@ -15,6 +15,9 @@
 # d3dcompiler is not yet: D3DCOMPILER=path/to/d3dcompiler_47.dll (Microsoft's)
 # is put beside the frontend and used; without it, Direct3D 9 is left out
 # where its shaders cannot be made, and said so.
+# Direct3D 12 draws one draw at a time (D3DH_NO_INDIRECT; D3D_SAME_INDIRECT=1
+# to leave the core's ExecuteIndirect batches on): wine's vkd3d drops draws
+# of those batches, so two builds that batch differently would differ.
 # Needs mingw-w64, wine, Xvfb, python3 and a Vulkan driver (lavapipe will
 # do), as tools/hdr/d3d_hdr.sh.
 set -e
@@ -52,6 +55,7 @@ wine_run() {
    rm -rf "$WORK/dir"; mkdir -p "$WORK/dir"
    env -u TMPDIR DISPLAY=$DISPLAY_NO WINEDEBUG=-all WINE_D3D_CONFIG=renderer=vulkan VKD3D_CONFIG=virtual_heaps \
       WINEDLLOVERRIDES="$OVERRIDES" D3D9F_DIR="Z:$WORK/dir" D3DH_DIR="Z:$WORK/dir" \
+      $( [ -n "${D3D_SAME_INDIRECT:-}" ] || echo D3DH_NO_INDIRECT=1 ) \
       timeout 600 wine "$@" > "$log" 2> "$log.err"
 }
 

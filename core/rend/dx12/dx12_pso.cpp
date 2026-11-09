@@ -43,9 +43,9 @@ struct DX12PsoFileHeader
 	u32 reserved;
 };
 static const char PsoFileMagic[8] = { 'F', 'C', 'D', '1', '2', 'P', 'S', 'O' };
-/* 3: a polygon's blend folded into its key (DX12PsoKey::Pack()); a file
- * of 2 gives its keys, folded, and no library */
-static const u32 PsoFileVersion = 3;
+/* 3: a polygon's blend folded into its key (DX12PsoKey::Pack()); 4: its
+ * cull mode too. A file of 2 or 3 gives its keys, folded, and no library */
+static const u32 PsoFileVersion = 4;
 static const u32 MaxKeys = 8192;
 
 /* What a build did (DX12Pipelines::BuildDesc()): counted by the thread
@@ -833,12 +833,14 @@ void DX12Pipelines::LoadFile()
 		DX12PsoFileHeader header{};
 		memcpy(&header, file, oldHeader);
 		const bool old = header.version == 2;
+		// (keys of the layout before this one: taken, their library not)
+		const bool keysOnly = old || header.version == 3;
 		const size_t headerBytes = old ? oldHeader : sizeof(header);
 		if (!old && (size_t)size >= sizeof(header))
 			memcpy(&header, file, sizeof(header));
 		const u64 keyBytes = (u64)header.keyCount * sizeof(u64);
 		if (!memcmp(header.magic, PsoFileMagic, sizeof(PsoFileMagic))
-				&& (old || (header.version == PsoFileVersion && (size_t)size >= sizeof(header)))
+				&& (old || ((header.version == PsoFileVersion || header.version == 3) && (size_t)size >= sizeof(header)))
 				&& header.keyCount <= MaxKeys && headerBytes + keyBytes <= (u64)size
 				&& header.libraryBytes <= (u64)size - headerBytes - keyBytes)
 		{
@@ -846,7 +848,7 @@ void DX12Pipelines::LoadFile()
 			// (a key of an earlier layout as this one has it: its blend folded)
 			for (u32 i = 0; i < header.keyCount; i++)
 				keys.push_back(DX12PsoKey::Valid(k[i]) ? DX12PsoKey::Unpack(k[i]).Pack() : k[i]);
-			if (!old && header.shaders == dx12_shaders_hash())
+			if (!keysOnly && header.shaders == dx12_shaders_hash())
 			{
 				const u8 *lib = (const u8 *)file + headerBytes + keyBytes;
 				libraryData.assign(lib, lib + header.libraryBytes);

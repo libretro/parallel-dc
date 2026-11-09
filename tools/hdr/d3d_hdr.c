@@ -20,7 +20,10 @@
  * copies the frame's lists to the card, not parse them where it reads
  * them (tools/rend/d3d_parse_arena.sh). With D3DH_UNLOAD=1 the core is
  * unloaded at the end, for what it says as it stops
- * (tools/rend/d3d_draw_path.sh). With D3DH_SM51=1 (Direct3D 12) the
+ * (tools/rend/d3d_draw_path.sh). With D3DH_NO_INDIRECT=1 the device makes no
+ * command signature: the core draws one draw at a time, not in
+ * ExecuteIndirect batches, which wine's vkd3d drops draws of
+ * (tools/rend/d3d_same.sh). With D3DH_SM51=1 (Direct3D 12) the
  * device's highest shader model is 5.1: the core's raster shaders are
  * DXBC, not DXIL (tools/rend/d3d_dxil.sh). With D3DH_EVERY=1 (Direct3D 12)
  * the picture handed over is read back after every frame and its sum
@@ -121,6 +124,17 @@ static HRESULT STDMETHODCALLTYPE sm51_check(ID3D12Device *device, D3D12_FEATURE 
    if (SUCCEEDED(hr) && feature == D3D12_FEATURE_SHADER_MODEL && size >= sizeof(D3D12_FEATURE_DATA_SHADER_MODEL))
       ((D3D12_FEATURE_DATA_SHADER_MODEL *)data)->HighestShaderModel = D3D_SHADER_MODEL_5_1;
    return hr;
+}
+/* D3DH_NO_INDIRECT: no command signature (the core draws one draw at a
+ * time, not through ExecuteIndirect: wine's vkd3d drops draws of the
+ * core's batches, which set root constants a draw) */
+static HRESULT STDMETHODCALLTYPE no_signature(ID3D12Device *device, const D3D12_COMMAND_SIGNATURE_DESC *desc,
+      ID3D12RootSignature *root, REFIID riid, void **out)
+{
+   (void)device; (void)desc; (void)root; (void)riid;
+   if (out)
+      *out = NULL;
+   return E_NOTIMPL;
 }
 static ID3D12CommandQueue *q12;
 static ID3D12Resource *frame12;
@@ -661,11 +675,14 @@ int main(int argc, char **argv)
          fprintf(stderr, "d3d_hdr: no Direct3D 12 device\n");
          return 2;
       }
-      if (getenv("D3DH_NOT_UMA") || getenv("D3DH_SM51"))
+      if (getenv("D3DH_NOT_UMA") || getenv("D3DH_SM51") || getenv("D3DH_NO_INDIRECT"))
       {
          memcpy(d12_not_uma, d12->lpVtbl, sizeof(d12_not_uma));
          d12_check = d12->lpVtbl->CheckFeatureSupport;
-         ((ID3D12DeviceVtbl *)d12_not_uma)->CheckFeatureSupport = getenv("D3DH_SM51") ? sm51_check : not_uma_check;
+         if (getenv("D3DH_NOT_UMA") || getenv("D3DH_SM51"))
+            ((ID3D12DeviceVtbl *)d12_not_uma)->CheckFeatureSupport = getenv("D3DH_SM51") ? sm51_check : not_uma_check;
+         if (getenv("D3DH_NO_INDIRECT"))
+            ((ID3D12DeviceVtbl *)d12_not_uma)->CreateCommandSignature = no_signature;
          d12->lpVtbl = (ID3D12DeviceVtbl *)d12_not_uma;
       }
       {
