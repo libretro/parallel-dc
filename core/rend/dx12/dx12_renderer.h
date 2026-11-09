@@ -347,8 +347,9 @@ protected:
 	virtual u32 SsaaColorImages() const { return 1; }
 	virtual u32 SsaaFixedKib(u32 width, u32 height) const { return 0; }
 	/* The pipelines a renderer wants made before a game draws (at Init(),
-	 * before SSAA's are made from them) */
-	virtual void PreparePipelines() {}
+	 * before SSAA's are made from them): the per-triangle one's, every one
+	 * DrawPoly() can draw with */
+	virtual void PreparePipelines();
 	/* The picture of samples at @srv of the table resolved into what is bound */
 	void SsaaResolve(u32 srv);
 
@@ -437,6 +438,12 @@ private:
 	void DrawFramebuffer();
 
 	enum class ShadowPass { None, LaterWins, EarlierWins };
+	/* A polygon's pipeline (DrawPoly()), but for its cull mode and shading,
+	 * which its shaders apply, and SSAA's: by its list, whether it is
+	 * sorted, drawn for the depth prepass or again for its shadow, the
+	 * ISP's depth mode and Z Write Disable, the TSP's blend instructions */
+	static DX12PsoKey PolyKey(u32 listType, bool sortTriangles, bool prepass, ShadowPass shadowPass,
+			u32 depthMode, bool zWriteDis, u32 src, u32 dst);
 	void DrawPoly(u32 listType, bool sortTriangles, const PolyParam& poly, u32 first, u32 count,
 			ShadowPass shadowPass = ShadowPass::None, const D3D12_RECT *within = nullptr);
 	void DrawShadowed(u32 listType, const List<PolyParam>& polys, u32 first, u32 last,

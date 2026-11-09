@@ -170,17 +170,18 @@ Done, but for:
    choosing by DX12_PF_GOURAUD); the per-pixel renderer's blends folded as
    the per-triangle one's are (`foldBlend()`, 15 pipelines for the 64
    pairs). The per-triangle start set 634 to 124.
-2. Every reachable key made before the first frame. Done for the
-   per-pixel renderer: its keys come from one function (`oitPolyKey()`),
-   which `PreparePipelines()` runs over every list, pass, depth mode and
-   blend (292 pipelines, the common ones first). The context reset makes
-   the renderer and waits for its pipelines on the worker
-   (`DX12Pipelines::WaitMade()`), as Vulkan's does; a renderer made again
-   later holds (`Renderer::Ready()`). `tools/rend/d3d_draw_path.sh` has
-   every disc, sort and threading mode at "0 of them in a frame". Left:
-   the per-triangle renderer's rare keys (a blended opaque polygon, an
-   unusual depth mode with a blend that reads the frame), still made as a
-   game first draws with them: the same, with its key from one function.
+2. Every reachable key made before the first frame. Done: each
+   renderer's keys come from one function (`DX12Renderer::PolyKey()`,
+   `oitPolyKey()`), which its `PreparePipelines()` runs over every list,
+   pass, depth mode and blend, the common ones queued first (521
+   pipelines for the per-triangle renderer, 314 for the per-pixel one,
+   the quads and volumes included). The context reset makes the renderer
+   and waits for them on the worker (`DX12Pipelines::WaitMade()`), as
+   Vulkan's does; a renderer made again later holds
+   (`Renderer::Ready()`). `tools/rend/d3d_draw_path.sh` has every disc,
+   sort and threading mode at "0 of them in a frame", the blend disc
+   (`live_disc.py --blend`: blends and depth modes a game seldom draws
+   with) among them.
 
 Testing under wine: its vkd3d drops draws of the renderer's
 ExecuteIndirect batches (root constants a draw), so the pictures of a

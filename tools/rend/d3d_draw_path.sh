@@ -2,7 +2,8 @@
 # Nothing made on the draw path (AGENTS.md), with Direct3D 11 and 12: the core's
 # Windows build under wine, on a frontend that runs the core's frames as
 # RetroArch does (tools/hdr/d3d_hdr.c), the test discs (plain, the texture
-# atlas, culling, DMA over renders to textures), the per-triangle renderer
+# atlas, culling, DMA over renders to textures, blends and depth modes a
+# game seldom draws with), the per-triangle renderer
 # (sorted per triangle and per strip) and the per-pixel one, threaded
 # rendering on and off, each from nothing kept by an earlier run (no shader
 # file): every shader and every state a frame wanted was made before the
@@ -41,7 +42,7 @@ fi
 ${CC_WIN:-x86_64-w64-mingw32-gcc} -O1 -Wall -I./core/libretro-common/include -I./core/deps/khronos \
    -o "$WORK/d3d_hdr.exe" tools/hdr/d3d_hdr.c -ld3d11 -ld3d12 -ldxguid
 # (each disc in its own directory: their tracks have the same names)
-for d in plain atlas cull dma; do
+for d in plain atlas cull dma blend; do
    mkdir -p "$WORK/$d"
    if [ $d = plain ]; then python3 tools/threads/live_disc.py "$WORK/$d/$d.gdi"
    else python3 tools/threads/live_disc.py "$WORK/$d/$d.gdi" --$d; fi > /dev/null
@@ -59,7 +60,7 @@ run() {
       > "$WORK/$name.log" 2>&1 || { echo "  FAIL: the run failed:"; tail -5 "$WORK/$name.log"; return 1; }
 }
 
-for d in plain atlas cull dma; do
+for d in plain atlas cull dma blend; do
    for m in tri strip pix; do
       case $m in
          tri) sort="reicast_alpha_sorting=per-triangle (normal)" ;;
@@ -95,7 +96,7 @@ for d in plain atlas cull dma; do
    done
 done
 api=12
-for d in plain atlas cull dma; do
+for d in plain atlas cull dma blend; do
    for m in tri strip pix; do
       case $m in
          tri) sort="reicast_alpha_sorting=per-triangle (normal)" ;;

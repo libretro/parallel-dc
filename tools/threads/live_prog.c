@@ -30,7 +30,8 @@
  * -DLIVE_SLANT -DLIVE_HSCALE for PROGRAM_HSCALE, with -DLIVE_CULL for
  * PROGRAM_CULL, with -DLIVE_ATLAS for PROGRAM_ATLAS, with -DLIVE_DMA
  * for PROGRAM_DMA, with -DLIVE_CLIP for PROGRAM_CLIP, with -DLIVE_KEEP for
- * PROGRAM_KEEP, and with -DLIVE_HEAVY for PROGRAM_HEAVY. */
+ * PROGRAM_KEEP, with -DLIVE_HEAVY for PROGRAM_HEAVY, and with
+ * -DLIVE_BLEND for PROGRAM_BLEND. */
 typedef unsigned int u32;
 typedef unsigned short u16;
 #define PVR(off) (*(volatile u32 *)(0xA05F8000 + (off)))
@@ -406,6 +407,19 @@ static void ta_quad(u32 pcw, u32 tsp, u32 tcw, u32 white, u32 z, u32 x0, u32 y0,
    ta_send(TA_VERTEX | pcw, x1, y0, z, F(1.0f), 0, white, 0);
    ta_send(TA_VERTEX | pcw | TA_LAST, x1, y1, z, F(1.0f), F(1.0f), white, 0);
 }
+
+#ifdef LIVE_BLEND
+/* ta_quad() with its own ISP word: depth mode (bits 29-31), Z Write
+ * Disable (bit 26) */
+static void ta_quad_isp(u32 pcw, u32 isp, u32 tsp, u32 colour, u32 z, u32 x0, u32 y0, u32 x1, u32 y1)
+{
+   ta_send(TA_POLYGON | pcw, isp, tsp, 0, 0, 0, 0, 0);
+   ta_send(TA_VERTEX | pcw, x0, y0, z, 0, 0, colour, 0);
+   ta_send(TA_VERTEX | pcw, x0, y1, z, 0, F(1.0f), colour, 0);
+   ta_send(TA_VERTEX | pcw, x1, y0, z, F(1.0f), 0, colour, 0);
+   ta_send(TA_VERTEX | pcw | TA_LAST, x1, y1, z, F(1.0f), F(1.0f), colour, 0);
+}
+#endif
 
 #ifdef LIVE_CLIP
 /* An untextured rectangle drawn only outside the clipping rectangle (user
@@ -1131,16 +1145,37 @@ static void render_to_texture(void)
  *   The translucent pair again, lower down, blue near and red far, sent
  *   nearest first. Not being sorted, the blue is drawn first and writes
  *   its depth, and the red, behind it, is then not drawn where they
- *   overlap: blue over the background there, with no red in it. */
+ *   overlap: blue over the background there, with no red in it.
+ *
+ * With -DLIVE_BLEND, blends and depth modes a game seldom draws with, in
+ * this pass (an opaque polygon's blend counts, and the translucent ones
+ * are not sorted, so their own depth modes do): in the top left corner,
+ * an opaque polygon, depth always and not written, "source x other
+ * colour, destination x destination alpha"; over it, translucent ones,
+ * less or equal with "source x one less other colour, destination x one
+ * less destination alpha", and greater, depth not written, "source x
+ * other colour, destination x one less source colour". Each renderer has
+ * to have made their pipelines before the first frame
+ * (tools/rend/d3d_draw_path.sh). */
 static void ta_scene_pass2(void)
 {
    ta_quad(0, TSP_PLAIN, 0, 0xFF00FFFF, F(0.7f), F(40.0f), F(95.0f), F(70.0f), F(108.0f));
    ta_quad(TA_SHADOW, TSP_BY_ALPHA, 0, 0x80FFFFFF, F(0.5f), F(256.0f), F(180.0f), F(300.0f), F(210.0f));
+#ifdef LIVE_BLEND
+   ta_quad_isp(0, (7u << 29) | (1u << 26), (2u << 29) | (6u << 26) | (2u << 22), 0xC080C0FF, F(0.8f),
+         F(4.0f), F(4.0f), F(60.0f), F(40.0f));
+#endif
    ta_send(0, 0, 0, 0, 0, 0, 0, 0);                    /* end of the opaque list */
    ta_volume(F(45.0f), F(97.0f), F(65.0f), F(106.0f), F(0.9f));
    ta_volume(F(270.0f), F(185.0f), F(290.0f), F(205.0f), F(0.9f));
    ta_quad(TA_TRANSLUCENT, TSP_BLEND, 0, 0x800000FF, F(0.6f), F(140.0f), F(180.0f), F(200.0f), F(210.0f));
    ta_quad(TA_TRANSLUCENT, TSP_BLEND, 0, 0x80FF0000, F(0.3f), F(120.0f), F(180.0f), F(180.0f), F(210.0f));
+#ifdef LIVE_BLEND
+   ta_quad_isp(TA_TRANSLUCENT, 3u << 29, (3u << 29) | (7u << 26) | (2u << 22) | (1u << 20), 0x6040FF80, F(0.85f),
+         F(10.0f), F(20.0f), F(50.0f), F(60.0f));
+   ta_quad_isp(TA_TRANSLUCENT, (4u << 29) | (1u << 26), (2u << 29) | (3u << 26) | (2u << 22) | (1u << 20), 0x80FF8040,
+         F(0.9f), F(30.0f), F(10.0f), F(70.0f), F(50.0f));
+#endif
    ta_send(0, 0, 0, 0, 0, 0, 0, 0);                    /* end of the translucent list */
 }
 

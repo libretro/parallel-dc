@@ -1788,6 +1788,90 @@ void DX12Renderer::FlushBatch()
 
 /* ---- The polygons, as the Direct3D 11 renderer draws them ---- */
 
+DX12PsoKey DX12Renderer::PolyKey(u32 listType, bool sortTriangles, bool prepass, ShadowPass shadowPass,
+		u32 depthMode, bool zWriteDis, u32 src, u32 dst)
+{
+	DX12PsoKey key{};
+	key.kind = DX12_PSO_POLY;
+	key.depthBound = true;
+	key.depthTest = true;
+	if (listType == ListType_Punch_Through || sortTriangles)
+		key.depthFunc = 6;	// greater or equal
+	else
+		key.depthFunc = depthMode;
+	// Sorted translucent polygons, per triangle or per strip, do not write
+	// depth: a strip drawn in sorted order would hide parts of the ones after it.
+	// Their depth prepass does.
+	if (prepass)
+		key.depthWrite = true;
+	else if (sortTriangles)
+		key.depthWrite = false;
+	// Z Write Disable seems to be ignored for punch-through.
+	// Fixes Worms World Party, Bust-a-Move 4 and Re-Volt
+	else if (listType == ListType_Punch_Through)
+		key.depthWrite = true;
+	else
+		key.depthWrite = !zWriteDis;
+
+	if (shadowPass != ShadowPass::None)
+	{
+		/* Drawn again for its shadow: where this polygon is the one showing
+		 * (same depth), takes shadows (stencil bit 7) and is in a volume
+		 * (bit 0). Bit 6 marks the pixels drawn this way; whether one already
+		 * marked may be drawn over is what tells the two kinds apart. */
+		key.depthWrite = false;
+		key.depthFunc = 2;
+		key.stencil = shadowPass == ShadowPass::LaterWins ? DX12Stencil::ShadowLaterWins : DX12Stencil::ShadowEarlierWins;
+	}
+	else if (listType == ListType_Opaque || listType == ListType_Punch_Through)
+		key.stencil = DX12Stencil::Shadow;
+	else
+		key.stencil = DX12Stencil::None;
+
+	// Apparently punch-through polys support blending, or at least some combinations
+	// An opaque polygon is blended by its instructions too when it is in a
+	// list continuation; the ones of the first render pass have had theirs
+	// set to source x 1 and destination x 0 when the list was read.
+	key.writeColor = !prepass;
+	if (!prepass && shadowPass == ShadowPass::None
+			&& (listType == ListType_Translucent || listType == ListType_Punch_Through || src != 1 || dst != 0))
+	{
+		key.blend = true;
+		key.src = src;
+		key.dst = dst;
+	}
+	return key;
+}
+
+/* Every pipeline DrawPoly() can draw with (PolyKey()), for every list and
+ * pass Render() draws it in, every depth mode and blend. The thread makes
+ * them in this order: the blends that read nothing of the frame first
+ * (one pipeline for them all, DX12PsoKey::Pack()) with the depth modes
+ * games mostly use, then the rest. */
+void DX12Renderer::PreparePipelines()
+{
+	static const u8 modes[] = { 6, 7, 3, 1, 2, 4, 5, 0 };
+	static const struct { u32 list; bool sorted; bool prepass; ShadowPass shadow; } draws[] = {
+		{ ListType_Opaque, false, false, ShadowPass::None }, { ListType_Punch_Through, false, false, ShadowPass::None },
+		{ ListType_Translucent, true, false, ShadowPass::None }, { ListType_Translucent, true, true, ShadowPass::None },
+		{ ListType_Translucent, false, false, ShadowPass::None },
+		{ ListType_Opaque, false, false, ShadowPass::LaterWins }, { ListType_Opaque, false, false, ShadowPass::EarlierWins },
+		{ ListType_Punch_Through, false, false, ShadowPass::LaterWins },
+		{ ListType_Punch_Through, false, false, ShadowPass::EarlierWins },
+	};
+	std::vector<u64> keys;
+	for (u32 rare = 0; rare < 2; rare++)
+		for (const u8 mode : modes)
+			for (const auto& d : draws)
+				for (u32 zwd = 0; zwd < 2; zwd++)
+					for (u32 src = 0; src < 8; src++)
+						for (u32 dst = 0; dst < 8; dst++)
+							if ((dx12_src_folds(src) && dx12_dst_folds(dst)) != (rare != 0))
+								keys.push_back(PolyKey(d.list, d.sorted, d.prepass, d.shadow, mode, zwd != 0, src, dst).Pack());
+	// (each made once, where it first comes: Want())
+	context->Pipelines().Prepare(keys);
+}
+
 void DX12Renderer::DrawPoly(u32 listType, bool sortTriangles, const PolyParam& poly, u32 first, u32 count,
 		ShadowPass shadowPass, const D3D12_RECT *within)
 {
@@ -1874,71 +1958,15 @@ void DX12Renderer::DrawPoly(u32 listType, bool sortTriangles, const PolyParam& p
 		constants.texture = ((DX12Texture *)(uintptr_t)poly.texid)->Srv();
 	constants.sampler = dx12_sampler_index(poly.tsp);
 
-	// Depth and stencil
-	DX12PsoKey key{};
-	key.kind = DX12_PSO_POLY;
+	// Depth, stencil and blend
+	DX12PsoKey key = PolyKey(listType, sortTriangles, prepassDraw, shadowPass,
+			poly.isp.DepthMode, poly.isp.ZWriteDis, poly.tsp.SrcInstr, poly.tsp.DstInstr);
 	key.gouraud = poly.pcw.Gouraud;
-	key.depthBound = true;
-	key.depthTest = true;
-	if (listType == ListType_Punch_Through || sortTriangles)
-		key.depthFunc = 6;	// greater or equal
-	else
-		key.depthFunc = poly.isp.DepthMode;
-	// Sorted translucent polygons, per triangle or per strip, do not write
-	// depth: a strip drawn in sorted order would hide parts of the ones after it.
-	// Their depth prepass does.
-	if (prepassDraw)
-		key.depthWrite = true;
-	else if (sortTriangles)
-		key.depthWrite = false;
-	// Z Write Disable seems to be ignored for punch-through.
-	// Fixes Worms World Party, Bust-a-Move 4 and Re-Volt
-	else if (listType == ListType_Punch_Through)
-		key.depthWrite = true;
-	else
-		key.depthWrite = !poly.isp.ZWriteDis;
-
-	const bool shadowed = listType == ListType_Opaque || listType == ListType_Punch_Through;
-	state.stencilRef = 0;
-	if (shadowPass != ShadowPass::None)
+	state.stencilRef = key.stencil == DX12Stencil::ShadowLaterWins ? 0xC1
+			: key.stencil == DX12Stencil::ShadowEarlierWins ? 0x81
+			: key.stencil == DX12Stencil::Shadow && poly.pcw.Shadow != 0 ? 0x80 : 0;
+	if (key.blend)
 	{
-		/* Drawn again for its shadow: where this polygon is the one showing
-		 * (same depth), takes shadows (stencil bit 7) and is in a volume
-		 * (bit 0). Bit 6 marks the pixels drawn this way; whether one already
-		 * marked may be drawn over is what tells the two kinds apart. */
-		key.depthWrite = false;
-		key.depthFunc = 2;
-		if (shadowPass == ShadowPass::LaterWins)
-		{
-			key.stencil = DX12Stencil::ShadowLaterWins;
-			state.stencilRef = 0xC1;
-		}
-		else
-		{
-			key.stencil = DX12Stencil::ShadowEarlierWins;
-			state.stencilRef = 0x81;
-		}
-	}
-	else if (shadowed)
-	{
-		key.stencil = DX12Stencil::Shadow;
-		state.stencilRef = poly.pcw.Shadow != 0 ? 0x80 : 0;
-	}
-	else
-		key.stencil = DX12Stencil::None;
-
-	// Apparently punch-through polys support blending, or at least some combinations
-	// An opaque polygon is blended by its instructions too when it is in a
-	// list continuation; the ones of the first render pass have had theirs
-	// set to source x 1 and destination x 0 when the list was read.
-	key.writeColor = !prepassDraw;
-	if (!prepassDraw && shadowPass == ShadowPass::None
-			&& (listType == ListType_Translucent || listType == ListType_Punch_Through
-				|| poly.tsp.SrcInstr != 1 || poly.tsp.DstInstr != 0))
-	{
-		key.blend = true;
-		key.src = poly.tsp.SrcInstr;
-		key.dst = poly.tsp.DstInstr;
 		// (the factors the shader applies, and the pipeline has as one and its second colour)
 		if (dx12_src_folds(key.src))
 			constants.flags |= DX12_PF_SRC_FOLD | (key.src << DX12_PF_SRC_FOLD_SHIFT);
