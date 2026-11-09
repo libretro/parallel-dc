@@ -104,6 +104,8 @@ ID3D11DepthStencilState *DX11DepthStencilStates::Make(u32 key)
 	desc.BackFace = desc.FrontFace;
 
 	ComPtr<ID3D11DepthStencilState>& state = states[key];
+	if (started)
+		drawPath++;
 	ID3D11Device *device = DX11Context::Instance()->GetDevice();
 	if (device == nullptr || FAILED(device->CreateDepthStencilState(&desc, state.put())))
 		WARN_LOG(RENDERER, "Depth stencil state creation failed");
@@ -159,6 +161,8 @@ static const D3D11_BLEND dstBlendAlpha[] =
 
 ID3D11BlendState *DX11BlendStates::Make(const D3D11_BLEND_DESC& desc, ComPtr<ID3D11BlendState>& state)
 {
+	if (started)
+		drawPath++;
 	ID3D11Device *device = DX11Context::Instance()->GetDevice();
 	if (device == nullptr || FAILED(device->CreateBlendState(&desc, state.put())))
 		WARN_LOG(RENDERER, "Blend state creation failed");
@@ -215,4 +219,33 @@ ID3D11BlendState *DX11BlendStates::GetFactorAlpha()
 		Make(desc, factorAlpha);
 	}
 	return factorAlpha;
+}
+
+bool DX11DepthStencilStates::MakeAll()
+{
+	bool ok = true;
+	started = false;
+	// (every depth test, write and mode with every stencil: 288 of them)
+	for (u32 key = 0; key < KeyCount; key++)
+		if ((key >> 5) < (u32)DX11Stencil::Count && states[key] == nullptr)
+			ok = Make(key) != nullptr && ok;
+	started = true;
+	return ok;
+}
+
+bool DX11BlendStates::MakeAll()
+{
+	bool ok = true;
+	started = false;
+	for (u32 key = 0; key < 256; key++)
+	{
+		// (blending off has its instructions at 0: Get())
+		if ((key & 1) == 0 && (key & 0x7e) != 0)
+			continue;
+		if (states[key] == nullptr)
+			ok = Make(key) != nullptr && ok;
+	}
+	ok = GetAlpha() != nullptr && GetFactorAlpha() != nullptr && ok;
+	started = true;
+	return ok;
 }

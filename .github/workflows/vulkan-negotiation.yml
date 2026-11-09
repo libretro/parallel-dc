@@ -69,6 +69,7 @@ on:
       - 'tools/rend/parse_arena_test.*'
       - 'tools/rend/d3d_parse_arena.sh'
       - 'tools/rend/d3d_dxil.sh'
+      - 'tools/rend/d3d_draw_path.sh'
       - 'tools/rend/dx12_blend_fold_test.*'
       - 'tools/rend/clip_check.py'
       - 'tools/threads/live_prog.c'
@@ -108,6 +109,7 @@ on:
       - 'tools/rend/parse_arena_test.*'
       - 'tools/rend/d3d_parse_arena.sh'
       - 'tools/rend/d3d_dxil.sh'
+      - 'tools/rend/d3d_draw_path.sh'
       - 'tools/rend/dx12_blend_fold_test.*'
       - 'tools/rend/clip_check.py'
       - 'tools/threads/live_prog.c'
@@ -193,3 +195,5 @@ jobs:
         run: VK_DRIVER_FILES=/usr/share/vulkan/icd.d/lvp_icd.json sh tools/rend/d3d_parse_arena.sh parallel_dc_libretro.dll
       - name: Direct3D 12's shaders as DXIL where the device takes shader model 6.0, as DXBC where it does not
         run: VK_DRIVER_FILES=/usr/share/vulkan/icd.d/lvp_icd.json sh tools/rend/d3d_dxil.sh parallel_dc_libretro.dll
+      - name: Direct3D 11 - nothing compiled or made on the draw path, cold, every renderer (AGENTS.md)
+        run: VK_DRIVER_FILES=/usr/share/vulkan/icd.d/lvp_icd.json sh tools/rend/d3d_draw_path.sh parallel_dc_libretro.dll

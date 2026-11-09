@@ -3,9 +3,9 @@
  * Direct3D 11 renderers' pictures, as the core option reicast_pvr2_scaler
  * asks: a compute shader's pass in place over the picture (pvr_compute.h's
  * PVRC_K_YFILTER, in Direct3D 11's terms), before what goes over it.
- * Compiled in Init(), when the renderer starts or changes size (a change
- * of the option is one); nothing is made in a frame, and a frame without a
- * write-out does nothing. Needs typed loads of R8G8B8A8_UNORM from an
+ * Compiled in Init() as the renderer starts, whether the option is on or
+ * not: turning it on (a change of size) makes nothing; nothing is made in
+ * a frame, and a frame without a write-out does nothing. Needs typed loads of R8G8B8A8_UNORM from an
  * unordered access view (Direct3D 11.3's TypedUAVLoadAdditionalFormats). */
 #pragma once
 #include <d3d11.h>
@@ -17,8 +17,9 @@ class DX11Shaders;
 class DX11WriteOut
 {
 public:
-	/* Made, or taken down, as the option and the device have it; true if
-	 * the pictures are to be made for it (D3D11_BIND_UNORDERED_ACCESS) */
+	/* Made the first time (the renderer's start), whatever the option; true
+	 * if the option and the device have it used, and the pictures are to be
+	 * made for it (D3D11_BIND_UNORDERED_ACCESS) */
 	bool Init(ID3D11Device *device, ID3D11DeviceContext *deviceContext, DX11Shaders *shaders);
 	void Term();
 	bool Ready() const { return (bool)shader; }
@@ -27,6 +28,8 @@ public:
 	void Record(ID3D11UnorderedAccessView *uav, u32 width, u32 height);
 
 private:
+	bool Make(ID3D11Device *device, ID3D11DeviceContext *deviceContext, DX11Shaders *shaders);
+	bool tried = false;
 	ID3D11DeviceContext *deviceContext = nullptr;
 	ComPtr<ID3D11ComputeShader> shader;
 	ComPtr<ID3D11Buffer> constants;

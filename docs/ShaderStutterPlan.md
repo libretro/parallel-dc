@@ -31,25 +31,18 @@ Ranked by how often they hit in play.
 
 **Direct3D 11**
 
-1. Polygons' pixel shaders, both renderers (`DX11Shaders::GetPixelShader`,
-   `DX11OITShaders::GetPixelShader` → `MissedPS`): a key not in
-   `d3d11_shaders.bin` is compiled from HLSL (`D3DCompile`) and created in
-   the frame. Every new combination on a first run, and every one after a
-   shader source change. With no warm thread (a single-threaded device,
-   no `HAVE_THREADS`) even the kept ones are created in the frame.
-2. Depth-stencil, blend and sampler states (`DX11DepthStencilStates`,
-   `DX11BlendStates`, `DX11Samplers`): made the first time a polygon needs
-   one, about 290, 130 and 1024 reachable.
-3. Vertex shaders: the flat-shaded one in both renderers, and the
-   per-pixel renderer's modifier volume and final ones, are made on first
-   use; vertex shaders are never warmed.
-4. The modifier volumes' pixel shaders: warmed, but made in the frame if
-   the thread has not got to them.
-5. The HDR post effects (`hdr_d3d11_encode` → `post_make`): seven pixel
-   shaders and a blend state in the frame they first turn on.
-6. Write-out (`DX11WriteOut::Init`, compiled from HLSL each boot and on
-   every resize) and the TA decoder's kernels (`OptionsChanged`): inside
-   `retro_run` on an option change.
+Polygons draw with a general pixel shader (the key in the polygon's
+constants) while their own is compiled on the warm thread; every vertex
+shader, fixed pixel shader and reachable state is made at the start
+(`tools/rend/d3d_draw_path.sh` holds it at zero). Left:
+
+1. A shader the warm thread made is kept for `d3d11_shaders.bin` by the
+   draw thread (`TakeBuilt` → `Keep`): a copy and a map insert, no
+   compile.
+2. The shaders are still HLSL compiled while the core runs, so a
+   system without `d3dcompiler_47.dll` (or with wine's, which does not
+   compile the per-pixel renderer's) has fewer of them.
+3. The TA decoder's kernels on an option change (phase 5).
 
 **Vulkan**
 
@@ -103,8 +96,10 @@ render states.
 
 - Direct3D 12 counts pipelines made in a frame (`statMadeInFrame`).
 - Vulkan counts pipelines `Need` made itself (`syncBuilt`).
-- Direct3D 11 counts the shaders its warm thread compiled (`statCompiledAhead`), not the ones a frame compiled.
-- Nothing fails a test on any of them yet.
+- Direct3D 11 counts shaders and states made on the draw path and draws
+  with a general shader, and `tools/rend/d3d_draw_path.sh` fails on any
+  made there (CI, cold, every renderer and the threaded setting).
+- Nothing fails a test on the others yet.
 
 ## Phase 0: measure (lands first)
 
@@ -120,18 +115,13 @@ render states.
 
 ## Phase 1: Direct3D 11
 
+Done, but for:
+
 1. The polygons' shaders embedded as DXBC, made by
    `tools/rend/kernels_dxbc.sh`, as Direct3D 12's are: no compiler needed
-   at run time, nothing compiled from HLSL while a game runs.
-2. A general pixel shader, both renderers, reading the polygon's key from
-   a constant buffer, made at the start and drawn with while the
-   polygon's own is made on the warm thread.
-3. Every reachable depth-stencil, blend and sampler state made at the
-   start (they are small; the reachable sets are known).
-4. Every vertex shader and every fixed pixel shader made at the start,
-   with no warm-thread race: the start waits for what a first frame needs.
-5. Write-out and the TA decoder made at the start whether on or not, the
-   HDR post effects with the HDR output.
+   at run time.
+2. The warm thread keeping what it compiled itself, so the draw thread
+   only adopts a shader.
 
 ## Phase 2: Vulkan
 
@@ -173,3 +163,5 @@ render states.
 Changing an option while a game runs (resolution, SSAA, the upscaler,
 the renderer, GPU TA, write-out, HDR) makes what it needs on a worker
 while the old setting keeps drawing, and switches when it is ready.
+Direct3D 11's write-out and HDR post effects are made at the start
+already; its TA decoder's kernels are not.

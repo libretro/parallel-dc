@@ -562,6 +562,8 @@ ID3D11SamplerState *DX11Samplers::MakeSampler(TSP tsp)
 	desc.MaxLOD = D3D11_FLOAT32_MAX;
 
 	ComPtr<ID3D11SamplerState>& sampler = samplers[key >> 8];
+	if (started)
+		drawPath++;
 	ID3D11Device *device = DX11Context::Instance()->GetDevice();
 	if (device == nullptr || FAILED(device->CreateSamplerState(&desc, sampler.put())))
 		WARN_LOG(RENDERER, "Sampler creation failed");
@@ -577,10 +579,31 @@ ID3D11SamplerState *DX11Samplers::GetPointSampler()
 	return GetSampler(tsp);
 }
 
+bool DX11Samplers::MakeAll()
+{
+	bool ok = true;
+	started = false;
+	// (every combination of the bits a sampler is made from: 1024)
+	for (u32 bits = TSP_Mask; ; bits = (bits - 1) & TSP_Mask)
+	{
+		TSP tsp;
+		tsp.full = bits;
+		if (samplers[bits >> 8] == nullptr)
+			ok = MakeSampler(tsp) != nullptr && ok;
+		if (bits == 0)
+			break;
+	}
+	ok = GetLinearSampler() != nullptr && ok;
+	started = true;
+	return ok;
+}
+
 ID3D11SamplerState *DX11Samplers::GetLinearSampler()
 {
 	if (!linear)
 	{
+		if (started)
+			drawPath++;
 		D3D11_SAMPLER_DESC desc{};
 		desc.Filter = D3D11_FILTER_MIN_MAG_MIP_LINEAR;
 		desc.AddressU = desc.AddressV = desc.AddressW = D3D11_TEXTURE_ADDRESS_CLAMP;

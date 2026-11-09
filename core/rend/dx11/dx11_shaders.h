@@ -41,17 +41,21 @@ struct DX11ShaderDesc
 	D3D_SHADER_MACRO macros[16];
 };
 
-/* The shaders, in HLSL, compiled the first time each one is wanted with the
- * compiler the frontend hands over (or d3dcompiler_47.dll's), and kept.
+/* The shaders, in HLSL, compiled with the compiler the frontend hands over
+ * (or d3dcompiler_47.dll's), and kept.
  *
- * Their bytecode is kept on disk too (rend/d3d_shader_cache.h), whatever
- * the driver: a shader compiled once is not compiled again. And the pixel
- * shaders the file has are made ahead, on a thread of their own
- * (rend/d3d_warm.h), when the device can be used from another thread: a
- * frame that wants one takes it from there, or makes it itself if it is
- * not there yet - nothing is drawn without its shader. The vertex shaders
- * are wanted as the renderer starts (for its input layouts): made there,
- * from the file. */
+ * Nothing is compiled or made on the draw path (AGENTS.md). Every vertex
+ * shader, every pixel shader of a kind of its own and a general pixel
+ * shader - one that reads a polygon's key from its constants and draws
+ * what the polygon's own would - are made as the renderer starts (Start()).
+ * A polygon's own pixel shader is made on a thread of its own
+ * (rend/d3d_warm.h), the ones the file had ahead, the others as a frame
+ * first wants them; until it is there the polygon is drawn with the general
+ * one. Without the thread (a device made for one thread, no threads) the
+ * general one draws what the file did not have, for the run.
+ *
+ * Their bytecode is kept on disk (rend/d3d_shader_cache.h), whatever the
+ * driver: a shader compiled once is not compiled again. */
 class DX11ShaderCompiler
 {
 public:
@@ -65,7 +69,13 @@ public:
 	ComPtr<ID3D11PixelShader> CompilePS(const char *source, const char *entry, const char *profile, const D3D_SHADER_MACRO *macros,
 			ID3DInclude *include = nullptr);
 
+	/* Whether a shader the thread made, or one asked of it, is taken: the
+	 * renderer's thread, with nothing waited for */
+	void TakeBuilt();
+
 	// what has been done so far, for measuring
+	u32 statDrawPath = 0;		// shaders made by the thread that renders once it started: always 0
+	u32 statGeneral = 0;		// draws with a general pixel shader, the polygon's own not there yet
 	u32 statCompiled = 0;		// compiled by the thread that renders
 	u32 statFromFile = 0;		// ...or found in the file
 	u32 statAhead = 0;			// made by the thread, and taken
@@ -85,8 +95,15 @@ protected:
 	virtual bool PixelFamily(u32 family) const = 0;
 	virtual void Fixed(std::vector<d3d_warm_job_t>& jobs) const = 0;
 
-	/* A pixel shader not there: the thread's, else made here */
+	/* A pixel shader not there: the thread's, else made here (the start's) */
 	ID3D11PixelShader *MissedPS(u32 family, u32 variant, ComPtr<ID3D11PixelShader>& slot);
+	/* @family's @variant asked of the thread: false only when it has no
+	 * room (to be asked again); with no thread, true, the general shader
+	 * drawing it for the run */
+	bool Request(u32 family, u32 variant);
+	/* What is made from now on is made on the draw path */
+	void Started() { started = true; }
+	bool started = false;
 	/* A vertex shader, made here, and its bytecode for an input layout */
 	ID3D11VertexShader *MakeVS(u32 family, u32 variant, ComPtr<ID3D11VertexShader>& slot, ComPtr<ID3DBlob> *blob);
 	/* The thread stopped, what it made taken, the file saved */
@@ -118,7 +135,6 @@ private:
 	/* The bytecode of @d: the file's, this run's, or compiled now (and kept) */
 	bool Bytecode(u32 family, u32 variant, const DX11ShaderDesc& d, ComPtr<ID3DBlob>& hold, const void **code, size_t *size, bool *fromFile);
 	void Keep(u64 hash, u32 family, u32 variant, const void *code, size_t size);
-	void TakeBuilt();
 	void LoadFile();
 	void SaveFile();
 
@@ -169,12 +185,17 @@ struct DX11FragmentShaderParams
 class DX11Shaders : public DX11ShaderCompiler
 {
 public:
-	/* Their families (DX11ShaderCompiler) */
-	enum { VS, PS, ModVolVS, ModVolPS, QuadVS, QuadPS };
+	/* Their families (DX11ShaderCompiler; the file's numbers, kept) */
+	enum { VS, PS, ModVolVS, ModVolPS, QuadVS, QuadPS, GeneralPS };
+	/* Everything a frame can want, made before the first: the vertex
+	 * shaders, the ones of a kind, the general pixel shaders */
+	bool Start();
 	void Term();
 
 	ID3D11VertexShader *GetVertexShader(bool gouraud);
-	ID3D11PixelShader *GetPixelShader(const DX11FragmentShaderParams& params);
+	/* A polygon's own, or the general one while its own is made
+	 * (*general): the polygon's key then in its constants */
+	ID3D11PixelShader *GetPixelShader(const DX11FragmentShaderParams& params, bool *general);
 	ID3D11VertexShader *GetModVolVertexShader();
 	ID3D11PixelShader *GetModVolPixelShader();
 	ID3D11VertexShader *GetQuadVertexShader();
@@ -188,7 +209,11 @@ public:
 private:
 	ComPtr<ID3D11VertexShader> vertexShaders[2];
 	ComPtr<ID3DBlob> vertexBlob;
-	std::unordered_map<u32, ComPtr<ID3D11PixelShader>> pixelShaders;
+	// by DX11FragmentShaderParams::hash(), all of them: nothing allocated in play
+	static const u32 PixelKeys = 1u << 16;
+	std::vector<ComPtr<ID3D11PixelShader>> pixelShaders;
+	std::vector<u32> requested;		// a bit a key, asked of the thread
+	ComPtr<ID3D11PixelShader> generalShaders[2];	// by pp_Gouraud
 	ComPtr<ID3D11VertexShader> modVolVertexShader;
 	ComPtr<ID3DBlob> modVolVertexBlob;
 	ComPtr<ID3D11PixelShader> modVolPixelShader;

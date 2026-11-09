@@ -85,7 +85,7 @@ protected:
 		float trilinearAlpha;
 		float paletteIndex;
 		float prepassAlpha;	// the depth prepass's least alpha (rend/sorter.h), 0 for the colour
-		float padding;
+		u32 polyKey;		// the general pixel shader's: the polygon's key (DX11Shaders)
 	};
 	struct ScreenTarget
 	{

@@ -187,7 +187,28 @@ cbuffer PolyConstants : register(b1)
 	float trilinearAlpha;
 	float palette_index;
 	float prepassAlpha;
+	uint polyKey;	// the general shader's: DX11FragmentShaderParams::hash()
 };
+
+// A polygon's own shader has its key's bits as numbers, and the branches
+// they decide are compiled away; the general shader (GENERAL) reads them
+// from the polygon's constants, and draws what its own shader would while
+// that is made: the same code, the same pixels
+#ifdef GENERAL
+#define cp_AlphaTest (polyKey & 1u)
+#define pp_ClipInside ((polyKey >> 1) & 1u)
+#define pp_UseAlpha ((polyKey >> 2) & 1u)
+#define pp_Texture ((polyKey >> 3) & 1u)
+#define pp_IgnoreTexA ((polyKey >> 4) & 1u)
+#define pp_ShadInstr ((polyKey >> 5) & 3u)
+#define pp_Offset ((polyKey >> 7) & 1u)
+#define pp_FogCtrl ((polyKey >> 8) & 3u)
+#define pp_BumpMap ((polyKey >> 11) & 1u)
+#define ColorClamping ((polyKey >> 12) & 1u)
+#define pp_TriLinear ((polyKey >> 13) & 1u)
+#define pp_Palette ((polyKey >> 14) & 1u)
+#define pp_Shadowed ((polyKey >> 15) & 1u)
+#endif
 
 Texture2D tex : register(t0);
 SamplerState texSampler : register(s0);
@@ -195,21 +216,17 @@ Texture2D palette : register(t1);
 
 float4 colorClamp(float4 col)
 {
-#if ColorClamping == 1
-	return clamp(col, colorClampMin, colorClampMax);
-#else
+	if (ColorClamping == 1)
+		return clamp(col, colorClampMin, colorClampMax);
 	return col;
-#endif
 }
 
-#if pp_Palette == 1
 float4 palettePixel(float2 coords)
 {
 	// palette_index is where the middle of the palette's first colour is in the row of 1024
 	float2 c = float2(tex.Sample(texSampler, coords).r * (255.0 / 1024.0) + palette_index, 0.5);
 	return palette.SampleLevel(pointSampler, c, 0);
 }
-#endif
 
 struct Pixel
 {
@@ -230,93 +247,85 @@ PSO main(in Pixel inpix)
 {
 	const float w = 1.0 / inpix.clipW;
 	// Clip inside the box
-#if pp_ClipInside == 1
-	if (inpix.pos.x >= clipTest.x && inpix.pos.x <= clipTest.z
-			&& inpix.pos.y >= clipTest.y && inpix.pos.y <= clipTest.w)
-		discard;
-#endif
+	if (pp_ClipInside == 1)
+	{
+		if (inpix.pos.x >= clipTest.x && inpix.pos.x <= clipTest.z
+				&& inpix.pos.y >= clipTest.y && inpix.pos.y <= clipTest.w)
+			discard;
+	}
 
 	float4 color = inpix.col;
-#if pp_UseAlpha == 0
-	color.a = 1.0;
-#endif
-#if pp_Shadowed == 1
-	// A pixel inside a modifier volume: what the polygon is shaded with,
-	// its base and offset colours, is scaled before the texture is
-	// combined with them. The texture itself is not.
-	color.rgb *= shade_scale_factor;
-	float4 offset = float4(inpix.spec.rgb * shade_scale_factor, inpix.spec.a);
-#else
+	if (pp_UseAlpha == 0)
+		color.a = 1.0;
 	float4 offset = inpix.spec;
-#endif
-#if pp_Texture == 1
+	if (pp_Shadowed == 1)
 	{
-	#if pp_Palette == 0
-		float4 texcol = tex.Sample(texSampler, inpix.uv);
-	#else
-		float4 texcol = palettePixel(inpix.uv);
-	#endif
-	#if pp_BumpMap == 1
-		float s = PI / 2.0 * (texcol.a * 15.0 * 16.0 + texcol.r * 15.0) / 255.0;
-		float r = 2.0 * PI * (texcol.g * 15.0 * 16.0 + texcol.b * 15.0) / 255.0;
-		texcol.a = clamp(offset.a + offset.r * sin(s) + offset.g * cos(s) * cos(r - 2.0 * PI * offset.b), 0.0, 1.0);
-		texcol.rgb = float3(1.0, 1.0, 1.0);
-	#else
-		#if pp_IgnoreTexA == 1
-		texcol.a = 1.0;
-		#endif
-	#endif
-	#if pp_ShadInstr == 0
-		color = texcol;
-	#endif
-	#if pp_ShadInstr == 1
-		color.rgb *= texcol.rgb;
-		color.a = texcol.a;
-	#endif
-	#if pp_ShadInstr == 2
-		color.rgb = lerp(color.rgb, texcol.rgb, texcol.a);
-	#endif
-	#if pp_ShadInstr == 3
-		color *= texcol;
-	#endif
-	#if pp_Offset == 1 && pp_BumpMap == 0
-		color.rgb += offset.rgb;
-	#endif
+		// A pixel inside a modifier volume: what the polygon is shaded with,
+		// its base and offset colours, is scaled before the texture is
+		// combined with them. The texture itself is not.
+		color.rgb *= shade_scale_factor;
+		offset.rgb *= shade_scale_factor;
 	}
-#endif
+	if (pp_Texture == 1)
+	{
+		float4 texcol;
+		if (pp_Palette == 0)
+			texcol = tex.Sample(texSampler, inpix.uv);
+		else
+			texcol = palettePixel(inpix.uv);
+		if (pp_BumpMap == 1)
+		{
+			float s = PI / 2.0 * (texcol.a * 15.0 * 16.0 + texcol.r * 15.0) / 255.0;
+			float r = 2.0 * PI * (texcol.g * 15.0 * 16.0 + texcol.b * 15.0) / 255.0;
+			texcol.a = clamp(offset.a + offset.r * sin(s) + offset.g * cos(s) * cos(r - 2.0 * PI * offset.b), 0.0, 1.0);
+			texcol.rgb = float3(1.0, 1.0, 1.0);
+		}
+		else if (pp_IgnoreTexA == 1)
+			texcol.a = 1.0;
+		if (pp_ShadInstr == 0)
+			color = texcol;
+		if (pp_ShadInstr == 1)
+		{
+			color.rgb *= texcol.rgb;
+			color.a = texcol.a;
+		}
+		if (pp_ShadInstr == 2)
+			color.rgb = lerp(color.rgb, texcol.rgb, texcol.a);
+		if (pp_ShadInstr == 3)
+			color *= texcol;
+		if (pp_Offset == 1 && pp_BumpMap == 0)
+			color.rgb += offset.rgb;
+	}
 
 	color = colorClamp(color);
 
 	// Look-up table mode 2: the fog colour takes the place of the pixel's
 	// colour and the fog coefficient the place of its alpha, after the
 	// texture has been combined in.
-#if pp_FogCtrl == 3
-	color = float4(sp_FOG_COL_RAM.rgb, fog_mode2(w) * (256.0 / 255.0));
-#endif
-#if pp_FogCtrl == 0
+	if (pp_FogCtrl == 3)
+		color = float4(sp_FOG_COL_RAM.rgb, fog_mode2(w) * (256.0 / 255.0));
+	if (pp_FogCtrl == 0)
 	{
 		float fog = fog_mode2(w);
 		color.rgb = color.rgb * (255.0 / 256.0 - fog) + sp_FOG_COL_RAM.rgb * fog;
 	}
-#endif
-#if pp_FogCtrl == 1 && pp_Offset == 1 && pp_BumpMap == 0
+	if (pp_FogCtrl == 1 && pp_Offset == 1 && pp_BumpMap == 0)
 	{
 		float fog = offset.a * (255.0 / 256.0);
 		color.rgb = color.rgb * (255.0 / 256.0 - fog) + sp_FOG_COL_VERT.rgb * fog;
 	}
-#endif
 
-#if pp_TriLinear == 1
-	color *= trilinearAlpha;
-#endif
+	if (pp_TriLinear == 1)
+		color *= trilinearAlpha;
 
 	// Punch-through polygons are tested on the alpha of the finished colour,
 	// after the texture and the vertex colours are combined and clamped.
-#if cp_AlphaTest == 1
-	if (cp_AlphaTestValue > color.a)
-		discard;
-	color.a = 1.0;
-#endif
+	if (cp_AlphaTest == 1)
+	{
+		if (cp_AlphaTestValue > color.a)
+			discard;
+		color.a = 1.0;
+	}
 	// The depth prepass of sorted translucent polygons (rend/sorter.h): the
 	// pixels that hide what is behind them. (0 for the colours.)
 	if (color.a < prepassAlpha)
@@ -605,11 +614,25 @@ void DX11ShaderCompiler::TakeBuilt()
 	}
 }
 
+bool DX11ShaderCompiler::Request(u32 family, u32 variant)
+{
+	d3d_warm_job_t j;
+	/* (no warm thread: the general shader draws it for the run) */
+	if (warm == nullptr)
+		return true;
+	j.key = 0;
+	j.kind = family;
+	j.aux = variant;
+	return d3d_warm_submit(warm, &j, 1) == 1;
+}
+
 ID3D11PixelShader *DX11ShaderCompiler::MissedPS(u32 family, u32 variant, ComPtr<ID3D11PixelShader>& slot)
 {
 	TakeBuilt();
 	if (slot)
 		return slot;
+	if (started)
+		statDrawPath++;
 	DX11ShaderDesc d;
 	ComPtr<ID3DBlob> hold;
 	const void *code;
@@ -627,6 +650,8 @@ ID3D11PixelShader *DX11ShaderCompiler::MissedPS(u32 family, u32 variant, ComPtr<
 ID3D11VertexShader *DX11ShaderCompiler::MakeVS(u32 family, u32 variant, ComPtr<ID3D11VertexShader>& slot, ComPtr<ID3DBlob> *blob)
 {
 	DX11ShaderDesc d;
+	if (started)
+		statDrawPath++;
 	ComPtr<ID3DBlob> hold;
 	const void *code;
 	size_t size;
@@ -747,6 +772,8 @@ void DX11ShaderCompiler::Init(ID3D11Device *device, pD3DCompile compile)
 	 * only: the file still spares it compiling) */
 	if (device == nullptr || (device->GetCreationFlags() & D3D11_CREATE_DEVICE_SINGLETHREADED) != 0)
 		return;
+	statDrawPath = statGeneral = 0;
+	started = false;
 	std::vector<d3d_warm_job_t> jobs;
 	Fixed(jobs);
 	const size_t fixed = jobs.size();
@@ -765,9 +792,10 @@ void DX11ShaderCompiler::Init(ID3D11Device *device, pD3DCompile compile)
 			j.aux = e.variant;
 			jobs.push_back(j);
 		}
-	if (jobs.empty())
+	// (room for the keys a game first wants while it runs, too)
+	warm = d3d_warm_new(WarmBuild, WarmRelease, this, std::max<size_t>(jobs.size(), 1024));
+	if (warm == nullptr || jobs.empty())
 		return;
-	warm = d3d_warm_new(WarmBuild, WarmRelease, this, jobs.size());
 	const size_t taken = d3d_warm_submit(warm, jobs.data(), jobs.size());
 	NOTICE_LOG(RENDERER, "DX11: %u shaders in %s, %u pixel shaders to be made ahead",
 			(u32)fileIndex.size(), FileName(), (u32)taken);
@@ -783,8 +811,8 @@ void DX11ShaderCompiler::TermCompiler()
 		warm = nullptr;
 	}
 	if (device != nullptr)
-		NOTICE_LOG(RENDERER, "DX11: %s: %u compiled, %u from the file, %u made ahead (%u of them compiled)",
-				FileName(), statCompiled, statFromFile, statAhead, statCompiledAhead);
+		NOTICE_LOG(RENDERER, "DX11: %s: %u compiled, %u from the file, %u made ahead (%u of them compiled), %u made on the draw path, %u draws with a general shader",
+				FileName(), statCompiled, statFromFile, statAhead, statCompiledAhead, statDrawPath, statGeneral);
 	SaveFile();
 	file.clear();
 	file.shrink_to_fit();
@@ -827,6 +855,12 @@ bool DX11Shaders::Describe(u32 family, u32 variant, DX11ShaderDesc& d) const
 		*m++ = { "pp_Palette", MacroValues[(variant >> 14) & 1] };
 		*m++ = { "pp_Shadowed", MacroValues[(variant >> 15) & 1] };
 		break;
+	case GeneralPS:
+		d.source = std::string(PixelShaderHeader) + DX11FogFunction + PixelShaderSource;
+		d.profile = "ps_4_0";
+		*m++ = { "GENERAL", "1" };
+		*m++ = { "pp_Gouraud", MacroValues[variant & 1] };
+		break;
 	case ModVolVS:
 		d.source = std::string(DX11VertexTransform) + DX11ModVolVertexShader;
 		d.profile = "vs_4_0";
@@ -856,7 +890,8 @@ void DX11Shaders::Adopt(u32 family, u32 variant, ID3D11PixelShader *shader)
 	switch (family)
 	{
 	case PS:
-		slot = &pixelShaders[variant];
+		if (variant < pixelShaders.size())
+			slot = &pixelShaders[variant];
 		break;
 	case ModVolPS:
 		slot = &modVolPixelShader;
@@ -897,18 +932,54 @@ ID3D11VertexShader *DX11Shaders::GetVertexShader(bool gouraud)
 	return shader;
 }
 
-ID3D11PixelShader *DX11Shaders::GetPixelShader(const DX11FragmentShaderParams& params)
+bool DX11Shaders::Start()
+{
+	pixelShaders.assign(PixelKeys, ComPtr<ID3D11PixelShader>());
+	requested.assign(PixelKeys / 32, 0);
+	for (u32 g = 0; g < 2; g++)
+	{
+		GetVertexShader(g != 0);
+		MissedPS(GeneralPS, g, generalShaders[g]);
+	}
+	GetModVolVertexShader();
+	GetModVolPixelShader();
+	GetQuadVertexShader();
+	GetQuadPixelShader();
+	Started();
+	return vertexShaders[0] && vertexShaders[1] && generalShaders[0] && generalShaders[1]
+			&& modVolVertexShader && modVolPixelShader && quadVertexShader && quadPixelShader;
+}
+
+ID3D11PixelShader *DX11Shaders::GetPixelShader(const DX11FragmentShaderParams& params, bool *general)
 {
 	const u32 key = params.hash();
+	*general = false;
 	Memo& m = MemoFor(key);
 	if (m.shader != nullptr && m.key == key)
 		return m.shader;
 	ComPtr<ID3D11PixelShader>& shader = pixelShaders[key];
+#ifndef DX11_SHADER_TEST_GENERAL
 	if (!shader)
-		MissedPS(PS, key, shader);
-	m.key = key;
-	m.shader = shader;
-	return shader;
+		TakeBuilt();
+	if (shader)
+	{
+		m.key = key;
+		m.shader = shader;
+		return shader;
+	}
+	// (its own asked for once; drawn with the general one till it is there)
+	u32& word = requested[key >> 5];
+	if ((word & (1u << (key & 31))) == 0)
+	{
+		word |= 1u << (key & 31);
+		/* (the queue full: asked again at its next draw) */
+		if (!Request(PS, key))
+			word &= ~(1u << (key & 31));
+	}
+#endif
+	statGeneral++;
+	*general = true;
+	return generalShaders[params.gouraud];
 }
 
 ID3D11VertexShader *DX11Shaders::GetModVolVertexShader()
@@ -946,6 +1017,10 @@ void DX11Shaders::Term()
 		shader.reset();
 	vertexBlob.reset();
 	pixelShaders.clear();
+	pixelShaders.shrink_to_fit();
+	requested.clear();
+	for (auto& shader : generalShaders)
+		shader.reset();
 	Forget();
 	modVolVertexShader.reset();
 	modVolVertexBlob.reset();

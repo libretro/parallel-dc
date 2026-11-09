@@ -241,6 +241,8 @@ static ID3D11SamplerState *sampler(ID3D11Device *device, D3D11_TEXTURE_ADDRESS_M
    return s;
 }
 
+static bool post_make(hdr_d3d11_t *e);
+
 hdr_d3d11_t *hdr_d3d11_new(ID3D11Device *device, DXGI_FORMAT format)
 {
    D3D11_RASTERIZER_DESC raster;
@@ -275,6 +277,10 @@ hdr_d3d11_t *hdr_d3d11_new(ID3D11Device *device, DXGI_FORMAT format)
       hdr_d3d11_free(e);
       return NULL;
    }
+   /* The post effects' shaders, made now whether or not they are on:
+    * nothing is made on the draw path (AGENTS.md). Without them the
+    * effects stay off. */
+   post_make(e);
    return e;
 }
 

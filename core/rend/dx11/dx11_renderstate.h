@@ -59,9 +59,15 @@ public:
 	{
 		for (auto& state : states)
 			state.reset();
+		started = false;
 	}
+	/* Every one a frame can want, made before the first (AGENTS.md): one
+	 * made after is made on the draw path (drawPath) */
+	bool MakeAll();
+	u32 drawPath = 0;
 
 private:
+	bool started = false;
 	/* (looked up for every polygon: by the key itself) */
 	static const u32 KeyCount = 1 << 9;
 	ComPtr<ID3D11DepthStencilState> states[KeyCount];
@@ -92,9 +98,14 @@ public:
 			state.reset();
 		alpha.reset();
 		factorAlpha.reset();
+		started = false;
 	}
+	/* Every one a frame can want, made before the first (AGENTS.md) */
+	bool MakeAll();
+	u32 drawPath = 0;
 
 private:
+	bool started = false;
 	ID3D11BlendState *Make(const D3D11_BLEND_DESC& desc, ComPtr<ID3D11BlendState>& state);
 	ID3D11BlendState *Make(u32 key);
 

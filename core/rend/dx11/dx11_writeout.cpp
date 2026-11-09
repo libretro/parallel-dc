@@ -50,17 +50,24 @@ void DX11WriteOut::Term()
 	shader.reset();
 	constants.reset();
 	deviceContext = nullptr;
+	tried = false;
 }
 
+/* Made the first time, as the renderer starts, whether the option is on or
+ * not: turning it on while a game runs (a change of size) makes nothing on
+ * the draw path (AGENTS.md). Whether it is used is the option's. */
 bool DX11WriteOut::Init(ID3D11Device *device, ID3D11DeviceContext *ctx, DX11Shaders *shaders)
 {
-	if (ComputeFrame::ScalersOff)
+	if (!tried)
 	{
-		Term();
-		return false;
+		tried = true;
+		Make(device, ctx, shaders);
 	}
-	if (shader)
-		return true;
+	return shader && !ComputeFrame::ScalersOff;
+}
+
+bool DX11WriteOut::Make(ID3D11Device *device, ID3D11DeviceContext *ctx, DX11Shaders *shaders)
+{
 	D3D11_FEATURE_DATA_FORMAT_SUPPORT2 fs{};
 	fs.InFormat = DXGI_FORMAT_R8G8B8A8_UNORM;
 	if (device->GetFeatureLevel() < D3D_FEATURE_LEVEL_11_0
@@ -79,7 +86,8 @@ bool DX11WriteOut::Init(ID3D11Device *device, ID3D11DeviceContext *ctx, DX11Shad
 			|| FAILED(device->CreateBuffer(&desc, nullptr, constants.put())))
 	{
 		WARN_LOG(RENDERER, "DX11: the PowerVR2 write-out pass could not be made: the picture goes without it");
-		Term();
+		shader.reset();
+		constants.reset();
 		return false;
 	}
 	deviceContext = ctx;

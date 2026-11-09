@@ -69,7 +69,8 @@ public:
 
 		DX11Lock lock;
 		oitShaders.Init(device, context->GetCompiler());
-		bool success = oitShaders.GetVertexShader(true) != nullptr && oitShaders.GetFinalPixelShader() != nullptr;
+		// (everything a frame can want, made now: AGENTS.md)
+		bool success = oitShaders.Start();
 		ID3DBlob *blob = oitShaders.GetVertexShaderBlob();
 		success = success && blob != nullptr
 				&& SUCCEEDED(device->CreateInputLayout(OITLayout, ARRAY_SIZE(OITLayout), blob->GetBufferPointer(), blob->GetBufferSize(), oitInputLayout.put()));
@@ -136,7 +137,7 @@ private:
 		float trilinearAlpha;
 		int pp_Number;
 		float palette_index;
-		int padding0;
+		u32 polyKey;	// the general pixel shader's: the polygon's key (DX11OITShaders)
 
 		// two volume mode
 		int blend_mode1[4];
@@ -475,13 +476,6 @@ void DX11OITRenderer::DrawPoly(u32 listType, bool autosort, DX11OITShaders::Pass
 		constants.ignore_tex_alpha0 = poly.tsp.IgnoreTexA;
 		constants.ignore_tex_alpha1 = poly.tsp1.IgnoreTexA;
 	}
-	if ((!depthOnly || insideClipTest)
-			&& (!lastConstantsValid || memcmp(&constants, &lastConstants, sizeof(constants))))
-	{
-		SetConstants(oitConstants.get(), constants);
-		lastConstants = constants;
-		lastConstantsValid = true;
-	}
 
 	if (poly.pcw.Texture && !depthOnly)
 	{
@@ -506,8 +500,18 @@ void DX11OITRenderer::DrawPoly(u32 listType, bool autosort, DX11OITShaders::Pass
 	params.pass = pass;
 	params.twoVolume = twoVolumes;
 	params.palette = palette;
+	bool general;
 	SetVS(oitShaders.GetVertexShader(poly.pcw.Gouraud));
-	SetPS(oitShaders.GetPixelShader(params));
+	SetPS(oitShaders.GetPixelShader(params, &general));
+	// (the general shader's key is the polygon's: in its constants)
+	constants.polyKey = general ? params.hash() : 0u;
+	if ((!depthOnly || insideClipTest || general)
+			&& (!lastConstantsValid || memcmp(&constants, &lastConstants, sizeof(constants))))
+	{
+		SetConstants(oitConstants.get(), constants);
+		lastConstants = constants;
+		lastConstantsValid = true;
+	}
 
 	// Depth and stencil
 	int depthFunc;

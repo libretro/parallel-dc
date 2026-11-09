@@ -32,8 +32,8 @@ class DX11OITShaders : public DX11ShaderCompiler
 {
 public:
 	enum Pass { Depth, Color, OIT };
-	/* Their families (DX11ShaderCompiler) */
-	enum { VS, PS, ModVolVS, ModVolPS, TrModVolPS, FinalVS, FinalPS };
+	/* Their families (DX11ShaderCompiler; the file's numbers, kept) */
+	enum { VS, PS, ModVolVS, ModVolPS, TrModVolPS, FinalVS, FinalPS, GeneralPS };
 	// Must match the order of the modifier volume modes in the shader
 	enum ModVolMode { Xor, Or, Inclusion, Exclusion };
 
@@ -63,9 +63,14 @@ public:
 		}
 	};
 
+	/* Everything a frame can want, made before the first: the vertex
+	 * shaders, the ones of a kind, the general pixel shaders */
+	bool Start();
 	void Term();
 	ID3D11VertexShader *GetVertexShader(bool gouraud);
-	ID3D11PixelShader *GetPixelShader(const FragmentShaderParams& params);
+	/* A polygon's own, or the general one while its own is made
+	 * (*general): the polygon's key then in its constants */
+	ID3D11PixelShader *GetPixelShader(const FragmentShaderParams& params, bool *general);
 	ID3D11VertexShader *GetModVolVertexShader();
 	ID3D11PixelShader *GetModVolPixelShader();
 	ID3D11PixelShader *GetTrModVolPixelShader(ModVolMode mode);
@@ -78,7 +83,13 @@ public:
 private:
 	ComPtr<ID3D11VertexShader> vertexShaders[2];
 	ComPtr<ID3DBlob> vertexBlob;
-	std::unordered_map<u32, ComPtr<ID3D11PixelShader>> pixelShaders;
+	// by FragmentShaderParams::hash(), all of them: nothing allocated in play
+	static const u32 PixelKeys = 1u << 17;
+	std::vector<ComPtr<ID3D11PixelShader>> pixelShaders;
+	std::vector<u32> requested;		// a bit a key, asked of the thread
+	// by the pass, the interpolation (<< 2) and the two volumes (<< 3)
+	static const u32 GeneralCount = 16;
+	ComPtr<ID3D11PixelShader> generalShaders[GeneralCount];
 	ComPtr<ID3D11VertexShader> modVolVertexShader;
 	ComPtr<ID3DBlob> modVolVertexBlob;
 	ComPtr<ID3D11PixelShader> modVolPixelShader;

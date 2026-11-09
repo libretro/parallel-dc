@@ -165,11 +165,17 @@ public:
 		for (auto& sampler : samplers)
 			sampler.reset();
 		linear.reset();
+		started = false;
 	}
+	/* Every one a frame can want, made before the first (AGENTS.md): one
+	 * made after is made on the draw path (drawPath) */
+	bool MakeAll();
+	u32 drawPath = 0;
 
 	static const u32 TSP_Mask = 0x7ef00;
 
 private:
+	bool started = false;
 	ID3D11SamplerState *MakeSampler(TSP tsp);
 	/* (looked up for every polygon: by the bits themselves) */
 	ComPtr<ID3D11SamplerState> samplers[(TSP_Mask >> 8) + 1];

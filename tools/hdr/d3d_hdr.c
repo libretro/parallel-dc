@@ -18,7 +18,9 @@
  * With D3DH_NOT_UMA=1 (Direct3D 12) the adapter says its memory is not the
  * processor's (CacheCoherentUMA 0, as a card of its own has it): the core
  * copies the frame's lists to the card, not parse them where it reads
- * them (tools/rend/d3d_parse_arena.sh). With D3DH_SM51=1 (Direct3D 12) the
+ * them (tools/rend/d3d_parse_arena.sh). With D3DH_UNLOAD=1 the core is
+ * unloaded at the end, for what it says as it stops
+ * (tools/rend/d3d_draw_path.sh). With D3DH_SM51=1 (Direct3D 12) the
  * device's highest shader model is 5.1: the core's raster shaders are
  * DXBC, not DXIL (tools/rend/d3d_dxil.sh). With D3DH_EVERY=1 (Direct3D 12)
  * the picture handed over is read back after every frame and its sum
@@ -565,11 +567,28 @@ typedef void (RETRO_CALLCONV *init_t)(void);
 typedef void (RETRO_CALLCONV *run_t)(void);
 typedef bool (RETRO_CALLCONV *load_game_t)(const struct retro_game_info*);
 
+typedef void (RETRO_CALLCONV *unload_t)(void);
+static HMODULE loaded_core;
+
 static int finish(int code)
 {
+   /* (the core is not unloaded, as vk_hdr, the run being what is judged;
+    * with D3DH_UNLOAD=1 it is, for what it says when it stops:
+    * tools/rend/d3d_draw_path.sh) */
+   if (getenv("D3DH_UNLOAD") && loaded_core)
+   {
+      unload_t unload = (unload_t)GetProcAddress(loaded_core, "retro_unload_game");
+      unload_t deinit = (unload_t)GetProcAddress(loaded_core, "retro_deinit");
+      /* (as RetroArch: the context goes first, the renderer with it) */
+      if (hw.context_destroy)
+         hw.context_destroy();
+      if (unload)
+         unload();
+      if (deinit)
+         deinit();
+   }
    fflush(stdout);
    fflush(stderr);
-   /* (the core is not unloaded: as vk_hdr, the run is what is judged) */
    ExitProcess((UINT)code);
    return code;
 }
@@ -701,6 +720,7 @@ int main(int argc, char **argv)
       fprintf(stderr, "d3d_hdr: retro_load_game failed\n");
       return finish(2);
    }
+   loaded_core = core;
    if (!have_hw)
    {
       fprintf(stderr, "d3d_hdr: the core did not ask for Direct3D %d\n", api);

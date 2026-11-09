@@ -99,7 +99,12 @@ bool DX11Renderer::Init()
 	blendStates = &context->GetBlendStates();
 
 	DX11Lock lock;
-	bool success = shaders->GetVertexShader(true) != nullptr && shaders->GetModVolVertexShader() != nullptr;
+	/* Everything a frame can want made now, before the first: no shader or
+	 * state is made on the draw path (AGENTS.md) */
+	bool success = shaders->Start();
+	success = depthStencilStates.MakeAll() && success;
+	success = blendStates->MakeAll() && success;
+	success = samplers->MakeAll() && success;
 	ID3DBlob *blob = shaders->GetVertexShaderBlob();
 	success = success && blob != nullptr
 			&& SUCCEEDED(device->CreateInputLayout(MainLayout, ARRAY_SIZE(MainLayout), blob->GetBufferPointer(), blob->GetBufferSize(), mainInputLayout.put()));
@@ -107,9 +112,6 @@ bool DX11Renderer::Init()
 	success = success && blob != nullptr
 			&& SUCCEEDED(device->CreateInputLayout(PositionLayout, ARRAY_SIZE(PositionLayout), blob->GetBufferPointer(), blob->GetBufferSize(), positionInputLayout.put()))
 			&& SUCCEEDED(device->CreateInputLayout(ModVolLayout, ARRAY_SIZE(ModVolLayout), blob->GetBufferPointer(), blob->GetBufferSize(), modVolInputLayout.put()));
-
-	// (the depth prepass's states, made now and not in the middle of a frame)
-	success = success && depthStencilStates.Get(true, true, 6) != nullptr && blendStates->Get(false, 1, 0, false) != nullptr;
 
 	vtxConstants = makeConstantBuffer(device, sizeof(VertexConstants));
 	fragConstants = makeConstantBuffer(device, sizeof(FragmentConstants));
@@ -191,6 +193,9 @@ void DX11Renderer::Term()
 	texDecoder.Term();
 	overlay.Term();
 	writeOut.Term();
+	if (shaders != nullptr)
+		NOTICE_LOG(RENDERER, "DX11: %u depth-stencil, %u blend and %u sampler states made on the draw path",
+				depthStencilStates.drawPath, blendStates->drawPath, samplers->drawPath);
 	depthStencilStates.Term();
 	fbView.reset();
 	fbTexture.reset();
@@ -1159,24 +1164,6 @@ void DX11Renderer::DrawPoly(u32 listType, bool sortTriangles, const PolyParam& p
 		else
 			palette_index = (float((poly.tcw.PalSelect >> 4) << 8) + 0.5f) / 1024.f;
 	}
-	if (tileClip == TileClipping::Inside || trilinearAlpha != 1.f || palette || prepassDraw)
-	{
-		const PolyConstants constants = {
-			{ (float)scissorRect.left, (float)scissorRect.top, (float)scissorRect.right, (float)scissorRect.bottom },
-			trilinearAlpha,
-			palette_index,
-			prepassDraw ? (PrepassAlwaysHides(&poly) ? -1.f : PREPASS_ALPHA_MIN) : 0.f,
-			0.f
-		};
-		SetPolyConstants(constants);
-	}
-
-	if (poly.pcw.Texture && poly.texid != 0)
-	{
-		DX11Texture *texture = (DX11Texture *)(uintptr_t)poly.texid;
-		SetTexture(0, texture->textureView, samplers->GetSampler(poly.tsp));
-	}
-
 	DX11FragmentShaderParams params = {};
 	params.alphaTest = listType == ListType_Punch_Through;
 	params.bumpmap = poly.tcw.PixelFmt == PixelBumpMap;
@@ -1194,8 +1181,28 @@ void DX11Renderer::DrawPoly(u32 listType, bool sortTriangles, const PolyParam& p
 	params.useAlpha = poly.tsp.UseAlpha;
 	params.palette = palette;
 	params.shadowed = shadowPass != ShadowPass::None;
+	bool general;
 	SetVS(shaders->GetVertexShader(poly.pcw.Gouraud));
-	SetPS(shaders->GetPixelShader(params));
+	SetPS(shaders->GetPixelShader(params, &general));
+
+	// (the general shader's key is the polygon's: in its constants)
+	if (tileClip == TileClipping::Inside || trilinearAlpha != 1.f || palette || prepassDraw || general)
+	{
+		const PolyConstants constants = {
+			{ (float)scissorRect.left, (float)scissorRect.top, (float)scissorRect.right, (float)scissorRect.bottom },
+			trilinearAlpha,
+			palette_index,
+			prepassDraw ? (PrepassAlwaysHides(&poly) ? -1.f : PREPASS_ALPHA_MIN) : 0.f,
+			general ? params.hash() : 0u
+		};
+		SetPolyConstants(constants);
+	}
+
+	if (poly.pcw.Texture && poly.texid != 0)
+	{
+		DX11Texture *texture = (DX11Texture *)(uintptr_t)poly.texid;
+		SetTexture(0, texture->textureView, samplers->GetSampler(poly.tsp));
+	}
 
 	// Depth and stencil
 	int depthFunc;

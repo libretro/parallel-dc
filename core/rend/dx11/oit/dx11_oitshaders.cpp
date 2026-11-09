@@ -209,12 +209,6 @@ static const char OITPixelShaderSource[] = R"(
 #define PASS_COLOR 1
 #define PASS_OIT 2
 
-#if pp_TwoVolumes == 1
-#define IF(x) if (x)
-#else
-#define IF(x)
-#endif
-
 #if pp_Gouraud == 0
 #define INTERPOLATION nointerpolation
 #else
@@ -228,7 +222,7 @@ cbuffer PolyConstants : register(b1)
 	float trilinearAlpha;
 	int pp_Number;
 	float palette_index;
-	int padding0;
+	uint polyKey;	// the general shader's: FragmentShaderParams::hash()
 
 	// two volume mode
 	int4 blend_mode1;
@@ -241,6 +235,34 @@ cbuffer PolyConstants : register(b1)
 	int ignore_tex_alpha0;
 	int ignore_tex_alpha1;
 };
+
+// A polygon's own shader has its key's bits as numbers, and the branches
+// they decide are compiled away; the general shader (GENERAL) reads them
+// from the polygon's constants, and draws what its own shader would while
+// that is made: the same code, the same pixels. The pass, the two volumes
+// and the interpolation decide what the shader takes and gives: those are
+// the general shader's own.
+#ifdef GENERAL
+#define cp_AlphaTest (polyKey & 1u)
+#define pp_ClipInside ((polyKey >> 1) & 1u)
+#define pp_UseAlpha ((polyKey >> 2) & 1u)
+#define pp_Texture ((polyKey >> 3) & 1u)
+#define pp_IgnoreTexA ((polyKey >> 4) & 1u)
+#define pp_ShadInstr ((polyKey >> 5) & 3u)
+#define pp_Offset ((polyKey >> 7) & 1u)
+#define pp_FogCtrl ((polyKey >> 8) & 3u)
+#define pp_BumpMap ((polyKey >> 12) & 1u)
+#define ColorClamping ((polyKey >> 13) & 1u)
+#define pp_Palette ((polyKey >> 14) & 1u)
+#endif
+// (with two volumes, the area's own instructions decide)
+#if pp_TwoVolumes == 1
+#define SHAD(k) (cur_shading_instr == k)
+#define FOG(k) (cur_fog_control == k)
+#else
+#define SHAD(k) (pp_ShadInstr == k)
+#define FOG(k) (pp_FogCtrl == k)
+#endif
 
 Texture2D tex0 : register(t0);
 SamplerState sampler0 : register(s0);
@@ -256,22 +278,18 @@ Texture2D<float> DepthTex : register(t4);
 
 float4 colorClamp(float4 col)
 {
-// TODO This can change in two-volume mode
-#if ColorClamping == 1
-	return clamp(col, colorClampMin, colorClampMax);
-#else
+	// TODO This can change in two-volume mode
+	if (ColorClamping == 1)
+		return clamp(col, colorClampMin, colorClampMax);
 	return col;
-#endif
 }
 
-#if pp_Palette == 1
 float4 palettePixel(float2 coords)
 {
 	// palette_index is where the middle of the palette's first colour is in the row of 1024
 	float2 c = float2(tex0.Sample(sampler0, coords).r * (255.0 / 1024.0) + palette_index, 0.5);
 	return palette.SampleLevel(pointSampler, c, 0);
 }
-#endif
 
 struct VertexOut
 {
@@ -305,11 +323,12 @@ PSO main(in VertexOut inpix)
 	#endif
 
 	// Clip inside the box
-	#if pp_ClipInside == 1
+	if (pp_ClipInside == 1)
+	{
 		if (inpix.pos.x >= clipTest.x && inpix.pos.x <= clipTest.z
 				&& inpix.pos.y >= clipTest.y && inpix.pos.y <= clipTest.w)
 			discard;
-	#endif
+	}
 
 	float4 color = inpix.col;
 	float4 offset = inpix.spec;
@@ -350,11 +369,14 @@ PSO main(in VertexOut inpix)
 			offset.rgb *= shade_scale_factor;
 		}
 	#endif
-	#if pp_UseAlpha == 0 || pp_TwoVolumes == 1
-		IF (!cur_use_alpha)
+	#if pp_TwoVolumes == 1
+		if (!cur_use_alpha)
+			color.a = 1.0;
+	#else
+		if (pp_UseAlpha == 0)
 			color.a = 1.0;
 	#endif
-	#if pp_Texture == 1
+	if (pp_Texture == 1)
 	{
 		float4 texcol;
 		#if pp_TwoVolumes == 1
@@ -363,87 +385,77 @@ PSO main(in VertexOut inpix)
 				texcol = tex1.Sample(sampler1, uv);
 			else
 		#endif
-		#if pp_Palette == 0
-				texcol = tex0.Sample(sampler0, uv);
-		#else
-				texcol = palettePixel(uv);
-		#endif
-		#if pp_BumpMap == 1
+		if (pp_Palette == 0)
+			texcol = tex0.Sample(sampler0, uv);
+		else
+			texcol = palettePixel(uv);
+		if (pp_BumpMap == 1)
+		{
 			float s = PI / 2.0 * (texcol.a * 15.0 * 16.0 + texcol.r * 15.0) / 255.0;
 			float r = 2.0 * PI * (texcol.g * 15.0 * 16.0 + texcol.b * 15.0) / 255.0;
 			texcol.a = clamp(inpix.spec.a + inpix.spec.r * sin(s) + inpix.spec.g * cos(s) * cos(r - 2.0 * PI * inpix.spec.b), 0.0, 1.0);
 			texcol.rgb = float3(1.0, 1.0, 1.0);
+		}
+		else
+		{
+		#if pp_TwoVolumes == 1
+			if (cur_ignore_tex_alpha)
+				texcol.a = 1.0;
 		#else
-			#if pp_IgnoreTexA == 1 || pp_TwoVolumes == 1
-				IF(cur_ignore_tex_alpha)
-					texcol.a = 1.0;
-			#endif
+			if (pp_IgnoreTexA == 1)
+				texcol.a = 1.0;
 		#endif
-		#if pp_ShadInstr == 0 || pp_TwoVolumes == 1 // DECAL
-		IF(cur_shading_instr == 0)
+		}
+		if (SHAD(0)) // DECAL
 		{
 			color = texcol;
 		}
-		#endif
-		#if pp_ShadInstr == 1 || pp_TwoVolumes == 1 // MODULATE
-		IF(cur_shading_instr == 1)
+		if (SHAD(1)) // MODULATE
 		{
 			color.rgb *= texcol.rgb;
 			color.a = texcol.a;
 		}
-		#endif
-		#if pp_ShadInstr == 2 || pp_TwoVolumes == 1 // DECAL ALPHA
-		IF(cur_shading_instr == 2)
+		if (SHAD(2)) // DECAL ALPHA
 		{
 			color.rgb = lerp(color.rgb, texcol.rgb, texcol.a);
 		}
-		#endif
-		#if pp_ShadInstr == 3 || pp_TwoVolumes == 1 // MODULATE ALPHA
-		IF(cur_shading_instr == 3)
+		if (SHAD(3)) // MODULATE ALPHA
 		{
 			color *= texcol;
 		}
-		#endif
 
-		#if pp_Offset == 1 && pp_BumpMap == 0
+		if (pp_Offset == 1 && pp_BumpMap == 0)
 			color.rgb += offset.rgb;
-		#endif
 	}
-	#endif
 
 	color = colorClamp(color);
 
 	// Look-up table mode 2: the fog colour takes the place of the pixel's
 	// colour and the fog coefficient the place of its alpha, after the
 	// texture has been combined in.
-	#if pp_FogCtrl == 3 || pp_TwoVolumes == 1 // LUT Mode 2
-		IF (cur_fog_control == 3)
-			color = float4(sp_FOG_COL_RAM.rgb, fog_mode2(w) * (256.0 / 255.0));
-	#endif
-	#if pp_FogCtrl == 0 || pp_TwoVolumes == 1 // LUT
-		IF(cur_fog_control == 0)
-		{
-			float fog = fog_mode2(w);
-			color.rgb = color.rgb * (255.0 / 256.0 - fog) + sp_FOG_COL_RAM.rgb * fog;
-		}
-	#endif
-	#if pp_Offset == 1 && pp_BumpMap == 0 && (pp_FogCtrl == 1 || pp_TwoVolumes == 1)  // Per vertex
-		IF(cur_fog_control == 1)
-		{
-			float fog = offset.a * (255.0 / 256.0);
-			color.rgb = color.rgb * (255.0 / 256.0 - fog) + sp_FOG_COL_VERT.rgb * fog;
-		}
-	#endif
+	if (FOG(3)) // LUT Mode 2
+		color = float4(sp_FOG_COL_RAM.rgb, fog_mode2(w) * (256.0 / 255.0));
+	if (FOG(0)) // LUT
+	{
+		float fog = fog_mode2(w);
+		color.rgb = color.rgb * (255.0 / 256.0 - fog) + sp_FOG_COL_RAM.rgb * fog;
+	}
+	if (pp_Offset == 1 && pp_BumpMap == 0 && FOG(1))  // Per vertex
+	{
+		float fog = offset.a * (255.0 / 256.0);
+		color.rgb = color.rgb * (255.0 / 256.0 - fog) + sp_FOG_COL_VERT.rgb * fog;
+	}
 
 	color *= trilinearAlpha;
 
 	// Punch-through polygons are tested on the alpha of the finished colour,
 	// after the texture and the vertex colours are combined and clamped.
-	#if cp_AlphaTest == 1
+	if (cp_AlphaTest == 1)
+	{
 		if (cp_AlphaTestValue > color.a)
 			discard;
 		color.a = 1.0;
-	#endif
+	}
 
 	#if PASS == PASS_OIT
 		// Discard as many pixels as possible
@@ -771,6 +783,15 @@ bool DX11OITShaders::Describe(u32 family, u32 variant, DX11ShaderDesc& d) const
 		*m++ = { "pp_Palette", MacroValues[(variant >> 14) & 1] };
 		*m++ = { "PASS", MacroValues[(variant >> 15) & 3] };
 		break;
+	case GeneralPS:
+		/* (the variant: the pass, the interpolation and the two volumes) */
+		d.source = pixelSource(OITPixelShaderSource);
+		d.profile = "ps_5_0";
+		*m++ = { "GENERAL", "1" };
+		*m++ = { "PASS", MacroValues[variant & 3] };
+		*m++ = { "pp_Gouraud", MacroValues[(variant >> 2) & 1] };
+		*m++ = { "pp_TwoVolumes", MacroValues[(variant >> 3) & 1] };
+		break;
 	case ModVolVS:
 		d.source = std::string(DX11VertexTransform) + DX11ModVolVertexShader;
 		d.profile = "vs_5_0";
@@ -805,7 +826,8 @@ void DX11OITShaders::Adopt(u32 family, u32 variant, ID3D11PixelShader *shader)
 	switch (family)
 	{
 	case PS:
-		slot = &pixelShaders[variant];
+		if (variant < pixelShaders.size())
+			slot = &pixelShaders[variant];
 		break;
 	case ModVolPS:
 		slot = &modVolPixelShader;
@@ -853,18 +875,54 @@ ID3D11VertexShader *DX11OITShaders::GetVertexShader(bool gouraud)
 	return shader;
 }
 
-ID3D11PixelShader *DX11OITShaders::GetPixelShader(const FragmentShaderParams& params)
+bool DX11OITShaders::Start()
+{
+	bool ok = true;
+	pixelShaders.assign(PixelKeys, ComPtr<ID3D11PixelShader>());
+	requested.assign(PixelKeys / 32, 0);
+	for (u32 g = 0; g < 2; g++)
+		ok = GetVertexShader(g != 0) != nullptr && ok;
+	for (u32 v = 0; v < GeneralCount; v++)
+		if ((v & 3) <= OIT)
+			ok = MissedPS(GeneralPS, v, generalShaders[v]) != nullptr && ok;
+	ok = GetModVolVertexShader() != nullptr && GetModVolPixelShader() != nullptr && ok;
+	for (u32 mode = 0; mode < 4; mode++)
+		ok = GetTrModVolPixelShader((ModVolMode)mode) != nullptr && ok;
+	ok = GetFinalVertexShader() != nullptr && GetFinalPixelShader() != nullptr && ok;
+	Started();
+	return ok;
+}
+
+ID3D11PixelShader *DX11OITShaders::GetPixelShader(const FragmentShaderParams& params, bool *general)
 {
 	const u32 key = params.hash();
+	*general = false;
 	Memo& m = MemoFor(key);
 	if (m.shader != nullptr && m.key == key)
 		return m.shader;
 	ComPtr<ID3D11PixelShader>& shader = pixelShaders[key];
+#ifndef DX11_SHADER_TEST_GENERAL
 	if (!shader)
-		MissedPS(PS, key, shader);
-	m.key = key;
-	m.shader = shader;
-	return shader;
+		TakeBuilt();
+	if (shader)
+	{
+		m.key = key;
+		m.shader = shader;
+		return shader;
+	}
+	// (its own asked for once; drawn with the general one till it is there)
+	u32& word = requested[key >> 5];
+	if ((word & (1u << (key & 31))) == 0)
+	{
+		word |= 1u << (key & 31);
+		/* (the queue full: asked again at its next draw) */
+		if (!Request(PS, key))
+			word &= ~(1u << (key & 31));
+	}
+#endif
+	statGeneral++;
+	*general = true;
+	return generalShaders[(u32)params.pass | ((u32)params.gouraud << 2) | ((u32)params.twoVolume << 3)];
 }
 
 ID3D11VertexShader *DX11OITShaders::GetModVolVertexShader()
@@ -910,6 +968,10 @@ void DX11OITShaders::Term()
 		shader.reset();
 	vertexBlob.reset();
 	pixelShaders.clear();
+	pixelShaders.shrink_to_fit();
+	requested.clear();
+	for (auto& shader : generalShaders)
+		shader.reset();
 	Forget();
 	modVolVertexShader.reset();
 	modVolVertexBlob.reset();
