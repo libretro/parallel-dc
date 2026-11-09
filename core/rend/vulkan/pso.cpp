@@ -286,6 +286,24 @@ void VkPsoWorker::WaitIdle()
 		Wait(&VkPsoWorker::AllAnswered);
 }
 
+bool VkPsoWorker::BatchMade() const
+{
+	const int size = retro_atomic_load_acquire_int(&batchSize);
+	for (int i = 0; i < size; i++)
+	{
+		const int state = retro_atomic_load_acquire_int(&batch[i]->state);
+		if (state == PSO_QUEUED || state == PSO_BUILDING)
+			return false;
+	}
+	return true;
+}
+
+void VkPsoWorker::WaitBatch()
+{
+	if (thread != nullptr && batch != nullptr && retro_atomic_load_relaxed_int(&batchActive) != 0)
+		Wait(&VkPsoWorker::BatchMade);
+}
+
 // the next entry of the batch nobody has taken, or -1
 int VkPsoWorker::ClaimIndex()
 {

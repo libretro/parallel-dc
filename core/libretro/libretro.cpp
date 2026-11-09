@@ -2360,6 +2360,9 @@ static void retro_vk_context_reset()
     * GPU-side TA processing's are made with it, when that is on). The
     * machine is not running here. */
    rend_prepare_renderer();
+   /* (and its fixed pipelines made before its first frame, which then
+    * never makes or waits for one: AGENTS.md) */
+   VkPsoWorker::Instance().WaitBatch();
 }
 
 static void retro_vk_context_destroy()

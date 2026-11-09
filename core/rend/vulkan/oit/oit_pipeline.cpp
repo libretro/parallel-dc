@@ -21,6 +21,7 @@
 */
 #include "oit_pipeline.h"
 #include "../quad.h"
+#include <algorithm>
 
 static vk::CullModeFlags CullMode(u32 cull)
 {
@@ -268,7 +269,56 @@ void OITPipelineManager::Prepare()
 					addGeneral((gouraud << KEY_GOURAUD) | (rate << KEY_RATE) | (pass << KEY_PASS) | (subpass << KEY_SUBPASS));
 				}
 			}
-	GetContext()->PsoKeys().ForEach(who, [&](u64 key) { if (fits(key)) addGeneral(key); });
+	if (!dynamic.depthStencil || !dynamic.blend)
+	{
+		std::vector<u64> reach;
+		/* A device that has a general pipeline for each fixed state: one for
+		 * every state a draw can reach, worked out by Key() itself from the
+		 * draws the drawer makes (each list in each pass it is drawn in) and
+		 * every value of the fields it reads */
+		static const struct { u32 list; bool autosort; Pass pass; } draws[] = {
+			{ ListType_Opaque, false, Pass::Depth }, { ListType_Punch_Through, false, Pass::Depth },
+			{ ListType_Opaque, false, Pass::Color }, { ListType_Punch_Through, false, Pass::Color },
+			{ ListType_Translucent, true, Pass::OIT }, { ListType_Translucent, false, Pass::Color },
+			{ ListType_Translucent, false, Pass::Depth }, { ListType_Translucent, true, Pass::Depth },
+		};
+		const u64 kept = DEPTH_STENCIL_BITS | BLEND_BITS | (3ull << KEY_PASS) | (3ull << KEY_SUBPASS);
+		for (const auto& d : draws)
+			for (u32 bits = 0; bits < (1u << 13); bits++)
+			{
+				PolyParam pp = {};
+				pp.isp.CullMode = bits & 3;
+				pp.isp.DepthMode = (bits >> 2) & 7;
+				pp.isp.ZWriteDis = (bits >> 5) & 1;
+				pp.pcw.Shadow = (bits >> 6) & 1;
+				pp.tsp.SrcInstr = (bits >> 7) & 7;
+				pp.tsp.DstInstr = (bits >> 10) & 7;
+				pp.tsp1.full = (u32)-1;
+				pp.tcw1.full = (u32)-1;
+				const u64 fixed = Key(d.list, d.autosort, pp, d.pass) & kept;
+				for (u64 gouraud = 0; gouraud < 2; gouraud++)
+					for (u64 rate = samples > 1 ? 1 : 0; rate <= (samples > 1 ? 2u : 0u); rate++)
+						if (d.pass != Pass::OIT || rate != 1)
+							reach.push_back(GeneralKey(fixed | (gouraud << KEY_GOURAUD) | (rate << KEY_RATE)));
+			}
+		/* All made at the start, before the first frame. Where they are too
+		 * many (a device with neither extension, the per-pixel renderer's
+		 * passes: thousands, until the blend is folded as Direct3D 12's
+		 * is), those of earlier runs are, and one not seen before is made
+		 * when first drawn (VkPsoWorker::SyncBuilt() counts them) */
+		std::sort(reach.begin(), reach.end());
+		reach.erase(std::unique(reach.begin(), reach.end()), reach.end());
+		if (reach.size() <= PSO_GENERAL_AT_START)
+			for (u64 key : reach)
+				addGeneral(key);
+		else
+		{
+			WARN_LOG(RENDERER, "Vulkan: %u general pipelines a draw can reach, too many to make at the start",
+					(u32)reach.size());
+			GetContext()->PsoKeys().ForEach(who, [&](u64 key) { if (fits(key)) addGeneral(key); });
+		}
+	}
+	NOTICE_LOG(RENDERER, "Vulkan: %u general pipelines made at the start", general.Used());
 	worker.BuildSoon(now.data(), (u32)now.size(), GetContext()->GetPipelineCache());
 	/* The polygons' own pipelines made in earlier runs: asked for now, made
 	 * while nothing more pressing is */

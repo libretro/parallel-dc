@@ -37,6 +37,14 @@
 class BaseVulkanRenderer : public Renderer
 {
 public:
+	/* The quads' pipelines dropped (what the pipeline thread still has of
+	 * them, finished or dropped): first in a derived Term(), before the
+	 * render passes they are made for go with the drawers */
+	void DropQuads()
+	{
+		quadPipeline.Forget();
+		overlayQuadPipeline.Forget();
+	}
 	virtual void Term() override
 	{
 		ta_set_flat_strips(false);

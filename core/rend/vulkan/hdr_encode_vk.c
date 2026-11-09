@@ -717,6 +717,10 @@ static bool make_slots(hdr_vk_t *e)
    return true;
 }
 
+static bool post_make(hdr_vk_t *e);
+static bool post_format_make(hdr_vk_t *e, unsigned k);
+static bool post_compact_drawn(hdr_vk_t *e);
+
 hdr_vk_t *hdr_vk_new(const struct retro_hw_render_interface_vulkan *iface,
       vk_heap_t *heap, VkPipelineCache cache, VkFormat format,
       unsigned slots, const hdr_vk_code_t *code)
@@ -764,6 +768,16 @@ hdr_vk_t *hdr_vk_new(const struct retro_hw_render_interface_vulkan *iface,
    {
       hdr_vk_free(e);
       return NULL;
+   }
+   /* The post effects' pipelines made now, whether on or not, and not in
+    * the frame they are first turned on in (AGENTS.md): of both formats
+    * of intermediates the device draws to (a failure leaves them off, as
+    * it did there) */
+   if (post_make(e))
+   {
+      post_format_make(e, P_HALF);
+      if (post_compact_drawn(e))
+         post_format_make(e, P_COMPACT);
    }
    return e;
 }
@@ -1293,17 +1307,20 @@ static bool post_image(hdr_vk_t *e, hdr_vk_image_t *o, unsigned k, unsigned w, u
    return false;
 }
 
-/* Compact Intermediates where the device draws to, blends and filters
- * B10G11R11 */
-static unsigned post_format_wanted(hdr_vk_t *e)
+/* Whether the device draws to, blends and filters B10G11R11 */
+static bool post_compact_drawn(hdr_vk_t *e)
 {
    VkFormatProperties props;
    const VkFormatFeatureFlags need = VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT
          | VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BLEND_BIT | VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT;
-   if (!hdr_post_compact())
-      return P_HALF;
    vkGetPhysicalDeviceFormatProperties(e->iface->gpu, VK_FORMAT_B10G11R11_UFLOAT_PACK32, &props);
-   return (props.optimalTilingFeatures & need) == need ? P_COMPACT : P_HALF;
+   return (props.optimalTilingFeatures & need) == need;
+}
+
+/* Compact Intermediates where the device takes them */
+static unsigned post_format_wanted(hdr_vk_t *e)
+{
+   return hdr_post_compact() && post_compact_drawn(e) ? P_COMPACT : P_HALF;
 }
 
 /* All the frame's post effects need, for @plan at @w x @h */

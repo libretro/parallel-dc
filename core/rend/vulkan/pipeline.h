@@ -193,7 +193,7 @@ public:
 			pipelineLayout = GetContext()->GetDevice().createPipelineLayoutUnique(
 					vk::PipelineLayoutCreateInfo(vk::PipelineLayoutCreateFlags(), ARRAY_SIZE(layouts), layouts, 1, &pushConstant));
 			pipelines.Init(4096, this);
-			general.Init(1024, this);
+			general.Init(4096, this);
 		}
 
 		if (this->renderPass != renderPass || this->samples != samples)

@@ -46,26 +46,31 @@ shader, fixed pixel shader and reachable state is made at the start
 
 **Vulkan**
 
-1. Devices without extended dynamic state: the general pipeline is keyed
-   by blend (no EDS3) and by depth, stencil and cull (no EDS1), only the
-   all-zero state is made at the start, and every other one is made in the
-   frame (`PipelineManager::Choose` and the per-pixel one →
-   `VkPsoWorker::BuildSync`).
-2. `VkPsoWorker::Need`: a fixed pipeline (general, modifier volume,
-   prepass, the per-pixel renderer's, quad, SSAA resolve, motion vectors,
-   the kernels) the first frames want before the worker has made it is
-   made there, or waited for.
-3. Every resize (resolution, widescreen, SSAA, the upscaler's size):
+The start (`context_reset`) waits, on the worker, for every fixed
+pipeline its first frame needs; a device without
+`VK_EXT_extended_dynamic_state` or `_state3` has the general pipeline of
+every fixed state a draw can reach made then too (`Prepare()` runs `Key()`
+over the drawer's draws: 130 to 394 a manager on lavapipe), and HDR
+output's post effects come with it. `tools/vulkan/vk_draw_path.sh` holds
+`retro_run` at zero. Left:
+
+1. A device with neither extension: the states a draw can reach are
+   thousands (18840 per-triangle, 7206 per-pixel, twice that with SSAA),
+   over `PSO_GENERAL_AT_START`; those of earlier runs are made at the
+   start, and one not seen before in the frame (`BuildSync`, about one a
+   new state). Folding the blend into the shader as Direct3D 12 does (64
+   pairs to 15, with dual-source blending) brings them under it.
+2. Every resize (resolution, widescreen, SSAA, the upscaler's size):
    write-out compiled there (`VulkanWriteOut::Init`), the compute
    renderer's modules and kernels remade, SSAA resolve, the overlay quad
-   and the motion vector pass dropped (waiting for the worker) and remade.
-4. The HDR post effects (`hdr_vk_encode` → `post_make`): about eight
-   pipelines in the frame they first turn on.
-5. Option changes: `PipelineManager::Reset` waits for the worker and the
+   and the motion vector pass dropped and remade, made by the frame that
+   needs them first (`Need`).
+3. Option changes: `PipelineManager::Reset` waits for the worker and the
    device; the HDR subpass pipeline is made with the render pass; the TA
    decoder's modules are made when it is turned on.
-6. A draw `Choose` has no pipeline for is skipped (the general table
-   full, a build failed).
+4. A draw `Choose` has no pipeline for is skipped: the general table full,
+   which only a device with neither extension can reach, or a build that
+   failed.
 
 **OpenGL and OpenGL 4**
 
@@ -95,11 +100,14 @@ render states.
 ### Measurement in the repo
 
 - Direct3D 12 counts pipelines made in a frame (`statMadeInFrame`).
-- Vulkan counts pipelines `Need` made itself (`syncBuilt`).
+- Vulkan counts pipelines `Need` and `BuildSync` made (`syncBuilt`), and
+  `tools/vulkan/vk_draw_path.sh` fails on any made in `retro_run` (CI,
+  cold, every renderer and disc, without each dynamic state, HDR; a
+  device with neither extension allowed, see above).
 - Direct3D 11 counts shaders and states made on the draw path and draws
   with a general shader, and `tools/rend/d3d_draw_path.sh` fails on any
   made there (CI, cold, every renderer and the threaded setting).
-- Nothing fails a test on the others yet.
+- Nothing fails a test on OpenGL or Direct3D 12 yet.
 
 ## Phase 0: measure (lands first)
 
@@ -125,18 +133,15 @@ Done, but for:
 
 ## Phase 2: Vulkan
 
-1. With no extended dynamic state, the general pipeline made for every
-   reachable blend, depth, stencil and cull state at the start (folding
-   what can be folded, as Direct3D 12's blend is), so nothing is left to
-   `BuildSync`.
-2. `Need` never makes or waits: a fixed pipeline a frame wants is made
-   before the first frame, and one remade for a resize is made beside the
-   old one, which draws until the new one is ready.
-3. Write-out, the compute renderer, SSAA resolve, the overlay quad and
-   the motion vector pass remade on the worker on a resize, not in
-   `retro_run`.
-4. The HDR post effects made with the HDR output.
-5. No skipped draws: the general table sized for every reachable key.
+Done, but for:
+
+1. The blend folded into the general shaders (dual-source blending,
+   where the device has it), so a device with neither extension has its
+   reachable states made at the start too.
+2. A pipeline remade for a resize made on the worker beside the old one,
+   which draws until the new one is ready (write-out, the compute
+   renderer, SSAA resolve, the overlay quad, the motion vector pass).
+3. No skipped draws: the general table sized for every reachable key.
 
 ## Phase 3: OpenGL
 

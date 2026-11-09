@@ -179,9 +179,22 @@ static VKAPI_ATTR void VKAPI_CALL vkh_set_cull(VkCommandBuffer cmd, VkCullModeFl
    ((void (VKAPI_PTR *)(VkCommandBuffer, VkCullModeFlags))vkh_real_set_cull)(cmd, mode);
 }
 
-/* VKH_HIDE_EXT=<name>: the device without that extension, as far as the
- * core can tell (a device that does not have it) */
+/* VKH_HIDE_EXT=<name>[,<name>...]: the device without those extensions,
+ * as far as the core can tell (a device that does not have them) */
 static PFN_vkEnumerateDeviceExtensionProperties vkh_real_enum_ext;
+
+static int vkh_hidden(const char *hide, const char *name)
+{
+   size_t len = strlen(name);
+   const char *p = hide;
+   while ((p = strstr(p, name)) != NULL)
+   {
+      if ((p == hide || p[-1] == ',') && (p[len] == '\0' || p[len] == ','))
+         return 1;
+      p += len;
+   }
+   return 0;
+}
 
 static VKAPI_ATTR VkResult VKAPI_CALL vkh_enum_ext(VkPhysicalDevice gpu, const char *layer,
       uint32_t *count, VkExtensionProperties *props)
@@ -198,7 +211,7 @@ static VKAPI_ATTR VkResult VKAPI_CALL vkh_enum_ext(VkPhysicalDevice gpu, const c
    all = (VkExtensionProperties *)calloc(n ? n : 1, sizeof(*all));
    vkh_real_enum_ext(gpu, NULL, &n, all);
    for (i = 0; i < n; i++)
-      if (strcmp(all[i].extensionName, hide))
+      if (!vkh_hidden(hide, all[i].extensionName))
       {
          if (props && kept < *count)
             props[kept] = all[i];

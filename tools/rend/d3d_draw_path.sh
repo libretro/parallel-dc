@@ -37,9 +37,11 @@ if [ -n "${D3DCOMPILER:-}" ]; then
 fi
 ${CC_WIN:-x86_64-w64-mingw32-gcc} -O1 -Wall -I./core/libretro-common/include -I./core/deps/khronos \
    -o "$WORK/d3d_hdr.exe" tools/hdr/d3d_hdr.c -ld3d11 -ld3d12 -ldxguid
+# (each disc in its own directory: their tracks have the same names)
 for d in plain atlas cull dma; do
-   if [ $d = plain ]; then python3 tools/threads/live_disc.py "$WORK/$d.gdi"
-   else python3 tools/threads/live_disc.py "$WORK/$d.gdi" --$d; fi > /dev/null
+   mkdir -p "$WORK/$d"
+   if [ $d = plain ]; then python3 tools/threads/live_disc.py "$WORK/$d/$d.gdi"
+   else python3 tools/threads/live_disc.py "$WORK/$d/$d.gdi" --$d; fi > /dev/null
 done
 fails=0
 
@@ -49,7 +51,7 @@ run() {
    rm -rf "$WORK/dir"; mkdir -p "$WORK/dir"
    env -u TMPDIR DISPLAY=$DISPLAY_NO WINEDEBUG=-all WINE_D3D_CONFIG=renderer=vulkan VKD3D_CONFIG=virtual_heaps \
       WINEDLLOVERRIDES="$OVERRIDES" D3DH_VERBOSE=1 D3DH_UNLOAD=1 D3DH_API=11 D3DH_FRONTEND=sdr D3DH_DIR="Z:$WORK/dir" \
-      timeout 600 wine "$WORK/d3d_hdr.exe" "Z:$CORE" "Z:$WORK/$disc.gdi" "Z:$WORK/$name.raw" 100 "$@" \
+      timeout 600 wine "$WORK/d3d_hdr.exe" "Z:$CORE" "Z:$WORK/$disc/$disc.gdi" "Z:$WORK/$name.raw" 100 "$@" \
       > "$WORK/$name.log" 2>&1 || { echo "  FAIL: the run failed:"; tail -5 "$WORK/$name.log"; return 1; }
 }
 

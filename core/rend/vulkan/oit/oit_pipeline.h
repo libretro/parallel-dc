@@ -315,7 +315,7 @@ public:
 			pipelineLayout = GetContext()->GetDevice().createPipelineLayoutUnique(
 					vk::PipelineLayoutCreateInfo(vk::PipelineLayoutCreateFlags(), ARRAY_SIZE(layouts), layouts, 1, &pushConstant));
 			pipelines.Init(4096, this);
-			general.Init(1024, this);
+			general.Init(4096, this);
 		}
 
 		// (made once for the render passes: a new size keeps them)

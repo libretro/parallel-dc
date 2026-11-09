@@ -36,9 +36,11 @@ if [ -n "${D3DCOMPILER:-}" ]; then
 fi
 $CC_WIN -O1 -Wall -I./core/libretro-common/include -I./core/deps/khronos \
    -o "$WORK/d3d_hdr.exe" tools/hdr/d3d_hdr.c -ld3d11 -ld3d12 -ldxguid
+# (each disc in its own directory: their tracks have the same names)
 for d in plain atlas cull dma; do
-   if [ $d = plain ]; then python3 tools/threads/live_disc.py "$WORK/$d.gdi"
-   else python3 tools/threads/live_disc.py "$WORK/$d.gdi" --$d; fi > /dev/null
+   mkdir -p "$WORK/$d"
+   if [ $d = plain ]; then python3 tools/threads/live_disc.py "$WORK/$d/$d.gdi"
+   else python3 tools/threads/live_disc.py "$WORK/$d/$d.gdi" --$d; fi > /dev/null
 done
 FRAMES=100
 fails=0
@@ -63,7 +65,7 @@ for d in plain atlas cull dma; do
       [ $skipped -eq 0 ] || continue
       for c in A B; do
          core=$A; [ $c = B ] && core=$B
-         wine_run "$WORK/$name.$c.log" "$WORK/d3d9_frames.exe" "Z:$core" "Z:$WORK/$d.gdi" "Z:$WORK/$name.$c.raw" $FRAMES "$@" \
+         wine_run "$WORK/$name.$c.log" "$WORK/d3d9_frames.exe" "Z:$core" "Z:$WORK/$d/$d.gdi" "Z:$WORK/$name.$c.raw" $FRAMES "$@" \
             || true
       done
       if grep -q "DX9: no shaders" "$WORK/$name.A.log.err" "$WORK/$name.B.log.err"; then
@@ -84,7 +86,7 @@ for d in plain atlas cull dma; do
          name=d3d$api-$d-$m
          for c in A B; do
             core=$A; [ $c = B ] && core=$B
-            D3DH_API=$api wine_run "$WORK/$name.$c.log" "$WORK/d3d_hdr.exe" "Z:$core" "Z:$WORK/$d.gdi" "Z:$WORK/$name.$c.raw" $FRAMES "$@" \
+            D3DH_API=$api wine_run "$WORK/$name.$c.log" "$WORK/d3d_hdr.exe" "Z:$core" "Z:$WORK/$d/$d.gdi" "Z:$WORK/$name.$c.raw" $FRAMES "$@" \
                || { echo "  FAIL: $name ($c) did not run:"; tail -3 "$WORK/$name.$c.log.err"; fails=$((fails + 1)); }
          done
          if [ -s "$WORK/$name.A.raw" ] && cmp -s "$WORK/$name.A.raw" "$WORK/$name.B.raw"; then

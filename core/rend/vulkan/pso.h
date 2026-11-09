@@ -137,6 +137,10 @@ static inline VkPipeline PsoCreateCompute(vk::Device device, vk::PipelineCache c
 	return pipeline;
 }
 
+/* The most general pipelines a manager makes at its start, for a device
+ * without the dynamic states (PipelineManager::Prepare()) */
+enum { PSO_GENERAL_AT_START = 1024 };
+
 /* (tests: every polygon drawn with the general pipelines, to see they draw
  * what the polygons' own ones do) */
 #ifdef VK_PSO_TEST_GENERAL
@@ -218,6 +222,10 @@ public:
 	static VkPipeline Need(PsoSlot *slot);
 	// until all that was asked so far is made or dropped
 	void WaitIdle();
+	/* Until every slot of the batch is made (by the worker: this thread
+	 * only waits). The start's, before the first frame: a draw then takes
+	 * them made, and never makes one itself. */
+	void WaitBatch();
 	// the worker's cache merged into @into (the worker idle)
 	void MergeInto(vk::PipelineCache into);
 
@@ -244,6 +252,7 @@ private:
 	bool AllAnswered() const;
 	bool BatchLeft() const;
 	bool NotBuilding() const;
+	bool BatchMade() const;
 
 	static VkPsoWorker instance;
 

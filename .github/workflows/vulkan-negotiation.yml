@@ -158,6 +158,8 @@ jobs:
           sh tools/gl/gl_parse_arena.sh
       - name: The temporal upscaler's side in the core (strips matched, the request, the inputs)
         run: sh tools/rend/upscaler_test.sh
+      - name: Vulkan - nothing made on the draw path, cold, every renderer, without the dynamic states, HDR (AGENTS.md)
+        run: VK_DRIVER_FILES=/usr/share/vulkan/icd.d/lvp_icd.json sh tools/vulkan/vk_draw_path.sh
       - name: HDR output (HDR10, scRGB, each renderer, every Display Transform)
         run: VK_DRIVER_FILES=/usr/share/vulkan/icd.d/lvp_icd.json sh tools/vulkan/vk_hdr.sh
       - name: HDR output's HLSL against its GLSL

@@ -92,6 +92,7 @@ public:
 		// (the frontend lets go of the pictures before they go)
 		GetContext()->ReleasePicture();
 		texCommandPool.WaitAll();
+		DropQuads();
 		screenDrawer.Term();
 		textureDrawer.Term();
 		samplerManager.Term();
