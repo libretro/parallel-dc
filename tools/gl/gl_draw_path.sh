@@ -15,9 +15,9 @@
 #  - and, with GL_PROGRAM_TEST_GENERAL built in (GENERAL=core.so), each
 #    picture the one the core draws with the general programs alone.
 #
-# The driver's parallel compile is hidden (GLF_NO_PARALLEL): with it,
-# OpenGL 3+ asks for a key's own program in a frame without waiting for it
-# (docs/ShaderStutterPlan.md), which this does not judge.
+# The driver is one that compiles in the background (GLF_SLOW_COMPILE: a
+# program's first completion status is "not done"), where a key's own
+# program used to be asked for in the frame that first drew it.
 #
 #   sh tools/gl/gl_draw_path.sh [core.so]
 #
@@ -54,7 +54,7 @@ run() {
    for core in "$CORE" ${GENERAL:+"$GENERAL"}; do
       out=$name; [ "$core" = "$CORE" ] || out=$name.general
       rm -rf "$WORK/dir"; mkdir -p "$WORK/dir"
-      if ! env $env GLF_NO_PARALLEL=1 GLF_COUNT_PROGRAMS=1 GLF_VERBOSE=1 GLF_DIR="$WORK/dir" \
+      if ! env $env GLF_SLOW_COMPILE=1 GLF_COUNT_PROGRAMS=1 GLF_VERBOSE=1 GLF_DIR="$WORK/dir" \
             timeout 600 "$WORK/gl_frames" "$core" "$WORK/$disc/$disc.gdi" "$WORK/$out.raw" 60 "$@" \
             > "$WORK/$out.log" 2>&1; then
          echo "$name"; echo "  FAIL: the run failed:"; tail -5 "$WORK/$out.log"

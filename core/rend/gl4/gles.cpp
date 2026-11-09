@@ -792,8 +792,6 @@ static bool RenderFrame()
 		palette_updated = false;
 	}
 
-	// (the programs being made in the background polled once a frame: gl4GetProgram())
-	gl4.frame++;
 
 	glcache.UseProgram(gl4.modvol_shader.program);
 

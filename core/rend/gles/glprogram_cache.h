@@ -17,14 +17,12 @@
  *   (KHR_parallel_shader_compile, or the ARB one, and it is seen to: a
  *   driver can have the extension and still make them as it is asked)
  *   those made at the start are asked for all at once and waited for
- *   together, and a polygon's program first wanted in a frame is asked
- *   for (glprog_make() with @background) and polled (glprog_poll()) in the
- *   frames after; the polygon is drawn with the renderer's general program
- *   meanwhile, which reads the key's bits from a uniform and draws the
- *   same pixels. Where it does not, such a polygon is drawn with the
- *   general program for the rest of the run, and its key kept for the next
- *   one. (A libretro core has no context of its own to compile in on a
- *   thread.)
+ *   together. A polygon's program first wanted in a frame is not made
+ *   there (AGENTS.md: nothing compiles on the draw path): the polygon is
+ *   drawn with the renderer's general program for the rest of the run,
+ *   which reads the key's bits from a uniform and draws the same pixels,
+ *   and its key is kept for the next start. (A libretro core has no
+ *   context of its own to compile in on a thread.)
  * - The file is read when a renderer starts (glprog_open()), written when it
  *   has made something new - at its start, once those programs are made,
  *   and when it goes (glprog_close(), or glprog_save() when the context
@@ -58,8 +56,6 @@ void glprog_started();
 
 // whether the programs are kept on disk (binaries)
 bool glprog_binaries();
-// whether the driver makes programs in the background, as far as was seen
-bool glprog_background();
 
 /* A program of a vertex and a fragment shader, its attributes bound as the
  * renderers have them (gles.h). From the file if it is there, else compiled

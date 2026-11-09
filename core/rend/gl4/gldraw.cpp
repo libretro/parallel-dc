@@ -74,10 +74,10 @@ static void use_general(gl4PipelineShader *s, gl4PipelineShader *g)
 	s->general = g;
 }
 
-/* A key first drawn (in a frame): drawn with the general program, its own
- * asked for in the background where the driver does that (else that is it
- * for this run: the key is kept, and its program made at the start of the
- * next); without a general program, made now as ever */
+/* A key first drawn (in a frame): drawn with the general program for the
+ * rest of the run, with no compile or link here (AGENTS.md); the key is
+ * kept, and its own program made at the start of the next. Without a
+ * general program (it did not link), made now as ever. */
 static void pipeline_first(gl4PipelineShader *s, u32 key)
 {
 	pipeline_from_key(s, key);
@@ -90,33 +90,6 @@ static void pipeline_first(gl4PipelineShader *s, u32 key)
 	}
 	use_general(s, g);
 	glprog_general_used();
-	if (glprog_background() && !PipelineTestGeneral)
-	{
-		s->pending = gl4MakePipelineProgram(s, false, true);
-		s->polled = gl4.frame;
-	}
-}
-
-// (once a frame) whether its own program is there now
-static void pipeline_poll(gl4PipelineShader *s)
-{
-	s->polled = gl4.frame;
-	switch (glprog_poll(s->pending))
-	{
-	case GLPROG_PENDING:
-		break;
-	case GLPROG_READY:
-		s->program = s->pending;
-		s->pending = 0;
-		s->general = nullptr;
-		gl4PipelineLocations(s, false);
-		break;
-	default:
-		WARN_LOG(RENDERER, "OpenGL: the program of key %x did not link; the general one draws it", s->key);
-		glDeleteProgram(s->pending);
-		s->pending = 0;
-		break;
-	}
 }
 
 static gl4PipelineShader *gl4GetProgram(bool cp_AlphaTest, bool pp_InsideClipping,
@@ -144,8 +117,6 @@ static gl4PipelineShader *gl4GetProgram(bool cp_AlphaTest, bool pp_InsideClippin
 	gl4PipelineShader *shader = &gl4.shaders[rv];
 	if (shader->program == 0)
 		pipeline_first(shader, rv);
-	else if (shader->pending != 0 && shader->polled != gl4.frame)
-		pipeline_poll(shader);
 
 	return shader;
 }

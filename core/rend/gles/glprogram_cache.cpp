@@ -378,11 +378,6 @@ bool glprog_binaries()
 	return cache.binaries;
 }
 
-bool glprog_background()
-{
-	return cache.background;
-}
-
 u32 glprog_make(const char *vertex, const char *fragment, bool background)
 {
 	u64 hash = fnv1a(FnvBasis, "graphics|");

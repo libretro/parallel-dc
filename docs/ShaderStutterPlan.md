@@ -79,15 +79,10 @@ key as four nibbles in floats), and `tools/gl/gl_draw_path.sh` holds
 `retro_run` at no compile, link or binary load, its pictures those of the
 general programs alone. Left:
 
-1. A driver without parallel compile draws a key first seen with the
-   general program for the rest of the run; its own is made at the next
-   start.
-2. OpenGL 3+ and the per-pixel renderer issue a new key's
-   `glCompileShader` and `glLinkProgram` on the draw thread. Nothing waits
-   (the general program draws, the driver's threads compile), but the
-   calls are there, and a key kept from an earlier run is loaded with
-   `glProgramBinary` and a link status read that waits.
-3. Option changes inside `retro_run`: the scaler's write-out program, the
+1. A key first seen in a run is drawn with the general program for the
+   rest of it, whatever the driver (no compile call in a frame, parallel
+   compile or not); its own program is made at the next start.
+2. Option changes inside `retro_run`: the scaler's write-out program, the
    TA decoder's kernels, and the whole renderer when it is switched.
 
 **Direct3D 12**
@@ -114,7 +109,7 @@ render states.
   made there (CI, cold, every renderer and the threaded setting).
 - OpenGL: `tools/gl/gl_draw_path.sh` fails on a glCompileShader,
   glLinkProgram or glProgramBinary in `retro_run` (CI, cold, OpenGL ES 2
-  and 3, OpenGL 2 and 3+; the driver's parallel compile hidden).
+  and 3, OpenGL 2 and 3+, on a driver that compiles in the background).
 - Nothing fails a test on Direct3D 12 yet.
 
 ## Phase 0: measure (lands first)
@@ -155,12 +150,10 @@ Done, but for:
 
 1. Done: a general program for OpenGL ES 2 and OpenGL 2 (the key's
    nibbles in a float uniform).
-2. A new key's own program on OpenGL 3+: OpenGL makes programs only on a
-   context's thread, and a core has only the frontend's context. Either
-   the calls stay, bounded (a few a frame, only with parallel compile, and
-   never a wait), or the general program draws a key for the whole run and
-   its own program is made at the next start. Which one is the user's
-   decision; until then, the first.
+2. Done: a new key's own program is not asked for in a frame on OpenGL 3+
+   either (OpenGL makes programs only on a context's thread, and a core
+   has only the frontend's): the general program draws it for the run,
+   and its own is made at the next start.
 3. Option changes: the scaler's write-out and the TA decoder's kernels
    made at the start whether on or not.
 

@@ -27,6 +27,8 @@
  * context said to be OpenGL ES 2.0 (with GLF_GLES) or OpenGL 2.1, so the
  * core takes its paths for those (their shaders still compile on the newer
  * context). GLF_NO_PARALLEL=1: no KHR_ or ARB_parallel_shader_compile.
+ * GLF_SLOW_COMPILE=1: a driver that compiles in the background, as the core
+ * sees it - a program's first GL_COMPLETION_STATUS_KHR is "not done".
  * GLF_COUNT_PROGRAMS=1 prints "programs: C compiled, L linked, B loaded in
  * retro_run" - glCompileShader, glLinkProgram and glProgramBinary called
  * inside it (tools/gl/gl_draw_path.sh).
@@ -172,6 +174,22 @@ void GLAPIENTRY glGetIntegerv(GLenum name, GLint *v)
    version_get_integerv(name, v);
 }
 
+/* GLF_SLOW_COMPILE */
+#ifndef GL_COMPLETION_STATUS_KHR
+#define GL_COMPLETION_STATUS_KHR 0x91B1
+#endif
+static unsigned char asked_done[65536];
+static void (*real_get_programiv)(GLuint, GLenum, GLint *);
+static void slow_get_programiv(GLuint p, GLenum name, GLint *v)
+{
+   real_get_programiv(p, name, v);
+   if (name == GL_COMPLETION_STATUS_KHR && p < sizeof(asked_done) && !asked_done[p])
+   {
+      asked_done[p] = 1;
+      *v = 0;
+   }
+}
+
 /* GLF_COUNT_PROGRAMS: what retro_run compiles, links and loads */
 static int in_run;
 static long compiled, linked, loaded;
@@ -194,6 +212,11 @@ static retro_proc_address_t gl_proc(const char *sym)
       return (retro_proc_address_t)glGetString;
    if (!strcmp(sym, "glGetIntegerv"))
       return (retro_proc_address_t)glGetIntegerv;
+   if (getenv("GLF_SLOW_COMPILE") && f != NULL && !strcmp(sym, "glGetProgramiv"))
+   {
+      *(retro_proc_address_t *)&real_get_programiv = f;
+      return (retro_proc_address_t)slow_get_programiv;
+   }
    if (getenv("GLF_COUNT_PROGRAMS") && f != NULL)
    {
       if (!strcmp(sym, "glCompileShader"))

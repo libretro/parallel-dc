@@ -120,12 +120,11 @@ struct PipelineShader
 
 	/* (glprogram_cache.h) The polygon's key (GetProgram()); for one drawn
 	 * with a general program, that program's record, whose program and
-	 * uniforms these are, and the program of its own being made in the
-	 * background (0: none); the frame it was last polled in */
+	 * uniforms these are; the program of its own the start asked for and
+	 * has not waited for yet (0: none) */
 	u32 key;
 	PipelineShader *general;
 	GLuint pending;
-	u32 polled;
 	// (a general program's record) the uniform it reads the key from, and the key it has
 	GLint key_bits;
 	u32 key_now;

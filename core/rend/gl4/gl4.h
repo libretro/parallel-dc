@@ -117,13 +117,12 @@ struct gl4PipelineShader
 
 	/* (rend/gles/glprogram_cache.h) The polygon's key (gl4GetProgram());
 	 * for one drawn with a general program, that program's record, whose
-	 * program and uniforms these are, and the program of its own being
-	 * made in the background (0: none); the frame it was last polled in;
-	 * the uniform a general program reads the key from (-1: none) */
+	 * program and uniforms these are; the program of its own the start
+	 * asked for and has not waited for yet (0: none); the uniform a general
+	 * program reads the key from (-1: none) */
 	u32 key;
 	gl4PipelineShader *general;
 	GLuint pending;
-	u32 polled;
 	GLint key_bits;
 };
 
@@ -138,10 +137,8 @@ struct gl4_ctx
 	} modvol_shader;
 
 	std::unordered_map<u32, gl4PipelineShader> shaders;
-	/* The general programs (rend/gles/glprogram_cache.h), by pass and
-	 * pp_Gouraud; and the frame, for polling the programs being made */
+	// The general programs (rend/gles/glprogram_cache.h), by pass and pp_Gouraud
 	gl4PipelineShader general[3][2];
-	u32 frame;
 
 	struct
 	{
