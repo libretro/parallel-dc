@@ -99,6 +99,34 @@ and `check` passes. Where a mode exists to make one include alone
 (`update-raster`, `update-dxil`, `update-hdr`), use it, so the others'
 bytes stay as they are.
 
+## No allocations during play
+
+As with compiles, a game never waits for memory. Once a game runs,
+nothing is allocated mid-game: not on the thread that renders a frame,
+not in `retro_run`, not on the emulation thread.
+
+- **What counts.** Heap allocation of any kind (`malloc`, `new`, a
+  container growing, a string built), and the GPU's: buffers, textures,
+  heaps, descriptor heaps and pools, command allocators, memory
+  (`vkAllocateMemory`, `vkCreateBuffer`/`vkCreateImage`,
+  `CreateCommittedResource`/`CreatePlacedResource`/`CreateHeap`,
+  `CreateDescriptorHeap`, D3D11's `Create*`, `glBufferData` that resizes,
+  `glTexImage*` that defines a new level). Freeing during play is the
+  same work and counts too.
+- **Sized before the first frame.** Everything play needs is made at
+  load or context reset, at its bound: pools, arenas, rings, free lists,
+  sized from what the hardware can hold (VRAM, the TA's lists, the
+  texture cache's budget). Play takes from them and gives back.
+- **A full pool is handled, not grown.** Evict, recycle or defer to the
+  next frame; never allocate on the spot, and never drop a draw.
+- **Changing an option** sets up what the new setting needs between
+  frames, with the machine not running, the way a renderer change makes
+  its pipelines (`Renderer::Ready()`), and not in the frame drawn next.
+- **Measured.** Allocations during play are counted where they happen
+  (one add, nothing logged), and must not get worse. Where a renderer
+  still allocates during play, a commit that touches that code removes
+  it.
+
 ## MSVC C89, gradually
 
 New code is C89 that MSVC compiles, and code touched in C++ files moves
@@ -116,8 +144,8 @@ code it touches closer, and never adds C++ that was not there.
 - **No STL in the code a change touches.** Fixed arrays where a bound is
   known, a pointer, count and capacity grown by doubling where it is
   not, a function pointer and context in place of a callable. A list
-  that is cleared keeps its storage, so play stops allocating once it
-  has grown.
+  that is cleared keeps its storage, and its bound is reserved before
+  play (No allocations during play).
 - **Frames stay small.** A function's stack frame is 4 KiB at most.
 - **Threads are lock-free.** retro_atomic, SPSC rings and eventcount park
   and wake; no mutexes, no sleeps or polling with a wall clock.
