@@ -6,6 +6,7 @@
 #include "texture.h"
 #include "commandpool.h"
 #include "hw/pvr/pvr_regs.h"
+#include <algorithm>
 #include <memory>
 
 static CommandPool read_pool;       /* vk_read_picture()'s */
@@ -13,14 +14,17 @@ static bool read_pool_ready;
 
 /* Copies of pictures off the card, each into memory this side reads: begun
  * ahead of the read where rtt_watch says which (vk_rtt_prefetch()), or by
- * the read itself. A batch of them is one submit with one fence. */
+ * the read itself. A batch of them is one submit with one fence. The read
+ * runs in the signal handler, where nothing may be allocated: the batches
+ * are made with the renderer (vk_rtt_init()), and every copy's buffer is
+ * grown to a render's size when it is watched (copies_reserve()). */
 #define RTT_COPIES 18
 #define RTT_BATCHES 4
 
 struct RttBatch
 {
 	vk::UniqueCommandPool pool;
-	vk::UniqueCommandBuffer cmd;
+	vk::CommandBuffer cmd;      /* the pool's: freed with it */
 	vk::UniqueFence fence;
 	bool busy;          /* submitted, its fence not seen signalled */
 };
@@ -40,6 +44,9 @@ static RttBatch batches[RTT_BATCHES];
 static RttCopy copies[RTT_COPIES];
 static bool copies_ready;
 static u64 copy_stamp;
+/* what every copy has room for: the console's pixels, and a shrink image */
+static vk::DeviceSize copies_bytes;
+static u32 shrink_w, shrink_h;
 
 static bool batch_done(RttBatch& b)
 {
@@ -57,7 +64,8 @@ static void copies_init(void)
 	{
 		b.pool = device.createCommandPoolUnique(vk::CommandPoolCreateInfo(vk::CommandPoolCreateFlagBits::eTransient
 				| vk::CommandPoolCreateFlagBits::eResetCommandBuffer, VulkanContext::Instance()->GetGraphicsQueueFamilyIndex()));
-		b.cmd = std::move(device.allocateCommandBuffersUnique(vk::CommandBufferAllocateInfo(*b.pool, vk::CommandBufferLevel::ePrimary, 1)).front());
+		const vk::CommandBufferAllocateInfo info(*b.pool, vk::CommandBufferLevel::ePrimary, 1);
+		(void)device.allocateCommandBuffers(&info, &b.cmd);
 		b.fence = device.createFenceUnique(vk::FenceCreateInfo());
 		b.busy = false;
 	}
@@ -66,7 +74,51 @@ static void copies_init(void)
 		c.serial = 0;
 		c.batch = -1;
 	}
+	copies_bytes = 0;
+	shrink_w = shrink_h = 0;
 	copies_ready = true;
+}
+
+/* Every copy's room grown, where a render to be watched needs more: its
+ * buffer for w by h pixels, and its shrink image, where the render is
+ * finer than the console's (@scale above 1) */
+static void copies_reserve(u32 w, u32 h, u32 scale)
+{
+	VulkanContext *context = VulkanContext::Instance();
+	const vk::DeviceSize bytes = (vk::DeviceSize)w * h * 4;
+	const bool shrink = scale > 1 && (w > shrink_w || h > shrink_h);
+
+	if (bytes <= copies_bytes && !shrink)
+		return;
+	/* (one being written by a batch on the card keeps its old room until
+	 * it is done: every batch waited for, rarely - a larger render) */
+	for (RttBatch& b : batches)
+		if (b.busy)
+		{
+			context->GetDevice().waitForFences(1, &b.fence.get(), true, UINT64_MAX);
+			b.busy = false;
+		}
+	if (bytes > copies_bytes)
+		copies_bytes = bytes;
+	if (shrink)
+	{
+		shrink_w = std::max(shrink_w, w);
+		shrink_h = std::max(shrink_h, h);
+	}
+	for (RttCopy& c : copies)
+	{
+		if (!c.buffer || c.buffer->bufferSize < copies_bytes)
+			c.buffer = std::unique_ptr<BufferData>(new BufferData(copies_bytes, vk::BufferUsageFlagBits::eTransferDst));
+		if (shrink && (!c.shrink || c.shrink->getExtent().width < shrink_w || c.shrink->getExtent().height < shrink_h))
+		{
+			c.shrink = std::unique_ptr<FramebufferAttachment>(new FramebufferAttachment(context->GetPhysicalDevice(), context->GetDevice()));
+			/* (sampled: its view, made with it, needs a use a view is for) */
+			c.shrink->Init(shrink_w, shrink_h, vk::Format::eR8G8B8A8Unorm, vk::ImageUsageFlagBits::eTransferSrc
+					| vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eSampled, false);
+		}
+		/* (what it held was copied into the room it had: gone) */
+		c.serial = 0;
+	}
 }
 
 /* A batch free to record into: none if every one is still on the card
@@ -124,21 +176,13 @@ static void record_copy(vk::CommandBuffer cmd, const RttWatch *watch, RttCopy& c
 	const s32 x0 = (s32)(watch->x0 * (scale > 1 ? scale : 1)), y0 = (s32)(watch->y0 * (scale > 1 ? scale : 1));
 	const vk::Format format = vk::Format::eR8G8B8A8Unorm;
 	const vk::ImageSubresourceLayers layers(vk::ImageAspectFlagBits::eColor, 0, 0, 1);
-	const vk::DeviceSize bytes = (vk::DeviceSize)w * h * 4;
 
-	if (!c.buffer || c.buffer->bufferSize < bytes)
-		c.buffer = std::unique_ptr<BufferData>(new BufferData(bytes, vk::BufferUsageFlagBits::eTransferDst));
+	/* (its room made when the render was watched: copies_reserve()) */
+	(void)context;
 	vk::Image source = texture->GetImage();
 	setImageLayout(cmd, source, format, 1, vk::ImageLayout::eShaderReadOnlyOptimal, vk::ImageLayout::eTransferSrcOptimal);
 	if (scale > 1)
 	{
-		if (!c.shrink || c.shrink->getExtent().width < w || c.shrink->getExtent().height < h)
-		{
-			c.shrink = std::unique_ptr<FramebufferAttachment>(new FramebufferAttachment(context->GetPhysicalDevice(), context->GetDevice()));
-			/* (sampled: its view, made with it, needs a use a view is for) */
-			c.shrink->Init(w, h, format, vk::ImageUsageFlagBits::eTransferSrc | vk::ImageUsageFlagBits::eTransferDst
-					| vk::ImageUsageFlagBits::eSampled, false);
-		}
 		const std::array<vk::Offset3D, 2> from = { vk::Offset3D(x0, y0, 0), vk::Offset3D(x0 + w * scale, y0 + h * scale, 1) };
 		const std::array<vk::Offset3D, 2> to = { vk::Offset3D(0, 0, 0), vk::Offset3D(w, h, 1) };
 
@@ -177,22 +221,21 @@ static bool batch_copies(int b, const RttWatch *const *watches, unsigned count)
 			break;
 		if (!begun)
 		{
-			batch.cmd->reset(vk::CommandBufferResetFlags());
-			batch.cmd->begin(vk::CommandBufferBeginInfo(vk::CommandBufferUsageFlagBits::eOneTimeSubmit));
+			batch.cmd.reset(vk::CommandBufferResetFlags());
+			batch.cmd.begin(vk::CommandBufferBeginInfo(vk::CommandBufferUsageFlagBits::eOneTimeSubmit));
 			begun = true;
 		}
-		record_copy(*batch.cmd, watches[i], *c);
+		record_copy(batch.cmd, watches[i], *c);
 		c->batch = b;
 	}
 	if (!begun)
 		return false;
 	/* (one barrier for every buffer: the host reads them after the fence) */
 	const vk::MemoryBarrier barrier(vk::AccessFlagBits::eTransferWrite, vk::AccessFlagBits::eHostRead);
-	batch.cmd->pipelineBarrier(vk::PipelineStageFlagBits::eTransfer, vk::PipelineStageFlagBits::eHost, {}, barrier, nullptr, nullptr);
-	batch.cmd->end();
+	batch.cmd.pipelineBarrier(vk::PipelineStageFlagBits::eTransfer, vk::PipelineStageFlagBits::eHost, {}, barrier, nullptr, nullptr);
+	batch.cmd.end();
 	VulkanContext::Instance()->GetDevice().resetFences(1, &batch.fence.get());
-	vk::CommandBuffer cmd = *batch.cmd;
-	VulkanContext::Instance()->SubmitCommandBuffers(1, &cmd, *batch.fence);
+	VulkanContext::Instance()->SubmitCommandBuffers(1, &batch.cmd, *batch.fence);
 	batch.busy = true;
 	return true;
 }
@@ -200,7 +243,6 @@ static bool batch_copies(int b, const RttWatch *const *watches, unsigned count)
 /* rtt_watch's: begun now, not waited for; nothing if no batch is free */
 static void vk_rtt_prefetch(const RttWatch *const *watches, unsigned count)
 {
-	copies_init();
 	const int b = batch_take(false);
 	if (b >= 0)
 		batch_copies(b, watches, count);
@@ -210,7 +252,6 @@ static void vk_rtt_prefetch(const RttWatch *const *watches, unsigned count)
  * now - or from one begun here and waited for. */
 static void vk_rtt_read(const RttWatch *watch, u8 *scratch, RttWatchTake take)
 {
-	copies_init();
 	RttCopy *c = copy_of(watch);
 	if (c == nullptr)
 	{
@@ -258,7 +299,7 @@ static void copies_term(void)
 		if (b.busy)
 			device.waitForFences(1, &b.fence.get(), true, UINT64_MAX);
 		b.busy = false;
-		b.cmd.reset();
+		b.cmd = nullptr;
 		b.pool.reset();
 		b.fence.reset();
 	}
@@ -354,8 +395,16 @@ void vk_rtt_watch(Texture *texture, u32 addr, u32 x0, u32 y0, u32 width, u32 hei
 	watch.tex = (uintptr_t)texture;
 	watch.target = texture;
 	watch.scale = settings.rend.RenderToTextureUpscale > 1 ? settings.rend.RenderToTextureUpscale : 1;
-	if (watch.bytes != 0)
-		rtt_watch_add(&watch, &vk_rtt_backend);
+	if (watch.bytes == 0)
+		return;
+	copies_init();
+	copies_reserve(watch.w, watch.h, watch.scale);
+	rtt_watch_add(&watch, &vk_rtt_backend);
+}
+
+void vk_rtt_init(void)
+{
+	copies_init();
 }
 
 void vk_rtt_term(void)

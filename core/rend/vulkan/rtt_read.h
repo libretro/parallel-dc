@@ -14,6 +14,8 @@ void vk_rtt_supersede(u32 addr, u32 x0, u32 y0, u32 width, u32 height);
 /* The render is finished and submitted. The texture is the frame from its
  * first pixel; the clip's part of it goes to video memory. */
 void vk_rtt_watch(Texture *texture, u32 addr, u32 x0, u32 y0, u32 width, u32 height);
+/* The renderer is made: the copies' batches made */
+void vk_rtt_init(void);
 /* The renderer is going. */
 void vk_rtt_term(void);
 

@@ -13,7 +13,8 @@ allocates: the heap (malloc and the rest, operator new, from the core's
 code or through the C and C++ runtimes for it; a driver's own do not
 count) and Vulkan memory, buffers, images and pools. Each place is named
 by the function that asked (`vk_alloc_sites.py`) and must be on
-`tools/vulkan/vk_allocs.allowed`. The list only ever shrinks.
+`tools/vulkan/vk_allocs.allowed`. The list only ever shrinks. A site
+reached from the core's signal handler fails whatever the list says.
 
 Where it started (60 frames of each test disc, frame 20 on): about 5000
 to 6000 heap allocations a run, some 80 a frame, nearly all of them the
@@ -21,10 +22,14 @@ SH-4 dynarec's; 9 buffers, 8 to 14 images and 4 command pools.
 
 ## In order
 
-1. **The signal handler.** A render to a texture read back on a fault
-   (`rtt_watch_fault()` -> `vk_rtt_read()` -> `copies_init()`) allocates
-   in the SIGSEGV handler, where malloc is not safe. Its copies and their
-   buffers made when the watch is armed, or at the start at their bound.
+1. **The signal handler.** Done: nothing is allocated there. The read
+   back of a render to a texture (`rtt_watch_fault()` -> `vk_rtt_read()`)
+   has its batches made with the renderer and every copy's room grown
+   when a render is watched (`copies_reserve()`); the dynarec's write to
+   a page of code (`bm_RamWriteAccess()`) discards the page's blocks
+   without copying their list, into a list of discards reserved at
+   `bm_Init()`. Left of it: the copies' growth when a larger render is
+   first watched (`vk_rtt_watch`), at the bound later.
 2. **A frame's draws.** Descriptor sets written into vectors made each
    time (`DescriptorSets::*`, `OITDescriptorSets::*`), the quad's set made
    again each frame the image changes (`QuadDrawer::Draw`: a set kept for

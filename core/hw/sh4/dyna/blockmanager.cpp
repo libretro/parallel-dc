@@ -520,6 +520,9 @@ void bm_ResetTempCache(bool full)
 
 void bm_Init()
 {
+	/* (a block discarded is put here, from the signal handler too: its
+	 * room made now, and kept when it is emptied) */
+	del_blocks.reserve(CODE_SIZE / 1024);
 
 #ifdef DYNA_OPROF
 	oprofHandle=op_open_agent();
@@ -781,16 +784,11 @@ void bm_RamWriteAccess(u32 addr)
 	}
 	unprotected_pages[addr / PAGE_SIZE] = true;
 	bm_UnlockPage(addr);
-   std::set<RuntimeBlockInfo*>& block_list = blocks_per_page[addr / PAGE_SIZE];
-   std::vector<RuntimeBlockInfo*> list_copy;
-	list_copy.insert(list_copy.begin(), block_list.begin(), block_list.end());
-	if (!list_copy.empty())
-		DEBUG_LOG(DYNAREC, "bm_RamWriteAccess write access to %08x pc %08x", addr, next_pc);
-	for (auto& block : list_copy)
-	{
-		bm_DiscardBlock(block);
-	}
-	verify(block_list.empty());
+	std::set<RuntimeBlockInfo*>& block_list = blocks_per_page[addr / PAGE_SIZE];
+	/* (from the signal handler: nothing allocated. A block in the page's
+	 * list is read-only, and its Discard() takes it out of the list.) */
+	while (!block_list.empty())
+		bm_DiscardBlock(*block_list.begin());
 }
 
 /* A save state's main memory, @from, is put in place of the machine's.
@@ -824,9 +822,8 @@ void bm_LoadRam(const u8 *from)
 			continue;
 
 		std::set<RuntimeBlockInfo*>& block_list = blocks_per_page[addr / PAGE_SIZE];
-		const std::vector<RuntimeBlockInfo*> list_copy(block_list.begin(), block_list.end());
-		for (auto& block : list_copy)
-			bm_DiscardBlock(block);
+		while (!block_list.empty())
+			bm_DiscardBlock(*block_list.begin());
 		bm_UnlockPage(addr);
 		memcpy(ram + addr, from + addr, PAGE_SIZE);
 	}

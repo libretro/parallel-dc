@@ -15,18 +15,16 @@ heap ngen_AllocateBlock
 heap ngen_link
 heap Emit
 heap bm_AddBlock
-heap bm_RamWriteAccess
 heap RuntimeBlockInfo::hash
 heap RuntimeBlockInfo::SetProtectedFlags
 
-# Video memory watched for writes (the texture cache's locks, renders to
-# textures read back on a fault - in the signal handler)
+# Video memory watched for writes (the texture cache's locks; renders to
+# textures, their copies' room grown when one is watched, never in the
+# signal handler that reads them back)
 heap vramlock_list_add
 heap libCore_vramlock_Lock
 heap rtt_watch_add
-heap copies_init
-vulkan copies_init
-heap batch_copies
+heap vk_rtt_watch
 
 # The texture cache: a texture first seen, and its pictures
 heap BaseVulkanRenderer::GetTexture

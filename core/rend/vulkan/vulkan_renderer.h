@@ -258,6 +258,7 @@ protected:
 	bool BaseInit(vk::RenderPass renderPass, int subpass = 0)
 	{
 		texCommandPool.Init();
+		vk_rtt_init();
 		/* where the frame's lists are parsed into, one slice a frame in
 		 * flight, where the card can read them as they are: memory the CPU
 		 * reads back fast too, as the parse and the sort do (a machine

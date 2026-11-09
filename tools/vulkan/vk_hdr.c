@@ -306,7 +306,7 @@ static long vkh_heap_bytes;
 /* a site: up to VKH_CHAIN of the core's frames, innermost first (by their
  * offsets in it), for its name (the first that is not a library's) */
 #define VKH_SITES 1024
-#define VKH_CHAIN 6
+#define VKH_CHAIN 12
 static uintptr_t vkh_site_key[VKH_SITES];
 static uintptr_t vkh_site_chain[VKH_SITES][VKH_CHAIN];
 static int vkh_site_gpu[VKH_SITES];
@@ -396,12 +396,12 @@ static void vkh_site(const uintptr_t *chain, int n, int gpu)
  * into @chain: how many, 0 if the call is not the core's */
 static int vkh_core_chain(void *ret, uintptr_t *chain)
 {
-   void *bt[24];
+   void *bt[32];
    int depth, i, from = -1, n = 0;
    if (vkh_in_hook)
       return 0;
    vkh_in_hook = 1;
-   depth = backtrace(bt, 24);
+   depth = backtrace(bt, 32);
    vkh_in_hook = 0;
    for (i = 0; i < depth; i++)
       if (bt[i] == ret)
