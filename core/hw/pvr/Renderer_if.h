@@ -67,6 +67,12 @@ struct Renderer
 	 * frontend as the frame, where the frontend had to let go of the old
 	 * renderer's own. False where there is none to hand over. */
 	virtual bool PresentKeptPicture() { return false; }
+	/* Whether every pipeline a frame can want is made: a renderer started
+	 * in a frame (another one chosen while a game runs) hands them to its
+	 * worker, and until they are, retro_run() shows the kept picture and
+	 * does not run the machine (AGENTS.md: nothing made, nothing waited
+	 * for, on the draw path) */
+	virtual bool Ready() { return true; }
 
 	// @area: 1 for the texture of a polygon's second volume
 	virtual u64 GetTexture(TSP tsp, TCW tcw, int area = 0) { return 0; }

@@ -45,6 +45,7 @@ public:
 		quadPipeline.Forget();
 		overlayQuadPipeline.Forget();
 	}
+	bool Ready() override { return VkPsoWorker::Instance().BatchReady(); }
 	virtual void Term() override
 	{
 		ta_set_flat_strips(false);
@@ -382,6 +383,7 @@ protected:
 		{
 			curTexture = std::unique_ptr<Texture>(new Texture());
 			curTexture->tex_type = TextureType::_8888;
+			curTexture->presented = true;
 			curTexture->tcw.full = 0;
 			curTexture->tsp.full = 0;
 			curTexture->SetPhysicalDevice(GetContext()->GetPhysicalDevice());

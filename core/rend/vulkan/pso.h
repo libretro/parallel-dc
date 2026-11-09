@@ -226,6 +226,8 @@ public:
 	 * only waits). The start's, before the first frame: a draw then takes
 	 * them made, and never makes one itself. */
 	void WaitBatch();
+	// whether every slot of the batch is made, without waiting
+	bool BatchReady() const { return thread == nullptr || batch == nullptr || BatchMade(); }
 	// the worker's cache merged into @into (the worker idle)
 	void MergeInto(vk::PipelineCache into);
 

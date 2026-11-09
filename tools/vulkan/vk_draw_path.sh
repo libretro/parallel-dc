@@ -13,7 +13,13 @@
 #  - on the culling disc, the device without VK_EXT_extended_dynamic_state,
 #    without _state3, and without both (VKH_HIDE_EXT): a general pipeline
 #    for every fixed state a draw can reach is made at the start;
-#  - HDR10 output with the post effects (made with the context).
+#  - HDR10 output with the post effects (made with the context);
+#  - a change of renderer while the game runs (VKH_OPTS_AT: per-triangle,
+#    per-pixel, compute, SSAA taken up), frames paced as a display has
+#    them (VKH_FRAME_MS): the new one's pipelines made on the worker while
+#    the frames show the kept picture, the game going on after (the core
+#    says how many frames that took), and the last picture the one the new
+#    options draw from the start.
 #
 # Allowed, and only shrinking (docs/ShaderStutterPlan.md): the device
 # without either extension, where the states a draw can reach are too many
@@ -48,14 +54,18 @@ TRI="reicast_alpha_sorting=per-triangle (normal)"
 STRIP="reicast_alpha_sorting=per-strip (fast, least accurate)"
 PIX="reicast_alpha_sorting=per-pixel (accurate)"
 fails=0
+# (a lane's own: set before a run, put back after it - an assignment in
+# front of a function call stays set in some shells)
+frames=60; opts_at=; frame_ms=
 
 # run <name> <disc> <hidden extensions or -> <frontend> <judged: 1 or 0> <options...>
 run() {
    name=$1; disc=$2; hide=$3; fe=$4; judged=$5; shift 5
    rm -rf "$WORK/dir"; mkdir -p "$WORK/dir"
-   if ! env $( [ "$hide" = - ] || echo VKH_HIDE_EXT=$hide ) VKH_VERBOSE=1 VKH_DIR="$WORK/dir" VKH_FRONTEND=$fe \
+   if ! env $( [ "$hide" = - ] || echo VKH_HIDE_EXT=$hide ) ${opts_at:+"VKH_OPTS_AT=$opts_at"} \
+         ${frame_ms:+VKH_FRAME_MS=$frame_ms} VKH_VERBOSE=1 VKH_DIR="$WORK/dir" VKH_FRONTEND=$fe \
          VKH_COUNT_PIPELINES=1 VKH_PIPELINE_CALLERS=1 VKH_UNLOAD=1 \
-         timeout 900 "$WORK/vk_hdr" "$CORE" "$WORK/$disc/$disc.gdi" "$WORK/$name.raw" 60 "$@" \
+         timeout 900 "$WORK/vk_hdr" "$CORE" "$WORK/$disc/$disc.gdi" "$WORK/$name.raw" $frames "$@" \
          > "$WORK/$name.log" 2>&1; then
       echo "$name"; echo "  FAIL: the run failed:"; grep -v 'pipeline asked for' "$WORK/$name.log" | tail -5
       fails=$((fails + 1)); return 0
@@ -93,6 +103,34 @@ for hide in $EDS $EDS3 $EDS,$EDS3; do
    run cull-pix-no-$short cull $hide sdr $judged "$PIX"
    run cull-tri-ssaa-no-$short cull $hide sdr $judged "$TRI" reicast_ssaa=4x
 done
+# switch <name> <option set at frame 20> <the option before>: 180 frames
+# (the test disc's picture still by then)
+switch() {
+   sw=$1; at=$2; from=$3
+   frames=180; opts_at="20:$at"; frame_ms=16
+   run $sw cull - sdr 1 "$from"
+   opts_at=; frame_ms=
+   held=$(sed -n 's/.*: \([0-9]*\) frames showed the kept picture.*/\1/p' "$WORK/$sw.log")
+   echo "  ${held:-0} frames showed the kept picture"
+   if [ "${held:-0}" -ge 150 ]; then
+      echo "  FAIL: the new renderer's pipelines were never made"; fails=$((fails + 1))
+   fi
+   if [ "${at%%=*}" = "${from%%=*}" ]; then
+      run $sw.new cull - sdr 1 "$at" > /dev/null
+   else
+      run $sw.new cull - sdr 1 "$from" "$at" > /dev/null
+   fi
+   frames=60
+   if ! cmp -s "$WORK/$sw.raw" "$WORK/$sw.new.raw"; then
+      echo "  FAIL: not the picture the new options draw"; fails=$((fails + 1))
+   fi
+}
+switch cull-tri-to-pix "$PIX" "$TRI"
+switch cull-pix-to-tri "$TRI" "$PIX"
+switch cull-tri-to-compute reicast_rendering_method=compute "$TRI"
+switch cull-pix-to-compute reicast_rendering_method=compute "$PIX"
+switch cull-tri-to-ssaa reicast_ssaa=4x "$TRI"
+switch cull-pix-to-ssaa reicast_ssaa=4x "$PIX"
 run cull-tri-hdr cull - hdr10 1 "$TRI" reicast_color_format=30bit_hdr reicast_hdr_bloom=standard reicast_hdr_chromatic=subtle
 run cull-pix-hdr cull - hdr10 1 "$PIX" reicast_color_format=30bit_hdr reicast_hdr_bloom=standard reicast_hdr_post_compact=enabled
 

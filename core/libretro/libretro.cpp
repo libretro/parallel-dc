@@ -1609,6 +1609,30 @@ static void update_av_info_if_changed(void)
    pending_av_fps_count = 0;
 }
 
+#ifdef HAVE_VULKAN
+/* A renderer made in a frame, its pipelines still being made on its
+ * worker (Renderer::Ready()): until they are, a run shows the picture kept
+ * from the one before it and does not run the machine */
+static bool rend_warming = false;
+// (how many runs it took: said when the game is unloaded)
+static unsigned rend_warming_runs = 0;
+/* Whether the machine has run since the context was made: before it has,
+ * a renderer made again (the size the frontend's upscaler asks for) is
+ * still the start's, and the start waits for its pipelines (on the
+ * worker: VkPsoWorker::WaitBatch()) */
+static bool ran_since_context = false;
+
+static void rend_made_again(void)
+{
+   if (renderer == NULL || renderer->Ready())
+      return;
+   if (ran_since_context)
+      rend_warming = true;
+   else
+      VkPsoWorker::Instance().WaitBatch();
+}
+#endif
+
 void retro_run (void)
 {
    bool updated     = false;
@@ -1664,6 +1688,9 @@ void retro_run (void)
          glsm_ctl(GLSM_CTL_STATE_UNBIND, NULL);
       }
 #endif
+#ifdef HAVE_VULKAN
+      rend_made_again();
+#endif
    }
    /* the upscaler's render size, when it changes (rend/upscaler.h); the
     * Vulkan and Direct3D 12 per-triangle and per-pixel renderers draw for it */
@@ -1673,12 +1700,31 @@ void retro_run (void)
       set_variable_visibility();
    }
    if (resize_pending)
+   {
       apply_new_size();
+#ifdef HAVE_VULKAN
+      // (SSAA taken up or let go, another size: the renderer made again)
+      rend_made_again();
+#endif
+   }
    if (threading_pending)
       apply_threading();
 
    if (devices_need_refresh)
       refresh_devices(false);
+#ifdef HAVE_VULKAN
+   if (rend_warming && renderer != NULL && !renderer->Ready())
+   {
+      /* the kept picture handed over once, then repeated (none: the
+       * frontend's last frame) */
+      const bool shown = rend_present_kept_picture();
+      video_cb(shown ? RETRO_HW_FRAME_BUFFER_VALID : 0, screen_width, screen_height, 0);
+      rend_warming_runs++;
+      return;
+   }
+   rend_warming = false;
+   ran_since_context = true;
+#endif
 #ifdef HAVE_HDR_OUTPUT
    /* the frontend's paper white, peak and panel, for this frame's encode
     * (on this thread, which renders, threaded rendering or not) */
@@ -2363,6 +2409,7 @@ static void retro_vk_context_reset()
    /* (and its fixed pipelines made before its first frame, which then
     * never makes or waits for one: AGENTS.md) */
    VkPsoWorker::Instance().WaitBatch();
+   ran_since_context = false;
 }
 
 static void retro_vk_context_destroy()
@@ -3202,6 +3249,13 @@ void retro_unload_game(void)
       disk_index = 0;
       return;
    }
+#ifdef HAVE_VULKAN
+   if (rend_warming_runs != 0)
+      NOTICE_LOG(RENDERER, "Vulkan: %u frames showed the kept picture while a renderer's pipelines were made",
+            rend_warming_runs);
+   rend_warming_runs = 0;
+   rend_warming = false;
+#endif
    game_loaded = false;
    /* The machine is going, video memory with it: nothing is to be written
     * there after this (the context is destroyed later than this). */

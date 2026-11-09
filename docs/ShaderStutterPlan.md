@@ -67,7 +67,10 @@ output's post effects come with it. `tools/vulkan/vk_draw_path.sh` holds
    needs them first (`Need`).
 3. Option changes: `PipelineManager::Reset` waits for the worker and the
    device; the HDR subpass pipeline is made with the render pass; the TA
-   decoder's modules are made when it is turned on.
+   decoder's modules are made when it is turned on. A change of renderer
+   (per-triangle, per-pixel, compute, SSAA) is done: the new one's
+   pipelines are made on the worker while the frames show the kept
+   picture and the machine waits (`Renderer::Ready()`, `retro_run()`).
 4. A draw `Choose` has no pipeline for is skipped: the general table full,
    which only a device with neither extension can reach, or a build that
    failed.
@@ -159,15 +162,24 @@ Done, but for:
 
 ## Phase 4: Direct3D 12
 
-1. Every reachable key made at the start, before the first frame (the
-   start is boot), with the key folded further where a shader can take a
-   field (flat and Gouraud shading in one shader); nothing left for
-   `Missed` to make.
+1. The key made small enough for every reachable one to be made at the
+   start (about 3300 for the per-triangle renderer as it is): the cull
+   mode in the pixel shader (cull none, SV_IsFrontFace and discard), and
+   whatever else a root constant can carry (flat and Gouraud shading in
+   one shader); then every reachable key made before the first frame,
+   with nothing left for `Missed` to make.
 
 ## Phase 5: option changes everywhere
 
 Changing an option while a game runs (resolution, SSAA, the upscaler,
 the renderer, GPU TA, write-out, HDR) makes what it needs on a worker
 while the old setting keeps drawing, and switches when it is ready.
+
+Vulkan's change of renderer does this: until the new renderer is ready,
+`retro_run()` shows the picture kept from the old one and does not run
+the machine. Direct3D 12 takes it once its key is small enough for its
+start set to be made in a few frames (phase 4); Direct3D 11's start
+compiles on the thread it is called on, and OpenGL has only the
+frontend's context to compile in.
 Direct3D 11's write-out and HDR post effects are made at the start
 already; its TA decoder's kernels are not.

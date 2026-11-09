@@ -229,6 +229,10 @@ private:
 	vk::Extent2D extent;
 	u32 mipmapLevels = 1;
 	bool needsStaging = false;
+public:
+	// handed to the frontend as its frame: copied from as well (a frontend may read it back)
+	bool presented = false;
+private:
 	/* the piece of the upload ring the texture was converted into, between
 	 * UploadMemory() and the UploadToGPU() that follows; and whether the
 	 * image was made anew for it */

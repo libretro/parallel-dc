@@ -70,7 +70,9 @@
 static char *opt_keys[64], *opt_vals[64];
 static int nopts;
 /* VKH_OPTS_AT=frame:key=value - the option changed before that frame, as a
- * frontend's menu does (the core told so: GET_VARIABLE_UPDATE) */
+ * frontend's menu does (the core told so: GET_VARIABLE_UPDATE).
+ * VKH_FRAME_MS=n: each frame at least n ms, as a frontend waiting for the
+ * display has them */
 static int opts_changed;
 static struct retro_hw_render_callback hw;
 static int have_hw;
@@ -1334,6 +1336,14 @@ int main(int argc, char **argv)
          retro_run();
          vkh_in_run = 0;
          dt = vkh_now_ms() - t0;
+         if (getenv("VKH_FRAME_MS") && dt < atof(getenv("VKH_FRAME_MS")))
+         {
+            const double rest = atof(getenv("VKH_FRAME_MS")) - dt;
+            struct timespec p;
+            p.tv_sec  = (time_t)(rest / 1000.0);
+            p.tv_nsec = (long)((rest - (double)p.tv_sec * 1000.0) * 1000000.0);
+            nanosleep(&p, NULL);
+         }
          if (frame_no == 0)
             first = dt;
          else if (dt > longest)

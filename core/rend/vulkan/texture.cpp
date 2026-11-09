@@ -902,6 +902,8 @@ void Texture::Init(u32 width, u32 height, vk::Format format, u32 dataSize, bool 
 	}
 	if (mipmapped && !mipmapsIncluded)
 		usageFlags |= vk::ImageUsageFlagBits::eTransferSrc | vk::ImageUsageFlagBits::eTransferDst;
+	if (presented)
+		usageFlags |= vk::ImageUsageFlagBits::eTransferSrc;
 	CreateImage(imageTiling, usageFlags, initialLayout, vk::ImageAspectFlagBits::eColor);
 }
 
