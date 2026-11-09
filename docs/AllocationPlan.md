@@ -1,0 +1,48 @@
+# Allocations during play
+
+AGENTS.md, "No allocations during play": once a game runs, nothing is
+allocated on the render thread, in `retro_run` or on the emulation
+thread. This is where the core stands, and the order the rest goes in.
+
+## Measured
+
+`tools/vulkan/vk_allocs.sh` (CI: `vulkan-negotiation.yml`) runs the core
+under a Vulkan frontend (`vk_hdr.c`, `VKH_ALLOCS`) on the test discs with
+every Vulkan renderer and counts, from frame 20 on, what the core
+allocates: the heap (malloc and the rest, operator new, from the core's
+code or through the C and C++ runtimes for it; a driver's own do not
+count) and Vulkan memory, buffers, images and pools. Each place is named
+by the function that asked (`vk_alloc_sites.py`) and must be on
+`tools/vulkan/vk_allocs.allowed`. The list only ever shrinks.
+
+Where it started (60 frames of each test disc, frame 20 on): about 5000
+to 6000 heap allocations a run, some 80 a frame, nearly all of them the
+SH-4 dynarec's; 9 buffers, 8 to 14 images and 4 command pools.
+
+## In order
+
+1. **The signal handler.** A render to a texture read back on a fault
+   (`rtt_watch_fault()` -> `vk_rtt_read()` -> `copies_init()`) allocates
+   in the SIGSEGV handler, where malloc is not safe. Its copies and their
+   buffers made when the watch is armed, or at the start at their bound.
+2. **A frame's draws.** Descriptor sets written into vectors made each
+   time (`DescriptorSets::*`, `OITDescriptorSets::*`), the quad's set made
+   again each frame the image changes (`QuadDrawer::Draw`: a set kept for
+   each of the frontend's images), the sorter's grow buffers
+   (`SortPasses`, `GenSortedTo`, `SortPParams`, `SortIntoMainBuffer`)
+   reserved at their bounds, the TA's lists' maxima, at the start.
+3. **Renders to textures.** Their targets, framebuffers and buffers
+   (`TextureDrawer::BeginRenderPass`, `BufferData`, `FramebufferAttachment`,
+   the per-pixel renderer's) from a pool made at the start, at the bound
+   the video memory budget gives.
+4. **The texture cache.** A texture first seen takes its picture from
+   the pool sized at the start (`TexturePool::Make`, and its log line);
+   the cache's map, its pieces' hashes, the samplers and the video memory
+   locks (`vramlock_list_add`) in arenas of their bound.
+5. **The dynarec.** Blocks compiled while the game runs (`ngen_Compile`,
+   `BlockCompiler`, `bm_AddBlock`, Xbyak's labels): the block's opcodes
+   into a scratch arena reset for each block, its bookkeeping in a pool
+   sized for the code cache, the assembler's labels in fixed tables.
+
+Other renderers (OpenGL, Direct3D) get the same measure once their
+harnesses count it.

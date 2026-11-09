@@ -122,10 +122,11 @@ not in `retro_run`, not on the emulation thread.
 - **Changing an option** sets up what the new setting needs between
   frames, with the machine not running, the way a renderer change makes
   its pipelines (`Renderer::Ready()`), and not in the frame drawn next.
-- **Measured.** Allocations during play are counted where they happen
-  (one add, nothing logged), and must not get worse. Where a renderer
-  still allocates during play, a commit that touches that code removes
-  it.
+- **Measured.** Allocations during play are counted
+  (`tools/vulkan/vk_allocs.sh`): every place that still allocates is on
+  its list, which only ever shrinks. Where the core still allocates, and
+  the order the rest goes in, is `docs/AllocationPlan.md`; a commit that
+  touches such code removes its allocation.
 
 ## MSVC C89, gradually
 

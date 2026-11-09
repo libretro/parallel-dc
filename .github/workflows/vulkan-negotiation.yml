@@ -33,11 +33,15 @@ name: Vulkan negotiation
 # no OpenGL error either, and OpenGL ES drawing as ever), and with Direct3D
 # 12 where the adapter's memory is the processor's (tools/rend/d3d_parse_arena.sh,
 # under wine), and the arena's slices (tools/rend/parse_arena_test.sh).
+# And no allocation during play with Vulkan but the ones listed, which
+# only ever shrink (tools/vulkan/vk_allocs.sh, AGENTS.md).
 
 on:
   push:
     paths:
       - 'core/rend/vulkan/**'
+      - 'core/hw/**'
+      - 'core/rec-x64/**'
       - 'core/rend/hdr/**'
       - 'core/rend/dx11/**'
       - 'core/rend/dx12/**'
@@ -78,6 +82,8 @@ on:
   pull_request:
     paths:
       - 'core/rend/vulkan/**'
+      - 'core/hw/**'
+      - 'core/rec-x64/**'
       - 'core/rend/hdr/**'
       - 'core/rend/dx11/**'
       - 'core/rend/dx12/**'
@@ -167,6 +173,8 @@ jobs:
         run: sh tools/rend/upscaler_test.sh
       - name: Vulkan - nothing made on the draw path, cold, every renderer, without the dynamic states, HDR (AGENTS.md)
         run: VK_DRIVER_FILES=/usr/share/vulkan/icd.d/lvp_icd.json sh tools/vulkan/vk_draw_path.sh
+      - name: Vulkan - no allocation during play but the listed ones, every renderer (AGENTS.md)
+        run: VK_DRIVER_FILES=/usr/share/vulkan/icd.d/lvp_icd.json sh tools/vulkan/vk_allocs.sh
       - name: HDR output (HDR10, scRGB, each renderer, every Display Transform)
         run: VK_DRIVER_FILES=/usr/share/vulkan/icd.d/lvp_icd.json sh tools/vulkan/vk_hdr.sh
       - name: HDR output's HLSL against its GLSL
