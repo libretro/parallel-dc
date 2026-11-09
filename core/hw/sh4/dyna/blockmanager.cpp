@@ -4,7 +4,6 @@
 */
 
 #include <algorithm>
-#include <set>
 #include <map>
 #include "blockmanager.h"
 #include "wait_site.h"
@@ -24,10 +23,11 @@ op_agent_t          oprofHandle;
 
 
 typedef std::vector<RuntimeBlockInfoPtr> bm_List;
-typedef std::set<RuntimeBlockInfoPtr> bm_Set;
 typedef std::map<void*, RuntimeBlockInfoPtr> bm_Map;
 
-static bm_Set all_temp_blocks;
+/* The temporary cache's blocks (blkmap has them as well), through their
+ * own links: put in and taken out with nothing allocated */
+static RuntimeBlockInfo *temp_blocks;
 static bm_List del_blocks;
 
 static bool unprotected_pages[RAM_SIZE_MAX/PAGE_SIZE];
@@ -35,7 +35,52 @@ static bool unprotected_pages[RAM_SIZE_MAX/PAGE_SIZE];
  * has been compiled from, and those it was compiled from once and that
  * nothing has written to since. */
 static bool locked_pages[RAM_SIZE_MAX/PAGE_SIZE];
-static std::set<RuntimeBlockInfo*> blocks_per_page[RAM_SIZE_MAX/PAGE_SIZE];
+/* The read-only blocks whose code is in each page, through their links
+ * (RuntimeBlockInfo::page_link): discarded when the page is written */
+static BlockPageLink *blocks_per_page[RAM_SIZE_MAX/PAGE_SIZE];
+
+static void temp_list_add(RuntimeBlockInfo *block)
+{
+	block->temp_prev = NULL;
+	block->temp_next = temp_blocks;
+	if (temp_blocks != NULL)
+		temp_blocks->temp_prev = block;
+	temp_blocks = block;
+	block->temp_listed = true;
+}
+
+static void temp_list_remove(RuntimeBlockInfo *block)
+{
+	if (!block->temp_listed)
+		return;
+	if (block->temp_prev != NULL)
+		block->temp_prev->temp_next = block->temp_next;
+	else
+		temp_blocks = block->temp_next;
+	if (block->temp_next != NULL)
+		block->temp_next->temp_prev = block->temp_prev;
+	block->temp_prev = block->temp_next = NULL;
+	block->temp_listed = false;
+}
+
+/* every list let go: the blocks' links too, so that a block discarded
+ * after takes itself out of nothing */
+static void lists_clear(void)
+{
+	size_t page;
+	for (page = 0; page < sizeof(blocks_per_page) / sizeof(blocks_per_page[0]); page++)
+	{
+		while (blocks_per_page[page] != NULL)
+		{
+			BlockPageLink *link = blocks_per_page[page];
+			blocks_per_page[page] = link->next;
+			link->prev = link->next = NULL;
+			link->block->page_links = 0;
+		}
+	}
+	while (temp_blocks != NULL)
+		temp_list_remove(temp_blocks);
+}
 
 static bm_Map blkmap;
 // Stats
@@ -248,7 +293,7 @@ void bm_AddBlock(RuntimeBlockInfo* blk)
 {
 	RuntimeBlockInfoPtr block(blk);
 	if (block->temp_block)
-		all_temp_blocks.insert(block);
+		temp_list_add(blk);
 	auto iter = blkmap.find((void*)blk->code);
 	if (iter != blkmap.end()) {
 		INFO_LOG(DYNAREC, "DUP: %08X %p %08X %p", iter->second->addr, iter->second->code, block->addr, block->code);
@@ -308,7 +353,7 @@ void bm_DiscardBlock(RuntimeBlockInfo* block)
 	bm_ForgetVaddrs();
 
 	if (block_ptr->temp_block)
-		all_temp_blocks.erase(block_ptr);
+		temp_list_remove(block_ptr.get());
 
 	del_blocks.push_back(block_ptr);
 	block_ptr->Discard();
@@ -463,10 +508,7 @@ void bm_ResetCache(bool nothing_since)
 
 	blkmap.clear();
 	// blkmap includes temp blocks as well
-	all_temp_blocks.clear();
-
-	for (auto& block_list : blocks_per_page)
-		block_list.clear();
+	lists_clear();
 
 	// every page may be protected again, when next something is compiled from it
 	memset(unprotected_pages, 0, sizeof(unprotected_pages));
@@ -500,20 +542,11 @@ void bm_ResetCache(bool nothing_since)
  * that a game keeps rewriting. */
 void bm_ResetTempCache(bool full)
 {
+	/* (bm_DiscardBlock() takes each out of the list; with @full,
+	 * bm_ResetCache() has let the list go already) */
 	if (!full)
-	{
-		// (bm_DiscardBlock() takes them out of all_temp_blocks as it goes)
-		const bm_List blocks(all_temp_blocks.begin(), all_temp_blocks.end());
-
-		for (const auto& block : blocks)
-			bm_DiscardBlock(block.get());
-	}
-	// (put in front: what bm_ResetCache() keeps note of is that much further on)
-	if (reset_batch != (size_t)-1)
-		reset_batch += all_temp_blocks.size();
-	reset_end += all_temp_blocks.size();
-	del_blocks.insert(del_blocks.begin(),all_temp_blocks.begin(),all_temp_blocks.end());
-	all_temp_blocks.clear();
+		while (temp_blocks != NULL)
+			bm_DiscardBlock(temp_blocks);
 	// (the temporary blocks there are now may be written over from here on)
 	temp_reset_end = del_blocks.size();
 }
@@ -556,13 +589,9 @@ static void bm_ReleaseBlocks()
 		block->pNextBlock = NULL;
 		block->pBranchBlock = NULL;
 	}
-	for (const auto& block : all_temp_blocks)
-		block->pre_refs.clear();
 	bm_ForgetVaddrs();
-	all_temp_blocks.clear();
+	lists_clear();
 	blkmap.clear();
-	for (auto& block_list : blocks_per_page)
-		block_list.clear();
 }
 
 void bm_Term()
@@ -732,15 +761,19 @@ void RuntimeBlockInfo::Discard()
 	}
 	pre_refs.clear();
 
-	if (read_only)
+	// Remove this block from the per-page block lists
+	for (u32 i = 0; i < page_links; i++)
 	{
-		// Remove this block from the per-page block lists
-		for (u32 addr = this->addr & ~PAGE_MASK; addr < this->addr + this->sh4_code_size; addr += PAGE_SIZE)
-		{
-         auto& block_list = blocks_per_page[(addr & RAM_MASK) / PAGE_SIZE];
-			block_list.erase(this);
-		}
+		BlockPageLink *link = &page_link[i];
+		if (link->prev != NULL)
+			link->prev->next = link->next;
+		else
+			blocks_per_page[link->page] = link->next;
+		if (link->next != NULL)
+			link->next->prev = link->prev;
+		link->prev = link->next = NULL;
 	}
+	page_links = 0;
 }
 
 void RuntimeBlockInfo::SetProtectedFlags()
@@ -765,12 +798,21 @@ void RuntimeBlockInfo::SetProtectedFlags()
 	}
 	this->read_only = true;
 	protected_blocks++;
+	verify(page_links == 0);
 	for (u32 addr = this->addr & ~PAGE_MASK; addr < this->addr + sh4_code_size; addr += PAGE_SIZE)
 	{
-		auto& block_list = blocks_per_page[(addr & RAM_MASK) / PAGE_SIZE];
-		if (block_list.empty())
+		const u32 page = (addr & RAM_MASK) / PAGE_SIZE;
+		BlockPageLink *link = &page_link[page_links++];
+		verify(page_links <= BLOCK_PAGES);
+		if (blocks_per_page[page] == NULL)
 			bm_LockPage(addr);
-		block_list.insert(this);
+		link->block = this;
+		link->page = page;
+		link->prev = NULL;
+		link->next = blocks_per_page[page];
+		if (link->next != NULL)
+			link->next->prev = link;
+		blocks_per_page[page] = link;
 	}
 }
 
@@ -784,11 +826,10 @@ void bm_RamWriteAccess(u32 addr)
 	}
 	unprotected_pages[addr / PAGE_SIZE] = true;
 	bm_UnlockPage(addr);
-	std::set<RuntimeBlockInfo*>& block_list = blocks_per_page[addr / PAGE_SIZE];
-	/* (from the signal handler: nothing allocated. A block in the page's
-	 * list is read-only, and its Discard() takes it out of the list.) */
-	while (!block_list.empty())
-		bm_DiscardBlock(*block_list.begin());
+	/* (from the signal handler: nothing allocated. A block's Discard()
+	 * takes it out of the page's list.) */
+	while (blocks_per_page[addr / PAGE_SIZE] != NULL)
+		bm_DiscardBlock(blocks_per_page[addr / PAGE_SIZE]->block);
 }
 
 /* A save state's main memory, @from, is put in place of the machine's.
@@ -821,9 +862,8 @@ void bm_LoadRam(const u8 *from)
 		if (memcmp(ram + addr, from + addr, PAGE_SIZE) == 0)
 			continue;
 
-		std::set<RuntimeBlockInfo*>& block_list = blocks_per_page[addr / PAGE_SIZE];
-		while (!block_list.empty())
-			bm_DiscardBlock(*block_list.begin());
+		while (blocks_per_page[addr / PAGE_SIZE] != NULL)
+			bm_DiscardBlock(blocks_per_page[addr / PAGE_SIZE]->block);
 		bm_UnlockPage(addr);
 		memcpy(ram + addr, from + addr, PAGE_SIZE);
 	}

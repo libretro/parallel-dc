@@ -173,6 +173,9 @@ bool RuntimeBlockInfo::Setup(u32 rpc,fpscr_t rfpu_cfg)
 	has_fpu_op = false;
 	temp_block = false;
 	mmu_go_on = false;
+	page_links = 0;
+	temp_prev = temp_next = NULL;
+	temp_listed = false;
 	
 	vaddr=rpc;
 #ifndef NO_MMU

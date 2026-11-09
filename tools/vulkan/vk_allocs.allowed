@@ -16,7 +16,6 @@ heap ngen_link
 heap Emit
 heap bm_AddBlock
 heap RuntimeBlockInfo::hash
-heap RuntimeBlockInfo::SetProtectedFlags
 
 # Video memory watched for writes (the texture cache's locks; renders to
 # textures, their copies' room grown when one is watched, never in the

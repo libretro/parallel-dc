@@ -44,8 +44,11 @@ SH-4 dynarec's; 9 buffers, 8 to 14 images and 4 command pools.
    the pool sized at the start (`TexturePool::Make`, and its log line);
    the cache's map, its pieces' hashes, the samplers and the video memory
    locks (`vramlock_list_add`) in arenas of their bound.
-5. **The dynarec.** Blocks compiled while the game runs (`ngen_Compile`,
-   `BlockCompiler`, `bm_AddBlock`, Xbyak's labels): the block's opcodes
+5. **The dynarec.** The pages' lists of their blocks and the temporary
+   blocks' list are the blocks' own links now (no std::set: nothing
+   allocated to put a block in or take it out). Left: blocks compiled
+   while the game runs (`ngen_Compile`, `BlockCompiler`, `bm_AddBlock`,
+   Xbyak's labels): the block's opcodes
    into a scratch arena reset for each block, its bookkeeping in a pool
    sized for the code cache, the assembler's labels in fixed tables.
 

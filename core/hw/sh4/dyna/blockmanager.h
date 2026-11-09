@@ -35,6 +35,20 @@ struct RuntimeBlockInfo_Core
 	u32 lookups;
 };
 
+struct RuntimeBlockInfo;
+
+/* A block's place in the list of a page of main memory its code is in
+ * (blockmanager.cpp: the page's blocks, discarded when it is written) */
+struct BlockPageLink
+{
+	RuntimeBlockInfo *block;
+	BlockPageLink *prev, *next;
+	u32 page;
+};
+/* the pages a block's code can be in: it is at most BLOCK_MAX_SH_OPS_HARD
+ * instructions, a fraction of a page, so two; four with room */
+#define BLOCK_PAGES 4
+
 struct RuntimeBlockInfo: RuntimeBlockInfo_Core
 {
 	bool Setup(u32 pc,fpscr_t fpu_cfg);
@@ -98,6 +112,14 @@ struct RuntimeBlockInfo: RuntimeBlockInfo_Core
 	u32 linkedmemops;
 	std::map<void*, u32> memory_accesses;	// key is host pc when access is made, value is opcode id
 	bool read_only;
+
+	/* in the lists of the pages its code is in (read-only blocks), and in
+	 * the temporary blocks' (temp_block): links of their own, nothing
+	 * allocated to put it in or take it out; in none after Setup() */
+	BlockPageLink page_link[BLOCK_PAGES];
+	u32 page_links;
+	RuntimeBlockInfo *temp_prev, *temp_next;
+	bool temp_listed;
 };
 
 

@@ -11,7 +11,9 @@ name: Headless
 # disc, the strips its vertex loop found drawable whole making the indices
 # a look at their vertices does (tools/pvr/ta_parse_bench.sh). And the beam
 # each read of SPG_STATUS sees, kept from the read before on its line,
-# against the beam found afresh (tools/pvr/spg_beam_test.sh).
+# against the beam found afresh (tools/pvr/spg_beam_test.sh). And the
+# register allocator's lists against the std::set they replace
+# (tools/sh4/reglist_test.sh).
 
 on:
   push:
@@ -21,6 +23,7 @@ on:
       - 'tools/threads/live_*'
       - 'tools/pvr/ta_index_test.*'
       - 'tools/pvr/ta_parse_bench.*'
+      - 'tools/sh4/reglist_test.*'
       - 'Makefile*'
       - '.github/workflows/headless.yml'
   pull_request:
@@ -30,6 +33,7 @@ on:
       - 'tools/threads/live_*'
       - 'tools/pvr/ta_index_test.*'
       - 'tools/pvr/ta_parse_bench.*'
+      - 'tools/sh4/reglist_test.*'
       - 'Makefile*'
       - '.github/workflows/headless.yml'
   workflow_dispatch:
@@ -57,3 +61,5 @@ jobs:
         run: sh tools/pvr/ta_parse_bench.sh
       - name: The beam kept from read to read of SPG_STATUS against the beam found afresh, straight and run ahead
         run: sh tools/pvr/spg_beam_test.sh
+      - name: The register allocator's lists against the std::set they replace, the same order
+        run: sh tools/sh4/reglist_test.sh

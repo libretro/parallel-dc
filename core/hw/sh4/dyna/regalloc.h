@@ -1,15 +1,61 @@
 #include <types.h>
 #include "shil.h"
 
-#include <set>
 #include <deque>
 
-static inline bool operator < (const shil_param &lhs, const shil_param &rhs)
+/* The registers an op writes, or reads, as the allocator walks them: by
+ * their key, the type plus 32 times the register, largest first, a key
+ * once. A fixed array: an op has at most two written and three read, a
+ * pair of registers taken apart (InsertRegs()). */
+#define SHIL_REG_LIST_MAX 8
+struct ShilRegList
 {
-	u32 rhsv=rhs.type + rhs._reg*32;
-	u32 lhsv=lhs.type + lhs._reg*32;
+	shil_param v[SHIL_REG_LIST_MAX];
+	u32 n;
+};
 
-	return rhsv < lhsv;
+static inline u32 shil_reg_list_key(const shil_param *p)
+{
+	return p->type + (u32)p->_reg * 32;
+}
+
+/* where @p's key is in @l, or -1 */
+static inline int shil_reg_list_find(const ShilRegList *l, const shil_param *p)
+{
+	const u32 key = shil_reg_list_key(p);
+	u32 i;
+	for (i = 0; i < l->n; i++)
+		if (shil_reg_list_key(&l->v[i]) == key)
+			return (int)i;
+	return -1;
+}
+
+/* @p in its place, unless its key is there already */
+static inline void shil_reg_list_insert(ShilRegList *l, const shil_param *p)
+{
+	const u32 key = shil_reg_list_key(p);
+	u32 i, j;
+	for (i = 0; i < l->n; i++)
+	{
+		const u32 k = shil_reg_list_key(&l->v[i]);
+		if (k == key)
+			return;
+		if (k < key)
+			break;
+	}
+	verify(l->n < SHIL_REG_LIST_MAX);
+	for (j = l->n; j > i; j--)
+		l->v[j] = l->v[j - 1];
+	l->v[i] = *p;
+	l->n++;
+}
+
+static inline void shil_reg_list_erase(ShilRegList *l, u32 at)
+{
+	u32 j;
+	for (j = at; j + 1 < l->n; j++)
+		l->v[j] = l->v[j + 1];
+	l->n--;
 }
 
 template<typename nreg_t,typename nregf_t,bool explode_spans=true>
@@ -385,11 +431,11 @@ struct RegAlloc
 		return is_fpr && (op->rd.count()>=2 || op->rd2.count()>=2 || op->rs1.count()>=2 ||  op->rs2.count()>=2 || op->rs3.count()>=2 );
 	}
 
-	void InsertRegs(std::set<shil_param>& l, const shil_param& regs)
+	void InsertRegs(ShilRegList *l, const shil_param& regs)
 	{
 		if (!explode_spans || (regs.count()==1 || regs.count()>2))
 		{
-			l.insert(regs);
+			shil_reg_list_insert(l, &regs);
 		}
 		else
 		{
@@ -401,7 +447,7 @@ struct RegAlloc
 				p.type=FMT_F32;
 				p._reg=(Sh4RegType)(p._reg+i);
 
-				l.insert(p);
+				shil_reg_list_insert(l, &p);
 			}
 		}
 	}
@@ -546,26 +592,26 @@ struct RegAlloc
 						}
 					}
 				}
-            std::set<shil_param> reg_wt;
-            std::set<shil_param> reg_rd;
+				ShilRegList reg_wt;
+				ShilRegList reg_rd;
+				const shil_param *iter;
+				u32 at;
 
-				//insert regs into sets ..
-				InsertRegs(reg_wt,op->rd);
-				
-				InsertRegs(reg_wt,op->rd2);
+				reg_wt.n = 0;
+				reg_rd.n = 0;
+				InsertRegs(&reg_wt, op->rd);
+				InsertRegs(&reg_wt, op->rd2);
+				InsertRegs(&reg_rd, op->rs1);
+				InsertRegs(&reg_rd, op->rs2);
+				InsertRegs(&reg_rd, op->rs3);
 
-				InsertRegs(reg_rd,op->rs1);
-				
-				InsertRegs(reg_rd,op->rs2);
-
-				InsertRegs(reg_rd,op->rs3);
-
-            std::set<shil_param>::iterator iter=reg_wt.begin();
-				while( iter != reg_wt.end() ) 
+				for (at = 0; at < reg_wt.n; at++)
 				{
-					if (reg_rd.count(*iter))
+					const int read = shil_reg_list_find(&reg_rd, &reg_wt.v[at]);
+					iter = &reg_wt.v[at];
+					if (read >= 0)
 					{
-						reg_rd.erase(*iter);
+						shil_reg_list_erase(&reg_rd, (u32)read);
 						{
 							if (iter->is_reg())
 							{
@@ -637,12 +683,11 @@ struct RegAlloc
 							}
 						}
 					}
-					++iter;
 				}
 
-				iter = reg_rd.begin();
-				while (iter != reg_rd.end())
+				for (at = 0; at < reg_rd.n; at++)
 				{
+					iter = &reg_rd.v[at];
 					//r
 					if (iter->is_reg())
 					{
@@ -669,7 +714,6 @@ struct RegAlloc
 							}
 						}
 					}
-					++iter;
 				}
 			
 				/*
