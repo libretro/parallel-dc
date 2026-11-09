@@ -139,11 +139,25 @@ R"(%s
 
 #define PI 3.1415926
 
+
+#define GLES2 0
+#define GLES3 1
+#define GL2 2
+#define GL3 3
+
+
+#if TARGET_GL == GL2
+#define highp
+#define lowp
+#define mediump
+#endif
 /* The general program (glprogram_cache.h): one for each pp_Gouraud, the
  * other bits of a polygon's key (GetProgram()) read from a uniform. The
- * code below is the same for both, so what one draws the other draws. */
+ * code below is the same for both, so what one draws the other draws.
+ * OpenGL ES 2 and OpenGL 2 have no integer bit operations: there the key
+ * comes as its four nibbles, each a float a mediump one holds exactly,
+ * and a field is taken out with floor() and mod(). */
 #ifdef GENERAL_PROGRAM
-uniform highp int key_bits;
 #undef cp_AlphaTest
 #undef pp_ClipInside
 #undef pp_UseAlpha
@@ -157,6 +171,24 @@ uniform highp int key_bits;
 #undef pp_TriLinear
 #undef pp_Palette
 #undef pp_Shadowed
+#if TARGET_GL == GLES2 || TARGET_GL == GL2
+uniform mediump vec4 key_nibbles;
+#define KEY_FIELD(n, shift, values) int(mod(floor(key_nibbles.n / shift), values))
+#define pp_ClipInside KEY_FIELD(w, 8.0, 2.0)
+#define cp_AlphaTest KEY_FIELD(w, 4.0, 2.0)
+#define pp_Texture KEY_FIELD(w, 2.0, 2.0)
+#define pp_UseAlpha KEY_FIELD(w, 1.0, 2.0)
+#define pp_IgnoreTexA KEY_FIELD(z, 8.0, 2.0)
+#define pp_ShadInstr KEY_FIELD(z, 2.0, 4.0)
+#define pp_Offset KEY_FIELD(z, 1.0, 2.0)
+#define pp_FogCtrl KEY_FIELD(y, 4.0, 4.0)
+#define pp_BumpMap KEY_FIELD(y, 1.0, 2.0)
+#define FogClamping KEY_FIELD(x, 8.0, 2.0)
+#define pp_TriLinear KEY_FIELD(x, 4.0, 2.0)
+#define pp_Palette KEY_FIELD(x, 2.0, 2.0)
+#define pp_Shadowed KEY_FIELD(x, 1.0, 2.0)
+#else
+uniform highp int key_bits;
 #define pp_ClipInside ((key_bits >> 15) & 1)
 #define cp_AlphaTest ((key_bits >> 14) & 1)
 #define pp_Texture ((key_bits >> 13) & 1)
@@ -171,16 +203,6 @@ uniform highp int key_bits;
 #define pp_Palette ((key_bits >> 1) & 1)
 #define pp_Shadowed (key_bits & 1)
 #endif
-
-#define GLES2 0
-#define GLES3 1
-#define GL2 2
-#define GL3 3
-
-#if TARGET_GL == GL2
-#define highp
-#define lowp
-#define mediump
 #endif
 #if TARGET_GL == GLES3
 out highp vec4 FragColor;
@@ -585,7 +607,7 @@ static void pipeline_locations(PipelineShader *s, bool general)
 	s->normal_matrix = glGetUniformLocation(s->program, "normal_matrix");
 	s->shade_scale_factor = glGetUniformLocation(s->program, "shade_scale_factor");
 	s->prepass_alpha = glGetUniformLocation(s->program, "prepass_alpha");
-	s->key_bits = general ? glGetUniformLocation(s->program, "key_bits") : -1;
+	s->key_bits = !general ? -1 : glGetUniformLocation(s->program, gl.gl_major >= 3 ? "key_bits" : "key_nibbles");
 	s->key_now = ~0u;
 	s->shadow_set = 0;
 
@@ -627,7 +649,7 @@ static void use_general(PipelineShader *s, PipelineShader *g)
 /* A key first drawn (in a frame): drawn with the general program, its own
  * asked for in the background where the driver does that (else that is it
  * for this run: the key is kept, and its program made at the start of the
- * next); without a general program, made now as ever */
+ * next); without a general program (it did not link), made now as ever */
 static void pipeline_first(PipelineShader *s, u32 key)
 {
 	pipeline_from_key(s, key);
@@ -681,7 +703,11 @@ void UsePipelineShader(PipelineShader *s)
 	if (s->general != nullptr && owner->key_now != s->key)
 	{
 		owner->key_now = s->key;
-		glUniform1i(owner->key_bits, (GLint)s->key);
+		if (gl.gl_major >= 3)
+			glUniform1i(owner->key_bits, (GLint)s->key);
+		else
+			glUniform4f(owner->key_bits, (GLfloat)(s->key & 15), (GLfloat)((s->key >> 4) & 15),
+					(GLfloat)((s->key >> 8) & 15), (GLfloat)((s->key >> 12) & 15));
 	}
 }
 
@@ -705,9 +731,7 @@ static void gl_make_programs()
 		PipelineShader *s = &gl.general[g];
 		memset(s, 0, sizeof(*s));
 		s->pp_Gouraud = g;
-		// (OpenGL ES 2 and OpenGL 2: none; the shaders' integers are 3's)
-		if (gl.gl_major >= 3)
-			s->program = make_pipeline_program(s, true, true);
+		s->program = make_pipeline_program(s, true, true);
 	}
 	u32 count = 0;
 	const u32 *known = glprog_known(GLPROG_GLES, &count);

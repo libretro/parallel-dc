@@ -23,9 +23,15 @@
  * buffer mapped once for good (persistently) is not a read of a frame.
  * GLF_NO_STORAGE=1: no GL_ARB_buffer_storage, as an OpenGL older than 4.4
  * has it: the frame's lists are copied to the card, not parsed where it
- * reads them (tools/gl/gl_parse_arena.sh).
+ * reads them (tools/gl/gl_parse_arena.sh). GLF_VERSION=gles2 or gl2: the
+ * context said to be OpenGL ES 2.0 (with GLF_GLES) or OpenGL 2.1, so the
+ * core takes its paths for those (their shaders still compile on the newer
+ * context). GLF_NO_PARALLEL=1: no KHR_ or ARB_parallel_shader_compile.
+ * GLF_COUNT_PROGRAMS=1 prints "programs: C compiled, L linked, B loaded in
+ * retro_run" - glCompileShader, glLinkProgram and glProgramBinary called
+ * inside it (tools/gl/gl_draw_path.sh).
  *
- * Built with: cc -o gl_frames gl_frames.c -lEGL -lGL -ldl */
+ * Built with: cc -rdynamic -o gl_frames gl_frames.c -lEGL -lGL -ldl */
 #define _GNU_SOURCE
 #include <dlfcn.h>
 #include <stdarg.h>
@@ -83,22 +89,128 @@ static void count_read_pixels(GLint x, GLint y, GLsizei w, GLsizei h, GLenum for
    real_read_pixels(x, y, w, h, format, type, pixels);
 }
 
+static int hidden(const char *e)
+{
+   if (getenv("GLF_NO_STORAGE") && !strcmp(e, "GL_ARB_buffer_storage"))
+      return 1;
+   return getenv("GLF_NO_PARALLEL") && (!strcmp(e, "GL_KHR_parallel_shader_compile")
+         || !strcmp(e, "GL_ARB_parallel_shader_compile"));
+}
+
 static const GLubyte *(*real_get_stringi)(GLenum, GLuint);
 static const GLubyte *hide_get_stringi(GLenum name, GLuint i)
 {
    const GLubyte *e = real_get_stringi(name, i);
-   if (name == GL_EXTENSIONS && e != NULL && !strcmp((const char *)e, "GL_ARB_buffer_storage"))
-      return (const GLubyte *)"GL_hidden_ARB_buffer_storage";
+   if (name == GL_EXTENSIONS && e != NULL && hidden((const char *)e))
+      return (const GLubyte *)"GL_hidden_extension";
    return e;
 }
+
+/* GLF_VERSION and GLF_NO_PARALLEL: what the context says it is. The core
+ * calls these two of OpenGL 1 straight, not through get_proc_address:
+ * they are defined here, and bound to the core's calls when this is built
+ * with -rdynamic (the core is loaded after it). */
+static const GLubyte *(*real_get_string)(GLenum);
+static char extensions[65536];
+static const GLubyte *version_get_string(GLenum name)
+{
+   const char *v = getenv("GLF_VERSION");
+   if (!real_get_string)
+      *(void **)&real_get_string = dlsym(RTLD_NEXT, "glGetString");
+   if (name == GL_VERSION && v)
+      return (const GLubyte *)(!strcmp(v, "gles2") ? "OpenGL ES 2.0 (gl_frames)" : "2.1 (gl_frames)");
+   if (name == GL_EXTENSIONS && getenv("GLF_NO_PARALLEL"))
+   {
+      /* the list without the hidden ones */
+      const char *all = (const char *)real_get_string(name);
+      char word[256];
+      size_t n = 0, at = 0;
+      extensions[0] = '\0';
+      while (all != NULL && all[at] != '\0')
+      {
+         size_t len = strcspn(all + at, " ");
+         if (len > 0 && len < sizeof(word))
+         {
+            memcpy(word, all + at, len);
+            word[len] = '\0';
+            if (!hidden(word) && n + len + 2 < sizeof(extensions))
+            {
+               memcpy(extensions + n, word, len);
+               n += len;
+               extensions[n++] = ' ';
+               extensions[n] = '\0';
+            }
+         }
+         at += len;
+         while (all[at] == ' ')
+            at++;
+      }
+      return (const GLubyte *)extensions;
+   }
+   return real_get_string(name);
+}
+static void (*real_get_integerv)(GLenum, GLint *);
+static void version_get_integerv(GLenum name, GLint *v)
+{
+   const char *ver = getenv("GLF_VERSION");
+   if (!real_get_integerv)
+      *(void **)&real_get_integerv = dlsym(RTLD_NEXT, "glGetIntegerv");
+   if (ver && name == GL_MAJOR_VERSION)
+      *v = 2;
+   else if (ver && name == GL_MINOR_VERSION)
+      *v = !strcmp(ver, "gles2") ? 0 : 1;
+   else
+      real_get_integerv(name, v);
+}
+
+const GLubyte *GLAPIENTRY glGetString(GLenum name)
+{
+   return version_get_string(name);
+}
+void GLAPIENTRY glGetIntegerv(GLenum name, GLint *v)
+{
+   version_get_integerv(name, v);
+}
+
+/* GLF_COUNT_PROGRAMS: what retro_run compiles, links and loads */
+static int in_run;
+static long compiled, linked, loaded;
+static void (*real_compile)(GLuint);
+static void count_compile(GLuint s) { if (in_run) compiled++; real_compile(s); }
+static void (*real_link)(GLuint);
+static void count_link(GLuint p) { if (in_run) linked++; real_link(p); }
+static void (*real_binary)(GLuint, GLenum, const void *, GLsizei);
+static void count_binary(GLuint p, GLenum f, const void *b, GLsizei n) { if (in_run) loaded++; real_binary(p, f, b, n); }
 
 static retro_proc_address_t gl_proc(const char *sym)
 {
    retro_proc_address_t f = (retro_proc_address_t)eglGetProcAddress(sym);
-   if (getenv("GLF_NO_STORAGE") && f != NULL && !strcmp(sym, "glGetStringi"))
+   if ((getenv("GLF_NO_STORAGE") || getenv("GLF_NO_PARALLEL")) && f != NULL && !strcmp(sym, "glGetStringi"))
    {
       *(retro_proc_address_t *)&real_get_stringi = f;
       return (retro_proc_address_t)hide_get_stringi;
+   }
+   if (!strcmp(sym, "glGetString"))
+      return (retro_proc_address_t)glGetString;
+   if (!strcmp(sym, "glGetIntegerv"))
+      return (retro_proc_address_t)glGetIntegerv;
+   if (getenv("GLF_COUNT_PROGRAMS") && f != NULL)
+   {
+      if (!strcmp(sym, "glCompileShader"))
+      {
+         *(retro_proc_address_t *)&real_compile = f;
+         return (retro_proc_address_t)count_compile;
+      }
+      if (!strcmp(sym, "glLinkProgram"))
+      {
+         *(retro_proc_address_t *)&real_link = f;
+         return (retro_proc_address_t)count_link;
+      }
+      if (!strcmp(sym, "glProgramBinary"))
+      {
+         *(retro_proc_address_t *)&real_binary = f;
+         return (retro_proc_address_t)count_binary;
+      }
    }
    if (!getenv("GLF_READS") || f == NULL)
       return f;
@@ -375,7 +487,9 @@ int main(int argc, char **argv)
    for (i = 0; i < frames; i++)
    {
       frame_no = i;
+      in_run = 1;
       retro_run();
+      in_run = 0;
       if (ahead_at >= 0 && i >= ahead_at)
       {
          /* the state after this frame; the frame after it, shown; back to the state */
@@ -439,5 +553,7 @@ int main(int argc, char **argv)
    free(state);
    if (getenv("GLF_READS"))
       printf("reads %ld\n", reads);
+   if (getenv("GLF_COUNT_PROGRAMS"))
+      printf("programs: %ld compiled, %ld linked, %ld loaded in retro_run\n", compiled, linked, loaded);
    return 0;
 }

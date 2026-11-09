@@ -145,6 +145,13 @@ jobs:
           sh tools/gl/gl_dma.sh
       - name: Polygons drawn outside a clipping rectangle, with OpenGL and OpenGL ES (each renderer)
         run: sh tools/gl/gl_clip.sh
+      - name: OpenGL - nothing compiled on the draw path, cold, OpenGL ES 2 and 3, OpenGL 2 and 3+, the general programs' pictures (AGENTS.md)
+        run: |
+          # (the built core again, every polygon drawn with the general programs: gles.cpp and the link)
+          cp -a . "$RUNNER_TEMP/general"
+          sed -i '1i #define GL_PROGRAM_TEST_GENERAL' "$RUNNER_TEMP/general/core/rend/gles/gles.cpp"
+          make -j"$(nproc)" -C "$RUNNER_TEMP/general"
+          GENERAL="$RUNNER_TEMP/general/parallel_dc_libretro.so" sh tools/gl/gl_draw_path.sh
       - name: A state saved while a render to a texture is on the card, every frame run ahead (OpenGL and OpenGL ES)
         run: sh tools/gl/gl_ahead.sh
       - name: The translucent sorter's sort (radix, stable, as a sort by <)
