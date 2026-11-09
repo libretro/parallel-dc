@@ -119,8 +119,8 @@ enum { DX12_PSO_POLY = 0, DX12_PSO_MODVOL = 1, DX12_PSO_QUAD = 2, DX12_PSO_OIT =
  * volume: with SSAA.) */
 enum { DX12_RATE_NONE = 0, DX12_RATE_SAMPLE = 1, DX12_RATE_PIXEL = 2, DX12_RATE_PIXEL_SUMS = 3 };
 
-/* Of a polygon's blend, the TSP's factors that read only the source,
- * which its pixel shader applies (DX12_PF_SRC_FOLD, DX12_PF_DST_FOLD): the
+/* Of a polygon's blend, either renderer's, the TSP's factors that read
+ * only the source, which its pixel shader applies (DX12_PF_SRC_FOLD, DX12_PF_DST_FOLD): the
  * source's zero, one, alpha and one less it, and the destination's those,
  * the source colour and one less it. Its pipeline then has one for the
  * first and the shader's second colour for the second (dual), so that
@@ -160,7 +160,7 @@ struct DX12PsoKey
 		const bool folds = kind == DX12_PSO_POLY || kind == DX12_PSO_OIT;
 		const u32 c = folds ? 0 : cull;
 		const bool g = folds ? false : gouraud;
-		if (kind == DX12_PSO_POLY && blend)
+		if (folds && blend)
 		{
 			if (dx12_src_folds(s))
 				s = 1;
@@ -205,7 +205,7 @@ struct DX12PsoKey
 	static bool Valid(u64 v)
 	{
 		const DX12PsoKey k = Unpack(v);
-		return (v >> 34) == 0 && ((v >> 28) & 1) == 1 && (!k.dual || (k.kind == DX12_PSO_POLY && k.blend)) && k.kind <= DX12_PSO_MOTION && (u32)k.stencil < (u32)DX12Stencil::Count
+		return (v >> 34) == 0 && ((v >> 28) & 1) == 1 && (!k.dual || ((k.kind == DX12_PSO_POLY || k.kind == DX12_PSO_OIT) && k.blend)) && k.kind <= DX12_PSO_MOTION && (u32)k.stencil < (u32)DX12Stencil::Count
 				&& k.cull <= 2 && k.special <= DX12_BLEND_FACTOR && k.pass <= DX12_PASS_OIT
 				&& (k.rate <= DX12_RATE_PIXEL || (k.rate == DX12_RATE_PIXEL_SUMS && k.kind == DX12_PSO_OIT_FINAL));
 	}
@@ -263,6 +263,13 @@ public:
 	void MakeAtStart();
 	/* One more a renderer wants made before a game draws */
 	void Prepare(const DX12PsoKey& key) { Want(key.Pack()); SubmitBatch(); }
+	/* Whether what the thread was given is made (and in the table) */
+	bool Made();
+	/* Waits for it: at the start, before the machine runs, never in a
+	 * frame (libretro.cpp) */
+	void WaitMade();
+	/* Many, made ahead as one batch, in their order (each once) */
+	void Prepare(const std::vector<u64>& packed) { for (u64 key : packed) Want(key); SubmitBatch(); }
 	/* SSAA of 2^@log2n samples taken up: every pipeline of one sample made
 	 * for that many, at each rate it can be drawn at, and the keys of that
 	 * many kept from earlier runs (those made already are found made) */

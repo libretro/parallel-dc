@@ -234,6 +234,37 @@ VertexOut main(in VertexIn vin)
 }
 #endif
 
+#if defined(DX12_POLY_PS) || defined(DX12_OIT_PS)
+struct PixelOut
+{
+	float4 color : SV_Target0;
+	float4 factor : SV_Target1;	// the destination's blend factor (DX12_PF_DST_FOLD)
+};
+
+/* The factors the pipeline leaves to the shader (DX12_PF_SRC_FOLD,
+ * DX12_PF_DST_FOLD): of the colour clamped to the frame's range, as the
+ * blender would take it */
+PixelOut foldBlend(float4 color)
+{
+	PixelOut po;
+	const float4 s = saturate(color);
+	po.color = color;
+	po.factor = 0.0;
+	if ((polyFlags & DX12_PF_SRC_FOLD) != 0)
+	{
+		const uint i = (polyFlags >> DX12_PF_SRC_FOLD_SHIFT) & 7;
+		po.color = s * DX12_SRC_FOLD_FACTOR(i, s.a);
+	}
+	if ((polyFlags & DX12_PF_DST_FOLD) != 0)
+	{
+		const uint i = (polyFlags >> DX12_PF_DST_FOLD_SHIFT) & 7;
+		po.factor = float4(DX12_DST_FOLD_FACTOR(i, s.r, s.a), DX12_DST_FOLD_FACTOR(i, s.g, s.a),
+				DX12_DST_FOLD_FACTOR(i, s.b, s.a), DX12_DST_FOLD_FACTOR(i, s.a, s.a));
+	}
+	return po;
+}
+#endif
+
 #ifdef DX12_POLY_PS
 struct Pixel
 {
@@ -246,12 +277,6 @@ struct Pixel
 #if defined(DX12_SAMPLE_RATE) && DX12_SAMPLE_RATE == 2
 	uint coverage : SV_Coverage;
 #endif
-};
-
-struct PixelOut
-{
-	float4 color : SV_Target0;
-	float4 factor : SV_Target1;	// the destination's blend factor (DX12_PF_DST_FOLD)
 };
 
 PixelOut main(in Pixel inpix, bool front : SV_IsFrontFace)
@@ -362,24 +387,7 @@ PixelOut main(in Pixel inpix, bool front : SV_IsFrontFace)
 	// pixels that hide what is behind them. (0 for the colours.)
 	if (color.a < prepassAlpha)
 		discard;
-	// The factors the pipeline leaves to the shader: of the colour clamped
-	// to the frame's range, as the blender would take it
-	PixelOut po;
-	const float4 s = saturate(color);
-	po.color = color;
-	po.factor = 0.0;
-	if ((polyFlags & DX12_PF_SRC_FOLD) != 0)
-	{
-		const uint i = (polyFlags >> DX12_PF_SRC_FOLD_SHIFT) & 7;
-		po.color = s * DX12_SRC_FOLD_FACTOR(i, s.a);
-	}
-	if ((polyFlags & DX12_PF_DST_FOLD) != 0)
-	{
-		const uint i = (polyFlags >> DX12_PF_DST_FOLD_SHIFT) & 7;
-		po.factor = float4(DX12_DST_FOLD_FACTOR(i, s.r, s.a), DX12_DST_FOLD_FACTOR(i, s.g, s.a),
-				DX12_DST_FOLD_FACTOR(i, s.b, s.a), DX12_DST_FOLD_FACTOR(i, s.a, s.a));
-	}
-	return po;
+	return foldBlend(color);
 }
 #endif
 
@@ -779,12 +787,14 @@ uint getNextPixelIndex()
 	return index;
 }
 
-// (the colour is not written in the depth pass or into the lists: the
-// pipeline's write mask is off then)
+// (the colour is not written into the lists, nor in the depth pass but by
+// punch-through polygons: the pipeline's write mask is off then; where it
+// is blended, the factors that read only the source are the shader's,
+// foldBlend())
 #if DX12_OIT_PASS == DX12_PASS_OIT && defined(DX12_SSAA) && defined(DX12_POST_Z_COVERAGE)
 [earlydepthstencil]
 #endif
-float4 main(in OITVertexOut inpix, bool front : SV_IsFrontFace) : SV_Target
+PixelOut main(in OITVertexOut inpix, bool front : SV_IsFrontFace)
 {
 	// (the guest's 1/w at this pixel, and the depth the rasterizer made of it)
 	const float w = inpix.pos.w;
@@ -1024,9 +1034,9 @@ float4 main(in OITVertexOut inpix, bool front : SV_IsFrontFace) : SV_Target
 	InterlockedExchange(abufferPointers[coords], idx, next);
 	pixel.next = next;
 	PixelBuffer[idx] = pixel;
-	return 0.0;
+	return foldBlend(0.0);
 #else
-	return color;
+	return foldBlend(color);
 #endif
 }
 #endif

@@ -8,8 +8,9 @@
  * have them) against the PowerVR's blend of the colour and the frame's
  * pixel. And the keys: 15 blends for the 64 pairs, a folded key packed
  * again the same, and the key of a pair from an earlier layout (a file's)
- * folded to the one the renderer asks for; a polygon's cull mode and
- * shading, applied by its shaders, folded out of its key too. Built with mingw-w64 and run
+ * folded to the one the renderer asks for; the per-pixel renderer's
+ * polygons' blends the same; a polygon's cull mode and shading, applied
+ * by its shaders, folded out of its key too. Built with mingw-w64 and run
  * under wine by dx12_blend_fold_test.sh: no device. */
 #include "rend/dx12/dx12_pso.h"
 #include <math.h>
@@ -179,17 +180,32 @@ int main()
 			failed++;
 		}
 	}
-	// nothing but a blended polygon is folded
+	// either renderer's blended polygon folded, to the same 15; nothing else
+	for (u32 kind = 0; kind < 8; kind++)
 	{
-		DX12PsoKey key{};
-		key.kind = DX12_PSO_OIT;
-		key.blend = true;
-		key.src = 4;
-		key.dst = 5;
-		const DX12PsoKey made = DX12PsoKey::Unpack(key.Pack());
-		if (made.dual || made.src != 4 || made.dst != 5)
+		const bool folds = kind == DX12_PSO_POLY || kind == DX12_PSO_OIT;
+		std::set<u64> blends;
+		for (u32 src = 0; src < 8; src++)
+			for (u32 dst = 0; dst < 8; dst++)
+			{
+				DX12PsoKey key{};
+				key.kind = kind;
+				key.blend = true;
+				key.writeColor = true;
+				key.src = src;
+				key.dst = dst;
+				const u64 packed = key.Pack();
+				blends.insert(packed);
+				const DX12PsoKey made = DX12PsoKey::Unpack(packed);
+				if (made.Pack() != packed || !DX12PsoKey::Valid(packed) || (!folds && (made.dual || made.src != src || made.dst != dst)))
+				{
+					printf("FAIL: kind %u: blend %u %u: the key %016llx not kept\n", kind, src, dst, (unsigned long long)packed);
+					failed++;
+				}
+			}
+		if (blends.size() != (folds ? 15u : 64u))
 		{
-			printf("FAIL: a per-pixel renderer's key was folded\n");
+			printf("FAIL: kind %u: %u pipelines for the 64 blends, not %u\n", kind, (unsigned)blends.size(), folds ? 15u : 64u);
 			failed++;
 		}
 	}

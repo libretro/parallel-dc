@@ -107,6 +107,8 @@ public:
 	u64 GetTexture(TSP tsp, TCW tcw, int area = 0) override;
 	// (TA processing switched on or off)
 	void OptionsChanged() override;
+	// (its pipelines made: Renderer::Ready())
+	bool Ready() override { return context->Pipelines().Made(); }
 
 protected:
 	virtual bool RenderFrame();

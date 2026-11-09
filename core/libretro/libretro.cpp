@@ -1609,17 +1609,18 @@ static void update_av_info_if_changed(void)
    pending_av_fps_count = 0;
 }
 
-#ifdef HAVE_VULKAN
+#if defined(HAVE_VULKAN) || defined(HAVE_D3D12)
 /* A renderer made in a frame, its pipelines still being made on its
  * worker (Renderer::Ready()): until they are, a run shows the picture kept
- * from the one before it and does not run the machine */
+ * from the one before it (none kept: the frontend's last) and does not run
+ * the machine */
 static bool rend_warming = false;
 // (how many runs it took: said when the game is unloaded)
 static unsigned rend_warming_runs = 0;
 /* Whether the machine has run since the context was made: before it has,
  * a renderer made again (the size the frontend's upscaler asks for) is
  * still the start's, and the start waits for its pipelines (on the
- * worker: VkPsoWorker::WaitBatch()) */
+ * worker: VkPsoWorker::WaitBatch(), DX12Pipelines::WaitMade()) */
 static bool ran_since_context = false;
 
 static void rend_made_again(void)
@@ -1629,7 +1630,14 @@ static void rend_made_again(void)
    if (ran_since_context)
       rend_warming = true;
    else
+   {
+#ifdef HAVE_VULKAN
       VkPsoWorker::Instance().WaitBatch();
+#endif
+#ifdef HAVE_D3D12
+      DX12Context::Instance()->Pipelines().WaitMade();
+#endif
+   }
 }
 #endif
 
@@ -1688,7 +1696,7 @@ void retro_run (void)
          glsm_ctl(GLSM_CTL_STATE_UNBIND, NULL);
       }
 #endif
-#ifdef HAVE_VULKAN
+#if defined(HAVE_VULKAN) || defined(HAVE_D3D12)
       rend_made_again();
 #endif
    }
@@ -1702,7 +1710,7 @@ void retro_run (void)
    if (resize_pending)
    {
       apply_new_size();
-#ifdef HAVE_VULKAN
+#if defined(HAVE_VULKAN) || defined(HAVE_D3D12)
       // (SSAA taken up or let go, another size: the renderer made again)
       rend_made_again();
 #endif
@@ -1712,7 +1720,7 @@ void retro_run (void)
 
    if (devices_need_refresh)
       refresh_devices(false);
-#ifdef HAVE_VULKAN
+#if defined(HAVE_VULKAN) || defined(HAVE_D3D12)
    if (rend_warming && renderer != NULL && !renderer->Ready())
    {
       /* the kept picture handed over once, then repeated (none: the
@@ -2648,8 +2656,12 @@ static void dx12_context_reset(void)
 	}
 	context_resets++;
 	take_pending_size();
+	renderer_changed = true;
 	if (!DX12Context::Instance()->Init(iface))
+	{
 		ERROR_LOG(RENDERER, "DX12 context initialization failed");
+		return;
+	}
 	/* The frontend's temporal upscaler, where it has one for this context
 	 * (rend/upscaler.h): the Direct3D 12 renderers draw for it */
 	{
@@ -2665,7 +2677,12 @@ static void dx12_context_reset(void)
 			set_variable_visibility();
 		}
 	}
-	renderer_changed = true;
+	/* The renderer set up now, with the context, and its pipelines made
+	 * before its first frame, as Vulkan's (retro_vk_context_reset()): the
+	 * machine is not running here */
+	rend_prepare_renderer();
+	DX12Context::Instance()->Pipelines().WaitMade();
+	ran_since_context = false;
 }
 
 static void dx12_context_destroy(void)
@@ -3249,9 +3266,9 @@ void retro_unload_game(void)
       disk_index = 0;
       return;
    }
-#ifdef HAVE_VULKAN
+#if defined(HAVE_VULKAN) || defined(HAVE_D3D12)
    if (rend_warming_runs != 0)
-      NOTICE_LOG(RENDERER, "Vulkan: %u frames showed the kept picture while a renderer's pipelines were made",
+      NOTICE_LOG(RENDERER, "%u frames showed the kept picture while a renderer's pipelines were made",
             rend_warming_runs);
    rend_warming_runs = 0;
    rend_warming = false;

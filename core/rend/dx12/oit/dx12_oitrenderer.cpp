@@ -664,90 +664,91 @@ u32 DX12OITRenderer::ChooseBands(bool rtt)
 
 /* ---- The pipelines ---- */
 
-/* The ones the passes draw with, made before a game draws (the
- * per-triangle renderer's are made by the context): the depth pass's with
- * every depth mode, the colour pass's (equal), the lists' (greater or
- * equal, nothing written), the unsorted translucent ones, the lists put
- * together, the translucent volumes */
+/* A polygon's pipeline in a pass (DrawPoly()), but for its cull mode and
+ * shading, which its shaders apply, and SSAA's: by its list, whether the
+ * list is sorted, the ISP's depth mode and Z Write Disable, the TSP's
+ * blend instructions */
+static DX12PsoKey oitPolyKey(u32 listType, bool autosort, u32 pass, u32 depthMode, bool zWriteDis, u32 src, u32 dst)
+{
+	DX12PsoKey key{};
+	key.kind = DX12_PSO_OIT;
+	key.pass = pass;
+	key.depthBound = true;
+	key.depthTest = true;
+	if (pass == DX12_PASS_COLOR && !zWriteDis && listType != ListType_Translucent)
+		key.depthFunc = 2;	// equal
+	else if (listType == ListType_Punch_Through || autosort)
+		key.depthFunc = 6;	// greater or equal
+	else
+		key.depthFunc = depthMode;
+	/* Depth is written in the depth pass. In the colour pass opaque and
+	 * punch-through polygons are drawn where their depth is the one the
+	 * depth pass left, and translucent ones that are sorted only into the
+	 * lists; the translucent polygons that are not sorted are drawn there,
+	 * in order, each tested against the depth the ones before it wrote, so
+	 * they still write. */
+	const bool colourPassWrites = pass == DX12_PASS_COLOR && !autosort && listType == ListType_Translucent;
+	if (pass != DX12_PASS_DEPTH && !colourPassWrites)
+		key.depthWrite = false;
+	// Z Write Disable seems to be ignored for punch-through.
+	// Fixes Worms World Party, Bust-a-Move 4 and Re-Volt
+	else if (listType == ListType_Punch_Through)
+		key.depthWrite = true;
+	else
+		key.depthWrite = !zWriteDis;
+	key.stencil = pass == DX12_PASS_DEPTH && (listType == ListType_Opaque || listType == ListType_Punch_Through)
+			? DX12Stencil::Shadow : DX12Stencil::None;
+	// Apparently punch-through polys support blending, or at least some combinations
+	if (listType == ListType_Punch_Through || pass == DX12_PASS_COLOR)
+	{
+		key.blend = true;
+		key.writeColor = true;
+		key.src = src;
+		key.dst = dst;
+	}
+	return key;
+}
+
+/* Every pipeline the passes can draw with, made before a game draws (the
+ * per-triangle renderer's are made by the context): each list in the
+ * passes Render() draws it in, with every depth mode and blend; the lists
+ * put together, the translucent volumes. The thread makes them in this
+ * order: the blends that read nothing of the frame first (one pipeline
+ * for them all, DX12PsoKey::Pack()) with the depth modes games mostly
+ * use, then the rest. */
 void DX12OITRenderer::PreparePipelines()
 {
-	static const u8 blends[][2] = { { 4, 5 }, { 1, 1 }, { 1, 0 }, { 4, 1 }, { 0, 1 }, { 1, 5 } };
-	DX12Pipelines& pipelines = context->Pipelines();
+	static const u8 modes[] = { 6, 7, 3, 1, 2, 4, 5, 0 };
+	static const struct { u32 list; bool autosort; u32 pass; } draws[] = {
+		{ ListType_Opaque, false, DX12_PASS_DEPTH }, { ListType_Punch_Through, false, DX12_PASS_DEPTH },
+		{ ListType_Opaque, false, DX12_PASS_COLOR }, { ListType_Punch_Through, false, DX12_PASS_COLOR },
+		{ ListType_Translucent, true, DX12_PASS_OIT }, { ListType_Translucent, false, DX12_PASS_COLOR },
+		{ ListType_Translucent, false, DX12_PASS_DEPTH }, { ListType_Translucent, true, DX12_PASS_DEPTH },
+	};
+	std::vector<u64> keys;
+	for (u32 rare = 0; rare < 2; rare++)
+		for (const u8 mode : modes)
+			for (const auto& d : draws)
+				for (u32 zwd = 0; zwd < 2; zwd++)
+					for (u32 src = 0; src < 8; src++)
+						for (u32 dst = 0; dst < 8; dst++)
+							if ((dx12_src_folds(src) && dx12_dst_folds(dst)) != (rare != 0))
+								keys.push_back(oitPolyKey(d.list, d.autosort, d.pass, mode, zwd != 0, src, dst).Pack());
 	DX12PsoKey k{};
-	for (u32 g = 0; g < 2; g++)
-		for (u32 cull = 0; cull < 3; cull++)
-		{
-			k = DX12PsoKey{};
-			k.kind = DX12_PSO_OIT;
-			k.gouraud = g != 0;
-			k.cull = cull;
-			k.depthBound = true;
-			k.depthTest = true;
-			// the depth pass: opaque, every mode; punch-through, blended, greater or equal
-			k.pass = DX12_PASS_DEPTH;
-			k.stencil = DX12Stencil::Shadow;
-			for (u32 func = 1; func < 8; func++)
-				for (u32 w = 0; w < 2; w++)
-				{
-					k.depthFunc = func;
-					k.depthWrite = w != 0;
-					pipelines.Prepare(k);
-				}
-			k.blend = true;
-			k.writeColor = true;
-			k.depthFunc = 6;
-			k.depthWrite = true;
-			for (const u8 *b : blends)
-			{
-				k.src = b[0];
-				k.dst = b[1];
-				pipelines.Prepare(k);
-			}
-			// the colour pass: where the depth is the one left; the unsorted translucent ones written
-			k.pass = DX12_PASS_COLOR;
-			k.stencil = DX12Stencil::None;
-			k.depthWrite = false;
-			k.depthFunc = 2;
-			for (const u8 *b : blends)
-			{
-				k.src = b[0];
-				k.dst = b[1];
-				pipelines.Prepare(k);
-				k.depthFunc = 6;
-				k.depthWrite = true;
-				pipelines.Prepare(k);
-				k.depthFunc = 7;
-				pipelines.Prepare(k);
-				k.depthWrite = false;
-				k.depthFunc = 2;
-			}
-			// the lists: nothing written but the lists
-			k.pass = DX12_PASS_OIT;
-			k.blend = false;
-			// (no blend, no instructions: as DrawPoly() keys them, not the last blend's above)
-			k.src = k.dst = 0;
-			k.writeColor = false;
-			k.depthFunc = 6;
-			k.depthWrite = false;
-			pipelines.Prepare(k);
-			// the translucent polygons' depth, for a pass after
-			k.pass = DX12_PASS_DEPTH;
-			k.depthWrite = true;
-			pipelines.Prepare(k);
-		}
-	k = DX12PsoKey{};
 	k.kind = DX12_PSO_OIT_FINAL;
 	k.writeColor = true;
 	k.depthFunc = 7;
-	pipelines.Prepare(k);
+	keys.push_back(k.Pack());
 	k = DX12PsoKey{};
 	k.kind = DX12_PSO_OIT_MODVOL;
 	k.depthFunc = 7;
 	for (u32 cull = 0; cull < 3; cull++)
 	{
 		k.cull = cull;
-		pipelines.Prepare(k);
+		keys.push_back(k.Pack());
 	}
+	// (each made once, where it first comes: Want())
+	context->Pipelines().Prepare(keys);
 }
 
 /* ---- The draws ---- */
@@ -840,51 +841,17 @@ void DX12OITRenderer::DrawPoly(u32 listType, bool autosort, u32 pass, const Poly
 	// (of a frame decoded on the GPU, the strip's number is its draw record's: the instance's)
 	constants.polyNumber = listType == ListType_Translucent && !pvrrc.gpu ? (u32)(&poly - pvrrc.global_param_tr.head()) : 0;
 
-	// Depth and stencil
-	DX12PsoKey key{};
-	key.kind = DX12_PSO_OIT;
-	key.pass = pass;
+	// Depth, stencil and blend
+	DX12PsoKey key = oitPolyKey(listType, autosort, pass, poly.isp.DepthMode, poly.isp.ZWriteDis, poly.tsp.SrcInstr, poly.tsp.DstInstr);
 	key.gouraud = poly.pcw.Gouraud;
-	key.depthBound = true;
-	key.depthTest = true;
-	if (pass == DX12_PASS_COLOR && !poly.isp.ZWriteDis && listType != ListType_Translucent)
-		key.depthFunc = 2;	// equal
-	else if (listType == ListType_Punch_Through || autosort)
-		key.depthFunc = 6;	// greater or equal
-	else
-		key.depthFunc = poly.isp.DepthMode;
-	/* Depth is written in the depth pass. In the colour pass opaque and
-	 * punch-through polygons are drawn where their depth is the one the
-	 * depth pass left, and translucent ones that are sorted only into the
-	 * lists; the translucent polygons that are not sorted are drawn there,
-	 * in order, each tested against the depth the ones before it wrote, so
-	 * they still write. */
-	const bool colourPassWrites = pass == DX12_PASS_COLOR && !autosort && listType == ListType_Translucent;
-	if (pass != DX12_PASS_DEPTH && !colourPassWrites)
-		key.depthWrite = false;
-	// Z Write Disable seems to be ignored for punch-through.
-	// Fixes Worms World Party, Bust-a-Move 4 and Re-Volt
-	else if (listType == ListType_Punch_Through)
-		key.depthWrite = true;
-	else
-		key.depthWrite = !poly.isp.ZWriteDis;
-
-	state.stencilRef = 0;
-	if (pass == DX12_PASS_DEPTH && (listType == ListType_Opaque || listType == ListType_Punch_Through))
+	state.stencilRef = key.stencil == DX12Stencil::Shadow && poly.pcw.Shadow != 0 ? 0x80 : 0;
+	if (key.blend)
 	{
-		key.stencil = DX12Stencil::Shadow;
-		state.stencilRef = poly.pcw.Shadow != 0 ? 0x80 : 0;
-	}
-	else
-		key.stencil = DX12Stencil::None;
-
-	// Apparently punch-through polys support blending, or at least some combinations
-	if (listType == ListType_Punch_Through || pass == DX12_PASS_COLOR)
-	{
-		key.blend = true;
-		key.writeColor = true;
-		key.src = poly.tsp.SrcInstr;
-		key.dst = poly.tsp.DstInstr;
+		// (the factors the shader applies, and the pipeline has as one and its second colour)
+		if (dx12_src_folds(key.src))
+			constants.flags |= DX12_PF_SRC_FOLD | (key.src << DX12_PF_SRC_FOLD_SHIFT);
+		if (dx12_dst_folds(key.dst))
+			constants.flags |= DX12_PF_DST_FOLD | (key.dst << DX12_PF_DST_FOLD_SHIFT);
 	}
 	key.cull = poly.isp.CullMode == 3 ? 2 : poly.isp.CullMode == 2 ? 1 : 0;
 	// (culled by the pixel shader: the pipeline culls nothing, DX12PsoKey::Pack())

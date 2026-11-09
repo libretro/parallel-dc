@@ -44,9 +44,9 @@ struct DX12PsoFileHeader
 };
 static const char PsoFileMagic[8] = { 'F', 'C', 'D', '1', '2', 'P', 'S', 'O' };
 /* 3: a polygon's blend folded into its key (DX12PsoKey::Pack()); 4: its
- * cull mode too; 5: its shading. A file of 2 to 4 gives its keys, folded,
- * and no library */
-static const u32 PsoFileVersion = 5;
+ * cull mode too; 5: its shading; 6: the per-pixel renderer's blend. A file
+ * of 2 to 5 gives its keys, folded, and no library */
+static const u32 PsoFileVersion = 6;
 static const u32 MaxKeys = 8192;
 
 /* What a build did (DX12Pipelines::BuildDesc()): counted by the thread
@@ -405,6 +405,20 @@ ID3D12PipelineState *DX12Pipelines::Missed(u64 key)
 	}
 	Request(key);
 	return Make(key, i, true);
+}
+
+bool DX12Pipelines::Made()
+{
+	if (d3d_warm_busy(warm))
+		return false;
+	TakeBuilt();
+	return true;
+}
+
+void DX12Pipelines::WaitMade()
+{
+	d3d_warm_drain_wait(warm);
+	TakeBuilt();
 }
 
 void DX12Pipelines::TakeBuilt()
@@ -835,7 +849,7 @@ void DX12Pipelines::LoadFile()
 		memcpy(&header, file, oldHeader);
 		const bool old = header.version == 2;
 		// (keys of the layout before this one: taken, their library not)
-		const bool keysOnly = old || header.version == 3 || header.version == 4;
+		const bool keysOnly = old || header.version < PsoFileVersion;
 		const size_t headerBytes = old ? oldHeader : sizeof(header);
 		if (!old && (size_t)size >= sizeof(header))
 			memcpy(&header, file, sizeof(header));

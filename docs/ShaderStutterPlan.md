@@ -165,15 +165,22 @@ Done, but for:
 1. The key made small enough for every reachable one to be made at the
    start. Done: the cull mode, in the polygons' and the per-pixel
    renderer's pixel shaders (their pipelines cull nothing; SV_IsFrontFace
-   and discard, DX12_PF_CULL_SHIFT), and the shading, flat and Gouraud in
-   one shader (the vertex shader's colours both ways, the pixel shader
-   choosing by DX12_PF_GOURAUD): the start set 634 to 124, the per-pixel
-   renderer's whole run 879 to 169. Left: the per-pixel renderer's blends
-   folded as the per-triangle one's are (it still makes two or three in a
-   frame).
-2. Then every reachable key made before the first frame, the start held
-   as Vulkan's change of renderer is (`Renderer::Ready()`), with nothing
-   left for `Missed` to make.
+   and discard, DX12_PF_CULL_SHIFT); the shading, flat and Gouraud in one
+   shader (the vertex shader's colours both ways, the pixel shader
+   choosing by DX12_PF_GOURAUD); the per-pixel renderer's blends folded as
+   the per-triangle one's are (`foldBlend()`, 15 pipelines for the 64
+   pairs). The per-triangle start set 634 to 124.
+2. Every reachable key made before the first frame. Done for the
+   per-pixel renderer: its keys come from one function (`oitPolyKey()`),
+   which `PreparePipelines()` runs over every list, pass, depth mode and
+   blend (292 pipelines, the common ones first). The context reset makes
+   the renderer and waits for its pipelines on the worker
+   (`DX12Pipelines::WaitMade()`), as Vulkan's does; a renderer made again
+   later holds (`Renderer::Ready()`). `tools/rend/d3d_draw_path.sh` has
+   every disc, sort and threading mode at "0 of them in a frame". Left:
+   the per-triangle renderer's rare keys (a blended opaque polygon, an
+   unusual depth mode with a blend that reads the frame), still made as a
+   game first draws with them: the same, with its key from one function.
 
 Testing under wine: its vkd3d drops draws of the renderer's
 ExecuteIndirect batches (root constants a draw), so the pictures of a
@@ -191,8 +198,8 @@ while the old setting keeps drawing, and switches when it is ready.
 
 Vulkan's change of renderer does this: until the new renderer is ready,
 `retro_run()` shows the picture kept from the old one and does not run
-the machine. Direct3D 12 takes it once its key is small enough for its
-start set to be made in a few frames (phase 4); Direct3D 11's start
+the machine; so does Direct3D 12's (the frontend's last frame: it keeps
+no picture of its own to show). Direct3D 11's start
 compiles on the thread it is called on, and OpenGL has only the
 frontend's context to compile in.
 Direct3D 11's write-out and HDR post effects are made at the start
