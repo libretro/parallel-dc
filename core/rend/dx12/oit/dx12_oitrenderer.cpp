@@ -889,6 +889,8 @@ void DX12OITRenderer::DrawPoly(u32 listType, bool autosort, u32 pass, const Poly
 	key.cull = poly.isp.CullMode == 3 ? 2 : poly.isp.CullMode == 2 ? 1 : 0;
 	// (culled by the pixel shader: the pipeline culls nothing, DX12PsoKey::Pack())
 	constants.flags |= key.cull << DX12_PF_CULL_SHIFT;
+	if (key.gouraud)
+		constants.flags |= DX12_PF_GOURAUD;
 	// SSAA: shaded at each sample, or once a pixel - into the lists always
 	key.samples = context->TargetSamples();
 	if (key.samples != 0)

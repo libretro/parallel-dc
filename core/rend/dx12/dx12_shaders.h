@@ -26,48 +26,43 @@
 #include <d3d12.h>
 #include "types.h"
 
-/* By their number in dx12_dxbc.inc */
+/* By their number in dx12_dxbc.inc. Smooth and flat shading are one
+ * shader (DX12_PF_GOURAUD). */
 enum class DX12Shader
 {
-	PolyVS = 1,			// smooth
-	PolyFlatVS = 2,		// flat
-	PolyPS = 3,
-	PolyFlatPS = 4,
-	ModVolVS = 5,
-	ModVolPS = 6,
-	QuadVS = 7,
-	QuadPS = 8,
+	PolyVS = 1,
+	PolyPS = 2,
+	ModVolVS = 3,
+	ModVolPS = 4,
+	QuadVS = 5,
+	QuadPS = 6,
 	// the per-pixel renderer's
-	OITVS = 9,
-	OITFlatVS = 10,
-	OITDepthPS = 11,		// DX12_PASS_DEPTH; smooth, then flat; then the colour pass's, then the lists'
-	OITDepthFlatPS = 12,
-	OITColorPS = 13,
-	OITColorFlatPS = 14,
-	OITListPS = 15,
-	OITListFlatPS = 16,
-	OITFinalVS = 17,
-	OITFinalPS = 18,
-	OITModVolPS = 19,
-	/* SSAA's (DX12_SSAA): each of these four is smooth at each sample, flat
-	 * at each sample, smooth once a pixel, flat once a pixel */
-	SsaaPolyPS = 20,
-	SsaaOITDepthPS = 24,
-	SsaaOITColorPS = 28,
-	SsaaOITListPS = 32,			// once a pixel: smooth, flat
-	SsaaOITFinalPS = 34,		// the lists put together and the samples resolved
-	SsaaOITFinalSamplePS = 35,	// ...put together into each sample
-	SsaaOITModVolPS = 36,
-	SsaaResolvePS = 37,
-	/* the lists' once a pixel, smooth and flat, taking SV_Coverage for the
-	 * samples the depth test passed: for pipelines made with NVIDIA's
-	 * post-depth coverage (dx12_nvapi.h) */
-	SsaaOITListPostZPS = 38,
+	OITVS = 7,
+	OITDepthPS = 8,		// DX12_PASS_DEPTH; then the colour pass's, then the lists'
+	OITColorPS = 9,
+	OITListPS = 10,
+	OITFinalVS = 11,
+	OITFinalPS = 12,
+	OITModVolPS = 13,
+	/* SSAA's (DX12_SSAA): each of these three at each sample, then once a
+	 * pixel */
+	SsaaPolyPS = 14,
+	SsaaOITDepthPS = 16,
+	SsaaOITColorPS = 18,
+	SsaaOITListPS = 20,			// once a pixel
+	SsaaOITFinalPS = 21,		// the lists put together and the samples resolved
+	SsaaOITFinalSamplePS = 22,	// ...put together into each sample
+	SsaaOITModVolPS = 23,
+	SsaaResolvePS = 24,
+	/* the lists' once a pixel, taking SV_Coverage for the samples the depth
+	 * test passed: for pipelines made with NVIDIA's post-depth coverage
+	 * (dx12_nvapi.h) */
+	SsaaOITListPostZPS = 25,
 	/* the temporal upscaler's motion vector pass (dx12_renderer.h) */
-	MotionVS = 40,
-	MotionPS = 41,
-	MotionSampledPS = 42,	// testing the depth the compute renderer stored itself
-	DepthCopyPS = 43,		// the depth buffer copied into the upscaler's picture of it
+	MotionVS = 26,
+	MotionPS = 27,
+	MotionSampledPS = 28,	// testing the depth the compute renderer stored itself
+	DepthCopyPS = 29,		// the depth buffer copied into the upscaler's picture of it
 };
 
 D3D12_SHADER_BYTECODE dx12_shader(DX12Shader shader);

@@ -33,6 +33,9 @@
 /* The cull mode, two bits (0 none, 1 front faces, 2 back faces): a
  * polygon's pipeline culls nothing, its pixel shader does (DX12PsoKey::Pack()) */
 #define DX12_PF_CULL_SHIFT       24
+/* Smooth (Gouraud) shading: the colours interpolated, else the provoking
+ * vertex's (the shaders have both: SHADE()) */
+#define DX12_PF_GOURAUD          0x04000000u
 /* Those factors, of a channel of the colour as the blender takes it
  * (clamped to the frame's range), @c, and its alpha, @a: the source's
  * (zero, one, alpha, one less it), and the destination's (those, the

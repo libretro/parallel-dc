@@ -2,14 +2,14 @@
 // renderer's (dx11/dx11_shaders.cpp), made once, when the core is built,
 // into DXBC (shader model 5.1) by tools/rend/kernels_dx12.sh, with
 // rend/dx12/dx12_shader_flags.h and one of these in front:
-//   DX12_POLY_VS, DX12_POLY_PS     a polygon (DX12_GOURAUD 0 or 1)
+//   DX12_POLY_VS, DX12_POLY_PS     a polygon
 //   DX12_MODVOL_VS, DX12_MODVOL_PS a modifier volume, and the shadows' darkening
 //   DX12_QUAD_VS, DX12_QUAD_PS     a picture drawn whole onto another
 // and the per-pixel renderer's (oit/dx12_oitrenderer.cpp), which puts the
 // translucent polygons' pixels in lists and blends them in depth order
 // at the end, as the Direct3D 11 per-pixel renderer's shaders do
 // (dx11/oit/dx11_oitshaders.cpp):
-//   DX12_OIT_VS                    a polygon with its second volume (DX12_GOURAUD)
+//   DX12_OIT_VS                    a polygon with its second volume
 //   DX12_OIT_PS                    ...its pixel, in the pass DX12_OIT_PASS
 //   DX12_OIT_FINAL_VS, DX12_OIT_FINAL_PS  the lists put together over the picture
 //   DX12_OIT_MODVOL_PS             a translucent modifier volume marking the lists
@@ -40,8 +40,9 @@
 // What the Direct3D 11 renderer made a pixel shader of its own for, a
 // polygon's bits (#if there), is read here from the root constants, and
 // branched on (if): the same operations in the same order, so what a pixel
-// comes out as is the same. Only the interpolation, which changes what the
-// shaders declare, is a shader of its own (DX12_GOURAUD). So no shader is
+// comes out as is the same. The interpolation too: the vertex shaders hand
+// the colours over both ways, smooth and flat (the provoking vertex's), and
+// the pixel shaders take one by DX12_PF_GOURAUD (SHADE()). So no shader is
 // ever compiled while the core runs, and a build of it needs no compiler.
 //
 // The root signature (DX12Context::MakeRootSignatures()):
@@ -59,11 +60,7 @@
 #else
 #define AT_SAMPLE
 #endif
-#if !defined(DX12_GOURAUD) || DX12_GOURAUD == 1
 #define INTERPOLATION AT_SAMPLE
-#else
-#define INTERPOLATION nointerpolation
-#endif
 #define PI 3.1415926
 
 #ifdef DX12_MS_TABLE
@@ -162,12 +159,9 @@ static float4 uv1Grad;
 #define AT_CENTRE(v) (v)
 #define TEX(t, s, coords, g) textures[t].Sample(samplers[s], coords)
 #endif
-// (a flat input is not interpolated, and is not to be asked for at a place)
-#if !defined(DX12_GOURAUD) || DX12_GOURAUD == 1
-#define AT_CENTRE_SMOOTH(v) AT_CENTRE(v)
-#else
-#define AT_CENTRE_SMOOTH(v) (v)
-#endif
+/* A colour of the polygon's, smooth or flat by DX12_PF_GOURAUD (a flat
+ * input is not interpolated, and is not to be asked for at a place) */
+#define SHADE(v) ((polyFlags & DX12_PF_GOURAUD) != 0 ? AT_CENTRE(inpix.v) : inpix.v##Flat)
 
 // A vertex's z is the guest's 1/w, which is what the PowerVR compares
 // depths by: the clip space position is (x * w, y * w, S, w), so that the
@@ -223,6 +217,8 @@ struct VertexOut
 	INTERPOLATION float4 col : COLOR0;
 	INTERPOLATION float4 spec : COLOR1;
 	float2 uv : TEXCOORD0;
+	nointerpolation float4 colFlat : COLOR4;
+	nointerpolation float4 specFlat : COLOR5;
 };
 
 VertexOut main(in VertexIn vin)
@@ -232,6 +228,8 @@ VertexOut main(in VertexIn vin)
 	vo.col = vin.col;
 	vo.spec = vin.spec;
 	vo.uv = vin.uv;
+	vo.colFlat = vin.col;
+	vo.specFlat = vin.spec;
 	return vo;
 }
 #endif
@@ -243,6 +241,8 @@ struct Pixel
 	INTERPOLATION float4 col : COLOR0;
 	INTERPOLATION float4 spec : COLOR1;
 	AT_SAMPLE float2 uv : TEXCOORD0;
+	nointerpolation float4 colFlat : COLOR4;
+	nointerpolation float4 specFlat : COLOR5;
 #if defined(DX12_SAMPLE_RATE) && DX12_SAMPLE_RATE == 2
 	uint coverage : SV_Coverage;
 #endif
@@ -279,7 +279,7 @@ PixelOut main(in Pixel inpix, bool front : SV_IsFrontFace)
 			discard;
 	}
 
-	float4 color = AT_CENTRE_SMOOTH(inpix.col);
+	float4 color = SHADE(col);
 	if ((polyFlags & DX12_PF_USE_ALPHA) == 0)
 		color.a = 1.0;
 	float4 offset;
@@ -289,10 +289,10 @@ PixelOut main(in Pixel inpix, bool front : SV_IsFrontFace)
 		// its base and offset colours, is scaled before the texture is
 		// combined with them. The texture itself is not.
 		color.rgb *= shade_scale_factor;
-		offset = float4(AT_CENTRE_SMOOTH(inpix.spec).rgb * shade_scale_factor, AT_CENTRE_SMOOTH(inpix.spec).a);
+		offset = float4(SHADE(spec).rgb * shade_scale_factor, SHADE(spec).a);
 	}
 	else
-		offset = AT_CENTRE_SMOOTH(inpix.spec);
+		offset = SHADE(spec);
 	if ((polyFlags & DX12_PF_TEXTURE) != 0)
 	{
 		float4 texcol;
@@ -638,6 +638,10 @@ struct OITVertexOut
 	INTERPOLATION float4 col1 : COLOR2;		// the second volume's, for opaque and punch-through polygons
 	INTERPOLATION float4 spec1 : COLOR3;
 	AT_SAMPLE float2 uv1 : TEXCOORD2;
+	nointerpolation float4 colFlat : COLOR4;	// the same, flat (SHADE())
+	nointerpolation float4 specFlat : COLOR5;
+	nointerpolation float4 col1Flat : COLOR6;
+	nointerpolation float4 spec1Flat : COLOR7;
 	/* a translucent polygon's number in its list: the root constant's, and
 	 * its strip's for a frame whose translucent strips are drawn by the
 	 * GPU's records (the per-instance attribute) */
@@ -674,6 +678,10 @@ OITVertexOut main(in OITVertexIn vin)
 	vo.col1 = vin.col1;
 	vo.spec1 = vin.spec1;
 	vo.uv1 = vin.uv1;
+	vo.colFlat = vin.col;
+	vo.specFlat = vin.spec;
+	vo.col1Flat = vin.col1;
+	vo.spec1Flat = vin.spec1;
 	vo.polyNumber = polyNumber + vin.instNumber;
 	return vo;
 }
@@ -837,8 +845,8 @@ float4 main(in OITVertexOut inpix, bool front : SV_IsFrontFace) : SV_Target
 			discard;
 	}
 
-	float4 color = AT_CENTRE_SMOOTH(inpix.col);
-	float4 offset = AT_CENTRE_SMOOTH(inpix.spec);
+	float4 color = SHADE(col);
+	float4 offset = SHADE(spec);
 	float2 uv = AT_CENTRE(inpix.uv);
 	bool area1 = false;
 	int2 cur_blend_mode = int2((oitFlags >> DX12_OF_SRC_SHIFT) & 15, (oitFlags >> DX12_OF_DST_SHIFT) & 15);
@@ -852,8 +860,8 @@ float4 main(in OITVertexOut inpix, bool front : SV_IsFrontFace) : SV_Target
 	if (twoVolumes)
 	{
 		if (stencil == 0x81u) {
-			color = AT_CENTRE_SMOOTH(inpix.col1);
-			offset = AT_CENTRE_SMOOTH(inpix.spec1);
+			color = SHADE(col1);
+			offset = SHADE(spec1);
 			uv = AT_CENTRE(inpix.uv1);
 			area1 = true;
 			cur_blend_mode = int2((oitFlags >> DX12_OF_SRC1_SHIFT) & 15, (oitFlags >> DX12_OF_DST1_SHIFT) & 15);
@@ -894,7 +902,7 @@ float4 main(in OITVertexOut inpix, bool front : SV_IsFrontFace) : SV_Target
 		{
 			float s = PI / 2.0 * (texcol.a * 15.0 * 16.0 + texcol.r * 15.0) / 255.0;
 			float r = 2.0 * PI * (texcol.g * 15.0 * 16.0 + texcol.b * 15.0) / 255.0;
-			texcol.a = clamp(AT_CENTRE_SMOOTH(inpix.spec).a + AT_CENTRE_SMOOTH(inpix.spec).r * sin(s) + AT_CENTRE_SMOOTH(inpix.spec).g * cos(s) * cos(r - 2.0 * PI * AT_CENTRE_SMOOTH(inpix.spec).b), 0.0, 1.0);
+			texcol.a = clamp(SHADE(spec).a + SHADE(spec).r * sin(s) + SHADE(spec).g * cos(s) * cos(r - 2.0 * PI * SHADE(spec).b), 0.0, 1.0);
 			texcol.rgb = float3(1.0, 1.0, 1.0);
 		}
 		else if (cur_ignore_tex_alpha)

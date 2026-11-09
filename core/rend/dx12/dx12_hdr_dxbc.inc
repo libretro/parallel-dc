@@ -3,7 +3,7 @@
  * rend/dx12/dx12_shader_flags.h): made by tools/rend/kernels_dx12.sh
  * update-hdr from them. Not to be edited.
  * d3dcompiler_47 1c07591966875475f18c0236e9b884af11b0a0d4
- * shader 1 ps_5_1 6b2cd5f43daed7cfc9ef88cabb049ae330c5d555
+ * shader 1 ps_5_1 c1eda74dd0d55f9dd1cc4cd9744a6373c9fb6755
  */
 static const unsigned char dx12_hdr_dxbc_1[] = {
 0x44,0x58,0x42,0x43,0x0f,0x65,0x84,0xb4,0xb3,0x7c,0x96,0x35,0xe7,0x3b,0xf3,0xbe,

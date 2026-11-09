@@ -151,12 +151,15 @@ struct DX12PsoKey
 
 	/* (a polygon's blend as its pipeline has it: the factors its shader
 	 * applies are one and the second colour, whatever the instructions;
-	 * and no cull mode, which its shader applies: DX12_PF_CULL_SHIFT) */
+	 * and no cull mode or shading, which its shaders apply:
+	 * DX12_PF_CULL_SHIFT, DX12_PF_GOURAUD) */
 	u64 Pack() const
 	{
 		u32 s = src, d = dst;
 		bool two = dual;
-		const u32 c = kind == DX12_PSO_POLY || kind == DX12_PSO_OIT ? 0 : cull;
+		const bool folds = kind == DX12_PSO_POLY || kind == DX12_PSO_OIT;
+		const u32 c = folds ? 0 : cull;
+		const bool g = folds ? false : gouraud;
 		if (kind == DX12_PSO_POLY && blend)
 		{
 			if (dx12_src_folds(s))
@@ -167,7 +170,7 @@ struct DX12PsoKey
 				two = true;
 			}
 		}
-		return (u64)(kind & 7) | ((u64)gouraud << 3) | ((u64)blend << 4) | ((u64)(s & 7) << 5) | ((u64)(d & 7) << 8)
+		return (u64)(kind & 7) | ((u64)g << 3) | ((u64)blend << 4) | ((u64)(s & 7) << 5) | ((u64)(d & 7) << 8)
 				| ((u64)writeColor << 11) | ((u64)depthTest << 12) | ((u64)depthWrite << 13) | ((u64)(depthFunc & 7) << 14)
 				| ((u64)((u32)stencil & 15) << 17) | ((u64)(c & 3) << 21) | ((u64)(special & 3) << 23)
 				| ((u64)depthBound << 25) | ((u64)(pass & 3) << 26)

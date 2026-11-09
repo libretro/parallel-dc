@@ -44,8 +44,9 @@ struct DX12PsoFileHeader
 };
 static const char PsoFileMagic[8] = { 'F', 'C', 'D', '1', '2', 'P', 'S', 'O' };
 /* 3: a polygon's blend folded into its key (DX12PsoKey::Pack()); 4: its
- * cull mode too. A file of 2 or 3 gives its keys, folded, and no library */
-static const u32 PsoFileVersion = 4;
+ * cull mode too; 5: its shading. A file of 2 to 4 gives its keys, folded,
+ * and no library */
+static const u32 PsoFileVersion = 5;
 static const u32 MaxKeys = 8192;
 
 /* What a build did (DX12Pipelines::BuildDesc()): counted by the thread
@@ -179,13 +180,13 @@ bool DX12Pipelines::BuildDesc(u64 packed, bool postZCoverage, bool useLibrary, I
 	DX12Shader vs, ps;
 	bool postZ = false;
 	*flags = 0;
-	/* SSAA's shaders: by rate, then smooth or flat (dx12_shaders.h) */
-	const int rateShader = (key.gouraud ? 0 : 1) + (key.rate == DX12_RATE_PIXEL ? 2 : 0);
+	/* SSAA's shaders: by rate (dx12_shaders.h) */
+	const int rateShader = key.rate == DX12_RATE_PIXEL ? 1 : 0;
 	switch (key.kind)
 	{
 	case DX12_PSO_POLY:
-		vs = key.gouraud ? DX12Shader::PolyVS : DX12Shader::PolyFlatVS;
-		ps = key.gouraud ? DX12Shader::PolyPS : DX12Shader::PolyFlatPS;
+		vs = DX12Shader::PolyVS;
+		ps = DX12Shader::PolyPS;
 		if (key.rate != DX12_RATE_NONE)
 			ps = (DX12Shader)((int)DX12Shader::SsaaPolyPS + rateShader);
 		desc.InputLayout = { MainLayout, (UINT)ARRAY_SIZE(MainLayout) };
@@ -196,13 +197,13 @@ bool DX12Pipelines::BuildDesc(u64 packed, bool postZCoverage, bool useLibrary, I
 		desc.InputLayout = { PositionLayout, (UINT)ARRAY_SIZE(PositionLayout) };
 		break;
 	case DX12_PSO_OIT:
-		vs = key.gouraud ? DX12Shader::OITVS : DX12Shader::OITFlatVS;
-		ps = (DX12Shader)((int)(key.gouraud ? DX12Shader::OITDepthPS : DX12Shader::OITDepthFlatPS) + 2 * (int)std::min<u32>(key.pass, DX12_PASS_OIT));
+		vs = DX12Shader::OITVS;
+		ps = (DX12Shader)((int)DX12Shader::OITDepthPS + (int)std::min<u32>(key.pass, DX12_PASS_OIT));
 		if (key.rate != DX12_RATE_NONE)
 		{
 			// (the lists' are once a pixel only)
-			ps = key.pass >= DX12_PASS_OIT ? (DX12Shader)((int)DX12Shader::SsaaOITListPS + (key.gouraud ? 0 : 1))
-					: (DX12Shader)((int)DX12Shader::SsaaOITDepthPS + 4 * (int)key.pass + rateShader);
+			ps = key.pass >= DX12_PASS_OIT ? DX12Shader::SsaaOITListPS
+					: (DX12Shader)((int)DX12Shader::SsaaOITDepthPS + 2 * (int)key.pass + rateShader);
 			/* The lists' with the device's own depth test at each sample,
 			 * where NVAPI makes the pipeline with post-depth coverage: the
 			 * pass tests greater or equal against the opaque depth,
@@ -211,7 +212,7 @@ bool DX12Pipelines::BuildDesc(u64 packed, bool postZCoverage, bool useLibrary, I
 			postZ = postZCoverage && key.pass >= DX12_PASS_OIT && key.samples != 0 && key.depthBound && key.depthTest
 					&& !key.depthWrite && key.depthFunc == 6;
 			if (postZ)
-				ps = (DX12Shader)((int)DX12Shader::SsaaOITListPostZPS + (key.gouraud ? 0 : 1));
+				ps = DX12Shader::SsaaOITListPostZPS;
 		}
 		desc.InputLayout = { OITLayout, (UINT)ARRAY_SIZE(OITLayout) };
 		break;
@@ -308,7 +309,7 @@ bool DX12Pipelines::BuildDesc(u64 packed, bool postZCoverage, bool useLibrary, I
 			return true;
 		}
 		*flags |= DX12_BUILT_NOPOSTZ;
-		desc.PS = dx12_shader((DX12Shader)((int)DX12Shader::SsaaOITListPS + (key.gouraud ? 0 : 1)));
+		desc.PS = dx12_shader(DX12Shader::SsaaOITListPS);
 	}
 	if (key.kind == DX12_PSO_OIT && key.pass >= DX12_PASS_OIT && key.rate != DX12_RATE_NONE)
 		*flags |= DX12_BUILT_OWNTEST;
@@ -834,13 +835,13 @@ void DX12Pipelines::LoadFile()
 		memcpy(&header, file, oldHeader);
 		const bool old = header.version == 2;
 		// (keys of the layout before this one: taken, their library not)
-		const bool keysOnly = old || header.version == 3;
+		const bool keysOnly = old || header.version == 3 || header.version == 4;
 		const size_t headerBytes = old ? oldHeader : sizeof(header);
 		if (!old && (size_t)size >= sizeof(header))
 			memcpy(&header, file, sizeof(header));
 		const u64 keyBytes = (u64)header.keyCount * sizeof(u64);
 		if (!memcmp(header.magic, PsoFileMagic, sizeof(PsoFileMagic))
-				&& (old || ((header.version == PsoFileVersion || header.version == 3) && (size_t)size >= sizeof(header)))
+				&& (old || (header.version >= 3 && header.version <= PsoFileVersion && (size_t)size >= sizeof(header)))
 				&& header.keyCount <= MaxKeys && headerBytes + keyBytes <= (u64)size
 				&& header.libraryBytes <= (u64)size - headerBytes - keyBytes)
 		{

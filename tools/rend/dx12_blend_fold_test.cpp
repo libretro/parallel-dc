@@ -8,7 +8,8 @@
  * have them) against the PowerVR's blend of the colour and the frame's
  * pixel. And the keys: 15 blends for the 64 pairs, a folded key packed
  * again the same, and the key of a pair from an earlier layout (a file's)
- * folded to the one the renderer asks for. Built with mingw-w64 and run
+ * folded to the one the renderer asks for; a polygon's cull mode and
+ * shading, applied by its shaders, folded out of its key too. Built with mingw-w64 and run
  * under wine by dx12_blend_fold_test.sh: no device. */
 #include "rend/dx12/dx12_pso.h"
 #include <math.h>
@@ -189,6 +190,48 @@ int main()
 		if (made.dual || made.src != 4 || made.dst != 5)
 		{
 			printf("FAIL: a per-pixel renderer's key was folded\n");
+			failed++;
+		}
+	}
+	/* a polygon's cull mode and shading, which its shaders apply
+	 * (DX12_PF_CULL_SHIFT, DX12_PF_GOURAUD): one pipeline for each mode and
+	 * shading, a key of an earlier file's (version 4: the shading in it)
+	 * folded the same; another kind's kept */
+	for (u32 kind = 0; kind < 8; kind++)
+	{
+		const bool folds = kind == DX12_PSO_POLY || kind == DX12_PSO_OIT;
+		std::set<u64> keys;
+		for (u32 cull = 0; cull < 3; cull++)
+			for (u32 g = 0; g < 2; g++)
+			{
+				DX12PsoKey key{};
+				key.kind = kind;
+				key.writeColor = true;
+				key.cull = cull;
+				key.gouraud = g != 0;
+				const u64 packed = key.Pack();
+				keys.insert(packed);
+				const DX12PsoKey made = DX12PsoKey::Unpack(packed);
+				if (made.Pack() != packed || (!folds && (made.cull != cull || made.gouraud != (g != 0))))
+				{
+					printf("FAIL: kind %u cull %u gouraud %u: the key %016llx not kept\n", kind, cull, g, (unsigned long long)packed);
+					failed++;
+				}
+			}
+		if (keys.size() != (folds ? 1u : 6u))
+		{
+			printf("FAIL: kind %u: %u pipelines for 3 cull modes and 2 shadings, not %u\n", kind, (unsigned)keys.size(), folds ? 1u : 6u);
+			failed++;
+		}
+	}
+	{
+		const u64 old = (u64)DX12_PSO_POLY | (1ull << 3) | (1ull << 11) | (1ull << 28);
+		DX12PsoKey key{};
+		key.kind = DX12_PSO_POLY;
+		key.writeColor = true;
+		if (!DX12PsoKey::Valid(old) || DX12PsoKey::Unpack(old).Pack() != key.Pack())
+		{
+			printf("FAIL: a smooth-shaded key of an earlier file is not folded to the renderer's\n");
 			failed++;
 		}
 	}

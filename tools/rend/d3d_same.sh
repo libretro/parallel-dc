@@ -3,7 +3,8 @@
 # 9 every frame each hands over (tools/rend/d3d9_frames.c: checksums, frame
 # for frame), and with Direct3D 11 and 12 the last picture
 # (tools/hdr/d3d_hdr.c) - the test discs (tools/threads/live_disc.py:
-# plain, the texture atlas, culling, DMA over renders to textures), each
+# plain, the texture atlas, culling, DMA over renders to textures, a
+# Gouraud-shaded triangle), each
 # translucent sort Direct3D has (per triangle and per strip; per pixel with
 # 11 and 12), threaded rendering on and off. For a change that should draw
 # nothing differently, against the build before it.
@@ -40,7 +41,7 @@ fi
 $CC_WIN -O1 -Wall -I./core/libretro-common/include -I./core/deps/khronos \
    -o "$WORK/d3d_hdr.exe" tools/hdr/d3d_hdr.c -ld3d11 -ld3d12 -ldxguid
 # (each disc in its own directory: their tracks have the same names)
-for d in plain atlas cull dma; do
+for d in plain atlas cull dma slant; do
    mkdir -p "$WORK/$d"
    if [ $d = plain ]; then python3 tools/threads/live_disc.py "$WORK/$d/$d.gdi"
    else python3 tools/threads/live_disc.py "$WORK/$d/$d.gdi" --$d; fi > /dev/null
@@ -62,7 +63,7 @@ wine_run() {
 TRI="reicast_alpha_sorting=per-triangle (normal)"
 STRIP="reicast_alpha_sorting=per-strip (fast, least accurate)"
 PIX="reicast_alpha_sorting=per-pixel (accurate)"
-for d in plain atlas cull dma; do
+for d in plain atlas cull dma slant; do
    for m in tri strip tri-nothread; do
       case $m in tri) set -- "$TRI";; strip) set -- "$STRIP";; tri-nothread) set -- "$TRI" reicast_threaded_rendering=disabled;; esac
       name=d3d9-$d-$m

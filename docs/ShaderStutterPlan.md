@@ -165,10 +165,12 @@ Done, but for:
 1. The key made small enough for every reachable one to be made at the
    start. Done: the cull mode, in the polygons' and the per-pixel
    renderer's pixel shaders (their pipelines cull nothing; SV_IsFrontFace
-   and discard, DX12_PF_CULL_SHIFT), a third of what it was. Left: flat
-   and Gouraud shading in one shader (the vertex shader's colours both
-   ways, the pixel shader choosing by a flag), and the per-pixel
-   renderer's blends folded as the per-triangle one's are.
+   and discard, DX12_PF_CULL_SHIFT), and the shading, flat and Gouraud in
+   one shader (the vertex shader's colours both ways, the pixel shader
+   choosing by DX12_PF_GOURAUD): the start set 634 to 124, the per-pixel
+   renderer's whole run 879 to 169. Left: the per-pixel renderer's blends
+   folded as the per-triangle one's are (it still makes two or three in a
+   frame).
 2. Then every reachable key made before the first frame, the start held
    as Vulkan's change of renderer is (`Renderer::Ready()`), with nothing
    left for `Missed` to make.
@@ -178,6 +180,8 @@ ExecuteIndirect batches (root constants a draw), so the pictures of a
 build that batches differently differ. `d3d_hdr`'s `D3DH_NO_INDIRECT` has
 the core draw one draw at a time: then the per-triangle and per-pixel
 renderers' pictures are Vulkan's on the plain, culling and DMA discs.
+`tools/rend/d3d_same.sh` compares two builds that way, on those discs and
+a Gouraud-shaded triangle's.
 
 ## Phase 5: option changes everywhere
 
