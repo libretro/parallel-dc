@@ -376,15 +376,17 @@ bool OITDrawer::Draw(const Texture *fogTexture, const Texture *paletteTexture)
 {
 	vk::CommandBuffer cmdBuffer = NewFrame();
 
-	if (needDepthTransition)
+	// (the attachments drawn into: this drawer's, or the screen's drawer's - see OITTextureDrawer::ShareAttachments())
+	OITDrawer *const att = attachmentsOf;
+	if (att->needDepthTransition)
 	{
-		needDepthTransition = false;
+		att->needDepthTransition = false;
 		// Not convinced that this is really needed but it makes validation layers happy
-		if (upscaled)
-			for (const auto& attachment : depthAttachments)
+		if (att->upscaled)
+			for (const auto& attachment : att->depthAttachments)
 				setImageLayout(cmdBuffer, attachment->GetImage(), GetContext()->GetDepthFormat(), 1, vk::ImageLayout::eUndefined, vk::ImageLayout::eDepthStencilReadOnlyOptimal);
 		else
-			setImageLayout(cmdBuffer, depthAttachment->GetImage(), GetContext()->GetDepthFormat(), 1, vk::ImageLayout::eUndefined, vk::ImageLayout::eDepthStencilReadOnlyOptimal);
+			setImageLayout(cmdBuffer, att->depthAttachment->GetImage(), GetContext()->GetDepthFormat(), 1, vk::ImageLayout::eUndefined, vk::ImageLayout::eDepthStencilReadOnlyOptimal);
 	}
 
 	OITDescriptorSets::FragmentShaderUniforms fragUniforms = MakeFragmentUniforms<OITDescriptorSets::FragmentShaderUniforms>();
@@ -422,8 +424,8 @@ bool OITDrawer::Draw(const Texture *fogTexture, const Texture *paletteTexture)
 	const vk::Buffer mainBuffer = GetMainBuffer(0)->buffer.get();
 	GetCurrentDescSet().UpdateUniforms(vertexUniformBuffer, mainBuffer, offsets.fragmentUniformOffset,
 			fogTexture->GetImageView(), offsets.polyParamsOffset,
-			offsets.polyParamsSize, Depth()->GetStencilView(),
-			Depth()->GetImageView(), paletteTexture->GetImageView(),
+			offsets.polyParamsSize, att->Depth()->GetStencilView(),
+			att->Depth()->GetImageView(), paletteTexture->GetImageView(),
 			RenderPasses::DepthInputLayout(depthWrites),
 			pvrrc.gpu ? gpuDraw->trParams : vk::Buffer(), pvrrc.gpu ? gpuDraw->trParamsSize : 0);
 	GetCurrentDescSet().BindPerFrameDescriptorSets(cmdBuffer);
@@ -431,11 +433,11 @@ bool OITDrawer::Draw(const Texture *fogTexture, const Texture *paletteTexture)
 	 * the general layout; without, the two that take turns */
 	const bool ssaa = pipelineManager->GetSamples() > 1;
 	if (ssaa)
-		GetCurrentDescSet().UpdateColorInputDescSet(0, colorAttachments[0]->GetImageView(), vk::ImageLayout::eGeneral);
+		GetCurrentDescSet().UpdateColorInputDescSet(0, att->colorAttachments[0]->GetImageView(), vk::ImageLayout::eGeneral);
 	else
 	{
-		GetCurrentDescSet().UpdateColorInputDescSet(0, colorAttachments[0]->GetImageView());
-		GetCurrentDescSet().UpdateColorInputDescSet(1, colorAttachments[1]->GetImageView());
+		GetCurrentDescSet().UpdateColorInputDescSet(0, att->colorAttachments[0]->GetImageView());
+		GetCurrentDescSet().UpdateColorInputDescSet(1, att->colorAttachments[1]->GetImageView());
 	}
 	oitBuffers->BindDescriptorSet(cmdBuffer, pipelineManager->GetPipelineLayout(), 3);
 
@@ -510,7 +512,7 @@ bool OITDrawer::Draw(const Texture *fogTexture, const Texture *paletteTexture)
     		// (the samples carry on to the next render pass; the picture is written by the last)
     		targetFramebuffer = GetFinalFramebuffer();
     	else if (!finalPass)
-    		targetFramebuffer = *tempFramebuffers[upscaled ? GetCurrentImage() : 0][(pvrrc.render_passes.used() - 1 - render_pass) % 2];
+    		targetFramebuffer = *att->tempFramebuffers[att->upscaled ? GetCurrentImage() : 0][(pvrrc.render_passes.used() - 1 - render_pass) % 2];
     	else
     		targetFramebuffer = GetFinalFramebuffer();
     	cmdBuffer.beginRenderPass(
@@ -737,6 +739,28 @@ void OITDrawer::MakeAttachments(int width, int height)
 	}
 }
 
+void OITDrawer::DropAttachments()
+{
+	for (auto& attachment : colorAttachments)
+		if (attachment && commandPool != nullptr)
+			commandPool->DeferDelete(std::move(attachment));
+	if (depthAttachment && commandPool != nullptr)
+		commandPool->DeferDelete(std::move(depthAttachment));
+	for (auto& attachment : depthAttachments)
+		if (attachment && commandPool != nullptr)
+			commandPool->DeferDelete(std::move(attachment));
+	for (auto& pair : tempFramebuffers)
+		for (auto& framebuffer : pair)
+			if (framebuffer && commandPool != nullptr)
+				commandPool->DeferDelete(std::unique_ptr<vk::UniqueFramebuffer>(new vk::UniqueFramebuffer(std::move(framebuffer))));
+	colorAttachments[0].reset();
+	colorAttachments[1].reset();
+	depthAttachment.reset();
+	depthAttachments.clear();
+	tempFramebuffers.clear();
+	maxWidth = maxHeight = 0;
+}
+
 /* SSAA: one image of samples for the colour, one for the depth, for all
  * the render passes of a frame (RenderPasses::MakeSsaaRenderPass()), of
  * the largest size asked for. Not transient: a frame of several render
@@ -787,7 +811,13 @@ void OITScreenDrawer::MakeFramebuffers()
 	viewport.extent = GetContext()->GetViewPort();
 
 	SetScreenSize(viewport.extent.width, viewport.extent.height);
-	MakeBuffers(viewport.extent.width, viewport.extent.height);
+	/* (renders to textures draw into the attachments too, when they can:
+	 * as large as those need, TextureDrawer::ShareExtent()) */
+	{
+		const vk::Extent2D size = SharesAttachments() ? TextureDrawer::ShareExtent(viewport.extent) : viewport.extent;
+		InitBuffers(viewport.extent.width, viewport.extent.height);
+		MakeAttachments(size.width, size.height);
+	}
 	// (kept until the frames that could still use them have gone by: see the per-triangle screen drawer)
 	if (commandPool != nullptr)
 	{
@@ -945,7 +975,6 @@ vk::CommandBuffer OITTextureDrawer::NewFrame()
 	const u32 clipX = size.clipX, clipY = size.clipY;
 	const u32 clipWidth = size.clipWidth, clipHeight = size.clipHeight;
 	const u32 upscaledWidth = size.upscaledWidth, upscaledHeight = size.upscaledHeight;
-	const u32 widthPow2 = size.widthPow2, heightPow2 = size.heightPow2;
 
 	VulkanContext *context = GetContext();
 	vk::Device device = context->GetDevice();
@@ -954,28 +983,57 @@ vk::CommandBuffer OITTextureDrawer::NewFrame()
 	commandBuffer.begin(vk::CommandBufferBeginInfo(vk::CommandBufferUsageFlagBits::eOneTimeSubmit));
 	vertexUniformBuffer = WriteVertexUniforms<OITDescriptorSets::VertexShaderUniforms>(commandBuffer, GetCurrentImage());
 
-	MakeBuffers(widthPow2, heightPow2);
+	/* What the render draws: its own pixels, the texture's from the first
+	 * (Texture::ClearOutside()) */
+	InitBuffers(upscaledWidth, upscaledHeight);
+	/* The attachments: the screen's drawer's when they are large enough -
+	 * drawn into by the screen's frames and this one by one, on the same
+	 * queue, each one's first render pass starting them anew -, or this
+	 * drawer's own; which a render larger than both has made for it. */
+	attachmentsOf = this;
+	if (screen != nullptr && screen->SharesAttachments() && screen->AttachmentsCover(upscaledWidth, upscaledHeight))
+	{
+		attachmentsOf = screen;
+		drewShared++;
+	}
+	else
+	{
+		drewOwn++;
+		if (!AttachmentsCover(upscaledWidth, upscaledHeight))
+		{
+			if (!saidLarger)
+			{
+				saidLarger = true;
+				WARN_LOG(RENDERER, "Render to a texture of %u x %u: attachments made for it", upscaledWidth, upscaledHeight);
+			}
+		}
+		MakeAttachments(upscaledWidth, upscaledHeight);
+	}
+	const OITDrawer *const att = attachmentsOf;
 
-	const vk::ImageLayout colorImageCurrentLayout = TakeTexture(size, vk::ImageUsageFlags());
+	vk::ImageLayout colorImageCurrentLayout = TakeTexture(size, vk::ImageUsageFlags());
 	const vk::ImageView colorImageView = texture->GetImageView();
+	viewport.extent.width = upscaledWidth;
+	viewport.extent.height = upscaledHeight;
+	texture->ClearOutside(commandBuffer, upscaledWidth, upscaledHeight, colorImageCurrentLayout);
 
 	setImageLayout(commandBuffer, colorImage, vk::Format::eR8G8B8A8Unorm, 1, colorImageCurrentLayout, vk::ImageLayout::eColorAttachmentOptimal);
 
 	vk::ImageView imageViews[] = {
 		colorImageView,
-		colorAttachments[0]->GetImageView(),
-		depthAttachment->GetImageView(),
+		att->ColorAttachment(0)->GetImageView(),
+		att->DepthAttachment()->GetImageView(),
 	};
 	const u64 viewSerials[] = {
 		texture->GetViewSerial(),
-		colorAttachments[0]->GetViewSerial(),
-		depthAttachment->GetViewSerial(),
+		att->ColorAttachment(0)->GetViewSerial(),
+		att->DepthAttachment()->GetViewSerial(),
 	};
 	/* (made again only for other attachments: a texture rendered to every
 	 * frame is the same one) */
 	framebuffers.resize(GetContext()->GetSwapChainSize());
 	framebuffers[GetCurrentImage()].Get(rttPipelineManager->GetRenderPass(true, true), ARRAY_SIZE(imageViews), imageViews,
-			viewSerials, widthPow2, heightPow2);
+			viewSerials, upscaledWidth, upscaledHeight);
 
 	commandBuffer.setViewport(0, vk::Viewport(0.0f, 0.0f, (float)upscaledWidth, (float)upscaledHeight, 0.0f, 1.0f));
 	{
@@ -1023,6 +1081,7 @@ OITTextureDrawer::ComputeTarget OITTextureDrawer::ComputeBegin()
 	textureAddr = FB_W_SOF1 & VRAM_MASK;
 	// (the compute renderer's own barrier makes it ready to be written, from whatever it held)
 	TakeTexture(GetSize(), vk::ImageUsageFlagBits::eStorage);
+	texture->rttArea = 0;	// (written as the compute renderer writes it: Texture::ClearOutside())
 	ComputeTarget t;
 	t.image = colorImage;
 	t.view = texture->GetImageView();

@@ -43,12 +43,24 @@ SH-4 dynarec's; 9 buffers, 8 to 14 images and 4 command pools.
    translucent list's polygons, 64K triangles). Left: the quad's set made
    again from the pool each frame the image changes (no heap: a set kept
    for each of the frontend's images would make none).
-3. **Renders to textures.** Done: the texture drawers' attachments are
-   made with them, as large as a render to a texture can be
-   (`TextureDrawer::MaxSide()`: SSAA's already were; the depth, the
-   per-pixel renderer's colour and depth, `MakeAttachments()`), with a
-   framebuffer's place for each image; the room a render read back is put
-   in, for one of the screen's size (`rtt_watch_reserve()`). Left: the
+3. **Renders to textures.** Done: a render draws with the screen's
+   attachments - the depth; the per-pixel renderer's colour and depth -
+   which are made at least as large as a render of a screen, 640x480
+   times Render To Texture Upscaling (`TextureDrawer::ShareExtent()`),
+   and it draws its own pixels, not the whole texture they are in, whose
+   rest is cleared black once (`Texture::ClearOutside()`). Nothing is
+   made for a render, and no more video memory is taken than the screen's
+   unless that upscaling is the higher; a larger render, which never
+   comes from most games, has attachments of its own made when it comes
+   (logged). With SSAA, or the upscaler, where the screen's attachments
+   are not of a single sample or are kept past a frame, the texture
+   drawers have their own, made with them (SSAA's as large as a render can
+   be, `TextureDrawer::MaxSide()`, in memory made only when needed where
+   SSAA is done to them). `tools/vulkan/vk_vram.sh` says how the renders
+   were drawn and how much image memory there was at the most, and judges
+   the black past a render. A framebuffer's place for each image; the
+   room a render read back is put in, for one of the screen's size
+   (`rtt_watch_reserve()`). Left: the
    read back's copies grown when a larger render is first watched
    (`vk_rtt_watch`: 18 of them, the screen's size each would be some 22
    MB made for every game), and the texture a render goes into, which is

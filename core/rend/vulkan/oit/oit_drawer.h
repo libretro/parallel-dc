@@ -55,6 +55,15 @@ public:
 		BaseDrawer::SetScissor(cmdBuffer, vk::Rect2D(vk::Offset2D(scissor.offset.x, top), vk::Extent2D(scissor.extent.width, (u32)(bottom - top))));
 	}
 
+	/* The attachments made, for another drawer to draw into as well (see
+	 * OITTextureDrawer::ShareAttachments()): they are at least this large */
+	bool AttachmentsCover(u32 width, u32 height) const
+	{
+		return colorAttachments[0] && (int)width <= maxWidth && (int)height <= maxHeight;
+	}
+	FramebufferAttachment *ColorAttachment(int i) const { return colorAttachments[i].get(); }
+	FramebufferAttachment *DepthAttachment() const { return depthAttachment.get(); }
+
 protected:
 	// SSAA's channel sums, when the buffers have them (OITBuffers::SetSums())
 	vk::ImageView GetSumsView() const { return oitBuffers->GetSumsView(); }
@@ -124,9 +133,13 @@ protected:
 	};
 
 	void MakeBuffers(int width, int height);
+	// (MakeBuffers()'s buffers alone)
+	void InitBuffers(int width, int height) { oitBuffers->Init(width, height, commandPool); }
 	/* (MakeBuffers()'s attachments and their framebuffers, at least
 	 * @width by @height) */
 	void MakeAttachments(int width, int height);
+	// ...and none: they go once the frames that may use them are done
+	void DropAttachments();
 	void MakeSampleAttachments();
 	vk::DeviceSize GetIndexOffset() const { return offsets.indexOffset; }
 	// (what the lists of fragments a render pass asked for: OITBuffers::CountPass())
@@ -159,6 +172,9 @@ protected:
 	OITPipelineManager *pipelineManager = nullptr;
 	int maxWidth = 0;
 	int maxHeight = 0;
+	/* The attachments a frame is drawn into: this drawer's own, or another
+	 * one's that it shares (OITTextureDrawer::ShareAttachments()) */
+	OITDrawer *attachmentsOf = this;
 	u32 attachmentSamples = 1;	// SSAA's, of the attachments made
 	bool attachmentsUpscaled = false;	// ...and whether they were made for the upscaler
 
@@ -196,6 +212,15 @@ private:
 class OITScreenDrawer : public OITDrawer
 {
 public:
+	/* Renders to textures draw into this drawer's attachments too, which
+	 * are then made large enough for them (TextureDrawer::ShareExtent()):
+	 * not with SSAA or the upscaler, when they are not of a single sample
+	 * and of no use past a frame */
+	bool SharesAttachments() const
+	{
+		return pipelineManager != nullptr && pipelineManager->GetSamples() == 1 && !upscaled
+				&& GetColorFormat() == vk::Format::eR8G8B8A8Unorm;
+	}
 	// @samples: SSAA's (1: off), which the shader manager has been given
 	// @samples: SSAA's (1: off), which the shader manager has been given
 	void Init(SamplerManager *samplerManager, OITShaderManager *shaderManager, OITBuffers *oitBuffers, u32 samples)
@@ -458,14 +483,34 @@ public:
 		OITDrawer::Init(samplerManager, rttPipelineManager.get(), oitBuffers);
 
 		this->textureCache = textureCache;
-		/* (the attachments as large as a render to a texture can be, and
-		 * a framebuffer's place for each image: made now, not while the
-		 * game runs) */
-		MakeAttachments((int)TextureDrawer::MaxSide(), (int)TextureDrawer::MaxSide());
+		// (a framebuffer's place for each image; the attachments: ShareAttachments())
 		framebuffers.resize(GetContext()->GetSwapChainSize());
+	}
+	/* The screen's drawer's attachments, which this draws into when they
+	 * are large enough (OITScreenDrawer::SharesAttachments(), and
+	 * TextureDrawer::ShareExtent()); made of its own, as large as
+	 * TextureDrawer::CommonRender(), where there are none to share - now,
+	 * not while the game runs. Said after the screen's drawer is made, or
+	 * made again. */
+	void ShareAttachments(OITScreenDrawer *screen)
+	{
+		this->screen = screen;
+		attachmentsOf = this;
+		if (screen != nullptr && screen->SharesAttachments())
+			DropAttachments();
+		else
+		{
+			const vk::Extent2D common = TextureDrawer::CommonRender();
+			MakeAttachments((int)common.width, (int)common.height);
+		}
 	}
 	void Term()
 	{
+		if (drewShared + drewOwn != 0)
+			NOTICE_LOG(RENDERER, "Renders to textures: %u drawn with the screen's attachments, %u with their own; %u cleared outside",
+					drewShared, drewOwn, Texture::outsideCleared);
+		Texture::outsideCleared = 0;
+		drewShared = drewOwn = 0;
 		framebuffers.clear();
 		rttPipelineManager.reset();
 		OITDrawer::Term();
@@ -517,6 +562,9 @@ private:
 	void Watch();
 
 	u32 textureAddr = 0;
+	OITScreenDrawer *screen = nullptr;	// whose attachments are shared
+	bool saidLarger = false;
+	u32 drewShared = 0, drewOwn = 0;	// (said when it goes: tools/vulkan/vk_vram.sh)
 	vk::ImageUsageFlags storageUsage;
 
 	Texture *texture = nullptr;

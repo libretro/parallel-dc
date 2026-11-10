@@ -43,6 +43,7 @@ public:
 		screenDrawer.Init(&samplerManager, &shaderManager, samples);
 		screenDrawer.SetCommandPool(&texCommandPool);
 		screenDrawer.SetGpuDraw(taDecoder.Draw());
+		textureDrawer.ShareDepth(&screenDrawer);
 		taDecoder.WantSort(true);
 		BaseInit(screenDrawer.GetRenderPass(), screenDrawer.GetOsdSubpass());
 		InitOverlay(screenDrawer.OverlayPass());
@@ -63,6 +64,7 @@ public:
 			quadPipeline.Forget();
 		}
 		screenDrawer.Init(&samplerManager, &shaderManager, samples);
+		textureDrawer.ShareDepth(&screenDrawer);
 		BaseInit(screenDrawer.GetRenderPass(), screenDrawer.GetOsdSubpass());
 		InitOverlay(screenDrawer.OverlayPass());
 		screenDrawer.SetQuadPipeline(&quadPipeline);

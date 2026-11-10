@@ -223,6 +223,18 @@ private:
 	void Defer(bool isNew);
 	/* what the image was made to be used for */
 	vk::ImageUsageFlags imageUsage;
+	/* A render to a texture draws its own pixels, @width by @height from
+	 * the first (Render To Texture Upscaling's), not the whole image, a
+	 * power of two: the rest is black, as it was when the render pass
+	 * cleared the whole image. Said before the render pass, with the
+	 * image's @layout, which is the one it is in after: cleared when it is
+	 * not black already - the image new, or written since by another
+	 * render, or anything else. */
+	void ClearOutside(vk::CommandBuffer cmd, u32 width, u32 height, vk::ImageLayout& layout);
+	/* (the last render's pixels, width << 16 | height, outside which the
+	 * image is black; 0 once anything else writes it) */
+	u32 rttArea = 0;
+	static u32 outsideCleared;	// (how many times: said with the renders to textures, tools/vulkan/vk_vram.sh)
 	void GenerateMipmaps();
 
 	vk::Format format = vk::Format::eUndefined;

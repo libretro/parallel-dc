@@ -59,6 +59,7 @@ public:
 		screenDrawer.SetStoragePicture(rend_compute_wanted);
 		screenDrawer.Init(&samplerManager, &oitShaderManager, &oitBuffers, samples);
 		screenDrawer.SetCommandPool(&texCommandPool);
+		textureDrawer.ShareAttachments(&screenDrawer);
 		screenDrawer.SetGpuDraw(taDecoder.Draw());
 		computeDrawer.SetGpuDraw(taDecoder.Draw());
 		BaseInit(screenDrawer.GetRenderPass(), screenDrawer.GetOsdSubpass());
@@ -89,6 +90,7 @@ public:
 			lastPicturePipeline.Forget();
 		}
 		screenDrawer.Init(&samplerManager, &oitShaderManager, &oitBuffers, samples);
+		textureDrawer.ShareAttachments(&screenDrawer);
 		BaseInit(screenDrawer.GetRenderPass(), screenDrawer.GetOsdSubpass());
 		InitOverlay(screenDrawer.OverlayPass());
 		// (a quad pipeline is for one subpass: the one above is the last subpass's, this the colour one's)

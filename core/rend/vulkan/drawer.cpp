@@ -585,9 +585,11 @@ void TextureDrawer::Init(SamplerManager *samplerManager, ShaderManager *shaderMa
 		samplesAttachment.reset();
 		this->samples = samples;
 	}
-	/* The attachments are made now, as large as a render to a texture can
-	 * be, never while the game runs: SSAA's, or the depth; and a
-	 * framebuffer's place for each image */
+	/* The attachments are made now, never while the game runs: SSAA's, as
+	 * large as a render to a texture can be (where SSAA is done to them,
+	 * memory made only if it is needed backs them); the depth is the
+	 * screen's, or one of its own (ShareDepth()). And a framebuffer's
+	 * place for each image. */
 	if (samples > 1)
 	{
 		if (!samplesAttachment || samplesAttachment->getExtent().width < MaxSide())
@@ -595,19 +597,34 @@ void TextureDrawer::Init(SamplerManager *samplerManager, ShaderManager *shaderMa
 		ssaaResolve.Init(rttPipelineManager->GetRenderPass(), 1, samples, samplesAttachment->GetImageView());
 	}
 	else
-	{
 		ssaaResolve.Term();
-		if (!depthAttachment || depthAttachment->getExtent().width < MaxSide() || depthAttachment->getExtent().height < MaxSide())
-		{
-			if (depthAttachment && commandPool != nullptr)
-				commandPool->DeferDelete(std::move(depthAttachment));
-			depthAttachment = std::unique_ptr<FramebufferAttachment>(new FramebufferAttachment(GetContext()->GetPhysicalDevice(),
-					GetContext()->GetDevice()));
-			depthAttachment->Init(MaxSide(), MaxSide(), GetContext()->GetDepthFormat(),
-					vk::ImageUsageFlagBits::eDepthStencilAttachment | vk::ImageUsageFlagBits::eTransientAttachment);
-		}
-	}
 	framebuffers.resize(GetContext()->GetSwapChainSize());
+}
+
+void TextureDrawer::ShareDepth(const ScreenDrawer *screen)
+{
+	this->screen = screen;
+	if (samples > 1)
+		return;
+	const FramebufferAttachment *shared = screen != nullptr ? screen->SharedDepth() : nullptr;
+	if (shared != nullptr)
+	{
+		// (its own goes once the frames that may use it are done)
+		if (depthAttachment && commandPool != nullptr)
+			commandPool->DeferDelete(std::move(depthAttachment));
+		depthAttachment.reset();
+		return;
+	}
+	const vk::Extent2D common = CommonRender();
+	if (!depthAttachment || depthAttachment->getExtent().width < common.width || depthAttachment->getExtent().height < common.height)
+	{
+		if (depthAttachment && commandPool != nullptr)
+			commandPool->DeferDelete(std::move(depthAttachment));
+		depthAttachment = std::unique_ptr<FramebufferAttachment>(new FramebufferAttachment(GetContext()->GetPhysicalDevice(),
+				GetContext()->GetDevice()));
+		depthAttachment->Init(common.width, common.height, GetContext()->GetDepthFormat(),
+				vk::ImageUsageFlagBits::eDepthStencilAttachment | vk::ImageUsageFlagBits::eTransientAttachment);
+	}
 }
 
 void TextureDrawer::MakeSsaaAttachments(u32 side)
@@ -678,13 +695,46 @@ vk::CommandBuffer TextureDrawer::BeginRenderPass()
 			MakeSsaaAttachments(side);
 		}
 	}
-	else if (!depthAttachment || widthPow2 > depthAttachment->getExtent().width || heightPow2 > depthAttachment->getExtent().height)
+	/* What the render draws: its own pixels, the texture's from the first;
+	 * with SSAA all of the texture, its attachments being that large */
+	const u32 areaWidth = samples > 1 ? widthPow2 : upscaledWidth;
+	const u32 areaHeight = samples > 1 ? heightPow2 : upscaledHeight;
+	/* The depth: the screen's when it is large enough - drawn into by the
+	 * screen's frames and this one by one, on the same queue, each
+	 * clearing it first: the render passes' dependencies on the depth
+	 * before them are those of one frame after another -, or this
+	 * drawer's own; which a render larger than both has made for it. */
+	const FramebufferAttachment *depth = nullptr;
+	if (samples > 1)
+		depth = depthAttachment.get();
+	else
 	{
-		if (depthAttachment)
-			commandPool->DeferDelete(std::move(depthAttachment));
-		depthAttachment = std::unique_ptr<FramebufferAttachment>(new FramebufferAttachment(context->GetPhysicalDevice(), device));
-		depthAttachment->Init(widthPow2, heightPow2, GetContext()->GetDepthFormat(),
-				vk::ImageUsageFlagBits::eDepthStencilAttachment | vk::ImageUsageFlagBits::eTransientAttachment);
+		const FramebufferAttachment *shared = screen != nullptr ? screen->SharedDepth() : nullptr;
+		if (shared != nullptr && areaWidth <= shared->getExtent().width && areaHeight <= shared->getExtent().height)
+		{
+			depth = shared;
+			drewShared++;
+		}
+		else
+		{
+			drewOwn++;
+			if (!depthAttachment || areaWidth > depthAttachment->getExtent().width || areaHeight > depthAttachment->getExtent().height)
+			{
+				if (!saidLarger)
+				{
+					saidLarger = true;
+					WARN_LOG(RENDERER, "Render to a texture of %u x %u: a depth made for it", areaWidth, areaHeight);
+				}
+				const u32 w = depthAttachment ? std::max(areaWidth, depthAttachment->getExtent().width) : areaWidth;
+				const u32 h = depthAttachment ? std::max(areaHeight, depthAttachment->getExtent().height) : areaHeight;
+				if (depthAttachment)
+					commandPool->DeferDelete(std::move(depthAttachment));
+				depthAttachment = std::unique_ptr<FramebufferAttachment>(new FramebufferAttachment(context->GetPhysicalDevice(), device));
+				depthAttachment->Init(w, h, GetContext()->GetDepthFormat(),
+						vk::ImageUsageFlagBits::eDepthStencilAttachment | vk::ImageUsageFlagBits::eTransientAttachment);
+			}
+			depth = depthAttachment.get();
+		}
 	}
 	vk::Image colorImage;
 	vk::ImageView colorImageView;
@@ -745,27 +795,29 @@ vk::CommandBuffer TextureDrawer::BeginRenderPass()
 	}
 	colorImage = texture->GetImage();
 	colorImageView = texture->GetImageView();
-	width = widthPow2;
-	height = heightPow2;
+	width = areaWidth;
+	height = areaHeight;
+	if (samples == 1)
+		texture->ClearOutside(commandBuffer, areaWidth, areaHeight, colorImageCurrentLayout);
 
 	setImageLayout(commandBuffer, colorImage, vk::Format::eR8G8B8A8Unorm, 1, colorImageCurrentLayout, vk::ImageLayout::eColorAttachmentOptimal);
 
 	// (with SSAA: the texture, then the samples' colour and depth)
 	vk::ImageView imageViews[] = {
 		colorImageView,
-		samples > 1 ? samplesAttachment->GetImageView() : depthAttachment->GetImageView(),
-		depthAttachment->GetImageView(),
+		samples > 1 ? samplesAttachment->GetImageView() : depth->GetImageView(),
+		depth->GetImageView(),
 	};
 	const u64 viewSerials[] = {
 		texture->GetViewSerial(),
-		samples > 1 ? samplesAttachment->GetViewSerial() : depthAttachment->GetViewSerial(),
-		depthAttachment->GetViewSerial(),
+		samples > 1 ? samplesAttachment->GetViewSerial() : depth->GetViewSerial(),
+		depth->GetViewSerial(),
 	};
 	/* (made again only for other attachments: a texture rendered to every
 	 * frame is the same one) */
 	framebuffers.resize(GetContext()->GetSwapChainSize());
 	const vk::Framebuffer framebuffer = framebuffers[GetCurrentImage()].Get(rttPipelineManager->GetRenderPass(),
-			samples > 1 ? 3 : 2, imageViews, viewSerials, widthPow2, heightPow2);
+			samples > 1 ? 3 : 2, imageViews, viewSerials, width, height);
 
 	const vk::ClearValue clear_colors[] = { vk::ClearColorValue(std::array<float, 4> { 0.f, 0.f, 0.f, 1.f }), vk::ClearDepthStencilValue { 0.f, 0 } };
 	const vk::ClearValue ssaa_clear_colors[] = { clear_colors[0], clear_colors[0], clear_colors[1] };
@@ -871,9 +923,12 @@ void ScreenDrawer::Init(SamplerManager *samplerManager, ShaderManager *shaderMan
 	const vk::SampleCountFlagBits n = (vk::SampleCountFlagBits)samples;
 	if (!depthAttachment && !upscaled)
 	{
+		/* (without SSAA, renders to textures draw into it too: as large as
+		 * they need, TextureDrawer::ShareExtent()) */
+		const vk::Extent2D depthSize = samples == 1 ? TextureDrawer::ShareExtent(viewport) : viewport;
 		depthAttachment = std::unique_ptr<FramebufferAttachment>(
 			new FramebufferAttachment(GetContext()->GetPhysicalDevice(), GetContext()->GetDevice()));
-		depthAttachment->Init(viewport.width, viewport.height, GetContext()->GetDepthFormat(),
+		depthAttachment->Init(depthSize.width, depthSize.height, GetContext()->GetDepthFormat(),
 				vk::ImageUsageFlagBits::eDepthStencilAttachment | vk::ImageUsageFlagBits::eTransientAttachment, true, n);
 	}
 	// SSAA: the samples' colour, which the last subpass resolves into the picture

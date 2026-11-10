@@ -339,6 +339,24 @@ PooledImage *TexturePool::TakeTarget(u32 width, u32 height, const vk::ImageUsage
 	return e != nullptr ? static_cast<PooledImage *>(e) : Make(cls, true);
 }
 
+u32 Texture::outsideCleared;
+
+void Texture::ClearOutside(vk::CommandBuffer cmd, u32 width, u32 height, vk::ImageLayout& layout)
+{
+	const u32 area = width << 16 | height;
+	const bool whole = width >= extent.width && height >= extent.height;
+	if (!whole && (area != rttArea || layout == vk::ImageLayout::eUndefined))
+	{
+		setImageLayout(cmd, GetImage(), format, 1, layout, vk::ImageLayout::eTransferDstOptimal);
+		cmd.clearColorImage(GetImage(), vk::ImageLayout::eTransferDstOptimal,
+				vk::ClearColorValue(std::array<float, 4> { 0.f, 0.f, 0.f, 1.f }),
+				vk::ImageSubresourceRange(vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1));
+		layout = vk::ImageLayout::eTransferDstOptimal;
+		outsideCleared++;
+	}
+	rttArea = area;
+}
+
 void Texture::CreateRenderTarget(const vk::ImageUsageFlags& usage)
 {
 	PooledImage *pi = pool != nullptr ? pool->TakeTarget(extent.width, extent.height, usage) : nullptr;
@@ -516,6 +534,7 @@ u8 *UploadRing::Allocate(size_t bytes, vk::Buffer *buffer, vk::DeviceSize *offse
  * Returns whether it was made anew. */
 bool Texture::Prepare(int width, int height, bool mipmapped, bool mipmapsIncluded, Maker maker, vk::Format native)
 {
+	rttArea = 0;	// (written other than by a render: ClearOutside())
 	vk::Format format = vk::Format::eUndefined;
 	switch (tex_type)
 	{
@@ -623,6 +642,7 @@ bool Texture::GpuDecode(const texd_plan& plan)
  * texture's uploads go in, which the GPU runs after the render's. */
 bool Texture::CopyRender(BaseTextureCacheData *from, u32 x, u32 y, u32 scale, u32 columns)
 {
+	rttArea = 0;	// (written other than by a render: ClearOutside())
 	Texture *src = static_cast<Texture *>(from);
 	const vk::Format rgba = vk::Format::eR8G8B8A8Unorm;
 
@@ -706,6 +726,7 @@ bool Texture::PartMemory(size_t bytes, void **memory)
 
 void Texture::UploadPart(const TexRegion *regions, u32 count, u8 *data, const size_t *offset)
 {
+	rttArea = 0;	// (written other than by a render: ClearOutside())
 	vk::BufferImageCopy copies[TEXP_REGIONS];
 	u32 i;
 
@@ -729,6 +750,7 @@ void Texture::UploadPart(const TexRegion *regions, u32 count, u8 *data, const si
 
 int Texture::GpuDecodePart(const texd_plan& plan, const TexRegion *regions, u32 count)
 {
+	rttArea = 0;	// (written other than by a render: ClearOutside())
 	TexDecoder::Level levels[TEXP_REGIONS];
 	TexPartPlan part;
 	vk::Format nativeFormat, format;
@@ -969,6 +991,7 @@ static u32 DebugSum(const u8 *p, u32 size)
 
 void Texture::SetImage(u32 srcSize, void *srcData, bool isNew, bool genMipmaps)
 {
+	rttArea = 0;	// (written other than by a render: ClearOutside())
 	if (!commandBuffer && commandPool != nullptr)
 		commandBuffer = commandPool->Allocate();
 	verify((bool)commandBuffer);

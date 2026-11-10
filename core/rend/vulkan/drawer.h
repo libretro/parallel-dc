@@ -385,6 +385,11 @@ public:
 		screenPipelineManager.reset();
 	}
 	vk::RenderPass GetRenderPass() const { return *renderPass; }
+	/* The depth a render to a texture draws into as well, made large
+	 * enough for one (TextureDrawer::ShareExtent()): null with SSAA or
+	 * the upscaler, when the screen's is not one of a single sample and
+	 * of no use past its frame */
+	const FramebufferAttachment *SharedDepth() const { return samples == 1 && !upscaled ? depthAttachment.get() : nullptr; }
 	// the subpass the screen's last things are drawn in (the VMUs, the OSD): after the resolve, with SSAA
 	int GetOsdSubpass() const { return samples > 1 ? 1 : 0; }
 	/* rend/last_picture.h: the context is going */
@@ -454,6 +459,11 @@ public:
 	void Init(SamplerManager *samplerManager, ShaderManager *shaderManager, TextureCache *textureCache, u32 samples);
 	void Term()
 	{
+		if (drewShared + drewOwn != 0)
+			NOTICE_LOG(RENDERER, "Renders to textures: %u drawn with the screen's depth, %u with one of their own; %u cleared outside",
+					drewShared, drewOwn, Texture::outsideCleared);
+		Texture::outsideCleared = 0;
+		drewShared = drewOwn = 0;
 		ssaaResolve.Term();
 		// (as the screen's drawer's)
 		rttPipelineManager.reset();
@@ -461,6 +471,28 @@ public:
 	virtual void EndRenderPass() override;
 	// the largest texture rendered to, a side, at this upscale (SSAA's attachments are made that large)
 	static u32 MaxSide() { return 1024u * (u32)std::max(1, settings.rend.RenderToTextureUpscale); }
+	/* A render to a texture draws its own pixels (Texture::ClearOutside()),
+	 * and its depth is the screen's, which is made at least as large as
+	 * the render of a screen: 640x480 times Render To Texture Upscaling
+	 * (@screen: the screen's size) - which is the screen's own size, or
+	 * less, unless that upscaling is the higher. A larger render (PAL's
+	 * whole 576 lines at the console's own resolution) has a depth of its
+	 * own, made when it comes, as all were before. */
+	static vk::Extent2D ShareExtent(vk::Extent2D screen)
+	{
+		const vk::Extent2D common = CommonRender();
+		return vk::Extent2D(std::max(screen.width, common.width), std::max(screen.height, common.height));
+	}
+	static vk::Extent2D CommonRender()
+	{
+		const u32 scale = (u32)std::max(1, settings.rend.RenderToTextureUpscale);
+		return vk::Extent2D(640u * scale, 480u * scale);
+	}
+	/* The screen's drawer's depth, the one this draws into when it is
+	 * large enough (ScreenDrawer::SharedDepth()); made of its own, as
+	 * large as CommonRender(), where there is none to share. Said after
+	 * the screen's drawer is made, or made again. */
+	void ShareDepth(const ScreenDrawer *screen);
 
 protected:
 	virtual vk::CommandBuffer BeginRenderPass() override;
@@ -475,7 +507,10 @@ private:
 
 	Texture *texture = nullptr;
 	std::vector<KeptFramebuffer> framebuffers;
-	std::unique_ptr<FramebufferAttachment> depthAttachment;
+	const ScreenDrawer *screen = nullptr;	// whose depth is shared
+	std::unique_ptr<FramebufferAttachment> depthAttachment;	// ...or this, of its own
+	bool saidLarger = false;
+	u32 drewShared = 0, drewOwn = 0;	// (said when it goes: tools/vulkan/vk_vram.sh)
 	std::unique_ptr<FramebufferAttachment> samplesAttachment;	// SSAA's colour
 	TextureCache *textureCache = nullptr;
 };

@@ -31,7 +31,7 @@
  * PROGRAM_CULL, with -DLIVE_ATLAS for PROGRAM_ATLAS, with -DLIVE_DMA
  * for PROGRAM_DMA, with -DLIVE_CLIP for PROGRAM_CLIP, with -DLIVE_KEEP for
  * PROGRAM_KEEP, with -DLIVE_HEAVY for PROGRAM_HEAVY, and with
- * -DLIVE_BLEND for PROGRAM_BLEND. */
+ * -DLIVE_BLEND for PROGRAM_BLEND, and with -DLIVE_ODD for PROGRAM_ODD. */
 typedef unsigned int u32;
 typedef unsigned short u16;
 #define PVR(off) (*(volatile u32 *)(0xA05F8000 + (off)))
@@ -478,6 +478,15 @@ static void ta_volume_triangle(u32 x0, u32 y0, u32 x1, u32 y1, u32 x2, u32 y2, u
 
 /* Where in video memory the render to a texture goes: see render_to_texture(). */
 #define RTT_ADDRESS 0x700000
+#ifdef LIVE_ODD
+/* With -DLIVE_ODD: a render to a texture of a size no power of two, 120 by
+ * 50 and 96 by 40 in turn for its first 24 frames and 96 by 40 after, red
+ * all over, at RTT_ODD; drawn as the 128 by 64 texture it is in, which past
+ * the render is black - as a render that drew the whole texture left it,
+ * the strip the larger render drew too (tools/vulkan/vk_vram.sh) */
+#define RTT_ODD (RTT_ADDRESS + 0x20000)
+static u32 rtt_odd_frames;
+#endif
 
 #ifdef LIVE_DMA
 /* With -DLIVE_DMA: video memory written by PVR-DMA over what was rendered
@@ -812,6 +821,13 @@ static void ta_scene(void)
     * RGB565, not twiddled, 128 by 128. */
    ta_quad(TA_TEXTURED, TSP_PLAIN | (4u << 3) | 4u, (1u << 27) | (1u << 26) | (RTT_ADDRESS >> 3),
          0xFFFFFFFF, F(0.5f), F(250.0f), F(125.0f), F(300.0f), F(175.0f));
+#ifdef LIVE_ODD
+   /* Top right: the render of no power of two, as its 128 by 64 texture,
+    * a texel a pixel of the 640 by 480 screen */
+   if (rtt_odd_frames != 0)
+      ta_quad(TA_TEXTURED, TSP_PLAIN | (4u << 3) | 3u, (1u << 27) | (1u << 26) | (RTT_ODD >> 3),
+            0xFFFFFFFF, F(0.5f), F(235.0f), F(1.0f), F(299.0f), F(33.0f));
+#endif
    /* Bottom middle: a white polygon whose colour is given as an intensity, 1,
     * and a face colour, 1. The two are multiplied and made eight bits, and
     * that is 255: not the 254 that 255 * 255 / 256 makes of it. */
@@ -1076,6 +1092,23 @@ static void render_to_texture(void)
          rtt_static_bad = 1;
       rtt_hscale_age = 11;
    }
+
+#ifdef LIVE_ODD
+   {
+      const u32 large = rtt_odd_frames < 24 && (rtt_odd_frames / 4) % 2 == 0;
+      const u32 w = large ? 120 : 96, h = large ? 50 : 40;
+
+      rtt_odd_frames++;
+      PVR(0x4C) = 128 * 2 / 8;
+      PVR(0x60) = 0x01000000 | RTT_ODD;
+      PVR(0x68) = (w - 1) << 16;
+      PVR(0x6C) = (h - 1) << 16;
+      PVR(0x144) = 0x80000000;                         /* TA_LIST_INIT */
+      ta_quad(0, TSP_PLAIN, 0, 0xFFFF0000, F(0.5f), F(0.0f), F(0.0f), large ? F(120.0f) : F(96.0f), large ? F(50.0f) : F(40.0f));
+      ta_send(0, 0, 0, 0, 0, 0, 0, 0);
+      PVR(0x14) = 0xFFFFFFFF;                          /* STARTRENDER */
+   }
+#endif
 
    PVR(0x48) = fb_w_ctrl;
    PVR(0x4C) = linestride;

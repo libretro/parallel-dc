@@ -459,16 +459,80 @@ static VKAPI_ATTR void VKAPI_CALL vkh_free_mem(VkDevice d, VkDeviceMemory m, con
       vkh_gpu_seen(VKH_A_FREE_MEMORY, __builtin_return_address(0));
    vkh_real_free_mem(d, m, a);
 }
+/* VKH_IMAGE_BYTES: the memory the images alive at once ask for
+ * (vkGetImageMemoryRequirements), at the most - the video memory images
+ * take, whatever the core's heap puts them in - printed at the end:
+ * "image memory peak N KiB" (tools/vulkan/vk_vram.sh) */
+#define VKH_IMAGES 16384
+static VkImage vkh_img_key[VKH_IMAGES];
+static VkDeviceSize vkh_img_size[VKH_IMAGES];
+static long vkh_img_live, vkh_img_peak;
+static PFN_vkGetImageMemoryRequirements vkh_img_reqs;
+static unsigned vkh_img_slot(VkImage image)
+{
+   return (unsigned)(((uint64_t)(uintptr_t)image * 0x9E3779B97F4A7C15ull) >> 40) % VKH_IMAGES;
+}
+static void vkh_img_made(VkDevice d, VkImage image)
+{
+   VkMemoryRequirements r;
+   unsigned i, n;
+   if (!vkh_img_reqs)
+      vkh_img_reqs = (PFN_vkGetImageMemoryRequirements)vkh_real_gdpa(d, "vkGetImageMemoryRequirements");
+   vkh_img_reqs(d, image, &r);
+   for (i = vkh_img_slot(image), n = 0; n < VKH_IMAGES; i = (i + 1) % VKH_IMAGES, n++)
+      if (vkh_img_key[i] == VK_NULL_HANDLE)
+      {
+         vkh_img_key[i] = image;
+         vkh_img_size[i] = r.size;
+         vkh_img_live += (long)(r.size / 1024);
+         if (vkh_img_live > vkh_img_peak)
+            vkh_img_peak = vkh_img_live;
+         return;
+      }
+}
+static void vkh_img_gone(VkImage image)
+{
+   unsigned i, n;
+   for (i = vkh_img_slot(image), n = 0; n < VKH_IMAGES && vkh_img_key[i] != VK_NULL_HANDLE; i = (i + 1) % VKH_IMAGES, n++)
+      if (vkh_img_key[i] == image)
+      {
+         unsigned j = i, k;
+         vkh_img_live -= (long)(vkh_img_size[i] / 1024);
+         vkh_img_key[i] = VK_NULL_HANDLE;
+         /* (the run after it moved up into the hole: linear probing) */
+         for (k = (j + 1) % VKH_IMAGES; vkh_img_key[k] != VK_NULL_HANDLE; k = (k + 1) % VKH_IMAGES)
+         {
+            const unsigned home = vkh_img_slot(vkh_img_key[k]);
+            if ((k > j && (home <= j || home > k)) || (k < j && home <= j && home > k))
+            {
+               vkh_img_key[j] = vkh_img_key[k];
+               vkh_img_size[j] = vkh_img_size[k];
+               vkh_img_key[k] = VK_NULL_HANDLE;
+               j = k;
+            }
+         }
+         return;
+      }
+}
+
 static VKAPI_ATTR VkResult VKAPI_CALL vkh_create_image(VkDevice d, const VkImageCreateInfo *ci,
       const VkAllocationCallbacks *a, VkImage *out)
 {
+   VkResult r;
    vkh_gpu_seen(VKH_A_IMAGE, __builtin_return_address(0));
-   return vkh_real_create_image(d, ci, a, out);
+   r = vkh_real_create_image(d, ci, a, out);
+   if (r == VK_SUCCESS && getenv("VKH_IMAGE_BYTES"))
+      vkh_img_made(d, *out);
+   return r;
 }
 static VKAPI_ATTR void VKAPI_CALL vkh_destroy_image(VkDevice d, VkImage i, const VkAllocationCallbacks *a)
 {
    if (i != VK_NULL_HANDLE)
+   {
       vkh_gpu_seen(VKH_A_DESTROY_IMAGE, __builtin_return_address(0));
+      if (getenv("VKH_IMAGE_BYTES"))
+         vkh_img_gone(i);
+   }
    vkh_real_destroy_image(d, i, a);
 }
 static VKAPI_ATTR VkResult VKAPI_CALL vkh_desc_pool(VkDevice d, const VkDescriptorPoolCreateInfo *ci,
@@ -646,6 +710,16 @@ static PFN_vkVoidFunction vkh_wrap(PFN_vkVoidFunction real, const char *name)
       VKH_WRAP_ALLOC("vkCreateBuffer", *(void **)&vkh_real_create_buffer, vkh_create_buffer)
       VKH_WRAP_ALLOC("vkDestroyBuffer", *(void **)&vkh_real_destroy_buffer, vkh_destroy_buffer)
 #undef VKH_WRAP_ALLOC
+   }
+   if (getenv("VKH_IMAGE_BYTES") && !strcmp(name, "vkCreateImage"))
+   {
+      vkh_real_create_image = (PFN_vkCreateImage)real;
+      return (PFN_vkVoidFunction)vkh_create_image;
+   }
+   if (getenv("VKH_IMAGE_BYTES") && !strcmp(name, "vkDestroyImage"))
+   {
+      vkh_real_destroy_image = (PFN_vkDestroyImage)real;
+      return (PFN_vkVoidFunction)vkh_destroy_image;
    }
    if (getenv("VKH_BUFFERS") && !strcmp(name, "vkCreateBuffer"))
    {
@@ -1586,7 +1660,7 @@ int main(int argc, char **argv)
    memset(&ctx, 0, sizeof(ctx));
    vkh_main_thread = pthread_self();
    core_gipa = getenv("VKH_COUNT_PIPELINES") || getenv("VKH_HIDE_EXT") || getenv("VKH_READS")
-         || getenv("VKH_UNCACHED") || getenv("VKH_BUFFERS") || getenv("VKH_ALLOCS") ? vkh_count_gipa : gipa;
+         || getenv("VKH_UNCACHED") || getenv("VKH_BUFFERS") || getenv("VKH_ALLOCS") || getenv("VKH_IMAGE_BYTES") ? vkh_count_gipa : gipa;
    if (!neg->create_device2(&ctx, instance, gpu, VK_NULL_HANDLE, core_gipa, NULL, NULL))
    {
       fprintf(stderr, "vk_hdr: create_device2 failed\n");
@@ -1680,6 +1754,8 @@ int main(int argc, char **argv)
          else if (dt > longest)
             longest = dt;
       }
+      if (getenv("VKH_IMAGE_BYTES"))
+         printf("vk_hdr: image memory peak %ld KiB\n", vkh_img_peak);
       if (getenv("VKH_ALLOCS"))
       {
          int k, i;
