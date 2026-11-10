@@ -15,11 +15,18 @@ static bool read_pool_ready;
 /* Copies of pictures off the card, each into memory this side reads: begun
  * ahead of the read where rtt_watch says which (vk_rtt_prefetch()), or by
  * the read itself. A batch of them is one submit with one fence. The read
- * runs in the signal handler, where nothing may be allocated: the batches
- * are made with the renderer (vk_rtt_init()), and every copy's buffer is
- * grown to a render's size when it is watched (copies_reserve()). */
+ * runs in the signal handler, where nothing may be allocated, and nothing
+ * is while a game runs: the batches, the ring every copy takes its room
+ * from and each batch's image a finer picture is made the console's size
+ * in, are made with the renderer (vk_rtt_init()), for renders of a
+ * screen's size; a larger one has them made larger when it is watched
+ * (copies_reserve()), which is said. */
 #define RTT_COPIES 18
 #define RTT_BATCHES 4
+/* the ring: four of the largest render, no less than four of a screen's */
+#define RTT_RING_RENDERS 4
+#define RTT_SCREEN_W 640
+#define RTT_SCREEN_H 480
 
 struct RttBatch
 {
@@ -27,6 +34,10 @@ struct RttBatch
 	vk::CommandBuffer cmd;      /* the pool's: freed with it */
 	vk::UniqueFence fence;
 	bool busy;          /* submitted, its fence not seen signalled */
+	/* a finer picture made the console's size, for each copy recorded in
+	 * turn; and whether one has been, in the batch being recorded */
+	std::unique_ptr<FramebufferAttachment> shrink;
+	bool shrunk;
 };
 
 struct RttCopy
@@ -36,17 +47,17 @@ struct RttCopy
 	u32 w, h;
 	int batch;          /* the batch that writes it */
 	u64 stamp;          /* when it was last begun, for the oldest */
-	std::unique_ptr<BufferData> buffer;               /* grown, never shrunk */
-	std::unique_ptr<FramebufferAttachment> shrink;    /* the console's size, for a finer picture */
+	vk::DeviceSize at, len;     /* its room in the ring; none if len is 0 */
 };
 
 static RttBatch batches[RTT_BATCHES];
 static RttCopy copies[RTT_COPIES];
 static bool copies_ready;
 static u64 copy_stamp;
-/* what every copy has room for: the console's pixels, and a shrink image */
-static vk::DeviceSize copies_bytes;
-static u32 shrink_w, shrink_h;
+static std::unique_ptr<BufferData> ring;
+static vk::DeviceSize ring_size, ring_head;
+static u32 shrink_w, shrink_h;      /* what each batch's shrink image is */
+static bool said_larger;
 
 static bool batch_done(RttBatch& b)
 {
@@ -73,51 +84,62 @@ static void copies_init(void)
 	{
 		c.serial = 0;
 		c.batch = -1;
+		c.len = 0;
 	}
-	copies_bytes = 0;
+	ring_size = ring_head = 0;
 	shrink_w = shrink_h = 0;
+	said_larger = false;
 	copies_ready = true;
 }
 
-/* Every copy's room grown, where a render to be watched needs more: its
- * buffer for w by h pixels, and its shrink image, where the render is
- * finer than the console's (@scale above 1) */
+/* The room for renders of w by h pixels (the console's), finer than the
+ * console's by @scale: the ring, and each batch's shrink image where
+ * @scale is above 1. Made larger if it is not that large - every batch
+ * waited for then, and every copy gone: at the start, or for a render
+ * larger than a screen, which is said. */
 static void copies_reserve(u32 w, u32 h, u32 scale)
 {
 	VulkanContext *context = VulkanContext::Instance();
-	const vk::DeviceSize bytes = (vk::DeviceSize)w * h * 4;
+	const vk::DeviceSize need = (vk::DeviceSize)w * h * 4 * RTT_RING_RENDERS;
 	const bool shrink = scale > 1 && (w > shrink_w || h > shrink_h);
 
-	if (bytes <= copies_bytes && !shrink)
+	if (need <= ring_size && !shrink)
 		return;
-	/* (one being written by a batch on the card keeps its old room until
-	 * it is done: every batch waited for, rarely - a larger render) */
+	if (ring_size != 0 && !said_larger)
+	{
+		said_larger = true;
+		WARN_LOG(RENDERER, "Render to a texture of %u x %u read back: its room made larger", w, h);
+	}
+	/* (what a batch on the card is still writing keeps its room until it
+	 * is done) */
 	for (RttBatch& b : batches)
 		if (b.busy)
 		{
 			context->GetDevice().waitForFences(1, &b.fence.get(), true, UINT64_MAX);
 			b.busy = false;
 		}
-	if (bytes > copies_bytes)
-		copies_bytes = bytes;
+	for (RttCopy& c : copies)
+	{
+		c.serial = 0;
+		c.len = 0;
+	}
+	if (need > ring_size)
+	{
+		ring.reset(new BufferData(need, vk::BufferUsageFlagBits::eTransferDst));
+		ring_size = need;
+		ring_head = 0;
+	}
 	if (shrink)
 	{
 		shrink_w = std::max(shrink_w, w);
 		shrink_h = std::max(shrink_h, h);
-	}
-	for (RttCopy& c : copies)
-	{
-		if (!c.buffer || c.buffer->bufferSize < copies_bytes)
-			c.buffer = std::unique_ptr<BufferData>(new BufferData(copies_bytes, vk::BufferUsageFlagBits::eTransferDst));
-		if (shrink && (!c.shrink || c.shrink->getExtent().width < shrink_w || c.shrink->getExtent().height < shrink_h))
+		for (RttBatch& b : batches)
 		{
-			c.shrink = std::unique_ptr<FramebufferAttachment>(new FramebufferAttachment(context->GetPhysicalDevice(), context->GetDevice()));
+			b.shrink = std::unique_ptr<FramebufferAttachment>(new FramebufferAttachment(context->GetPhysicalDevice(), context->GetDevice()));
 			/* (sampled: its view, made with it, needs a use a view is for) */
-			c.shrink->Init(shrink_w, shrink_h, vk::Format::eR8G8B8A8Unorm, vk::ImageUsageFlagBits::eTransferSrc
+			b.shrink->Init(shrink_w, shrink_h, vk::Format::eR8G8B8A8Unorm, vk::ImageUsageFlagBits::eTransferSrc
 					| vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eSampled, false);
 		}
-		/* (what it held was copied into the room it had: gone) */
-		c.serial = 0;
 	}
 }
 
@@ -144,31 +166,56 @@ static RttCopy *copy_of(const RttWatch *watch)
 	return nullptr;
 }
 
-/* One to begin a copy in: one that holds none, or the one begun longest
- * ago - never one a batch on the card is still writing, nor one begun
- * after @since (in the batch being recorded). */
-static RttCopy *copy_free(u64 since)
+/* A copy may give up its room and its place: no batch on the card is
+ * writing it, and it was not begun after @since (in the batch being
+ * recorded) */
+static bool copy_droppable(RttCopy& c, u64 since)
 {
-	RttCopy *oldest = nullptr;
+	if (c.len != 0 && c.batch >= 0 && !batch_done(batches[c.batch]))
+		return false;
+	return c.serial == 0 || c.stamp <= since;
+}
 
+/* One to begin a copy of @len bytes in, with its room in the ring: the
+ * ring's next, from its start where the end is too near; what was there
+ * before goes, and the copy that held none or was begun longest ago gives
+ * its place. Null if what is there may not go (droppable()). */
+static RttCopy *copy_free(u64 since, vk::DeviceSize len)
+{
+	RttCopy *place = nullptr;
+	vk::DeviceSize at = ring_head;
+
+	if (len > ring_size)
+		return nullptr;
+	if (at + len > ring_size)
+		at = 0;
+	for (RttCopy& c : copies)
+		if (c.len != 0 && c.at < at + len && at < c.at + c.len && !copy_droppable(c, since))
+			return nullptr;
 	for (RttCopy& c : copies)
 	{
-		if (c.batch >= 0 && !batch_done(batches[c.batch]))
+		if (c.len != 0 && c.at < at + len && at < c.at + c.len)
+		{
+			c.serial = 0;
+			c.len = 0;
+		}
+		if (!copy_droppable(c, since))
 			continue;
-		if (c.serial != 0 && c.stamp > since)
-			continue;
-		if (c.serial == 0)
-			return &c;
-		if (oldest == nullptr || c.stamp < oldest->stamp)
-			oldest = &c;
+		if (place == nullptr || (place->len != 0 && (c.len == 0 || c.stamp < place->stamp)))
+			place = &c;
 	}
-	return oldest;
+	if (place == nullptr)
+		return nullptr;
+	place->at = at;
+	place->len = len;
+	ring_head = at + len;
+	return place;
 }
 
 /* The picture as the console would have it, w by h, R G B A, copied into
  * c's buffer by @cmd: from the texture at the clip; or made the console's
  * size on the card first, filtered, where it is finer. */
-static void record_copy(vk::CommandBuffer cmd, const RttWatch *watch, RttCopy& c)
+static void record_copy(vk::CommandBuffer cmd, int batch, const RttWatch *watch, RttCopy& c)
 {
 	Texture *texture = (Texture *)watch->tex;
 	VulkanContext *context = VulkanContext::Instance();
@@ -185,17 +232,23 @@ static void record_copy(vk::CommandBuffer cmd, const RttWatch *watch, RttCopy& c
 	{
 		const std::array<vk::Offset3D, 2> from = { vk::Offset3D(x0, y0, 0), vk::Offset3D(x0 + w * scale, y0 + h * scale, 1) };
 		const std::array<vk::Offset3D, 2> to = { vk::Offset3D(0, 0, 0), vk::Offset3D(w, h, 1) };
+		RttBatch& b = batches[batch];
+		const vk::Image shrink = b.shrink->GetImage();
 
-		setImageLayout(cmd, c.shrink->GetImage(), format, 1, vk::ImageLayout::eUndefined, vk::ImageLayout::eTransferDstOptimal);
-		cmd.blitImage(source, vk::ImageLayout::eTransferSrcOptimal, c.shrink->GetImage(), vk::ImageLayout::eTransferDstOptimal,
+		/* (the batch's one image: a copy before this one in the batch read
+		 * it, and is done with it first) */
+		setImageLayout(cmd, shrink, format, 1, b.shrunk ? vk::ImageLayout::eTransferSrcOptimal : vk::ImageLayout::eUndefined,
+				vk::ImageLayout::eTransferDstOptimal);
+		cmd.blitImage(source, vk::ImageLayout::eTransferSrcOptimal, shrink, vk::ImageLayout::eTransferDstOptimal,
 				vk::ImageBlit(layers, from, layers, to), vk::Filter::eLinear);
-		setImageLayout(cmd, c.shrink->GetImage(), format, 1, vk::ImageLayout::eTransferDstOptimal, vk::ImageLayout::eTransferSrcOptimal);
-		source = c.shrink->GetImage();
+		setImageLayout(cmd, shrink, format, 1, vk::ImageLayout::eTransferDstOptimal, vk::ImageLayout::eTransferSrcOptimal);
+		b.shrunk = true;
+		source = shrink;
 	}
 	/* (from the console-sized image at 0; from the texture at the clip) */
 	const vk::Offset3D at = scale > 1 ? vk::Offset3D(0, 0, 0) : vk::Offset3D(x0, y0, 0);
-	cmd.copyImageToBuffer(source, vk::ImageLayout::eTransferSrcOptimal, *c.buffer->buffer,
-			vk::BufferImageCopy(0, w, h, layers, at, vk::Extent3D(w, h, 1)));
+	cmd.copyImageToBuffer(source, vk::ImageLayout::eTransferSrcOptimal, *ring->buffer,
+			vk::BufferImageCopy(c.at, w, h, layers, at, vk::Extent3D(w, h, 1)));
 	setImageLayout(cmd, texture->GetImage(), format, 1, vk::ImageLayout::eTransferSrcOptimal, vk::ImageLayout::eShaderReadOnlyOptimal);
 	c.serial = watch->serial;
 	c.tex = watch->tex;
@@ -216,16 +269,17 @@ static bool batch_copies(int b, const RttWatch *const *watches, unsigned count)
 	{
 		if (copy_of(watches[i]) != nullptr)
 			continue;
-		RttCopy *c = copy_free(since);
+		RttCopy *c = copy_free(since, (vk::DeviceSize)watches[i]->w * watches[i]->h * 4);
 		if (c == nullptr)
 			break;
 		if (!begun)
 		{
 			batch.cmd.reset(vk::CommandBufferResetFlags());
 			batch.cmd.begin(vk::CommandBufferBeginInfo(vk::CommandBufferUsageFlagBits::eOneTimeSubmit));
+			batch.shrunk = false;
 			begun = true;
 		}
-		record_copy(batch.cmd, watches[i], *c);
+		record_copy(batch.cmd, b, watches[i], *c);
 		c->batch = b;
 	}
 	if (!begun)
@@ -275,18 +329,19 @@ static void vk_rtt_read(const RttWatch *watch, u8 *scratch, RttWatchTake take)
 		VulkanContext::Instance()->GetDevice().waitForFences(1, &batch.fence.get(), true, UINT64_MAX);
 		batch.busy = false;
 	}
-	const BufferData *data = c->buffer.get();
+	const BufferData *data = ring.get();
 	/* Read where the copy put it, with the host's cache in front of it (as
 	 * the heap prefers for what is read back); memory without is slow to
 	 * read a byte at a time, and is copied out first. */
 	if (data->allocation.PropertyFlags() & VK_MEMORY_PROPERTY_HOST_CACHED_BIT)
-		take(watch, (const u8 *)data->allocation.MapMemory(), (size_t)c->w * 4);
+		take(watch, (const u8 *)data->allocation.MapMemory() + c->at, (size_t)c->w * 4);
 	else
 	{
-		data->download(c->w * c->h * 4, scratch);
+		data->download(c->w * c->h * 4, scratch, (u32)c->at);
 		take(watch, scratch, (size_t)c->w * 4);
 	}
 	c->serial = 0;
+	c->len = 0;
 }
 
 static void copies_term(void)
@@ -302,14 +357,16 @@ static void copies_term(void)
 		b.cmd = nullptr;
 		b.pool.reset();
 		b.fence.reset();
+		b.shrink.reset();
 	}
 	for (RttCopy& c : copies)
 	{
-		c.buffer.reset();
-		c.shrink.reset();
 		c.serial = 0;
 		c.batch = -1;
+		c.len = 0;
 	}
+	ring.reset();
+	ring_size = ring_head = 0;
 	copies_ready = false;
 }
 
@@ -405,6 +462,8 @@ void vk_rtt_watch(Texture *texture, u32 addr, u32 x0, u32 y0, u32 width, u32 hei
 void vk_rtt_init(void)
 {
 	copies_init();
+	/* (the room for a screen's render now, finer by the upscaling if it is) */
+	copies_reserve(RTT_SCREEN_W, RTT_SCREEN_H, settings.rend.RenderToTextureUpscale > 1 ? settings.rend.RenderToTextureUpscale : 1);
 }
 
 void vk_rtt_term(void)

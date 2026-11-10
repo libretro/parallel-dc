@@ -60,9 +60,13 @@ SH-4 dynarec's; 9 buffers, 8 to 14 images and 4 command pools.
    were drawn and how much image memory there was at the most, and judges
    the black past a render. A framebuffer's place for each image; the
    room a render read back is put in, for one of the screen's size
-   (`rtt_watch_reserve()`). Left: the read back's copies grown when a
-   larger render is first watched (`vk_rtt_watch`: 18 of them, the
-   screen's size each would be some 22 MB made for every game).
+   (`rtt_watch_reserve()`). The read back's copies take their room from
+   one ring made with the renderer, four of a screen's render (4.7 MB of
+   memory this side reads, in place of up to 18 renders' room grown as
+   they came), and a finer render is made the console's size in one image
+   for each of the four batches, not one for each copy (`vk_rtt_init()`,
+   `copies_reserve()`); a render larger than a screen has them made larger
+   when it is watched, which is said.
 4. **The texture cache.** Done: the cache's textures are in room made
    when the renderer starts, twice as many as the pool has images, no
    fewer than 1024, found by a fixed index (`rend/tex_map.h`, in place of

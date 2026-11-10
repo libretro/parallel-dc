@@ -17,9 +17,3 @@ heap Emit
 heap bm_AddBlock
 heap RuntimeBlockInfo::hash
 
-# Renders to textures watched for reads: the read back's copies, their
-# room grown when a larger one is watched (never in the signal handler
-# that reads them back)
-heap vk_rtt_watch
-vulkan BufferData::BufferData
-
