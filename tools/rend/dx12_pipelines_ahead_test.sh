@@ -4,10 +4,10 @@
 # (CXX_WIN, default x86_64-w64-mingw32-g++) from the renderer's own
 # rend/dx12/dx12_pso.cpp and its shaders, run under wine (WINE, default
 # wine64, or /usr/lib/wine/wine64 where only that is there; "" on Windows)
-# and xvfb-run where this is not Windows, with vkd3d-proton's d3d12.dll and
-# d3d12core.dll from $D3D12_DLLS where that is given (wine's own vkd3d
-# cannot make the renderer's root signature on every Vulkan driver: it
-# wants more descriptor sets than lavapipe's 8).
+# and xvfb-run where this is not Windows: wine's own vkd3d, with its
+# virtual heaps (VKD3D_CONFIG=virtual_heaps: the renderer's root signature
+# wants more descriptor sets than lavapipe's 8 otherwise), or vkd3d-proton's
+# d3d12.dll and d3d12core.dll from $D3D12_DLLS where that is given.
 #
 #   sh tools/rend/dx12_pipelines_ahead_test.sh     PASS when it passes
 #
@@ -34,7 +34,7 @@ fi
 LRC=core/libretro-common
 INC="-Icore -Icore/deps -I$LRC/include -Icore/libretro"
 DEFS="-D__LIBRETRO__ -DHAVE_THREADS -DHAVE_D3D12 -DNDEBUG"
-for f in core/rend/d3d_warm.c core/deps/xxhash/xxhash.c $LRC/queues/retro_spsc.c $LRC/rthreads/rthreads.c; do
+for f in core/rend/d3d_warm.c core/deps/xxhash/xxhash.c $LRC/queues/retro_spsc.c $LRC/rthreads/rthreads.c $LRC/rthreads/retro_eventcount.c; do
    $CC_WIN -O1 $DEFS $INC -c -o "$WORK/$(basename "$f" .c).o" "$f"
 done
 $CXX_WIN -std=c++11 -O1 -fpermissive -fno-operator-names $DEFS $INC -o "$WORK/dx12_pipelines_ahead_test.exe" \
@@ -45,7 +45,7 @@ cd "$WORK"
 if [ -n "$WINE" ]; then
    # (wine wants the TMPDIR it was set up with)
    # (no debugger to wait for, should it crash)
-   env -u TMPDIR WINEDEBUG=-all WINEDLLOVERRIDES="${WINEDLLOVERRIDES:+$WINEDLLOVERRIDES;}winedbg.exe=d" xvfb-run -a "$WINE" ./dx12_pipelines_ahead_test.exe $ARGS | tr -d '\r' | tee log.txt
+   env -u TMPDIR WINEDEBUG=-all VKD3D_CONFIG=virtual_heaps WINEDLLOVERRIDES="${WINEDLLOVERRIDES:+$WINEDLLOVERRIDES;}winedbg.exe=d" xvfb-run -a "$WINE" ./dx12_pipelines_ahead_test.exe $ARGS | tr -d '\r' | tee log.txt
 else
    ./dx12_pipelines_ahead_test.exe $ARGS | tee log.txt
 fi

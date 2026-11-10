@@ -101,6 +101,7 @@ protected:
 	bool Describe(u32 family, u32 variant, DX11ShaderDesc& d) const override;
 	void Adopt(u32 family, u32 variant, ID3D11PixelShader *shader) override;
 	const char *FileName() const override { return "d3d11_oit_shaders.bin"; }
+	void MakeSources() override;
 	bool PixelFamily(u32 family) const override
 	{
 		return family == PS || family == ModVolPS || family == TrModVolPS || family == FinalPS;

@@ -1082,7 +1082,8 @@ public:
 	bool changed_pieces;
 
 	void PrintTextureName();
-	virtual std::string GetId() = 0;
+	/* what the renderer calls it, into @s (@n bytes) */
+	virtual void GetId(char *s, size_t n) = 0;
 
 	bool IsPaletted()
 	{

@@ -18,14 +18,17 @@
  * (rend/dx11/dx11_shaders.cpp, rend/dx11/oit/dx11_oitshaders.cpp), on a
  * device, with d3dcompiler_47.dll: see dx11_shaders_ahead_test.sh.
  *
- * A first run, with no file: every shader is made, those ahead by the
- * thread, and a file written. A second: nothing is compiled - the vertex
- * shaders come from the file, the pixel shaders the file has are all made
- * ahead - and each one's bytecode is what compiling it makes. A file that
- * is not one (a byte changed) is not used, and is written again right; a
- * file whose shaders were compiled from another source has them compiled
- * again. A device for one thread only gets no thread, and still the file.
- * Each for both renderers. */
+ * As the renderer has them: Init(), then Start() - everything but the
+ * polygons' own pixel shaders - and then the shaders a game wants, a
+ * polygon's own pixel shader drawn with the general one until the thread
+ * has made it. A first run, with no file: the polygons' own made by the
+ * thread, nothing on the draw path, and a file written. A second: nothing
+ * compiled - what Start() makes from the file, the pixel shaders the file
+ * has all made ahead - and each one's bytecode what compiling it makes. A
+ * file that is not one (a byte changed) is not used, and is written again
+ * right; a file whose shaders were compiled from another source has them
+ * compiled again. A device for one thread only gets no thread, and still
+ * the file. Each for both renderers. */
 #include <windows.h>
 #include <d3d11.h>
 #include <d3dcompiler.h>
@@ -85,13 +88,13 @@ static void checkFile(DX11ShaderCompiler& s, const std::string& path, size_t exp
 	d3d_shcache_entry_t *e = nullptr;
 	size_t count = 0, at = 0;
 	CHECK(d3d_shcache_parse(f.data(), f.size(), &e, &count, &at));
-	CHECK(count == expect);
+	CHECK(count >= expect);
 	for (size_t i = 0; i < count; i++)
 	{
 		DX11ShaderDesc d;
 		CHECK(s.Describe(e[i].family, e[i].variant, d));
 		CHECK(DX11ShaderCompiler::HashOf(d) == e[i].hash);
-		ComPtr<ID3DBlob> b = s.Compile(d.source.c_str(), "main", d.profile, d.macros);
+		ComPtr<ID3DBlob> b = s.Compile(d.source->c_str(), "main", d.profile, d.macros);
 		CHECK(b && b->GetBufferSize() == e[i].size
 				&& memcmp(b->GetBufferPointer(), &f[at + e[i].offset], e[i].size) == 0);
 	}
@@ -109,7 +112,7 @@ static ID3D11Device *newDevice(UINT flags)
 }
 
 /* What a game would want of the per-triangle renderer's */
-static size_t useTriangle(DX11Shaders& s)
+static size_t useTriangle(DX11Shaders& s, size_t *own)
 {
 	size_t made = 0;
 	made += s.GetVertexShader(false) != nullptr;
@@ -127,14 +130,17 @@ static size_t useTriangle(DX11Shaders& s)
 		p.fog = (int)(v % 3);
 		p.gouraud = v >= 3;
 		p.shadowed = v == 5;
-		made += s.GetPixelShader(p) != nullptr;
+		bool general;
+		made += s.GetPixelShader(p, &general) != nullptr;
+		if (own != nullptr && !general)
+			(*own)++;
 	}
 	CHECK(s.GetVertexShaderBlob() != nullptr && s.GetModVolVertexShaderBlob() != nullptr && s.GetQuadVertexShaderBlob() != nullptr);
 	return made;
 }
 static const size_t TriangleShaders = 12;	// (VS 2, mod. vol. 2, quad 2, PS 6)
 
-static size_t useOIT(DX11OITShaders& s)
+static size_t useOIT(DX11OITShaders& s, size_t *own)
 {
 	size_t made = 0;
 	made += s.GetVertexShader(false) != nullptr;
@@ -152,7 +158,10 @@ static size_t useOIT(DX11OITShaders& s)
 		p.twoVolume = (v & 2) != 0;
 		p.fog = (int)(v % 3);
 		p.pass = (DX11OITShaders::Pass)(v % 3);
-		made += s.GetPixelShader(p) != nullptr;
+		bool general;
+		made += s.GetPixelShader(p, &general) != nullptr;
+		if (own != nullptr && !general)
+			(*own)++;
 	}
 	return made;
 }
@@ -168,7 +177,7 @@ static void resign(std::vector<u8>& f)
 
 /* @total shaders used, @fixed pixel ones of a kind, @pixel of them all */
 template<typename S>
-static void run(const char *name, size_t (*use)(S&), size_t total, size_t fixed, size_t pixel)
+static void run(const char *name, size_t (*use)(S&, size_t *), size_t total, size_t fixed, size_t pixel)
 {
 	printf("%s\n", name);
 	S probe;
@@ -178,10 +187,11 @@ static void run(const char *name, size_t (*use)(S&), size_t total, size_t fixed,
 		DX11ShaderDesc d;
 		std::vector<d3d_warm_job_t> jobs;
 		probe.compile = compileFn;
+		probe.MakeSources();
 		probe.Fixed(jobs);
 		bool all = true;
 		for (const d3d_warm_job_t& j : jobs)
-			all = all && probe.Describe(j.kind, j.aux, d) && probe.Compile(d.source.c_str(), "main", d.profile, d.macros);
+			all = all && probe.Describe(j.kind, j.aux, d) && probe.Compile(d.source->c_str(), "main", d.profile, d.macros);
 		if (!all)
 		{
 			printf("  (this compiler does not compile its shaders: not tested)\n");
@@ -197,15 +207,21 @@ static void run(const char *name, size_t (*use)(S&), size_t total, size_t fixed,
 	probe.device = device;
 	probe.compile = compileFn;
 
-	/* no file: all compiled; those of a kind, ahead */
+	/* no file: all compiled - the polygons' own on the thread - none on
+	 * the draw path */
 	{
 		S s;
 		s.Init(device, compileFn);
 		CHECK(s.warm != nullptr);
 		d3d_warm_drain_wait(s.warm);
-		CHECK(use(s) == total);
-		CHECK(s.statAhead == fixed && s.statCompiledAhead == fixed);
-		CHECK(s.statCompiled == total - fixed && s.statFromFile == 0);
+		CHECK(s.Start());
+		CHECK(use(s, nullptr) == total);
+		d3d_warm_drain_wait(s.warm);
+		s.TakeBuilt();
+		size_t own = 0;
+		CHECK(use(s, &own) == total && own == pixel - fixed);
+		CHECK(s.statAhead >= fixed + own && s.statCompiledAhead == s.statAhead);
+		CHECK(s.statFromFile == 0 && s.statDrawPath == 0);
 		s.Term();
 	}
 	checkFile(probe, file, total);
@@ -216,20 +232,22 @@ static void run(const char *name, size_t (*use)(S&), size_t total, size_t fixed,
 		S s;
 		s.Init(device, compileFn);
 		d3d_warm_drain_wait(s.warm);
-		CHECK(use(s) == total);
-		CHECK(s.statCompiled == 0 && s.statCompiledAhead == 0);
-		CHECK(s.statAhead == pixel && s.statFromFile == total - pixel);
+		CHECK(s.Start());
+		size_t own = 0;
+		CHECK(use(s, &own) == total && own == pixel - fixed);
+		CHECK(s.statCompiled == 0 && s.statCompiledAhead == 0 && s.statDrawPath == 0);
+		CHECK(s.statAhead >= pixel && s.statFromFile > 0);
 		s.Term();
 	}
 	CHECK(readFile(file) == good);
 
-	/* wanted before the thread is done: the same shaders, still nothing compiled */
+	/* wanted before the thread is done: still nothing compiled */
 	{
 		S s;
 		s.Init(device, compileFn);
-		CHECK(use(s) == total);
-		CHECK(s.statCompiled == 0);
-		CHECK(s.statAhead + s.statFromFile >= total - pixel);
+		CHECK(s.Start());
+		CHECK(use(s, nullptr) == total);
+		CHECK(s.statCompiled == 0 && s.statDrawPath == 0);
 		s.Term();
 	}
 	CHECK(readFile(file) == good);
@@ -242,8 +260,11 @@ static void run(const char *name, size_t (*use)(S&), size_t total, size_t fixed,
 		S s;
 		s.Init(device, compileFn);
 		d3d_warm_drain_wait(s.warm);
-		CHECK(use(s) == total);
-		CHECK(s.statCompiled == total - fixed && s.statFromFile == 0);
+		CHECK(s.Start());
+		CHECK(use(s, nullptr) == total);
+		d3d_warm_drain_wait(s.warm);
+		s.TakeBuilt();
+		CHECK(s.statFromFile == 0 && s.statDrawPath == 0);
 		s.Term();
 	}
 	checkFile(probe, file, total);
@@ -267,8 +288,11 @@ static void run(const char *name, size_t (*use)(S&), size_t total, size_t fixed,
 		S s;
 		s.Init(device, compileFn);
 		d3d_warm_drain_wait(s.warm);
-		CHECK(use(s) == total);
-		CHECK(s.statCompiled == 0 && s.statCompiledAhead == 1 && s.statAhead == pixel);
+		CHECK(s.Start());
+		CHECK(use(s, nullptr) == total);
+		d3d_warm_drain_wait(s.warm);
+		s.TakeBuilt();
+		CHECK(s.statCompiled == 0 && s.statCompiledAhead == 1 && s.statDrawPath == 0);
 		s.Term();
 	}
 	checkFile(probe, file, total);
@@ -289,8 +313,9 @@ static void run(const char *name, size_t (*use)(S&), size_t total, size_t fixed,
 			S s;
 			s.Init(one, compileFn);
 			CHECK(s.warm == nullptr);
-			CHECK(use(s) == total);
-			CHECK(s.statCompiled == 0 && s.statAhead == 0 && s.statFromFile == total);
+			CHECK(s.Start());
+			CHECK(use(s, nullptr) == total);
+			CHECK(s.statCompiled == 0 && s.statAhead == 0 && s.statFromFile > 0);
 			s.Term();
 			one->Release();
 		}

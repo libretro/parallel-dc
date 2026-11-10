@@ -96,7 +96,7 @@ public:
 	static void SetDecoder(DX11TexDecoder *decoder) { DX11Texture::decoder = decoder; }
 	static void SetPool(DX11TexturePool *pool) { DX11Texture::pool = pool; }
 	bool Force32BitTexture(TextureType type) const override;
-	std::string GetId() override { char s[20]; sprintf(s, "%p", (void *)this); return s; }
+	void GetId(char *s, size_t n) override { snprintf(s, n, "%p", (void *)this); }
 	u64 GetIntId() { return (u64)reinterpret_cast<uintptr_t>(this); }
 	bool IsNew() const { return !texture; }
 
@@ -187,6 +187,7 @@ private:
  * and is brought to video memory when the game first touches it there. */
 void dx11_rtt_supersede(u32 addr, u32 x0, u32 y0, u32 width, u32 height);
 void dx11_rtt_watch(DX11Texture *texture, u32 addr, u32 x0, u32 y0, u32 width, u32 height);
+void dx11_rtt_init(void);
 void dx11_rtt_term(void);
 /* width by height pixels of a picture of that size, R G B A, top line
  * first. Waits for the card. False if the frontend's context cannot be

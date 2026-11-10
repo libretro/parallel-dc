@@ -39,7 +39,7 @@ if [ -n "${D3DCOMPILER:-}" ]; then
    OVERRIDES="$OVERRIDES;d3dcompiler_47=n"
 fi
 $CC_WIN -O1 -Wall -I./core/libretro-common/include -I./core/deps/khronos \
-   -o "$WORK/d3d_hdr.exe" tools/hdr/d3d_hdr.c -ld3d11 -ld3d12 -ldxguid
+   -o "$WORK/d3d_hdr.exe" tools/hdr/d3d_hdr.c tools/rend/alloc_count.c -ld3d11 -ld3d12 -ldxguid
 # (each disc in its own directory: their tracks have the same names)
 for d in plain atlas cull dma slant blend; do
    mkdir -p "$WORK/$d"

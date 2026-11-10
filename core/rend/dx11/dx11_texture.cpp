@@ -701,11 +701,14 @@ bool dx11_read_picture(ID3D11Texture2D *texture, u32 width, u32 height, u8 *rgba
 	return readBack(texture, 0, 0, width, height, rgba);
 }
 
-/* Copies of pictures off the card, each into a staging picture of its own:
- * made ahead of the read where rtt_watch says which (dx11_rtt_prefetch()),
- * or by the read itself, whose Map() waits for the card only if it has not
- * got there yet. */
+/* Copies of pictures off the card, each into its rows of one staging
+ * picture, a ring - as wide as a screen and RTT_RING_RENDERS screens tall -
+ * made with the renderer (dx11_rtt_init()), and nothing made in the fault
+ * handler: made ahead of the read where rtt_watch says which
+ * (dx11_rtt_prefetch()), or by the read itself, whose Map() waits for the
+ * card only if it has not got there yet. */
 #define RTT_COPIES 18
+#define RTT_RING_RENDERS 4
 
 struct Dx11RttCopy
 {
@@ -713,11 +716,14 @@ struct Dx11RttCopy
 	uintptr_t tex;
 	u32 w, h;
 	u64 stamp;          /* when it was last made, for the oldest */
-	ComPtr<ID3D11Texture2D> staging;   /* grown, never shrunk */
+	u32 at, rows;       /* its rows of the ring */
 };
 
 static Dx11RttCopy rttCopies[RTT_COPIES];
 static u64 rttStamp;
+static ComPtr<ID3D11Texture2D> rttRing;
+static u32 rttRingW, rttRingH, rttRingHead;
+static bool rttSaidLarger;
 
 static Dx11RttCopy *rtt_copy_of(const RttWatch *watch)
 {
@@ -727,19 +733,130 @@ static Dx11RttCopy *rtt_copy_of(const RttWatch *watch)
 	return nullptr;
 }
 
-/* One to copy into: one that holds none, or the one made longest ago */
-static Dx11RttCopy *rtt_copy_free(void)
+/* The ring, at least @w wide and @rows tall: made larger if it is not,
+ * every copy gone - never in the fault handler */
+static bool rtt_ring(u32 w, u32 rows)
 {
-	Dx11RttCopy *oldest = nullptr;
+	ID3D11Device *device = DX11Context::Instance()->GetDevice();
 
+	if (w <= rttRingW && rows <= rttRingH)
+		return true;
+	if (device == nullptr)
+		return false;
+	if (rttRing && !rttSaidLarger)
+	{
+		rttSaidLarger = true;
+		WARN_LOG(RENDERER, "Render to a texture read back: its room made larger, %u x %u", w, rows);
+	}
 	for (Dx11RttCopy& c : rttCopies)
 	{
-		if (c.serial == 0)
-			return &c;
-		if (oldest == nullptr || c.stamp < oldest->stamp)
-			oldest = &c;
+		c.serial = 0;
+		c.rows = 0;
 	}
-	return oldest;
+	w = std::max(w, std::max(rttRingW, 640u));
+	rows = std::max(rows, rttRingH);
+	rttRing.reset();
+	rttRingW = rttRingH = rttRingHead = 0;
+	D3D11_TEXTURE2D_DESC desc{};
+	desc.Width = w;
+	desc.Height = rows;
+	desc.MipLevels = 1;
+	desc.ArraySize = 1;
+	desc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+	desc.SampleDesc.Count = 1;
+	desc.Usage = D3D11_USAGE_STAGING;
+	desc.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
+	if (FAILED(device->CreateTexture2D(&desc, nullptr, rttRing.put())))
+	{
+		WARN_LOG(RENDERER, "Staging texture creation failed (%d x %d)", w, rows);
+		rttRing.reset();
+		return false;
+	}
+	rttRingW = desc.Width;
+	rttRingH = desc.Height;
+	return true;
+}
+
+/* One to copy @rows into, with its rows of the ring: the ring's next, from
+ * its top where the bottom is too near; the copies there before go, and
+ * the one that held none or was made longest ago - not after @since (in
+ * the same batch) - gives its place. Null if what is there was made in
+ * this batch, or the ring is too small. */
+static Dx11RttCopy *rtt_copy_free(u64 since, u32 rows)
+{
+	Dx11RttCopy *place = nullptr;
+	u32 at = rttRingHead;
+
+	if (rows > rttRingH)
+		return nullptr;
+	if (at + rows > rttRingH)
+		at = 0;
+	for (Dx11RttCopy& c : rttCopies)
+		if (c.rows != 0 && c.at < at + rows && at < c.at + c.rows && c.serial != 0 && c.stamp > since)
+			return nullptr;
+	for (Dx11RttCopy& c : rttCopies)
+	{
+		if (c.rows != 0 && c.at < at + rows && at < c.at + c.rows)
+		{
+			c.serial = 0;
+			c.rows = 0;
+		}
+		if (c.serial != 0 && c.stamp > since)
+			continue;
+		if (place == nullptr || (place->rows != 0 && (c.rows == 0 || c.stamp < place->stamp)))
+			place = &c;
+	}
+	if (place == nullptr)
+		return nullptr;
+	place->at = at;
+	place->rows = rows;
+	rttRingHead = at + rows;
+	return place;
+}
+
+/* The target a finer picture is brought down to the console's size in,
+ * at least @w by @h: made larger if it is not - never in the fault handler */
+static bool rtt_small(u32 w, u32 h)
+{
+	ID3D11Device *device = DX11Context::Instance()->GetDevice();
+
+	if (small)
+	{
+		D3D11_TEXTURE2D_DESC desc;
+		small->GetDesc(&desc);
+		if (desc.Width >= w && desc.Height >= h)
+			return true;
+		smallTarget.reset();
+		small.reset();
+	}
+	if (device == nullptr)
+		return false;
+	D3D11_TEXTURE2D_DESC desc{};
+	desc.Width = std::max(w, 640u);
+	desc.Height = std::max(h, 480u);
+	desc.MipLevels = 1;
+	desc.ArraySize = 1;
+	desc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+	desc.SampleDesc.Count = 1;
+	desc.Usage = D3D11_USAGE_DEFAULT;
+	desc.BindFlags = D3D11_BIND_RENDER_TARGET;
+	if (FAILED(device->CreateTexture2D(&desc, nullptr, small.put()))
+			|| FAILED(device->CreateRenderTargetView(small, nullptr, smallTarget.put())))
+	{
+		WARN_LOG(RENDERER, "Render to texture read back: target creation failed");
+		smallTarget.reset();
+		small.reset();
+		return false;
+	}
+	return true;
+}
+
+void dx11_rtt_init(void)
+{
+	DX11Lock lock;
+	rtt_ring(640, 480 * RTT_RING_RENDERS);
+	if (settings.rend.RenderToTextureUpscale > 1)
+		rtt_small(640, 480);
 }
 
 /* The part of @texture from (x0, y0) on, the console's w by h of it,
@@ -748,36 +865,14 @@ static Dx11RttCopy *rtt_copy_free(void)
 static bool shrink(DX11Texture *texture, u32 x0, u32 y0, u32 w, u32 h, u32 scale)
 {
 	DX11Context *context = DX11Context::Instance();
-	ID3D11Device *device = context->GetDevice();
 
-	if (small)
+	if (!small)
+		return false;
 	{
 		D3D11_TEXTURE2D_DESC desc;
 		small->GetDesc(&desc);
 		if (desc.Width < w || desc.Height < h)
-		{
-			smallTarget.reset();
-			small.reset();
-		}
-	}
-	if (!small)
-	{
-		D3D11_TEXTURE2D_DESC desc{};
-		desc.Width = std::max(w, 640u);
-		desc.Height = std::max(h, 480u);
-		desc.MipLevels = 1;
-		desc.ArraySize = 1;
-		desc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
-		desc.SampleDesc.Count = 1;
-		desc.Usage = D3D11_USAGE_DEFAULT;
-		desc.BindFlags = D3D11_BIND_RENDER_TARGET;
-		if (FAILED(device->CreateTexture2D(&desc, nullptr, small.put()))
-				|| FAILED(device->CreateRenderTargetView(small, nullptr, smallTarget.put())))
-		{
-			WARN_LOG(RENDERER, "Render to texture read back: target creation failed");
-			small.reset();
 			return false;
-		}
 	}
 	D3D11_TEXTURE2D_DESC src;
 	texture->texture->GetDesc(&src);
@@ -805,33 +900,8 @@ static bool rtt_copy(const RttWatch *watch, Dx11RttCopy& c)
 	ID3D11Texture2D *source = texture->texture;
 	u32 sx = x0, sy = y0;
 
-	if (device == nullptr || !context->CanReadBack() || !texture->texture)
+	if (device == nullptr || !context->CanReadBack() || !texture->texture || !rttRing || w > rttRingW || h > c.rows)
 		return false;
-	if (c.staging)
-	{
-		D3D11_TEXTURE2D_DESC desc;
-		c.staging->GetDesc(&desc);
-		if (desc.Width < w || desc.Height < h)
-			c.staging.reset();
-	}
-	if (!c.staging)
-	{
-		D3D11_TEXTURE2D_DESC desc{};
-		desc.Width = w;
-		desc.Height = h;
-		desc.MipLevels = 1;
-		desc.ArraySize = 1;
-		desc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
-		desc.SampleDesc.Count = 1;
-		desc.Usage = D3D11_USAGE_STAGING;
-		desc.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
-		if (FAILED(device->CreateTexture2D(&desc, nullptr, c.staging.put())))
-		{
-			WARN_LOG(RENDERER, "Staging texture creation failed (%d x %d)", w, h);
-			c.staging.reset();
-			return false;
-		}
-	}
 	if (scale > 1)
 	{
 		if (!shrink(texture, x0, y0, w, h, scale))
@@ -840,7 +910,7 @@ static bool rtt_copy(const RttWatch *watch, Dx11RttCopy& c)
 		sx = sy = 0;
 	}
 	const D3D11_BOX box = { sx, sy, 0, sx + w, sy + h, 1 };
-	deviceContext->CopySubresourceRegion(c.staging, 0, 0, 0, 0, source, 0, &box);
+	deviceContext->CopySubresourceRegion(rttRing, 0, 0, c.at, 0, source, 0, &box);
 	c.serial = watch->serial;
 	c.tex = watch->tex;
 	c.w = w;
@@ -854,11 +924,29 @@ static void dx11_rtt_prefetch(const RttWatch *const *watches, unsigned count)
 {
 	DX11Lock lock;
 	bool any = false;
+	u32 mostW = 0, mostH = 0, smallW = 0, smallH = 0;
+	const u64 since = rttStamp;
 
+	/* (the ring and the small target made larger here, not in the fault
+	 * handler, for a render larger than a screen) */
+	for (unsigned i = 0; i < count; i++)
+	{
+		mostW = std::max(mostW, watches[i]->w);
+		mostH = std::max(mostH, watches[i]->h);
+		if (watches[i]->scale > 1)
+		{
+			smallW = std::max(smallW, watches[i]->w);
+			smallH = std::max(smallH, watches[i]->h);
+		}
+	}
+	if (count != 0)
+		rtt_ring(mostW, mostH * RTT_RING_RENDERS);
+	if (smallW != 0)
+		rtt_small(smallW, smallH);
 	for (unsigned i = 0; i < count; i++)
 		if (rtt_copy_of(watches[i]) == nullptr)
 		{
-			Dx11RttCopy *c = rtt_copy_free();
+			Dx11RttCopy *c = rtt_copy_free(since, watches[i]->h);
 			if (c != nullptr && rtt_copy(watches[i], *c))
 				any = true;
 		}
@@ -876,23 +964,23 @@ static void dx11_rtt_read(const RttWatch *watch, u8 *, RttWatchTake take)
 
 	if (c == nullptr)
 	{
-		c = rtt_copy_free();
-		if (!rtt_copy(watch, *c))
+		c = rtt_copy_free(rttStamp, watch->h);
+		if (c == nullptr || !rtt_copy(watch, *c))
 		{
 			take(watch, nullptr, 0);
 			return;
 		}
 	}
 	D3D11_MAPPED_SUBRESOURCE mapped;
-	if (FAILED(deviceContext->Map(c->staging, 0, D3D11_MAP_READ, 0, &mapped)))
+	if (FAILED(deviceContext->Map(rttRing, 0, D3D11_MAP_READ, 0, &mapped)))
 	{
 		WARN_LOG(RENDERER, "A picture could not be read back from the card");
 		take(watch, nullptr, 0);
 	}
 	else
 	{
-		take(watch, (const u8 *)mapped.pData, mapped.RowPitch);
-		deviceContext->Unmap(c->staging, 0);
+		take(watch, (const u8 *)mapped.pData + (size_t)c->at * mapped.RowPitch, mapped.RowPitch);
+		deviceContext->Unmap(rttRing, 0);
 	}
 	c->serial = 0;
 }
@@ -980,14 +1068,18 @@ bool DX11Texture::CopyRender(BaseTextureCacheData *from, u32 x, u32 y, u32 scale
 	}
 	if (columns < w)
 	{
-		// (the rest of each row a narrower stride leaves: clear)
-		static std::vector<u32> clear;
-		const size_t texels = (size_t)(w - columns) * h;
+		/* (the rest of each row a narrower stride leaves: cleared a row at
+		 * a time, from one row of the widest texture) */
+		static u32 clear[1024];
 		const u32 value = ClearOpaque() ? 0xFF000000u : 0u;
-		if (clear.size() < texels || clear[0] != value)
-			clear.assign(std::max(texels, clear.size()), value);
-		const D3D11_BOX rest = { columns, 0, 0, w, h, 1 };
-		context->GetDeviceContext()->UpdateSubresource(texture, 0, &rest, clear.data(), (w - columns) * 4, 0);
+		if (clear[0] != value || clear[1023] != value)
+			for (u32 i = 0; i < 1024; i++)
+				clear[i] = value;
+		for (u32 row = 0; row < h && w <= 1024; row++)
+		{
+			const D3D11_BOX rest = { columns, row, 0, w, row + 1, 1 };
+			context->GetDeviceContext()->UpdateSubresource(texture, 0, &rest, clear, (w - columns) * 4, 0);
+		}
 	}
 	const D3D11_BOX box = { sx, sy, 0, sx + columns, sy + h, 1 };
 	context->GetDeviceContext()->CopySubresourceRegion(texture, 0, 0, 0, 0, source, 0, &box);
@@ -1029,9 +1121,12 @@ void dx11_rtt_term(void)
 	rtt_watch_term();
 	for (Dx11RttCopy& c : rttCopies)
 	{
-		c.staging.reset();
 		c.serial = 0;
+		c.rows = 0;
 	}
+	rttRing.reset();
+	rttRingW = rttRingH = rttRingHead = 0;
+	rttSaidLarger = false;
 	smallTarget.reset();
 	small.reset();
 	staging.reset();

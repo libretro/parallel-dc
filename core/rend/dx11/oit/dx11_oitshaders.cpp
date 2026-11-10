@@ -754,19 +754,30 @@ static std::string pixelSource(const char *source)
 	return std::string("#define MAX_PIXELS_PER_FRAGMENT " MAX_PIXELS_PER_FRAGMENT "\n") + OITShaderHeader + DX11FogFunction + source;
 }
 
+void DX11OITShaders::MakeSources()
+{
+	sources[VS] = std::string(DX11VertexTransform) + OITVertexShaderSource;
+	sources[PS] = pixelSource(OITPixelShaderSource);
+	sources[ModVolVS] = std::string(DX11VertexTransform) + DX11ModVolVertexShader;
+	sources[ModVolPS] = pixelSource(OITModVolPixelShaderSource);
+	sources[TrModVolPS] = pixelSource(OITTranslucentModvolShaderSource);
+	sources[FinalVS] = OITFinalVertexShaderSource;
+	sources[FinalPS] = pixelSource(OITFinalShaderSource);
+}
+
 bool DX11OITShaders::Describe(u32 family, u32 variant, DX11ShaderDesc& d) const
 {
 	D3D_SHADER_MACRO *m = d.macros;
 	switch (family)
 	{
 	case VS:
-		d.source = std::string(DX11VertexTransform) + OITVertexShaderSource;
+		d.source = &sources[VS];
 		d.profile = "vs_5_0";
 		*m++ = { "pp_Gouraud", MacroValues[variant & 1] };
 		break;
 	case PS:
 		/* (the variant is FragmentShaderParams::hash()) */
-		d.source = pixelSource(OITPixelShaderSource);
+		d.source = &sources[PS];
 		d.profile = "ps_5_0";
 		*m++ = { "cp_AlphaTest", MacroValues[variant & 1] };
 		*m++ = { "pp_ClipInside", MacroValues[(variant >> 1) & 1] };
@@ -785,7 +796,7 @@ bool DX11OITShaders::Describe(u32 family, u32 variant, DX11ShaderDesc& d) const
 		break;
 	case GeneralPS:
 		/* (the variant: the pass, the interpolation and the two volumes) */
-		d.source = pixelSource(OITPixelShaderSource);
+		d.source = &sources[PS];
 		d.profile = "ps_5_0";
 		*m++ = { "GENERAL", "1" };
 		*m++ = { "PASS", MacroValues[variant & 3] };
@@ -793,24 +804,24 @@ bool DX11OITShaders::Describe(u32 family, u32 variant, DX11ShaderDesc& d) const
 		*m++ = { "pp_TwoVolumes", MacroValues[(variant >> 3) & 1] };
 		break;
 	case ModVolVS:
-		d.source = std::string(DX11VertexTransform) + DX11ModVolVertexShader;
+		d.source = &sources[ModVolVS];
 		d.profile = "vs_5_0";
 		break;
 	case ModVolPS:
-		d.source = pixelSource(OITModVolPixelShaderSource);
+		d.source = &sources[ModVolPS];
 		d.profile = "ps_5_0";
 		break;
 	case TrModVolPS:
-		d.source = pixelSource(OITTranslucentModvolShaderSource);
+		d.source = &sources[TrModVolPS];
 		d.profile = "ps_5_0";
 		*m++ = { "MV_MODE", MacroValues[variant & 3] };
 		break;
 	case FinalVS:
-		d.source = OITFinalVertexShaderSource;
+		d.source = &sources[FinalVS];
 		d.profile = "vs_5_0";
 		break;
 	case FinalPS:
-		d.source = pixelSource(OITFinalShaderSource);
+		d.source = &sources[FinalPS];
 		d.profile = "ps_5_0";
 		break;
 	default:

@@ -108,6 +108,8 @@ bool DX11Renderer::Init()
 	success = depthStencilStates.MakeAll() && success;
 	success = blendStates->MakeAll() && success;
 	success = samplers->MakeAll() && success;
+	// what a render read back takes, made now (dx11_rtt_init())
+	dx11_rtt_init();
 	ID3DBlob *blob = shaders->GetVertexShaderBlob();
 	success = success && blob != nullptr
 			&& SUCCEEDED(device->CreateInputLayout(MainLayout, ARRAY_SIZE(MainLayout), blob->GetBufferPointer(), blob->GetBufferSize(), mainInputLayout.put()));

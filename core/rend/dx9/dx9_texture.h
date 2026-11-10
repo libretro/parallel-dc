@@ -91,7 +91,7 @@ public:
 	static void SetDecoder(DX9TexDecoder *decoder) { DX9Texture::decoder = decoder; }
 	static void SetPool(DX9TexturePool *pool) { DX9Texture::pool = pool; }
 	bool Force32BitTexture(TextureType type) const override;
-	std::string GetId() override { char s[20]; sprintf(s, "%p", (void *)this); return s; }
+	void GetId(char *s, size_t n) override { snprintf(s, n, "%p", (void *)this); }
 	u64 GetIntId() { return (u64)reinterpret_cast<uintptr_t>(this); }
 	bool IsNew() const { return !texture; }
 

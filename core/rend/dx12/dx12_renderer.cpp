@@ -237,6 +237,8 @@ bool DX12Renderer::Init()
 	texCache.ReserveFor(texPool.Book().made);
 	DX12Texture::SetDecoder(texDecoder.Ready() ? &texDecoder : nullptr);
 	DX12Texture::SetPool(&texPool);
+	// what a render read back takes, made now (dx12_rtt_init())
+	dx12_rtt_init();
 	// the pipelines, and SSAA's pictures and pipelines made from them
 	PreparePipelines();
 	// the chip's write-out, and the pictures made for it (dx12_writeout.h)

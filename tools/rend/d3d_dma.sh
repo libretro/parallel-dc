@@ -28,7 +28,7 @@ Xvfb $DISPLAY_NO -screen 0 640x480x24 >/dev/null 2>&1 &
 XVFB=$!
 trap 'kill $XVFB 2>/dev/null; [ -n "${KEEP:-}" ] || rm -rf "$WORK"' EXIT
 ${CC_WIN:-x86_64-w64-mingw32-gcc} -O1 -Wall -I./core/libretro-common/include -I./core/deps/khronos \
-   -o "$WORK/d3d_hdr.exe" tools/hdr/d3d_hdr.c -ld3d11 -ld3d12 -ldxguid
+   -o "$WORK/d3d_hdr.exe" tools/hdr/d3d_hdr.c tools/rend/alloc_count.c -ld3d11 -ld3d12 -ldxguid
 python3 tools/threads/live_disc.py "$WORK/test.gdi" --dma
 fails=0
 

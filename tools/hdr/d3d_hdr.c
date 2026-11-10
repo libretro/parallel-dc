@@ -28,7 +28,11 @@
  * DXBC, not DXIL (tools/rend/d3d_dxil.sh). With D3DH_EVERY=1 (Direct3D 12)
  * the picture handed over is read back after every frame and its sum
  * printed, "frame N SUM", for runs to be compared frame for frame (as
- * gl_frames.c's GLF_EVERY).
+ * gl_frames.c's GLF_EVERY). With D3DH_ALLOCS=N the core's allocations
+ * from frame N on are counted (tools/rend/alloc_count.c): its heap's, in a
+ * build with -DALLOC_COUNT, and the Direct3D objects it makes - resources,
+ * heaps, views (11), pipelines, shaders and states - and with
+ * D3DH_ALLOC_SITES=1 where (tools/rend/d3d_allocs.sh).
  *
  *   D3DH_API=11|12 D3DH_FRONTEND=sdr|hdr10|scrgb D3DH_DIR=dir \
  *      d3d_hdr core.dll content out.raw frames [key=value ...]
@@ -47,6 +51,8 @@
 #include <libretro.h>
 #include <libretro_d3d11.h>
 #include <libretro_d3d12.h>
+
+#include "../rend/alloc_count.h"
 
 /* vk_hdr's picture: its header's format is the Vulkan format of the pixels */
 #define VKH_MAGIC          0x52484b56u
@@ -136,6 +142,132 @@ static HRESULT STDMETHODCALLTYPE no_signature(ID3D12Device *device, const D3D12_
       *out = NULL;
    return E_NOTIMPL;
 }
+/* ---- D3DH_ALLOCS: what the core makes, counted where it asks (the
+ * methods that make an object or its memory: not those that write a
+ * descriptor) ---- */
+
+enum { D3DH_OBJECT = ALLOC_HOST_KINDS, D3DH_A_KINDS };
+static const char *const d3dh_a_names[D3DH_A_KINDS] = { "heap allocations", "heap frees", "Direct3D objects made" };
+static const char *const d3dh_a_site[D3DH_A_KINDS] = { "heap", NULL, "d3d" };
+#define D3DH_SEEN() alloc_count_seen(D3DH_OBJECT, __builtin_return_address(0))
+
+static ID3D12DeviceVtbl real12;
+static HRESULT (STDMETHODCALLTYPE *real12_library)(ID3D12Device1 *, const void *, SIZE_T, REFIID, void **);
+#define D3DH_WRAP12(Method, params, args) \
+   static HRESULT STDMETHODCALLTYPE wrap12_##Method params { D3DH_SEEN(); return real12.Method args; }
+D3DH_WRAP12(CreateCommandAllocator, (ID3D12Device *d, D3D12_COMMAND_LIST_TYPE t, REFIID r, void **o), (d, t, r, o))
+D3DH_WRAP12(CreateGraphicsPipelineState, (ID3D12Device *d, const D3D12_GRAPHICS_PIPELINE_STATE_DESC *x, REFIID r, void **o), (d, x, r, o))
+D3DH_WRAP12(CreateComputePipelineState, (ID3D12Device *d, const D3D12_COMPUTE_PIPELINE_STATE_DESC *x, REFIID r, void **o), (d, x, r, o))
+D3DH_WRAP12(CreateCommandList, (ID3D12Device *d, UINT m, D3D12_COMMAND_LIST_TYPE t, ID3D12CommandAllocator *a,
+      ID3D12PipelineState *ps, REFIID r, void **o), (d, m, t, a, ps, r, o))
+D3DH_WRAP12(CreateDescriptorHeap, (ID3D12Device *d, const D3D12_DESCRIPTOR_HEAP_DESC *x, REFIID r, void **o), (d, x, r, o))
+D3DH_WRAP12(CreateRootSignature, (ID3D12Device *d, UINT m, const void *b, SIZE_T n, REFIID r, void **o), (d, m, b, n, r, o))
+D3DH_WRAP12(CreateCommittedResource, (ID3D12Device *d, const D3D12_HEAP_PROPERTIES *hp, D3D12_HEAP_FLAGS f,
+      const D3D12_RESOURCE_DESC *x, D3D12_RESOURCE_STATES st, const D3D12_CLEAR_VALUE *c, REFIID r, void **o), (d, hp, f, x, st, c, r, o))
+D3DH_WRAP12(CreateHeap, (ID3D12Device *d, const D3D12_HEAP_DESC *x, REFIID r, void **o), (d, x, r, o))
+D3DH_WRAP12(CreatePlacedResource, (ID3D12Device *d, ID3D12Heap *h, UINT64 at, const D3D12_RESOURCE_DESC *x,
+      D3D12_RESOURCE_STATES st, const D3D12_CLEAR_VALUE *c, REFIID r, void **o), (d, h, at, x, st, c, r, o))
+D3DH_WRAP12(CreateReservedResource, (ID3D12Device *d, const D3D12_RESOURCE_DESC *x, D3D12_RESOURCE_STATES st,
+      const D3D12_CLEAR_VALUE *c, REFIID r, void **o), (d, x, st, c, r, o))
+D3DH_WRAP12(CreateFence, (ID3D12Device *d, UINT64 v, D3D12_FENCE_FLAGS f, REFIID r, void **o), (d, v, f, r, o))
+D3DH_WRAP12(CreateQueryHeap, (ID3D12Device *d, const D3D12_QUERY_HEAP_DESC *x, REFIID r, void **o), (d, x, r, o))
+D3DH_WRAP12(CreateCommandSignature, (ID3D12Device *d, const D3D12_COMMAND_SIGNATURE_DESC *x, ID3D12RootSignature *rs,
+      REFIID r, void **o), (d, x, rs, r, o))
+static HRESULT STDMETHODCALLTYPE wrap12_library(ID3D12Device1 *d, const void *b, SIZE_T n, REFIID r, void **o)
+{
+   D3DH_SEEN();
+   return real12_library(d, b, n, r, o);
+}
+
+/* (the newer interfaces' methods are in the same table, past these) */
+static void d3dh_wrap12(void **table)
+{
+   ID3D12DeviceVtbl *t = (ID3D12DeviceVtbl *)table;
+   const size_t library = offsetof(ID3D12Device1Vtbl, CreatePipelineLibrary) / sizeof(void *);
+   memcpy(&real12, table, sizeof(real12));
+   real12_library = (HRESULT (STDMETHODCALLTYPE *)(ID3D12Device1 *, const void *, SIZE_T, REFIID, void **))table[library];
+   table[library] = (void *)wrap12_library;
+   t->CreateCommandAllocator = wrap12_CreateCommandAllocator;
+   t->CreateGraphicsPipelineState = wrap12_CreateGraphicsPipelineState;
+   t->CreateComputePipelineState = wrap12_CreateComputePipelineState;
+   t->CreateCommandList = wrap12_CreateCommandList;
+   t->CreateDescriptorHeap = wrap12_CreateDescriptorHeap;
+   t->CreateRootSignature = wrap12_CreateRootSignature;
+   t->CreateCommittedResource = wrap12_CreateCommittedResource;
+   t->CreateHeap = wrap12_CreateHeap;
+   t->CreatePlacedResource = wrap12_CreatePlacedResource;
+   t->CreateReservedResource = wrap12_CreateReservedResource;
+   t->CreateFence = wrap12_CreateFence;
+   t->CreateQueryHeap = wrap12_CreateQueryHeap;
+   t->CreateCommandSignature = wrap12_CreateCommandSignature;
+}
+
+static ID3D11DeviceVtbl real11;
+static void *d11_table[96];
+#define D3DH_WRAP11(Method, params, args) \
+   static HRESULT STDMETHODCALLTYPE wrap11_##Method params { D3DH_SEEN(); return real11.Method args; }
+#define D3DH_RES11(Method, Desc, Out) \
+   D3DH_WRAP11(Method, (ID3D11Device *d, const Desc *x, const D3D11_SUBRESOURCE_DATA *i, Out **o), (d, x, i, o))
+#define D3DH_VIEW11(Method, Desc, Out) \
+   D3DH_WRAP11(Method, (ID3D11Device *d, ID3D11Resource *res, const Desc *x, Out **o), (d, res, x, o))
+#define D3DH_SHADER11(Method, Out) \
+   D3DH_WRAP11(Method, (ID3D11Device *d, const void *b, SIZE_T n, ID3D11ClassLinkage *l, Out **o), (d, b, n, l, o))
+#define D3DH_STATE11(Method, Desc, Out) \
+   D3DH_WRAP11(Method, (ID3D11Device *d, const Desc *x, Out **o), (d, x, o))
+D3DH_RES11(CreateBuffer, D3D11_BUFFER_DESC, ID3D11Buffer)
+D3DH_RES11(CreateTexture1D, D3D11_TEXTURE1D_DESC, ID3D11Texture1D)
+D3DH_RES11(CreateTexture2D, D3D11_TEXTURE2D_DESC, ID3D11Texture2D)
+D3DH_RES11(CreateTexture3D, D3D11_TEXTURE3D_DESC, ID3D11Texture3D)
+D3DH_VIEW11(CreateShaderResourceView, D3D11_SHADER_RESOURCE_VIEW_DESC, ID3D11ShaderResourceView)
+D3DH_VIEW11(CreateUnorderedAccessView, D3D11_UNORDERED_ACCESS_VIEW_DESC, ID3D11UnorderedAccessView)
+D3DH_VIEW11(CreateRenderTargetView, D3D11_RENDER_TARGET_VIEW_DESC, ID3D11RenderTargetView)
+D3DH_VIEW11(CreateDepthStencilView, D3D11_DEPTH_STENCIL_VIEW_DESC, ID3D11DepthStencilView)
+D3DH_WRAP11(CreateInputLayout, (ID3D11Device *d, const D3D11_INPUT_ELEMENT_DESC *e, UINT n, const void *b, SIZE_T bn,
+      ID3D11InputLayout **o), (d, e, n, b, bn, o))
+D3DH_SHADER11(CreateVertexShader, ID3D11VertexShader)
+D3DH_SHADER11(CreateGeometryShader, ID3D11GeometryShader)
+D3DH_SHADER11(CreatePixelShader, ID3D11PixelShader)
+D3DH_SHADER11(CreateHullShader, ID3D11HullShader)
+D3DH_SHADER11(CreateDomainShader, ID3D11DomainShader)
+D3DH_SHADER11(CreateComputeShader, ID3D11ComputeShader)
+D3DH_STATE11(CreateBlendState, D3D11_BLEND_DESC, ID3D11BlendState)
+D3DH_STATE11(CreateDepthStencilState, D3D11_DEPTH_STENCIL_DESC, ID3D11DepthStencilState)
+D3DH_STATE11(CreateRasterizerState, D3D11_RASTERIZER_DESC, ID3D11RasterizerState)
+D3DH_STATE11(CreateSamplerState, D3D11_SAMPLER_DESC, ID3D11SamplerState)
+D3DH_STATE11(CreateQuery, D3D11_QUERY_DESC, ID3D11Query)
+D3DH_STATE11(CreatePredicate, D3D11_QUERY_DESC, ID3D11Predicate)
+D3DH_STATE11(CreateCounter, D3D11_COUNTER_DESC, ID3D11Counter)
+
+static void d3dh_wrap11(ID3D11Device *device)
+{
+   ID3D11DeviceVtbl *t = (ID3D11DeviceVtbl *)d11_table;
+   memcpy(d11_table, device->lpVtbl, sizeof(d11_table));
+   memcpy(&real11, device->lpVtbl, sizeof(real11));
+   t->CreateBuffer = wrap11_CreateBuffer;
+   t->CreateTexture1D = wrap11_CreateTexture1D;
+   t->CreateTexture2D = wrap11_CreateTexture2D;
+   t->CreateTexture3D = wrap11_CreateTexture3D;
+   t->CreateShaderResourceView = wrap11_CreateShaderResourceView;
+   t->CreateUnorderedAccessView = wrap11_CreateUnorderedAccessView;
+   t->CreateRenderTargetView = wrap11_CreateRenderTargetView;
+   t->CreateDepthStencilView = wrap11_CreateDepthStencilView;
+   t->CreateInputLayout = wrap11_CreateInputLayout;
+   t->CreateVertexShader = wrap11_CreateVertexShader;
+   t->CreateGeometryShader = wrap11_CreateGeometryShader;
+   t->CreatePixelShader = wrap11_CreatePixelShader;
+   t->CreateHullShader = wrap11_CreateHullShader;
+   t->CreateDomainShader = wrap11_CreateDomainShader;
+   t->CreateComputeShader = wrap11_CreateComputeShader;
+   t->CreateBlendState = wrap11_CreateBlendState;
+   t->CreateDepthStencilState = wrap11_CreateDepthStencilState;
+   t->CreateRasterizerState = wrap11_CreateRasterizerState;
+   t->CreateSamplerState = wrap11_CreateSamplerState;
+   t->CreateQuery = wrap11_CreateQuery;
+   t->CreatePredicate = wrap11_CreatePredicate;
+   t->CreateCounter = wrap11_CreateCounter;
+   device->lpVtbl = t;
+}
+
 static ID3D12CommandQueue *q12;
 static ID3D12Resource *frame12;
 static DXGI_FORMAT frame12_format;
@@ -660,6 +792,8 @@ int main(int argc, char **argv)
          fprintf(stderr, "d3d_hdr: no Direct3D 11 device\n");
          return 2;
       }
+      if (getenv("D3DH_ALLOCS"))
+         d3dh_wrap11(d11);
       iface11.interface_type    = RETRO_HW_RENDER_INTERFACE_D3D11;
       iface11.interface_version = RETRO_HW_RENDER_INTERFACE_D3D11_VERSION;
       iface11.device            = d11;
@@ -675,10 +809,12 @@ int main(int argc, char **argv)
          fprintf(stderr, "d3d_hdr: no Direct3D 12 device\n");
          return 2;
       }
-      if (getenv("D3DH_NOT_UMA") || getenv("D3DH_SM51") || getenv("D3DH_NO_INDIRECT"))
+      if (getenv("D3DH_NOT_UMA") || getenv("D3DH_SM51") || getenv("D3DH_NO_INDIRECT") || getenv("D3DH_ALLOCS"))
       {
          memcpy(d12_not_uma, d12->lpVtbl, sizeof(d12_not_uma));
          d12_check = d12->lpVtbl->CheckFeatureSupport;
+         if (getenv("D3DH_ALLOCS"))
+            d3dh_wrap12(d12_not_uma);
          if (getenv("D3DH_NOT_UMA") || getenv("D3DH_SM51"))
             ((ID3D12DeviceVtbl *)d12_not_uma)->CheckFeatureSupport = getenv("D3DH_SM51") ? sm51_check : not_uma_check;
          if (getenv("D3DH_NO_INDIRECT"))
@@ -749,8 +885,12 @@ int main(int argc, char **argv)
       iface12.queue  = NULL;
    }
    hw.context_reset();
+   if (getenv("D3DH_ALLOCS"))
+      alloc_count_kinds(D3DH_A_KINDS, d3dh_a_names, d3dh_a_site);
    for (n = 0; n < frames; n++)
    {
+      if (getenv("D3DH_ALLOCS") && n == (unsigned)atoi(getenv("D3DH_ALLOCS")))
+         alloc_count_start((void *)retro_run);
       retro_run();
       if (getenv("D3DH_EVERY") && api == 12 && frame12 != NULL)
       {
@@ -762,6 +902,13 @@ int main(int argc, char **argv)
                sum = ((sum ^ rows[(size_t)y * pitch + x]) * 16777619ul) & 0xfffffffful;
          printf("frame %u %ux%u %08lx\n", n, frame_w, frame_h, sum);
       }
+   }
+   if (alloc_count_on())
+   {
+      char what[64];
+      alloc_count_stop();
+      snprintf(what, sizeof(what), "frames %d to %u", atoi(getenv("D3DH_ALLOCS")), frames - 1);
+      alloc_count_print("d3d_hdr", what, getenv("D3DH_ALLOC_SITES") != NULL);
    }
 
    if (getenv("D3DH_REFUSED"))

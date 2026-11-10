@@ -98,7 +98,9 @@ public:
 	/* How many of each shape of picture rendered to there are: the square
 	 * ones, eight of 64, two of 128 to 512, and 1024x1024; and
 	 * what renders of a screen are, 1024x512 (640x480 and the like) and
-	 * 512x256 */
+	 * 512x256; one of each twice as long as it is wide from 64; and two of
+	 * each four times as long, to 256 (a strip rendered to and its copy:
+	 * 128x32 and the like, 340 KB in all at 32 bits) */
 	static u32 TargetCount(u32 lw, u32 lh)
 	{
 		if (lw == lh)
@@ -106,6 +108,8 @@ public:
 		if (lw == 7 && lh == 6)
 			return 4;
 		if (lw == 6 && lh == 5)
+			return 2;
+		if ((lw == lh + 2 || lh == lw + 2) && (lw > lh ? lw : lh) <= 5)
 			return 2;
 		return lw >= 3 && lh >= 3 && (lw == lh + 1 || lh == lw + 1) ? 1 : 0;
 	}

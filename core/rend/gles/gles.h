@@ -397,7 +397,7 @@ class TextureCacheData : public BaseTextureCacheData
 {
 public:
 	GLuint texID;   //gl texture: its own, or the pool's
-	virtual std::string GetId() override { return std::to_string(texID); }
+	virtual void GetId(char *s, size_t n) override { snprintf(s, n, "%u", (unsigned)texID); }
 	virtual void UploadToGPU(int width, int height, u8 *temp_tex_buffer, bool mipmapped, bool mipmapsIncluded = false) override;
 	virtual void *UploadMemory(u32 width, u32 height, size_t bytes, u32 pixel, bool mipmaps) override;
 	void UploadToGPUFrom(int width, int height, u8 *temp_tex_buffer, bool mipmapped, bool mipmapsIncluded);

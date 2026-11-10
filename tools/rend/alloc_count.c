@@ -1,8 +1,12 @@
 /* What the core allocates while a test host runs it: see alloc_count.h. */
+#ifdef _WIN32
+#include <windows.h>
+#else
 #define _GNU_SOURCE 1 /* dladdr, dl_iterate_phdr */
 #include <dlfcn.h>
 #include <execinfo.h>
 #include <link.h>
+#endif
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -42,6 +46,7 @@ static int vkh_runtime(uintptr_t a)
    return 0;
 }
 
+#ifndef _WIN32
 /* the core's executable segments, and the C and C++ runtimes' */
 static int vkh_find_ranges(struct dl_phdr_info *info, size_t size, void *core_base)
 {
@@ -75,6 +80,8 @@ static int vkh_find_ranges(struct dl_phdr_info *info, size_t size, void *core_ba
    }
    return 0;
 }
+
+#endif
 
 static __thread int vkh_in_hook;
 
@@ -120,7 +127,11 @@ static int vkh_core_chain(void *ret, uintptr_t *chain)
    if (vkh_in_hook)
       return 0;
    vkh_in_hook = 1;
+#ifdef _WIN32
+   depth = RtlCaptureStackBackTrace(0, 32, bt, NULL);
+#else
    depth = backtrace(bt, 32);
+#endif
    vkh_in_hook = 0;
    for (i = 0; i < depth; i++)
       if (bt[i] == ret)
@@ -152,6 +163,29 @@ void alloc_count_kinds(int kinds, const char *const *names, const char *const *s
    vkh_a_site = site;
 }
 
+#ifdef _WIN32
+#ifdef ALLOC_COUNT
+static void vkh_hook_imports(HMODULE core);
+#endif
+
+/* The core's image, all of it (the C++ runtime is in it, linked statically) */
+void alloc_count_start(void *core_symbol)
+{
+   HMODULE core = NULL;
+   if (GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+         (LPCSTR)core_symbol, &core) && core)
+   {
+      const IMAGE_DOS_HEADER *dos = (const IMAGE_DOS_HEADER *)core;
+      const IMAGE_NT_HEADERS *nt = (const IMAGE_NT_HEADERS *)((const char *)core + dos->e_lfanew);
+      vkh_core_base = vkh_core_lo = (uintptr_t)core;
+      vkh_core_hi = vkh_core_lo + nt->OptionalHeader.SizeOfImage;
+#ifdef ALLOC_COUNT
+      vkh_hook_imports(core);
+#endif
+   }
+   vkh_alloc_on = 1;
+}
+#else
 void alloc_count_start(void *core_symbol)
 {
    Dl_info info;
@@ -164,6 +198,7 @@ void alloc_count_start(void *core_symbol)
    }
    vkh_alloc_on = 1;
 }
+#endif
 
 void alloc_count_stop(void)
 {
@@ -214,7 +249,7 @@ void alloc_count_print(const char *prefix, const char *what, int sites)
          }
 }
 
-#ifdef ALLOC_COUNT
+#if defined(ALLOC_COUNT) && !defined(_WIN32)
 /* The heap's, in place of the C library's (this program exports them:
  * -rdynamic), counted where the core asked: from its own code, or through
  * the C and C++ runtimes for it - the first frame outside them is the
@@ -302,4 +337,140 @@ VKH_NEW(_ZnwmSt11align_val_t, (size_t n, size_t al), n, __libc_memalign(al, n))
 VKH_NEW(_ZnamSt11align_val_t, (size_t n, size_t al), n, __libc_memalign(al, n))
 VKH_NEW(_ZnwmSt11align_val_tRKSt9nothrow_t, (size_t n, size_t al, const void *t), n, ((void)t, __libc_memalign(al, n)))
 VKH_NEW(_ZnamSt11align_val_tRKSt9nothrow_t, (size_t n, size_t al, const void *t), n, ((void)t, __libc_memalign(al, n)))
+#endif
+
+#if defined(ALLOC_COUNT) && defined(_WIN32)
+/* The heap's on Windows: what the core imports for it (msvcrt's, which
+ * the C++ runtime linked into it calls too, and the system's) pointed at
+ * these, which count what it asks for and call what it imported. Pages
+ * committed in what it reserved (VirtualAlloc: the recompiler's table of
+ * blocks, a page as it is first reached) are not, as mprotect() is not on
+ * Linux. */
+static void vkh_heap_seen(int kind, void *ret, size_t size)
+{
+   uintptr_t chain[VKH_CHAIN];
+   int n;
+   if (!vkh_alloc_on || vkh_in_hook || !vkh_in((uintptr_t)ret, vkh_core_lo, vkh_core_hi))
+      return;
+   __sync_fetch_and_add(&vkh_a_count[kind], 1);
+   if (kind != ALLOC_HEAP)
+      return;
+   __sync_fetch_and_add(&vkh_heap_bytes, (long)size);
+   if ((n = vkh_core_chain(ret, chain)))
+      vkh_site(chain, n, ALLOC_HEAP);
+}
+
+static void *(__cdecl *real_malloc)(size_t);
+static void *(__cdecl *real_calloc)(size_t, size_t);
+static void *(__cdecl *real_realloc)(void *, size_t);
+static void (__cdecl *real_free)(void *);
+static void *(__cdecl *real_aligned_malloc)(size_t, size_t);
+static void (__cdecl *real_aligned_free)(void *);
+static char *(__cdecl *real_strdup)(const char *);
+static LPVOID (WINAPI *real_HeapAlloc)(HANDLE, DWORD, SIZE_T);
+static BOOL (WINAPI *real_HeapFree)(HANDLE, DWORD, LPVOID);
+
+static void *__cdecl hook_malloc(size_t n)
+{
+   void *p = real_malloc(n);
+   vkh_heap_seen(ALLOC_HEAP, __builtin_return_address(0), n);
+   return p;
+}
+static void *__cdecl hook_calloc(size_t n, size_t s)
+{
+   void *p = real_calloc(n, s);
+   vkh_heap_seen(ALLOC_HEAP, __builtin_return_address(0), n * s);
+   return p;
+}
+static void *__cdecl hook_realloc(void *old, size_t n)
+{
+   void *p = real_realloc(old, n);
+   if (n != 0)
+      vkh_heap_seen(ALLOC_HEAP, __builtin_return_address(0), n);
+   return p;
+}
+static void __cdecl hook_free(void *p)
+{
+   if (p)
+      vkh_heap_seen(ALLOC_FREE, __builtin_return_address(0), 0);
+   real_free(p);
+}
+static void *__cdecl hook_aligned_malloc(size_t n, size_t align)
+{
+   void *p = real_aligned_malloc(n, align);
+   vkh_heap_seen(ALLOC_HEAP, __builtin_return_address(0), n);
+   return p;
+}
+static void __cdecl hook_aligned_free(void *p)
+{
+   if (p)
+      vkh_heap_seen(ALLOC_FREE, __builtin_return_address(0), 0);
+   real_aligned_free(p);
+}
+static char *__cdecl hook_strdup(const char *str)
+{
+   char *p = real_strdup(str);
+   vkh_heap_seen(ALLOC_HEAP, __builtin_return_address(0), str ? strlen(str) + 1 : 0);
+   return p;
+}
+static LPVOID WINAPI hook_HeapAlloc(HANDLE heap, DWORD flags, SIZE_T n)
+{
+   LPVOID p = real_HeapAlloc(heap, flags, n);
+   vkh_heap_seen(ALLOC_HEAP, __builtin_return_address(0), n);
+   return p;
+}
+static BOOL WINAPI hook_HeapFree(HANDLE heap, DWORD flags, LPVOID p)
+{
+   if (p)
+      vkh_heap_seen(ALLOC_FREE, __builtin_return_address(0), 0);
+   return real_HeapFree(heap, flags, p);
+}
+
+static const struct { const char *name; void *hook; void **real; } vkh_hooks[] = {
+   { "malloc", (void *)hook_malloc, (void **)&real_malloc },
+   { "calloc", (void *)hook_calloc, (void **)&real_calloc },
+   { "realloc", (void *)hook_realloc, (void **)&real_realloc },
+   { "free", (void *)hook_free, (void **)&real_free },
+   { "_aligned_malloc", (void *)hook_aligned_malloc, (void **)&real_aligned_malloc },
+   { "_aligned_free", (void *)hook_aligned_free, (void **)&real_aligned_free },
+   { "_strdup", (void *)hook_strdup, (void **)&real_strdup },
+   { "HeapAlloc", (void *)hook_HeapAlloc, (void **)&real_HeapAlloc },
+   { "HeapFree", (void *)hook_HeapFree, (void **)&real_HeapFree },
+};
+
+static void vkh_hook_imports(HMODULE core)
+{
+   const char *base = (const char *)core;
+   const IMAGE_NT_HEADERS *nt = (const IMAGE_NT_HEADERS *)(base + ((const IMAGE_DOS_HEADER *)base)->e_lfanew);
+   const IMAGE_DATA_DIRECTORY *dir = &nt->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_IMPORT];
+   const IMAGE_IMPORT_DESCRIPTOR *d;
+   if (dir->VirtualAddress == 0)
+      return;
+   for (d = (const IMAGE_IMPORT_DESCRIPTOR *)(base + dir->VirtualAddress); d->Name; d++)
+   {
+      const IMAGE_THUNK_DATA *names = (const IMAGE_THUNK_DATA *)(base + (d->OriginalFirstThunk ? d->OriginalFirstThunk : d->FirstThunk));
+      IMAGE_THUNK_DATA *slots = (IMAGE_THUNK_DATA *)(base + d->FirstThunk);
+      for (; names->u1.AddressOfData; names++, slots++)
+      {
+         const char *name;
+         unsigned h;
+         if (IMAGE_SNAP_BY_ORDINAL(names->u1.Ordinal))
+            continue;
+         name = (const char *)((const IMAGE_IMPORT_BY_NAME *)(base + names->u1.AddressOfData))->Name;
+         for (h = 0; h < sizeof(vkh_hooks) / sizeof(vkh_hooks[0]); h++)
+         {
+            DWORD was;
+            if (strcmp(name, vkh_hooks[h].name))
+               continue;
+            if (*vkh_hooks[h].real == NULL)
+               *vkh_hooks[h].real = (void *)slots->u1.Function;
+            if (VirtualProtect(&slots->u1.Function, sizeof(slots->u1.Function), PAGE_READWRITE, &was))
+            {
+               slots->u1.Function = (ULONG_PTR)vkh_hooks[h].hook;
+               VirtualProtect(&slots->u1.Function, sizeof(slots->u1.Function), was, &was);
+            }
+         }
+      }
+   }
+}
 #endif

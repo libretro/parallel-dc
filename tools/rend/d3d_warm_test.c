@@ -20,7 +20,7 @@
  *
  * The thread: every job handed over comes back exactly once - taken, or
  * released when there is no room for it, or released when it is all
- * freed - whether the thread is running, has left or is started again;
+ * freed - whether the thread is running, is parked or is woken again;
  * one that cannot be built does not come back; a stopped one builds
  * nothing more; and once it is not busy, nothing of the renderer's is
  * being touched. Each result is a block of its own, so a result lost or
@@ -139,7 +139,7 @@ static void test_basic(void)
 	CHECK(take_all(w, t) == 50);
 	for (i = 1; i <= 50; i++)
 		CHECK(t->seen[i]);
-	/* the thread left: the next jobs start another */
+	/* the thread parked: the next jobs wake it */
 	CHECK(submit_range(w, 51, 10) == 10);
 	d3d_warm_drain_wait(w);
 	CHECK(take_all(w, t) == 10);
@@ -225,8 +225,8 @@ static void test_stop(void)
 	free(t);
 }
 
-/* Handed over a few at a time while the thread runs, leaves and is started
- * again: none lost (the thread leaving as more are handed over), and never
+/* Handed over a few at a time while the thread runs, parks and is woken
+ * again: none lost (the thread parking as more are handed over), and never
  * building while it is not busy. (Results it had no room for - the thread
  * through a full queue of jobs while this one is not taking - are
  * released: counted with those taken.) */

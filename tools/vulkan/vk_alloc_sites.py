@@ -1,10 +1,15 @@
 #!/usr/bin/env python3
 """Names the core's allocation sites a test host printed
 (tools/rend/alloc_count.c: vk_hdr's VKH_ALLOC_SITES, gl_frames'
-GLF_ALLOC_SITES) and checks them against an allowlist
-(tools/vulkan/vk_allocs.sh, tools/gl/gl_allocs.sh).
+GLF_ALLOC_SITES, d3d_hdr's D3DH_ALLOC_SITES) and checks them against an
+allowlist (tools/vulkan/vk_allocs.sh, tools/gl/gl_allocs.sh,
+tools/rend/d3d_allocs.sh).
 
-  vk_alloc_sites.py core.so allowed.txt log...
+  vk_alloc_sites.py core.so|core.dll allowed.txt log...
+
+A Windows build's sites are its offsets from where it was loaded, named
+by its symbol table (its DWARF has a few of its files): the function a
+frame is in, inlined ones not told apart.
 
 A site is a chain of the core's frames, innermost first. Its name is the
 first function in it, inlined ones included, that is not a library's (the
@@ -21,7 +26,7 @@ import re
 import subprocess
 import sys
 
-HANDLER = 'signal_handler'
+HANDLER = ('signal_handler', 'ExceptionHandler')
 DEPTH = 3
 LIBRARY = ('std::', '__gnu_cxx::', 'Xbyak::', 'vk::', 'operator new', 'operator delete', 'VULKAN_HPP', 'node_pool::')
 
@@ -41,7 +46,31 @@ def qualified(name):
                 break
             out += ch
     out = re.sub(r'\[abi:[^]]*\]', '', out)
+    if re.search(r'(^|::|\s)operator\b', out):
+        return out[out.rfind(' operator') + 1:] if ' operator' in out else out
     return out.split(' ')[-1] if out.strip() else name
+
+
+def pe_frames(core, addrs):
+    """the function each of @addrs (offsets from the image's base) is in,
+    by the symbol table of the Windows build @core"""
+    import bisect
+    tool = 'x86_64-w64-mingw32-'
+    head = subprocess.run([tool + 'objdump', '-p', core], capture_output=True, text=True, check=True).stdout
+    base = int(re.search(r'ImageBase\s+([0-9a-fA-F]+)', head).group(1), 16)
+    syms = []
+    for line in subprocess.run([tool + 'nm', '-C', '--defined-only', core],
+                               capture_output=True, text=True, check=True).stdout.splitlines():
+        parts = line.split(' ', 2)
+        if len(parts) == 3 and parts[1] in 'Tt':
+            syms.append((int(parts[0], 16), parts[2]))
+    syms.sort()
+    starts = [a for a, _ in syms]
+    frames = {}
+    for a in addrs:
+        i = bisect.bisect_right(starts, base + int(a, 16)) - 1
+        frames['0x%x' % int(a, 16)] = [qualified(syms[i][1])] if i >= 0 else ['??']
+    return frames
 
 
 def main():
@@ -57,7 +86,9 @@ def main():
                 addrs.update(chain)
     addrs = sorted(addrs)
     frames = {}
-    if addrs:
+    if addrs and core.endswith('.dll'):
+        frames = pe_frames(core, addrs)
+    elif addrs:
         out = subprocess.run(['addr2line', '-f', '-C', '-i', '-a', '-e', core] + addrs,
                              capture_output=True, text=True, check=True).stdout.splitlines()
         cur = None
@@ -78,7 +109,7 @@ def main():
     named = {}
     in_handler = set()
     for kind, n, chain, path in sites:
-        handler = any(f == HANDLER for a in chain for f in frames.get('0x%x' % int(a, 16), []))
+        handler = any(f in HANDLER for a in chain for f in frames.get('0x%x' % int(a, 16), []))
         mine = []
         for a in chain:
             for f in frames.get('0x%x' % int(a, 16), []):

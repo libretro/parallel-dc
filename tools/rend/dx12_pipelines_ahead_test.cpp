@@ -175,7 +175,9 @@ int main(int argc, char **argv)
 		/* (taken at a frame's first miss) */
 		CHECK(p.Get(unwanted()) != nullptr);
 		printf("  %u wanted, %u made ahead, %u in all\n", queued, p.statAhead, p.statMade);
-		CHECK(queued > 100);
+		/* (the quads and the volumes: the renderers' PreparePipelines()
+		 * want the polygons') */
+		CHECK(queued >= 20);
 		CHECK(p.statAhead == queued);
 		CHECK(p.statMade == queued + 1 && p.statMadeInFrame == 1);
 		started = p.keys;

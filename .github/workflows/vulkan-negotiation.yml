@@ -14,6 +14,10 @@ name: Vulkan negotiation
 # 24-bit, HDR10 and scRGB pictures read back and judged:
 # tools/hdr/d3d_hdr.sh. SSAA's exact average on Direct3D 12 is the
 # encoders' (hdr_d3d 12ssaa, 12sums): wine's vkd3d cannot draw SSAA.
+# And with Direct3D 11 and 12, no allocation during play
+# (tools/rend/d3d_allocs.sh), the thread that makes shaders and pipelines
+# ahead (tools/rend/d3d_warm_test.sh) and what it makes, on a device
+# (tools/rend/dx11_shaders_ahead_test.sh, dx12_pipelines_ahead_test.sh).
 # The HDR post effects (bloom, halation, chromatic aberration) are judged
 # in each against what the CPU makes of the picture (vk_hdr --post).
 # And renders to textures: what is fetched off the card and when
@@ -71,6 +75,12 @@ on:
       - 'core/rend/gl4/**'
       - 'tools/gl/**'
       - 'tools/rend/alloc_count.*'
+      - 'tools/vulkan/vk_alloc_sites.py'
+      - 'tools/rend/d3d_allocs.*'
+      - 'core/rend/d3d_warm.*'
+      - 'tools/rend/d3d_warm_test.*'
+      - 'tools/rend/dx11_shaders_ahead_test.*'
+      - 'tools/rend/dx12_pipelines_ahead_test.*'
       - 'core/rend/TexCache.*'
       - 'core/hw/sh4/sh4_mem.cpp'
       - 'tools/rend/rtt_watch_test.*'
@@ -122,6 +132,12 @@ on:
       - 'core/rend/gl4/**'
       - 'tools/gl/**'
       - 'tools/rend/alloc_count.*'
+      - 'tools/vulkan/vk_alloc_sites.py'
+      - 'tools/rend/d3d_allocs.*'
+      - 'core/rend/d3d_warm.*'
+      - 'tools/rend/d3d_warm_test.*'
+      - 'tools/rend/dx11_shaders_ahead_test.*'
+      - 'tools/rend/dx12_pipelines_ahead_test.*'
       - 'core/rend/TexCache.*'
       - 'core/hw/sh4/sh4_mem.cpp'
       - 'tools/rend/rtt_watch_test.*'
@@ -251,3 +267,13 @@ jobs:
         run: VK_DRIVER_FILES=/usr/share/vulkan/icd.d/lvp_icd.json sh tools/rend/d3d_dxil.sh parallel_dc_libretro.dll
       - name: Direct3D 11 - nothing compiled or made on the draw path, cold, every renderer (AGENTS.md)
         run: VK_DRIVER_FILES=/usr/share/vulkan/icd.d/lvp_icd.json sh tools/rend/d3d_draw_path.sh parallel_dc_libretro.dll
+      - name: Direct3D 11 and 12 - no allocation during play, every renderer (AGENTS.md)
+        run: VK_DRIVER_FILES=/usr/share/vulkan/icd.d/lvp_icd.json sh tools/rend/d3d_allocs.sh parallel_dc_libretro.dll
+      - name: The Direct3D renderers' thread ahead and their shader file (TSan, ASan/UBSan, no threads, Windows)
+        run: |
+          sh tools/rend/d3d_warm_test.sh
+          WINDOWS=1 sh tools/rend/d3d_warm_test.sh
+      - name: Direct3D 11's shaders made ahead and kept on disk, on a device
+        run: sh tools/rend/dx11_shaders_ahead_test.sh
+      - name: Direct3D 12's pipelines made ahead, on a device
+        run: VK_DRIVER_FILES=/usr/share/vulkan/icd.d/lvp_icd.json sh tools/rend/dx12_pipelines_ahead_test.sh

@@ -172,7 +172,7 @@ public:
 	 * renderer's own pictures, which go when it says.) */
 	void SetCached() { cached = true; }
 	u64 GetIntId() { return (u64)reinterpret_cast<uintptr_t>(this); }
-	std::string GetId() override { char s[20]; sprintf(s, "%p", this); return s; }
+	void GetId(char *s, size_t n) override { snprintf(s, n, "%p", (void *)this); }
 	bool IsNew() const { return !image.get() && pooled == nullptr; }
 	vk::ImageView GetImageView() const { return pooled != nullptr ? *pooled->view : *imageView; }
 	u64 GetViewSerial() const { return pooled != nullptr ? pooled->viewSerial : ownSerial; }

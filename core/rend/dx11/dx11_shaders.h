@@ -30,13 +30,14 @@
 #include "comptr.h"
 #include "rend/d3d_warm.h"
 #include "rend/d3d_shader_cache.h"
+#include "rend/tex_map.h"
 
 /* What a shader is compiled from: its source, profile and macros (a list
  * ending with a null one). One function says it for each shader, for the
  * thread that renders and the one that makes them ahead alike. */
 struct DX11ShaderDesc
 {
-	std::string source;
+	const std::string *source;	// the family's, put together in Init()
 	const char *profile;
 	D3D_SHADER_MACRO macros[16];
 };
@@ -134,7 +135,8 @@ private:
 	const u8 *FromFile(u64 hash, u32 *size) const;
 	/* The bytecode of @d: the file's, this run's, or compiled now (and kept) */
 	bool Bytecode(u32 family, u32 variant, const DX11ShaderDesc& d, ComPtr<ID3DBlob>& hold, const void **code, size_t *size, bool *fromFile);
-	void Keep(u64 hash, u32 family, u32 variant, const void *code, size_t size);
+	/* @blob's bytecode kept, the blob held (nothing copied) */
+	void Keep(u64 hash, u32 family, u32 variant, ID3DBlob *blob);
 	void LoadFile();
 	void SaveFile();
 
@@ -144,14 +146,18 @@ private:
 	size_t fileBlobs = 0;
 	struct Kept
 	{
-		u64 hash;
 		u32 family;
 		u32 variant;
-		std::vector<u8> code;
+		ComPtr<ID3DBlob> blob;
 	};
-	std::vector<Kept> kept;						// compiled this run
-	std::unordered_map<u64, size_t> keptByHash;
+	TexMap<Kept> kept;		// compiled this run, by hash: room made in Init()
 	bool fileChanged = false;
+
+protected:
+	/* Each family's source, put together once in Init() (before the thread
+	 * that makes them ahead reads them: nothing put together in play) */
+	virtual void MakeSources() = 0;
+	std::string sources[8];
 };
 
 /* What a polygon's pixel shader is made for: as the Vulkan renderer's */
@@ -226,6 +232,7 @@ protected:
 	void Adopt(u32 family, u32 variant, ID3D11PixelShader *shader) override;
 	const char *FileName() const override { return "d3d11_shaders.bin"; }
 	bool PixelFamily(u32 family) const override { return family == PS || family == ModVolPS || family == QuadPS; }
+	void MakeSources() override;
 	void Fixed(std::vector<d3d_warm_job_t>& jobs) const override;
 };
 

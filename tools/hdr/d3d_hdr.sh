@@ -38,7 +38,7 @@ Xvfb $DISPLAY_NO -screen 0 640x480x24 >/dev/null 2>&1 &
 XVFB=$!
 trap 'kill $XVFB 2>/dev/null; rm -rf "$WORK"' EXIT
 ${CC_WIN:-x86_64-w64-mingw32-gcc} -O1 -Wall -I./core/libretro-common/include -I./core/deps/khronos \
-   -o "$WORK/d3d_hdr.exe" tools/hdr/d3d_hdr.c -ld3d11 -ld3d12 -ldxguid
+   -o "$WORK/d3d_hdr.exe" tools/hdr/d3d_hdr.c tools/rend/alloc_count.c -ld3d11 -ld3d12 -ldxguid
 ${CC:-cc} -O1 -Wall -I./core/libretro-common/include -I./core/deps/khronos \
    -DTARGET_NO_THREADS -o "$WORK/vk_hdr" tools/vulkan/vk_hdr.c tools/rend/alloc_count.c tools/hdr/hdr_post_ref.c \
    core/rend/hdr/hdr_output.c core/rend/hdr/hdr_transform.c core/rend/hdr/hdr_aces2.c \

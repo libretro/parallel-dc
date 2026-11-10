@@ -109,4 +109,20 @@ card has is not taken for one: the pool was planned from 31 MB on
 llvmpipe and missed. Left: the per-pixel renderer's copy of the depth for
 frames of more than one pass, made when the first comes.
 
-Direct3D gets the same measure once its harness counts it.
+Direct3D 11 and 12 are measured the same way: `tools/rend/d3d_allocs.sh`,
+the core's Windows build under wine on `d3d_hdr.c`, its heap counted
+through what it imports for it (`tools/rend/alloc_count.c`'s Windows half:
+msvcrt's, which the C++ runtime linked into it calls too, and the
+system's) and the Direct3D objects it makes through the device's methods,
+named by the build's symbol table, against `tools/rend/d3d_allocs.allowed`.
+Done for it: a render read back takes its room from one readback buffer
+(12) or staging picture (11), a ring made with the renderer, and nothing
+is made in the fault handler; a texture's name for the log is written into
+the caller's room (`GetId()`); the thread that makes shaders and pipelines
+ahead is one, started with the renderer, which parks on an eventcount when
+it has nothing to do (`rend/d3d_warm.h`); Direct3D 11's shader sources are
+put together once and the bytecode it compiles kept as the compiler's blob
+in a fixed map; and the texture pool has render targets four times as
+long as they are wide. Left: a polygon's own Direct3D 11 pixel shader,
+made on that thread when a frame first wants it (made at the start, it
+would be every key's compiled before the first frame).

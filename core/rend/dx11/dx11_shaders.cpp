@@ -473,7 +473,7 @@ private:
 
 u64 DX11ShaderCompiler::HashOf(const DX11ShaderDesc& d)
 {
-	u64 h = d3d_shcache_hash(D3D_SHCACHE_HASH_INIT, d.source.c_str(), d.source.size() + 1);
+	u64 h = d3d_shcache_hash(D3D_SHCACHE_HASH_INIT, d.source->c_str(), d.source->size() + 1);
 	h = d3d_shcache_hash(h, d.profile, strlen(d.profile) + 1);
 	for (const D3D_SHADER_MACRO *m = d.macros; m->Name != nullptr; m++)
 	{
@@ -500,17 +500,15 @@ const u8 *DX11ShaderCompiler::FromFile(u64 hash, u32 *size) const
 	return &file[fileBlobs + fileIndex[lo].offset];
 }
 
-void DX11ShaderCompiler::Keep(u64 hash, u32 family, u32 variant, const void *code, size_t size)
+void DX11ShaderCompiler::Keep(u64 hash, u32 family, u32 variant, ID3DBlob *blob)
 {
-	if (keptByHash.count(hash) != 0 || size == 0)
+	if (blob == nullptr || blob->GetBufferSize() == 0 || kept.Find(hash) != nullptr)
 		return;
-	Kept k;
-	k.hash = hash;
-	k.family = family;
-	k.variant = variant;
-	k.code.assign((const u8 *)code, (const u8 *)code + size);
-	keptByHash[hash] = kept.size();
-	kept.push_back(std::move(k));
+	Kept *k = kept.Add(hash);
+	k->family = family;
+	k->variant = variant;
+	blob->AddRef();
+	k->blob.reset(blob);
 	fileChanged = true;
 }
 
@@ -527,20 +525,20 @@ bool DX11ShaderCompiler::Bytecode(u32 family, u32 variant, const DX11ShaderDesc&
 		*size = bytes;
 		return true;
 	}
-	auto it = keptByHash.find(hash);
-	if (it != keptByHash.end())
+	const Kept *k = kept.Find(hash);
+	if (k != nullptr)
 	{
-		*code = kept[it->second].code.data();
-		*size = kept[it->second].code.size();
+		*code = k->blob->GetBufferPointer();
+		*size = k->blob->GetBufferSize();
 		return true;
 	}
-	hold = Compile(d.source.c_str(), "main", d.profile, d.macros);
+	hold = Compile(d.source->c_str(), "main", d.profile, d.macros);
 	if (!hold)
 		return false;
 	statCompiled++;
 	*code = hold->GetBufferPointer();
 	*size = hold->GetBufferSize();
-	Keep(hash, family, variant, *code, *size);
+	Keep(hash, family, variant, hold);
 	return true;
 }
 
@@ -561,7 +559,7 @@ bool DX11ShaderCompiler::WarmBuild(void *ctx, const d3d_warm_job_t *job, d3d_war
 	{
 		ID3DBlob *errors = nullptr;
 		if (self->compile == nullptr
-				|| FAILED(self->compile(d.source.c_str(), d.source.size(), nullptr, d.macros, nullptr, "main", d.profile, 0, 0, &blob, &errors)))
+				|| FAILED(self->compile(d.source->c_str(), d.source->size(), nullptr, d.macros, nullptr, "main", d.profile, 0, 0, &blob, &errors)))
 		{
 			if (errors != nullptr)
 				errors->Release();
@@ -605,7 +603,7 @@ void DX11ShaderCompiler::TakeBuilt()
 		if (r.extra != nullptr)
 		{
 			ID3DBlob *blob = (ID3DBlob *)r.extra;
-			Keep(r.key, r.kind, r.aux, blob->GetBufferPointer(), blob->GetBufferSize());
+			Keep(r.key, r.kind, r.aux, blob);
 			blob->Release();
 			statCompiledAhead++;
 		}
@@ -706,20 +704,20 @@ void DX11ShaderCompiler::SaveFile()
 	std::vector<d3d_shcache_entry_t> entries;
 	std::vector<const void *> blobs;
 	std::unordered_map<u64, size_t> byName;
-	for (const Kept& k : kept)
-	{
+	kept.Each([&](u64 hash, Kept& k) {
 		const u64 name = ((u64)k.family << 32) | k.variant;
 		if (byName.count(name) != 0 || entries.size() >= D3D_SHCACHE_MAX_ENTRIES)
-			continue;
+			return true;
 		byName[name] = entries.size();
 		d3d_shcache_entry_t e{};
-		e.hash = k.hash;
+		e.hash = hash;
 		e.family = k.family;
 		e.variant = k.variant;
-		e.size = (u32)k.code.size();
+		e.size = (u32)k.blob->GetBufferSize();
 		entries.push_back(e);
-		blobs.push_back(k.code.data());
-	}
+		blobs.push_back(k.blob->GetBufferPointer());
+		return true;
+	});
 	for (const d3d_shcache_entry_t& f : fileIndex)
 	{
 		const u64 name = ((u64)f.family << 32) | f.variant;
@@ -764,9 +762,12 @@ void DX11ShaderCompiler::Init(ID3D11Device *device, pD3DCompile compile)
 	this->device = device;
 	this->compile = compile;
 	statCompiled = statFromFile = statAhead = statCompiledAhead = 0;
-	kept.clear();
-	keptByHash.clear();
+	/* (room for what a run compiles; more is made, and said) */
+	kept.Name("DX11 shaders compiled");
+	kept.Clear();
+	kept.Reserve(1024);
 	fileChanged = false;
+	MakeSources();
 	LoadFile();
 	/* (a device made for one thread only is used from the one that renders
 	 * only: the file still spares it compiling) */
@@ -817,8 +818,7 @@ void DX11ShaderCompiler::TermCompiler()
 	file.clear();
 	file.shrink_to_fit();
 	fileIndex.clear();
-	kept.clear();
-	keptByHash.clear();
+	kept.Clear();
 	fileChanged = false;
 }
 
@@ -826,19 +826,29 @@ void DX11ShaderCompiler::TermCompiler()
 
 static const char * const MacroValues[] = { "0", "1", "2", "3" };
 
+void DX11Shaders::MakeSources()
+{
+	sources[VS] = std::string(DX11VertexTransform) + VertexShaderSource;
+	sources[PS] = std::string(PixelShaderHeader) + DX11FogFunction + PixelShaderSource;
+	sources[ModVolVS] = std::string(DX11VertexTransform) + DX11ModVolVertexShader;
+	sources[ModVolPS] = std::string(PixelShaderHeader) + DX11FogFunction + ModVolPixelShaderSource;
+	sources[QuadVS] = QuadVertexShaderSource;
+	sources[QuadPS] = QuadPixelShaderSource;
+}
+
 bool DX11Shaders::Describe(u32 family, u32 variant, DX11ShaderDesc& d) const
 {
 	D3D_SHADER_MACRO *m = d.macros;
 	switch (family)
 	{
 	case VS:
-		d.source = std::string(DX11VertexTransform) + VertexShaderSource;
+		d.source = &sources[VS];
 		d.profile = "vs_4_0";
 		*m++ = { "pp_Gouraud", MacroValues[variant & 1] };
 		break;
 	case PS:
 		/* (the variant is DX11FragmentShaderParams::hash()) */
-		d.source = std::string(PixelShaderHeader) + DX11FogFunction + PixelShaderSource;
+		d.source = &sources[PS];
 		d.profile = "ps_4_0";
 		*m++ = { "cp_AlphaTest", MacroValues[variant & 1] };
 		*m++ = { "pp_ClipInside", MacroValues[(variant >> 1) & 1] };
@@ -856,25 +866,25 @@ bool DX11Shaders::Describe(u32 family, u32 variant, DX11ShaderDesc& d) const
 		*m++ = { "pp_Shadowed", MacroValues[(variant >> 15) & 1] };
 		break;
 	case GeneralPS:
-		d.source = std::string(PixelShaderHeader) + DX11FogFunction + PixelShaderSource;
+		d.source = &sources[PS];
 		d.profile = "ps_4_0";
 		*m++ = { "GENERAL", "1" };
 		*m++ = { "pp_Gouraud", MacroValues[variant & 1] };
 		break;
 	case ModVolVS:
-		d.source = std::string(DX11VertexTransform) + DX11ModVolVertexShader;
+		d.source = &sources[ModVolVS];
 		d.profile = "vs_4_0";
 		break;
 	case ModVolPS:
-		d.source = std::string(PixelShaderHeader) + DX11FogFunction + ModVolPixelShaderSource;
+		d.source = &sources[ModVolPS];
 		d.profile = "ps_4_0";
 		break;
 	case QuadVS:
-		d.source = QuadVertexShaderSource;
+		d.source = &sources[QuadVS];
 		d.profile = "vs_4_0";
 		break;
 	case QuadPS:
-		d.source = QuadPixelShaderSource;
+		d.source = &sources[QuadPS];
 		d.profile = "ps_4_0";
 		break;
 	default:

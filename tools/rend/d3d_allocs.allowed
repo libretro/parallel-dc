@@ -1,0 +1,11 @@
+# Where the core may allocate during play with Direct3D, by function
+# (tools/rend/d3d_allocs.sh, tools/vulkan/vk_alloc_sites.py; "heap", or
+# "d3d" for Direct3D objects). AGENTS.md, "No allocations during play":
+# the list only ever shrinks.
+
+# Direct3D 11: a polygon's own pixel shader, made on the thread ahead
+# (rend/d3d_warm.h) when a frame first wants it, the general one drawing it
+# until then - not on the draw path. Made at the start, it would be every
+# key's shader compiled before the first frame (kept on disk for the next
+# run: rend/d3d_shader_cache.h).
+d3d DX11ShaderCompiler::WarmBuild

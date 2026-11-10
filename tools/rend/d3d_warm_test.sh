@@ -16,7 +16,7 @@ mkdir -p "$WORK"
 trap 'rm -rf "$WORK"' EXIT
 LRC=core/libretro-common
 OURS="tools/rend/d3d_warm_test.c core/rend/d3d_warm.c core/rend/d3d_shader_cache.c"
-THEIRS="$LRC/queues/retro_spsc.c $LRC/rthreads/rthreads.c"
+THEIRS="$LRC/queues/retro_spsc.c $LRC/rthreads/rthreads.c $LRC/rthreads/retro_eventcount.c"
 STRICT="-std=c89 -pedantic -Wno-long-long -Wall -Wextra -Werror -Wdeclaration-after-statement"
 INC="-Icore/rend -I$LRC/include"
 

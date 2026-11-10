@@ -685,11 +685,15 @@ bool dx12_read_picture(ID3D12Resource *texture, D3D12_RESOURCE_STATES& state, u3
 	return readBack(texture, state, 0, 0, width, height, rgba);
 }
 
-/* Copies of pictures off the card, each into a readback buffer of its own:
- * recorded ahead of the read where rtt_watch says which (dx12_rtt_prefetch()),
- * or by the read itself. Each waits for the fence value of the list it was
- * submitted with - passed by the time it is read, as often as not. */
+/* Copies of pictures off the card, each into its piece of one readback
+ * buffer, a ring, made with the renderer (dx12_rtt_init()) - room for
+ * RTT_RING_RENDERS renders of a screen's size - and nothing made in the
+ * fault handler: recorded ahead of the read where rtt_watch says which
+ * (dx12_rtt_prefetch()), or by the read itself. Each waits for the fence
+ * value of the list it was submitted with - passed by the time it is read,
+ * as often as not. */
 #define RTT_COPIES 18
+#define RTT_RING_RENDERS 4
 
 struct Dx12RttCopy
 {
@@ -698,12 +702,80 @@ struct Dx12RttCopy
 	u32 w, h, pitch;
 	u64 value;          /* the fence value its list signals */
 	u64 stamp;          /* when it was last recorded, for the oldest */
-	u64 size;
-	ComPtr<ID3D12Resource> buffer;   /* grown, never shrunk */
+	u64 at, len;        /* its piece of the ring */
 };
 
 static Dx12RttCopy rttCopies[RTT_COPIES];
 static u64 rttStamp;
+static ComPtr<ID3D12Resource> rttRing;
+static u64 rttRingSize, rttRingHead;
+/* (a ring made larger: the old one kept until the card is past it) */
+static ComPtr<ID3D12Resource> rttRingOld;
+static u64 rttRingOldValue;
+static bool rttSaidLarger;
+
+static u32 rtt_pitch(u32 w)
+{
+	return (w * 4 + D3D12_TEXTURE_DATA_PITCH_ALIGNMENT - 1) & ~(D3D12_TEXTURE_DATA_PITCH_ALIGNMENT - 1);
+}
+
+/* The ring, at least @bytes: made larger if it is not (every copy gone,
+ * once the card has written them) - never in the fault handler */
+static bool rtt_ring(u64 bytes)
+{
+	DX12Context *context = DX12Context::Instance();
+
+	if (bytes <= rttRingSize)
+		return true;
+	if (context->GetDevice() == nullptr)
+		return false;
+	if (rttRingSize != 0 && !rttSaidLarger)
+	{
+		rttSaidLarger = true;
+		WARN_LOG(RENDERER, "Render to a texture read back: its room made larger, %u KB", (u32)(bytes >> 10));
+	}
+	/* (made larger twice before the card is past the first: waited for, the
+	 * once) */
+	if (rttRingOld && context->Completed() < rttRingOldValue)
+		context->WaitFor(rttRingOldValue);
+	rttRingOld.reset();
+	for (Dx12RttCopy& c : rttCopies)
+	{
+		c.serial = 0;
+		c.len = 0;
+	}
+	if (rttRing)
+	{
+		rttRingOld = std::move(rttRing);
+		rttRingOldValue = context->LastSubmitted();
+	}
+	rttRing.reset();
+	rttRingSize = rttRingHead = 0;
+	D3D12_HEAP_PROPERTIES heap{};
+	heap.Type = D3D12_HEAP_TYPE_READBACK;
+	D3D12_RESOURCE_DESC desc{};
+	desc.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER;
+	desc.Width = (bytes + 0xffff) & ~0xffffull;
+	desc.Height = 1;
+	desc.DepthOrArraySize = 1;
+	desc.MipLevels = 1;
+	desc.SampleDesc.Count = 1;
+	desc.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
+	if (FAILED(context->GetDevice()->CreateCommittedResource(&heap, D3D12_HEAP_FLAG_NONE, &desc,
+			D3D12_RESOURCE_STATE_COPY_DEST, nullptr, __uuidof(ID3D12Resource), (void **)rttRing.put())))
+	{
+		WARN_LOG(RENDERER, "DX12: readback buffer creation failed (%u KB)", (u32)(bytes / 1024));
+		rttRing.reset();
+		return false;
+	}
+	rttRingSize = desc.Width;
+	return true;
+}
+
+void dx12_rtt_init(void)
+{
+	rtt_ring((u64)rtt_pitch(640) * 480 * RTT_RING_RENDERS);
+}
 
 static Dx12RttCopy *rtt_copy_of(const RttWatch *watch)
 {
@@ -713,27 +785,42 @@ static Dx12RttCopy *rtt_copy_of(const RttWatch *watch)
 	return nullptr;
 }
 
-/* One to record a copy into: one that holds none, or the one recorded
- * longest ago - never one the card is still writing, nor one recorded
- * after @since (in the list being recorded). */
-static Dx12RttCopy *rtt_copy_free(u64 since)
+/* One to record a copy of @len bytes into, with its piece of the ring: the
+ * ring's next, from its start where the end is too near; the copies there
+ * before go (the card writes the ring in the order the copies are
+ * recorded), and the one that held none or was recorded longest ago - not
+ * after @since (in the list being recorded) - gives its place. Null if
+ * what is there was recorded in this list. */
+static Dx12RttCopy *rtt_copy_free(u64 since, u64 len)
 {
-	DX12Context *context = DX12Context::Instance();
-	const u64 completed = context->Completed();
-	Dx12RttCopy *oldest = nullptr;
+	Dx12RttCopy *place = nullptr;
+	u64 at = rttRingHead;
 
+	if (len > rttRingSize)
+		return nullptr;
+	if (at + len > rttRingSize)
+		at = 0;
+	for (Dx12RttCopy& c : rttCopies)
+		if (c.len != 0 && c.at < at + len && at < c.at + c.len && c.serial != 0 && c.stamp > since)
+			return nullptr;
 	for (Dx12RttCopy& c : rttCopies)
 	{
-		if (c.value > completed && c.buffer)
-			continue;
+		if (c.len != 0 && c.at < at + len && at < c.at + c.len)
+		{
+			c.serial = 0;
+			c.len = 0;
+		}
 		if (c.serial != 0 && c.stamp > since)
 			continue;
-		if (c.serial == 0)
-			return &c;
-		if (oldest == nullptr || c.stamp < oldest->stamp)
-			oldest = &c;
+		if (place == nullptr || (place->len != 0 && (c.len == 0 || c.stamp < place->stamp)))
+			place = &c;
 	}
-	return oldest;
+	if (place == nullptr)
+		return nullptr;
+	place->at = at;
+	place->len = len;
+	rttRingHead = at + len;
+	return place;
 }
 
 /* The copy of the clip's part of @image, w by h at (x0, y0), into c's
@@ -741,36 +828,16 @@ static Dx12RttCopy *rtt_copy_free(u64 since)
 static bool rtt_record_copy(Dx12RttCopy& c, ID3D12Resource *texture, D3D12_RESOURCE_STATES& state, u32 x0, u32 y0, u32 w, u32 h)
 {
 	DX12Context *context = DX12Context::Instance();
-	const u32 pitch = (w * 4 + D3D12_TEXTURE_DATA_PITCH_ALIGNMENT - 1) & ~(D3D12_TEXTURE_DATA_PITCH_ALIGNMENT - 1);
-	const u64 bytes = (u64)pitch * h;
+	const u32 pitch = rtt_pitch(w);
 
-	if (!c.buffer || c.size < bytes)
-	{
-		D3D12_HEAP_PROPERTIES heap{};
-		heap.Type = D3D12_HEAP_TYPE_READBACK;
-		D3D12_RESOURCE_DESC desc{};
-		desc.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER;
-		desc.Width = (bytes + 0xffff) & ~0xffffull;
-		desc.Height = 1;
-		desc.DepthOrArraySize = 1;
-		desc.MipLevels = 1;
-		desc.SampleDesc.Count = 1;
-		desc.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
-		c.size = 0;
-		if (FAILED(context->GetDevice()->CreateCommittedResource(&heap, D3D12_HEAP_FLAG_NONE, &desc,
-				D3D12_RESOURCE_STATE_COPY_DEST, nullptr, __uuidof(ID3D12Resource), (void **)c.buffer.put())))
-		{
-			WARN_LOG(RENDERER, "DX12: readback buffer creation failed (%u KB)", (u32)(bytes / 1024));
-			c.buffer.reset();
-			return false;
-		}
-		c.size = desc.Width;
-	}
+	if (!rttRing || (u64)pitch * h > c.len)
+		return false;
 	const D3D12_RESOURCE_STATES was = state;
 	context->Transition(texture, state, D3D12_RESOURCE_STATE_COPY_SOURCE);
 	D3D12_TEXTURE_COPY_LOCATION dst{};
-	dst.pResource = c.buffer;
+	dst.pResource = rttRing;
 	dst.Type = D3D12_TEXTURE_COPY_TYPE_PLACED_FOOTPRINT;
+	dst.PlacedFootprint.Offset = c.at;
 	dst.PlacedFootprint.Footprint.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
 	dst.PlacedFootprint.Footprint.Width = w;
 	dst.PlacedFootprint.Footprint.Height = h;
@@ -854,7 +921,10 @@ static u64 rtt_copies(const RttWatch *const *watches, unsigned count)
 	{
 		if (rtt_copy_of(watches[i]) != nullptr)
 			continue;
-		Dx12RttCopy *c = rtt_copy_free(since);
+		/* (pieces start where a copy may: D3D12_TEXTURE_DATA_PLACEMENT_ALIGNMENT) */
+		const u64 len = ((u64)rtt_pitch(watches[i]->w) * watches[i]->h + D3D12_TEXTURE_DATA_PLACEMENT_ALIGNMENT - 1)
+				& ~(u64)(D3D12_TEXTURE_DATA_PLACEMENT_ALIGNMENT - 1);
+		Dx12RttCopy *c = rtt_copy_free(since, len);
 		if (c == nullptr)
 			break;
 		if (rtt_record(watches[i], *c))
@@ -868,11 +938,19 @@ static u64 rtt_copies(const RttWatch *const *watches, unsigned count)
 	return value;
 }
 
-/* rtt_watch's: begun now, not waited for */
+/* rtt_watch's: begun now, not waited for (and the ring made larger first,
+ * here and not in the fault handler, for a render larger than a screen) */
 static void dx12_rtt_prefetch(const RttWatch *const *watches, unsigned count)
 {
-	if (DX12Context::Instance()->GetDevice() != nullptr)
-		rtt_copies(watches, count);
+	u64 most = 0;
+
+	if (DX12Context::Instance()->GetDevice() == nullptr)
+		return;
+	for (unsigned i = 0; i < count; i++)
+		most = std::max<u64>(most, (u64)rtt_pitch(watches[i]->w) * watches[i]->h);
+	if (most * RTT_RING_RENDERS > rttRingSize)
+		rtt_ring(most * RTT_RING_RENDERS);
+	rtt_copies(watches, count);
 }
 
 /* The picture, from its copy - recorded ahead as often as not, and done by
@@ -904,9 +982,9 @@ static void dx12_rtt_read(const RttWatch *watch, u8 *, RttWatchTake take)
 	}
 	if (context->Completed() < c->value)
 		context->WaitFor(c->value);
-	const D3D12_RANGE range = { 0, (SIZE_T)c->pitch * c->h };
+	const D3D12_RANGE range = { (SIZE_T)c->at, (SIZE_T)(c->at + (u64)c->pitch * c->h) };
 	void *p = nullptr;
-	if (FAILED(c->buffer->Map(0, &range, &p)))
+	if (FAILED(rttRing->Map(0, &range, &p)))
 	{
 		WARN_LOG(RENDERER, "A picture could not be read back from the card");
 		take(watch, nullptr, 0);
@@ -914,9 +992,9 @@ static void dx12_rtt_read(const RttWatch *watch, u8 *, RttWatchTake take)
 	else
 	{
 		/* (a readback heap's: the host's cache is in front of it) */
-		take(watch, (const u8 *)p, c->pitch);
+		take(watch, (const u8 *)p + c->at, c->pitch);
 		const D3D12_RANGE none = { 0, 0 };
-		c->buffer->Unmap(0, &none);
+		rttRing->Unmap(0, &none);
 	}
 	c->serial = 0;
 }
@@ -1022,16 +1100,19 @@ void dx12_rtt_term(void)
 	DX12Context *context = DX12Context::Instance();
 
 	rtt_watch_term();
+	/* (the card may still be writing it) */
+	if ((rttRing || rttRingOld) && context->GetDevice() != nullptr && context->Completed() < context->LastSubmitted())
+		context->WaitFor(context->LastSubmitted());
+	rttRingOld.reset();
 	for (Dx12RttCopy& c : rttCopies)
 	{
-		/* (the card may still be writing it) */
-		if (c.buffer && context->GetDevice() != nullptr && context->Completed() < c.value)
-			context->WaitFor(c.value);
-		c.buffer.reset();
 		c.serial = 0;
 		c.value = 0;
-		c.size = 0;
+		c.len = 0;
 	}
+	rttRing.reset();
+	rttRingSize = rttRingHead = 0;
+	rttSaidLarger = false;
 	turned.clear();
 	turned.shrink_to_fit();
 }
