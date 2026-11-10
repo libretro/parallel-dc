@@ -296,14 +296,15 @@ static VKAPI_ATTR void VKAPI_CALL vkh_mem_props2(VkPhysicalDevice gpu, VkPhysica
 
 /* VKH_ALLOCS: what the core allocates once counting is on (from frame
  * VKH_ALLOCS), and where in it: the heap's (built with -DALLOC_COUNT) and
- * the Vulkan objects' (tools/rend/alloc_count.c) */
+ * the Vulkan objects' (tools/rend/alloc_count.c); and the descriptor sets
+ * it takes from its pools, named apart ("sets") */
 enum { VKH_A_MEMORY = ALLOC_HOST_KINDS, VKH_A_FREE_MEMORY, VKH_A_BUFFER, VKH_A_DESTROY_BUFFER,
-   VKH_A_IMAGE, VKH_A_DESTROY_IMAGE, VKH_A_DESC_POOL, VKH_A_CMD_POOL, VKH_A_KINDS };
+   VKH_A_IMAGE, VKH_A_DESTROY_IMAGE, VKH_A_DESC_POOL, VKH_A_CMD_POOL, VKH_A_DESC_SET, VKH_A_KINDS };
 static const char *const vkh_a_names[VKH_A_KINDS] = { "heap allocations", "heap frees", "memory allocations",
    "memory frees", "buffers made", "buffers destroyed", "images made", "images destroyed", "descriptor pools made",
-   "command pools made" };
+   "command pools made", "descriptor sets made" };
 static const char *const vkh_a_site[VKH_A_KINDS] = { "heap", NULL, "vulkan", NULL, "vulkan", NULL, "vulkan", NULL,
-   "vulkan", "vulkan" };
+   "vulkan", "vulkan", "sets" };
 /* A Vulkan object the core made or destroyed, from its own code */
 #define vkh_gpu_seen alloc_count_seen
 
@@ -313,6 +314,13 @@ static PFN_vkCreateImage vkh_real_create_image;
 static PFN_vkDestroyImage vkh_real_destroy_image;
 static PFN_vkCreateDescriptorPool vkh_real_desc_pool;
 static PFN_vkCreateCommandPool vkh_real_cmd_pool;
+static PFN_vkAllocateDescriptorSets vkh_real_desc_sets;
+static VKAPI_ATTR VkResult VKAPI_CALL vkh_desc_sets(VkDevice d, const VkDescriptorSetAllocateInfo *ai,
+      VkDescriptorSet *out)
+{
+   vkh_gpu_seen(VKH_A_DESC_SET, __builtin_return_address(0));
+   return vkh_real_desc_sets(d, ai, out);
+}
 static VKAPI_ATTR VkResult VKAPI_CALL vkh_alloc_mem(VkDevice d, const VkMemoryAllocateInfo *ai,
       const VkAllocationCallbacks *a, VkDeviceMemory *out)
 {
@@ -484,6 +492,7 @@ static PFN_vkVoidFunction vkh_wrap(PFN_vkVoidFunction real, const char *name)
       VKH_WRAP_ALLOC("vkDestroyImage", *(void **)&vkh_real_destroy_image, vkh_destroy_image)
       VKH_WRAP_ALLOC("vkCreateDescriptorPool", *(void **)&vkh_real_desc_pool, vkh_desc_pool)
       VKH_WRAP_ALLOC("vkCreateCommandPool", *(void **)&vkh_real_cmd_pool, vkh_cmd_pool)
+      VKH_WRAP_ALLOC("vkAllocateDescriptorSets", *(void **)&vkh_real_desc_sets, vkh_desc_sets)
       VKH_WRAP_ALLOC("vkCreateBuffer", *(void **)&vkh_real_create_buffer, vkh_create_buffer)
       VKH_WRAP_ALLOC("vkDestroyBuffer", *(void **)&vkh_real_destroy_buffer, vkh_destroy_buffer)
 #undef VKH_WRAP_ALLOC

@@ -49,8 +49,10 @@ public:
 		if (cap == 0)
 		{
 			Grow(RESERVE);
-			if (nfree == 0)
-				Allocate();
+			// (the texture atlas disc's frames draw with some 60)
+			for (u32 i = 0; i < START / BATCH; i++)
+				if (!Allocate())
+					break;
 		}
 	}
 
@@ -168,9 +170,10 @@ private:
 		for (u32 i = 0; i < BATCH; i++)
 			layouts[i] = layout;
 		const vk::DescriptorSetAllocateInfo info(VulkanContext::Instance()->GetDescriptorPool(), BATCH, layouts);
-		if (VulkanContext::Instance()->GetDevice().allocateDescriptorSets(&info, freeSets) != vk::Result::eSuccess)
+		if (count + nfree > cap /* (room in freeSets for every set there is) */
+				|| VulkanContext::Instance()->GetDevice().allocateDescriptorSets(&info, freeSets + nfree) != vk::Result::eSuccess)
 			return false;
-		nfree = BATCH;
+		nfree += BATCH;
 		return true;
 	}
 
@@ -210,7 +213,7 @@ private:
 		o.cap = o.count = o.nfree = 0;
 	}
 
-	enum { BATCH = 16, RESERVE = 256 };
+	enum { BATCH = 16, RESERVE = 256, START = 64 };
 	vk::DescriptorSetLayout layout;
 	Entry *table = nullptr;
 	Entry *spare = nullptr;

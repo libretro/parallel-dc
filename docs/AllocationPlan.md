@@ -11,9 +11,10 @@ under a Vulkan frontend (`vk_hdr.c`, `VKH_ALLOCS`) on the test discs with
 every Vulkan renderer and counts, from frame 20 on, what the core
 allocates: the heap (malloc and the rest, operator new, from the core's
 code or through the C and C++ runtimes for it; a driver's own do not
-count) and Vulkan memory, buffers, images and pools. Each place is named
-by the function that asked (`vk_alloc_sites.py`; any of the first three
-the core's own, so that inlining does not move it) and must be on
+count), Vulkan memory, buffers, images and pools, and descriptor sets
+taken from a pool. Each place is named by the function that asked
+(`vk_alloc_sites.py`; any of the first three the core's own, so that
+inlining does not move it) and must be on
 `tools/vulkan/vk_allocs.allowed`. The list only ever shrinks. A site
 reached from the core's signal handler fails whatever the list says.
 
@@ -65,9 +66,15 @@ than it has); they are made when first drawn and kept in the cache.
    can ask for (288) is made at the renderer's start
    (`SamplerManager::Init()`); the translucent sort's room is reserved
    before the first frame (`SortReserve()`, `SortPassesReserve()`: the
-   translucent list's polygons, 64K triangles). Left: the quad's set made
-   again from the pool each frame the image changes (no heap: a set kept
-   for each of the frontend's images would make none).
+   translucent list's polygons, 64K triangles). Descriptor sets are
+   counted too ("sets": taken from a pool while the game runs), and none
+   is: the drawers' per-frame sets, their color inputs and a first 64
+   texture sets for each frame slot are made with them; the texture
+   decoder's every set for each frame's place at its start, written again
+   each time round in place of its pool reset and taken from; and the
+   quad (the last picture, the VMUs, the crosshairs) writes a set its
+   frames are done with when the picture changes, a few for each of the
+   frontend's images, none made or given back.
 3. **Renders to textures.** Done: a render draws with the screen's
    attachments - the depth; the per-pixel renderer's colour and depth -
    which are made at least as large as a render of a screen, 640x480

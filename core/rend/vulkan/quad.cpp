@@ -207,50 +207,54 @@ void QuadDrawer::Init(QuadPipeline *pipeline)
 {
 	this->pipeline = pipeline;
 	buffer = std::unique_ptr<QuadBuffer>(new QuadBuffer());
-	slots.clear();
-	slots.resize(VulkanContext::Instance()->GetSwapChainSize());
+	for (Slot& slot : slots)
+		slot = Slot();
 }
 
 void QuadDrawer::Draw(vk::CommandBuffer commandBuffer, vk::ImageView imageView, QuadVertex vertices[], bool nearestFilter, CommandPool *commandPool)
 {
 	VulkanContext *context = GetContext();
-	/* The frontend can make its swap chain longer while the game runs (when
-	 * fast-forward changes how it presents): its frame index then goes past
-	 * the slots made at the start. */
-	const size_t imageIndex = context->GetCurrentImageIndex();
-	if (imageIndex >= slots.size())
-		slots.resize(imageIndex + 1);
-	Slot& slot = slots[imageIndex];
+	Slot& slot = slots[context->GetCurrentImageIndex() % SLOTS];
 	const vk::Sampler sampler = nearestFilter ? pipeline->GetNearestSampler() : pipeline->GetLinearSampler();
+	const u64 now = commandPool->GetFrames();
+	const u64 inFlight = (u64)std::max(std::max(commandPool->GetSize(), (int)context->GetSwapChainSize()), 1);
 
 	/* The set says which image to draw and how to sample it, and that is the
 	 * same from one frame to the next, so it is written when it changes and
-	 * not every time. Writing it every time was also not allowed: the frame
-	 * before can still be on its way through the GPU using this very set -
-	 * the frontend's frame index, which picks the set, does not move when the
-	 * game renders twice in one run - and a set in use must not be written.
-	 * When it does change, the old set is left as it is for the frames that
-	 * use it and a new one takes its place.
-	 *
-	 * The old one goes to the command pool, which destroys what it is given
-	 * when it comes round to this frame's place again - having waited, on
-	 * the way, for the fence of every frame submitted before then. (It was
-	 * kept here for a number of draws instead, and a number of draws says
-	 * nothing about what the GPU has finished: a game that renders several
-	 * times to one of the frontend's frames gets through them at once.) */
-	if (!slot.set || slot.view != imageView || slot.sampler != sampler)
+	 * not every time. A set in use must not be written - the frame before
+	 * can still be on its way through the GPU with it, the frontend's frame
+	 * index not moving when the game renders twice in one run - so the
+	 * picture changed is written into another of the slot's sets, one not
+	 * drawn with in the frames the command pool has not waited for yet (a
+	 * frame's fence is waited for when its place in the ring comes round:
+	 * CommandPool::BeginFrame()). Only with none of them free is one given
+	 * back to the pool, once its frames are done, and another made. */
+	if (!slot.set[slot.current] || slot.view != imageView || slot.sampler != sampler)
 	{
-		if (slot.set)
-			commandPool->DeferFree(std::move(slot.set), context->GetDescriptorPool());
-		vk::DescriptorSetLayout layout = pipeline->GetDescSetLayout();
-		slot.set = vk_alloc_desc_set(context->GetDevice(), context->GetDescriptorPool(), layout);
+		u32 k = SETS;
+		for (u32 i = 0; i < SETS && k == SETS; i++)
+			if (i != slot.current && (!slot.set[i] || slot.used[i] + inFlight <= now))
+				k = i;
+		if (k == SETS)
+		{
+			// (the one drawn with longest ago)
+			k = slot.current == 0 ? 1 : 0;
+			for (u32 i = 0; i < SETS; i++)
+				if (i != slot.current && slot.used[i] < slot.used[k])
+					k = i;
+			commandPool->DeferFree(std::move(slot.set[k]), context->GetDescriptorPool());
+		}
+		if (!slot.set[k])
+			slot.set[k] = vk_alloc_desc_set(context->GetDevice(), context->GetDescriptorPool(), pipeline->GetDescSetLayout());
+		slot.current = k;
 		slot.view = imageView;
 		slot.sampler = sampler;
 		vk::DescriptorImageInfo imageInfo(sampler, imageView, vk::ImageLayout::eShaderReadOnlyOptimal);
-		vk::WriteDescriptorSet write(*slot.set, 0, 0, 1, vk::DescriptorType::eCombinedImageSampler, &imageInfo, nullptr, nullptr);
+		vk::WriteDescriptorSet write(*slot.set[k], 0, 0, 1, vk::DescriptorType::eCombinedImageSampler, &imageInfo, nullptr, nullptr);
 		context->GetDevice().updateDescriptorSets(1, &write, 0, nullptr);
 	}
-	commandBuffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, pipeline->GetPipelineLayout(), 0, 1, &slot.set.get(), 0, nullptr);
+	slot.used[slot.current] = now;
+	commandBuffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, pipeline->GetPipelineLayout(), 0, 1, &slot.set[slot.current].get(), 0, nullptr);
 
 	buffer->Update(vertices);
 	buffer->Bind(commandBuffer);

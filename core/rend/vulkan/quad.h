@@ -133,15 +133,21 @@ public:
 	 * be using it are done. */
 	void Draw(vk::CommandBuffer commandBuffer, vk::ImageView imageView, QuadVertex vertices[], bool nearestFilter, CommandPool *commandPool);
 private:
-	/* One descriptor set for each frame that can be in flight, with what
-	 * was last written to it. */
+	/* For each of the frontend's images, a few descriptor sets, what the
+	 * one drawn with was last written with, and the frame each was last
+	 * drawn in: a set whose frames the GPU is done with is written again
+	 * when the picture changes, none made or given back. (More images than
+	 * there are slots share them.) */
+	enum { SLOTS = 16, SETS = 3 };
 	struct Slot
 	{
-		vk::UniqueDescriptorSet set;
+		vk::UniqueDescriptorSet set[SETS];
+		u64 used[SETS] = {};
+		u32 current = 0;
 		vk::ImageView view;
 		vk::Sampler sampler;
 	};
 	QuadPipeline *pipeline = nullptr;
 	std::unique_ptr<QuadBuffer> buffer;
-	std::vector<Slot> slots;
+	Slot slots[SLOTS];
 };

@@ -123,7 +123,20 @@ void TexDecoder::Init()
 	dispatches.resize(MAX_DISPATCHES);
 	copies.resize(MAX_JOBS);
 	setLayouts.assign(MAX_DISPATCHES, *imageLayout);
-	sets.resize(MAX_DISPATCHES);
+	/* every set a frame's place can want, from its pool, now: written again
+	 * each time round (the frame that last had the place done, its fence),
+	 * none taken from the pool while the game runs */
+	sets.resize((size_t)swapChain * MAX_DISPATCHES);
+	for (int i = 0; i < swapChain; i++)
+	{
+		const vk::DescriptorSetAllocateInfo allocInfo(*pools[i], MAX_DISPATCHES, setLayouts.data());
+		if (device.allocateDescriptorSets(&allocInfo, &sets[(size_t)i * MAX_DISPATCHES]) != vk::Result::eSuccess)
+		{
+			ERROR_LOG(RENDERER, "Vulkan: no descriptor sets for the texture decoder");
+			Term();
+			return;
+		}
+	}
 	imageInfos.resize(MAX_DISPATCHES);
 	writes.resize(MAX_DISPATCHES);
 	barriers.resize(MAX_JOBS);
@@ -227,8 +240,7 @@ void TexDecoder::BeginFrame(int frame)
 	flushed = false;
 	jobCount = dispatchCount = copyCount = 0;
 	ringUsed = 0;
-	// the frame that last had this place is done (its fence): so are its sets
-	VulkanContext::Instance()->GetDevice().resetDescriptorPool(*pools[index]);
+	// (the frame that last had this place is done, its fence: so are its sets)
 }
 
 u8 *TexDecoder::Reserve(u32 bytes, u32 *offset)
@@ -317,16 +329,9 @@ void TexDecoder::Flush(CommandPool& pool)
 
 	// a storage image set for each dispatch, all in one go
 	u32 n = 0;
+	vk::DescriptorSet *frameSets = &sets[(size_t)index * MAX_DISPATCHES];
 	if (liveDispatches > 0)
 	{
-		const vk::DescriptorSetAllocateInfo allocInfo(*pools[index], liveDispatches, setLayouts.data());
-		if (device.allocateDescriptorSets(&allocInfo, sets.data()) != vk::Result::eSuccess)
-		{
-			// (the pool has a set for every dispatch there can be)
-			ERROR_LOG(RENDERER, "Vulkan: no descriptor sets for %u texture levels", liveDispatches);
-			jobCount = dispatchCount = copyCount = 0;
-			return;
-		}
 		for (u32 i = 0; i < jobCount; i++)
 		{
 			const Job& job = jobs[i];
@@ -335,7 +340,7 @@ void TexDecoder::Flush(CommandPool& pool)
 			for (u32 d = job.first; d < job.first + job.count; d++)
 			{
 				imageInfos[n] = vk::DescriptorImageInfo(vk::Sampler(), dispatches[d].view, vk::ImageLayout::eGeneral);
-				writes[n] = vk::WriteDescriptorSet(sets[n], 0, 0, 1, vk::DescriptorType::eStorageImage, &imageInfos[n]);
+				writes[n] = vk::WriteDescriptorSet(frameSets[n], 0, 0, 1, vk::DescriptorType::eStorageImage, &imageInfos[n]);
 				n++;
 			}
 		}
@@ -401,7 +406,7 @@ void TexDecoder::Flush(CommandPool& pool)
 				for (u32 d = job.first; d < job.first + job.count; d++, s++)
 				{
 					const Level& lv = dispatches[d];
-					cmd.bindDescriptorSets(vk::PipelineBindPoint::eCompute, *pipelineLayout, 1, sets[s], nullptr);
+					cmd.bindDescriptorSets(vk::PipelineBindPoint::eCompute, *pipelineLayout, 1, frameSets[s], nullptr);
 					cmd.pushConstants(*pipelineLayout, vk::ShaderStageFlagBits::eCompute, 0, sizeof(lv.pc), lv.pc);
 					if (lv.group[0] == 0 && lv.group[1] == 0)
 						cmd.dispatch(lv.group[2], lv.group[3], 1);

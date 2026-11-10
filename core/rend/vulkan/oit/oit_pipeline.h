@@ -87,6 +87,16 @@ public:
 		this->perPolyLayout = perPolyLayout;
 		perPoly.SetLayout(perPolyLayout);
 		this->colorInputLayout = colorInputLayout;
+		// (made now, with the drawer: one that first draws while the game runs - a render to a texture - makes none then)
+		vk::Device device = GetContext()->GetDevice();
+		vk::DescriptorPool pool = GetContext()->GetDescriptorPool();
+		if (!perFrameDescSet)
+			perFrameDescSet = vk_alloc_desc_set(device, pool, perFrameLayout);
+		if (!noTextureDescSet)
+			noTextureDescSet = vk_alloc_desc_set(device, pool, perPolyLayout);
+		for (auto& set : colorInputDescSets)
+			if (!set)
+				set = vk_alloc_desc_set(device, pool, colorInputLayout);
 	}
 	// FIXME way too many params
 	// (the vertex uniforms are a buffer of their own: BaseDrawer::WriteVertexUniforms())

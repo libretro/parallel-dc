@@ -1,5 +1,6 @@
 # Where the core may allocate during play with Vulkan, by function
-# (tools/vulkan/vk_allocs.sh, vk_alloc_sites.py; "heap" or "vulkan" for
-# Vulkan memory, buffers, images and pools). AGENTS.md, "No allocations
+# (tools/vulkan/vk_allocs.sh, vk_alloc_sites.py; "heap", "vulkan" for
+# Vulkan memory, buffers, images and pools, or "sets" for descriptor sets
+# taken from a pool). AGENTS.md, "No allocations
 # during play": nowhere. The list is empty and stays so: a site that
 # shows up fails, and is fixed, not listed here.

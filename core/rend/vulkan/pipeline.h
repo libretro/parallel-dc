@@ -39,6 +39,11 @@ public:
 		this->perFrameLayout = perFrameLayout;
 		this->perPolyLayout = perPolyLayout;
 		perPoly.SetLayout(perPolyLayout);
+		// (made now, with the drawer: one that first draws while the game runs - a render to a texture - makes none then)
+		if (!perFrameDescSet)
+			perFrameDescSet = vk_alloc_desc_set(GetContext()->GetDevice(), GetContext()->GetDescriptorPool(), perFrameLayout);
+		if (!noTextureDescSet)
+			noTextureDescSet = vk_alloc_desc_set(GetContext()->GetDevice(), GetContext()->GetDescriptorPool(), perPolyLayout);
 	}
 	// (the vertex uniforms are a buffer of their own: BaseDrawer::WriteVertexUniforms())
 	void UpdateUniforms(vk::Buffer vertexUniformBuffer, vk::Buffer buffer, u32 fragmentUniformOffset, vk::ImageView fogImageView, vk::ImageView paletteImageView)
