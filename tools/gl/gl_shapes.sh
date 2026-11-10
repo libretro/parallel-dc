@@ -22,7 +22,7 @@ FLAGS="-I./core/libretro -I./core -I./core/deps -I./core/libretro-common/include
    -I./core/deps/vixl -I./core/deps/stb -I./core/deps/picotcp/include
    -I./core/deps/picotcp/modules -I./core/deps/khronos -D__LIBRETRO__
    -DHAVE_GLSYM_PRIVATE -DHAVE_THREADS -DHAVE_TEXUPSCALE
-   -DTARGET_NO_OPENMP -DHAVE_CHD -std=c++11 -fno-rtti -fpermissive
+   -DHAVE_CHD -std=c++11 -fno-rtti -fpermissive
    -fno-operator-names -fsyntax-only"
 GL="$FLAGS -DHAVE_OPENGL"
 GLES="$FLAGS -DHAVE_OPENGLES -DHAVE_OPENGLES2 -DHAVE_GL3"

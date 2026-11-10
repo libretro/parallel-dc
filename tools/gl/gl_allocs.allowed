@@ -2,8 +2,3 @@
 # (tools/gl/gl_allocs.sh, tools/vulkan/vk_alloc_sites.py; "heap", or "gl"
 # for OpenGL names, storage, programs and shaders). AGENTS.md, "No
 # allocations during play": the list only ever shrinks.
-
-# The per-pixel renderer's copy of the depth for a frame of more than one
-# render pass, made when the first such frame comes (made at the start, it
-# would be video memory every game pays for)
-gl gl4DrawStrips

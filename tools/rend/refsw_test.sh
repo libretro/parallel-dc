@@ -37,11 +37,11 @@ CORE_INC="-I./core/libretro -I./core -I./core/deps -I./core/libretro-common/incl
 # the renderer: refsw as it is, this core's texture cache, the frame walk
 if [ ! -x "$WORK/refsw_frame" ] || [ -n "$REFSW_REBUILD" ]; then
    for f in refsw refsw_pixel refsw_frame; do
-      ${CXX:-g++} $CORE_INC -Itools/rend/refsw $CORE_DEFS -std=c++11 -O2 -ffp-contract=off -fno-strict-aliasing -fno-rtti -fopenmp -w \
+      ${CXX:-g++} $CORE_INC -Itools/rend/refsw $CORE_DEFS -std=c++11 -O2 -ffp-contract=off -fno-strict-aliasing -fno-rtti -w \
          -c -o "$WORK/$f.o" tools/rend/refsw/$f.cpp
    done
-   ${CXX:-g++} -fopenmp -o "$WORK/refsw_frame" "$WORK/refsw.o" "$WORK/refsw_pixel.o" "$WORK/refsw_frame.o" \
-      core/rend/TexCache.o core/deps/xxhash/xxhash.o -lm -Wl,--unresolved-symbols=ignore-all
+   ${CXX:-g++} -o "$WORK/refsw_frame" "$WORK/refsw.o" "$WORK/refsw_pixel.o" "$WORK/refsw_frame.o" \
+      core/rend/TexCache.o core/rend/band_pool.o core/deps/xxhash/xxhash.o -lm -Wl,--unresolved-symbols=ignore-all
 fi
 
 draw() {
@@ -75,7 +75,7 @@ if [ ! -x "$WORK/tile_dump" ]; then
    OBJS=$(make -n platform=unix -W core/hw/pvr/ta_vtx.cpp 2>/dev/null | tail -1 | tr ' ' '\n' | grep '\.o$' | grep -v 'glslang.js.o')
    ${CC:-cc} -O1 -c -o "$WORK/headless.o" tools/threads/headless.c
    ${CXX:-g++} $CORE_FLAGS -w -c -o "$WORK/dump.o" tools/rend/tile_dump.cpp
-   ${CXX:-g++} -fopenmp -rdynamic -o "$WORK/tile_dump" "$WORK/headless.o" "$WORK/dump.o" $OBJS \
+   ${CXX:-g++} -rdynamic -o "$WORK/tile_dump" "$WORK/headless.o" "$WORK/dump.o" $OBJS \
       -Wl,--wrap=dlopen -Wl,--wrap=_Z13ta_parse_vdrcP10TA_context -lvulkan -lGL -lrt -lpthread -lm -ldl
    nm -D --undefined-only "$WORK/tile_dump" | awk '{print $NF}' | sed 's/@.*//' | grep '^gl' \
       | python3 tools/threads/headless_gl.py > "$WORK/nogl.c" || true

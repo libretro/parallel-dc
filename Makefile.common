@@ -489,6 +489,8 @@ endif
 
 ifeq ($(HAVE_TEXUPSCALE), 1)
 	SOURCES_CXX += $(DEPS_DIR)/xbrz/xbrz.cpp
+	# (the threads xBRZ's rows are shared out to: rend/band_pool.h)
+	SOURCES_C += $(CORE_DIR)/core/rend/band_pool.c
 endif
 
 ifeq ($(HAVE_CHD), 1)

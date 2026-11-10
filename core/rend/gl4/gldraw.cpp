@@ -713,6 +713,22 @@ void gl4CreateTextures(int width, int height)
 	GLuint uStatus = glCheckFramebufferStatus(GL_FRAMEBUFFER);
 
 	verify(uStatus == GL_FRAMEBUFFER_COMPLETE);
+
+	/* The copy of the depth a frame of more than one pass draws its later
+	 * passes against, made with the rest (not by the first such frame) */
+	if (depth_fbo == 0)
+		glGenFramebuffers(1, &depth_fbo);
+	glBindFramebuffer(GL_FRAMEBUFFER, depth_fbo);
+	depthSaveTexId = glcache.GenTexture();
+	glBindTexture(GL_TEXTURE_2D, depthSaveTexId);
+	glTexParameteri(GL_TEXTURE_2D, GL_DEPTH_STENCIL_TEXTURE_MODE, GL_DEPTH_COMPONENT);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+	glTexStorage2D(GL_TEXTURE_2D, 1, GL_DEPTH32F_STENCIL8, width, height);
+	glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT, GL_TEXTURE_2D, depthSaveTexId, 0); glCheck();
+	uStatus = glCheckFramebufferStatus(GL_FRAMEBUFFER);
+	verify(uStatus == GL_FRAMEBUFFER_COMPLETE);
+	glBindFramebuffer(GL_FRAMEBUFFER, geom_fbo);
 }
 
 void gl4DrawStrips(GLuint output_fbo, int width, int height)
@@ -826,22 +842,8 @@ void gl4DrawStrips(GLuint output_fbo, int width, int height)
 			if (render_pass > 0)
 			{
 				// Make a copy of the depth buffer that will be reused in pass 2
-				if (depth_fbo == 0)
-					glGenFramebuffers(1, &depth_fbo);
+				// (into the copy made with the textures: gl4CreateTextures())
 				glBindFramebuffer(GL_FRAMEBUFFER, depth_fbo);
-				if (depthSaveTexId == 0)
-				{
-					depthSaveTexId = glcache.GenTexture();
-					glBindTexture(GL_TEXTURE_2D, depthSaveTexId);
-					glTexParameteri(GL_TEXTURE_2D, GL_DEPTH_STENCIL_TEXTURE_MODE, GL_DEPTH_COMPONENT);
-					glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-					glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-					glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH32F_STENCIL8, max_image_width, max_image_height, 0, GL_DEPTH_STENCIL, GL_FLOAT_32_UNSIGNED_INT_24_8_REV, NULL); glCheck();
-					glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT, GL_TEXTURE_2D, depthSaveTexId, 0); glCheck();
-				}
-				GLuint uStatus = glCheckFramebufferStatus(GL_FRAMEBUFFER);
-				verify(uStatus == GL_FRAMEBUFFER_COMPLETE);
-
 				glBindFramebuffer(GL_READ_FRAMEBUFFER, geom_fbo);
 				glBlitFramebuffer(0, 0, width, height, 0, 0, width, height, GL_DEPTH_BUFFER_BIT, GL_NEAREST);
 				glCheck();

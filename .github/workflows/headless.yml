@@ -16,7 +16,9 @@ name: Headless
 # (tools/sh4/reglist_test.sh), and the recompilers' pool, pieces taken and
 # given back at random (tools/sh4/node_pool_test.sh). And the recompilers
 # against the interpreters, each built alone with the assembler they share
-# (tools/sh4/run.sh, tools/arm7/run.sh, tools/aica/run.sh).
+# (tools/sh4/run.sh, tools/arm7/run.sh, tools/aica/run.sh). And the threads
+# a texture scaled up is shared out to, and the core needing no OpenMP
+# runtime (tools/rend/band_pool_test.sh).
 
 on:
   push:
@@ -28,6 +30,7 @@ on:
       - 'tools/pvr/ta_parse_bench.*'
       - 'tools/sh4/reglist_test.*'
       - 'tools/sh4/node_pool_test.*'
+      - 'tools/rend/band_pool_test.*'
       - 'tools/sh4/run.sh'
       - 'tools/sh4/vector_test.cpp'
       - 'tools/arm7/**'
@@ -43,6 +46,7 @@ on:
       - 'tools/pvr/ta_parse_bench.*'
       - 'tools/sh4/reglist_test.*'
       - 'tools/sh4/node_pool_test.*'
+      - 'tools/rend/band_pool_test.*'
       - 'tools/sh4/run.sh'
       - 'tools/sh4/vector_test.cpp'
       - 'tools/arm7/**'
@@ -68,6 +72,8 @@ jobs:
         run: make -j"$(nproc)"
       - name: The disc with no display, its states and run-ahead among it
         run: sh tools/threads/headless.sh parallel_dc_libretro.so
+      - name: The threads a texture scaled up is shared out to (TSan, ASan/UBSan, no threads), and no OpenMP in the core
+        run: sh tools/rend/band_pool_test.sh parallel_dc_libretro.so
       - name: A strip's indices (C89, ASan and UBSan; SIMD, scalar and NEON) against the loop they replaced
         run: NEON=required sh tools/pvr/ta_index_test.sh
       - name: The parse timed on the heavy disc, the strips known good making the indices a look at them does

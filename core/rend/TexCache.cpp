@@ -18,8 +18,14 @@
 #define XXH_STATIC_LINKING_ONLY
 #include <deps/xxhash/xxhash.h>
 
-#if defined(HAVE_TEXUPSCALE) && !defined(TARGET_NO_OPENMP)
-#include <omp.h>
+#ifdef HAVE_TEXUPSCALE
+#include <features/features_cpu.h>
+#include "band_pool.h"
+
+/* The threads a texture scaled up is shared out to, by bands of rows
+ * (band_pool.h): started with the cache's room (texcache_reserve()), NULL
+ * for none */
+static band_pool_t *xbrz_pool;
 #endif
 
 u8* vq_codebook;
@@ -227,11 +233,16 @@ void texcache_reserve(u32 textures)
 	pieces_reserve(textures);
 #ifdef HAVE_TEXUPSCALE
 	/* Textures scaled up: what the largest is converted into (not straight
-	 * into the renderer's memory) and scaled up into, and xBRZ's table and
-	 * OpenMP's threads, which come with its first texture, made now */
+	 * into the renderer's memory) and scaled up into, the threads it is
+	 * shared out to, and xBRZ's table, which comes with its first texture,
+	 * made now */
 	if (settings.rend.TextureUpscale > 1)
 	{
 		const size_t side = (size_t)settings.rend.MaxFilteredTextureSize;
+#if !defined(TARGET_NO_THREADS)
+		if (xbrz_pool == NULL)
+			xbrz_pool = band_pool_new(band_pool_threads_for(cpu_features_get_core_amount()));
+#endif
 		/* (pixels of every colour apart: xBRZ makes its table the first
 		 * time it measures how far two are) */
 		u32 px[4 * 4], up[4 * 4 * 6 * 6];
@@ -543,51 +554,29 @@ static void libCore_vramlock_Unlock_block_wb(vram_block* block)
 }
 
 #ifdef HAVE_TEXUPSCALE
-#ifndef TARGET_NO_OPENMP
-static inline int getThreadCount()
-{
-	int tcount = omp_get_num_procs() - 1;
-	if (tcount < 1)
-		tcount = 1;
-	return std::min(tcount, 3);
-}
-
-template<typename Func>
-void parallelize(Func func, int start, int end)
-{
-	int tcount = getThreadCount();
-	/* (one thread: on this one, with no parallel region - OpenMP makes
-	 * and frees a team for each region of a single thread) */
-	if (tcount == 1)
-	{
-		func(start, end);
-		return;
-	}
-#pragma omp parallel num_threads(tcount)
-	{
-		int num_threads = omp_get_num_threads();
-		int thread = omp_get_thread_num();
-		int chunk = (end - start) / num_threads;
-		func(start + chunk * thread,
-				num_threads == thread + 1 ? end
-						: (start + chunk * (thread + 1)));
-	}
-}
-
-#endif
-
 static struct xbrz::ScalerCfg xbrz_cfg;
+
+struct XbrzJob
+{
+	int factor;
+	u32 *source;
+	u32 *dest;
+	int width;
+	int height;
+	bool has_alpha;
+};
+
+static void xbrz_rows(void *ctx, int first, int last)
+{
+	const XbrzJob *job = (const XbrzJob *)ctx;
+	xbrz::scale(job->factor, job->source, job->dest, job->width, job->height,
+			job->has_alpha ? xbrz::ColorFormat::ARGB : xbrz::ColorFormat::RGB, xbrz_cfg, first, last);
+}
 
 void UpscalexBRZ(int factor, u32* source, u32* dest, int width, int height, bool has_alpha)
 {
-#ifndef TARGET_NO_OPENMP
-	parallelize([=](int start, int end) {
-		xbrz::scale(factor, source, dest, width, height, has_alpha ? xbrz::ColorFormat::ARGB : xbrz::ColorFormat::RGB,
-				xbrz_cfg, start, end);
-	}, 0, height);
-#else
-	xbrz::scale(factor, source, dest, width, height, has_alpha ? xbrz::ColorFormat::ARGB : xbrz::ColorFormat::RGB, xbrz_cfg);
-#endif
+	XbrzJob job = { factor, source, dest, width, height, has_alpha };
+	band_pool_run(xbrz_pool, xbrz_rows, &job, 0, height);
 }
 
 #endif
@@ -1118,6 +1107,10 @@ void texcache_scratch_free()
 	free(tex_upscaled);
 	tex_upscaled = NULL;
 	tex_upscaled_size = 0;
+#ifdef HAVE_TEXUPSCALE
+	band_pool_free(xbrz_pool);
+	xbrz_pool = NULL;
+#endif
 }
 
 void BaseTextureCacheData::ComputeHash()

@@ -15,7 +15,6 @@ HAVE_GL3      := 0
 FORCE_GLES    := 0
 STATIC_LINKING:= 0
 HAVE_TEXUPSCALE := 1
-HAVE_OPENMP   := 1
 HAVE_CHD      := 1
 HAVE_CLANG    ?= 0
 HAVE_CDROM    := 0
@@ -249,7 +248,6 @@ else ifeq ($(platform), classic_armv7_a7)
 	FORCE_GLES = 1
 	SINGLE_PREC_FLAGS = 1
 	HAVE_LTCG = 0
-	HAVE_OPENMP = 1
 	CFLAGS += -Ofast \
 	-flto=4 -fwhole-program -fuse-linker-plugin \
 	-fdata-sections -ffunction-sections -Wl,--gc-sections \
@@ -289,7 +287,6 @@ else ifeq ($(platform), classic_armv8_a35)
 	FORCE_GLES = 1
 	SINGLE_PREC_FLAGS = 1
 	HAVE_LTCG = 0
-	HAVE_OPENMP = 0
 	CFLAGS += -Ofast \
 	-fuse-linker-plugin \
 	-fno-stack-protector -fno-ident -fomit-frame-pointer \
@@ -358,7 +355,6 @@ else ifeq ($(platform), sun8i_legacy)
 	FORCE_GLES = 1
 	SINGLE_PREC_FLAGS = 1
 	HAVE_LTCG = 0
-	HAVE_OPENMP = 0
 	CFLAGS += -Ofast \
 	-flto -fuse-linker-plugin \
 	-fno-stack-protector -fno-ident -fomit-frame-pointer \
@@ -485,7 +481,7 @@ else ifeq ($(platform), libnx)
    include $(DEVKITPRO)/libnx/switch_rules
    CC_AS = aarch64-none-elf-as
    TARGET := $(TARGET_NAME)_libretro_$(platform).a
-   DEFINES := -DSWITCH=1 -D__SWITCH__=1 -fcommon -DHAVE_LIBNX=1 -DTARGET_LIBNX -DTARGET_NO_OPENMP -DFEAT_NO_RWX_PAGES
+   DEFINES := -DSWITCH=1 -D__SWITCH__=1 -fcommon -DHAVE_LIBNX=1 -DTARGET_LIBNX -DFEAT_NO_RWX_PAGES
    CFLAGS := $(DEFINES) -fPIE -I$(LIBNX)/include/ -I$(PORTLIBS)/include/ -isystem$(CORE_DIR)/core/deps/switch/ -ffunction-sections -fdata-sections -ftls-model=local-exec
    CPUFLAGS += -march=armv8-a -mtune=cortex-a57 -mtp=soft -mcpu=cortex-a57+crc+fp+simd -ffast-math -frename-registers -funroll-loops -ftree-vectorize
    CFLAGS += $(CPUFLAGS) -DTARGET_LIBNX -DTARGET_NO_AREC
@@ -752,7 +748,6 @@ else ifneq (,$(findstring osx,$(platform)))
 	endif
 	CFLAGS   += $(OSX_ARCHFLAGS)
 	LDFLAGS  += $(OSX_ARCHFLAGS)
-	HAVE_OPENMP=0
 
 # iOS and tvOS, 64-bit ARM. Apple's systems give no memory that is both
 # writable and executable there, so no recompiler: the interpreters.
@@ -785,7 +780,6 @@ else ifneq (,$(filter ios-arm64 tvos-arm64,$(platform)))
 	HAVE_GENERIC_JIT = 0
 	NO_REC = 1
 	HOST_CPU_FLAGS = -DHOST_CPU=$(HOST_CPU_ARM64)
-	HAVE_OPENMP = 0
 
 # iOS
 else ifneq (,$(findstring ios,$(platform)))
@@ -824,7 +818,6 @@ else ifneq (,$(findstring ios,$(platform)))
 		CXX += -miphoneos-version-min=5.0
 		PLATCFLAGS += -miphoneos-version-min=5.0
 	endif
-	HAVE_OPENMP=0
 
 # Theos iOS
 else ifneq (,$(findstring theos_ios,$(platform)))
@@ -941,7 +934,6 @@ else ifeq ($(platform), webos)
 	LIBS += -lrt -ldl
 	FORCE_GLES = 1
 	HAVE_VULKAN = 0
-	HAVE_OPENMP = 0
 	SINGLE_PREC_FLAGS = 1
 	CPUFLAGS += -marm -march=armv7-a -mfpu=neon -mfloat-abi=softfp -D__arm__ -DARM_ASM -DNOSSE -DNO_ASM
 	CFLAGS += $(CPUFLAGS)
@@ -1205,16 +1197,8 @@ endif
 
 ifeq ($(HAVE_TEXUPSCALE), 1)
 	CORE_DEFINES += -DHAVE_TEXUPSCALE
-ifeq ($(HAVE_OPENMP), 1)
-	CFLAGS += -fopenmp
-	CXXFLAGS += -fopenmp
-	LDFLAGS += -fopenmp
-else
-	CFLAGS += -DTARGET_NO_OPENMP
-	CXXFLAGS += -DTARGET_NO_OPENMP
-endif
 ifeq ($(WINDOWS_BUILD), 1)
-	LDFLAGS_END += -Wl,-Bstatic -lgomp -lwsock32 -lws2_32 -liphlpapi
+	LDFLAGS_END += -Wl,-Bstatic -lwsock32 -lws2_32 -liphlpapi
 endif
 	NEED_CXX11=1
 	NEED_PTHREAD=1

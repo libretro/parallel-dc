@@ -80,6 +80,7 @@ on:
       - 'tools/rend/d3d_allocs.*'
       - 'core/rend/d3d_warm.*'
       - 'tools/rend/d3d_warm_test.*'
+      - 'tools/rend/band_pool_test.*'
       - 'tools/rend/dx11_shaders_ahead_test.*'
       - 'tools/rend/dx12_pipelines_ahead_test.*'
       - 'core/rend/TexCache.*'
@@ -138,6 +139,7 @@ on:
       - 'tools/rend/d3d_allocs.*'
       - 'core/rend/d3d_warm.*'
       - 'tools/rend/d3d_warm_test.*'
+      - 'tools/rend/band_pool_test.*'
       - 'tools/rend/dx11_shaders_ahead_test.*'
       - 'tools/rend/dx12_pipelines_ahead_test.*'
       - 'core/rend/TexCache.*'
@@ -273,10 +275,11 @@ jobs:
         run: VK_DRIVER_FILES=/usr/share/vulkan/icd.d/lvp_icd.json sh tools/rend/d3d_draw_path.sh parallel_dc_libretro.dll
       - name: Direct3D 11 and 12 - no allocation during play, every renderer (AGENTS.md)
         run: VK_DRIVER_FILES=/usr/share/vulkan/icd.d/lvp_icd.json sh tools/rend/d3d_allocs.sh parallel_dc_libretro.dll
-      - name: The Direct3D renderers' thread ahead and their shader file (TSan, ASan/UBSan, no threads, Windows)
+      - name: The Direct3D renderers' thread ahead and their shader file (TSan, ASan/UBSan, no threads, Windows), and the band pool on Windows
         run: |
           sh tools/rend/d3d_warm_test.sh
           WINDOWS=1 sh tools/rend/d3d_warm_test.sh
+          WINDOWS=1 sh tools/rend/band_pool_test.sh
       - name: Direct3D 11's shaders made ahead and kept on disk, on a device
         run: sh tools/rend/dx11_shaders_ahead_test.sh
       - name: Direct3D 12's pipelines made ahead, on a device

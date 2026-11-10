@@ -27,7 +27,7 @@ CORE_FLAGS=$(make -n platform=unix -W core/hw/pvr/ta_vtx.cpp core/hw/pvr/ta_vtx.
 OBJS=$(make -n platform=unix -W core/hw/pvr/ta_vtx.cpp 2>/dev/null | tail -1 | tr ' ' '\n' | grep '\.o$' | grep -v 'glslang.js.o')
 ${CC:-cc} -O1 -c -o "$WORK/headless.o" tools/threads/headless.c
 ${CXX:-g++} $CORE_FLAGS -w -c -o "$WORK/bench.o" tools/pvr/ta_parse_bench.cpp
-${CXX:-g++} -fopenmp -rdynamic -o "$WORK/ta_parse_bench" "$WORK/headless.o" "$WORK/bench.o" $OBJS \
+${CXX:-g++} -rdynamic -o "$WORK/ta_parse_bench" "$WORK/headless.o" "$WORK/bench.o" $OBJS \
    -Wl,--wrap=dlopen -Wl,--wrap=_exit -Wl,--wrap=_Z13ta_parse_vdrcP10TA_context -lGL -lrt -lpthread -lm -ldl
 # an OpenGL that does nothing, for the core's renderer (headless.sh's)
 nm -D --undefined-only "$WORK/ta_parse_bench" | awk '{print $NF}' | sed 's/@.*//' | grep '^gl' \

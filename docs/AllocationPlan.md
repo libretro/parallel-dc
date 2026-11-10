@@ -30,15 +30,16 @@ texture debug log. Done for them: a texture scaled up (xBRZ) is drawn from
 the 32-bit images of the pool a size or two up, with its mipmaps made on
 the GPU, which the pool is planned with (`TexPoolBook::Drawn()`); it is
 scaled into room grown with the cache (`texcache_upscaled()`), whose
-scaler's table and threads are made at the start; on a single thread xBRZ
-runs with no OpenMP region, which made and freed a team for each texture
-(counted: OpenMP is one of the runtimes now). Renders to a texture finer
-have their targets planned as large as they are drawn too, and the
-per-pixel renderers' lists' heads (Vulkan) and images (OpenGL 4) are as large
-as a render of a screen at that upscale from the start. Left: texture
-upscaling at 6x and renders to a texture 3x and 8x finer, whose images are
-of sizes no image of the pool's has (or larger than it has); they are made
-when first drawn and kept in the cache.
+scaler's table and threads are made at the start. Its rows are shared out
+by bands to a few threads of the core's own (`rend/band_pool.h`, in place
+of OpenMP, which made and freed a team for each texture on one thread),
+started with the cache and parked on an eventcount between textures.
+Renders to a texture finer have their targets planned as large as they are
+drawn too, and the per-pixel renderers' lists' heads (Vulkan) and images
+(OpenGL 4) are as large as a render of a screen at that upscale from the
+start. Left: texture upscaling at 6x and renders to a texture 3x and 8x
+finer, whose images are of sizes no image of the pool's has (or larger
+than it has); they are made when first drawn and kept in the cache.
 
 ## In order
 
@@ -123,9 +124,9 @@ and shaders (`tools/rend/alloc_count.c`, shared with `vk_hdr.c`), against
 `tools/gl/gl_allocs.allowed`. Done for it: a render read back takes its
 room from one pixel buffer, a ring, and reads through framebuffers made
 with the renderer (`rtt_gl_init()`; none in the signal handler); the
-programs by key are in a fixed map (`rend/tex_map.h`); the frame's
-buffers have their storage given at the start (`gl_buffer_room()`), and
-the translucent sort its room (`gl_sort_reserve()`). OpenGL ES 3 has the
+programs by key are in a fixed map (`rend/tex_map.h`); the frame's buffers
+have their storage given at the start (`gl_buffer_room()`), and the
+translucent sort its room (`gl_sort_reserve()`). OpenGL ES 3 has the
 texture pool too (8-bit textures are `GL_R8`, as on OpenGL 3). Where
 textures are converted on the CPU (OpenGL ES, OpenGL before 4.3) they are
 converted into a piece of one pixel unpack buffer, a ring fenced a frame
@@ -134,8 +135,9 @@ them. A device with next to no memory of its own (an integrated one that
 says so) has the system's memory for its budget, and a figure no card has
 is not taken for one. A rasterizer in software has the estimate: what
 llvmpipe says of its memory is what was on the stack, another figure each
-run, and the pool was planned from 22 MB in some runs and missed. Left: the per-pixel renderer's copy of the depth for
-frames of more than one pass, made when the first comes.
+run, and the pool was planned from 22 MB in some runs and missed. The
+per-pixel renderer's copy of the depth, for frames of more than one pass,
+is made with its other pictures. `tools/gl/gl_allocs.allowed` is empty.
 
 Direct3D 11 and 12 are measured the same way: `tools/rend/d3d_allocs.sh`,
 the core's Windows build under wine on `d3d_hdr.c`, its heap counted
