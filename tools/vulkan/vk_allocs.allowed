@@ -17,23 +17,9 @@ heap Emit
 heap bm_AddBlock
 heap RuntimeBlockInfo::hash
 
-# Video memory watched for writes (the texture cache's locks; renders to
-# textures, their copies' room grown when one is watched, never in the
-# signal handler that reads them back)
-heap vramlock_list_add
-heap libCore_vramlock_Lock
+# Renders to textures watched for reads: the read back's copies, their
+# room grown when a larger one is watched (never in the signal handler
+# that reads them back)
 heap vk_rtt_watch
-
-# The texture cache: a texture first seen, and its pictures
-heap BaseVulkanRenderer::GetTexture
-heap BaseTextureCacheData::HashPieces
-heap TexturePool::Make
-vulkan TexturePool::Make
-heap StringFromFormatV        # (TexturePool::Make's log line)
-
-# Renders to textures: the texture a render goes into (the cache's), and
-# the read back's copies (vk_rtt_watch)
-heap TextureDrawer::BeginRenderPass
 vulkan BufferData::BufferData
-heap OITTextureDrawer::TakeTexture
 

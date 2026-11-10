@@ -16,9 +16,10 @@
  * has a list of the free images of that shape. How many of each are made
  * at the start is a share of the video memory the renderer may use
  * (rend/vram_budget.h), spread over the classes the way games' textures
- * are: mostly 16-bit, mipmapped and square, 64 to 256 texels; a quarter of
- * it to the rectangles, by fixed shares - the smaller the shape and the
- * nearer to square, the more. Pictures rendered to (a format of the kind
+ * are: mostly 16-bit, mipmapped and square, 64 to 256 texels, and a few
+ * of the smallest squares whatever the share; a quarter of it to
+ * the rectangles, by fixed shares - the smaller the shape and the nearer
+ * to square, the more. Pictures rendered to (a format of the kind
  * TARGETS) are a fixed few of the shapes renders come in, from 64x64 to
  * 1024x1024 (half as many where the share is the least). A class that has
  * none left when one is asked for has one made then - which means the
@@ -89,13 +90,19 @@ public:
 		const u32 d = lw > lh ? lw - lh : lh - lw;
 		return d == 0 ? 0 : shorter[lw < lh ? lw : lh] >> (d - 1);
 	}
+	/* The fewest square textures of 2^(@s + 3) texels without mipmaps of
+	 * each format there is: the smallest ones, fonts and the like, which
+	 * the tables above give none of, eight of 8x8 and four of 16x16 (a few
+	 * KB) */
+	static u32 Least(u32 s) { return s == 0 ? 8 : s == 1 ? 4 : 0; }
 	/* How many of each shape of picture rendered to there are: the square
-	 * ones from 64 to 512, two each, and 1024x1024; and what renders of a
-	 * screen are, 1024x512 (640x480 and the like) and 512x256 */
+	 * ones, eight of 64, two of 128 to 512, and 1024x1024; and
+	 * what renders of a screen are, 1024x512 (640x480 and the like) and
+	 * 512x256 */
 	static u32 TargetCount(u32 lw, u32 lh)
 	{
 		if (lw == lh)
-			return lw >= 3 && lw <= 6 ? 2 : lw == 7 ? 1 : 0;
+			return lw == 3 ? 8 : lw >= 4 && lw <= 6 ? 2 : lw == 7 ? 1 : 0;
 		if (lw == 7 && lh == 6)
 			return 4;
 		if (lw == 6 && lh == 5)
@@ -161,6 +168,8 @@ public:
 				const int m = Class(f, 8u << s, 8u << s, true), p = Class(f, 8u << s, 8u << s, false);
 				counts[m] = (u32)(((u64)mipped[s] * use[f] * squares + unit * 8 - 1) / (unit * 8));
 				counts[p] = (u32)(((u64)plain[s] * use[f] * squares + unit * 8 - 1) / (unit * 8));
+				if (use[f] != 0 && counts[p] < Least(s))
+					counts[p] = Least(s);
 				bytes += (u64)counts[m] * Bytes(m, texel[f]) + (u64)counts[p] * Bytes(p, texel[f]);
 				for (t = 0; t < SIZES && rectUnit != 0; t++)
 				{

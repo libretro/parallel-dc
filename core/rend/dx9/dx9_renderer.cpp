@@ -112,6 +112,8 @@ bool DX9Renderer::Init()
 	 * textures themselves, all of them now (rend/tex_pool.h) */
 	texDecoder.Init(context);
 	texPool.Init(context, &texDecoder);
+	// ...and the cache's room for them (rend/tex_map.h)
+	texCache.ReserveFor(texPool.Book().made);
 	DX9Texture::SetDecoder(texDecoder.Ready() ? &texDecoder : nullptr);
 	DX9Texture::SetPool(&texPool);
 	/* The depth buffer and the screen's pictures now, at the size the

@@ -7,6 +7,7 @@
 #include <retro_atomic.h>
 #include <memory>
 #include <unordered_map>
+#include "rend/tex_map.h"
 
 extern u8* vq_codebook;
 extern u32 palette_index;
@@ -173,6 +174,10 @@ void palette_update();
 void texcache_scratch_free();
 // Stops the custom texture loader, which then has no texture: see BaseTextureCache::Clear()
 void texcache_stop_custom_loads();
+/* Room for the locks on video memory of @textures textures, made now, so
+ * that locking one takes none (TexCache.cpp): more is made if it runs
+ * out, and that is said */
+void texcache_reserve(u32 textures);
 
 #define clamp(minv, maxv, x) (x < minv ? minv : x > maxv ? maxv : x)
 
@@ -1040,8 +1045,8 @@ public:
 	 * (TEX_HASH_PIECE) the locked range is on, from the one at @piece_first
 	 * on, @pieces of them, and after them a bit for each that changed */
 	u32 *piece_hash = nullptr;
-	u32 piece_first;
-	u32 pieces;
+	u32 piece_first = 0;
+	u32 pieces = 0;
 	/* The render the hashes were last found to hold in, and vram_write_epoch
 	 * then: the texture is not hashed again until one of them moves. */
 	u32 hash_frame;
@@ -1191,8 +1196,18 @@ public:
 template<typename Texture>
 class BaseTextureCache
 {
-	using TexCacheIter = typename std::unordered_map<u64, Texture>::iterator;
 public:
+	/* Room for @textures, and their locks on video memory, made now: the
+	 * renderer's start (rend/tex_map.h, texcache_reserve()) */
+	void Reserve(u32 textures)
+	{
+		cache.Reserve(textures);
+		texcache_reserve(textures);
+	}
+	/* ...as many as a pool of @images textures' images serves: twice
+	 * that, no fewer than 1024 */
+	void ReserveFor(u32 images) { Reserve(images * 2 > 1024 ? images * 2 : 1024); }
+
 	Texture *getTextureCacheData(TSP tsp, TCW tcw, int area = 0)
 	{
 		u64 key = tsp.full & TSPTextureCacheMask.full;
@@ -1207,18 +1222,15 @@ public:
 		else
 			key |= (u64)(tcw.full & TCWTextureCacheMask.full) << 32;
 
-		TexCacheIter it = cache.find(key);
-
-		Texture* texture;
-		if (it != cache.end())
-		{
-			texture = &it->second;
+		Texture* texture = cache.Find(key);
+		if (texture != nullptr)
 			// Needed if the texture is updated
 			texture->tcw.StrideSel = tcw.StrideSel;
-		}
 		else //create if not existing
 		{
-			texture = &cache[key];
+			texture = cache.Add(key);
+			if (texture == nullptr)
+				die("Out of memory");
 
 			texture->tsp = tsp;
 			texture->tcw = tcw;
@@ -1238,19 +1250,16 @@ public:
 
 		u32 TargetFrame = std::max((u32)120, FrameCount) - 120;
 
-		for (const auto& pair : cache)
-		{
-			if (pair.second.dirty && pair.second.dirty < TargetFrame)
-				list[n++] = pair.first;
-
-			if (n == 6)
-				break;
-		}
+		cache.Each([&](u64 key, Texture& texture) {
+			if (texture.dirty && texture.dirty < TargetFrame)
+				list[n++] = key;
+			return n < 6;
+		});
 
 		for (u32 i = 0; i < n; i++)
 		{
-			if (cache[list[i]].Delete())
-				cache.erase(list[i]);
+			if (cache.Find(list[i])->Delete())
+				cache.Remove(list[i]);
 		}
 	}
 
@@ -1266,24 +1275,25 @@ public:
 		 * A count at zero is a texture the loader has finished with or
 		 * never had: only the renderer raises it from zero, and bringing
 		 * it back there is the last thing the loader does to a texture. */
-		for (auto& pair : cache)
-		{
-			if (retro_atomic_load_acquire_int(&pair.second.custom_load_in_progress) > 0)
-			{
-				texcache_stop_custom_loads();
-				break;
-			}
-		}
-		for (auto& pair : cache)
-			pair.second.Delete();
+		bool loading = false;
+		cache.Each([&](u64, Texture& texture) {
+			loading = retro_atomic_load_acquire_int(&texture.custom_load_in_progress) > 0;
+			return !loading;
+		});
+		if (loading)
+			texcache_stop_custom_loads();
+		cache.Each([](u64, Texture& texture) {
+			texture.Delete();
+			return true;
+		});
 
-		cache.clear();
+		cache.Clear();
 		KillTex = false;
 		INFO_LOG(RENDERER, "Texture cache cleared");
 	}
 
 protected:
-	std::unordered_map<u64, Texture> cache;
+	TexMap<Texture> cache;
 	// Only use TexU and TexV from TSP in the cache key
 	//     TexV : 7, TexU : 7
 	const TSP TSPTextureCacheMask = { { 7, 7 } };

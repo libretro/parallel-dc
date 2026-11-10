@@ -155,6 +155,8 @@ bool DX11Renderer::Init()
 	// textures made on the GPU, and the textures themselves, all of them now (rend/tex_pool.h)
 	texDecoder.Init(context);
 	texPool.Init(device, context->GetVramBudget(), &texDecoder);
+	// ...and the cache's room for them (rend/tex_map.h)
+	texCache.ReserveFor(texPool.Book().made);
 	// the chip's write-out, and the pictures made for it (dx11_writeout.h)
 	writeOutPictures = writeOut.Init(device, deviceContext, shaders);
 	DX11Texture::SetDecoder(texDecoder.Ready() ? &texDecoder : nullptr);

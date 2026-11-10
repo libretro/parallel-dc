@@ -290,6 +290,8 @@ protected:
 		// the textures' images, all of them now (rend/tex_pool.h)
 		texPool.Init(&texDecoder);
 		Texture::SetPool(&texPool);
+		// ...and the cache's room for them (rend/tex_map.h)
+		textureCache.ReserveFor(texPool.Book().made);
 		quadPipeline.Init(&shaderManager, renderPass, subpass);
 		vmus = std::unique_ptr<VulkanOSD>(new VulkanOSD());
 		vmus->Init(&quadPipeline);

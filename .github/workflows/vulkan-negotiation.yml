@@ -20,7 +20,8 @@ name: Vulkan negotiation
 # (tools/rend/rtt_watch_test.sh), and video memory written by DMA over
 # them, with Vulkan and with OpenGL (tools/vulkan/vk_dma.sh,
 # tools/gl/gl_dma.sh: Mesa's surfaceless EGL). And the translucent
-# sorter's sort against a stable sort by < (tools/rend/sort_pairs_test.sh).
+# sorter's sort against a stable sort by < (tools/rend/sort_pairs_test.sh),
+# and the texture cache's map against a plain list (tools/rend/tex_map_test.sh).
 # And polygons drawn outside a clipping rectangle, with OpenGL and OpenGL
 # ES, each renderer (tools/gl/gl_clip.sh).
 # And a state saved while a render to a texture is still on the card, every
@@ -82,6 +83,9 @@ on:
       - 'tools/rend/clip_check.py'
       - 'tools/rend/odd_check.py'
       - 'core/rend/tex_pool.h'
+      - 'core/rend/tex_map.h'
+      - 'tools/rend/tex_map_test.*'
+      - 'core/log/**'
       - 'tools/threads/live_prog.c'
       - 'Makefile*'
       - '.github/workflows/vulkan-negotiation.yml'
@@ -126,6 +130,9 @@ on:
       - 'tools/rend/clip_check.py'
       - 'tools/rend/odd_check.py'
       - 'core/rend/tex_pool.h'
+      - 'core/rend/tex_map.h'
+      - 'tools/rend/tex_map_test.*'
+      - 'core/log/**'
       - 'tools/threads/live_prog.c'
       - 'Makefile*'
       - '.github/workflows/vulkan-negotiation.yml'
@@ -170,6 +177,8 @@ jobs:
         run: sh tools/gl/gl_ahead.sh
       - name: The translucent sorter's sort (radix, stable, as a sort by <)
         run: sh tools/rend/sort_pairs_test.sh
+      - name: The texture cache's map (room made at the start, the textures never moved), against a plain list
+        run: sh tools/rend/tex_map_test.sh
       - name: The Vulkan renderers compiled for 32-bit Windows (a Vulkan handle an integer there)
         run: sh tools/vulkan/vk_i686.sh
       - name: Direct3D 12's polygon blends, the factors folded into the shader, against the PowerVR's (wine, no device)

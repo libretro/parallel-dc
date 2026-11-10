@@ -1190,19 +1190,16 @@ void TextureCache::Cleanup()
 
 	u32 TargetFrame = std::max((u32)120, FrameCount) - 120;
 
-	for (const auto& pair : cache)
-	{
-		if (pair.second.dirty && pair.second.dirty < TargetFrame)
-			list[n++] = pair.first;
-
-		if (n == 6)
-			break;
-	}
+	cache.Each([&](u64 key, Texture& texture) {
+		if (texture.dirty && texture.dirty < TargetFrame)
+			list[n++] = key;
+		return n < 6;
+	});
 
 	for (u32 i = 0; i < n; i++)
 	{
-		if (clearTexture(&cache[list[i]]))
-			cache.erase(list[i]);
+		if (clearTexture(cache.Find(list[i])))
+			cache.Remove(list[i]);
 	}
 }
 

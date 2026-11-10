@@ -233,6 +233,8 @@ bool DX12Renderer::Init()
 	// (the pictures rendered to: drawn into by the compute renderer too, when it is wanted)
 	texPool.SetTargetStorage(storagePictures);
 	texPool.Init(context->GetVramBudget(), &texDecoder);
+	// ...and the cache's room for them (rend/tex_map.h)
+	texCache.ReserveFor(texPool.Book().made);
 	DX12Texture::SetDecoder(texDecoder.Ready() ? &texDecoder : nullptr);
 	DX12Texture::SetPool(&texPool);
 	// the pipelines, and SSAA's pictures and pipelines made from them

@@ -152,28 +152,95 @@ void palette_update()
 		pal_hash_256[i] = XXH32(&PALETTE_RAM[i << 8], 256 * 4, 7);
 }
 
-/* The locks on each page of video memory: a list that grows (nullptr
- * where a lock has gone, used again), and how many are live, the page
- * being protected while any is. Render thread only. */
-struct VramLockList
+/* The locks on each page of video memory: a list, the page being
+ * protected while it has any. A lock is on each page of the texture's, as
+ * a node of each page's list; the nodes and the locks are in arenas made
+ * when the renderer starts, for the textures the cache has room for
+ * (texcache_reserve()), the free ones linked. Taking a lock and dropping
+ * one allocate nothing; an arena that runs out is made larger, and that is
+ * said. Render thread only. */
+struct VramLockNode
 {
-	vram_block **locks;
-	u32 count, size, live;
+	vram_block *lock;
+	u32 next;		/* +1, 0: none */
 };
-static VramLockList VramLocks[VRAM_SIZE_MAX / PAGE_SIZE];
+static u32 VramLocks[VRAM_SIZE_MAX / PAGE_SIZE];	/* each page's first node, +1; 0: none */
+static VramLockNode *vramlock_nodes;
+static u32 vramlock_node_count, vramlock_free_nodes;
 VArray2 vram;  // vram 32-64b
 
 /* Locks gone, kept for the next (linked by userdata): a texture rendered
  * to is locked again each frame, and takes one of these, not new memory */
 static vram_block *vramlock_free_blocks;
+static u32 vramlock_block_count;
+static bool vramlock_said;
+
+static void vramlock_ran_out(const char *what)
+{
+	if (vramlock_said)
+		return;
+	vramlock_said = true;
+	WARN_LOG(RENDERER, "Video memory locks: no %s left, more made (the room for the texture cache is too small for this game)", what);
+}
+
+/* @count more locks, onto the free list */
+static bool vramlock_blocks_more(u32 count)
+{
+	vram_block *blocks = (vram_block *)malloc((size_t)count * sizeof(vram_block));
+	u32 i;
+	if (blocks == nullptr)
+		return false;
+	for (i = 0; i < count; i++)
+	{
+		blocks[i].userdata = vramlock_free_blocks;
+		vramlock_free_blocks = &blocks[i];
+	}
+	vramlock_block_count += count;
+	return true;
+}
+
+/* Room for @count nodes: more, onto the free list (the arena is moved;
+ * the lists hold the nodes' places in it, not their addresses) */
+static bool vramlock_nodes_more(u32 count)
+{
+	VramLockNode *nodes = (VramLockNode *)realloc(vramlock_nodes, ((size_t)vramlock_node_count + count) * sizeof(VramLockNode));
+	u32 i;
+	if (nodes == nullptr)
+		return false;
+	vramlock_nodes = nodes;
+	for (i = vramlock_node_count + count; i-- > vramlock_node_count; )
+	{
+		vramlock_nodes[i].next = vramlock_free_nodes;
+		vramlock_free_nodes = i + 1;
+	}
+	vramlock_node_count += count;
+	return true;
+}
+
+static void pieces_reserve(u32 textures);
+
+void texcache_reserve(u32 textures)
+{
+	pieces_reserve(textures);
+	/* (a texture has one lock; on four pages, most of them less: a lock
+	 * on more takes the room of smaller ones) */
+	if (vramlock_block_count < textures)
+		vramlock_blocks_more(textures - vramlock_block_count);
+	if (vramlock_node_count < textures * 4)
+		vramlock_nodes_more(textures * 4 - vramlock_node_count);
+}
 
 static vram_block *vramlock_block_new()
 {
-	vram_block *block = vramlock_free_blocks;
-	if (block != nullptr)
-		vramlock_free_blocks = (vram_block *)block->userdata;
-	else
-		block = (vram_block *)malloc(sizeof(vram_block));
+	vram_block *block;
+	if (vramlock_free_blocks == nullptr)
+	{
+		vramlock_ran_out("lock");
+		if (!vramlock_blocks_more(vramlock_block_count > 64 ? vramlock_block_count / 2 : 64))
+			return nullptr;
+	}
+	block = vramlock_free_blocks;
+	vramlock_free_blocks = (vram_block *)block->userdata;
 	return block;
 }
 
@@ -186,14 +253,19 @@ void vramlock_list_remove(vram_block* block)
 
 	for (u32 i = base; i <= end; i++)
 	{
-		VramLockList& list = VramLocks[i];
-		for (u32 k = 0; k < list.count; k++)
+		u32 *at = &VramLocks[i];
+		while (*at != 0)
 		{
-			if (list.locks[k] == block)
+			VramLockNode *node = &vramlock_nodes[*at - 1];
+			if (node->lock == block)
 			{
-				list.locks[k] = nullptr;
-				list.live--;
+				const u32 n = *at;
+				*at = node->next;
+				node->next = vramlock_free_nodes;
+				vramlock_free_nodes = n;
 			}
+			else
+				at = &node->next;
 		}
 	}
 }
@@ -205,31 +277,23 @@ void vramlock_list_add(vram_block* block)
 
 	for (u32 i = base; i <= end; i++)
 	{
-		VramLockList& list = VramLocks[i];
+		u32 n;
 		/* If the list has no lock then we need to protect vram, otherwise
 		 * it's already been done - or a lock dropped since left it so
 		 * (rend_text_invl()): no system call for that */
-		if (list.live == 0 && !_vmem_vram_page_protected(i))
+		if (VramLocks[i] == 0 && !_vmem_vram_page_protected(i))
 			_vmem_protect_vram(i * PAGE_SIZE, PAGE_SIZE);
-		u32 k = 0;
-		if (list.live < list.count)
-			while (list.locks[k] != nullptr)
-				k++;
-		else
+		if (vramlock_free_nodes == 0)
 		{
-			if (list.count == list.size)
-			{
-				const u32 size = list.size != 0 ? list.size * 2 : 4;
-				vram_block **locks = (vram_block **)realloc(list.locks, size * sizeof(vram_block *));
-				if (locks == nullptr)
-					die("Out of memory");
-				list.locks = locks;
-				list.size = size;
-			}
-			k = list.count++;
+			vramlock_ran_out("room");
+			if (!vramlock_nodes_more(vramlock_node_count > 256 ? vramlock_node_count / 2 : 256))
+				die("Out of memory");
 		}
-		list.locks[k] = block;
-		list.live++;
+		n = vramlock_free_nodes;
+		vramlock_free_nodes = vramlock_nodes[n - 1].next;
+		vramlock_nodes[n - 1].lock = block;
+		vramlock_nodes[n - 1].next = VramLocks[i];
+		VramLocks[i] = n;
 	}
 }
  
@@ -260,26 +324,21 @@ static void libCore_vramlock_Unlock_block_wb(vram_block* block);
 static void vramlock_collect()
 {
 	vram_writes.Collect([](unsigned page) {
-		VramLockList& list = VramLocks[page];
-
 		vram_write_epoch++;
 
-		for (u32 k = 0; k < list.count; k++)
+		/* (dropping a lock takes it off every page it is on, this one's
+		 * first node with it) */
+		while (VramLocks[page] != 0)
 		{
-			vram_block *lock = list.locks[k];
-			if (lock != nullptr)
-			{
-				rend_text_invl(lock);
+			const u32 first = VramLocks[page];
+			rend_text_invl(vramlock_nodes[first - 1].lock);
 
-				if (list.locks[k] != nullptr)
-				{
-					ERROR_LOG(PVR, "Error : pvr is supposed to remove lock");
-					die("Invalid state");
-				}
+			if (VramLocks[page] == first)
+			{
+				ERROR_LOG(PVR, "Error : pvr is supposed to remove lock");
+				die("Invalid state");
 			}
 		}
-		list.count = 0;
-		list.live = 0;
 	});
 }
 
@@ -368,12 +427,14 @@ void VramRendered(u32 offset, u32 size, const BaseTextureCacheData *target)
 	const u32 end = offset + size - 1;
 	for (u32 page = offset / PAGE_SIZE; page <= end / PAGE_SIZE; page++)
 	{
-		const VramLockList& list = VramLocks[page];
-		for (u32 k = 0; k < list.count; k++)
+		u32 n = VramLocks[page];
+		while (n != 0)
 		{
-			vram_block *lock = list.locks[k];
-			/* (dropping one takes it off every page it is on) */
-			if (lock != nullptr && lock->userdata != target && lock->start <= end && lock->end >= offset)
+			vram_block *lock = vramlock_nodes[n - 1].lock;
+			/* (dropping one takes it off every page it is on: this node
+			 * goes, the next stays) */
+			n = vramlock_nodes[n - 1].next;
+			if (lock->userdata != target && lock->start <= end && lock->end >= offset)
 				rend_text_invl(lock);
 		}
 	}
@@ -594,6 +655,93 @@ void BaseTextureCacheData::PrintTextureName()
  * write-protection lock would cover, clamped to VRAM like the lock is,
  * hashed piece by piece. For frequently-updated textures that run
  * unprotected. */
+/* The pieces' hashes, and their bits, in arenas: blocks of a power of two
+ * words, 8 to 1024 (a texture's most), each size's free ones linked
+ * through their first words. Made when the renderer starts
+ * (texcache_reserve()), more when a size runs out, which is said; one
+ * larger than all is the heap's. Render thread only. */
+enum { PIECE_CLASSES = 8, PIECE_MIN_WORDS = 8 };
+static void *piece_free_list[PIECE_CLASSES];
+static u32 piece_blocks[PIECE_CLASSES];
+static bool piece_said;
+
+static int piece_class(u32 words)
+{
+	int c;
+	for (c = 0; c < PIECE_CLASSES; c++)
+		if (words <= (u32)PIECE_MIN_WORDS << c)
+			return c;
+	return -1;
+}
+
+/* @count more blocks of class @c: one allocation, never given back */
+static bool piece_blocks_more(int c, u32 count)
+{
+	const size_t bytes = ((size_t)PIECE_MIN_WORDS << c) * sizeof(u32);
+	u8 *mem = (u8 *)malloc(bytes * count);
+	u32 i;
+	if (mem == NULL)
+		return false;
+	for (i = 0; i < count; i++)
+	{
+		*(void **)(mem + i * bytes) = piece_free_list[c];
+		piece_free_list[c] = mem + i * bytes;
+	}
+	piece_blocks[c] += count;
+	return true;
+}
+
+static void pieces_reserve(u32 textures)
+{
+	/* (for one texture in 8 of the smallest, half as many each size up,
+	 * no fewer than 8) */
+	int c;
+	for (c = 0; c < PIECE_CLASSES; c++)
+	{
+		u32 want = (textures / 8) >> c;
+		if (want < 8)
+			want = 8;
+		if (piece_blocks[c] < want)
+			piece_blocks_more(c, want - piece_blocks[c]);
+	}
+}
+
+static u32 *pieces_alloc(u32 words)
+{
+	const int c = piece_class(words);
+	void *block;
+	if (c < 0)
+		return (u32 *)malloc((size_t)words * sizeof(u32));
+	if (piece_free_list[c] == NULL)
+	{
+		if (!piece_said)
+		{
+			piece_said = true;
+			WARN_LOG(RENDERER, "Texture cache: no room for the hashes of %u pieces left, more made (too small for this game)", words);
+		}
+		if (!piece_blocks_more(c, piece_blocks[c] > 8 ? piece_blocks[c] / 2 : 8))
+			return NULL;
+	}
+	block = piece_free_list[c];
+	piece_free_list[c] = *(void **)block;
+	return (u32 *)block;
+}
+
+/* @hashes, of @count pieces, given back */
+static void pieces_free(u32 *hashes, u32 count)
+{
+	const int c = piece_class(count + (count + 31) / 32);
+	if (hashes == NULL)
+		return;
+	if (c < 0)
+	{
+		free(hashes);
+		return;
+	}
+	*(void **)hashes = piece_free_list[c];
+	piece_free_list[c] = hashes;
+}
+
 bool BaseTextureCacheData::HashPieces(u32 *changed)
 {
 	const u32 start = sa_tex & VRAM_MASK;
@@ -612,8 +760,8 @@ bool BaseTextureCacheData::HashPieces(u32 *changed)
 	all = piece_hash == NULL || count != pieces || first != piece_first;
 	if (all)
 	{
-		free(piece_hash);
-		piece_hash = (u32 *)malloc(((size_t)count + (count + 31) / 32) * sizeof(u32));
+		pieces_free(piece_hash, pieces);
+		piece_hash = pieces_alloc(count + (count + 31) / 32);
 		pieces = 0;
 		if (piece_hash == NULL)
 			return false;
@@ -708,7 +856,7 @@ bool BaseTextureCacheData::FromRender(u32 stride, u32 rows)
 	}
 	tex_type = TextureType::_8888;
 	made_type = 0;
-	free(piece_hash);
+	pieces_free(piece_hash, pieces);
 	piece_hash = NULL;
 	pieces = 0;
 	Updates = 0;
@@ -748,7 +896,7 @@ bool BaseTextureCacheData::Delete()
 		libCore_vramlock_Unlock_block_wb(lock_block);
 	lock_block = nullptr;
 
-	free(piece_hash);
+	pieces_free(piece_hash, pieces);
 	piece_hash = NULL;
 	pieces = 0;
 	free(custom_image_data);
@@ -763,7 +911,7 @@ void BaseTextureCacheData::Create()
 	dirty = FrameCount;
 	stride_read = 0;
 	lock_block = nullptr;
-	free(piece_hash);
+	pieces_free(piece_hash, pieces);
 	piece_hash = NULL;
 	pieces = 0;
 	made_type = 0;

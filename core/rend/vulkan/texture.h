@@ -523,8 +523,10 @@ public:
 	 * is replaced is, and destroyed once those frames are done. */
 	void ClearLater()
 	{
-		for (auto& pair : cache)
-			DestroyLater(&pair.second);
+		cache.Each([this](u64, Texture& texture) {
+			DestroyLater(&texture);
+			return true;
+		});
 		EmptyAllInFlight();
 		BaseTextureCache::Clear();
 	}

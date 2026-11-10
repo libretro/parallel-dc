@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <cstdarg>
+#include <cstdio>
 #include <cstring>
 #include <string>
 
@@ -101,13 +102,14 @@ void LogManager::LogWithFullPath(LogTypes::LOG_LEVELS level, LogTypes::LOG_TYPE 
 		const char* file_, int line, const char* format, va_list args)
 {
    const char *file =  file_ + m_path_cutoff_point;
+	/* (on the stack, the line too: a line logged while a game runs
+	 * allocates nothing) */
 	char temp[MAX_MSGLEN];
+	char text[MAX_MSGLEN + 128];
 	CharArrayFromFormatV(temp, MAX_MSGLEN, format, args);
-	std::string msg =
-			StringFromFormat("%s:%u %c[%s]: %s\n", file,
-					line, LogTypes::LOG_LEVEL_TO_CHAR[(int)level], GetShortName(type), temp);
-   retro_log_level retro_level;
-   const char *text = msg.c_str();
+	snprintf(text, sizeof(text), "%s:%u %c[%s]: %s\n", file,
+			line, LogTypes::LOG_LEVEL_TO_CHAR[(int)level], GetShortName(type), temp);
+   retro_log_level retro_level = RETRO_LOG_INFO;
    switch (level)
    {
       case LogTypes::LNOTICE:

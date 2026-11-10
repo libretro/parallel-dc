@@ -199,6 +199,8 @@ void gl_tex_init(bool depth)
 {
 	glTexDecoder.Init();
 	glTexPool.Init();
+	// ...and the cache's room for them (rend/tex_map.h)
+	TexCache.ReserveFor(glTexPool.Book().made);
 	gl.rtt.kept = false;
 	gl.rtt.pooled = nullptr;
 	if (!glTexPool.Ready())

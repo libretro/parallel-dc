@@ -60,15 +60,19 @@ SH-4 dynarec's; 9 buffers, 8 to 14 images and 4 command pools.
    were drawn and how much image memory there was at the most, and judges
    the black past a render. A framebuffer's place for each image; the
    room a render read back is put in, for one of the screen's size
-   (`rtt_watch_reserve()`). Left: the
-   read back's copies grown when a larger render is first watched
-   (`vk_rtt_watch`: 18 of them, the screen's size each would be some 22
-   MB made for every game), and the texture a render goes into, which is
-   the texture cache's and the pool's (below).
-4. **The texture cache.** A texture first seen takes its picture from
-   the pool sized at the start (`TexturePool::Make`, and its log line);
-   the cache's map, its pieces' hashes, the samplers and the video memory
-   locks (`vramlock_list_add`) in arenas of their bound.
+   (`rtt_watch_reserve()`). Left: the read back's copies grown when a
+   larger render is first watched (`vk_rtt_watch`: 18 of them, the
+   screen's size each would be some 22 MB made for every game).
+4. **The texture cache.** Done: the cache's textures are in room made
+   when the renderer starts, twice as many as the pool has images, no
+   fewer than 1024, found by a fixed index (`rend/tex_map.h`, in place of
+   the `unordered_map`; `tools/rend/tex_map_test.sh`); the locks on video
+   memory, and each page's list of them, in arenas made with it
+   (`texcache_reserve()`); the pieces' hashes in arenas by size. The pool
+   has eight 8x8 and four 16x16 textures of each format whatever their
+   share (some 100 KB, which the share gave none of), and eight 64x64
+   pictures rendered to. Each of these says, once, when it runs out and
+   more is made. A line logged is formatted on the stack.
 5. **The dynarec.** The pages' lists of their blocks and the temporary
    blocks' list are the blocks' own links now (no std::set: nothing
    allocated to put a block in or take it out). Left: blocks compiled
