@@ -47,13 +47,14 @@ static int vkh_runtime(uintptr_t a)
 }
 
 #ifndef _WIN32
-/* the core's executable segments, and the C and C++ runtimes' */
+/* the core's executable segments, and the C, C++ and OpenMP runtimes' */
 static int vkh_find_ranges(struct dl_phdr_info *info, size_t size, void *core_base)
 {
    int i;
    const char *n = info->dlpi_name ? info->dlpi_name : "";
    const int core = info->dlpi_addr == (uintptr_t)core_base;
-   const int rt = strstr(n, "libc.so") || strstr(n, "libstdc++") || strstr(n, "libgcc_s") || strstr(n, "libm.so");
+   const int rt = strstr(n, "libc.so") || strstr(n, "libstdc++") || strstr(n, "libgcc_s") || strstr(n, "libm.so")
+         || strstr(n, "libgomp");
    (void)size;
    if (!core && !(rt && vkh_nrt < VKH_RUNTIMES))
       return 0;
@@ -252,7 +253,7 @@ void alloc_count_print(const char *prefix, const char *what, int sites)
 #if defined(ALLOC_COUNT) && !defined(_WIN32)
 /* The heap's, in place of the C library's (this program exports them:
  * -rdynamic), counted where the core asked: from its own code, or through
- * the C and C++ runtimes for it - the first frame outside them is the
+ * the C, C++ and OpenMP runtimes for it - the first frame outside them is the
  * core's. A driver's own allocations, and this program's, are not. */
 extern void *__libc_malloc(size_t n);
 extern void *__libc_calloc(size_t n, size_t s);

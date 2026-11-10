@@ -51,6 +51,11 @@ public:
 	void SetWindowSize(u32 width, u32 height) { this->width = screen_width = width; this->height = screen_height = height; }
 	/* @hdr: the image is the HDR output's (HdrEncode(), the HDR subpass) */
 	void PresentFrame(vk::Image image, vk::ImageView imageView, vk::Offset2D extent, bool hdr = false);
+	/* the size of the picture last handed over (@extent of PresentFrame()),
+	 * as the frontend is told it: a framebuffer read from the game's memory
+	 * is handed over at its own size; 0 x 0 before the first */
+	u32 PresentedWidth() const { return presentedWidth; }
+	u32 PresentedHeight() const { return presentedHeight; }
 
 	/* ---- The HDR output (Color Format; hdr_encode_vk.h) ----
 	 * Recorded into the frame's command buffers, from the frame's command
@@ -246,6 +251,8 @@ private:
 	vk::Queue queue;
 
 	retro_vulkan_image retro_image;
+	u32 presentedWidth = 0;
+	u32 presentedHeight = 0;
 	/* the HDR output (Color Format), when the frontend took it: what every
 	 * picture is encoded through on the way to the frontend */
 	hdr_vk_t *hdr = nullptr;

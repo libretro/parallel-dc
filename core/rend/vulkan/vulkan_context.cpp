@@ -661,6 +661,8 @@ void VulkanContext::PresentFrame(vk::Image image, vk::ImageView imageView, vk::O
 		retro_image.create_info.format = hdr ? hdrFormat : (VkFormat)colorFormat;
 	retro_image.image_view = (VkImageView)imageView;
 	retro_image.create_info.image = (VkImage)image;
+	presentedWidth = (u32)extent.x;
+	presentedHeight = (u32)extent.y;
 	retro_render_if->set_image(retro_render_if->handle, &retro_image, 0, nullptr, VK_QUEUE_FAMILY_IGNORED);
 	// once a frame: memory left empty by a change of size goes back to the driver
 	heap.Frame();
@@ -767,6 +769,8 @@ void VulkanContext::WaitQueueIdle()
 
 void VulkanContext::Term()
 {
+	presentedWidth = 0;
+	presentedHeight = 0;
 	if (device)
 	{
 		device.waitIdle();

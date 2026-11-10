@@ -21,7 +21,8 @@
  * the rectangles, by fixed shares - the smaller the shape and the nearer
  * to square, the more. Pictures rendered to (a format of the kind
  * TARGETS) are a fixed few of the shapes renders come in, from 64x64 to
- * 1024x1024 (half as many where the share is the least). A class that has
+ * 1024x1024 (half as many of 256 a side and larger where the share is the
+ * least). A class that has
  * none left when one is asked for has one made then - which means the
  * share was too small for the game - and it stays in the pool after: it is
  * counted, and said once for each class.
@@ -51,6 +52,8 @@ public:
 	enum { SIZES = 8, MIN_LOG2 = 3, MAX_FORMATS = 12, MAX_FRAMES = 8 };
 	/* What a format's images are for: textures; or pictures rendered to */
 	enum { TEXTURES = 0, TARGETS = 1 };
+	/* (the format of TextureType::_8888's: what a texture scaled up is) */
+	enum { FORMAT_8888 = 3 };
 	enum { CLASSES = MAX_FORMATS * SIZES * SIZES * 2 };
 
 	/* The class of an image of @format (the renderer's own number for it,
@@ -114,6 +117,26 @@ public:
 		return lw >= 3 && lh >= 3 && (lw == lh + 1 || lh == lw + 1) ? 1 : 0;
 	}
 
+	/* Where a texture of @f, 2^(@lw + 3) by 2^(@lh + 3), with mipmaps or
+	 * not, is drawn from: its own class (@texel[f] bytes a texel), or, scaled
+	 * up by 2^@k (xBRZ: no larger than @upMax a side to be), the 32-bit
+	 * class @k sizes up (its mipmaps, if it has them, made from it). -1:
+	 * none (scaled past 1024). */
+	static int Drawn(u32 f, u32 lw, u32 lh, bool mips, u32 k, u32 upMax, const u32 *texel, u32 *bytes)
+	{
+		if (k != 0 && (8u << lw) * (8u << lh) <= upMax * upMax)
+		{
+			if (lw + k >= SIZES || lh + k >= SIZES || texel[FORMAT_8888] == 0)
+				return -1;
+			const int c = Class(FORMAT_8888, 8u << (lw + k), 8u << (lh + k), mips);
+			*bytes = Bytes(c, texel[FORMAT_8888]);
+			return c;
+		}
+		const int c = Class(f, 8u << lw, 8u << lh, mips);
+		*bytes = Bytes(c, texel[f]);
+		return c;
+	}
+
 	/* How many images of each class to make at the start (into @counts,
 	 * CLASSES of them), for formats of @texel bytes a texel (0 for a
 	 * format there is none of), of the kind @kind[f] (TEXTURES, TARGETS;
@@ -121,16 +144,42 @@ public:
 	 * 8 for a format games use as much as 565). What the textures take is
 	 * a sixteenth of what the budget has left, but no less than 16 MB and
 	 * no more than 128 MB: three quarters of it the square ones, a quarter
-	 * the rectangles. Returns the bytes, the targets' too. */
-	static u64 Plan(const VramBudget& budget, const u32 *texel, const u32 *use, const u8 *kind, u32 formats, u32 *counts)
+	 * the rectangles. With textures scaled up @upscale times (xBRZ: those no
+	 * larger than @upMax a side), the textures as they are drawn: 32-bit,
+	 * as large as they are made (Drawn()) - none of them for a
+	 * factor no power of two, whose sizes no image of the pool's has.
+	 * With renders to a texture @rtt times finer, the targets of those
+	 * sizes as well as the console's (read back at its size). Returns the
+	 * bytes, the targets' too. */
+	static u64 Plan(const VramBudget& budget, const u32 *texel, const u32 *use, const u8 *kind, u32 formats, u32 *counts,
+			u32 upscale = 1, u32 upMax = 0, u32 rtt = 1)
 	{
 		/* For a format used as much as 565: square, mipmapped, then not;
 		 * from 8 texels to 1024. */
 		static const u32 mipped[SIZES] = { 1, 4, 6, 12, 16, 16, 4, 0 };
 		static const u32 plain[SIZES]  = { 0, 0, 1,  2,  4,  4, 2, 0 };
 		u64 unit = 0, rectUnit = 0, want, bytes = 0;
-		u32 f, s, t;
+		u32 f, s, t, k = 0, b;
+		int c;
 
+		/* (2^k: a factor no power of two leaves those it scales out) */
+		if (upscale > 1)
+		{
+			while ((2u << k) <= upscale)
+				k++;
+			if ((1u << k) != upscale)
+				k = SIZES;
+		}
+		/* (renders to a texture @rtt times finer: 2^rk, none for a factor
+		 * no power of two) */
+		u32 rk = 0;
+		if (rtt > 1)
+		{
+			while ((2u << rk) <= rtt)
+				rk++;
+			if ((1u << rk) != rtt)
+				rk = SIZES;
+		}
 		memset(counts, 0, sizeof(u32) * CLASSES);
 		for (f = 0; f < formats && f < MAX_FORMATS; f++)
 		{
@@ -138,10 +187,13 @@ public:
 				continue;
 			for (s = 0; s < SIZES; s++)
 			{
-				unit += (u64)mipped[s] * use[f] * Bytes(Class(f, 8u << s, 8u << s, true), texel[f]);
-				unit += (u64)plain[s] * use[f] * Bytes(Class(f, 8u << s, 8u << s, false), texel[f]);
+				if (Drawn(f, s, s, true, k, upMax, texel, &b) >= 0)
+					unit += (u64)mipped[s] * use[f] * b;
+				if (Drawn(f, s, s, false, k, upMax, texel, &b) >= 0)
+					unit += (u64)plain[s] * use[f] * b;
 				for (t = 0; t < SIZES; t++)
-					rectUnit += (u64)RectShare(s, t) * use[f] * Bytes(Class(f, 8u << s, 8u << t, false), texel[f]);
+					if (Drawn(f, s, t, false, k, upMax, texel, &b) >= 0)
+						rectUnit += (u64)RectShare(s, t) * use[f] * b;
 			}
 		}
 		want = (u64)budget.available_kib() * 1024 / 16;
@@ -160,29 +212,50 @@ public:
 				for (s = 0; s < SIZES; s++)
 					for (t = 0; t < SIZES; t++)
 					{
-						const int c = Class(f, 8u << s, 8u << t, false);
-						// (half as many on a card with little memory)
-						counts[c] = want < 64ull << 20 ? (TargetCount(s, t) + 1) / 2 : TargetCount(s, t);
-						bytes += (u64)counts[c] * Bytes(c, texel[f]);
+						/* (half as many of 256 a side and larger on a card
+						 * with little memory: the smaller, which a game
+						 * renders more of at once, take little) */
+						const u32 n = want < 64ull << 20 && (s >= 5 || t >= 5) ? (TargetCount(s, t) + 1) / 2 : TargetCount(s, t);
+						c = Class(f, 8u << s, 8u << t, false);
+						counts[c] += n;
+						bytes += (u64)n * Bytes(c, texel[f]);
+						/* ...and, rendered @rtt times finer, the same
+						 * renders as large as they are drawn (those still
+						 * no larger than 1024) */
+						if (rk != 0 && rk < SIZES && s + rk < SIZES && t + rk < SIZES && n != 0)
+						{
+							c = Class(f, 8u << (s + rk), 8u << (t + rk), false);
+							counts[c] += n;
+							bytes += (u64)n * Bytes(c, texel[f]);
+						}
 					}
 				continue;
 			}
 			for (s = 0; s < SIZES && unit != 0; s++)
 			{
-				const int m = Class(f, 8u << s, 8u << s, true), p = Class(f, 8u << s, 8u << s, false);
-				counts[m] = (u32)(((u64)mipped[s] * use[f] * squares + unit * 8 - 1) / (unit * 8));
-				counts[p] = (u32)(((u64)plain[s] * use[f] * squares + unit * 8 - 1) / (unit * 8));
-				if (use[f] != 0 && counts[p] < Least(s))
-					counts[p] = Least(s);
-				bytes += (u64)counts[m] * Bytes(m, texel[f]) + (u64)counts[p] * Bytes(p, texel[f]);
+				u32 n;
+				if ((c = Drawn(f, s, s, true, k, upMax, texel, &b)) >= 0)
+				{
+					n = (u32)(((u64)mipped[s] * use[f] * squares + unit * 8 - 1) / (unit * 8));
+					counts[c] += n;
+					bytes += (u64)n * b;
+				}
+				if ((c = Drawn(f, s, s, false, k, upMax, texel, &b)) >= 0)
+				{
+					n = (u32)(((u64)plain[s] * use[f] * squares + unit * 8 - 1) / (unit * 8));
+					if (use[f] != 0 && n < Least(s))
+						n = Least(s);
+					counts[c] += n;
+					bytes += (u64)n * b;
+				}
 				for (t = 0; t < SIZES && rectUnit != 0; t++)
 				{
-					if (t == s)
+					if (t == s || (c = Drawn(f, s, t, false, k, upMax, texel, &b)) < 0)
 						continue;
-					const int r = Class(f, 8u << s, 8u << t, false);
 					// (to the nearest: there are many of them, and few of each are used)
-					counts[r] = (u32)(((u64)RectShare(s, t) * use[f] * rects + rectUnit * 4) / (rectUnit * 8));
-					bytes += (u64)counts[r] * Bytes(r, texel[f]);
+					n = (u32)(((u64)RectShare(s, t) * use[f] * rects + rectUnit * 4) / (rectUnit * 8));
+					counts[c] += n;
+					bytes += (u64)n * b;
 				}
 			}
 		}

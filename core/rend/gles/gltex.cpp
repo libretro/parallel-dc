@@ -97,15 +97,17 @@ void GLTexturePool::Init()
 	/* (A driver that does not say what video memory there is - neither
 	 * GL_NVX_gpu_memory_info nor GL_ATI_meminfo, which is most of them - has
 	 * a budget that is a guess, and a low one: the pool is made as for a
-	 * card with 1.5 GB to spare, 96 MB of textures, which Jet Grind Radio's
-	 * scenes need.) */
+	 * card with 1.5 GB to spare, 96 MB of textures, which the busiest
+	 * games' scenes need.) */
 	VramBudget budget = gl.vram_budget;
 	if (!budget.exact && budget.available_kib() < (1536u << 10))
 	{
 		budget.budget_kib = 1536u << 10;
 		budget.usage_kib = 0;
 	}
-	const u64 bytes = TexPoolBook::Plan(budget, poolTexel, use, kind, FORMATS, counts);
+	const u64 bytes = TexPoolBook::Plan(budget, poolTexel, use, kind, FORMATS, counts,
+			texcache_upscale_factor(), (u32)settings.rend.MaxFilteredTextureSize,
+			settings.rend.RenderToTextureUpscale > 1 ? (u32)settings.rend.RenderToTextureUpscale : 1u);
 	ready = true;
 	while (glGetError() != GL_NO_ERROR)
 		;

@@ -93,7 +93,9 @@ void DX12TexturePool::Init(const VramBudget& budget, const DX12TexDecoder *decod
 		have[f] = usable[f] ? poolTexel[f] : 0;
 	}
 	u32 counts[TexPoolBook::CLASSES];
-	const u64 bytes = TexPoolBook::Plan(budget, have, use, kind, FORMATS, counts);
+	const u64 bytes = TexPoolBook::Plan(budget, have, use, kind, FORMATS, counts,
+			texcache_upscale_factor(), (u32)settings.rend.MaxFilteredTextureSize,
+			settings.rend.RenderToTextureUpscale > 1 ? (u32)settings.rend.RenderToTextureUpscale : 1u);
 	ready = true;
 	for (int c = 0; c < TexPoolBook::CLASSES; c++)
 		for (u32 i = 0; i < counts[c]; i++)

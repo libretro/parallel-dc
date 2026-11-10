@@ -4,7 +4,9 @@
 # tools/rend/alloc_count.c, built with -DALLOC_COUNT: VKH_ALLOCS,
 # VKH_ALLOC_SITES), the test discs, every
 # Vulkan renderer (per-triangle, threaded rendering on and off, per-strip,
-# per-pixel, compute), from frame 20 of 100 on; and with run-ahead
+# per-pixel, compute), from frame 20 of 100 on; the options that change
+# what is drawn (texture upscaling, renders to a texture finer, frame
+# skipping, the internal resolution, SSAA and the rest); and with run-ahead
 # (VKH_AHEAD: a state saved and loaded every frame), the plain disc and the
 # one with a render to a texture in its state. Each place in the core that
 # allocated - the heap, or Vulkan memory, buffers, images and pools - is
@@ -43,7 +45,7 @@ run() {
    name=$1; disc=$2; shift 2
    rm -rf "$WORK/dir"; mkdir -p "$WORK/dir"
    if ! env VKH_DIR="$WORK/dir" VKH_FRONTEND=sdr VKH_ALLOCS=20 VKH_ALLOC_SITES=1 \
-         timeout 900 "$WORK/vk_hdr" "$CORE" "$WORK/$disc/$disc.gdi" "$WORK/$name.raw" 100 "$@" \
+         ${PIN:-} timeout 900 "$WORK/vk_hdr" "$CORE" "$WORK/$disc/$disc.gdi" "$WORK/$name.raw" 100 "$@" \
          > "$WORK/$name.log" 2>&1; then
       echo "  FAIL: $name: the run failed:"; tail -5 "$WORK/$name.log"
       fails=$((fails + 1))
@@ -59,6 +61,28 @@ for d in plain atlas cull dma blend; do
    run $d-pix $d "$PIX"
    run $d-compute $d "$PIX" reicast_rendering_method=compute
 done
+# the options that change what is drawn, or at what size: the plain disc,
+# per-triangle (texture upscaling at 6x and renders to a texture at 3x and
+# 8x are left out: their images are of sizes no image of the pool's has).
+# Under the validation layer a frame skipped is the framebuffer, handed
+# over at its own size and read back as that size.
+# (on one processor: xBRZ's work on this thread, with no OpenMP team)
+PIN="taskset -c 0"
+run plain-texup2 plain "$TRI" reicast_texupscale=2x
+PIN=
+run plain-texup4 plain "$TRI" reicast_texupscale=4x
+run plain-rtt2 plain "$TRI" reicast_render_to_texture_upscaling=2x
+run plain-rtt4 plain "$PIX" reicast_render_to_texture_upscaling=4x
+run plain-skip2 plain "$TRI" reicast_frame_skipping=2
+run plain-res2 plain "$TRI" reicast_internal_resolution=2x
+run plain-ssaa2 plain "$TRI" reicast_ssaa=2x
+run plain-aniso plain "$TRI" reicast_anisotropic_filtering=16
+run plain-pvr2 plain "$TRI" reicast_pvr2_scaler=enabled
+run plain-vert plain "$TRI" reicast_screen_rotation=vertical
+run plain-vmu plain "$TRI" reicast_vmu1_screen_display=enabled
+run plain-cross plain "$TRI" reicast_lightgun1_crosshair=White
+run plain-tagpu plain "$TRI" reicast_ta_processing=gpu
+run plain-texdbg plain "$TRI" reicast_texture_debug=enabled
 # with run-ahead (a state saved and loaded every frame): the plain disc, and
 # the one whose state has a render to a texture on the card in it
 for d in plain keep; do
@@ -66,6 +90,10 @@ for d in plain keep; do
    VKH_AHEAD=10 run $d-pix-ahead $d "$PIX"
    VKH_AHEAD=10 run $d-compute-ahead $d "$PIX" reicast_rendering_method=compute
 done
-python3 tools/vulkan/vk_alloc_sites.py "$CORE" tools/vulkan/vk_allocs.allowed "$WORK"/*.log || fails=$((fails + 1))
+python3 tools/vulkan/vk_alloc_sites.py "$CORE" tools/vulkan/vk_allocs.allowed "$WORK"/*.log || {
+   fails=$((fails + 1))
+   # (and which of the pool's shapes ran out, where one did)
+   grep -h "image left" "$WORK"/*.log | sort | uniq -c || true
+}
 [ $fails -eq 0 ] || { echo "vk_allocs: $fails failed"; exit 1; }
 echo "vk_allocs: no allocation site that is not on the list"

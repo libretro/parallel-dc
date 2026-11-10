@@ -613,12 +613,17 @@ private:
 		for (u32 s = 0; s < inFlightCount; s++)
 			EmptyInFlight(s);
 	}
+	/* (each frame's lists with room for a game's textures of its own,
+	 * those no image of the pool's has the shape of, retired in a frame:
+	 * made with the frame's place, before the first, and kept) */
 	template<typename T>
 	void EmptyTrash(T& v)
 	{
 		if (v.size() < currentIndex + 1)
 			v.resize(currentIndex + 1);
 		v[currentIndex].clear();
+		if (v[currentIndex].capacity() < 64)
+			v[currentIndex].reserve(64);
 	}
 	grow_buf_t inFlightLists = GROW_BUF_INIT;	/* InFlightList, a place each */
 	u32 inFlightCount = 0;

@@ -828,10 +828,10 @@ PipelineShader *GetProgram(bool cp_AlphaTest, bool pp_InsideClipping,
  * GL_NVX_gpu_memory_info says is available (all of it counts as the
  * budget, none as used), or GL_ATI_meminfo's free texture memory; and
  * without either, a fixed figure small enough for any device that runs the
- * renderer. A device that has next to no memory of its own (less than
- * GL_UMA_DEDICATED_KIB: a software one, an integrated one that says so) uses
- * the system's: what the GPU can reach is its budget, the free auxiliary
- * memory by GL_ATI_meminfo. */
+ * renderer, which a rasterizer in software has too. A device that has next
+ * to no memory of its own (less than GL_UMA_DEDICATED_KIB: an integrated one
+ * that says so) uses the system's: what the GPU can reach is its budget,
+ * the free auxiliary memory by GL_ATI_meminfo. */
 #define GL_UMA_DEDICATED_KIB (64 << 10)
 #define GL_MOST_KIB (1 << 28)
 static void gl_query_vram_budget(bool nvx_meminfo, bool ati_meminfo)
@@ -843,14 +843,19 @@ static void gl_query_vram_budget(bool nvx_meminfo, bool ati_meminfo)
 	GLint kib[4] = { 0, 0, 0, 0 };
 
 	gl.vram_budget = VramBudget();
+	/* (a rasterizer in software has no video memory, and what Mesa's say of
+	 * it through GL_NVX_gpu_memory_info is what was on the stack - another
+	 * figure each run: the budget is the estimate, every run the same) */
+	const char *renderer_name = (const char *)glGetString(GL_RENDERER);
+	if (renderer_name != nullptr && (strstr(renderer_name, "llvmpipe") != nullptr || strstr(renderer_name, "softpipe") != nullptr))
+		nvx_meminfo = ati_meminfo = false;
 	if (nvx_meminfo)
 	{
 		GLint total = 0, dedicated = 0;
 		glGetIntegerv(nvx_dedicated, &dedicated);
 		glGetIntegerv(nvx_total_available, &total);
 		glGetIntegerv(nvx_current_available, &kib[0]);
-		/* (a figure no card has, 256 GB or more, is not one: llvmpipe's
-		 * dedicated memory is whatever its stack had there) */
+		/* (a figure no card has, 256 GB or more, is not one) */
 		const bool ok = glGetError() == GL_NO_ERROR && total > 0 && total < GL_MOST_KIB
 				&& dedicated >= 0 && dedicated < GL_MOST_KIB;
 		if (ok && dedicated > 0 && dedicated < GL_UMA_DEDICATED_KIB)

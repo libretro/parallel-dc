@@ -21,6 +21,25 @@ Where it started (60 frames of each test disc, frame 20 on): about 5000
 to 6000 heap allocations a run, some 80 a frame, nearly all of them the
 SH-4 dynarec's; 9 buffers, 8 to 14 images and 4 command pools.
 
+The options that change what is drawn, or at what size, are measured on
+the plain disc with each API that has them: texture upscaling at 2x and
+4x, renders to a texture 2x and 4x finer, frame skipping, the internal
+resolution, SSAA, anisotropic filtering, the PowerVR2 scaler, the vertical
+screen, the VMU's screen, the crosshair, TA processing on the GPU and the
+texture debug log. Done for them: a texture scaled up (xBRZ) is drawn from
+the 32-bit images of the pool a size or two up, with its mipmaps made on
+the GPU, which the pool is planned with (`TexPoolBook::Drawn()`); it is
+scaled into room grown with the cache (`texcache_upscaled()`), whose
+scaler's table and threads are made at the start; on a single thread xBRZ
+runs with no OpenMP region, which made and freed a team for each texture
+(counted: OpenMP is one of the runtimes now). Renders to a texture finer
+have their targets planned as large as they are drawn too, and the
+per-pixel renderers' lists' heads (Vulkan) and images (OpenGL 4) are as large
+as a render of a screen at that upscale from the start. Left: texture
+upscaling at 6x and renders to a texture 3x and 8x finer, whose images are
+of sizes no image of the pool's has (or larger than it has); they are made
+when first drawn and kept in the cache.
+
 ## In order
 
 1. **The signal handler.** Done: nothing is allocated there. The read
@@ -111,10 +130,11 @@ texture pool too (8-bit textures are `GL_R8`, as on OpenGL 3). Where
 textures are converted on the CPU (OpenGL ES, OpenGL before 4.3) they are
 converted into a piece of one pixel unpack buffer, a ring fenced a frame
 at a time (`upload_ring_take()`), and nothing of the cache's is grown for
-them. A device with next to no memory of its own (llvmpipe, an integrated
-one that says so) has the system's memory for its budget, and a figure no
-card has is not taken for one: the pool was planned from 31 MB on
-llvmpipe and missed. Left: the per-pixel renderer's copy of the depth for
+them. A device with next to no memory of its own (an integrated one that
+says so) has the system's memory for its budget, and a figure no card has
+is not taken for one. A rasterizer in software has the estimate: what
+llvmpipe says of its memory is what was on the stack, another figure each
+run, and the pool was planned from 22 MB in some runs and missed. Left: the per-pixel renderer's copy of the depth for
 frames of more than one pass, made when the first comes.
 
 Direct3D 11 and 12 are measured the same way: `tools/rend/d3d_allocs.sh`,

@@ -638,8 +638,20 @@ void DX11Renderer::SetupFrame()
 	}
 }
 
+/* As large as a render of a screen to a texture is, 640x480 times Render
+ * To Texture Upscaling: what the screen's depth and pictures are made at
+ * least as large as, from the first, so that no such render has them made
+ * again while the game runs (a larger one, which few games make, does) */
+void DX11Renderer::CommonRender(u32 *width, u32 *height)
+{
+	const u32 scale = settings.rend.RenderToTextureUpscale > 1 ? settings.rend.RenderToTextureUpscale : 1;
+	*width = std::max(*width, 640u * scale);
+	*height = std::max(*height, 480u * scale);
+}
+
 bool DX11Renderer::EnsureDepth(u32 width, u32 height)
 {
+	CommonRender(&width, &height);
 	if (depthTex && depthWidth >= width && depthHeight >= height)
 		return true;
 	width = std::max(width, depthWidth);

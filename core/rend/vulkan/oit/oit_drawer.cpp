@@ -815,7 +815,10 @@ void OITScreenDrawer::MakeFramebuffers()
 	 * as large as those need, TextureDrawer::ShareExtent()) */
 	{
 		const vk::Extent2D size = SharesAttachments() ? TextureDrawer::ShareExtent(viewport.extent) : viewport.extent;
-		InitBuffers(viewport.extent.width, viewport.extent.height);
+		/* (the lists' heads as large as those renders too: made while
+		 * the game runs, for the first of them, otherwise) */
+		const vk::Extent2D heads = TextureDrawer::ShareExtent(viewport.extent);
+		InitBuffers(heads.width, heads.height);
 		MakeAttachments(size.width, size.height);
 	}
 	// (kept until the frames that could still use them have gone by: see the per-triangle screen drawer)

@@ -219,9 +219,30 @@ static bool vramlock_nodes_more(u32 count)
 
 static void pieces_reserve(u32 textures);
 
+static void *texcache_scratch(size_t size);
+static void *texcache_upscaled(size_t size);
+
 void texcache_reserve(u32 textures)
 {
 	pieces_reserve(textures);
+#ifdef HAVE_TEXUPSCALE
+	/* Textures scaled up: what the largest is converted into (not straight
+	 * into the renderer's memory) and scaled up into, and xBRZ's table and
+	 * OpenMP's threads, which come with its first texture, made now */
+	if (settings.rend.TextureUpscale > 1)
+	{
+		const size_t side = (size_t)settings.rend.MaxFilteredTextureSize;
+		/* (pixels of every colour apart: xBRZ makes its table the first
+		 * time it measures how far two are) */
+		u32 px[4 * 4], up[4 * 4 * 6 * 6];
+		for (u32 i = 0; i < 4 * 4; i++)
+			px[i] = 0xFF000000u | (i * 0x10F3A5u);
+		texcache_scratch(PixelBuffer<u32>::bytes((u32)side, (u32)side, false) + 1024 * sizeof(u32));
+		texcache_upscaled(side * side * settings.rend.TextureUpscale * settings.rend.TextureUpscale * sizeof(u32));
+		if (settings.rend.TextureUpscale <= 6)
+			UpscalexBRZ(settings.rend.TextureUpscale, px, up, 4, 4, true);
+	}
+#endif
 	/* (a texture has one lock; on four pages, most of them less: a lock
 	 * on more takes the room of smaller ones) */
 	if (vramlock_block_count < textures)
@@ -535,6 +556,13 @@ template<typename Func>
 void parallelize(Func func, int start, int end)
 {
 	int tcount = getThreadCount();
+	/* (one thread: on this one, with no parallel region - OpenMP makes
+	 * and frees a team for each region of a single thread) */
+	if (tcount == 1)
+	{
+		func(start, end);
+		return;
+	}
 #pragma omp parallel num_threads(tcount)
 	{
 		int num_threads = omp_get_num_threads();
@@ -1065,11 +1093,31 @@ void *BaseTextureCacheData::ConvertInto(u32 width, u32 height, size_t bytes, u32
 	return memory != NULL ? memory : texcache_scratch(bytes);
 }
 
+/* Where a texture scaled up (xBRZ) is put, and grown as the scratch is:
+ * both made as large as they can be wanted when the cache's room is
+ * (texcache_reserve()), with textures scaled up. */
+static void *tex_upscaled;
+static size_t tex_upscaled_size;
+
+static void *texcache_upscaled(size_t size)
+{
+	if (size > tex_upscaled_size)
+	{
+		free(tex_upscaled);
+		tex_upscaled = malloc(size);
+		tex_upscaled_size = tex_upscaled != NULL ? size : 0;
+	}
+	return tex_upscaled;
+}
+
 void texcache_scratch_free()
 {
 	free(tex_scratch);
 	tex_scratch = NULL;
 	tex_scratch_size = 0;
+	free(tex_upscaled);
+	tex_upscaled = NULL;
+	tex_upscaled_size = 0;
 }
 
 void BaseTextureCacheData::ComputeHash()
@@ -1897,7 +1945,8 @@ void BaseTextureCacheData::Update()
 			if (textureUpscaling)
 			{
 				PixelBuffer<u32> tmp_buf;
-				tmp_buf.init(w * settings.rend.TextureUpscale, h * settings.rend.TextureUpscale);
+				const u32 uw = w * settings.rend.TextureUpscale, uh = h * settings.rend.TextureUpscale;
+				tmp_buf.init(uw, uh, false, texcache_upscaled((size_t)uw * uh * sizeof(u32)));
 
 				if (tcw.PixelFmt == Pixel1555 || tcw.PixelFmt == Pixel4444)
 					// Alpha channel formats. Palettes with alpha are already handled

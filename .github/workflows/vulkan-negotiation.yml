@@ -21,7 +21,8 @@ name: Vulkan negotiation
 # The HDR post effects (bloom, halation, chromatic aberration) are judged
 # in each against what the CPU makes of the picture (vk_hdr --post).
 # And renders to textures: what is fetched off the card and when
-# (tools/rend/rtt_watch_test.sh), and video memory written by DMA over
+# (tools/rend/rtt_watch_test.sh) and the images made for them at the start
+# (tools/rend/tex_pool_test.sh), and video memory written by DMA over
 # them, with Vulkan and with OpenGL (tools/vulkan/vk_dma.sh,
 # tools/gl/gl_dma.sh: Mesa's surfaceless EGL). And the translucent
 # sorter's sort against a stable sort by < (tools/rend/sort_pairs_test.sh),
@@ -84,6 +85,7 @@ on:
       - 'core/rend/TexCache.*'
       - 'core/hw/sh4/sh4_mem.cpp'
       - 'tools/rend/rtt_watch_test.*'
+      - 'tools/rend/tex_pool_test.*'
       - 'core/rend/sorter.*'
       - 'core/rend/sort_pairs.h'
       - 'core/rend/grow_buf.h'
@@ -141,6 +143,7 @@ on:
       - 'core/rend/TexCache.*'
       - 'core/hw/sh4/sh4_mem.cpp'
       - 'tools/rend/rtt_watch_test.*'
+      - 'tools/rend/tex_pool_test.*'
       - 'core/rend/sorter.*'
       - 'core/rend/sort_pairs.h'
       - 'core/rend/grow_buf.h'
@@ -190,6 +193,7 @@ jobs:
       - name: Renders to textures - what is fetched off the card, when, and what a DMA over them leaves
         run: |
           sh tools/rend/rtt_watch_test.sh
+          sh tools/rend/tex_pool_test.sh
           VK_DRIVER_FILES=/usr/share/vulkan/icd.d/lvp_icd.json sh tools/vulkan/vk_dma.sh
           sh tools/gl/gl_dma.sh
       - name: Polygons drawn outside a clipping rectangle, with OpenGL and OpenGL ES (each renderer)

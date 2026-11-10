@@ -177,6 +177,7 @@ protected:
 	u32 depthWidth = 0;
 	u32 depthHeight = 0;
 	bool EnsureDepth(u32 width, u32 height);
+	static void CommonRender(u32 *width, u32 *height);
 
 	/* The screen: a picture for each of the frontend's sync indexes (one
 	 * with version 1), the size rendered at */

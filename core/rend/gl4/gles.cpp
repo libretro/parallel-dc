@@ -661,6 +661,14 @@ extern void gl4CreateTextures(int width, int height);
 
 static void resize(int w, int h)
 {
+	/* (as large as a render of a screen to a texture, at the upscale renders
+	 * to textures have, from the first: made while the game runs, for the
+	 * first such render, otherwise) */
+	const int scale = settings.rend.RenderToTextureUpscale > 1 ? settings.rend.RenderToTextureUpscale : 1;
+	if (w < 640 * scale)
+		w = 640 * scale;
+	if (h < 480 * scale)
+		h = 480 * scale;
 	if (w > max_image_width || h > max_image_height || stencilTexId == 0)
 	{
 		if (w > max_image_width)

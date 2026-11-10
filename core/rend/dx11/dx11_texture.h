@@ -67,6 +67,9 @@ public:
 	 * none of that shape */
 	DX11PooledTexture *TakeTarget(u32 width, u32 height);
 	void Give(DX11PooledTexture *texture) { book.Give(texture); }
+	/* With textures scaled up (xBRZ): the 32-bit ones with levels have
+	 * them made on the card (GenerateMips()), as a texture scaled up does */
+	bool Generates() const { return generates; }
 	enum { FORMATS = 6, TARGET = 5 };
 	const TexPoolBook& Book() const { return book; }
 
@@ -78,6 +81,7 @@ private:
 	bool ready = false;
 	bool usable[FORMATS] = {};
 	bool writable[FORMATS] = {};
+	bool generates = false;
 	DX11PooledTexture *all = nullptr;
 };
 

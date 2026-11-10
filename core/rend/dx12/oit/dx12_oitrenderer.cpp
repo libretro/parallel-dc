@@ -424,6 +424,14 @@ bool DX12OITRenderer::MakePictures(u32 width, u32 height)
 	const u64 wanted = PlannedSize(screen_width, screen_height);
 	if (wanted != bufferSize && !MakeBuffers(wanted))
 		return false;
+	/* (as large as a render of a screen to a texture, at the upscale renders
+	 * to textures have, from the first: made while the game runs, for the
+	 * first such render, otherwise) */
+	{
+		const u32 scale = settings.rend.RenderToTextureUpscale > 1 ? settings.rend.RenderToTextureUpscale : 1;
+		width = std::max(width, 640u * scale);
+		height = std::max(height, 480u * scale);
+	}
 
 	// the lists' heads, a picture of at least this size: none of them a list (EOL)
 	if (!pointers.resource || width > pointersWidth || height > pointersHeight)
@@ -443,45 +451,27 @@ bool DX12OITRenderer::MakePictures(u32 width, u32 height)
 		desc.Format = DXGI_FORMAT_R32_UINT;
 		desc.SampleDesc.Count = 1;
 		desc.Flags = D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS;
-		pointers.state = D3D12_RESOURCE_STATE_COPY_DEST;
+		pointers.state = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
 		if (FAILED(device->CreateCommittedResource(&heap, D3D12_HEAP_FLAG_NONE, &desc, pointers.state, nullptr,
-				__uuidof(ID3D12Resource), (void **)pointers.resource.put())))
+				__uuidof(ID3D12Resource), (void **)pointers.resource.put()))
+				|| (clearHeap.Heap() == nullptr && !clearHeap.Init(device, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, 1, false)))
 		{
 			WARN_LOG(RENDERER, "DX12: per-pixel list heads creation failed (%d x %d)", width, height);
 			pointers.resource.reset();
 			return false;
 		}
-		// filled with EOL through the ring
-		const u32 pitch = (width * 4 + D3D12_TEXTURE_DATA_PITCH_ALIGNMENT - 1) & ~(D3D12_TEXTURE_DATA_PITCH_ALIGNMENT - 1);
-		DX12Upload upload;
-		if (!context->Upload(pitch * height, D3D12_TEXTURE_DATA_PLACEMENT_ALIGNMENT, upload))
-		{
-			WARN_LOG(RENDERER, "DX12: the upload ring is too small for the per-pixel list heads (%u KB)", pitch * height / 1024);
-			DropBuffer(pointers);
-			return false;
-		}
-		memset(upload.cpu, 0xff, (size_t)pitch * height);
-		D3D12_TEXTURE_COPY_LOCATION dst{};
-		dst.pResource = pointers.resource;
-		dst.Type = D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX;
-		D3D12_TEXTURE_COPY_LOCATION src{};
-		src.pResource = upload.buffer;
-		src.Type = D3D12_TEXTURE_COPY_TYPE_PLACED_FOOTPRINT;
-		src.PlacedFootprint.Offset = upload.offset;
-		src.PlacedFootprint.Footprint.Format = DXGI_FORMAT_R32_UINT;
-		src.PlacedFootprint.Footprint.Width = width;
-		src.PlacedFootprint.Footprint.Height = height;
-		src.PlacedFootprint.Footprint.Depth = 1;
-		src.PlacedFootprint.Footprint.RowPitch = pitch;
-		context->Cmd()->CopyTextureRegion(&dst, 0, 0, 0, &src, nullptr);
-		context->Transition(pointers.resource, pointers.state, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
 		D3D12_UNORDERED_ACCESS_VIEW_DESC uav{};
 		uav.Format = DXGI_FORMAT_R32_UINT;
 		uav.ViewDimension = D3D12_UAV_DIMENSION_TEXTURE2D;
 		device->CreateUnorderedAccessView(pointers.resource, nullptr, &uav, context->Srv().Cpu(DX12Context::OitFirst + 1));
 		device->CreateUnorderedAccessView(pointers.resource, nullptr, &uav, context->Srv().Cpu(DX12Context::OitSsaaFirst + 1));
-		if (clearHeap.Heap() != nullptr || clearHeap.Init(device, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, 1, false))
-			device->CreateUnorderedAccessView(pointers.resource, nullptr, &uav, clearHeap.Cpu(0));
+		device->CreateUnorderedAccessView(pointers.resource, nullptr, &uav, clearHeap.Cpu(0));
+		/* filled with EOL on the card (they are made as large as a render of
+		 * a screen to a texture, which the upload ring may have no room for) */
+		const UINT eol[4] = { ~0u, ~0u, ~0u, ~0u };
+		context->Cmd()->ClearUnorderedAccessViewUint(context->Srv().Gpu(DX12Context::OitFirst + 1), clearHeap.Cpu(0),
+				pointers.resource, eol, 0, nullptr);
+		context->UavBarrier(pointers.resource);
 		pointersWidth = width;
 		pointersHeight = height;
 	}

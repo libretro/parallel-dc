@@ -6,9 +6,11 @@
 # from frame 20 of 100 on: tools/rend/alloc_count.c). The test discs (plain,
 # the texture atlas, culling, DMA over renders to textures, blends and depth
 # modes a game seldom draws with), the per-triangle renderer (per triangle,
-# threaded rendering on and off, and per strip) and the per-pixel one, and
-# with run-ahead (D3DH_AHEAD: a state saved and loaded every frame) the
-# plain disc and the one with a render to a texture in its state;
+# threaded rendering on and off, and per strip) and the per-pixel one, the
+# options that change what is drawn (texture upscaling, renders to a
+# texture finer, frame skipping and the rest), and with run-ahead
+# (D3DH_AHEAD: a state saved and loaded every frame) the plain disc and the
+# one with a render to a texture in its state;
 # every site named (tools/vulkan/vk_alloc_sites.py, by the build's symbol
 # table) has to be on tools/rend/d3d_allocs.allowed, and none may be in the
 # fault handler.
@@ -70,6 +72,19 @@ for api in 11 12; do
       run d3d$api-$d-strip $d "$STRIP"
       run d3d$api-$d-pix $d "$PIX"
    done
+   # the options that change what is drawn, or at what size: the plain
+   # disc, per-triangle (texture upscaling at 6x is left out: its textures
+   # are of sizes no texture of the pool's has)
+   run d3d$api-plain-texup2 plain "$TRI" reicast_texupscale=2x
+   run d3d$api-plain-texup4 plain "$TRI" reicast_texupscale=4x
+   run d3d$api-plain-rtt2 plain "$TRI" reicast_render_to_texture_upscaling=2x
+   run d3d$api-plain-rtt4 plain "$PIX" reicast_render_to_texture_upscaling=4x
+   run d3d$api-plain-skip2 plain "$TRI" reicast_frame_skipping=2
+   run d3d$api-plain-res2 plain "$TRI" reicast_internal_resolution=2x
+   run d3d$api-plain-aniso plain "$TRI" reicast_anisotropic_filtering=16
+   run d3d$api-plain-vert plain "$TRI" reicast_screen_rotation=vertical
+   run d3d$api-plain-vmu plain "$TRI" reicast_vmu1_screen_display=enabled
+   run d3d$api-plain-cross plain "$TRI" reicast_lightgun1_crosshair=White
    # with run-ahead (a state saved and loaded every frame): the plain disc,
    # and the one whose state has a render to a texture on the card in it
    for d in plain keep; do
@@ -77,6 +92,10 @@ for api in 11 12; do
       D3DH_AHEAD=10 run d3d$api-$d-pix-ahead $d "$PIX"
    done
 done
-python3 tools/vulkan/vk_alloc_sites.py "$CORE" tools/rend/d3d_allocs.allowed "$WORK"/*.log || fails=$((fails + 1))
+python3 tools/vulkan/vk_alloc_sites.py "$CORE" tools/rend/d3d_allocs.allowed "$WORK"/*.log || {
+   fails=$((fails + 1))
+   # (and which of the pool's shapes ran out, where one did)
+   grep -h "image left" "$WORK"/*.log | sort | uniq -c || true
+}
 [ $fails -eq 0 ] || { echo "d3d_allocs: $fails failed"; exit 1; }
 echo "d3d_allocs: no allocation site that is not on the list"

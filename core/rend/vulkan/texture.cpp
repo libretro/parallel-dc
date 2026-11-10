@@ -226,7 +226,9 @@ void TexturePool::Init(const TexDecoder *decoder)
 		have[f] = usable[f] ? texel[f] : 0;
 	}
 	u32 counts[TexPoolBook::CLASSES];
-	const u64 bytes = TexPoolBook::Plan(context->GetVramBudget(), have, use, kind, FORMATS, counts);
+	const u64 bytes = TexPoolBook::Plan(context->GetVramBudget(), have, use, kind, FORMATS, counts,
+			texcache_upscale_factor(), (u32)settings.rend.MaxFilteredTextureSize,
+			settings.rend.RenderToTextureUpscale > 1 ? (u32)settings.rend.RenderToTextureUpscale : 1u);
 	ready = true;
 	for (int c = 0; c < TexPoolBook::CLASSES; c++)
 		for (u32 i = 0; i < counts[c]; i++)
@@ -1058,11 +1060,13 @@ void Texture::SetImage(u32 srcSize, void *srcData, bool isNew, bool genMipmaps)
 			vk::BufferImageCopy copyRegion(slotOffset, extent.width, extent.height, vk::ImageSubresourceLayers(vk::ImageAspectFlagBits::eColor, 0, 0, 1),
 					vk::Offset3D(0, 0, 0), vk::Extent3D(extent, 1));
 			commandBuffer.copyBufferToImage(slotBuffer, GetImage(), vk::ImageLayout::eTransferDstOptimal, copyRegion);
-			if (mipmapLevels > 1)
-				GenerateMipmaps();
 		}
-		// Set the layout for the texture image from eTransferDstOptimal to SHADER_READ_ONLY
-		setImageLayout(commandBuffer, GetImage(), format, mipmapLevels, vk::ImageLayout::eTransferDstOptimal, vk::ImageLayout::eShaderReadOnlyOptimal);
+		if (mipmapLevels > 1 && !levels)
+			// (every level left for the shaders to read)
+			GenerateMipmaps();
+		else
+			// Set the layout for the texture image from eTransferDstOptimal to SHADER_READ_ONLY
+			setImageLayout(commandBuffer, GetImage(), format, mipmapLevels, vk::ImageLayout::eTransferDstOptimal, vk::ImageLayout::eShaderReadOnlyOptimal);
 		debugPath = DBG_STAGED;
 	}
 	else

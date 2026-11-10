@@ -178,6 +178,16 @@ void texcache_stop_custom_loads();
  * that locking one takes none (TexCache.cpp): more is made if it runs
  * out, and that is said */
 void texcache_reserve(u32 textures);
+/* How many times textures are scaled up (xBRZ), 1 for not: for the pools'
+ * plans (TexPoolBook::Plan()) */
+static inline u32 texcache_upscale_factor(void)
+{
+#ifdef HAVE_TEXUPSCALE
+	return settings.rend.TextureUpscale > 1 ? (u32)settings.rend.TextureUpscale : 1;
+#else
+	return 1;
+#endif
+}
 
 #define clamp(minv, maxv, x) (x < minv ? minv : x > maxv ? maxv : x)
 

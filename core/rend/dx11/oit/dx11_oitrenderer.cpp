@@ -285,6 +285,7 @@ bool DX11OITRenderer::MakePictures(u32 width, u32 height)
 	const u64 wanted = DX11OITBuffers::PlannedSize(screen_width, screen_height);
 	if (wanted != buffers.GetSize() && !buffers.Init(device, wanted))
 		return false;
+	CommonRender(&width, &height);
 	if (!buffers.Resize(width, height))
 		return false;
 	if (pictures[0].texture && width <= picturesWidth && height <= picturesHeight)

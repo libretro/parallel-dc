@@ -55,8 +55,12 @@ void DX11TexturePool::Init(ID3D11Device *device, const VramBudget& budget, const
 		writable[f] = f != TARGET && usable[f] && decoder != nullptr && decoder->Takes((TextureType)f);
 		have[f] = usable[f] ? poolTexel[f] : 0;
 	}
+	generates = texcache_upscale_factor() > 1 && usable[(int)TextureType::_8888]
+			&& DX11Context::Instance()->CanGenerateMips(TextureType::_8888);
 	u32 counts[TexPoolBook::CLASSES];
-	const u64 bytes = TexPoolBook::Plan(budget, have, use, kind, FORMATS, counts);
+	const u64 bytes = TexPoolBook::Plan(budget, have, use, kind, FORMATS, counts,
+			texcache_upscale_factor(), (u32)settings.rend.MaxFilteredTextureSize,
+			settings.rend.RenderToTextureUpscale > 1 ? (u32)settings.rend.RenderToTextureUpscale : 1u);
 	ready = true;
 	for (int c = 0; c < TexPoolBook::CLASSES; c++)
 		for (u32 i = 0; i < counts[c]; i++)
@@ -92,7 +96,9 @@ DX11PooledTexture *DX11TexturePool::Make(int cls, bool late)
 	const bool wide = f == (u32)TextureType::_8888 || f == (u32)TextureType::_8;
 	DX11PooledTexture *t = new DX11PooledTexture();
 	t->levels = TexPoolBook::Mips(cls) ? 1 + bitscanrev(std::max(width, height)) : 1;
-	t->writable = writable[f];
+	// (one whose levels the card makes is filled by copies, not by the decoder)
+	const bool generated = generates && f == (u32)TextureType::_8888 && TexPoolBook::Mips(cls);
+	t->writable = writable[f] && !generated;
 
 	D3D11_TEXTURE2D_DESC desc{};
 	desc.Width = width;
@@ -106,6 +112,11 @@ DX11PooledTexture *DX11TexturePool::Make(int cls, bool late)
 	desc.BindFlags = D3D11_BIND_SHADER_RESOURCE | (t->writable ? (wide ? D3D11_BIND_UNORDERED_ACCESS : D3D11_BIND_RENDER_TARGET) : 0);
 	if (f == TARGET)
 		desc.BindFlags = D3D11_BIND_SHADER_RESOURCE | D3D11_BIND_RENDER_TARGET;
+	if (generated)
+	{
+		desc.BindFlags = D3D11_BIND_SHADER_RESOURCE | D3D11_BIND_RENDER_TARGET;
+		desc.MiscFlags = D3D11_RESOURCE_MISC_GENERATE_MIPS;
+	}
 	bool ok = SUCCEEDED(device->CreateTexture2D(&desc, nullptr, t->texture.put()));
 	if (ok)
 	{
@@ -360,9 +371,11 @@ void DX11Texture::UploadToGPU(int width, int height, u8 *data, bool mipmapped, b
 	desc.BindFlags = D3D11_BIND_SHADER_RESOURCE | (generate ? D3D11_BIND_RENDER_TARGET : 0);
 	desc.MiscFlags = generate ? D3D11_RESOURCE_MISC_GENERATE_MIPS : 0;
 
-	/* One of the pool's, made before the game (but one whose smaller levels
-	 * the card makes) */
-	const bool fromPool = !generate && TakePooled(width, height, mipmapsIncluded);
+	/* One of the pool's, made before the game (one whose smaller levels the
+	 * card makes where the pool's 32-bit ones are made for that) */
+	const bool fromPool = generate ? pool != nullptr && pool->Generates() && tex_type == TextureType::_8888
+				&& TakePooled(width, height, true)
+			: TakePooled(width, height, mipmapsIncluded);
 	if (!fromPool)
 		ReleasePooled();
 	if (texture && !fromPool)

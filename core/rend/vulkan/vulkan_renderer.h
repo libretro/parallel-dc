@@ -358,7 +358,7 @@ protected:
 		}
 		curTexture->UploadToGPU(width, height, pixels, false);
 		curTexture->SetCommandBuffer(nullptr);
-		PresentTexture(*curTexture, width, height, { 640, 480 });
+		PresentTexture(*curTexture, width, height, { width, height });
 
 		return true;
 	}

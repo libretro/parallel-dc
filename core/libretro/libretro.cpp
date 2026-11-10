@@ -1641,6 +1641,9 @@ static void rend_made_again(void)
 }
 #endif
 
+/* the size of the picture handed over this frame, as video_cb is told it */
+static void frame_size(unsigned *w, unsigned *h);
+
 void retro_run (void)
 {
    bool updated     = false;
@@ -1726,7 +1729,11 @@ void retro_run (void)
       /* the kept picture handed over once, then repeated (none: the
        * frontend's last frame) */
       const bool shown = rend_present_kept_picture();
-      video_cb(shown ? RETRO_HW_FRAME_BUFFER_VALID : 0, screen_width, screen_height, 0);
+      {
+         unsigned fw, fh;
+         frame_size(&fw, &fh);
+         video_cb(shown ? RETRO_HW_FRAME_BUFFER_VALID : 0, fw, fh, 0);
+      }
       rend_warming_runs++;
       return;
    }
@@ -1852,7 +1859,11 @@ void retro_run (void)
       is_dupe = false;
 #endif
 #if defined(HAVE_OPENGL) || defined(HAVE_OPENGLES) || defined(HAVE_VULKAN) || defined(HAVE_D3D11) || defined(HAVE_D3D9) || defined(HAVE_D3D12)
-   video_cb(is_dupe ? 0 : RETRO_HW_FRAME_BUFFER_VALID, screen_width, screen_height, 0);
+   {
+      unsigned fw, fh;
+      frame_size(&fw, &fh);
+      video_cb(is_dupe ? 0 : RETRO_HW_FRAME_BUFFER_VALID, fw, fh, 0);
+   }
 #endif
    is_dupe = true;
 
@@ -2380,6 +2391,27 @@ static void upscaler_announce(void)
 
 #ifdef HAVE_VULKAN
 static VulkanContext theVulkanContext;
+#endif
+
+static void frame_size(unsigned *w, unsigned *h)
+{
+   *w = screen_width;
+   *h = screen_height;
+#ifdef HAVE_VULKAN
+   /* The Vulkan renderers hand over a framebuffer read from the game's
+    * memory (and the picture kept over a change of renderer) as an image of
+    * its own size: the frontend is told that size, the image's, and reads
+    * no further than it. The drawn frames are the screen's size. */
+   if ((settings.pvr.rend == 4 || settings.pvr.rend == 5)
+         && theVulkanContext.PresentedWidth() != 0)
+   {
+      *w = theVulkanContext.PresentedWidth();
+      *h = theVulkanContext.PresentedHeight();
+   }
+#endif
+}
+
+#ifdef HAVE_VULKAN
 
 static void retro_vk_context_reset()
 {
