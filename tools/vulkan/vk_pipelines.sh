@@ -39,7 +39,7 @@ WORK=${TMPDIR:-/tmp}/vk_pipelines.$$
 mkdir -p "$WORK"
 trap 'rm -rf "$WORK"' EXIT
 ${CC:-cc} -O1 -g -Wall -I./core/libretro-common/include -I./core/deps/khronos \
-   -DTARGET_NO_THREADS -o "$WORK/vk_hdr" tools/vulkan/vk_hdr.c tools/hdr/hdr_post_ref.c \
+   -DTARGET_NO_THREADS -o "$WORK/vk_hdr" tools/vulkan/vk_hdr.c tools/rend/alloc_count.c tools/hdr/hdr_post_ref.c \
    core/rend/hdr/hdr_output.c core/rend/hdr/hdr_transform.c core/rend/hdr/hdr_aces2.c \
    core/rend/hdr/hdr_libretro.c core/rend/hdr/hdr_display.c -ldl -lm -lpthread
 # (the build with modifier volumes and translucent polygons of each cull mode)

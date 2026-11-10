@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
-"""Names the core's allocation sites vk_hdr printed (VKH_ALLOC_SITES) and
-checks them against an allowlist (tools/vulkan/vk_allocs.sh).
+"""Names the core's allocation sites a test host printed
+(tools/rend/alloc_count.c: vk_hdr's VKH_ALLOC_SITES, gl_frames'
+GLF_ALLOC_SITES) and checks them against an allowlist
+(tools/vulkan/vk_allocs.sh, tools/gl/gl_allocs.sh).
 
   vk_alloc_sites.py core.so allowed.txt log...
 
@@ -21,7 +23,7 @@ import sys
 
 HANDLER = 'signal_handler'
 DEPTH = 3
-LIBRARY = ('std::', '__gnu_cxx::', 'Xbyak::', 'vk::', 'operator new', 'operator delete', 'VULKAN_HPP')
+LIBRARY = ('std::', '__gnu_cxx::', 'Xbyak::', 'vk::', 'operator new', 'operator delete', 'VULKAN_HPP', 'node_pool::')
 
 
 def qualified(name):
@@ -48,7 +50,7 @@ def main():
     addrs = set()
     for path in logs:
         for line in open(path, errors='replace'):
-            m = re.match(r'vk_hdr: site (heap|vulkan) (\d+)((?: 0x[0-9a-f]+)+)$', line.strip())
+            m = re.match(r'[a-z_0-9]+: site ([a-z0-9]+) (\d+)((?: 0x[0-9a-f]+)+)$', line.strip())
             if m:
                 chain = m.group(3).split()
                 sites.append((m.group(1), int(m.group(2)), chain, path))

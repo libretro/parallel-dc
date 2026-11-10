@@ -510,6 +510,16 @@ void SortReserve(void)
 	grow_buf_reserve(&runsTmp, polys * sizeof(PrepassRun));
 }
 
+void SortListReserve(SortList *list)
+{
+	grow_buf_reserve_keep(&list->buf, (size_t)SORT_RESERVE_DRAWS * sizeof(SortTrigDrawParam));
+}
+
+void SortIndicesReserve(grow_buf_t *buf)
+{
+	grow_buf_reserve(buf, ((size_t)6 * SORT_RESERVE_TRIS + 1) * sizeof(u32));
+}
+
 void SortPassesReserve(grow_buf_t *lists)
 {
 	/* (the render passes a frame can have: TA_context's) */

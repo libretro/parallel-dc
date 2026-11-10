@@ -39,6 +39,9 @@ public:
 	TexMap(const TexMap&) = delete;
 	TexMap& operator=(const TexMap&) = delete;
 
+	/* What it holds, for what it says when it runs out (the texture
+	 * cache's textures unless said) */
+	void Name(const char *what) { name = what; }
 	/* Room for @textures, made now */
 	void Reserve(u32 textures)
 	{
@@ -69,8 +72,8 @@ public:
 			if (!said)
 			{
 				said = true;
-				WARN_LOG(RENDERER, "Texture cache: no room for more than %u textures, more made (the cache is too small for this game)",
-						chunkCount * CHUNK);
+				WARN_LOG(RENDERER, "%s: no room for more than %u, more made (too small for this game)",
+						name, chunkCount * CHUNK);
 			}
 			if (chunkCount == MAX_CHUNKS || !AddChunk())
 				return NULL;
@@ -250,6 +253,7 @@ private:
 	u32 *slotEntry = NULL;
 	u32 indexSize = 0;		// a power of two
 	bool said = false;
+	const char *name = "Texture cache";
 };
 
 #endif

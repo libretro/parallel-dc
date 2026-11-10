@@ -331,6 +331,15 @@ static void DrawList(const List<PolyParam>& gply, int first, int count)
 /* The sorted triangles' draws and the depth prepass's (rend/sorter.h),
  * its indices after the sorted ones; kept from one frame to the next */
 static SortList sortedDraws, prepassDraws;
+/* (kept from one frame to the next: grown, never made again) */
+static grow_buf_t sortedIndices;
+
+void gl_sort_reserve(void)
+{
+	SortListReserve(&sortedDraws);
+	SortListReserve(&prepassDraws);
+	SortIndicesReserve(&sortedIndices);
+}
 
 // (where the shaders write the depth: OpenGL ES 2 has them leave it, and a discard there would cost every polygon)
 static bool PrepassSupported()
@@ -345,8 +354,6 @@ static bool PrepassSupported()
  * in the buffer bound, in bytes. */
 static uintptr_t SortTriangles(int first, int count, bool sortTriangles, bool lastPass)
 {
-	/* (kept from one frame to the next: grown, never made again) */
-	static grow_buf_t indices;
 	sortedDraws.count = 0;
 	prepassDraws.count = 0;
 	const bool prepass = PrepassSupported();
@@ -356,7 +363,7 @@ static uintptr_t SortTriangles(int first, int count, bool sortTriangles, bool la
 	const size_t room = (size_t)(6 * SortedTriangles(first, count) + 1) * sizeof(u32);
 	size_t at = 0;
 	u32 *here = gl_frame_sorted(room, &at);
-	u32 *out = here != nullptr ? here : (u32 *)grow_buf_reserve(&indices, room);
+	u32 *out = here != nullptr ? here : (u32 *)grow_buf_reserve(&sortedIndices, room);
 	if (out == nullptr)
 		return 0;
 	u32 n = 0;

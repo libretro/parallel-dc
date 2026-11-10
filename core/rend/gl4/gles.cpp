@@ -579,15 +579,15 @@ static void gl_term(void)
 	if (gl.depth_ubo != 0)
 		glDeleteBuffers(1, &gl.depth_ubo);
 	gl.depth_ubo = 0;
-	for (auto it = gl4.shaders.begin(); it != gl4.shaders.end(); it++)
-	{
+	gl4.shaders.Each([](u32, gl4PipelineShader& s) {
 		// (one drawn with a general program has none of its own, but may have one coming)
-		if (it->second.program != 0 && it->second.general == nullptr)
-			glDeleteProgram(it->second.program);
-		if (it->second.pending != 0)
-			glDeleteProgram(it->second.pending);
-	}
-	gl4.shaders.clear();
+		if (s.program != 0 && s.general == nullptr)
+			glDeleteProgram(s.program);
+		if (s.pending != 0)
+			glDeleteProgram(s.pending);
+		return true;
+	});
+	gl4.shaders.Clear();
 	for (auto& pass : gl4.general)
 		for (gl4PipelineShader& g : pass)
 		{
@@ -614,6 +614,11 @@ static bool gl_create_resources(void)
 	glGenBuffers(1, &gl4.vbo.modvols);
 	glGenBuffers(1, &gl4.vbo.idxs);
 	glGenBuffers(1, &gl4.vbo.idxs2);
+	/* (each its room now: gl_buffer_room()) */
+	gl_buffer_room(gl4.vbo.geometry, GL_BUFFER_ROOM * 4);
+	gl_buffer_room(gl4.vbo.modvols, GL_BUFFER_ROOM);
+	gl_buffer_room(gl4.vbo.idxs, GL_BUFFER_ROOM);
+	gl_buffer_room(gl4.vbo.idxs2, GL_BUFFER_ROOM);
 
 	gl4SetupMainVBO();
 	gl4SetupModvolVBO();
@@ -638,8 +643,9 @@ static bool gl_create_resources(void)
 	gl4.modvol_shader.program=gl_CompileAndLink(vshader, ModifierVolumeShader);
 	gl4.modvol_shader.normal_matrix  = glGetUniformLocation(gl4.modvol_shader.program, "normal_matrix");
 
-	// Create the buffer for Translucent poly params
+	// Create the buffer for Translucent poly params: as many as a frame can have, now
 	glGenBuffers(1, &gl4.vbo.tr_poly_params);
+	gl_buffer_room(gl4.vbo.tr_poly_params, (size_t)gl4.trPolyMax * 8);
 	// Bind it
 	glBindBuffer(GL_SHADER_STORAGE_BUFFER, gl4.vbo.tr_poly_params);
 	// Declare storage

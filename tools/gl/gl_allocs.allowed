@@ -1,0 +1,21 @@
+# Where the core may allocate during play with OpenGL, by function
+# (tools/gl/gl_allocs.sh, tools/vulkan/vk_alloc_sites.py; "heap", or "gl"
+# for OpenGL names, storage, programs and shaders). AGENTS.md, "No
+# allocations during play": the list only ever shrinks.
+
+# OpenGL ES has no texture pool: a render to a texture's texture, depth
+# buffer and framebuffer, and a texture's picture and its conversion,
+# made as they come
+gl BindRTT
+gl TextureCacheData::UploadToGPU
+heap BaseTextureCacheData::ConvertInto
+
+# A texture of a shape the pool has none of left: one made, and said
+heap GLTexturePool::Make
+gl GLTexturePool::Make
+gl TextureCacheData::CopyRender
+
+# The per-pixel renderer's copy of the depth for a frame of more than one
+# render pass, made when the first such frame comes (made at the start, it
+# would be video memory every game pays for)
+gl gl4DrawStrips

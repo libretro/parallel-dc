@@ -32,6 +32,14 @@
  * GLF_COUNT_PROGRAMS=1 prints "programs: C compiled, L linked, B loaded in
  * retro_run" - glCompileShader, glLinkProgram and glProgramBinary called
  * inside it (tools/gl/gl_draw_path.sh).
+ * GLF_ALLOCS=N, built with -DALLOC_COUNT -rdynamic and
+ * tools/rend/alloc_count.c: the core's allocations during play, from frame
+ * N on (AGENTS.md, "No allocations during play"), printed after the
+ * frames - its heap's, and its OpenGL objects': names made (glGen*),
+ * storage given (glTexImage*, glTexStorage*, glRenderbufferStorage*,
+ * glBufferStorage, a glBufferData larger than the buffer ever was), programs
+ * and shaders made; with GLF_ALLOC_SITES, where in the core each was
+ * (tools/gl/gl_allocs.sh).
  *
  * Built with: cc -rdynamic -o gl_frames gl_frames.c -lEGL -lGL -ldl */
 #define _GNU_SOURCE
@@ -200,9 +208,159 @@ static void count_link(GLuint p) { if (in_run) linked++; real_link(p); }
 static void (*real_binary)(GLuint, GLenum, const void *, GLsizei);
 static void count_binary(GLuint p, GLenum f, const void *b, GLsizei n) { if (in_run) loaded++; real_binary(p, f, b, n); }
 
+#ifdef ALLOC_COUNT
+#include "../rend/alloc_count.h"
+/* GLF_ALLOCS: the OpenGL objects the core makes and gives storage, from its
+ * own code (alloc_count.c names where) */
+enum { GLF_A_NAMES = ALLOC_HOST_KINDS, GLF_A_STORAGE, GLF_A_PROGRAMS, GLF_A_KINDS };
+static const char *const glf_a_names[GLF_A_KINDS] = { "heap allocations", "heap frees", "objects named",
+   "storage given", "programs and shaders made" };
+static const char *const glf_a_site[GLF_A_KINDS] = { "heap", NULL, "gl", "gl", "gl" };
+#define GLF_SEEN(kind) alloc_count_seen(kind, __builtin_return_address(0))
+
+/* the most a buffer has had, by its name, from the binding of its target:
+ * a glBufferData no larger than that - a frame's data streamed, the
+ * buffer's storage given anew, which a driver keeps for it - asks for
+ * none more */
+#define GLF_BUFFERS 65536
+static GLsizeiptr glf_buffer_size[GLF_BUFFERS];
+static GLuint glf_bound[16];
+static int glf_target(GLenum t)
+{
+   static const GLenum targets[] = { GL_ARRAY_BUFFER, GL_ELEMENT_ARRAY_BUFFER, GL_UNIFORM_BUFFER,
+      GL_PIXEL_PACK_BUFFER, GL_PIXEL_UNPACK_BUFFER, GL_COPY_READ_BUFFER, GL_COPY_WRITE_BUFFER,
+      GL_SHADER_STORAGE_BUFFER, GL_TEXTURE_BUFFER, GL_DRAW_INDIRECT_BUFFER, GL_ATOMIC_COUNTER_BUFFER,
+      GL_TRANSFORM_FEEDBACK_BUFFER, GL_DISPATCH_INDIRECT_BUFFER, GL_QUERY_BUFFER };
+   int i;
+   for (i = 0; i < (int)(sizeof(targets) / sizeof(targets[0])); i++)
+      if (targets[i] == t)
+         return i;
+   return 15;
+}
+
+#define GLF_NAMER(fn) \
+   static void (*real_##fn)(GLsizei, GLuint *); \
+   static void count_##fn(GLsizei n, GLuint *names) { GLF_SEEN(GLF_A_NAMES); real_##fn(n, names); }
+GLF_NAMER(glGenTextures)
+GLF_NAMER(glGenBuffers)
+GLF_NAMER(glGenFramebuffers)
+GLF_NAMER(glGenRenderbuffers)
+GLF_NAMER(glGenVertexArrays)
+GLF_NAMER(glGenQueries)
+GLF_NAMER(glGenSamplers)
+static void (*real_glBindBuffer)(GLenum, GLuint);
+static void count_glBindBuffer(GLenum t, GLuint b) { glf_bound[glf_target(t)] = b; real_glBindBuffer(t, b); }
+static void (*real_glBindBufferBase)(GLenum, GLuint, GLuint);
+static void count_glBindBufferBase(GLenum t, GLuint i, GLuint b) { glf_bound[glf_target(t)] = b; real_glBindBufferBase(t, i, b); }
+static void (*real_glBindBufferRange)(GLenum, GLuint, GLuint, GLintptr, GLsizeiptr);
+static void count_glBindBufferRange(GLenum t, GLuint i, GLuint b, GLintptr o, GLsizeiptr n)
+{
+   glf_bound[glf_target(t)] = b;
+   real_glBindBufferRange(t, i, b, o, n);
+}
+static void (*real_glBufferData)(GLenum, GLsizeiptr, const void *, GLenum);
+static void count_glBufferData(GLenum t, GLsizeiptr n, const void *d, GLenum u)
+{
+   const GLuint b = glf_bound[glf_target(t)];
+   if (b < GLF_BUFFERS)
+   {
+      if (n > glf_buffer_size[b])
+      {
+         GLF_SEEN(GLF_A_STORAGE);
+         glf_buffer_size[b] = n;
+      }
+   }
+   real_glBufferData(t, n, d, u);
+}
+static void (*real_glBufferStorage)(GLenum, GLsizeiptr, const void *, GLbitfield);
+static void count_glBufferStorage(GLenum t, GLsizeiptr n, const void *d, GLbitfield f)
+{
+   GLF_SEEN(GLF_A_STORAGE);
+   real_glBufferStorage(t, n, d, f);
+}
+static void (*real_glTexImage2D)(GLenum, GLint, GLint, GLsizei, GLsizei, GLint, GLenum, GLenum, const void *);
+static void count_glTexImage2D(GLenum t, GLint l, GLint i, GLsizei w, GLsizei h, GLint b, GLenum f, GLenum ty,
+      const void *d)
+{
+   GLF_SEEN(GLF_A_STORAGE);
+   real_glTexImage2D(t, l, i, w, h, b, f, ty, d);
+}
+static void (*real_glTexImage3D)(GLenum, GLint, GLint, GLsizei, GLsizei, GLsizei, GLint, GLenum, GLenum, const void *);
+static void count_glTexImage3D(GLenum t, GLint l, GLint i, GLsizei w, GLsizei h, GLsizei dp, GLint b, GLenum f,
+      GLenum ty, const void *d)
+{
+   GLF_SEEN(GLF_A_STORAGE);
+   real_glTexImage3D(t, l, i, w, h, dp, b, f, ty, d);
+}
+static void (*real_glTexStorage2D)(GLenum, GLsizei, GLenum, GLsizei, GLsizei);
+static void count_glTexStorage2D(GLenum t, GLsizei l, GLenum f, GLsizei w, GLsizei h)
+{
+   GLF_SEEN(GLF_A_STORAGE);
+   real_glTexStorage2D(t, l, f, w, h);
+}
+static void (*real_glTexStorage3D)(GLenum, GLsizei, GLenum, GLsizei, GLsizei, GLsizei);
+static void count_glTexStorage3D(GLenum t, GLsizei l, GLenum f, GLsizei w, GLsizei h, GLsizei d)
+{
+   GLF_SEEN(GLF_A_STORAGE);
+   real_glTexStorage3D(t, l, f, w, h, d);
+}
+static void (*real_glRenderbufferStorage)(GLenum, GLenum, GLsizei, GLsizei);
+static void count_glRenderbufferStorage(GLenum t, GLenum f, GLsizei w, GLsizei h)
+{
+   GLF_SEEN(GLF_A_STORAGE);
+   real_glRenderbufferStorage(t, f, w, h);
+}
+static void (*real_glRenderbufferStorageMultisample)(GLenum, GLsizei, GLenum, GLsizei, GLsizei);
+static void count_glRenderbufferStorageMultisample(GLenum t, GLsizei s, GLenum f, GLsizei w, GLsizei h)
+{
+   GLF_SEEN(GLF_A_STORAGE);
+   real_glRenderbufferStorageMultisample(t, s, f, w, h);
+}
+static GLuint (*real_glCreateProgram)(void);
+static GLuint count_glCreateProgram(void) { GLF_SEEN(GLF_A_PROGRAMS); return real_glCreateProgram(); }
+static GLuint (*real_glCreateShader)(GLenum);
+static GLuint count_glCreateShader(GLenum t) { GLF_SEEN(GLF_A_PROGRAMS); return real_glCreateShader(t); }
+
+static retro_proc_address_t glf_alloc_wrap(const char *sym, retro_proc_address_t f)
+{
+#define GLF_WRAP(fn) \
+   if (!strcmp(sym, #fn)) { *(retro_proc_address_t *)&real_##fn = f; return (retro_proc_address_t)count_##fn; }
+   GLF_WRAP(glGenTextures)
+   GLF_WRAP(glGenBuffers)
+   GLF_WRAP(glGenFramebuffers)
+   GLF_WRAP(glGenRenderbuffers)
+   GLF_WRAP(glGenVertexArrays)
+   GLF_WRAP(glGenQueries)
+   GLF_WRAP(glGenSamplers)
+   GLF_WRAP(glBindBuffer)
+   GLF_WRAP(glBindBufferBase)
+   GLF_WRAP(glBindBufferRange)
+   GLF_WRAP(glBufferData)
+   GLF_WRAP(glBufferStorage)
+   GLF_WRAP(glTexImage2D)
+   GLF_WRAP(glTexImage3D)
+   GLF_WRAP(glTexStorage2D)
+   GLF_WRAP(glTexStorage3D)
+   GLF_WRAP(glRenderbufferStorage)
+   GLF_WRAP(glRenderbufferStorageMultisample)
+   GLF_WRAP(glCreateProgram)
+   GLF_WRAP(glCreateShader)
+#undef GLF_WRAP
+   return f;
+}
+#endif
+
 static retro_proc_address_t gl_proc(const char *sym)
 {
    retro_proc_address_t f = (retro_proc_address_t)eglGetProcAddress(sym);
+#ifdef ALLOC_COUNT
+   if (getenv("GLF_ALLOCS") && f != NULL)
+   {
+      retro_proc_address_t w = glf_alloc_wrap(sym, f);
+      if (w != f)
+         return w;
+   }
+#endif
    if ((getenv("GLF_NO_STORAGE") || getenv("GLF_NO_PARALLEL")) && f != NULL && !strcmp(sym, "glGetStringi"))
    {
       *(retro_proc_address_t *)&real_get_stringi = f;
@@ -510,6 +668,13 @@ int main(int argc, char **argv)
    for (i = 0; i < frames; i++)
    {
       frame_no = i;
+#ifdef ALLOC_COUNT
+      if (getenv("GLF_ALLOCS") && i == atoi(getenv("GLF_ALLOCS")))
+      {
+         alloc_count_kinds(GLF_A_KINDS, glf_a_names, glf_a_site);
+         alloc_count_start((void *)retro_run);
+      }
+#endif
       in_run = 1;
       retro_run();
       in_run = 0;
@@ -535,6 +700,15 @@ int main(int argc, char **argv)
       }
    }
 
+#ifdef ALLOC_COUNT
+   if (getenv("GLF_ALLOCS"))
+   {
+      char what[64];
+      alloc_count_stop();
+      snprintf(what, sizeof(what), "frames %d to %d", atoi(getenv("GLF_ALLOCS")), frames - 1);
+      alloc_count_print("gl_frames", what, getenv("GLF_ALLOC_SITES") != NULL);
+   }
+#endif
    if (last_w == 0 || last_h == 0)
    {
       fprintf(stderr, "gl_frames: no frame was drawn\n");

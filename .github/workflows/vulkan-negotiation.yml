@@ -35,7 +35,8 @@ name: Vulkan negotiation
 # 12 where the adapter's memory is the processor's (tools/rend/d3d_parse_arena.sh,
 # under wine), and the arena's slices (tools/rend/parse_arena_test.sh).
 # And no allocation during play with Vulkan but the ones listed, which
-# only ever shrink (tools/vulkan/vk_allocs.sh, AGENTS.md). And the Vulkan
+# only ever shrink (tools/vulkan/vk_allocs.sh, AGENTS.md), and with
+# OpenGL (tools/gl/gl_allocs.sh). And the Vulkan
 # renderers compiled for 32-bit Windows (tools/vulkan/vk_i686.sh). And
 # renders to textures drawn with the screen's attachments, made no larger
 # than a screen's render needs, and black past what they draw
@@ -66,6 +67,7 @@ on:
       - 'core/rend/gles/**'
       - 'core/rend/gl4/**'
       - 'tools/gl/**'
+      - 'tools/rend/alloc_count.*'
       - 'core/rend/TexCache.*'
       - 'core/hw/sh4/sh4_mem.cpp'
       - 'tools/rend/rtt_watch_test.*'
@@ -115,6 +117,7 @@ on:
       - 'core/rend/gles/**'
       - 'core/rend/gl4/**'
       - 'tools/gl/**'
+      - 'tools/rend/alloc_count.*'
       - 'core/rend/TexCache.*'
       - 'core/hw/sh4/sh4_mem.cpp'
       - 'tools/rend/rtt_watch_test.*'
@@ -198,6 +201,8 @@ jobs:
         run: VK_DRIVER_FILES=/usr/share/vulkan/icd.d/lvp_icd.json sh tools/vulkan/vk_draw_path.sh
       - name: Vulkan - no allocation during play but the listed ones, every renderer (AGENTS.md)
         run: VK_DRIVER_FILES=/usr/share/vulkan/icd.d/lvp_icd.json sh tools/vulkan/vk_allocs.sh
+      - name: OpenGL - no allocation during play but the listed ones, every renderer, OpenGL ES 3 too (AGENTS.md)
+        run: sh tools/gl/gl_allocs.sh
       - name: Vulkan - renders to textures with the screen's attachments, no video memory of their own, black past them
         run: VK_DRIVER_FILES=/usr/share/vulkan/icd.d/lvp_icd.json sh tools/vulkan/vk_vram.sh
       - name: HDR output (HDR10, scRGB, each renderer, every Display Transform)

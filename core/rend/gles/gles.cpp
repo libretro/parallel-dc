@@ -697,8 +697,19 @@ static const u16 CommonKeys[] = {
 /* At the renderer's start: the general programs, and the programs of the
  * keys of earlier runs and the common ones, all asked of the driver before
  * any is waited for */
+/* @key's: found, or made (value-initialized: its program to come) */
+static PipelineShader *shader_of(u32 key)
+{
+	PipelineShader *s = gl.shaders.Find(key);
+	if (s == nullptr && (s = gl.shaders.Add(key)) == nullptr)
+		die("Out of memory");
+	return s;
+}
+
 static void gl_make_programs()
 {
+	gl.shaders.Name("OpenGL programs");
+	gl.shaders.Reserve(2048);
 	for (int g = 0; g < 2; g++)
 	{
 		PipelineShader *s = &gl.general[g];
@@ -724,7 +735,7 @@ static void gl_make_programs()
 	if (!PipelineTestGeneral)
 		for (u32 key : keys)
 		{
-			PipelineShader *s = &gl.shaders[key];
+			PipelineShader *s = shader_of(key);
 			if (s->program != 0 || s->pending != 0)
 				continue;
 			pipeline_from_key(s, key);
@@ -745,9 +756,12 @@ static void gl_make_programs()
 			s->program = 0;
 		}
 	}
-	for (auto it = gl.shaders.begin(); it != gl.shaders.end(); )
-	{
-		PipelineShader *s = &it->second;
+	/* (those that did not link go: taken away after, not while they are
+	 * gone through) */
+	static u32 failed[1024];
+	u32 nfailed = 0;
+	gl.shaders.Each([&](u32 key, PipelineShader& sh) {
+		PipelineShader *s = &sh;
 		if (s->pending != 0 && s->program == 0)
 		{
 			const GLuint p = s->pending;
@@ -761,12 +775,14 @@ static void gl_make_programs()
 			{
 				WARN_LOG(RENDERER, "OpenGL: the program of key %x did not link", s->key);
 				glDeleteProgram(p);
-				it = gl.shaders.erase(it);
-				continue;
+				if (nfailed < ARRAY_SIZE(failed))
+					failed[nfailed++] = key;
 			}
 		}
-		++it;
-	}
+		return true;
+	});
+	for (u32 i = 0; i < nfailed; i++)
+		gl.shaders.Remove(failed[i]);
 }
 
 PipelineShader *GetProgram(bool cp_AlphaTest, bool pp_InsideClipping,
@@ -777,7 +793,7 @@ PipelineShader *GetProgram(bool cp_AlphaTest, bool pp_InsideClipping,
 	const u32 rv = pipeline_key(cp_AlphaTest, pp_InsideClipping, pp_Texture, pp_UseAlpha, pp_IgnoreTexA,
 			pp_ShadInstr, pp_Offset, pp_FogCtrl, pp_Gouraud, pp_BumpMap, fog_clamping, trilinear, palette, shadowed);
 
-	PipelineShader *shader = &gl.shaders[rv];
+	PipelineShader *shader = shader_of(rv);
 	if (shader->program == 0)
 		pipeline_first(shader, rv);
 
@@ -1059,15 +1075,15 @@ Tile clip
 
 static void gl_delete_shaders()
 {
-	for (const auto& it : gl.shaders)
-	{
+	gl.shaders.Each([](u32, PipelineShader& s) {
 		// (one drawn with a general program has none of its own, but may have one coming)
-		if (it.second.program != 0 && it.second.general == nullptr)
-			glDeleteProgram(it.second.program);
-		if (it.second.pending != 0)
-			glDeleteProgram(it.second.pending);
-	}
-	gl.shaders.clear();
+		if (s.program != 0 && s.general == nullptr)
+			glDeleteProgram(s.program);
+		if (s.pending != 0)
+			glDeleteProgram(s.pending);
+		return true;
+	});
+	gl.shaders.Clear();
 	for (PipelineShader& g : gl.general)
 	{
 		if (g.program != 0)
@@ -1106,6 +1122,13 @@ static void gl_term(void)
 	gl_delete_shaders();
 }
 
+void gl_buffer_room(GLuint buffer, size_t bytes)
+{
+	glBindBuffer(GL_ARRAY_BUFFER, buffer);
+	glBufferData(GL_ARRAY_BUFFER, (GLsizeiptr)bytes, nullptr, GL_STREAM_DRAW);
+	glBindBuffer(GL_ARRAY_BUFFER, 0);
+}
+
 static bool gl_create_resources(void)
 {
 	/* create VBOs */
@@ -1113,6 +1136,13 @@ static bool gl_create_resources(void)
 	glGenBuffers(1, &gl.vbo.modvols);
 	glGenBuffers(1, &gl.vbo.idxs);
 	glGenBuffers(1, &gl.vbo.idxs2);
+	/* (each its room now: gl_buffer_room()) */
+	gl_buffer_room(gl.vbo.geometry, GL_BUFFER_ROOM * 4);
+	gl_buffer_room(gl.vbo.modvols, GL_BUFFER_ROOM);
+	gl_buffer_room(gl.vbo.idxs, GL_BUFFER_ROOM);
+	gl_buffer_room(gl.vbo.idxs2, GL_BUFFER_ROOM);
+	// (and the translucent sort's room: rend/sorter.h)
+	gl_sort_reserve();
 
    findGLVersion();
    glprog_open();

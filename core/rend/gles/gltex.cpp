@@ -195,10 +195,14 @@ GLPooledTexture *GLTexturePool::Find(GLuint name) const
 	return nullptr;
 }
 
+static void rtt_gl_init(void);
+
 void gl_tex_init(bool depth)
 {
 	glTexDecoder.Init();
 	glTexPool.Init();
+	// what a render read back takes, made now (rtt_gl_init())
+	rtt_gl_init();
 	// ...and the cache's room for them (rend/tex_map.h)
 	TexCache.ReserveFor(glTexPool.Book().made);
 	gl.rtt.kept = false;
@@ -608,11 +612,36 @@ bool TextureCacheData::Delete()
 	return true;
 }
 
-/* The framebuffers a read attaches the picture to, kept from one read to
- * the next, and the picture of the console's size a finer one is brought
- * down to (grown, never shrunk) */
+/* The framebuffers a read attaches the picture to, and the picture of the
+ * console's size a finer one is brought down to: made with the renderer
+ * for renders of a screen's size (rtt_gl_init()), larger when a larger
+ * one is read, which is said */
 static GLuint rtt_read_fbo, rtt_small_fbo, rtt_small_rb;
 static u32 rtt_small_w, rtt_small_h;
+static bool rtt_said_larger;
+
+#if defined(GL_READ_FRAMEBUFFER) && defined(GL_DRAW_FRAMEBUFFER) && defined(GL_RGBA8)
+static void rtt_gl_small(u32 w, u32 h)
+{
+	if (rtt_small_rb != 0 && w <= rtt_small_w && h <= rtt_small_h)
+		return;
+	if (rtt_small_rb != 0 && !rtt_said_larger)
+	{
+		rtt_said_larger = true;
+		WARN_LOG(RENDERER, "Render to a texture of %u x %u read back: its room made larger", w, h);
+	}
+	rtt_small_w = std::max(w, rtt_small_w);
+	rtt_small_h = std::max(h, rtt_small_h);
+	if (rtt_small_rb == 0)
+		glGenRenderbuffers(1, &rtt_small_rb);
+	glBindRenderbuffer(RARCH_GL_RENDERBUFFER, rtt_small_rb);
+	glRenderbufferStorage(RARCH_GL_RENDERBUFFER, GL_RGBA8, rtt_small_w, rtt_small_h);
+	if (rtt_small_fbo == 0)
+		glGenFramebuffers(1, &rtt_small_fbo);
+	glBindFramebuffer(RARCH_GL_FRAMEBUFFER, rtt_small_fbo);
+	glFramebufferRenderbuffer(RARCH_GL_FRAMEBUFFER, RARCH_GL_COLOR_ATTACHMENT0, RARCH_GL_RENDERBUFFER, rtt_small_rb);
+}
+#endif
 
 /* The framebuffer the picture is read from, bound: @tex's, or - finer than
  * the console's, made its size on the card, filtered - the small one's.
@@ -634,19 +663,7 @@ static bool rtt_gl_source(const RttWatch *watch, u32 *x, u32 *y)
 		return false;
 	const GLboolean was_scissor = glIsEnabled(GL_SCISSOR_TEST);
 
-	if (rtt_small_rb == 0 || rtt_small_w < w || rtt_small_h < h)
-	{
-		rtt_small_w = std::max(w, rtt_small_w);
-		rtt_small_h = std::max(h, rtt_small_h);
-		if (rtt_small_rb == 0)
-			glGenRenderbuffers(1, &rtt_small_rb);
-		glBindRenderbuffer(RARCH_GL_RENDERBUFFER, rtt_small_rb);
-		glRenderbufferStorage(RARCH_GL_RENDERBUFFER, GL_RGBA8, rtt_small_w, rtt_small_h);
-		if (rtt_small_fbo == 0)
-			glGenFramebuffers(1, &rtt_small_fbo);
-		glBindFramebuffer(RARCH_GL_FRAMEBUFFER, rtt_small_fbo);
-		glFramebufferRenderbuffer(RARCH_GL_FRAMEBUFFER, RARCH_GL_COLOR_ATTACHMENT0, RARCH_GL_RENDERBUFFER, rtt_small_rb);
-	}
+	rtt_gl_small(w, h);
 	glBindFramebuffer(GL_READ_FRAMEBUFFER, rtt_read_fbo);
 	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, rtt_small_fbo);
 	if (was_scissor)
@@ -765,11 +782,14 @@ static void rtt_gl_read(const RttWatch *watch, u8 *rgba)
 }
 
 #ifndef HAVE_OPENGLES2
-/* OpenGL 3 and OpenGL ES 3: copies of pictures off the card into pixel
- * buffers, each with a fence - begun ahead of the read where rtt_watch says
- * which (rtt_gl_prefetch()), or by the read - and handed over from the
- * buffer mapped, with no copy of this side's. */
+/* OpenGL 3 and OpenGL ES 3: copies of pictures off the card into one pixel
+ * buffer, a ring - each copy its room in it, and a fence - begun ahead of
+ * the read where rtt_watch says which (rtt_gl_prefetch()), or by the read,
+ * and handed over from the buffer mapped, with no copy of this side's. The
+ * ring is made with the renderer, four of a screen's render
+ * (rtt_gl_init()); larger when a larger render is read, which is said. */
 #define RTT_COPIES 18
+#define RTT_RING_RENDERS 4
 
 struct GlRttCopy
 {
@@ -777,13 +797,14 @@ struct GlRttCopy
 	uintptr_t tex;
 	u32 w, h;
 	u64 stamp;          /* when it was last begun, for the oldest */
-	GLuint pbo;
-	size_t size;        /* grown, never shrunk */
+	size_t at, len;     /* its room in the ring; none if len is 0 */
 	GLsync fence;
 };
 
 static GlRttCopy rtt_copies[RTT_COPIES];
 static u64 rtt_stamp;
+static GLuint rtt_ring;
+static size_t rtt_ring_size, rtt_ring_head;
 
 static bool rtt_gl_pbo(void)
 {
@@ -798,42 +819,82 @@ static GlRttCopy *rtt_gl_copy_of(const RttWatch *watch)
 	return nullptr;
 }
 
-/* One to begin a copy in: one that holds none, or the one begun longest
- * ago, not after @since (in this batch) */
-static GlRttCopy *rtt_gl_copy_free(u64 since)
+/* The ring, at least @bytes: made larger if it is not, every copy gone */
+static void rtt_gl_ring(size_t bytes)
 {
-	GlRttCopy *oldest = nullptr;
-
+	if (bytes <= rtt_ring_size)
+		return;
+	if (rtt_ring_size != 0 && !rtt_said_larger)
+	{
+		rtt_said_larger = true;
+		WARN_LOG(RENDERER, "Render to a texture read back: its room made larger, %u KB", (u32)(bytes >> 10));
+	}
 	for (GlRttCopy& c : rtt_copies)
 	{
-		if (c.serial != 0 && c.stamp > since)
-			continue;
-		if (c.serial == 0)
-			return &c;
-		if (oldest == nullptr || c.stamp < oldest->stamp)
-			oldest = &c;
+		if (c.fence != nullptr)
+			glDeleteSync(c.fence);
+		c.fence = nullptr;
+		c.serial = 0;
+		c.len = 0;
 	}
-	return oldest;
+	if (rtt_ring == 0)
+		glGenBuffers(1, &rtt_ring);
+	glBindBuffer(GL_PIXEL_PACK_BUFFER, rtt_ring);
+	glBufferData(GL_PIXEL_PACK_BUFFER, bytes, nullptr, GL_STREAM_READ);
+	rtt_ring_size = bytes;
+	rtt_ring_head = 0;
 }
 
-/* The copy of the picture into c's buffer, begun; false if it cannot be
- * (made smaller on the card) */
+/* One to begin a copy of @len bytes in, with its room in the ring: the
+ * ring's next, from its start where the end is too near; what was there
+ * before goes, and the copy that held none or was begun longest ago - not
+ * after @since (in this batch) - gives its place. Null if what is there
+ * was begun in this batch. */
+static GlRttCopy *rtt_gl_copy_free(u64 since, size_t len)
+{
+	GlRttCopy *place = nullptr;
+	size_t at = rtt_ring_head;
+
+	if (len > rtt_ring_size)
+		return nullptr;
+	if (at + len > rtt_ring_size)
+		at = 0;
+	for (GlRttCopy& c : rtt_copies)
+		if (c.len != 0 && c.at < at + len && at < c.at + c.len && c.serial != 0 && c.stamp > since)
+			return nullptr;
+	for (GlRttCopy& c : rtt_copies)
+	{
+		if (c.len != 0 && c.at < at + len && at < c.at + c.len)
+		{
+			c.serial = 0;
+			c.len = 0;
+		}
+		if (c.serial != 0 && c.stamp > since)
+			continue;
+		if (place == nullptr || (place->len != 0 && (c.len == 0 || c.stamp < place->stamp)))
+			place = &c;
+	}
+	if (place == nullptr)
+		return nullptr;
+	place->at = at;
+	place->len = len;
+	rtt_ring_head = at + len;
+	return place;
+}
+
+/* The copy of the picture into c's room in the ring, begun; false if it
+ * cannot be (made smaller on the card) */
 static bool rtt_gl_begin(const RttWatch *watch, GlRttCopy& c)
 {
-	const size_t bytes = (size_t)watch->w * watch->h * 4;
 	u32 x0, y0;
 
 	if (!rtt_gl_source(watch, &x0, &y0))
-		return false;
-	if (c.pbo == 0)
-		glGenBuffers(1, &c.pbo);
-	glBindBuffer(GL_PIXEL_PACK_BUFFER, c.pbo);
-	if (c.size < bytes)
 	{
-		glBufferData(GL_PIXEL_PACK_BUFFER, bytes, nullptr, GL_STREAM_READ);
-		c.size = bytes;
+		c.len = 0;
+		return false;
 	}
-	glReadPixels(x0, y0, watch->w, watch->h, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+	glBindBuffer(GL_PIXEL_PACK_BUFFER, rtt_ring);
+	glReadPixels(x0, y0, watch->w, watch->h, GL_RGBA, GL_UNSIGNED_BYTE, (void *)(uintptr_t)c.at);
 	if (c.fence != nullptr)
 		glDeleteSync(c.fence);
 	c.fence = (GLsync)glFenceSync(GL_SYNC_GPU_COMMANDS_COMPLETE, 0);
@@ -861,7 +922,7 @@ static void rtt_gl_copies(const RttWatch *const *watches, unsigned count)
 	{
 		if (rtt_gl_copy_of(watches[i]) != nullptr)
 			continue;
-		GlRttCopy *c = rtt_gl_copy_free(since);
+		GlRttCopy *c = rtt_gl_copy_free(since, (size_t)watches[i]->w * watches[i]->h * 4);
 		if (c == nullptr)
 			break;
 		if (rtt_gl_begin(watches[i], *c))
@@ -882,8 +943,40 @@ static void rtt_gl_copies(const RttWatch *const *watches, unsigned count)
 
 static void rtt_gl_prefetch(const RttWatch *const *watches, unsigned count)
 {
-	if (rtt_gl_pbo())
-		rtt_gl_copies(watches, count);
+	if (!rtt_gl_pbo())
+		return;
+	/* (the room for the largest, made here where it is, not in a read: a
+	 * render larger than a screen) */
+	{
+		size_t most = 0;
+		u32 w = 0, h = 0;
+		bool finer = false;
+		GLint was_pbo = 0, was_fbo = 0;
+		for (unsigned i = 0; i < count; i++)
+		{
+			most = std::max(most, (size_t)watches[i]->w * watches[i]->h * 4);
+			w = std::max(w, watches[i]->w);
+			h = std::max(h, watches[i]->h);
+			finer = finer || watches[i]->scale > 1;
+		}
+		if (most * RTT_RING_RENDERS > rtt_ring_size)
+		{
+			glGetIntegerv(GL_PIXEL_PACK_BUFFER_BINDING, &was_pbo);
+			rtt_gl_ring(most * RTT_RING_RENDERS);
+			glBindBuffer(GL_PIXEL_PACK_BUFFER, was_pbo);
+		}
+#if defined(GL_READ_FRAMEBUFFER) && defined(GL_DRAW_FRAMEBUFFER) && defined(GL_RGBA8)
+		if (finer && (w > rtt_small_w || h > rtt_small_h))
+		{
+			glGetIntegerv(GL_FRAMEBUFFER_BINDING, &was_fbo);
+			rtt_gl_small(w, h);
+			glBindFramebuffer(RARCH_GL_FRAMEBUFFER, was_fbo);
+		}
+#endif
+		(void)finer;
+		(void)was_fbo;
+	}
+	rtt_gl_copies(watches, count);
 }
 
 /* The picture, from its copy's buffer mapped: begun ahead as often as not,
@@ -904,8 +997,9 @@ static bool rtt_gl_take_copy(const RttWatch *watch, RttWatchTake take)
 	glDeleteSync(c->fence);
 	c->fence = nullptr;
 	glGetIntegerv(GL_PIXEL_PACK_BUFFER_BINDING, &was_pbo);
-	glBindBuffer(GL_PIXEL_PACK_BUFFER, c->pbo);
-	const u8 *p = (const u8 *)glMapBufferRange(GL_PIXEL_PACK_BUFFER, 0, (GLsizeiptr)c->w * c->h * 4, GL_MAP_READ_BIT);
+	glBindBuffer(GL_PIXEL_PACK_BUFFER, rtt_ring);
+	const u8 *p = (const u8 *)glMapBufferRange(GL_PIXEL_PACK_BUFFER, (GLintptr)c->at, (GLsizeiptr)c->w * c->h * 4,
+			GL_MAP_READ_BIT);
 	if (p != nullptr)
 	{
 		take(watch, p, (size_t)c->w * 4);
@@ -913,6 +1007,7 @@ static bool rtt_gl_take_copy(const RttWatch *watch, RttWatchTake take)
 	}
 	glBindBuffer(GL_PIXEL_PACK_BUFFER, was_pbo);
 	c->serial = 0;
+	c->len = 0;
 	return p != nullptr;
 }
 #endif
@@ -925,10 +1020,12 @@ static void rtt_gl_term(void)
 	{
 		if (c.fence != nullptr)
 			glDeleteSync(c.fence);
-		if (c.pbo != 0)
-			glDeleteBuffers(1, &c.pbo);
 		c = GlRttCopy();
 	}
+	if (rtt_ring != 0)
+		glDeleteBuffers(1, &rtt_ring);
+	rtt_ring = 0;
+	rtt_ring_size = rtt_ring_head = 0;
 #endif
 	if (rtt_read_fbo != 0)
 		glDeleteFramebuffers(1, &rtt_read_fbo);
@@ -938,6 +1035,34 @@ static void rtt_gl_term(void)
 		glDeleteRenderbuffers(1, &rtt_small_rb);
 	rtt_read_fbo = rtt_small_fbo = rtt_small_rb = 0;
 	rtt_small_w = rtt_small_h = 0;
+	rtt_said_larger = false;
+}
+
+/* What a read back takes, made with the renderer for renders of a screen's
+ * size: the framebuffer it reads through, the ring (OpenGL 3 and OpenGL ES
+ * 3), the picture a finer render is brought down to (with Render To Texture
+ * Upscaling, OpenGL 3) */
+static void rtt_gl_init(void)
+{
+	GLint was_fbo = 0;
+
+	glGetIntegerv(GL_FRAMEBUFFER_BINDING, &was_fbo);
+	if (rtt_read_fbo == 0)
+		glGenFramebuffers(1, &rtt_read_fbo);
+#ifndef HAVE_OPENGLES2
+	if (rtt_gl_pbo())
+	{
+		GLint was_pbo = 0;
+		glGetIntegerv(GL_PIXEL_PACK_BUFFER_BINDING, &was_pbo);
+		rtt_gl_ring((size_t)640 * 480 * 4 * RTT_RING_RENDERS);
+		glBindBuffer(GL_PIXEL_PACK_BUFFER, was_pbo);
+	}
+#endif
+#if defined(GL_READ_FRAMEBUFFER) && defined(GL_DRAW_FRAMEBUFFER) && defined(GL_RGBA8)
+	if (settings.rend.RenderToTextureUpscale > 1 && gl.gl_major >= 3)
+		rtt_gl_small(640, 480);
+#endif
+	glBindFramebuffer(RARCH_GL_FRAMEBUFFER, was_fbo);
 }
 
 static void rtt_gl_release(uintptr_t tex)

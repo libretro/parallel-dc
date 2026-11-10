@@ -136,7 +136,9 @@ struct gl4_ctx
 		GLint normal_matrix;
 	} modvol_shader;
 
-	std::unordered_map<u32, gl4PipelineShader> shaders;
+	/* by key: room for them made with the renderer (rend/tex_map.h), a key
+	 * first drawn with taking none */
+	TexMap<gl4PipelineShader> shaders;
 	// The general programs (rend/gles/glprogram_cache.h), by pass and pp_Gouraud
 	gl4PipelineShader general[3][2];
 

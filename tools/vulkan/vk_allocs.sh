@@ -1,7 +1,8 @@
 #!/bin/sh
 # Allocations during play (AGENTS.md, "No allocations during play"): the
-# core under a Vulkan frontend as RetroArch runs it (vk_hdr.c, built with
-# -DVKH_ALLOCS: VKH_ALLOCS, VKH_ALLOC_SITES), the test discs, every
+# core under a Vulkan frontend as RetroArch runs it (vk_hdr.c with
+# tools/rend/alloc_count.c, built with -DALLOC_COUNT: VKH_ALLOCS,
+# VKH_ALLOC_SITES), the test discs, every
 # Vulkan renderer (per-triangle, threaded rendering on and off, per-strip,
 # per-pixel, compute), from frame 20 on. Each place in the core that
 # allocated - the heap, or Vulkan memory, buffers, images and pools - is
@@ -20,8 +21,8 @@ CORE=$(readlink -f "${1:-parallel_dc_libretro.so}")
 WORK=$(readlink -f "${TMPDIR:-/tmp}")/vk_allocs.$$
 mkdir -p "$WORK"
 trap '[ -n "${KEEP:-}" ] || rm -rf "$WORK"' EXIT
-${CC:-cc} -O1 -g -Wall -DVKH_ALLOCS -rdynamic -I./core/libretro-common/include -I./core/deps/khronos \
-   -DTARGET_NO_THREADS -o "$WORK/vk_hdr" tools/vulkan/vk_hdr.c tools/hdr/hdr_post_ref.c \
+${CC:-cc} -O1 -g -Wall -DALLOC_COUNT -rdynamic -I./core/libretro-common/include -I./core/deps/khronos \
+   -DTARGET_NO_THREADS -o "$WORK/vk_hdr" tools/vulkan/vk_hdr.c tools/rend/alloc_count.c tools/hdr/hdr_post_ref.c \
    core/rend/hdr/hdr_output.c core/rend/hdr/hdr_transform.c core/rend/hdr/hdr_aces2.c \
    core/rend/hdr/hdr_libretro.c core/rend/hdr/hdr_display.c -ldl -lm -lpthread
 # (each disc in its own directory: their tracks have the same names)

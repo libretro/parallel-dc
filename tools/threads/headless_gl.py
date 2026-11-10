@@ -82,10 +82,13 @@ static void *read_back;
 static void *read_map(void) { if (!read_back) { read_back = malloc(64 << 20); if (read_back) memset(read_back, READ_BYTE, 64 << 20); } return read_back; }
 void *GL_CC glMapBufferRange(unsigned target, long offset, long length, unsigned access) { return (access & 0x0001 /* GL_MAP_READ_BIT */) && !(access & 0x0002) ? read_map() : map(); }
 void *GL_CC glMapBuffer(unsigned target, unsigned access) { return access == 0x88B8 /* GL_READ_ONLY */ ? read_map() : map(); }
-/* (into the core's own memory: a pixel pack buffer's offset is no pointer) */
+/* (into the core's own memory only: with a pixel pack buffer bound,
+ * what is given is an offset into it, however large, and no pointer) */
+static unsigned pack_buffer;
+void GL_CC glBindBuffer(unsigned target, unsigned buffer) { if (target == 0x88EB /* GL_PIXEL_PACK_BUFFER */) pack_buffer = buffer; }
 void GL_CC glReadPixels(int x, int y, int w, int h, unsigned format, unsigned type, void *pixels)
 {
-   if (format == 0x1908 /* GL_RGBA */ && type == 0x1401 /* GL_UNSIGNED_BYTE */ && (size_t)pixels >= 0x10000 && w > 0 && h > 0)
+   if (format == 0x1908 /* GL_RGBA */ && type == 0x1401 /* GL_UNSIGNED_BYTE */ && !pack_buffer && pixels && w > 0 && h > 0)
       memset(pixels, READ_BYTE, (size_t)w * (size_t)h * 4);
 }
 void GL_CC glGetBufferSubData(unsigned target, long offset, long size, void *data) { if (data && size > 0) memset(data, 0, (size_t)size); }

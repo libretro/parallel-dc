@@ -29,8 +29,7 @@ SH-4 dynarec's; 9 buffers, 8 to 14 images and 4 command pools.
    when a render is watched (`copies_reserve()`); the dynarec's write to
    a page of code (`bm_RamWriteAccess()`) discards the page's blocks
    without copying their list, into a list of discards reserved at
-   `bm_Init()`. Left of it: the copies' growth when a larger render is
-   first watched (`vk_rtt_watch`), at the bound later.
+   `bm_Init()`. The copies' room is made with the renderer (item 3).
 2. **A frame's draws.** Done: a descriptor set is made with nothing
    allocated but the set (`vk_alloc_desc_set()`: vulkan.hpp's
    allocateDescriptorSetsUnique() made a std::vector for each), a retired
@@ -91,5 +90,17 @@ SH-4 dynarec's; 9 buffers, 8 to 14 images and 4 command pools.
 `tools/vulkan/vk_allocs.allowed` is empty: nothing in the core allocates
 during play on the test discs with any Vulkan renderer.
 
-Other renderers (OpenGL, Direct3D) get the same measure once their
-harnesses count it.
+OpenGL is measured the same way: `tools/gl/gl_allocs.sh`, the core under
+`gl_frames.c` counting its heap and its OpenGL names, storage, programs
+and shaders (`tools/rend/alloc_count.c`, shared with `vk_hdr.c`), against
+`tools/gl/gl_allocs.allowed`. Done for it: a render read back takes its
+room from one pixel buffer, a ring, and reads through framebuffers made
+with the renderer (`rtt_gl_init()`; none in the signal handler); the
+programs by key are in a fixed map (`rend/tex_map.h`); the frame's
+buffers have their storage given at the start (`gl_buffer_room()`), and
+the translucent sort its room (`gl_sort_reserve()`). Left: OpenGL ES,
+which has no texture pool (a render to a texture's texture and depth, a
+texture's picture); the pool's misses; and the per-pixel renderer's copy
+of the depth for frames of more than one pass, made when the first comes.
+
+Direct3D gets the same measure once its harness counts it.

@@ -59,6 +59,10 @@ void SortPassesFree(grow_buf_t *lists);
 void SortReserve(void);
 /* A renderer's lists of the passes' draws, reserved the same way */
 void SortPassesReserve(grow_buf_t *lists);
+/* ...and one list's draws, as many as a frame mostly has; and the room for
+ * the sorted triangles' indices of one, u32 each, @buf (OpenGL's) */
+void SortListReserve(SortList *list);
+void SortIndicesReserve(grow_buf_t *buf);
 /* The most indices SortPassesTo() writes of this frame */
 u32 SortPassesRoom(void);
 /* Every render pass's sorted triangles (@sorted, a list a pass) and, if

@@ -114,7 +114,9 @@ static gl4PipelineShader *gl4GetProgram(bool cp_AlphaTest, bool pp_InsideClippin
 	rv <<= 1; rv |= palette;
 	rv <<= 2; rv |= (int)pass;
 
-	gl4PipelineShader *shader = &gl4.shaders[rv];
+	gl4PipelineShader *shader = gl4.shaders.Find(rv);
+	if (shader == nullptr && (shader = gl4.shaders.Add(rv)) == nullptr)
+		die("Out of memory");
 	if (shader->program == 0)
 		pipeline_first(shader, rv);
 
@@ -131,6 +133,8 @@ static const u32 CommonKeys[] = {
 
 void gl4MakePrograms()
 {
+	gl4.shaders.Name("OpenGL programs");
+	gl4.shaders.Reserve(2048);
 	for (int p = 0; p < 3; p++)
 		for (int g = 0; g < 2; g++)
 		{
@@ -154,7 +158,9 @@ void gl4MakePrograms()
 	if (!PipelineTestGeneral)
 		for (u32 key : keys)
 		{
-			gl4PipelineShader *s = &gl4.shaders[key];
+			gl4PipelineShader *s = gl4.shaders.Find(key);
+			if (s == nullptr && (s = gl4.shaders.Add(key)) == nullptr)
+				die("Out of memory");
 			if (s->program != 0 || s->pending != 0)
 				continue;
 			pipeline_from_key(s, key);
@@ -174,9 +180,12 @@ void gl4MakePrograms()
 				s->program = 0;
 			}
 		}
-	for (auto it = gl4.shaders.begin(); it != gl4.shaders.end(); )
-	{
-		gl4PipelineShader *s = &it->second;
+	/* (those that did not link go: taken away after, not while they are
+	 * gone through) */
+	static u32 failed[1024];
+	u32 nfailed = 0;
+	gl4.shaders.Each([&](u32 key, gl4PipelineShader& sh) {
+		gl4PipelineShader *s = &sh;
 		if (s->pending != 0 && s->program == 0)
 		{
 			const GLuint p = s->pending;
@@ -190,12 +199,14 @@ void gl4MakePrograms()
 			{
 				WARN_LOG(RENDERER, "OpenGL: the program of key %x did not link", s->key);
 				glDeleteProgram(p);
-				it = gl4.shaders.erase(it);
-				continue;
+				if (nfailed < ARRAY_SIZE(failed))
+					failed[nfailed++] = key;
 			}
 		}
-		++it;
-	}
+		return true;
+	});
+	for (u32 i = 0; i < nfailed; i++)
+		gl4.shaders.Remove(failed[i]);
 }
 
 /* What the two samplers' parameters were last set to: each set again only

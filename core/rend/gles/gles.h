@@ -9,6 +9,16 @@
 #include "rend/sorter.h"
 #include "rend/tileclip.h"
 #include "rend/tex_pool.h"
+
+/* A buffer's storage given now, @bytes, so that a frame's data no larger
+ * than that, given it with glBufferData() as it comes, asks for no more
+ * (AGENTS.md, "No allocations during play"): GL_BUFFER_ROOM for the
+ * frame's small things - the quads, the indices drawn apart -, four times
+ * that for the vertices where the frame's are copied there */
+#define GL_BUFFER_ROOM (64 * 1024)
+void gl_buffer_room(GLuint buffer, size_t bytes);
+// the translucent sort's lists and indices, room made now (gldraw.cpp)
+void gl_sort_reserve(void);
 #include "gl_writeout.h"
 #include "glcache.h"
 #include "rend/depth_scale.h"
@@ -150,7 +160,9 @@ struct gl_ctx
 
 	} modvol_shader;
 
-	std::unordered_map<u32, PipelineShader> shaders;
+	/* by key: room for them made with the renderer (rend/tex_map.h), a key
+	 * first drawn with taking none */
+	TexMap<PipelineShader> shaders;
 	/* The general programs (glprogram_cache.h), by pp_Gouraud: no program
 	 * where there are none (OpenGL ES 2, OpenGL 2) */
 	PipelineShader general[2];
