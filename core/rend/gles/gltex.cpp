@@ -86,9 +86,9 @@ void GLTexturePool::Init()
 {
 	if (ready)
 		return;
-	if (gl.is_gles || gl.gl_major < 3)
+	if (gl.gl_major < 3)
 		return;
-	storage = gl.gl_major > 4 || (gl.gl_major == 4 && gl.gl_minor >= 2);
+	storage = gl.is_gles || gl.gl_major > 4 || (gl.gl_major == 4 && gl.gl_minor >= 2);
 	book.Reset(1);
 	// how much games use them, in eighths of what they use 565
 	static const u32 use[FORMATS] = { 8, 6, 6, 4, 2, 0, 0 };
@@ -196,11 +196,15 @@ GLPooledTexture *GLTexturePool::Find(GLuint name) const
 }
 
 static void rtt_gl_init(void);
+static void upload_ring_init(void);
+static void upload_ring_term(void);
+static void upload_ring_fence(void);
 
 void gl_tex_init(bool depth)
 {
 	glTexDecoder.Init();
 	glTexPool.Init();
+	upload_ring_init();
 	// what a render read back takes, made now (rtt_gl_init())
 	rtt_gl_init();
 	// ...and the cache's room for them (rend/tex_map.h)
@@ -248,6 +252,7 @@ void gl_tex_term()
 		gl.rtt.pooled = nullptr;
 		gl.rtt.tex = 0;
 	}
+	upload_ring_term();
 	glTexPool.Term();
 	glTexDecoder.Term();
 	rtt_gl_term();
@@ -257,6 +262,191 @@ void gl_tex_term()
 void gl_tex_flush()
 {
 	glTexDecoder.Flush();
+	upload_ring_fence();
+}
+
+/* ---- Where textures converted on the CPU wait ----
+ *
+ * Where the textures are not made on the GPU (OpenGL ES, OpenGL before
+ * 4.3), a texture of the pool's is converted straight into a piece of one
+ * pixel unpack buffer, made when the renderer starts, and taken from there
+ * (TextureCacheData::UploadMemory()): no memory of the cache's grown for
+ * it, and no copy of it out of that. The pieces are handed out one after
+ * the other, a ring, and a frame's are taken back when its fence, polled,
+ * says the GPU is done with them. Nothing waits: with the ring held by
+ * frames still on the GPU there is no piece, and the texture is converted
+ * into the cache's memory as before. */
+#if !defined(HAVE_OPENGLES2) && defined(GL_PIXEL_UNPACK_BUFFER) && defined(GL_SYNC_GPU_COMMANDS_COMPLETE)
+#ifndef GL_MAP_INVALIDATE_RANGE_BIT
+#define GL_MAP_INVALIDATE_RANGE_BIT 0x0004
+#endif
+#ifndef GL_MAP_UNSYNCHRONIZED_BIT
+#define GL_MAP_UNSYNCHRONIZED_BIT 0x0020
+#endif
+#define UPLOAD_SPANS 16
+
+static struct
+{
+	GLuint buffer;
+	size_t size, head, open;
+	u32 first, count;
+	struct { size_t start, end; GLsync fence; } span[UPLOAD_SPANS];
+	u8 *mapped;
+	size_t at, len;
+	bool saidFull;
+} upload;
+
+static void upload_ring_init(void)
+{
+	u64 bytes;
+	upload_ring_term();
+	if (!glTexPool.Ready() || glTexDecoder.Ready()
+			|| (!gl.is_gles && (gl.gl_major < 3 || (gl.gl_major == 3 && gl.gl_minor < 2))))
+		return;
+	/* A share of the video memory: 8 to 16 MB, room for the largest
+	 * texture, 1024x1024 with its mipmaps at 32 bits, and more */
+	bytes = (u64)gl.vram_budget.available_kib() * 1024 / 128;
+	bytes = std::max<u64>(bytes, 8 << 20);
+	bytes = std::min<u64>(bytes, 16 << 20);
+	while (glGetError() != GL_NO_ERROR)
+		;
+	glGenBuffers(1, &upload.buffer);
+	glBindBuffer(GL_PIXEL_UNPACK_BUFFER, upload.buffer);
+	glBufferData(GL_PIXEL_UNPACK_BUFFER, (GLsizeiptr)bytes, nullptr, GL_STREAM_DRAW);
+	glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
+	if (glGetError() != GL_NO_ERROR)
+	{
+		glDeleteBuffers(1, &upload.buffer);
+		upload.buffer = 0;
+		return;
+	}
+	upload.size = (size_t)bytes;
+	NOTICE_LOG(RENDERER, "OpenGL: textures converted on the CPU go through a ring of %u KB", (u32)(bytes >> 10));
+}
+
+static void upload_unmap(void)
+{
+	if (upload.mapped == nullptr)
+		return;
+	glBindBuffer(GL_PIXEL_UNPACK_BUFFER, upload.buffer);
+	glUnmapBuffer(GL_PIXEL_UNPACK_BUFFER);
+	glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
+	upload.mapped = nullptr;
+}
+
+static void upload_ring_term(void)
+{
+	u32 i;
+	if (upload.buffer == 0)
+		return;
+	upload_unmap();
+	for (i = 0; i < upload.count; i++)
+		glDeleteSync(upload.span[(upload.first + i) % UPLOAD_SPANS].fence);
+	glDeleteBuffers(1, &upload.buffer);
+	memset(&upload, 0, sizeof(upload));
+}
+
+/* The frame's pieces, to be taken back once the GPU has done with them */
+static void upload_ring_fence(void)
+{
+	u32 i;
+	if (upload.buffer == 0 || upload.head == upload.open || upload.count == UPLOAD_SPANS)
+		return;
+	i = (upload.first + upload.count) % UPLOAD_SPANS;
+	upload.span[i].start = upload.open;
+	upload.span[i].end = upload.head;
+	upload.span[i].fence = (GLsync)glFenceSync(GL_SYNC_GPU_COMMANDS_COMPLETE, 0);
+	if (upload.span[i].fence == 0)
+		return;
+	upload.count++;
+	upload.open = upload.head;
+}
+
+static u8 *upload_ring_take(size_t len)
+{
+	size_t live, at;
+	if (upload.buffer == 0)
+		return nullptr;
+	upload_unmap();
+	while (upload.count != 0)
+	{
+		GLsync f = upload.span[upload.first].fence;
+		GLenum r = glClientWaitSync(f, 0, 0);
+		if (r != GL_ALREADY_SIGNALED && r != GL_CONDITION_SATISFIED)
+			break;
+		glDeleteSync(f);
+		upload.first = (upload.first + 1) % UPLOAD_SPANS;
+		upload.count--;
+	}
+	len = (len + 15) & ~(size_t)15;
+	live = upload.count != 0 ? upload.span[upload.first].start : upload.open;
+	if (live == upload.head)
+		upload.head = upload.open = live = 0;
+	if (upload.head >= live)
+	{
+		/* free: what is after the head, then what is before the oldest */
+		if (upload.head + len <= upload.size)
+			at = upload.head;
+		else if (len < live)
+			at = 0;
+		else
+			at = upload.size;
+	}
+	else
+		at = upload.head + len < live ? upload.head : upload.size;
+	if (at == upload.size)
+	{
+		if (!upload.saidFull)
+			INFO_LOG(RENDERER, "OpenGL: the ring textures go through is full: one converted in memory of the cache's");
+		upload.saidFull = true;
+		return nullptr;
+	}
+	glBindBuffer(GL_PIXEL_UNPACK_BUFFER, upload.buffer);
+	upload.mapped = (u8 *)glMapBufferRange(GL_PIXEL_UNPACK_BUFFER, (GLintptr)at, (GLsizeiptr)len,
+			GL_MAP_WRITE_BIT | GL_MAP_INVALIDATE_RANGE_BIT | GL_MAP_UNSYNCHRONIZED_BIT);
+	glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
+	if (upload.mapped == nullptr)
+		return nullptr;
+	upload.at = at;
+	upload.len = len;
+	upload.head = at + len;
+	return upload.mapped;
+}
+
+/* What the upload reads, if it is in the piece mapped: the piece let go of,
+ * the buffer bound, and the offset in it */
+static u8 *upload_ring_source(u8 *data, bool *bound)
+{
+	*bound = false;
+	if (upload.mapped == nullptr || data < upload.mapped || data >= upload.mapped + upload.len)
+		return data;
+	const size_t offset = upload.at + (size_t)(data - upload.mapped);
+	glBindBuffer(GL_PIXEL_UNPACK_BUFFER, upload.buffer);
+	glUnmapBuffer(GL_PIXEL_UNPACK_BUFFER);
+	upload.mapped = nullptr;
+	*bound = true;
+	return (u8 *)(uintptr_t)offset;
+}
+
+static void upload_ring_done(bool bound)
+{
+	if (bound)
+		glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
+}
+#else
+static void upload_ring_init(void) { }
+static void upload_ring_term(void) { }
+static void upload_ring_fence(void) { }
+static u8 *upload_ring_take(size_t len) { return nullptr; }
+static u8 *upload_ring_source(u8 *data, bool *bound) { *bound = false; return data; }
+static void upload_ring_done(bool bound) { }
+#endif
+
+void *TextureCacheData::UploadMemory(u32 width, u32 height, size_t bytes, u32 pixel, bool mipmaps)
+{
+	if (texID == 0 || !TakePooled(width, height, mipmaps))
+		return nullptr;
+	return upload_ring_take(bytes);
 }
 
 bool TextureCacheData::TakePooled(u32 width, u32 height, bool mips)
@@ -396,7 +586,15 @@ void TextureCacheData::SetRendered(GLuint tex, GLPooledTexture *pooled)
 
 void TextureCacheData::UploadToGPU(int width, int height, u8 *temp_tex_buffer, bool mipmapped, bool mipmapsIncluded)
 {
+	bool bound;
 	CancelDecode();
+	temp_tex_buffer = upload_ring_source(temp_tex_buffer, &bound);
+	UploadToGPUFrom(width, height, temp_tex_buffer, mipmapped, mipmapsIncluded);
+	upload_ring_done(bound);
+}
+
+void TextureCacheData::UploadToGPUFrom(int width, int height, u8 *temp_tex_buffer, bool mipmapped, bool mipmapsIncluded)
+{
 	if (texID != 0 && TakePooled(width, height, mipmapped || mipmapsIncluded))
 	{
 		/* Into the pool's texture, made before the game with every level
@@ -481,7 +679,7 @@ void TextureCacheData::UploadToGPU(int width, int height, u8 *temp_tex_buffer, b
 					internalFormat = GL_RGBA8;
 					break;
 				case TextureType::_8:
-					internalFormat = comps;
+					internalFormat = gl.single_channel_internal;
 					break;
 				default:
 					die("Unsupported texture format");
@@ -506,14 +704,14 @@ void TextureCacheData::UploadToGPU(int width, int height, u8 *temp_tex_buffer, b
 				glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, mipmapLevels - 1);
 				for (int i = 0; i < mipmapLevels; i++)
 				{
-					glTexImage2D(GL_TEXTURE_2D, mipmapLevels - i - 1, comps, 1 << i, 1 << i, 0, comps, gltype, temp_tex_buffer);
+					glTexImage2D(GL_TEXTURE_2D, mipmapLevels - i - 1, tex_type == TextureType::_8 ? gl.single_channel_internal : comps, 1 << i, 1 << i, 0, comps, gltype, temp_tex_buffer);
 					temp_tex_buffer += (1 << (2 * i)) * bytes_per_pixel;
 				}
 			}
 		}
 		else
 		{
-			glTexImage2D(GL_TEXTURE_2D, 0,comps, width, height, 0, comps, gltype, temp_tex_buffer);
+			glTexImage2D(GL_TEXTURE_2D, 0, tex_type == TextureType::_8 ? gl.single_channel_internal : comps, width, height, 0, comps, gltype, temp_tex_buffer);
 			if (mipmapped)
 				glGenerateMipmap(GL_TEXTURE_2D);
 	}
@@ -558,7 +756,13 @@ bool TextureCacheData::PartMemory(size_t bytes, void **memory)
 	*memory = nullptr;
 	if (made_type != (u8)tex_type + 1 || texID == 0 || (decodeSerial != 0 && decodeSerial == glTexDecoder.Serial()))
 		return false;
-	return pooled == nullptr || (int)pooled->cls == TexPoolBook::Class((u32)tex_type, w, h, made_mips);
+	if (pooled == nullptr)
+		return true;
+	if ((int)pooled->cls != TexPoolBook::Class((u32)tex_type, w, h, made_mips))
+		return false;
+	// (through the ring, where there is one and room in it)
+	*memory = upload_ring_take(bytes);
+	return true;
 }
 
 void TextureCacheData::UploadPart(const TexRegion *regions, u32 count, u8 *data, const size_t *offset)
@@ -566,7 +770,9 @@ void TextureCacheData::UploadPart(const TexRegion *regions, u32 count, u8 *data,
 	const u32 f = (u32)tex_type;
 	GLenum format, type;
 	u32 i;
+	bool bound;
 
+	data = upload_ring_source(data, &bound);
 	if (pooled != nullptr)
 	{
 		format = poolFormat[f];
@@ -582,6 +788,7 @@ void TextureCacheData::UploadPart(const TexRegion *regions, u32 count, u8 *data,
 	glcache.BindTexture(GL_TEXTURE_2D, texID);
 	for (i = 0; i < count; i++)
 		glTexSubImage2D(GL_TEXTURE_2D, regions[i].level, regions[i].x, regions[i].y, regions[i].w, regions[i].h, format, type, data + offset[i]);
+	upload_ring_done(bound);
 	glCheck();
 }
 
@@ -617,6 +824,8 @@ bool TextureCacheData::Delete()
  * for renders of a screen's size (rtt_gl_init()), larger when a larger
  * one is read, which is said */
 static GLuint rtt_read_fbo, rtt_small_fbo, rtt_small_rb;
+/* (what a render copied into a texture is drawn into: TextureCacheData::CopyRender()) */
+static GLuint rtt_copy_fbo;
 static u32 rtt_small_w, rtt_small_h;
 static bool rtt_said_larger;
 
@@ -695,7 +904,6 @@ bool TextureCacheData::CopyRender(BaseTextureCacheData *from, u32 x, u32 y, u32 
 {
 #if defined(GL_READ_FRAMEBUFFER) && defined(GL_DRAW_FRAMEBUFFER)
 	const TextureCacheData *src = static_cast<const TextureCacheData *>(from);
-	static GLuint copy_fbo;
 	GLint was_fbo = 0;
 
 	if (gl.gl_major < 3 || texID == 0 || src->texID == 0 || src->texID == texID || columns == 0 || columns > w)
@@ -714,14 +922,14 @@ bool TextureCacheData::CopyRender(BaseTextureCacheData *from, u32 x, u32 y, u32 
 	const GLboolean was_scissor = glIsEnabled(GL_SCISSOR_TEST);
 	if (rtt_read_fbo == 0)
 		glGenFramebuffers(1, &rtt_read_fbo);
-	if (copy_fbo == 0)
-		glGenFramebuffers(1, &copy_fbo);
+	if (rtt_copy_fbo == 0)
+		glGenFramebuffers(1, &rtt_copy_fbo);
 	glBindFramebuffer(RARCH_GL_FRAMEBUFFER, rtt_read_fbo);
 	glFramebufferTexture2D(RARCH_GL_FRAMEBUFFER, RARCH_GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, src->texID, 0);
-	glBindFramebuffer(RARCH_GL_FRAMEBUFFER, copy_fbo);
+	glBindFramebuffer(RARCH_GL_FRAMEBUFFER, rtt_copy_fbo);
 	glFramebufferTexture2D(RARCH_GL_FRAMEBUFFER, RARCH_GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, texID, 0);
 	glBindFramebuffer(GL_READ_FRAMEBUFFER, rtt_read_fbo);
-	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, copy_fbo);
+	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, rtt_copy_fbo);
 	if (was_scissor)
 		glDisable(GL_SCISSOR_TEST);
 	if (columns < w)
@@ -738,7 +946,7 @@ bool TextureCacheData::CopyRender(BaseTextureCacheData *from, u32 x, u32 y, u32 
 	if (was_scissor)
 		glEnable(GL_SCISSOR_TEST);
 	/* (a texture attached to a framebuffer is not deleted when it is) */
-	glBindFramebuffer(RARCH_GL_FRAMEBUFFER, copy_fbo);
+	glBindFramebuffer(RARCH_GL_FRAMEBUFFER, rtt_copy_fbo);
 	glFramebufferTexture2D(RARCH_GL_FRAMEBUFFER, RARCH_GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, 0, 0);
 	rtt_gl_detach();
 	glBindFramebuffer(RARCH_GL_FRAMEBUFFER, was_fbo);
@@ -1029,11 +1237,13 @@ static void rtt_gl_term(void)
 #endif
 	if (rtt_read_fbo != 0)
 		glDeleteFramebuffers(1, &rtt_read_fbo);
+	if (rtt_copy_fbo != 0)
+		glDeleteFramebuffers(1, &rtt_copy_fbo);
 	if (rtt_small_fbo != 0)
 		glDeleteFramebuffers(1, &rtt_small_fbo);
 	if (rtt_small_rb != 0)
 		glDeleteRenderbuffers(1, &rtt_small_rb);
-	rtt_read_fbo = rtt_small_fbo = rtt_small_rb = 0;
+	rtt_read_fbo = rtt_copy_fbo = rtt_small_fbo = rtt_small_rb = 0;
 	rtt_small_w = rtt_small_h = 0;
 	rtt_said_larger = false;
 }
@@ -1049,6 +1259,8 @@ static void rtt_gl_init(void)
 	glGetIntegerv(GL_FRAMEBUFFER_BINDING, &was_fbo);
 	if (rtt_read_fbo == 0)
 		glGenFramebuffers(1, &rtt_read_fbo);
+	if (rtt_copy_fbo == 0 && gl.gl_major >= 3)
+		glGenFramebuffers(1, &rtt_copy_fbo);
 #ifndef HAVE_OPENGLES2
 	if (rtt_gl_pbo())
 	{

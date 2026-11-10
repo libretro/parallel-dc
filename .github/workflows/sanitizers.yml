@@ -8,7 +8,8 @@ name: Sanitizers
 # unloaded after its frames with OpenGL and the process ended, with nothing
 # left over for LeakSanitizer (tools/threads/unload_leaks.sh). And with
 # each, states saved and loaded with every frame run ahead, on OpenGL
-# (tools/gl/gl_ahead.sh).
+# (tools/gl/gl_ahead.sh), and textures of one channel on each OpenGL
+# (tools/gl/gl_channels.sh).
 
 on:
   push:
@@ -18,6 +19,8 @@ on:
       - 'tools/gl/gl_frames.c'
       - 'tools/gl/gl_ahead.sh'
       - 'tools/gl/ahead_check.py'
+      - 'tools/gl/gl_channels.sh'
+      - 'tools/rend/channel_check.py'
       - 'tools/vulkan/vk_sanitize.sh'
       - 'tools/vulkan/vk_hdr.c'
       - 'tools/rend/alloc_count.*'
@@ -32,6 +35,8 @@ on:
       - 'tools/gl/gl_frames.c'
       - 'tools/gl/gl_ahead.sh'
       - 'tools/gl/ahead_check.py'
+      - 'tools/gl/gl_channels.sh'
+      - 'tools/rend/channel_check.py'
       - 'tools/vulkan/vk_sanitize.sh'
       - 'tools/vulkan/vk_hdr.c'
       - 'tools/rend/alloc_count.*'
@@ -71,6 +76,8 @@ jobs:
         run: VK_DRIVER_FILES=/usr/share/vulkan/icd.d/lvp_icd.json SANITIZE=${{ matrix.sanitizer }} sh tools/vulkan/vk_sanitize.sh
       - name: States saved and loaded, every frame run ahead
         run: SANITIZE=${{ matrix.sanitizer }} sh tools/gl/gl_ahead.sh
+      - name: Textures of one channel, OpenGL ES 2 and 3, OpenGL 2 and 3+ (sanitizer)
+        run: SANITIZE=${{ matrix.sanitizer }} sh tools/gl/gl_channels.sh
       - name: The core unloaded, nothing left over (LeakSanitizer)
         if: matrix.sanitizer == 'address'
         run: sh tools/threads/unload_leaks.sh

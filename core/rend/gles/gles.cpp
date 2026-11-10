@@ -13,6 +13,9 @@
 #ifndef GL_RED
 #define GL_RED                            0x1903
 #endif
+#ifndef GL_R8
+#define GL_R8                             0x8229
+#endif
 #ifndef GL_MAJOR_VERSION
 #define GL_MAJOR_VERSION                  0x821B
 #endif
@@ -207,7 +210,7 @@ uniform highp int key_bits;
 #if TARGET_GL == GLES3
 out highp vec4 FragColor;
 #define gl_FragColor FragColor
-#define FOG_CHANNEL a
+#define FOG_CHANNEL r
 #elif TARGET_GL == GL3
 out highp vec4 FragColor;
 #define gl_FragColor FragColor
@@ -825,9 +828,15 @@ PipelineShader *GetProgram(bool cp_AlphaTest, bool pp_InsideClipping,
  * GL_NVX_gpu_memory_info says is available (all of it counts as the
  * budget, none as used), or GL_ATI_meminfo's free texture memory; and
  * without either, a fixed figure small enough for any device that runs the
- * renderer. */
+ * renderer. A device that has next to no memory of its own (less than
+ * GL_UMA_DEDICATED_KIB: a software one, an integrated one that says so) uses
+ * the system's: what the GPU can reach is its budget, the free auxiliary
+ * memory by GL_ATI_meminfo. */
+#define GL_UMA_DEDICATED_KIB (64 << 10)
+#define GL_MOST_KIB (1 << 28)
 static void gl_query_vram_budget(bool nvx_meminfo, bool ati_meminfo)
 {
+	const GLenum nvx_dedicated = 0x9047;		// GL_GPU_MEMORY_INFO_DEDICATED_VIDMEM_NVX
 	const GLenum nvx_total_available = 0x9048;	// GL_GPU_MEMORY_INFO_TOTAL_AVAILABLE_MEMORY_NVX
 	const GLenum nvx_current_available = 0x9049;	// GL_GPU_MEMORY_INFO_CURRENT_AVAILABLE_VIDMEM_NVX
 	const GLenum ati_texture_free = 0x87FC;		// GL_TEXTURE_FREE_MEMORY_ATI
@@ -836,10 +845,20 @@ static void gl_query_vram_budget(bool nvx_meminfo, bool ati_meminfo)
 	gl.vram_budget = VramBudget();
 	if (nvx_meminfo)
 	{
-		GLint total = 0;
+		GLint total = 0, dedicated = 0;
+		glGetIntegerv(nvx_dedicated, &dedicated);
 		glGetIntegerv(nvx_total_available, &total);
 		glGetIntegerv(nvx_current_available, &kib[0]);
-		if (glGetError() == GL_NO_ERROR && total > 0 && kib[0] > 0)
+		/* (a figure no card has, 256 GB or more, is not one: llvmpipe's
+		 * dedicated memory is whatever its stack had there) */
+		const bool ok = glGetError() == GL_NO_ERROR && total > 0 && total < GL_MOST_KIB
+				&& dedicated >= 0 && dedicated < GL_MOST_KIB;
+		if (ok && dedicated > 0 && dedicated < GL_UMA_DEDICATED_KIB)
+		{
+			gl.vram_budget.budget_kib = (u32)total;
+			gl.vram_budget.exact = true;
+		}
+		else if (ok && kib[0] > 0)
 		{
 			gl.vram_budget.budget_kib = (u32)total;
 			gl.vram_budget.usage_kib = total > kib[0] ? (u32)(total - kib[0]) : 0;
@@ -849,7 +868,13 @@ static void gl_query_vram_budget(bool nvx_meminfo, bool ati_meminfo)
 	if (!gl.vram_budget.exact && ati_meminfo)
 	{
 		glGetIntegerv(ati_texture_free, kib);
-		if (glGetError() == GL_NO_ERROR && kib[0] > 0)
+		const bool ok = glGetError() == GL_NO_ERROR;
+		if (ok && kib[0] >= 0 && kib[0] < GL_UMA_DEDICATED_KIB && kib[2] > kib[0])
+		{
+			gl.vram_budget.budget_kib = (u32)kib[0] + (u32)kib[2];
+			gl.vram_budget.exact = true;
+		}
+		else if (ok && kib[0] > 0)
 		{
 			gl.vram_budget.budget_kib = (u32)kib[0];
 			gl.vram_budget.exact = true;
@@ -883,14 +908,18 @@ void findGLVersion()
 		{
 			gl.gl_version = "GLES3";
 			gl.glsl_version_header = "#version 300 es";
+			/* (GL_R8: a size the texture pool can make, as GL_ALPHA has none) */
+			gl.single_channel_format = GL_RED;
+			gl.single_channel_internal = GL_R8;
 		}
 		else
 		{
 			gl.gl_version = "GLES2";
 			gl.glsl_version_header = "";
 			gl.index_type = GL_UNSIGNED_SHORT;
+			gl.single_channel_format = GL_ALPHA;
+			gl.single_channel_internal = GL_ALPHA;
 		}
-		gl.single_channel_format = GL_ALPHA;
 
 		GLint stencilBits = 0;
 		glGetIntegerv(GL_STENCIL_BITS, &stencilBits);
@@ -905,12 +934,14 @@ void findGLVersion()
 			gl.gl_version = "GL3";
 			gl.glsl_version_header = "#version 130";
 			gl.single_channel_format = GL_RED;
+			gl.single_channel_internal = GL_RED;
 		}
 		else
 		{
 			gl.gl_version = "GL2";
 			gl.glsl_version_header = "#version 120";
 			gl.single_channel_format = GL_ALPHA;
+			gl.single_channel_internal = GL_ALPHA;
 		}
 	}
 	gl.max_anisotropy = 1.f;
@@ -1199,7 +1230,7 @@ void UpdateFogTexture(u8 *fog_table, GLenum texture_slot, GLint fog_image_format
 		glcache.BindTexture(GL_TEXTURE_2D, fogTextureId);
 
     glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
-	glTexImage2D(GL_TEXTURE_2D, 0, fog_image_format, 128, 2, 0, fog_image_format, GL_UNSIGNED_BYTE, temp_tex_buffer);
+	glTexImage2D(GL_TEXTURE_2D, 0, fog_image_format == GL_RED ? GL_R8 : fog_image_format, 128, 2, 0, fog_image_format, GL_UNSIGNED_BYTE, temp_tex_buffer);
 	glCheck();
 	memcpy(uploaded, temp_tex_buffer, sizeof(uploaded));
 

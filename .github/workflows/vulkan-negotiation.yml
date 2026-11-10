@@ -24,10 +24,13 @@ name: Vulkan negotiation
 # and the texture cache's map against a plain list (tools/rend/tex_map_test.sh).
 # And polygons drawn outside a clipping rectangle, with OpenGL and OpenGL
 # ES, each renderer (tools/gl/gl_clip.sh).
+# And textures of one channel - the fog table, paletted indices - on
+# OpenGL ES 2 and 3 and OpenGL 2 and 3+ (tools/gl/gl_channels.sh).
 # And a state saved while a render to a texture is still on the card, every
 # frame run ahead, with OpenGL and OpenGL ES (tools/gl/gl_ahead.sh).
-# And the OpenGL renderers compiled as macOS (clang) and the Switch (libnx)
-# build them, through glsm's own GL functions (tools/gl/gl_shapes.sh).
+# And the OpenGL renderers compiled as macOS (clang), the Switch (libnx)
+# and GLES=1 (OpenGL ES 2's headers) build them, through glsm's own GL
+# functions (tools/gl/gl_shapes.sh).
 # And a frame's vertices and indices parsed straight into memory the card
 # reads, none copied, the pictures those of the lists copied, with Vulkan
 # and with OpenGL (tools/vulkan/vk_parse_arena.sh, tools/gl/gl_parse_arena.sh:
@@ -85,6 +88,7 @@ on:
       - 'tools/rend/d3d_draw_path.sh'
       - 'tools/rend/dx12_blend_fold_test.*'
       - 'tools/rend/clip_check.py'
+      - 'tools/rend/channel_check.py'
       - 'tools/rend/odd_check.py'
       - 'core/rend/tex_pool.h'
       - 'core/rend/tex_map.h'
@@ -135,6 +139,7 @@ on:
       - 'tools/rend/d3d_draw_path.sh'
       - 'tools/rend/dx12_blend_fold_test.*'
       - 'tools/rend/clip_check.py'
+      - 'tools/rend/channel_check.py'
       - 'tools/rend/odd_check.py'
       - 'core/rend/tex_pool.h'
       - 'core/rend/tex_map.h'
@@ -159,8 +164,8 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
             build-essential libgl1-mesa-dev mesa-vulkan-drivers vulkan-validationlayers libvulkan1 \
-            glslang-tools mingw-w64 wine wine64 xvfb libegl1-mesa-dev libgl1-mesa-dri clang
-      - name: The OpenGL renderers as macOS and the Switch compile them
+            glslang-tools mingw-w64 wine wine64 xvfb libegl1-mesa-dev libgl1-mesa-dri clang libgles-dev
+      - name: The OpenGL renderers as macOS, the Switch and GLES=1 compile them
         run: sh tools/gl/gl_shapes.sh
       - name: Build the core
         run: make -j"$(nproc)"
@@ -173,6 +178,8 @@ jobs:
           sh tools/gl/gl_dma.sh
       - name: Polygons drawn outside a clipping rectangle, with OpenGL and OpenGL ES (each renderer)
         run: sh tools/gl/gl_clip.sh
+      - name: Textures of one channel (fog table, paletted indices), OpenGL ES 2 and 3, OpenGL 2 and 3+
+        run: sh tools/gl/gl_channels.sh
       - name: OpenGL - nothing compiled on the draw path, cold, OpenGL ES 2 and 3, OpenGL 2 and 3+, the general programs' pictures (AGENTS.md)
         run: |
           # (the built core again, every polygon drawn with the general programs: gles.cpp and the link)

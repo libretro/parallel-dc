@@ -204,6 +204,8 @@ struct gl_ctx
 	void (APIENTRYP clearDepthf)(GLfloat depth);
 	void (APIENTRYP copyBufferSubData)(GLenum readTarget, GLenum writeTarget, GLintptr readOffset, GLintptr writeOffset, GLsizeiptr size);
 	GLuint single_channel_format;
+	/* (what it is made as: OpenGL ES 3 has GL_RED by its size alone) */
+	GLuint single_channel_internal;
 	GLenum index_type;
 	bool stencil_present;
 	f32 max_anisotropy;
@@ -397,6 +399,8 @@ public:
 	GLuint texID;   //gl texture: its own, or the pool's
 	virtual std::string GetId() override { return std::to_string(texID); }
 	virtual void UploadToGPU(int width, int height, u8 *temp_tex_buffer, bool mipmapped, bool mipmapsIncluded = false) override;
+	virtual void *UploadMemory(u32 width, u32 height, size_t bytes, u32 pixel, bool mipmaps) override;
+	void UploadToGPUFrom(int width, int height, u8 *temp_tex_buffer, bool mipmapped, bool mipmapsIncluded);
 	virtual bool GpuDecode(const texd_plan& plan) override;
 	virtual bool PartMemory(size_t bytes, void **memory) override;
 	virtual void UploadPart(const TexRegion *regions, u32 count, u8 *data, const size_t *offset) override;

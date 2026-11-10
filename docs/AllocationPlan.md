@@ -98,9 +98,15 @@ room from one pixel buffer, a ring, and reads through framebuffers made
 with the renderer (`rtt_gl_init()`; none in the signal handler); the
 programs by key are in a fixed map (`rend/tex_map.h`); the frame's
 buffers have their storage given at the start (`gl_buffer_room()`), and
-the translucent sort its room (`gl_sort_reserve()`). Left: OpenGL ES,
-which has no texture pool (a render to a texture's texture and depth, a
-texture's picture); the pool's misses; and the per-pixel renderer's copy
-of the depth for frames of more than one pass, made when the first comes.
+the translucent sort its room (`gl_sort_reserve()`). OpenGL ES 3 has the
+texture pool too (8-bit textures are `GL_R8`, as on OpenGL 3). Where
+textures are converted on the CPU (OpenGL ES, OpenGL before 4.3) they are
+converted into a piece of one pixel unpack buffer, a ring fenced a frame
+at a time (`upload_ring_take()`), and nothing of the cache's is grown for
+them. A device with next to no memory of its own (llvmpipe, an integrated
+one that says so) has the system's memory for its budget, and a figure no
+card has is not taken for one: the pool was planned from 31 MB on
+llvmpipe and missed. Left: the per-pixel renderer's copy of the depth for
+frames of more than one pass, made when the first comes.
 
 Direct3D gets the same measure once its harness counts it.
