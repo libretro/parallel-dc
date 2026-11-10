@@ -34,13 +34,15 @@ SH-4 dynarec's; 9 buffers, 8 to 14 images and 4 command pools.
 2. **A frame's draws.** Done: a descriptor set is made with nothing
    allocated but the set (`vk_alloc_desc_set()`: vulkan.hpp's
    allocateDescriptorSetsUnique() made a std::vector for each), a retired
-   one is given back through the command pool's list (`DeferFree()`), and
-   a drawer's main and vertex uniform buffers are made with it, not when
-   it first draws. Left: the quad's set made again each frame the image
-   changes (a set kept for each of the frontend's images), the sorter's
-   grow buffers
-   (`SortPasses`, `GenSortedTo`, `SortPParams`, `SortIntoMainBuffer`)
-   reserved at their bounds, the TA's lists' maxima, at the start.
+   one is given back through the command pool's list (`DeferFree()`); a
+   drawer's main and vertex uniform buffers, and its texture descriptor
+   cache's tables and first sets, are made with it; every sampler a TSP
+   can ask for (288) is made at the renderer's start
+   (`SamplerManager::Init()`); the translucent sort's room is reserved
+   before the first frame (`SortReserve()`, `SortPassesReserve()`: the
+   translucent list's polygons, 64K triangles). Left: the quad's set made
+   again from the pool each frame the image changes (no heap: a set kept
+   for each of the frontend's images would make none).
 3. **Renders to textures.** Their targets, framebuffers and buffers
    (`TextureDrawer::BeginRenderPass`, `BufferData`, `FramebufferAttachment`,
    the per-pixel renderer's) from a pool made at the start, at the bound

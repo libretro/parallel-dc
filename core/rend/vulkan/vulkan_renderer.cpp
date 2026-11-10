@@ -35,6 +35,7 @@ public:
 		DEBUG_LOG(RENDERER, "VulkanRenderer::Init");
 
 		samples = SsaaSamples();
+		samplerManager.Init();
 		textureDrawer.SetCommandPool(&texCommandPool);
 		textureDrawer.Init(&samplerManager, &shaderManager, &textureCache, RttSamples());
 		textureDrawer.SetGpuDraw(taDecoder.Draw());

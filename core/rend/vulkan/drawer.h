@@ -284,6 +284,9 @@ protected:
 	{
 		this->pipelineManager = pipelineManager;
 		this->samplerManager = samplerManager;
+		/* (the passes' sorted draws: room before the first frame) */
+		SortPassesReserve(&sortedPasses);
+		SortPassesReserve(&prepassPasses);
 
 		int size = GetContext()->GetSwapChainSize();
 		if (descriptorSets.size() > size)

@@ -86,6 +86,9 @@ static bool makeTexture(ID3D11Device *device, u32 width, u32 height, DXGI_FORMAT
 
 bool DX11Renderer::Init()
 {
+	/* (the passes' sorted draws: room before the first frame) */
+	SortPassesReserve(&sortedPasses);
+	SortPassesReserve(&prepassPasses);
 	context = DX11Context::Instance();
 	device = context->GetDevice();
 	deviceContext = context->GetDeviceContext();

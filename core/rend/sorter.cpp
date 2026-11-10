@@ -20,6 +20,8 @@
 
 /* (sorting: in memory kept from one frame to the next) */
 static grow_buf_t sortPairs, sortPairsTmp;
+/* SortPParams()'s, GenSortedTo()'s, GenPrepassTo()'s */
+static grow_buf_t gathered, lstBuf, orderBuf, runsBuf, runsTmp;
 
 struct IndexTrig
 {
@@ -80,7 +82,6 @@ void SortPParams(int first, int count)
 	/* sorted by zvZ, stably: the polygons gathered in that order, and put back */
 	PolyParam * const base = pvrrc.global_param_tr.head() + first;
 	sort_pair_t *pairs = (sort_pair_t *)grow_buf_reserve(&sortPairs, (size_t)count * sizeof(sort_pair_t));
-	static grow_buf_t gathered;
 	PolyParam *to = (PolyParam *)grow_buf_reserve(&gathered, (size_t)count * sizeof(PolyParam));
 	if (pairs == NULL || to == NULL)
 		return;
@@ -170,7 +171,6 @@ u32 GenSortedTo(int first, int count, SortList *draws, u32 *out, bool firstProvo
 	/* every triangle, with its polygon and its vertices; and a pair of its
 	 * depth and its place, which is what is sorted. (Kept from one frame to
 	 * the next: nothing allocated once they have grown.) */
-	static grow_buf_t lstBuf;
 	const u32 tris = SortedTriangles(first, count);
 	IndexTrig *lst = (IndexTrig *)grow_buf_reserve(&lstBuf, (size_t)(tris ? tris : 1) * sizeof(IndexTrig));
 	sort_pair_t *pairs = (sort_pair_t *)grow_buf_reserve(&sortPairs, (size_t)(tris ? tris : 1) * sizeof(sort_pair_t));
@@ -331,7 +331,6 @@ u32 GenPrepassTo(int first, int count, bool lastPass, SortList *draws, u32 *out,
 		bool firstProvoking)
 {
 	/* (kept from one frame to the next: no allocation once they have grown) */
-	static grow_buf_t orderBuf, runsBuf, runsTmp;
 
 	if (count <= 0 || pvrrc.verts.used() == 0 || !PrepassWanted(lastPass))
 		return 0;
@@ -489,4 +488,33 @@ u32 SortPassesRoom(void)
 		previous = current.tr_count;
 	}
 	return tris * 6;
+}
+
+/* The translucent polygons a frame can have (TA_context::Alloc()'s list),
+ * and the triangles of them sorted that a frame mostly has: reserved
+ * before the first frame, so that a frame up to them allocates nothing */
+#define SORT_RESERVE_POLYS (10240 * (ta_data_size() / TA_DATA_SIZE))
+#define SORT_RESERVE_TRIS 65536
+#define SORT_RESERVE_DRAWS 1024
+
+void SortReserve(void)
+{
+	const size_t polys = SORT_RESERVE_POLYS;
+	const size_t pairs = polys > SORT_RESERVE_TRIS ? polys : SORT_RESERVE_TRIS;
+	grow_buf_reserve(&sortPairs, pairs * sizeof(sort_pair_t));
+	grow_buf_reserve(&sortPairsTmp, pairs * sizeof(sort_pair_t));
+	grow_buf_reserve(&gathered, polys * sizeof(PolyParam));
+	grow_buf_reserve(&lstBuf, (size_t)SORT_RESERVE_TRIS * sizeof(IndexTrig));
+	grow_buf_reserve(&orderBuf, polys * sizeof(u32));
+	grow_buf_reserve(&runsBuf, polys * sizeof(PrepassRun));
+	grow_buf_reserve(&runsTmp, polys * sizeof(PrepassRun));
+}
+
+void SortPassesReserve(grow_buf_t *lists)
+{
+	/* (the render passes a frame can have: TA_context's) */
+	SortList *list = SortPasses(lists, 10);
+	u32 i;
+	for (i = 0; list != NULL && i < 10; i++)
+		grow_buf_reserve_keep(&list[i].buf, (size_t)SORT_RESERVE_DRAWS * sizeof(SortTrigDrawParam));
 }

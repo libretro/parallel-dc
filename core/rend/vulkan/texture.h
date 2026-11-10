@@ -285,40 +285,79 @@ private:
 	friend class TextureCache;
 };
 
+/* The polygons' samplers, every one a TSP can ask for made before the
+ * first frame (Init()): filtered or not, each axis clamped, mirrored or
+ * repeated, and the 16 mipmap biases - 288 - in a plain table, nothing
+ * made or allocated while the game runs */
 class SamplerManager
 {
 public:
+	SamplerManager() { memset(samplers, 0, sizeof(samplers)); }
+	~SamplerManager() { Term(); }
+
+	void Init()
+	{
+		u32 i;
+		Term();
+		for (i = 0; i < SAMPLERS; i++)
+			samplers[i] = Make(i);
+	}
 	vk::Sampler GetSampler(TSP tsp)
 	{
-		u32 samplerHash = tsp.full & TSP_Mask;	// MipMapD, FilterMode, ClampU, ClampV, FlipU, FlipV
-		const auto& it = samplers.find(samplerHash);
-		vk::Sampler sampler;
-		if (it != samplers.end())
-			return it->second.get();
-		vk::Filter filter = tsp.FilterMode == 0 ? vk::Filter::eNearest : vk::Filter::eLinear;
-		vk::SamplerAddressMode uRepeat = tsp.ClampU ? vk::SamplerAddressMode::eClampToEdge
-				: tsp.FlipU ? vk::SamplerAddressMode::eMirroredRepeat : vk::SamplerAddressMode::eRepeat;
-		vk::SamplerAddressMode vRepeat = tsp.ClampV ? vk::SamplerAddressMode::eClampToEdge
-				: tsp.FlipV ? vk::SamplerAddressMode::eMirroredRepeat : vk::SamplerAddressMode::eRepeat;
-
-		bool anisotropicFiltering = settings.rend.AnisotropicFiltering > 1 && VulkanContext::Instance()->SupportsSamplerAnisotropy()
-				&& filter == vk::Filter::eLinear;
-		return samplers.emplace(
-					std::make_pair(samplerHash, VulkanContext::Instance()->GetDevice().createSamplerUnique(
-						vk::SamplerCreateInfo(vk::SamplerCreateFlags(), filter, filter,
-							vk::SamplerMipmapMode::eNearest, uRepeat, vRepeat, vk::SamplerAddressMode::eClampToEdge, D_Adjust_LoD_Bias[tsp.MipMapD],
-							anisotropicFiltering, std::min((float)settings.rend.AnisotropicFiltering, VulkanContext::Instance()->GetMaxSamplerAnisotropy()),
-							false, vk::CompareOp::eNever,
-							0.0f, 256.0f, vk::BorderColor::eFloatOpaqueBlack)))).first->second.get();
+		const u32 i = Index(tsp);
+		/* (one asked for before Init(): made now) */
+		if (!samplers[i])
+			samplers[i] = Make(i);
+		return vk::Sampler(samplers[i]);
 	}
 	void Term()
 	{
-		samplers.clear();
+		u32 i;
+		for (i = 0; i < SAMPLERS; i++)
+			if (samplers[i] != VK_NULL_HANDLE)
+			{
+				VulkanContext::Instance()->GetDevice().destroySampler(vk::Sampler(samplers[i]));
+				samplers[i] = VK_NULL_HANDLE;
+			}
 	}
 	static const u32 TSP_Mask = 0x7ef00;
 
 private:
-	std::map<u32, vk::UniqueSampler> samplers;
+	enum { SAMPLERS = 16 * 2 * 3 * 3 };
+
+	/* an axis: clamped, mirrored or repeated */
+	static u32 Axis(u32 clamp, u32 flip) { return clamp ? 0 : flip ? 1 : 2; }
+	static u32 Index(TSP tsp)
+	{
+		return ((tsp.MipMapD * 2 + (tsp.FilterMode != 0 ? 1 : 0)) * 3 + Axis(tsp.ClampU, tsp.FlipU)) * 3
+				+ Axis(tsp.ClampV, tsp.FlipV);
+	}
+	static vk::SamplerAddressMode Mode(u32 axis)
+	{
+		return axis == 0 ? vk::SamplerAddressMode::eClampToEdge : axis == 1 ? vk::SamplerAddressMode::eMirroredRepeat
+				: vk::SamplerAddressMode::eRepeat;
+	}
+	static VkSampler Make(u32 i)
+	{
+		VulkanContext *context = VulkanContext::Instance();
+		const vk::SamplerAddressMode vRepeat = Mode(i % 3);
+		const vk::SamplerAddressMode uRepeat = Mode(i / 3 % 3);
+		const vk::Filter filter = i / 9 % 2 ? vk::Filter::eLinear : vk::Filter::eNearest;
+		const u32 mipMapD = i / 18;
+		const bool anisotropicFiltering = settings.rend.AnisotropicFiltering > 1 && context->SupportsSamplerAnisotropy()
+				&& filter == vk::Filter::eLinear;
+		const vk::SamplerCreateInfo info(vk::SamplerCreateFlags(), filter, filter,
+				vk::SamplerMipmapMode::eNearest, uRepeat, vRepeat, vk::SamplerAddressMode::eClampToEdge, D_Adjust_LoD_Bias[mipMapD],
+				anisotropicFiltering, std::min((float)settings.rend.AnisotropicFiltering, context->GetMaxSamplerAnisotropy()),
+				false, vk::CompareOp::eNever,
+				0.0f, 256.0f, vk::BorderColor::eFloatOpaqueBlack);
+		vk::Sampler sampler;
+		if (context->GetDevice().createSampler(&info, nullptr, &sampler) != vk::Result::eSuccess)
+			return VK_NULL_HANDLE;
+		return (VkSampler)sampler;
+	}
+
+	VkSampler samplers[SAMPLERS];
 };
 
 class FramebufferAttachment

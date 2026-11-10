@@ -31,7 +31,6 @@ heap BaseTextureCacheData::HashPieces
 heap TexturePool::Make
 vulkan TexturePool::Make
 heap StringFromFormatV        # (TexturePool::Make's log line)
-heap SamplerManager::GetSampler
 
 # Renders to textures: their targets and buffers
 heap TextureDrawer::BeginRenderPass
@@ -40,10 +39,5 @@ vulkan FramebufferAttachment::Init
 heap OITTextureDrawer::TakeTexture
 heap OITTextureDrawer::NewFrame
 
-# A frame's draws: descriptor sets, the quad's, the sort's buffers
-heap DescriptorSets::SetTexture
-heap SortPasses
-heap SortPParams
-heap GenSortedTo
-heap OITDescriptorSets::SetTexture
+# The per-pixel renderer's attachments for a render to a texture
 heap OITDrawer::MakeBuffers

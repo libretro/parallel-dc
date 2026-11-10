@@ -55,6 +55,10 @@ static INLINE SortTrigDrawParam *SortDraws(const SortList *list)
  * there is no memory. SortPassesFree(): every list's memory and theirs. */
 SortList *SortPasses(grow_buf_t *lists, u32 passes);
 void SortPassesFree(grow_buf_t *lists);
+/* The sorter's own room, reserved before a renderer's first frame */
+void SortReserve(void);
+/* A renderer's lists of the passes' draws, reserved the same way */
+void SortPassesReserve(grow_buf_t *lists);
 /* The most indices SortPassesTo() writes of this frame */
 u32 SortPassesRoom(void);
 /* Every render pass's sorted triangles (@sorted, a list a pass) and, if

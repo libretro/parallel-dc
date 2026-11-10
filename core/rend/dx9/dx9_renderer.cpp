@@ -76,6 +76,9 @@ bool DX9Renderer::MakeBuffers(u32 vertexBytes, u32 indexBytes)
 
 bool DX9Renderer::Init()
 {
+	/* (the passes' sorted draws: room before the first frame) */
+	SortPassesReserve(&sortedPasses);
+	SortPassesReserve(&prepassPasses);
 	context = DX9Context::Instance();
 	device = context->GetDevice();
 	if (device == nullptr)

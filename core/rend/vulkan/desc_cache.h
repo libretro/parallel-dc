@@ -40,7 +40,19 @@ public:
 		return *this;
 	}
 
-	void SetLayout(vk::DescriptorSetLayout layout) { this->layout = layout; }
+	/* (the tables and a batch of sets made now, with the drawer: one that
+	 * first draws while the game runs - a render to a texture - allocates
+	 * nothing then) */
+	void SetLayout(vk::DescriptorSetLayout layout)
+	{
+		this->layout = layout;
+		if (cap == 0)
+		{
+			Grow(RESERVE);
+			if (nfree == 0)
+				Allocate();
+		}
+	}
 
 	/* The set for @key, bound by this use of the slot: one written for it
 	 * already, or a null one - and then Add() has to have one written */
@@ -198,7 +210,7 @@ private:
 		o.cap = o.count = o.nfree = 0;
 	}
 
-	enum { BATCH = 16 };
+	enum { BATCH = 16, RESERVE = 256 };
 	vk::DescriptorSetLayout layout;
 	Entry *table = nullptr;
 	Entry *spare = nullptr;

@@ -190,6 +190,9 @@ void DX12Renderer::DropImage(DX12Image& image)
 
 bool DX12Renderer::Init()
 {
+	/* (the passes' sorted draws: room before the first frame) */
+	SortPassesReserve(&sortedPasses);
+	SortPassesReserve(&prepassPasses);
 	context = DX12Context::Instance();
 	device = context->GetDevice();
 	if (device == nullptr)

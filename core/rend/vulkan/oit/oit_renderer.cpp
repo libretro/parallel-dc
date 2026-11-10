@@ -38,6 +38,7 @@ public:
 
 		oitBuffers.SetCompact(rend_compute_wanted && ComputeDrawer::DeviceLacks() == nullptr);
 		samples = SsaaSamples();
+		samplerManager.Init();
 		/* (with SSAA and the HDR output, the last pass's channel sums, for
 		 * the encode: OITBuffers::SetSums()) */
 		oitBuffers.SetSums(samples > 1 && GetContext()->HdrSumsReady());
