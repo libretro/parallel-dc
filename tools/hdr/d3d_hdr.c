@@ -32,7 +32,10 @@
  * from frame N on are counted (tools/rend/alloc_count.c): its heap's, in a
  * build with -DALLOC_COUNT, and the Direct3D objects it makes - resources,
  * heaps, views (11), pipelines, shaders and states - and with
- * D3DH_ALLOC_SITES=1 where (tools/rend/d3d_allocs.sh).
+ * D3DH_ALLOC_SITES=1 where (tools/rend/d3d_allocs.sh). With D3DH_AHEAD=N
+ * the frames from the N-th on are run as a frontend's run-ahead of one
+ * frame runs them: the frame, a state saved, the frame after it and the
+ * state loaded back (as gl_frames' GLF_AHEAD).
  *
  *   D3DH_API=11|12 D3DH_FRONTEND=sdr|hdr10|scrgb D3DH_DIR=dir \
  *      d3d_hdr core.dll content out.raw frames [key=value ...]
@@ -714,6 +717,9 @@ typedef void (RETRO_CALLCONV *run_t)(void);
 typedef bool (RETRO_CALLCONV *load_game_t)(const struct retro_game_info*);
 
 typedef void (RETRO_CALLCONV *unload_t)(void);
+typedef size_t (RETRO_CALLCONV *serialize_size_t)(void);
+typedef bool (RETRO_CALLCONV *serialize_t)(void *, size_t);
+typedef bool (RETRO_CALLCONV *unserialize_t)(const void *, size_t);
 static HMODULE loaded_core;
 
 static int finish(int code)
@@ -892,6 +898,31 @@ int main(int argc, char **argv)
       if (getenv("D3DH_ALLOCS") && n == (unsigned)atoi(getenv("D3DH_ALLOCS")))
          alloc_count_start((void *)retro_run);
       retro_run();
+      if (getenv("D3DH_AHEAD") && n >= (unsigned)atoi(getenv("D3DH_AHEAD")))
+      {
+         /* the state after this frame; the frame after it; back to the state */
+         static void *state;
+         static size_t state_size;
+         serialize_size_t size_fn = (serialize_size_t)GetProcAddress(core, "retro_serialize_size");
+         serialize_t save_fn = (serialize_t)GetProcAddress(core, "retro_serialize");
+         unserialize_t load_fn = (unserialize_t)GetProcAddress(core, "retro_unserialize");
+         if (!state)
+         {
+            state_size = size_fn();
+            state = malloc(state_size);
+         }
+         if (!state || !save_fn(state, state_size))
+         {
+            fprintf(stderr, "d3d_hdr: the state could not be saved (frame %u)\n", n);
+            return finish(1);
+         }
+         retro_run();
+         if (!load_fn(state, state_size))
+         {
+            fprintf(stderr, "d3d_hdr: the state could not be loaded (frame %u)\n", n);
+            return finish(1);
+         }
+      }
       if (getenv("D3DH_EVERY") && api == 12 && frame12 != NULL)
       {
          UINT pitch, y, x;

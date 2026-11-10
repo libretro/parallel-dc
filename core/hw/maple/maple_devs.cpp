@@ -1,4 +1,5 @@
 #include "types.h"
+#include <new>
 #include <streams/file_stream.h>
 #include "maple_if.h"
 #include "maple_helper.h"
@@ -4831,59 +4832,63 @@ struct maple_rfid_reader : maple_base
 	}
 };
 
-maple_device* maple_Create(MapleDeviceType type)
+/* The device of @type: made at @at - the memory of one of the same type,
+ * gone, so that a state loaded makes nothing - or, with none, new */
+#define MAPLE_MAKE(T) (at != NULL ? (maple_device *)new (at) T() : (maple_device *)new T())
+
+maple_device* maple_CreateAt(MapleDeviceType type, void *at)
 {
 	maple_device* rv=0;
 	switch(type)
 	{
 	case MDT_SegaController:
 		if (settings.System == DC_PLATFORM_ATOMISWAVE)
-			rv = new maple_atomiswave_controller();
+			rv = MAPLE_MAKE(maple_atomiswave_controller);
 		else
-			rv = new maple_sega_controller();
+			rv = MAPLE_MAKE(maple_sega_controller);
 		break;
 
 	case MDT_TwinStick:
-		rv = new maple_sega_twinstick();
+		rv = MAPLE_MAKE(maple_sega_twinstick);
 		break;
 
 	case MDT_AsciiStick:
-		rv = new maple_ascii_stick();
+		rv = MAPLE_MAKE(maple_ascii_stick);
 		break;
 
 	case MDT_Microphone:
-		rv = new maple_microphone();
+		rv = MAPLE_MAKE(maple_microphone);
 		break;
 
 	case MDT_SegaVMU:
-		rv = new maple_sega_vmu();
+		rv = MAPLE_MAKE(maple_sega_vmu);
 		break;
 
    case MDT_PurupuruPack:
-      rv = new maple_sega_purupuru();
+      rv = MAPLE_MAKE(maple_sega_purupuru);
       break;
 
    case MDT_Keyboard:
-		rv = new maple_keyboard();
+		rv = MAPLE_MAKE(maple_keyboard);
 		break;
 
    case MDT_Mouse:
-		rv = new maple_mouse();
+		rv = MAPLE_MAKE(maple_mouse);
 		break;
 
    case MDT_LightGun:
 		if (settings.System == DC_PLATFORM_ATOMISWAVE)
-			rv = new atomiswave_lightgun();
+			rv = MAPLE_MAKE(atomiswave_lightgun);
 		else
-			rv = new maple_lightgun();
+			rv = MAPLE_MAKE(maple_lightgun);
 		break;
 
 	case MDT_NaomiJamma:
-		rv = new maple_naomi_jamma();
+		rv = MAPLE_MAKE(maple_naomi_jamma);
 		break;
 
 	case MDT_RFIDReaderWriter:
-		rv = new maple_rfid_reader();
+		rv = MAPLE_MAKE(maple_rfid_reader);
 		break;
 
 	default:
@@ -4893,4 +4898,9 @@ maple_device* maple_Create(MapleDeviceType type)
 	}
 
 	return rv;
+}
+
+maple_device* maple_Create(MapleDeviceType type)
+{
+	return maple_CreateAt(type, NULL);
 }

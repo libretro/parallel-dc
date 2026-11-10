@@ -106,6 +106,7 @@ struct maple_device
 };
 
 maple_device* maple_Create(MapleDeviceType type);
+maple_device* maple_CreateAt(MapleDeviceType type, void *at);
 // What a NAOMI's I/O boards have had in a save state since V21: maple_devs.cpp
 void maple_jvs_serialize_v21(void **data, unsigned int *total_size);
 void maple_jvs_unserialize_v21(void **data, unsigned int *total_size);

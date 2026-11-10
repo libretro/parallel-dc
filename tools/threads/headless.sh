@@ -450,8 +450,17 @@ unset HEADLESS_SAVE HEADLESS_LOAD HEADLESS_AHEAD
 # cartridge's test program, and from there - a test program's way out is
 # the same routine - as the game once more, each time as the real BIOS
 # starts them. naomi_prog.c has what it looks at.
-echo "== headless: a NAOMI cartridge, into its test program and back"
+# And the same with every frame from the fifth on run ahead: a state saved
+# and loaded every frame, the I/O board made anew in its place each time
+# (mcfg_Remake()) and its EEPROM still read.
+for NAOMI_RUN in plain ahead; do
+if [ $NAOMI_RUN = plain ]; then
+   echo "== headless: a NAOMI cartridge, into its test program and back"
+else
+   echo "== headless: a NAOMI cartridge, into its test program and back, with every frame run ahead"
+fi
 unset HEADLESS_RESET HEADLESS_SWAP HEADLESS_SAVE HEADLESS_LOAD HEADLESS_OPTION HEADLESS_OPTION2 HEADLESS_SKIP HEADLESS_AHEAD
+[ $NAOMI_RUN = plain ] || { HEADLESS_AHEAD=5; export HEADLESS_AHEAD; }
 python3 "$T/naomi_cart.py" "$WORK/naomi-test.bin"
 if [ -n "$WINDOWS" ]; then
    :
@@ -467,11 +476,12 @@ HEADLESS_DIR=$WORK/dir HEADLESS_PEEK=$(python3 "$T/naomi_cart.py" --verdict) \
    tail -n 20 "$WORK/naomi.log" >&2
    exit 1
 }
-unset LD_PRELOAD
+unset LD_PRELOAD HEADLESS_AHEAD
 tr -d '\r' < "$WORK/naomi.out" | grep -q "= 600d7e57\$" || {
    echo "FAIL: the cartridge's program found something wrong: $(cat "$WORK/naomi.out")" >&2
    exit 1
 }
+done
 
 # And a state of another machine: one saved by the Dreamcast program above,
 # given to the cartridge while it runs. A Dreamcast has half a NAOMI's

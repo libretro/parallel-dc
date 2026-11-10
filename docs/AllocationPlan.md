@@ -90,6 +90,14 @@ SH-4 dynarec's; 9 buffers, 8 to 14 images and 4 command pools.
 `tools/vulkan/vk_allocs.allowed` is empty: nothing in the core allocates
 during play on the test discs with any Vulkan renderer.
 
+With run-ahead a frontend saves and loads a state every frame, which is
+play too: each measure runs the plain disc and the one whose state has a
+render to a texture on the card in it with a state saved and loaded every
+frame (`VKH_AHEAD`, `GLF_AHEAD`, `D3DH_AHEAD`). Done for it: a device on a
+controller port that the state has one of the same type of is made anew
+in its own memory, its map with it (`mcfg_Remake()`, `maple_CreateAt()`),
+in place of sixteen made and freed for every state loaded.
+
 OpenGL is measured the same way: `tools/gl/gl_allocs.sh`, the core under
 `gl_frames.c` counting its heap and its OpenGL names, storage, programs
 and shaders (`tools/rend/alloc_count.c`, shared with `vk_hdr.c`), against

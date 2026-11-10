@@ -61,7 +61,11 @@
  *                        code or through the C and C++ runtimes for it;
  *                        a driver's own are not the core's). With
  *                        VKH_ALLOC_SITES, where in the core each was made
- *                        (addr2line resolves it). tools/vulkan/vk_allocs.sh */
+ *                        (addr2line resolves it). tools/vulkan/vk_allocs.sh
+ *   VKH_AHEAD=N          the frames from the N-th on as a frontend's
+ *                        run-ahead of one frame runs them: the frame, a
+ *                        state saved, the frame after it and the state
+ *                        loaded back (as gl_frames' GLF_AHEAD) */
 #define _GNU_SOURCE 1 /* dladdr */
 #include <math.h>
 #include <stdarg.h>
@@ -1250,6 +1254,9 @@ typedef void (*set_poll_t)(retro_input_poll_t);
 typedef void (*set_state_t)(retro_input_state_t);
 typedef void (*init_t)(void);
 typedef void (*run_t)(void);
+typedef size_t (*serialize_size_t)(void);
+typedef bool (*serialize_t)(void *, size_t);
+typedef bool (*unserialize_t)(const void *, size_t);
 typedef bool (*load_game_t)(const struct retro_game_info*);
 #define CORE_FN(type, name) type name = (type)dlsym(core, #name)
 
@@ -1506,6 +1513,33 @@ int main(int argc, char **argv)
          vkh_in_run = 1;
          retro_run();
          vkh_in_run = 0;
+         if (getenv("VKH_AHEAD") && frame_no >= (unsigned)atoi(getenv("VKH_AHEAD")))
+         {
+            /* the state after this frame; the frame after it; back to the state */
+            static void *state;
+            static size_t state_size;
+            CORE_FN(serialize_size_t, retro_serialize_size);
+            CORE_FN(serialize_t, retro_serialize);
+            CORE_FN(unserialize_t, retro_unserialize);
+            if (!state)
+            {
+               state_size = retro_serialize_size();
+               state = malloc(state_size);
+            }
+            if (!state || !retro_serialize(state, state_size))
+            {
+               fprintf(stderr, "vk_hdr: the state could not be saved (frame %u)\n", frame_no);
+               return 1;
+            }
+            vkh_in_run = 1;
+            retro_run();
+            vkh_in_run = 0;
+            if (!retro_unserialize(state, state_size))
+            {
+               fprintf(stderr, "vk_hdr: the state could not be loaded (frame %u)\n", frame_no);
+               return 1;
+            }
+         }
          dt = vkh_now_ms() - t0;
          if (getenv("VKH_FRAME_MS") && dt < atof(getenv("VKH_FRAME_MS")))
          {

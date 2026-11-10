@@ -1,4 +1,5 @@
 #include "types.h"
+#include <new>
 #include "maple_if.h"
 #include "maple_helper.h"
 #include "maple_devs.h"
@@ -304,6 +305,28 @@ void mcfg_ArcadeAbsPos(int port, f32 *x, f32 *y)
 	*y = mo_y_abs[port];
 }
 
+/* The device at @bus.@port, of @type, made anew in its own memory, and its
+ * map with it: as gone and made again (mcfg_DestroyDevice(), mcfg_Create()),
+ * nothing allocated */
+static void mcfg_Remake(u32 bus, u32 port, MapleDeviceType type, int player_num)
+{
+	maple_device *dev = MapleDevices[bus][port];
+	IMapleConfigMap *map = dev->config;
+	const bool eeprom_loaded = EEPROM_loaded;
+
+	dev->config = NULL;
+	dev->~maple_device();
+	if (map != NULL)
+		map->~IMapleConfigMap();
+	/* (the board, as it went, forgot the EEPROM: the one made remembers) */
+	EEPROM_loaded = eeprom_loaded;
+	dev = maple_CreateAt(type, dev);
+	dev->Setup(maple_GetAddress(bus, port));
+	dev->config = map != NULL ? new (map) MapleConfigMap(dev, player_num) : new MapleConfigMap(dev, player_num);
+	dev->OnSetup();
+	MapleDevices[bus][port] = dev;
+}
+
 void mcfg_Create(MapleDeviceType type,u32 bus,u32 port, int player_num /* = -1 */)
 {
 	maple_device* dev=maple_Create(type);
@@ -585,13 +608,9 @@ void mcfg_UnserializeDevices(void **data, unsigned int *total_size)
 	 * state's contents. Making a card is reading its file, after waiting
 	 * for everything still on its way there to be written - four or eight
 	 * times for every state loaded, which with run-ahead is every frame -
-	 * and all of what it then is comes from the state. */
-	for (int i = 0; i < MAPLE_PORTS; i++)
-		for (int j = 0; j < 6; j++)
-			if (MapleDevices[i][j] != NULL && MapleDevices[i][j]->get_device_type() != MDT_SegaVMU)
-				mcfg_DestroyDevice(i, j);
-	EEPROM_loaded = eeprom_loaded;
-
+	 * and all of what it then is comes from the state. A device of the
+	 * type the state has is made anew where it is (mcfg_Remake()): nothing
+	 * allocated, with run-ahead, every frame. */
 	for (int i = 0; i < MAPLE_PORTS; i++)
 		for (int j = 0; j < 6; j++)
 		{
@@ -610,15 +629,26 @@ void mcfg_UnserializeDevices(void **data, unsigned int *total_size)
 				ra_unserialize_fail();
 			}
 			MapleDeviceType device_type = (MapleDeviceType)type;
-			// (a card where the state has none, or something else)
-			if (MapleDevices[i][j] != NULL && device_type != MDT_SegaVMU)
-				mcfg_DestroyDevice(i, j);
-			if (device_type != MDT_None)
+			const int player = atomiswave && i >= 2 && j == 5 ? mcfg_PlayerNum(device_type, i) : -1;
+			maple_device *was = MapleDevices[i][j];
+			const MapleDeviceType wasType = was != NULL ? was->get_device_type() : MDT_None;
+			if (wasType == MDT_SegaVMU && device_type == MDT_SegaVMU)
+				;	// (the card stays: given the state's contents below)
+			else if (wasType != MDT_None && wasType == device_type)
+				mcfg_Remake(i, j, device_type, player);
+			else
 			{
-				if (MapleDevices[i][j] == NULL)
-					mcfg_Create(device_type, i, j,
-							atomiswave && i >= 2 && j == 5 ? mcfg_PlayerNum(device_type, i) : -1);
-				MapleDevices[i][j]->maple_unserialize(data, total_size);
+				// (none there, another, or a card where the state has something else)
+				if (was != NULL)
+					mcfg_DestroyDevice(i, j);
+				EEPROM_loaded = eeprom_loaded;
+				if (device_type != MDT_None)
+					mcfg_Create(device_type, i, j, player);
 			}
+			/* (a NAOMI's I/O board, when it goes, forgets that the EEPROM was
+			 * read: it has been, from the state) */
+			EEPROM_loaded = eeprom_loaded;
+			if (device_type != MDT_None)
+				MapleDevices[i][j]->maple_unserialize(data, total_size);
 		}
 }

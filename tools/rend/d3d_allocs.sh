@@ -3,10 +3,12 @@
 # core's Windows build under wine, on a frontend that runs the core's frames
 # as RetroArch does (tools/hdr/d3d_hdr.c, D3DH_ALLOCS: the core's heap - what
 # it imports for it pointed at a counter - and the Direct3D objects it makes,
-# from frame 20 of 80 on: tools/rend/alloc_count.c). The test discs (plain,
+# from frame 20 of 100 on: tools/rend/alloc_count.c). The test discs (plain,
 # the texture atlas, culling, DMA over renders to textures, blends and depth
 # modes a game seldom draws with), the per-triangle renderer (per triangle,
-# threaded rendering on and off, and per strip) and the per-pixel one;
+# threaded rendering on and off, and per strip) and the per-pixel one, and
+# with run-ahead (D3DH_AHEAD: a state saved and loaded every frame) the
+# plain disc and the one with a render to a texture in its state;
 # every site named (tools/vulkan/vk_alloc_sites.py, by the build's symbol
 # table) has to be on tools/rend/d3d_allocs.allowed, and none may be in the
 # fault handler.
@@ -36,26 +38,26 @@ fi
 ${CC_WIN:-x86_64-w64-mingw32-gcc} -O1 -Wall -DALLOC_COUNT -I./core/libretro-common/include -I./core/deps/khronos \
    -o "$WORK/d3d_hdr.exe" tools/hdr/d3d_hdr.c tools/rend/alloc_count.c -ld3d11 -ld3d12 -ldxguid
 # (each disc in its own directory: their tracks have the same names)
-for d in plain atlas cull dma blend; do
+for d in plain atlas cull dma blend keep; do
    mkdir -p "$WORK/$d"
    if [ $d = plain ]; then python3 tools/threads/live_disc.py "$WORK/$d/$d.gdi"
    else python3 tools/threads/live_disc.py "$WORK/$d/$d.gdi" --$d; fi > /dev/null
 done
 fails=0
 
-# run <name> <disc> <options...>: 80 frames, from nothing kept, with Direct3D $api
+# run <name> <disc> <options...>: 100 frames, from nothing kept, with Direct3D $api
 run() {
    name=$1; disc=$2; shift 2
    rm -rf "$WORK/dir"; mkdir -p "$WORK/dir"
    if ! env -u TMPDIR DISPLAY=$DISPLAY_NO WINEDEBUG=-all WINE_D3D_CONFIG=renderer=vulkan VKD3D_CONFIG=virtual_heaps \
          WINEDLLOVERRIDES="$OVERRIDES" D3DH_ALLOCS=20 D3DH_ALLOC_SITES=1 D3DH_API=$api D3DH_FRONTEND=sdr \
          D3DH_DIR="Z:$WORK/dir" timeout 600 wine "$WORK/d3d_hdr.exe" "Z:$CORE" "Z:$WORK/$disc/$disc.gdi" \
-         "Z:$WORK/$name.raw" 80 "$@" > "$WORK/$name.log" 2>&1; then
+         "Z:$WORK/$name.raw" 100 "$@" > "$WORK/$name.log" 2>&1; then
       echo "  FAIL: $name: the run failed:"; tail -5 "$WORK/$name.log"
       fails=$((fails + 1))
       return 0
    fi
-   echo "$name:$(sed -n 's/.*during play (frames 20 to 79)://p' "$WORK/$name.log")"
+   echo "$name:$(sed -n 's/.*during play (frames 20 to 99)://p' "$WORK/$name.log")"
 }
 
 TRI="reicast_alpha_sorting=per-triangle (normal)"
@@ -67,6 +69,12 @@ for api in 11 12; do
       run d3d$api-$d-tri-nothread $d "$TRI" reicast_threaded_rendering=disabled
       run d3d$api-$d-strip $d "$STRIP"
       run d3d$api-$d-pix $d "$PIX"
+   done
+   # with run-ahead (a state saved and loaded every frame): the plain disc,
+   # and the one whose state has a render to a texture on the card in it
+   for d in plain keep; do
+      D3DH_AHEAD=10 run d3d$api-$d-tri-ahead $d "$TRI"
+      D3DH_AHEAD=10 run d3d$api-$d-pix-ahead $d "$PIX"
    done
 done
 python3 tools/vulkan/vk_alloc_sites.py "$CORE" tools/rend/d3d_allocs.allowed "$WORK"/*.log || fails=$((fails + 1))
