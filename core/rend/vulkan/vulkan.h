@@ -29,4 +29,17 @@ extern PFN_vkGetInstanceProcAddr vulkan_symbol_wrapper_vkGetInstanceProcAddr;
 #undef VK_NO_PROTOTYPES
 #include "vulkan/vulkan.hpp"
 
+/* One descriptor set from @pool, given back to it when let go: what
+ * allocateDescriptorSetsUnique() makes, without the std::vector it makes
+ * it in (nothing allocated but the set). None if the pool has no room. */
+static inline vk::UniqueDescriptorSet vk_alloc_desc_set(vk::Device device, vk::DescriptorPool pool, vk::DescriptorSetLayout layout)
+{
+	static const vk::DispatchLoaderDefault dispatch;
+	const vk::DescriptorSetAllocateInfo info(pool, 1, &layout);
+	vk::DescriptorSet set;
+	if (device.allocateDescriptorSets(&info, &set) != vk::Result::eSuccess)
+		return vk::UniqueDescriptorSet();
+	return vk::UniqueDescriptorSet(set, vk::PoolFree<vk::Device, vk::DescriptorPool, vk::DispatchLoaderDefault>(device, pool, dispatch));
+}
+
 //#define VK_DEBUG

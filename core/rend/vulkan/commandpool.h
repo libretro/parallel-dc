@@ -33,7 +33,9 @@ class CommandPool
 	struct Deferred
 	{
 		void *object;
-		void (*destroy)(void *object);
+		void (*destroy)(void *object);	/* none: a descriptor set, given back to its pool */
+		vk::DescriptorSet set;
+		vk::DescriptorPool setPool;
 	};
 	struct Slot
 	{
@@ -58,7 +60,12 @@ class CommandPool
 	{
 		const Deferred *d = (const Deferred *)slot.deferred.data;
 		for (u32 i = 0; i < slot.deferredCount; i++)
-			d[i].destroy(d[i].object);
+		{
+			if (d[i].destroy != nullptr)
+				d[i].destroy(d[i].object);
+			else
+				VulkanContext::Instance()->GetDevice().freeDescriptorSets(d[i].setPool, 1, &d[i].set);
+		}
 		slot.deferredCount = 0;
 	}
 
@@ -238,6 +245,28 @@ public:
 		}
 		list[slot.deferredCount].object = obj.release();
 		list[slot.deferredCount].destroy = DeleteObject<T>;
+		slot.deferredCount++;
+	}
+
+	/* A descriptor set retired the same way, given back to @pool: nothing
+	 * allocated to hold it (the list keeps its room) */
+	void DeferFree(vk::UniqueDescriptorSet set, vk::DescriptorPool pool)
+	{
+		if (!set || slotCount == 0)
+			return;
+		Slot& slot = slots[index];
+		Deferred *list = (Deferred *)grow_buf_reserve_keep(&slot.deferred,
+				(slot.deferredCount + 1) * sizeof(Deferred));
+		if (list == nullptr)
+		{
+			/* (no room to defer it in: the frames that may use it waited for, then freed) */
+			VulkanContext::Instance()->WaitQueueIdle();
+			return;
+		}
+		list[slot.deferredCount].object = nullptr;
+		list[slot.deferredCount].destroy = nullptr;
+		list[slot.deferredCount].set = set.release();
+		list[slot.deferredCount].setPool = pool;
 		slot.deferredCount++;
 	}
 

@@ -7,6 +7,9 @@ checks them against an allowlist (tools/vulkan/vk_allocs.sh).
 A site is a chain of the core's frames, innermost first. Its name is the
 first function in it, inlined ones included, that is not a library's (the
 C++ standard library's, Xbyak's, vulkan.hpp's): what in the core asked.
+It is on the list if any of its first DEPTH such functions is: a
+compiler that inlines a function into its caller, or does not, names
+the same site either way.
 Prints each name with its allocations, and fails when a name is not on
 the allowlist; names on it no longer seen are printed, to be taken off.
 A site reached from the core's signal handler fails whatever the list
@@ -17,6 +20,7 @@ import subprocess
 import sys
 
 HANDLER = 'signal_handler'
+DEPTH = 3
 LIBRARY = ('std::', '__gnu_cxx::', 'Xbyak::', 'vk::', 'operator new', 'operator delete', 'VULKAN_HPP')
 
 
@@ -64,29 +68,28 @@ def main():
                 continue
             frames[cur].append(qualified(out[i]))
             i += 2   # (the function, then its file and line)
-    named = {}
-    in_handler = set()
-    for kind, n, chain, path in sites:
-        name = None
-        handler = any(f == HANDLER for a in chain for f in frames.get('0x%x' % int(a, 16), []))
-        for a in chain:
-            for f in frames.get('0x%x' % int(a, 16), []):
-                if f != '??' and not f.startswith(LIBRARY):
-                    name = f
-                    break
-            if name:
-                break
-        name = '%s %s' % (kind, name or '?')
-        if handler:
-            in_handler.add(name)
-        named.setdefault(name, [0, set()])
-        named[name][0] += n
-        named[name][1].add(path.rsplit('/', 1)[-1].rsplit('.', 1)[0])
     allowed = set()
     for line in open(allowed_path):
         line = line.split('#', 1)[0].strip()
         if line:
             allowed.add(line)
+    named = {}
+    in_handler = set()
+    for kind, n, chain, path in sites:
+        handler = any(f == HANDLER for a in chain for f in frames.get('0x%x' % int(a, 16), []))
+        mine = []
+        for a in chain:
+            for f in frames.get('0x%x' % int(a, 16), []):
+                if f != '??' and not f.startswith(LIBRARY) and f not in mine:
+                    mine.append(f)
+        mine = ['%s %s' % (kind, f) for f in mine[:DEPTH]] or ['%s ?' % kind]
+        # (by the first of them on the list, if one is)
+        name = next((f for f in mine if f in allowed), mine[0])
+        if handler:
+            in_handler.add(name)
+        named.setdefault(name, [0, set()])
+        named[name][0] += n
+        named[name][1].add(path.rsplit('/', 1)[-1].rsplit('.', 1)[0])
     bad = 0
     for name in sorted(named, key=lambda k: -named[k][0]):
         ok = name in allowed

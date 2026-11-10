@@ -41,16 +41,9 @@ heap OITTextureDrawer::TakeTexture
 heap OITTextureDrawer::NewFrame
 
 # A frame's draws: descriptor sets, the quad's, the sort's buffers
-heap QuadDrawer::Draw
 heap DescriptorSets::SetTexture
-heap DescriptorSets::UpdateUniforms
-heap Drawer::SortIntoMainBuffer
 heap SortPasses
 heap SortPParams
 heap GenSortedTo
 heap OITDescriptorSets::SetTexture
-heap OITDescriptorSets::UpdateColorInputDescSet
-heap OITDescriptorSets::UpdateUniforms
-heap OITDrawer::GetMainBuffer
 heap OITDrawer::MakeBuffers
-heap vk_heap_block_insert

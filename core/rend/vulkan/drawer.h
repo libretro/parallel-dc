@@ -212,7 +212,19 @@ protected:
 	 * and 1/fZ_max from the host; for a frame decoded on the GPU, 1/fZ_max
 	 * is the decode's word, copied over the host's before the render pass
 	 * (so this is called before the render pass begins). The buffers are
-	 * made the first time an image's is needed. */
+	 * made with the drawer (MakeVertexUniforms()); a swap chain the
+	 * frontend made longer while the game runs has the new images' made
+	 * here. */
+	/* every swap chain image's vertex uniform buffer, before the first
+	 * frame: nothing allocated while the game runs */
+	template<typename T>
+	void MakeVertexUniforms()
+	{
+		while ((int)vertexUniformBuffers.size() < GetContext()->GetSwapChainSize())
+			vertexUniformBuffers.push_back(std::unique_ptr<BufferData>(new BufferData(sizeof(T),
+					vk::BufferUsageFlagBits::eUniformBuffer | vk::BufferUsageFlagBits::eTransferDst)));
+	}
+
 	template<typename T>
 	vk::Buffer WriteVertexUniforms(const vk::CommandBuffer& cmdBuffer, int image)
 	{
@@ -282,6 +294,10 @@ protected:
 				descriptorSets.emplace_back();
 				descriptorSets.back().Init(samplerManager, pipelineManager->GetPipelineLayout(), pipelineManager->GetPerFrameDSLayout(), pipelineManager->GetPerPolyDSLayout());
 			}
+		/* (a frame's buffers made now, not when it first draws: a render
+		 * to a texture may come long after the game started) */
+		MakeVertexUniforms<VertexShaderUniforms>();
+		GetMainBuffer(0);
 	}
 	int GetCurrentImage() const { return imageIndex; }
 	DescriptorSets& GetCurrentDescSet() { return descriptorSets[GetCurrentImage()]; }

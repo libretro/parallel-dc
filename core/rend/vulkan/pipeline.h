@@ -45,8 +45,7 @@ public:
 	{
 		if (!perFrameDescSet)
 		{
-			perFrameDescSet = std::move(GetContext()->GetDevice().allocateDescriptorSetsUnique(
-					vk::DescriptorSetAllocateInfo(GetContext()->GetDescriptorPool(), 1, &perFrameLayout)).front());
+			perFrameDescSet = vk_alloc_desc_set(GetContext()->GetDevice(), GetContext()->GetDescriptorPool(), perFrameLayout);
 		}
 		const vk::DescriptorBufferInfo bufferInfos[2] = {
 			vk::DescriptorBufferInfo(vertexUniformBuffer, 0, sizeof(VertexShaderUniforms)),
@@ -73,8 +72,7 @@ public:
 			 * pipelines read one only for a textured polygon, but have it in
 			 * their shader (pso.h) */
 			if (!noTextureDescSet)
-				noTextureDescSet = std::move(GetContext()->GetDevice().allocateDescriptorSetsUnique(
-						vk::DescriptorSetAllocateInfo(GetContext()->GetDescriptorPool(), 1, &perPolyLayout)).front());
+				noTextureDescSet = vk_alloc_desc_set(GetContext()->GetDevice(), GetContext()->GetDescriptorPool(), perPolyLayout);
 			if (noTextureView != fogImageView)
 			{
 				noTextureView = fogImageView;

@@ -12,7 +12,8 @@ every Vulkan renderer and counts, from frame 20 on, what the core
 allocates: the heap (malloc and the rest, operator new, from the core's
 code or through the C and C++ runtimes for it; a driver's own do not
 count) and Vulkan memory, buffers, images and pools. Each place is named
-by the function that asked (`vk_alloc_sites.py`) and must be on
+by the function that asked (`vk_alloc_sites.py`; any of the first three
+the core's own, so that inlining does not move it) and must be on
 `tools/vulkan/vk_allocs.allowed`. The list only ever shrinks. A site
 reached from the core's signal handler fails whatever the list says.
 
@@ -30,10 +31,14 @@ SH-4 dynarec's; 9 buffers, 8 to 14 images and 4 command pools.
    without copying their list, into a list of discards reserved at
    `bm_Init()`. Left of it: the copies' growth when a larger render is
    first watched (`vk_rtt_watch`), at the bound later.
-2. **A frame's draws.** Descriptor sets written into vectors made each
-   time (`DescriptorSets::*`, `OITDescriptorSets::*`), the quad's set made
-   again each frame the image changes (`QuadDrawer::Draw`: a set kept for
-   each of the frontend's images), the sorter's grow buffers
+2. **A frame's draws.** Done: a descriptor set is made with nothing
+   allocated but the set (`vk_alloc_desc_set()`: vulkan.hpp's
+   allocateDescriptorSetsUnique() made a std::vector for each), a retired
+   one is given back through the command pool's list (`DeferFree()`), and
+   a drawer's main and vertex uniform buffers are made with it, not when
+   it first draws. Left: the quad's set made again each frame the image
+   changes (a set kept for each of the frontend's images), the sorter's
+   grow buffers
    (`SortPasses`, `GenSortedTo`, `SortPParams`, `SortIntoMainBuffer`)
    reserved at their bounds, the TA's lists' maxima, at the start.
 3. **Renders to textures.** Their targets, framebuffers and buffers

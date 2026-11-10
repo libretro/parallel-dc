@@ -152,23 +152,24 @@ public:
 			return;
 
 		if (descSet)
-			commandPool->DeferDelete(std::unique_ptr<vk::UniqueDescriptorSet>(new vk::UniqueDescriptorSet(std::move(descSet))));
-		descSet = std::move(context->GetDevice().allocateDescriptorSetsUnique(
-				vk::DescriptorSetAllocateInfo(context->GetDescriptorPool(), 1, &descSetLayout.get())).front());
-		std::vector<vk::WriteDescriptorSet> writeDescriptorSets;
+			commandPool->DeferFree(std::move(descSet), context->GetDescriptorPool());
+		descSet = vk_alloc_desc_set(context->GetDevice(), context->GetDescriptorPool(), descSetLayout.get());
+		/* (on the stack: nothing allocated for them) */
+		vk::WriteDescriptorSet writeDescriptorSets[4];
+		u32 writes = 0;
 		// (the buffers not needed are given the first again: the shaders never go to them)
 		vk::DescriptorBufferInfo pixelBufferInfo[Bindings];
 		for (u32 i = 0; i < Bindings; i++)
 			pixelBufferInfo[i] = vk::DescriptorBufferInfo(*pixelBuffers[i < bindings ? i : 0]->buffer, 0, bindingSize);
-		writeDescriptorSets.push_back(vk::WriteDescriptorSet(*descSet, 0, 0, Bindings, vk::DescriptorType::eStorageBuffer, nullptr, pixelBufferInfo, nullptr));
+		writeDescriptorSets[writes++] = (vk::WriteDescriptorSet(*descSet, 0, 0, Bindings, vk::DescriptorType::eStorageBuffer, nullptr, pixelBufferInfo, nullptr));
 		vk::DescriptorBufferInfo pixelCounterBufferInfo(*pixelCounter->buffer, 0, 2 * sizeof(u32));
-		writeDescriptorSets.push_back(vk::WriteDescriptorSet(*descSet, 1, 0, 1, vk::DescriptorType::eStorageBuffer, nullptr, &pixelCounterBufferInfo, nullptr));
+		writeDescriptorSets[writes++] = (vk::WriteDescriptorSet(*descSet, 1, 0, 1, vk::DescriptorType::eStorageBuffer, nullptr, &pixelCounterBufferInfo, nullptr));
 		vk::DescriptorImageInfo pointerImageInfo(vk::Sampler(), abufferPointerAttachment->GetImageView(), vk::ImageLayout::eGeneral);
-		writeDescriptorSets.push_back(vk::WriteDescriptorSet(*descSet, 2, 0, 1, vk::DescriptorType::eStorageImage, &pointerImageInfo, nullptr, nullptr));
+		writeDescriptorSets[writes++] = (vk::WriteDescriptorSet(*descSet, 2, 0, 1, vk::DescriptorType::eStorageImage, &pointerImageInfo, nullptr, nullptr));
 		vk::DescriptorImageInfo sumsImageInfo(vk::Sampler(), sumsAttachment ? sumsAttachment->GetImageView() : vk::ImageView(), vk::ImageLayout::eGeneral);
 		if (sumsAttachment)
-			writeDescriptorSets.push_back(vk::WriteDescriptorSet(*descSet, 3, 0, 1, vk::DescriptorType::eStorageImage, &sumsImageInfo, nullptr, nullptr));
-		context->GetDevice().updateDescriptorSets(writeDescriptorSets, nullptr);
+			writeDescriptorSets[writes++] = (vk::WriteDescriptorSet(*descSet, 3, 0, 1, vk::DescriptorType::eStorageImage, &sumsImageInfo, nullptr, nullptr));
+		context->GetDevice().updateDescriptorSets(writes, writeDescriptorSets, 0, nullptr);
 	}
 
 	void BindDescriptorSet(vk::CommandBuffer cmdBuffer, vk::PipelineLayout pipelineLayout, u32 firstSet)

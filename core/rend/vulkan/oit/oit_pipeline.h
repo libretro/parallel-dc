@@ -97,8 +97,7 @@ public:
 	{
 		if (!perFrameDescSet)
 		{
-			perFrameDescSet = std::move(GetContext()->GetDevice().allocateDescriptorSetsUnique(
-					vk::DescriptorSetAllocateInfo(GetContext()->GetDescriptorPool(), 1, &perFrameLayout)).front());
+			perFrameDescSet = vk_alloc_desc_set(GetContext()->GetDevice(), GetContext()->GetDescriptorPool(), perFrameLayout);
 		}
 		const vk::DescriptorBufferInfo bufferInfos[2] = {
 			vk::DescriptorBufferInfo(vertexUniformBuffer, 0, sizeof(VertexShaderUniforms)),
@@ -125,8 +124,7 @@ public:
 			 * pipelines read them only for a textured polygon, but have them
 			 * in their shader (pso.h) */
 			if (!noTextureDescSet)
-				noTextureDescSet = std::move(GetContext()->GetDevice().allocateDescriptorSetsUnique(
-						vk::DescriptorSetAllocateInfo(GetContext()->GetDescriptorPool(), 1, &perPolyLayout)).front());
+				noTextureDescSet = vk_alloc_desc_set(GetContext()->GetDevice(), GetContext()->GetDescriptorPool(), perPolyLayout);
 			if (noTextureView != fogImageView)
 			{
 				noTextureView = fogImageView;
@@ -166,8 +164,7 @@ public:
 	void UpdateColorInputDescSet(int index, vk::ImageView colorImageView, vk::ImageLayout layout = vk::ImageLayout::eShaderReadOnlyOptimal)
 	{
 		if (!colorInputDescSets[index])
-			colorInputDescSets[index] = std::move(GetContext()->GetDevice().allocateDescriptorSetsUnique(
-					vk::DescriptorSetAllocateInfo(GetContext()->GetDescriptorPool(), 1, &colorInputLayout)).front());
+			colorInputDescSets[index] = vk_alloc_desc_set(GetContext()->GetDevice(), GetContext()->GetDescriptorPool(), colorInputLayout);
 		/* (on the stack: nothing allocated for them) */
 		vk::WriteDescriptorSet writeDescriptorSets[12];
 		u32 writes = 0;

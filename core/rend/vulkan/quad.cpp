@@ -241,11 +241,9 @@ void QuadDrawer::Draw(vk::CommandBuffer commandBuffer, vk::ImageView imageView, 
 	if (!slot.set || slot.view != imageView || slot.sampler != sampler)
 	{
 		if (slot.set)
-			commandPool->DeferDelete(std::unique_ptr<vk::UniqueDescriptorSet>(
-					new vk::UniqueDescriptorSet(std::move(slot.set))));
+			commandPool->DeferFree(std::move(slot.set), context->GetDescriptorPool());
 		vk::DescriptorSetLayout layout = pipeline->GetDescSetLayout();
-		slot.set = std::move(context->GetDevice().allocateDescriptorSetsUnique(
-				vk::DescriptorSetAllocateInfo(context->GetDescriptorPool(), 1, &layout)).front());
+		slot.set = vk_alloc_desc_set(context->GetDevice(), context->GetDescriptorPool(), layout);
 		slot.view = imageView;
 		slot.sampler = sampler;
 		vk::DescriptorImageInfo imageInfo(sampler, imageView, vk::ImageLayout::eShaderReadOnlyOptimal);
@@ -287,8 +285,7 @@ void SsaaResolve::Init(vk::RenderPass renderPass, u32 subpass, u32 samples, vk::
 	this->subpass = subpass;
 	this->samples = samples;
 	if (!descSet)
-		descSet = std::move(device.allocateDescriptorSetsUnique(
-				vk::DescriptorSetAllocateInfo(context->GetDescriptorPool(), 1, &setLayout.get())).front());
+		descSet = vk_alloc_desc_set(device, context->GetDescriptorPool(), setLayout.get());
 	vk::DescriptorImageInfo imageInfo(vk::Sampler(), samplesView, vk::ImageLayout::eShaderReadOnlyOptimal);
 	vk::WriteDescriptorSet write(*descSet, 0, 0, 1, vk::DescriptorType::eInputAttachment, &imageInfo, nullptr, nullptr);
 	device.updateDescriptorSets(write, nullptr);
@@ -348,9 +345,8 @@ void SsaaResolve::SetSamplesView(vk::ImageView samplesView, CommandPool *command
 {
 	VulkanContext *context = VulkanContext::Instance();
 	if (descSet)
-		commandPool->DeferDelete(std::unique_ptr<vk::UniqueDescriptorSet>(new vk::UniqueDescriptorSet(std::move(descSet))));
-	descSet = std::move(context->GetDevice().allocateDescriptorSetsUnique(
-			vk::DescriptorSetAllocateInfo(context->GetDescriptorPool(), 1, &setLayout.get())).front());
+		commandPool->DeferFree(std::move(descSet), context->GetDescriptorPool());
+	descSet = vk_alloc_desc_set(context->GetDevice(), context->GetDescriptorPool(), setLayout.get());
 	vk::DescriptorImageInfo imageInfo(vk::Sampler(), samplesView, vk::ImageLayout::eShaderReadOnlyOptimal);
 	vk::WriteDescriptorSet write(*descSet, 0, 0, 1, vk::DescriptorType::eInputAttachment, &imageInfo, nullptr, nullptr);
 	context->GetDevice().updateDescriptorSets(write, nullptr);

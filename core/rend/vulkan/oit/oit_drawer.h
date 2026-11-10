@@ -77,6 +77,10 @@ protected:
 						pipelineManager->GetPerPolyDSLayout(),
 						pipelineManager->GetColorInputDSLayout());
 			}
+		/* (a frame's buffers made now, not when it first draws: a render
+		 * to a texture may come long after the game started) */
+		MakeVertexUniforms<OITDescriptorSets::VertexShaderUniforms>();
+		GetMainBuffer(0);
 	}
 	void Term()
 	{
