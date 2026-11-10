@@ -77,13 +77,19 @@ SH-4 dynarec's; 9 buffers, 8 to 14 images and 4 command pools.
    share (some 100 KB, which the share gave none of), and eight 64x64
    pictures rendered to. Each of these says, once, when it runs out and
    more is made. A line logged is formatted on the stack.
-5. **The dynarec.** The pages' lists of their blocks and the temporary
-   blocks' list are the blocks' own links now (no std::set: nothing
-   allocated to put a block in or take it out). Left: blocks compiled
-   while the game runs (`ngen_Compile`, `BlockCompiler`, `bm_AddBlock`,
-   Xbyak's labels): the block's opcodes
-   into a scratch arena reset for each block, its bookkeeping in a pool
-   sized for the code cache, the assembler's labels in fixed tables.
+5. **The dynarec.** Done: the pages' lists of their blocks and the
+   temporary blocks' list are the blocks' own links (no std::set). A
+   block, its operations, its list of the blocks linked to it, its count
+   (the shared pointer's), the map of blocks by their code, the self-
+   modifying code's set and the assembler's labels (Xbyak's maps, given
+   its allocator) take their room from one pool made when the recompiler
+   starts, 8 MB, and give it back there (`node_pool.h`); the x64
+   compiler is made in room of its own for each block, and a block's hash
+   is taken on the stack. More room is made in chunks if a game needs it,
+   which is said.
+
+`tools/vulkan/vk_allocs.allowed` is empty: nothing in the core allocates
+during play on the test discs with any Vulkan renderer.
 
 Other renderers (OpenGL, Direct3D) get the same measure once their
 harnesses count it.

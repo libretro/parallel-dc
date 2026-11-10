@@ -13,7 +13,10 @@ name: Headless
 # each read of SPG_STATUS sees, kept from the read before on its line,
 # against the beam found afresh (tools/pvr/spg_beam_test.sh). And the
 # register allocator's lists against the std::set they replace
-# (tools/sh4/reglist_test.sh).
+# (tools/sh4/reglist_test.sh), and the recompilers' pool, pieces taken and
+# given back at random (tools/sh4/node_pool_test.sh). And the recompilers
+# against the interpreters, each built alone with the assembler they share
+# (tools/sh4/run.sh, tools/arm7/run.sh, tools/aica/run.sh).
 
 on:
   push:
@@ -24,6 +27,11 @@ on:
       - 'tools/pvr/ta_index_test.*'
       - 'tools/pvr/ta_parse_bench.*'
       - 'tools/sh4/reglist_test.*'
+      - 'tools/sh4/node_pool_test.*'
+      - 'tools/sh4/run.sh'
+      - 'tools/sh4/vector_test.cpp'
+      - 'tools/arm7/**'
+      - 'tools/aica/**'
       - 'Makefile*'
       - '.github/workflows/headless.yml'
   pull_request:
@@ -34,6 +42,11 @@ on:
       - 'tools/pvr/ta_index_test.*'
       - 'tools/pvr/ta_parse_bench.*'
       - 'tools/sh4/reglist_test.*'
+      - 'tools/sh4/node_pool_test.*'
+      - 'tools/sh4/run.sh'
+      - 'tools/sh4/vector_test.cpp'
+      - 'tools/arm7/**'
+      - 'tools/aica/**'
       - 'Makefile*'
       - '.github/workflows/headless.yml'
   workflow_dispatch:
@@ -63,3 +76,10 @@ jobs:
         run: sh tools/pvr/spg_beam_test.sh
       - name: The register allocator's lists against the std::set they replace, the same order
         run: sh tools/sh4/reglist_test.sh
+      - name: The recompilers' pool (blocks, their lists, the labels), pieces taken and given back
+        run: sh tools/sh4/node_pool_test.sh
+      - name: The recompilers against the interpreters, built alone with Xbyak (the SH-4's vectors, the sound chip's ARM7 and DSP)
+        run: |
+          sh tools/sh4/run.sh
+          sh tools/arm7/run.sh
+          sh tools/aica/run.sh

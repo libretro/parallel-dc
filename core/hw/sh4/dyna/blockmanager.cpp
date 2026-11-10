@@ -23,7 +23,8 @@ op_agent_t          oprofHandle;
 
 
 typedef std::vector<RuntimeBlockInfoPtr> bm_List;
-typedef std::map<void*, RuntimeBlockInfoPtr> bm_Map;
+typedef std::map<void*, RuntimeBlockInfoPtr, std::less<void *>,
+		node_pool::Allocator<std::pair<void * const, RuntimeBlockInfoPtr> > > bm_Map;
 
 /* The temporary cache's blocks (blkmap has them as well), through their
  * own links: put in and taken out with nothing allocated */
@@ -291,7 +292,8 @@ RuntimeBlockInfoPtr bm_GetStaleBlock(void* dynarec_code)
 
 void bm_AddBlock(RuntimeBlockInfo* blk)
 {
-	RuntimeBlockInfoPtr block(blk);
+	/* (its count, as the block, in the recompiler's pool) */
+	RuntimeBlockInfoPtr block(blk, std::default_delete<RuntimeBlockInfo>(), node_pool::Allocator<RuntimeBlockInfo>());
 	if (block->temp_block)
 		temp_list_add(blk);
 	auto iter = blkmap.find((void*)blk->code);
@@ -551,11 +553,20 @@ void bm_ResetTempCache(bool full)
 	temp_reset_end = del_blocks.size();
 }
 
+static void bm_RanOut(size_t made)
+{
+	WARN_LOG(DYNAREC, "The recompiler's room: %u MB was not enough, more made", (unsigned)(made >> 20));
+}
+
 void bm_Init()
 {
 	/* (a block discarded is put here, from the signal handler too: its
 	 * room made now, and kept when it is emptied) */
 	del_blocks.reserve(CODE_SIZE / 1024);
+	/* the room the blocks and what they are kept in take, made now
+	 * (node_pool.h): more is made if a game needs it, and that is said */
+	node_pool::Reserve(node_pool::CHUNK);
+	node_pool::The().ran_out = bm_RanOut;
 
 #ifdef DYNA_OPROF
 	oprofHandle=op_open_agent();
@@ -738,7 +749,7 @@ void RuntimeBlockInfo::AddRef(const RuntimeBlockInfoPtr& other)
 
 void RuntimeBlockInfo::RemRef(const RuntimeBlockInfoPtr& other)
 { 
-	bm_List::iterator it = std::find(pre_refs.begin(), pre_refs.end(), other);
+	auto it = std::find(pre_refs.begin(), pre_refs.end(), other);
 	if (it != pre_refs.end())
 		pre_refs.erase(it);
 }

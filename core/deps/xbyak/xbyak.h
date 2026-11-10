@@ -43,6 +43,10 @@
 	#include <unordered_map>
 	#define XBYAK_STD_UNORDERED_MAP std::unordered_map
 	#define XBYAK_STD_UNORDERED_MULTIMAP std::unordered_multimap
+	/* (the core's: the labels' maps take their room from its pool,
+	 * node_pool.h, and allocate nothing as blocks are compiled) */
+	#include "node_pool.h"
+	#define XBYAK_NODE_POOL
 
 /*
 	Clang/llvm-gcc and ICC-EDG in 'GCC-mode' always claim to be GCC 4.2, using
@@ -1119,21 +1123,39 @@ class LabelManager {
 		size_t offset;
 		SlabelVal(size_t offset) : offset(offset) {}
 	};
+#ifdef XBYAK_NODE_POOL
+	typedef std::unordered_map<std::string, SlabelVal, std::hash<std::string>, std::equal_to<std::string>,
+			node_pool::Allocator<std::pair<const std::string, SlabelVal> > > SlabelDefList;
+	typedef std::unordered_multimap<std::string, const JmpLabel, std::hash<std::string>, std::equal_to<std::string>,
+			node_pool::Allocator<std::pair<const std::string, const JmpLabel> > > SlabelUndefList;
+#else
 	typedef XBYAK_STD_UNORDERED_MAP<std::string, SlabelVal> SlabelDefList;
 	typedef XBYAK_STD_UNORDERED_MULTIMAP<std::string, const JmpLabel> SlabelUndefList;
+#endif
 	struct SlabelState {
 		SlabelDefList defList;
 		SlabelUndefList undefList;
 	};
+#ifdef XBYAK_NODE_POOL
+	typedef std::list<SlabelState, node_pool::Allocator<SlabelState> > StateList;
+#else
 	typedef std::list<SlabelState> StateList;
+#endif
 	// for Label class
 	struct ClabelVal {
 		ClabelVal(size_t offset = 0) : offset(offset), refCount(1) {}
 		size_t offset;
 		int refCount;
 	};
+#ifdef XBYAK_NODE_POOL
+	typedef std::unordered_map<int, ClabelVal, std::hash<int>, std::equal_to<int>,
+			node_pool::Allocator<std::pair<const int, ClabelVal> > > ClabelDefList;
+	typedef std::unordered_multimap<int, const JmpLabel, std::hash<int>, std::equal_to<int>,
+			node_pool::Allocator<std::pair<const int, const JmpLabel> > > ClabelUndefList;
+#else
 	typedef XBYAK_STD_UNORDERED_MAP<int, ClabelVal> ClabelDefList;
 	typedef XBYAK_STD_UNORDERED_MULTIMAP<int, const JmpLabel> ClabelUndefList;
+#endif
 
 	CodeArray *base_;
 	// global : stateList_.front(), local : stateList_.back()

@@ -3097,16 +3097,17 @@ public:
 		}
 	}
 
-   std::vector<Xbyak::Reg32> call_regs;
-   std::vector<Xbyak::Reg64> call_regs64;
-   std::vector<Xbyak::Xmm> call_regsxmm;
+	/* (the recompiler's pool's room: node_pool.h) */
+   std::vector<Xbyak::Reg32, node_pool::Allocator<Xbyak::Reg32> > call_regs;
+   std::vector<Xbyak::Reg64, node_pool::Allocator<Xbyak::Reg64> > call_regs64;
+   std::vector<Xbyak::Xmm, node_pool::Allocator<Xbyak::Xmm> > call_regsxmm;
 
 	struct CC_PS
 	{
 	   CanonicalParamType type;
 	   const shil_param* prm;
 	};
-   std::vector<CC_PS> CC_pars;
+   std::vector<CC_PS, node_pool::Allocator<CC_PS> > CC_pars;
 
 	X64RegAlloc regalloc;
 	static Xbyak::util::Cpu cpu;
@@ -3155,11 +3156,14 @@ void ngen_Compile(RuntimeBlockInfo* block, bool force_checks, bool reset, bool s
 	verify(CTX_BASE == offsetof(Sh4RCB, cntx) + CTX_BIAS);
 	verify(emit_FreeSpace() >= CODE_MARGIN);
 
-	compiler = new BlockCompiler();
+	/* (in room of its own, made anew for each block: nothing allocated) */
+	alignas(BlockCompiler) static unsigned char room[sizeof(BlockCompiler)];
+	compiler = new (room) BlockCompiler();
 
 	compiler->compile(block, force_checks, reset, staging, optimise);
 
-	delete compiler;
+	compiler->~BlockCompiler();
+	compiler = NULL;
 }
 
 void ngen_CC_Call(shil_opcode*op, void* function)

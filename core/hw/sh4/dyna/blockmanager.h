@@ -5,6 +5,7 @@
 #include <map>
 #include "types.h"
 #include "decoder.h"
+#include "node_pool.h"
 #pragma once
 
 typedef void (*DynarecCodeEntryPtr)();
@@ -86,7 +87,10 @@ struct RuntimeBlockInfo: RuntimeBlockInfo_Core
 	BlockEndType BlockType;
 	bool has_jcond;
 
-   std::vector<shil_opcode> oplist;
+	/* (it, its lists and the lists blocks are kept in take their room from
+	 * the recompiler's pool, node_pool.h: compiling a block allocates
+	 * nothing once the pool is large enough) */
+   std::vector<shil_opcode, node_pool::Allocator<shil_opcode> > oplist;
 
 	bool contains_code(const u8* ptr)
 	{
@@ -94,12 +98,20 @@ struct RuntimeBlockInfo: RuntimeBlockInfo_Core
 	}
 
 	virtual ~RuntimeBlockInfo();
+	static void *operator new(size_t n)
+	{
+		void *p = node_pool::Alloc(n);
+		if (p == NULL)
+			throw std::bad_alloc();
+		return p;
+	}
+	static void operator delete(void *p, size_t n) { node_pool::Free(p, n); }
 
 	virtual u32 Relink()=0;
 	virtual void Relocate(void* dst)=0;
 	
 	//predecessors references
-   std::vector<RuntimeBlockInfoPtr> pre_refs;
+   std::vector<RuntimeBlockInfoPtr, node_pool::Allocator<RuntimeBlockInfoPtr> > pre_refs;
 
    void AddRef(const RuntimeBlockInfoPtr& other);
 	void RemRef(const RuntimeBlockInfoPtr& other);

@@ -1,6 +1,8 @@
 #include "types.h"
 #include <unordered_set>
 
+/* (the state is a complete type: hash() keeps it on the stack) */
+#define XXH_STATIC_LINKING_ONLY
 #include "deps/xxhash/xxhash.h"
 #include "../sh4_interpreter.h"
 #include "../sh4_opcode_list.h"
@@ -51,7 +53,7 @@ u32 TempLastAddr = 0;
 u32* emit_ptr = nullptr;
 u32* emit_ptr_limit = nullptr;
 
-std::unordered_set<u32> smc_hotspots;
+std::unordered_set<u32, std::hash<u32>, std::equal_to<u32>, node_pool::Allocator<u32> > smc_hotspots;
 
 
 void* emit_GetCCPtr(void)
@@ -140,7 +142,9 @@ const char* RuntimeBlockInfo::hash()
 
 	if (ptr)
 	{
-		XXH32_state_t *state = XXH32_createState();
+		/* (on the stack: nothing allocated) */
+		XXH32_state_t state_room;
+		XXH32_state_t *state = &state_room;
 		XXH32_reset(state, 7);
 			for (u32 i=0; i<this->guest_opcodes; i++)
 			{
@@ -152,7 +156,6 @@ const char* RuntimeBlockInfo::hash()
 			XXH32_update(state, &data, 2);
 			}
 		hash = XXH32_digest(state);
-		XXH32_freeState(state);
 		}
 
 	sprintf(block_hash, ">:1:%02X:%08X", this->guest_opcodes, hash);

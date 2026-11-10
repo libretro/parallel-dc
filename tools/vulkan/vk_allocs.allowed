@@ -1,19 +1,5 @@
-# Where the core still allocates during play with Vulkan, by function
+# Where the core may allocate during play with Vulkan, by function
 # (tools/vulkan/vk_allocs.sh, vk_alloc_sites.py; "heap" or "vulkan" for
 # Vulkan memory, buffers, images and pools). AGENTS.md, "No allocations
-# during play": this list only ever shrinks. A commit that removes a site
-# takes it off; docs/AllocationPlan.md says how each group goes.
-
-# The SH-4 dynarec, compiling a block the game runs for the first time
-heap ngen_Compile
-heap BlockCompiler::compile
-heap BlockCompiler::GenGoOn
-heap BlockCompiler::GenSliceCheck
-heap BlockCompiler::CheckBlock
-heap ngen_CC_Param
-heap ngen_AllocateBlock
-heap ngen_link
-heap Emit
-heap bm_AddBlock
-heap RuntimeBlockInfo::hash
-
+# during play": nowhere. The list is empty and stays so: a site that
+# shows up fails, and is fixed, not listed here.
