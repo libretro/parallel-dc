@@ -9,7 +9,12 @@
 # heavy one, DMA one and the one with modifier volumes (--cull: their
 # triangles drawn from there too), the sorted passes' indices written after
 # the frame's, with each renderer, threaded rendering on and off,
-# a VMU's screen drawn over them.
+# a VMU's screen drawn over them. A render is copied rather than waited
+# for when no slot of the parse is free - a frame of more renders than
+# slots, the card behind with them, as Mesa's software rasterizer is now
+# and then - so the renders are counted (the renderer's at its end): one
+# copied in 10 at most (the software rasterizer has copied 1 in 45),
+# and none at all is no part of the test.
 # And with OpenGL ES, which has no such buffers, the frames are drawn as
 # ever.
 #
@@ -63,9 +68,10 @@ for disc in plain heavy dma cull; do
          run $disc "$name" "$@" reicast_threaded_rendering=$threaded || { fails=$((fails + 1)); continue; }
          GLF_NO_STORAGE=1 run $disc "$name-copied" "$@" reicast_threaded_rendering=$threaded \
             || { fails=$((fails + 1)); continue; }
-         if ! grep -q "renders parsed where the card reads them" "$WORK/$name.log" \
-               || grep -q "a render copied to the card" "$WORK/$name.log"; then
-            echo "  FAIL: not every render parsed where the card reads it"
+         here=$(sed -n 's/.*OpenGL: \([0-9]*\) renders parsed where the card reads them, \([0-9]*\) copied there.*/\1 \2/p' "$WORK/$name.log")
+         parsed=${here% *}; copied=${here#* }
+         if [ -z "$here" ] || [ "$parsed" -eq 0 ] || [ $((copied * 10)) -gt "$parsed" ]; then
+            echo "  FAIL: renders not parsed where the card reads them (${parsed:-?} there, ${copied:-?} copied)"
             fails=$((fails + 1))
          fi
          if grep -q "renders parsed where the card reads them" "$WORK/$name-copied.log"; then

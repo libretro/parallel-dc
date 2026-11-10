@@ -1719,6 +1719,11 @@ GLuint gl_frame_modvol_buffer(GLuint own)
 	return frame_buffer(pvrrc.mv_clip.used() != 0 ? PARSE_ARENA_MV_CLIP : PARSE_ARENA_MODTRIG, own);
 }
 
+#ifdef HAVE_GL4
+/* renders parsed into the arena, and copied for want of a free slot */
+static u32 parsed_here, parsed_copied;
+#endif
+
 u32 *gl_frame_sorted(size_t bytes, size_t *offset)
 {
 #ifdef HAVE_GL4
@@ -1739,7 +1744,11 @@ void gl_frame_buffers_term()
 {
 #ifdef HAVE_GL4
 	if (parse_arena.ready)
+	{
+		NOTICE_LOG(RENDERER, "OpenGL: %u renders parsed where the card reads them, %u copied there", parsed_here, parsed_copied);
 		parse_arena_gl_term(&parse_arena);
+	}
+	parsed_here = parsed_copied = 0;
 	parse_arena_tried = false;
 #endif
 }
@@ -1761,13 +1770,16 @@ static void parse_where_drawn(TA_context* ctx)
 			INFO_LOG(RENDERER, "OpenGL: renders copied to the card (the buffers for them could not be had, or read slowly)");
 	}
 	/* (four vertices at the head the parse keeps: the background's, FillBGP()'s) */
-	static bool copied;
 	ta_list_t *lists[PARSE_ARENA_PARTS];
 	ctx->ArenaLists(lists);
-	if (!parse_arena_gl_attach(&parse_arena, lists, 4 * sizeof(Vertex)) && parse_arena.ready && !copied)
+	if (parse_arena_gl_attach(&parse_arena, lists, 4 * sizeof(Vertex)))
+		parsed_here++;
+	else if (parse_arena.ready)
 	{
-		copied = true;
-		NOTICE_LOG(RENDERER, "OpenGL: a render copied to the card, no slot of the parse's free");
+		/* (no slot whose frame the card is done with: a frame of more
+		 * renders than slots, the card behind - never waited for) */
+		if (parsed_copied++ == 0)
+			NOTICE_LOG(RENDERER, "OpenGL: a render copied to the card, no slot of the parse's free");
 	}
 #endif
 }
