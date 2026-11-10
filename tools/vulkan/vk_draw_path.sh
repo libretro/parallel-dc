@@ -103,8 +103,11 @@ for hide in $EDS $EDS3 $EDS,$EDS3; do
    run cull-pix-no-$short cull $hide sdr $judged "$PIX"
    run cull-tri-ssaa-no-$short cull $hide sdr $judged "$TRI" reicast_ssaa=4x
 done
-# switch <name> <option set at frame 20> <the option before>: 180 frames
-# (the test disc's picture still by then)
+# switch <name> <option set at frame 20> <the option before>: 180 frames,
+# against the new options from the start for as many frames as the
+# machine ran - 180 less those that showed the kept picture, the machine
+# not running - so both end at the same frame of the program (whose
+# picture changes as it goes: its palette banks at its frames 90 and 100)
 switch() {
    sw=$1; at=$2; from=$3
    frames=180; opts_at="20:$at"; frame_ms=16
@@ -115,6 +118,7 @@ switch() {
    if [ "${held:-0}" -ge 150 ]; then
       echo "  FAIL: the new renderer's pipelines were never made"; fails=$((fails + 1))
    fi
+   frames=$((180 - ${held:-0}))
    if [ "${at%%=*}" = "${from%%=*}" ]; then
       run $sw.new cull - sdr 1 "$at" > /dev/null
    else
