@@ -113,6 +113,23 @@ typedef struct hdr_vk_post_format
    int              made;
 } hdr_vk_post_format_t;
 
+/* The intermediates the post effects draw through, for one size of
+ * picture */
+typedef struct hdr_vk_post_set
+{
+   hdr_vk_image_t        scene;
+   hdr_vk_image_t        images[HDR_POST_IMAGES];
+   unsigned              width;
+   unsigned              height;
+   int                   current;   /* the format they are of, -1 for none */
+   uint64_t              used;      /* the frame they were last drawn through */
+} hdr_vk_post_set_t;
+
+/* (two: a game whose frames alternate between the framebuffer it writes
+ * and its renders, of another size, has a set for each, not both made
+ * again every frame) */
+#define HDR_VK_POST_SETS 2
+
 /* The post effects (hdr_output.h), made the first time they are on and
  * kept: nothing of it exists while they have not been */
 typedef struct hdr_vk_post
@@ -125,9 +142,9 @@ typedef struct hdr_vk_post
    VkPipeline            composite;
    VkDescriptorPool      pool;
    hdr_vk_post_format_t  formats[P_FORMATS];
-   int                   current;   /* the format the images are of */
-   hdr_vk_image_t        scene;
-   hdr_vk_image_t        images[HDR_POST_IMAGES];
+   hdr_vk_post_set_t     sets[HDR_VK_POST_SETS];
+   hdr_vk_post_set_t    *set;       /* this frame's */
+   uint64_t              frames;    /* drawn through them, for the sets' age */
 } hdr_vk_post_t;
 
 struct hdr_vk
@@ -153,7 +170,12 @@ struct hdr_vk
    hdr_vk_slot_t         slots[HDR_VK_MAX_RINGS][HDR_VK_MAX_SLOTS];
    unsigned              slot_count;
    hdr_vk_slot_t        *current;       /* the slot preparing: where what goes is retired */
-   hdr_vk_image_t        outputs[HDR_VK_MAX_OUTPUTS];
+   /* for each of the frontend's images, one of each of the last two sizes
+    * of picture handed over (a game whose frames alternate between the
+    * framebuffer it writes and its renders has both kept, not made again) */
+   hdr_vk_image_t        outputs[HDR_VK_MAX_OUTPUTS][2];
+   uint64_t              output_used[HDR_VK_MAX_OUTPUTS][2];
+   uint64_t              outputs_drawn;
    hdr_vk_image_t        tables[T_COUNT];
    unsigned              generation;
    hdr_vk_code_t         code;          /* (the post effects' made from it when first on) */
@@ -728,6 +750,7 @@ hdr_vk_t *hdr_vk_new(const struct retro_hw_render_interface_vulkan *iface,
    VkFormatProperties props;
    VkShaderModule     frag;
    hdr_vk_t          *e;
+   unsigned           i;
 
    vkGetPhysicalDeviceFormatProperties(iface->gpu, format, &props);
    if ((props.optimalTilingFeatures & (VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT | VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT))
@@ -746,7 +769,8 @@ hdr_vk_t *hdr_vk_new(const struct retro_hw_render_interface_vulkan *iface,
    e->code         = *code;
    e->post.formats[P_HALF].format    = VK_FORMAT_R16G16B16A16_SFLOAT;
    e->post.formats[P_COMPACT].format = VK_FORMAT_B10G11R11_UFLOAT_PACK32;
-   e->post.current = -1;
+   for (i = 0; i < HDR_VK_POST_SETS; i++)
+      e->post.sets[i].current = -1;
    e->nearest      = make_sampler(e->device, VK_FILTER_NEAREST, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE);
    e->linear_clamp = make_sampler(e->device, VK_FILTER_LINEAR, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE);
    e->linear_wrap  = make_sampler(e->device, VK_FILTER_LINEAR, VK_SAMPLER_ADDRESS_MODE_REPEAT);
@@ -794,7 +818,10 @@ void hdr_vk_free(hdr_vk_t *e)
          buffer_destroy(e, &e->slots[r][i].dt);
       }
    for (i = 0; i < HDR_VK_MAX_OUTPUTS; i++)
-      image_destroy(e, &e->outputs[i]);
+   {
+      image_destroy(e, &e->outputs[i][0]);
+      image_destroy(e, &e->outputs[i][1]);
+   }
    for (i = 0; i < T_COUNT; i++)
       image_destroy(e, &e->tables[i]);
    if (e->descriptor_pool != VK_NULL_HANDLE)
@@ -1224,9 +1251,13 @@ static void post_free(hdr_vk_t *e)
 {
    hdr_vk_post_t *p = &e->post;
    unsigned       i;
-   image_destroy(e, &p->scene);
-   for (i = 0; i < HDR_POST_IMAGES; i++)
-      image_destroy(e, &p->images[i]);
+   unsigned       j;
+   for (j = 0; j < HDR_VK_POST_SETS; j++)
+   {
+      image_destroy(e, &p->sets[j].scene);
+      for (i = 0; i < HDR_POST_IMAGES; i++)
+         image_destroy(e, &p->sets[j].images[i]);
+   }
    for (i = 0; i < P_FORMATS; i++)
       post_format_free(e, &p->formats[i]);
    if (p->composite != VK_NULL_HANDLE)
@@ -1296,9 +1327,9 @@ static bool post_image_make(hdr_vk_t *e, hdr_vk_image_t *o, unsigned k, unsigned
 
 /* The image @o as @k, @w x @h: made again (what it was retired with the
  * slot) when it is not */
-static bool post_image(hdr_vk_t *e, hdr_vk_image_t *o, unsigned k, unsigned w, unsigned h)
+static bool post_image(hdr_vk_t *e, hdr_vk_post_set_t *set, hdr_vk_image_t *o, unsigned k, unsigned w, unsigned h)
 {
-   if (o->live && o->width == w && o->height == h && (int)k == e->post.current)
+   if (o->live && o->width == w && o->height == h && (int)k == set->current)
       return true;
    retire_image(e, o);
    if (post_image_make(e, o, k, w, h))
@@ -1327,16 +1358,34 @@ static unsigned post_format_wanted(hdr_vk_t *e)
 static bool post_ready(hdr_vk_t *e, const struct hdr_post_plan *plan, unsigned w, unsigned h,
       unsigned *k)
 {
-   unsigned i;
+   hdr_vk_post_set_t *set;
+   unsigned           i;
    *k = post_format_wanted(e);
    if (!post_make(e) || !post_format_make(e, *k))
       return false;
-   if (!post_image(e, &e->post.scene, *k, w, h))
+   /* the set of this size and format, or the one drawn through longest ago */
+   set = &e->post.sets[0];
+   for (i = 0; i < HDR_VK_POST_SETS; i++)
+   {
+      hdr_vk_post_set_t *t = &e->post.sets[i];
+      if (t->current == (int)*k && t->width == w && t->height == h)
+      {
+         set = t;
+         break;
+      }
+      if (t->used < set->used)
+         set = t;
+   }
+   e->post.set = set;
+   set->used   = ++e->post.frames;
+   set->width  = w;
+   set->height = h;
+   if (!post_image(e, set, &set->scene, *k, w, h))
       return false;
    for (i = 0; i < HDR_POST_IMAGES; i++)
-      if (plan->w[i] && !post_image(e, &e->post.images[i], *k, plan->w[i], plan->h[i]))
+      if (plan->w[i] && !post_image(e, set, &set->images[i], *k, plan->w[i], plan->h[i]))
          return false;
-   e->post.current = (int)*k;
+   set->current = (int)*k;
    return true;
 }
 
@@ -1357,7 +1406,8 @@ static void write_sampler(VkWriteDescriptorSet *w, VkDescriptorImageInfo *info,
 
 static VkImageView post_view(hdr_vk_t *e, int image)
 {
-   return image == HDR_POST_SCENE ? e->post.scene.view : e->post.images[image].view;
+   const hdr_vk_post_set_t *set = e->post.set;
+   return image == HDR_POST_SCENE ? set->scene.view : set->images[image].view;
 }
 
 /* One full-target draw of @pipeline into @fb of @rp, @w x @h */
@@ -1416,7 +1466,7 @@ static void post_encode(hdr_vk_t *e, const struct hdr_output *out, VkCommandBuff
    /* the sets: each pass's source, the composite's */
    for (i = 0; i < plan->passes; i++, n++)
       write_sampler(&wr[n], &images[n], s->set_bloom[i], 0, e->linear_clamp, post_view(e, plan->pass[i].src));
-   write_sampler(&wr[n], &images[n], s->set_composite, B_PICTURE, e->linear_clamp, p->scene.view); n++;
+   write_sampler(&wr[n], &images[n], s->set_composite, B_PICTURE, e->linear_clamp, p->set->scene.view); n++;
    write_sampler(&wr[n], &images[n], s->set_composite, B_ACES2_LUT, e->linear_wrap, table_view(e, T_ACES2_LUT)); n++;
    write_sampler(&wr[n], &images[n], s->set_composite, B_FILM_LUT, e->linear_clamp, table_view(e, T_FILM_LUT)); n++;
    write_sampler(&wr[n], &images[n], s->set_composite, B_DESAT, e->linear_clamp, table_view(e, T_DESAT)); n++;
@@ -1438,13 +1488,13 @@ static void post_encode(hdr_vk_t *e, const struct hdr_output *out, VkCommandBuff
 
    /* the picture into scene-linear light */
    hdr_encode_params_fill(&push.encode, out, unorm8);
-   post_draw(cmd, f->clear, p->scene.framebuffer, sums ? f->linear_sums : f->linear,
+   post_draw(cmd, f->clear, p->set->scene.framebuffer, sums ? f->linear_sums : f->linear,
          e->pipeline_layout[K_SAMPLED], s->set_sampled, &push.encode, sizeof(push.encode), w, h);
    /* the bloom */
    for (i = 0; i < plan->passes; i++)
    {
       const struct hdr_post_pass *q = &plan->pass[i];
-      post_draw(cmd, q->stage == HDR_BLOOM_UP ? f->load : f->clear, p->images[q->dst].framebuffer,
+      post_draw(cmd, q->stage == HDR_BLOOM_UP ? f->load : f->clear, p->set->images[q->dst].framebuffer,
             f->stage[q->stage], p->bloom_pipeline_layout, s->set_bloom[i],
             &q->params, sizeof(q->params), plan->w[q->dst], plan->h[q->dst]);
    }
@@ -1469,7 +1519,19 @@ bool hdr_vk_encode(hdr_vk_t *e, const struct hdr_output *out, VkCommandBuffer cm
       return false;
    hdr_vk_prepare(e, out, cmd, ring, slot, epoch);
    e->current = s;
-   o = &e->outputs[index];
+   {
+      /* the one of this size, or the one drawn into longest ago */
+      hdr_vk_image_t *a = &e->outputs[index][0], *b = &e->outputs[index][1];
+      unsigned        n;
+      if (a->live && a->width == width && a->height == height)
+         n = 0;
+      else if (b->live && b->width == width && b->height == height)
+         n = 1;
+      else
+         n = e->output_used[index][0] <= e->output_used[index][1] ? 0 : 1;
+      o = &e->outputs[index][n];
+      e->output_used[index][n] = ++e->outputs_drawn;
+   }
    if (o->live && (o->width != width || o->height != height))
       retire_image(e, o);
    if (!o->live && !output_make(e, o, width, height))

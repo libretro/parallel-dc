@@ -25,15 +25,21 @@ The options that change what is drawn, or at what size, are measured on
 the plain disc with each API that has them: texture upscaling at 2x and
 4x, renders to a texture 2x and 4x finer, frame skipping, the internal
 resolution, SSAA, anisotropic filtering, the PowerVR2 scaler, the vertical
-screen, the VMU's screen, the crosshair, TA processing on the GPU and the
-texture debug log. Done for them: a texture scaled up (xBRZ) is drawn from
-the 32-bit images of the pool a size or two up, with its mipmaps made on
-the GPU, which the pool is planned with (`TexPoolBook::Drawn()`); it is
-scaled into room grown with the cache (`texcache_upscaled()`), whose
-scaler's table and threads are made at the start. Its rows are shared out
-by bands to a few threads of the core's own (`rend/band_pool.h`, in place
-of OpenMP, which made and freed a team for each texture on one thread),
-started with the cache and parked on an eventcount between textures.
+screen, the VMU's screen, the crosshair, TA processing on the GPU, the
+texture debug log, GPU Texture Decoding off, and the HDR output with its
+post effects. Done for them: a texture scaled up (xBRZ) is drawn from the
+32-bit images of the pool a size or two up, with its mipmaps made on the
+GPU, which the pool is planned with (`TexPoolBook::Drawn()`); it is scaled
+into room grown with the cache (`texcache_upscaled()`), whose scaler's
+table and threads are made at the start. Its rows are shared out by bands
+to a few threads of the core's own (`rend/band_pool.h`, in place of
+OpenMP, which made and freed a team for each texture on one thread),
+started with the cache and parked on an eventcount between textures. The
+HDR output's intermediates for the post effects, and the pictures it hands
+over, are kept for the last two sizes of picture (a game's frames may be
+the framebuffer it writes and its renders in turn), not made again
+whenever the size changes. With GPU Texture Decoding off, OpenGL converts
+the textures into its upload ring, which is made when that is turned off.
 Renders to a texture finer have their targets planned as large as they are
 drawn too, and the per-pixel renderers' lists' heads (Vulkan) and images
 (OpenGL 4) are as large as a render of a screen at that upscale from the

@@ -6,7 +6,8 @@
 # Vulkan renderer (per-triangle, threaded rendering on and off, per-strip,
 # per-pixel, compute), from frame 20 of 100 on; the options that change
 # what is drawn (texture upscaling, renders to a texture finer, frame
-# skipping, the internal resolution, SSAA and the rest); and with run-ahead
+# skipping, the internal resolution, SSAA and the rest); the HDR output with
+# its post effects; and with run-ahead
 # (VKH_AHEAD: a state saved and loaded every frame), the plain disc and the
 # one with a render to a texture in its state. Each place in the core that
 # allocated - the heap, or Vulkan memory, buffers, images and pools - is
@@ -44,7 +45,7 @@ fails=0
 run() {
    name=$1; disc=$2; shift 2
    rm -rf "$WORK/dir"; mkdir -p "$WORK/dir"
-   if ! env VKH_DIR="$WORK/dir" VKH_FRONTEND=sdr VKH_ALLOCS=20 VKH_ALLOC_SITES=1 \
+   if ! env VKH_DIR="$WORK/dir" VKH_FRONTEND=${FE:-sdr} VKH_ALLOCS=20 VKH_ALLOC_SITES=1 \
          ${PIN:-} timeout 900 "$WORK/vk_hdr" "$CORE" "$WORK/$disc/$disc.gdi" "$WORK/$name.raw" 100 "$@" \
          > "$WORK/$name.log" 2>&1; then
       echo "  FAIL: $name: the run failed:"; tail -5 "$WORK/$name.log"
@@ -74,6 +75,8 @@ run plain-texup4 plain "$TRI" reicast_texupscale=4x
 run plain-rtt2 plain "$TRI" reicast_render_to_texture_upscaling=2x
 run plain-rtt4 plain "$PIX" reicast_render_to_texture_upscaling=4x
 run plain-skip2 plain "$TRI" reicast_frame_skipping=2
+run plain-gtdoff plain "$TRI" reicast_gpu_texture_decode=disabled
+run plain-gtdoff-pix plain "$PIX" reicast_gpu_texture_decode=disabled
 run plain-res2 plain "$TRI" reicast_internal_resolution=2x
 run plain-ssaa2 plain "$TRI" reicast_ssaa=2x
 run plain-aniso plain "$TRI" reicast_anisotropic_filtering=16
@@ -83,6 +86,18 @@ run plain-vmu plain "$TRI" reicast_vmu1_screen_display=enabled
 run plain-cross plain "$TRI" reicast_lightgun1_crosshair=White
 run plain-tagpu plain "$TRI" reicast_ta_processing=gpu
 run plain-texdbg plain "$TRI" reicast_texture_debug=enabled
+# the HDR output to an HDR10 and an scRGB frontend, with the post effects
+# (bloom, halation, chromatic aberration): the plain disc's frames are the
+# framebuffer it writes and its renders, of two sizes, in turn
+FE=hdr10
+run plain-hdr10 plain "$TRI" reicast_color_format=30bit_hdr
+run plain-hdr10-post plain "$TRI" reicast_color_format=30bit_hdr reicast_hdr_bloom=standard \
+   reicast_hdr_halation=subtle reicast_hdr_chromatic=subtle
+run plain-hdr10-post-compute plain "$PIX" reicast_rendering_method=compute reicast_color_format=30bit_hdr \
+   reicast_hdr_bloom=intense
+FE=scrgb
+run plain-scrgb-post plain "$PIX" reicast_color_format=64bit_scrgb reicast_hdr_bloom=standard
+FE=
 # with run-ahead (a state saved and loaded every frame): the plain disc, and
 # the one whose state has a render to a texture on the card in it
 for d in plain keep; do

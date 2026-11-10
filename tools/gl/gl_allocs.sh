@@ -66,6 +66,9 @@ run plain-texup4 plain "$TRI" reicast_texupscale=4x
 run plain-rtt2 plain "$TRI" reicast_render_to_texture_upscaling=2x
 run plain-rtt4 plain "$PIX" reicast_render_to_texture_upscaling=4x
 run plain-skip2 plain "$TRI" reicast_frame_skipping=2
+run plain-gtdoff plain "$TRI" reicast_gpu_texture_decode=disabled
+run plain-gtdoff-pix plain "$PIX" reicast_gpu_texture_decode=disabled
+GLF_GLES=1 run plain-gtdoff-gles plain "$TRI" reicast_gpu_texture_decode=disabled
 run plain-res2 plain "$TRI" reicast_internal_resolution=2x
 run plain-aniso plain "$TRI" reicast_anisotropic_filtering=16
 run plain-pvr2 plain "$TRI" reicast_pvr2_scaler=enabled

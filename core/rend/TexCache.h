@@ -178,6 +178,11 @@ void texcache_stop_custom_loads();
  * that locking one takes none (TexCache.cpp): more is made if it runs
  * out, and that is said */
 void texcache_reserve(u32 textures);
+/* The memory a texture converted on the CPU is converted into, where the
+ * renderer has none of its own for it, as large as the largest: made when
+ * the cache's room is with GPU Texture Decoding off, and when that is
+ * turned off */
+void texcache_scratch_largest(void);
 /* How many times textures are scaled up (xBRZ), 1 for not: for the pools'
  * plans (TexPoolBook::Plan()) */
 static inline u32 texcache_upscale_factor(void)

@@ -58,6 +58,8 @@ char* strdup(const char *str)
 #include "rend/vulkan/vulkan_context.h"
 #endif
 #include "rend/rtt_watch.h"
+/* (rend/TexCache.h) */
+void texcache_scratch_largest(void);
 #include "rend/gles/ta_decoder_gl.h"
 #include "rend/gles/glprogram_cache.h"
 #include "rend/last_picture.h"
@@ -1196,7 +1198,12 @@ static void update_variables(bool first_startup)
    var.key = CORE_OPTION_NAME "_gpu_texture_decode";
    {
       const bool got = environ_cb(RETRO_ENVIRONMENT_GET_VARIABLE, &var) && var.value;
+      const bool was = settings.rend.GpuTextureDecode;
       settings.rend.GpuTextureDecode = !(got && !strcmp("disabled", var.value));
+      /* (turned off: the textures converted on the CPU from the next on,
+       * their memory made now) */
+      if (was && !settings.rend.GpuTextureDecode)
+         texcache_scratch_largest();
       /* (Direct3D 9's pixel shaders: not by default, until they are found
        * faster there than the CPU) */
       settings.rend.GpuTextureDecodeD3D9 = got && !strcmp("enabled_d3d9", var.value);

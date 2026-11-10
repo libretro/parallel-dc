@@ -8,7 +8,8 @@
 # modes a game seldom draws with), the per-triangle renderer (per triangle,
 # threaded rendering on and off, and per strip) and the per-pixel one, the
 # options that change what is drawn (texture upscaling, renders to a
-# texture finer, frame skipping and the rest), and with run-ahead
+# texture finer, frame skipping and the rest), the HDR output with its post
+# effects, and with run-ahead
 # (D3DH_AHEAD: a state saved and loaded every frame) the plain disc and the
 # one with a render to a texture in its state;
 # every site named (tools/vulkan/vk_alloc_sites.py, by the build's symbol
@@ -52,7 +53,7 @@ run() {
    name=$1; disc=$2; shift 2
    rm -rf "$WORK/dir"; mkdir -p "$WORK/dir"
    if ! env -u TMPDIR DISPLAY=$DISPLAY_NO WINEDEBUG=-all WINE_D3D_CONFIG=renderer=vulkan VKD3D_CONFIG=virtual_heaps \
-         WINEDLLOVERRIDES="$OVERRIDES" D3DH_ALLOCS=20 D3DH_ALLOC_SITES=1 D3DH_API=$api D3DH_FRONTEND=sdr \
+         WINEDLLOVERRIDES="$OVERRIDES" D3DH_ALLOCS=20 D3DH_ALLOC_SITES=1 D3DH_API=$api D3DH_FRONTEND=${FE:-sdr} \
          D3DH_DIR="Z:$WORK/dir" timeout 600 wine "$WORK/d3d_hdr.exe" "Z:$CORE" "Z:$WORK/$disc/$disc.gdi" \
          "Z:$WORK/$name.raw" 100 "$@" > "$WORK/$name.log" 2>&1; then
       echo "  FAIL: $name: the run failed:"; tail -5 "$WORK/$name.log"
@@ -80,11 +81,21 @@ for api in 11 12; do
    run d3d$api-plain-rtt2 plain "$TRI" reicast_render_to_texture_upscaling=2x
    run d3d$api-plain-rtt4 plain "$PIX" reicast_render_to_texture_upscaling=4x
    run d3d$api-plain-skip2 plain "$TRI" reicast_frame_skipping=2
+   run d3d$api-plain-gtdoff plain "$TRI" reicast_gpu_texture_decode=disabled
+   run d3d$api-plain-gtdoff-pix plain "$PIX" reicast_gpu_texture_decode=disabled
    run d3d$api-plain-res2 plain "$TRI" reicast_internal_resolution=2x
    run d3d$api-plain-aniso plain "$TRI" reicast_anisotropic_filtering=16
    run d3d$api-plain-vert plain "$TRI" reicast_screen_rotation=vertical
    run d3d$api-plain-vmu plain "$TRI" reicast_vmu1_screen_display=enabled
    run d3d$api-plain-cross plain "$TRI" reicast_lightgun1_crosshair=White
+   # the HDR output, with its post effects (bloom, halation, chromatic
+   # aberration), to an HDR10 frontend and an scRGB one
+   FE=hdr10
+   run d3d$api-plain-hdr10-post plain "$TRI" reicast_color_format=30bit_hdr reicast_hdr_bloom=standard \
+      reicast_hdr_halation=subtle reicast_hdr_chromatic=subtle
+   FE=scrgb
+   run d3d$api-plain-scrgb-post plain "$PIX" reicast_color_format=64bit_scrgb reicast_hdr_bloom=standard
+   FE=
    # with run-ahead (a state saved and loaded every frame): the plain disc,
    # and the one whose state has a render to a texture on the card in it
    for d in plain keep; do

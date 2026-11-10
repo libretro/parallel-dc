@@ -201,6 +201,7 @@ static void rtt_gl_init(void);
 static void upload_ring_init(void);
 static void upload_ring_term(void);
 static void upload_ring_fence(void);
+static void upload_ring_follow(void);
 
 void gl_tex_init(bool depth)
 {
@@ -265,6 +266,7 @@ void gl_tex_flush()
 {
 	glTexDecoder.Flush();
 	upload_ring_fence();
+	upload_ring_follow();
 }
 
 /* ---- Where textures converted on the CPU wait ----
@@ -296,14 +298,24 @@ static struct
 	u8 *mapped;
 	size_t at, len;
 	bool saidFull;
+	bool tried;	/* made, or tried to be, since the textures were made on the GPU */
 } upload;
+
+/* Whether textures are converted on the CPU: no decoder, or the GPU's
+ * decoding turned off (GPU Texture Decoding, which takes effect with the
+ * next texture) */
+static bool upload_ring_wanted(void)
+{
+	return glTexPool.Ready() && (!glTexDecoder.Ready() || !settings.rend.GpuTextureDecode)
+			&& (gl.is_gles || gl.gl_major > 3 || (gl.gl_major == 3 && gl.gl_minor >= 2));
+}
 
 static void upload_ring_init(void)
 {
 	u64 bytes;
 	upload_ring_term();
-	if (!glTexPool.Ready() || glTexDecoder.Ready()
-			|| (!gl.is_gles && (gl.gl_major < 3 || (gl.gl_major == 3 && gl.gl_minor < 2))))
+	upload.tried = upload_ring_wanted();
+	if (!upload.tried)
 		return;
 	/* A share of the video memory: 8 to 16 MB, room for the largest
 	 * texture, 1024x1024 with its mipmaps at 32 bits, and more */
@@ -324,6 +336,17 @@ static void upload_ring_init(void)
 	}
 	upload.size = (size_t)bytes;
 	NOTICE_LOG(RENDERER, "OpenGL: textures converted on the CPU go through a ring of %u KB", (u32)(bytes >> 10));
+}
+
+/* The ring made when the GPU's decoding is turned off while the game runs
+ * (after the frame: as a change of resolution makes what it needs), and
+ * kept if it is turned on again */
+static void upload_ring_follow(void)
+{
+	if (upload.buffer == 0 && !upload.tried && upload_ring_wanted())
+		upload_ring_init();
+	else if (upload.tried && !upload_ring_wanted() && upload.buffer == 0)
+		upload.tried = false;
 }
 
 static void upload_unmap(void)
@@ -440,6 +463,7 @@ static void upload_ring_init(void) { }
 static void upload_ring_term(void) { }
 static void upload_ring_fence(void) { }
 static u8 *upload_ring_take(size_t len) { return nullptr; }
+static void upload_ring_follow(void) { }
 static u8 *upload_ring_source(u8 *data, bool *bound) { *bound = false; return data; }
 static void upload_ring_done(bool bound) { }
 #endif

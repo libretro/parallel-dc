@@ -228,9 +228,16 @@ static void pieces_reserve(u32 textures);
 static void *texcache_scratch(size_t size);
 static void *texcache_upscaled(size_t size);
 
+void texcache_scratch_largest(void)
+{
+	texcache_scratch(PixelBuffer<u32>::bytes(1024, 1024, true) + 1024 * sizeof(u32));
+}
+
 void texcache_reserve(u32 textures)
 {
 	pieces_reserve(textures);
+	if (!settings.rend.GpuTextureDecode)
+		texcache_scratch_largest();
 #ifdef HAVE_TEXUPSCALE
 	/* Textures scaled up: what the largest is converted into (not straight
 	 * into the renderer's memory) and scaled up into, the threads it is
