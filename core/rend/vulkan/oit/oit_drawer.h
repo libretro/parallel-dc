@@ -124,6 +124,9 @@ protected:
 	};
 
 	void MakeBuffers(int width, int height);
+	/* (MakeBuffers()'s attachments and their framebuffers, at least
+	 * @width by @height) */
+	void MakeAttachments(int width, int height);
 	void MakeSampleAttachments();
 	vk::DeviceSize GetIndexOffset() const { return offsets.indexOffset; }
 	// (what the lists of fragments a render pass asked for: OITBuffers::CountPass())
@@ -455,6 +458,11 @@ public:
 		OITDrawer::Init(samplerManager, rttPipelineManager.get(), oitBuffers);
 
 		this->textureCache = textureCache;
+		/* (the attachments as large as a render to a texture can be, and
+		 * a framebuffer's place for each image: made now, not while the
+		 * game runs) */
+		MakeAttachments((int)TextureDrawer::MaxSide(), (int)TextureDrawer::MaxSide());
+		framebuffers.resize(GetContext()->GetSwapChainSize());
 	}
 	void Term()
 	{

@@ -43,10 +43,16 @@ SH-4 dynarec's; 9 buffers, 8 to 14 images and 4 command pools.
    translucent list's polygons, 64K triangles). Left: the quad's set made
    again from the pool each frame the image changes (no heap: a set kept
    for each of the frontend's images would make none).
-3. **Renders to textures.** Their targets, framebuffers and buffers
-   (`TextureDrawer::BeginRenderPass`, `BufferData`, `FramebufferAttachment`,
-   the per-pixel renderer's) from a pool made at the start, at the bound
-   the video memory budget gives.
+3. **Renders to textures.** Done: the texture drawers' attachments are
+   made with them, as large as a render to a texture can be
+   (`TextureDrawer::MaxSide()`: SSAA's already were; the depth, the
+   per-pixel renderer's colour and depth, `MakeAttachments()`), with a
+   framebuffer's place for each image; the room a render read back is put
+   in, for one of the screen's size (`rtt_watch_reserve()`). Left: the
+   read back's copies grown when a larger render is first watched
+   (`vk_rtt_watch`: 18 of them, the screen's size each would be some 22
+   MB made for every game), and the texture a render goes into, which is
+   the texture cache's and the pool's (below).
 4. **The texture cache.** A texture first seen takes its picture from
    the pool sized at the start (`TexturePool::Make`, and its log line);
    the cache's map, its pieces' hashes, the samplers and the video memory

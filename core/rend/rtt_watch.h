@@ -106,5 +106,9 @@ extern int rtt_watch_request;
 void rtt_watch_forget(void);
 /* Render thread: the renderer is going, and its pictures with it. */
 void rtt_watch_term(void);
+/* Before a renderer's first frame: the room a render read back is put in,
+ * for one of the screen's size (a larger one grows it, when it is
+ * watched, never in the fault handler) */
+void rtt_watch_reserve(void);
 /* The emulation thread says which one it is. */
 void rtt_watch_emu_thread(void);

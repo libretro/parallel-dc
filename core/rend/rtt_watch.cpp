@@ -519,6 +519,17 @@ void rtt_watch_forget(void)
 		}
 }
 
+void rtt_watch_reserve(void)
+{
+	const size_t need = (size_t)640 * 480 * 4;
+	if (need > pixels_size)
+	{
+		free(pixels);
+		pixels = (u8 *)malloc(need);
+		pixels_size = pixels != NULL ? need : 0;
+	}
+}
+
 void rtt_watch_term(void)
 {
 	for (RttWatch& s : slots)

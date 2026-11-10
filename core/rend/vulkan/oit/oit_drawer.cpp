@@ -654,7 +654,11 @@ bool OITDrawer::Draw(const Texture *fogTexture, const Texture *paletteTexture)
 void OITDrawer::MakeBuffers(int width, int height)
 {
 	oitBuffers->Init(width, height, commandPool);
+	MakeAttachments(width, height);
+}
 
+void OITDrawer::MakeAttachments(int width, int height)
+{
 	// (made again for another count of samples)
 	const u32 samples = pipelineManager->GetSamples();
 	if (samples != attachmentSamples || upscaled != attachmentsUpscaled)

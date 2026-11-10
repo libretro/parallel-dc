@@ -585,8 +585,9 @@ void TextureDrawer::Init(SamplerManager *samplerManager, ShaderManager *shaderMa
 		samplesAttachment.reset();
 		this->samples = samples;
 	}
-	/* SSAA's attachments are made now, as large as a render to a texture
-	 * can be, never while the game runs */
+	/* The attachments are made now, as large as a render to a texture can
+	 * be, never while the game runs: SSAA's, or the depth; and a
+	 * framebuffer's place for each image */
 	if (samples > 1)
 	{
 		if (!samplesAttachment || samplesAttachment->getExtent().width < MaxSide())
@@ -594,7 +595,19 @@ void TextureDrawer::Init(SamplerManager *samplerManager, ShaderManager *shaderMa
 		ssaaResolve.Init(rttPipelineManager->GetRenderPass(), 1, samples, samplesAttachment->GetImageView());
 	}
 	else
+	{
 		ssaaResolve.Term();
+		if (!depthAttachment || depthAttachment->getExtent().width < MaxSide() || depthAttachment->getExtent().height < MaxSide())
+		{
+			if (depthAttachment && commandPool != nullptr)
+				commandPool->DeferDelete(std::move(depthAttachment));
+			depthAttachment = std::unique_ptr<FramebufferAttachment>(new FramebufferAttachment(GetContext()->GetPhysicalDevice(),
+					GetContext()->GetDevice()));
+			depthAttachment->Init(MaxSide(), MaxSide(), GetContext()->GetDepthFormat(),
+					vk::ImageUsageFlagBits::eDepthStencilAttachment | vk::ImageUsageFlagBits::eTransientAttachment);
+		}
+	}
+	framebuffers.resize(GetContext()->GetSwapChainSize());
 }
 
 void TextureDrawer::MakeSsaaAttachments(u32 side)

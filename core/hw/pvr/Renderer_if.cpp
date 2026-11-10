@@ -4,6 +4,7 @@
 #include "hw/pvr/pvr_mem.h"
 #include "rend/TexCache.h"
 #include "rend/sorter.h"
+#include "rend/rtt_watch.h"
 #include "hw/mem/_vmem.h"
 #include "cheats.h"
 #include "spg.h"
@@ -173,8 +174,10 @@ static u32 fb_addr_history[2] = { 1, 1 };
 
 void rend_init_renderer()
 {
-	/* (the translucent sort's room, before the first frame) */
+	/* (the translucent sort's room, and a render's read back, before the
+	 * first frame) */
 	SortReserve();
+	rtt_watch_reserve();
 	if (!renderer->Init())
     {
 		delete renderer;
