@@ -119,7 +119,7 @@ CHD_SOURCES_C = \
 					$(LIBRETRO_COMM_DIR)/formats/flac/rflac.c
 
 # zip and 7z archives: rzip_archive over encoding_deflate.c, r7z_archive
-# over the LZMA/LZMA2/BCJ units.
+# over the LZMA/LZMA2/BCJ units and encoding_rbzip2.c.
 ARCHIVE_SOURCES_C = \
 					$(CORE_DIR)/core/archive/archive.c \
 					$(LIBRETRO_COMM_DIR)/encodings/encoding_deflate.c \
@@ -501,4 +501,6 @@ ifeq ($(HAVE_CHD), 1)
 endif
 
 SOURCES_C += $(ARCHIVE_SOURCES_C)
+# (7z's bzip2 folders, through encoding_rbzip2.c)
+CORE_DEFINES += -DHAVE_RBZIP2
 

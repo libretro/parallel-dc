@@ -103,7 +103,7 @@ int main(int argc, char **argv)
 {
    static const char *const loads[] =
    {
-      "src/disc.gdi", "stored.zip", "deflate.zip", "subdir.zip", "solid.7z",
+      "src/disc.gdi", "stored.zip", "deflate.zip", "subdir.zip", "solid.7z", "bzip2.7z",
       /* the frontend naming a member: a track, and the image itself */
       "solid.7z#track03.bin", "stored.zip#disc.gdi",
       /* a disc image in a rar, and by a member of it: the file layer has

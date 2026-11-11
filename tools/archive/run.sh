@@ -4,7 +4,7 @@
 #   sh tools/archive/run.sh
 #
 # Packages the GD-ROM fixture of tools/chd/make_fixture.py as stored and
-# deflated zips, a solid and a single-member 7z (tools/archive/make_fixture.py,
+# deflated zips, a solid, a bzip2 and a single-member 7z (tools/archive/make_fixture.py,
 # needs python3 with py7zr), then checks every member through the archive
 # API and through core_fopen("archive#member") against the source files,
 # with archive_test built under AddressSanitizer + UBSan with leak detection.
@@ -67,11 +67,11 @@ for mode in mmap nommap mmap_seek nommap_seek; do
       mmap_seek)   defs="-DHAVE_MMAP -DARCHIVE_SEEK_MIN=4096" ;;
       nommap_seek) defs=-DARCHIVE_SEEK_MIN=4096 ;;
    esac
-   $CC -O1 -g $defs -DHAVE_THREADS -fsanitize=address,undefined \
+   $CC -O1 -g $defs -DHAVE_THREADS -DHAVE_RBZIP2 -fsanitize=address,undefined \
       -fno-sanitize-recover=undefined -I$L/include -Icore \
       -o "$WORK/archive_test_$mode" $SOURCES -lm -lpthread
 done
-$CC -O1 -g -DHAVE_MMAP -DARCHIVE_SEEK_MIN=4096 -DHAVE_THREADS -fsanitize=thread \
+$CC -O1 -g -DHAVE_MMAP -DARCHIVE_SEEK_MIN=4096 -DHAVE_THREADS -DHAVE_RBZIP2 -fsanitize=thread \
    -I$L/include -Icore -o "$WORK/archive_test_tsan" $SOURCES -lm -lpthread
 
 # libretro-common's index itself (rzip_seek), against whole extraction

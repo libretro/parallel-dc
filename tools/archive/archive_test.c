@@ -478,6 +478,7 @@ int main(int argc, char **argv)
    check_archive(work, "deflate.zip", "",      0, mapped_build, NUM_MEMBERS);
    check_archive(work, "subdir.zip",  "GAME/", 0, mapped_build, NUM_MEMBERS);
    check_archive(work, "solid.7z",    "",      0, mapped_build, NUM_MEMBERS);
+   check_archive(work, "bzip2.7z",    "",      0, mapped_build, NUM_MEMBERS);
    check_archive(work, "suffix",      "",      1, mapped_build, NUM_MEMBERS);
    /* (a rar's members are reached through the archive only: the file
     * layer has no "archive#member" names for one) */

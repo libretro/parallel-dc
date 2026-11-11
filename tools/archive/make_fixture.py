@@ -13,6 +13,7 @@ Writes <workdir>/src/{disc.gdi,track01.bin,track02.raw,track03.bin} and:
   solid.7z       one LZMA2 folder holding all members
   single.7z      track03.bin alone, so the member is its folder's whole
                  output and is handed over without a copy
+  bzip2.7z       one bzip2 folder holding all members
   suffix         stored.zip again under a name with no extension, to be
                  opened as "suffix" + ".zip"
   stored.rar     every member stored, in the RAR 2.9 format, written out
@@ -65,6 +66,10 @@ def main():
                     os.path.join(work, 'suffix.zip'))
 
     with py7zr.SevenZipFile(os.path.join(work, 'solid.7z'), 'w') as z:
+        for m in MEMBERS:
+            z.write(os.path.join(src, m), m)
+    with py7zr.SevenZipFile(os.path.join(work, 'bzip2.7z'), 'w',
+                            filters=[{'id': py7zr.FILTER_BZIP2}]) as z:
         for m in MEMBERS:
             z.write(os.path.join(src, m), m)
     with py7zr.SevenZipFile(os.path.join(work, 'single.7z'), 'w') as z:
