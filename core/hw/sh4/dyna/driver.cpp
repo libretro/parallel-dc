@@ -2,8 +2,7 @@
 #include <unordered_set>
 
 /* (the state is a complete type: hash() keeps it on the stack) */
-#define XXH_STATIC_LINKING_ONLY
-#include "deps/xxhash/xxhash.h"
+#include <encodings/xxh32.h>
 #include "../sh4_interpreter.h"
 #include "../sh4_opcode_list.h"
 #include "../sh4_core.h"
@@ -136,16 +135,16 @@ static char block_hash[1024];
 
 const char* RuntimeBlockInfo::hash()
 {
-	XXH32_hash_t hash = 0;
+	u32 hash = 0;
 
 	u8* ptr = GetMemPtr(this->addr, this->sh4_code_size);
 
 	if (ptr)
 	{
 		/* (on the stack: nothing allocated) */
-		XXH32_state_t state_room;
-		XXH32_state_t *state = &state_room;
-		XXH32_reset(state, 7);
+		xxh32_state_t state_room;
+		xxh32_state_t *state = &state_room;
+		xxh32_reset(state, 7);
 			for (u32 i=0; i<this->guest_opcodes; i++)
 			{
 				u16 data=ptr[i];
@@ -153,9 +152,9 @@ const char* RuntimeBlockInfo::hash()
 				if ((ptr[i]>>12)==0xD)
 					data=0xD000;
 
-			XXH32_update(state, &data, 2);
+			xxh32_update(state, &data, 2);
 			}
-		hash = XXH32_digest(state);
+		hash = xxh32_digest(state);
 		}
 
 	sprintf(block_hash, ">:1:%02X:%08X", this->guest_opcodes, hash);

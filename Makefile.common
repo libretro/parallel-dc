@@ -5,8 +5,7 @@ INCFLAGS    += -I$(CORE_DIR)/core/libretro \
 					-I$(CORE_DIR)/core/ \
 					-I$(DEPS_DIR) \
 					-I$(LIBRETRO_COMM_DIR)/include \
-					-I$(DEPS_DIR)/vixl \
-					-I$(DEPS_DIR)/stb
+					-I$(DEPS_DIR)/vixl
 
 SOURCES_C   ?=
 SOURCES_CXX := \
@@ -166,7 +165,10 @@ PICOTCP_SOURCES_C = \
 					$(DEPS_DIR)/picotcp/stack/pico_stack.c \
 					$(DEPS_DIR)/picotcp/stack/pico_tree.c
 
-XXHASH_SOURCES_C = $(DEPS_DIR)/xxhash/xxhash.c
+# The textures' hashes (custom textures are named by them): XXH32
+SOURCES_C += $(LIBRETRO_COMM_DIR)/encodings/encoding_xxh32.c
+# ...and their pictures, read and dumped (core/rend/custom_image.h)
+SOURCES_C += $(CORE_DIR)/core/rend/custom_image.c
 
 # The NAOMI 2's geometry processor
 SOURCES_C += $(CORE_DIR)/core/hw/pvr/elan.c
@@ -195,15 +197,7 @@ else
 	SOURCES_C += $(PICOTCP_SOURCES_C)
 endif
 
-ifeq ($(SYSTEM_XXHASH), 1)
-	CFLAGS += $(shell pkg-config --cflags libxxhash)
-	LIBS += $(shell pkg-config --libs libxxhash)
-else
-	SOURCES_C += $(XXHASH_SOURCES_C)
-endif
-
 ifeq ($(ENABLE_MODEM), 1)
-	INCFLAGS    += -I$(CORE_DIR)/core/deps/miniupnpc
 	SOURCES_CXX += $(CORE_DIR)/core/hw/modem/dns.cpp \
 						$(CORE_DIR)/core/hw/modem/modem.cpp \
 						$(CORE_DIR)/core/hw/bba/bba.cpp \
@@ -214,23 +208,18 @@ ifeq ($(ENABLE_MODEM), 1)
 						$(CORE_DIR)/core/hw/modem/v42bis.cpp \
 						$(CORE_DIR)/core/network/dcnet.cpp
 
-	SOURCES_C += \
-					 $(CORE_DIR)/core/deps/miniupnpc/addr_is_reserved.c \
-					 $(CORE_DIR)/core/deps/miniupnpc/igd_desc_parse.c \
-					 $(CORE_DIR)/core/deps/miniupnpc/upnpreplyparse.c \
-					 $(CORE_DIR)/core/deps/miniupnpc/upnpcommands.c \
-					 $(CORE_DIR)/core/deps/miniupnpc/upnperrors.c \
-					 $(CORE_DIR)/core/deps/miniupnpc/connecthostport.c \
-					 $(CORE_DIR)/core/deps/miniupnpc/portlistingparse.c \
-					 $(CORE_DIR)/core/deps/miniupnpc/receivedata.c \
-					 $(CORE_DIR)/core/deps/miniupnpc/upnpdev.c \
-					 $(CORE_DIR)/core/deps/miniupnpc/minissdpc.c \
-					 $(CORE_DIR)/core/deps/miniupnpc/miniwget.c \
-					 $(CORE_DIR)/core/deps/miniupnpc/miniupnpc.c \
-					 $(CORE_DIR)/core/deps/miniupnpc/minixml.c \
-					 $(CORE_DIR)/core/deps/miniupnpc/minisoap.c
+	# the gateway's ports forwarded (UPnP; RetroArch does not build it)
+	SOURCES_C += $(LIBRETRO_COMM_DIR)/net/net_upnp.c
+ifneq ($(STATIC_LINKING), 1)
+	SOURCES_C += $(LIBRETRO_COMM_DIR)/net/net_http.c \
+					$(LIBRETRO_COMM_DIR)/net/net_socket.c \
+					$(LIBRETRO_COMM_DIR)/net/net_compat.c \
+					$(LIBRETRO_COMM_DIR)/formats/xml/rxml.c \
+					$(LIBRETRO_COMM_DIR)/lists/string_list.c \
+					$(LIBRETRO_COMM_DIR)/encodings/encoding_base64.c
+endif
 
-	CORE_DEFINES += -DENABLE_MODEM -DMINIUPNP_STATICLIB
+	CORE_DEFINES += -DENABLE_MODEM
 endif
 
 ifeq ($(HAVE_GL), 1)
@@ -476,6 +465,20 @@ SOURCES_C += $(LIBRETRO_COMM_DIR)/memmap/memalign.c \
 					$(LIBRETRO_COMM_DIR)/string/stdstring.c \
 					$(LIBRETRO_COMM_DIR)/string/rstrtod.c \
 					$(LIBRETRO_COMM_DIR)/time/rtime.c
+# custom textures read (PNG, JPEG) and dumped (PNG)
+SOURCES_C += $(LIBRETRO_COMM_DIR)/formats/png/rpng.c \
+					$(LIBRETRO_COMM_DIR)/formats/png/rpng_encode.c \
+					$(LIBRETRO_COMM_DIR)/file/rpng_file.c \
+					$(LIBRETRO_COMM_DIR)/formats/jpeg/rjpeg.c \
+					$(LIBRETRO_COMM_DIR)/streams/trans_stream.c \
+					$(LIBRETRO_COMM_DIR)/streams/trans_stream_deflate.c \
+					$(LIBRETRO_COMM_DIR)/streams/trans_stream_pipe.c \
+					$(LIBRETRO_COMM_DIR)/streams/interface_stream.c \
+					$(LIBRETRO_COMM_DIR)/streams/memory_stream.c
+ifeq ($(HAVE_CHD), 1)
+# (interface_stream.c opens CHDs with HAVE_CHD)
+SOURCES_C += $(LIBRETRO_COMM_DIR)/streams/chd_stream.c
+endif
 endif
 
 ifeq ($(NO_THREADS), 1)

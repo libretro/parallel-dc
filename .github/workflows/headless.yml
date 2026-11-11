@@ -18,7 +18,10 @@ name: Headless
 # against the interpreters, each built alone with the assembler they share
 # (tools/sh4/run.sh, tools/arm7/run.sh, tools/aica/run.sh). And the threads
 # a texture scaled up is shared out to, and the core needing no OpenMP
-# runtime (tools/rend/band_pool_test.sh).
+# runtime (tools/rend/band_pool_test.sh). And custom textures' pictures,
+# read as stb_image read them and dumped (tools/rend/custom_image_test.sh),
+# the textures' hashes as XXH32 made them (tools/rend/texhash_test.sh), and
+# the modem's UPnP against a gateway on the runner (tools/threads/upnp_test.sh).
 
 on:
   push:
@@ -31,6 +34,9 @@ on:
       - 'tools/sh4/reglist_test.*'
       - 'tools/sh4/node_pool_test.*'
       - 'tools/rend/band_pool_test.*'
+      - 'tools/rend/custom_image*'
+      - 'tools/rend/texhash_test.*'
+      - 'tools/threads/upnp_*'
       - 'tools/sh4/run.sh'
       - 'tools/sh4/vector_test.cpp'
       - 'tools/arm7/**'
@@ -47,6 +53,9 @@ on:
       - 'tools/sh4/reglist_test.*'
       - 'tools/sh4/node_pool_test.*'
       - 'tools/rend/band_pool_test.*'
+      - 'tools/rend/custom_image*'
+      - 'tools/rend/texhash_test.*'
+      - 'tools/threads/upnp_*'
       - 'tools/sh4/run.sh'
       - 'tools/sh4/vector_test.cpp'
       - 'tools/arm7/**'
@@ -74,6 +83,14 @@ jobs:
         run: sh tools/threads/headless.sh parallel_dc_libretro.so
       - name: The threads a texture scaled up is shared out to (TSan, ASan/UBSan, no threads), and no OpenMP in the core
         run: sh tools/rend/band_pool_test.sh parallel_dc_libretro.so
+      - name: Custom textures' pictures (PNG, JPEG) read as stb_image read them, cut and spoilt, dumped and read back (ASan/UBSan; AArch64)
+        run: |
+          sh tools/rend/custom_image_test.sh
+          CC="aarch64-linux-gnu-gcc -static" RUN=qemu-aarch64-static sh tools/rend/custom_image_test.sh
+      - name: The textures' hashes (custom textures' names) as XXH32 made them
+        run: sh tools/rend/texhash_test.sh
+      - name: The modem's UPnP against a gateway on the runner (found, TCP and UDP mapped and deleted; none found without)
+        run: sh tools/threads/upnp_test.sh
       - name: A strip's indices (C89, ASan and UBSan; SIMD, scalar and NEON) against the loop they replaced
         run: NEON=required sh tools/pvr/ta_index_test.sh
       - name: The parse timed on the heavy disc, the strips known good making the indices a look at them does

@@ -1291,7 +1291,7 @@ static void *pico_thread_func(void *)
 	// be to implement VJ compression.
 	dont_reject_opt_vj_hack = gameId == "6107117" ? 1 : 0;
 	
-	// Initialize miniupnpc and map network ports
+	// Find the gateway (UPnP) and map network ports
 	MiniUPnP upnp;
 	bool upnp_mapped = false;
 	if (ports != nullptr)

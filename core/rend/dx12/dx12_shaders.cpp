@@ -20,7 +20,7 @@
 #include "dx12_hdr_dxbc.inc"
 #include "dx12_dxil.inc"
 #include "rend/texdecode_dxbc.inc"
-#include "deps/xxhash/xxhash.h"
+#include <encodings/xxh32.h>
 
 /* DXIL, where the device takes it: the raster shaders all of one kind,
  * since a pipeline's are */
@@ -66,22 +66,22 @@ u32 dx12_shaders_hash()
 {
 	if (hash == 0)
 	{
-		XXH32_state_t *st = XXH32_createState();
-		XXH32_reset(st, useDxil ? 1 : 0);
+		xxh32_state_t state;
+		xxh32_state_t *st = &state;
+		xxh32_reset(st, useDxil ? 1 : 0);
 		for (size_t i = 1; i < sizeof(dx12_dxbc) / sizeof(dx12_dxbc[0]); i++)
 		{
 			const D3D12_SHADER_BYTECODE code = dx12_shader((DX12Shader)i);
-			XXH32_update(st, code.pShaderBytecode, code.BytecodeLength);
+			xxh32_update(st, code.pShaderBytecode, code.BytecodeLength);
 		}
 		for (size_t i = 1; i < sizeof(dx12_hdr_dxbc) / sizeof(dx12_hdr_dxbc[0]); i++)
 		{
 			const D3D12_SHADER_BYTECODE code = dx12_hdr_shader((DX12HdrShader)i);
-			XXH32_update(st, code.pShaderBytecode, code.BytecodeLength);
+			xxh32_update(st, code.pShaderBytecode, code.BytecodeLength);
 		}
 		for (size_t i = 1; i < sizeof(texdecode_dxbc) / sizeof(texdecode_dxbc[0]); i++)
-			XXH32_update(st, texdecode_dxbc[i], texdecode_dxbc_size[i]);
-		hash = XXH32_digest(st) | 1;	// (never 0: not worked out yet)
-		XXH32_freeState(st);
+			xxh32_update(st, texdecode_dxbc[i], texdecode_dxbc_size[i]);
+		hash = xxh32_digest(st) | 1;	// (never 0: not worked out yet)
 	}
 	return hash;
 }

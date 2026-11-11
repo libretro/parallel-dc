@@ -14,7 +14,9 @@ WORK=${TMPDIR:-/tmp}/texconv_test.$$
 mkdir -p "$WORK"
 trap 'rm -rf "$WORK"' EXIT
 # (its hash under another name: the test's own counts what is hashed)
-${CC:-cc} -O2 -DXXH_NAMESPACE=texconv_ -c -o "$WORK/xxhash.o" core/deps/xxhash/xxhash.c
+${CC:-cc} -O2 -Dxxh32=texconv_xxh32 -Dxxh32_reset=texconv_xxh32_reset -Dxxh32_update=texconv_xxh32_update \
+   -Dxxh32_digest=texconv_xxh32_digest -I./core/libretro-common/include \
+   -c -o "$WORK/xxhash.o" core/libretro-common/encodings/encoding_xxh32.c
 ${CXX:-g++} -I./core/libretro -I./core -I./core/deps -I./core/libretro-common/include -I./core/deps/khronos \
    -DTARGET_LINUX_x64 -DHOST_CPU=0x20000004 -D__LIBRETRO__ -DHAVE_GLSYM_PRIVATE -DNO_VERIFY -DNDEBUG \
    -DHAVE_GL3 -DHAVE_GL4 -DCORE -DHAVE_TEXUPSCALE -DHAVE_OPENGL -DHAVE_VULKAN -DPVR_REGS_FOR_RENDERER -O2 -fpermissive -w \

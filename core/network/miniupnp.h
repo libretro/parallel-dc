@@ -17,27 +17,29 @@
     along with Flycast.  If not, see <https://www.gnu.org/licenses/>.
 */
 #pragma once
-#include <vector>
-#include <utility>
-#include <miniupnpc/miniupnpc.h>
+#include <net/net_upnp.h>
 
+/* The gateway's ports forwarded to this host while the network is up, and
+ * given back when it goes (libretro-common's net/net_upnp.h). Init() and
+ * AddPortMapping() wait on the network, up to a few seconds: they are
+ * called off the emulation thread. */
 class MiniUPnP
 {
 public:
-	MiniUPnP() {
-		lanAddress[0] = 0;
-		wanAddress[0] = 0;
-		memset(&urls, 0, sizeof(urls));
-		memset(&data, 0, sizeof(data));
-	}
+	MiniUPnP() : found(false), count(0) {}
 	bool Init();
 	void Term();
 	bool AddPortMapping(int port, bool tcp);
 
 private:
-	UPNPUrls urls;
-	IGDdatas data;
-	char lanAddress[32];
-	char wanAddress[32];
-	std::vector<std::pair<std::string, bool>> mappedPorts;
+	enum { MOST = 32 };
+	struct Mapping
+	{
+		unsigned port;
+		bool tcp;
+	};
+	struct net_upnp_gateway gateway;
+	bool found;
+	unsigned count;
+	Mapping mapped[MOST];
 };

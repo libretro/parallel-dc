@@ -24,12 +24,7 @@
 #include <sys/stat.h>
 #include "retro_dirent.h"
 #include "string/stdstring.h"
-#define STB_IMAGE_IMPLEMENTATION
-#define STBI_ONLY_JPEG
-#define STBI_ONLY_PNG
-#include <stb_image.h>
-#define STB_IMAGE_WRITE_IMPLEMENTATION
-#include <stb_image_write.h>
+#include "custom_image.h"
 
 #include "reios/reios.h"
 #include "file/file_path.h"
@@ -181,7 +176,6 @@ u8* CustomTexture::LoadCustomTexture(u32 hash, int& width, int& height)
 	if (it == texture_map.end())
 		return nullptr;
 
-	int n;
 	core_file* f = core_fopen(it->second.c_str());
 	const u8* data;
 	u8* buf = NULL;
@@ -199,10 +193,14 @@ u8* CustomTexture::LoadCustomTexture(u32 hash, int& width, int& height)
 		if (buf && core_fread_at(f, 0, buf, len) == len)
 			data = buf;
 	}
-	if (data && len <= 0x7fffffff)
+	if (data)
 	{
-		stbi_set_flip_vertically_on_load(1);
-		image = stbi_load_from_memory(data, (int)len, &width, &height, &n, STBI_rgb_alpha);
+		unsigned w = 0, h = 0;
+		if ((image = custom_image_decode(data, len, &w, &h)) != NULL)
+		{
+			width = (int)w;
+			height = (int)h;
+		}
 	}
 	free(buf);
 	core_fclose(f);
@@ -246,68 +244,19 @@ void CustomTexture::DumpTexture(u32 hash, int w, int h, TextureType textype, voi
 	std::stringstream path;
 	path << base_dump_dir << std::hex << hash << ".png";
 
-	/* Four, five and six bits are made eight by repeating their top bits, as
-	 * the texture converters do for a texture drawn from 32 bits: full is 255.
-	 * With the low bits left clear an opaque texel was written with an alpha
-	 * of 240, and white as 248 or 240 - and that is the picture a replacement
-	 * texture is painted over and loaded back from. */
-	u16 *src = (u16 *)src_buffer;
-	u8 *dst_buffer = (u8 *)malloc(w * h * 4);	// 32-bit per pixel
-	u8 *dst = dst_buffer;
-
-	for (int y = 0; y < h; y++)
+	enum custom_image_texels texels;
+	switch (textype)
 	{
-		switch (textype)
-		{
-		case TextureType::_4444:
-			for (int x = 0; x < w; x++)
-			{
-				*dst++ = ((*src >> 12) & 0xF) * 17;
-				*dst++ = ((*src >> 8) & 0xF) * 17;
-				*dst++ = ((*src >> 4) & 0xF) * 17;
-				*dst++ = (*src & 0xF) * 17;
-				src++;
-			}
-			break;
-		case TextureType::_565:
-			for (int x = 0; x < w; x++)
-			{
-				*dst++ = (((*src >> 11) & 0x1F) << 3) | ((*src >> 13) & 7);
-				*dst++ = (((*src >> 5) & 0x3F) << 2) | ((*src >> 9) & 3);
-				*dst++ = ((*src & 0x1F) << 3) | ((*src >> 2) & 7);
-				*dst++ = 255;
-				src++;
-			}
-			break;
-		case TextureType::_5551:
-			for (int x = 0; x < w; x++)
-			{
-				*dst++ = (((*src >> 11) & 0x1F) << 3) | ((*src >> 13) & 7);
-				*dst++ = (((*src >> 6) & 0x1F) << 3) | ((*src >> 8) & 7);
-				*dst++ = (((*src >> 1) & 0x1F) << 3) | ((*src >> 3) & 7);
-				*dst++ = (*src & 1) ? 255 : 0;
-				src++;
-			}
-			break;
-		case TextureType::_8888:
-			for (int x = 0; x < w; x++)
-			{
-				*(u32 *)dst = *(u32 *)src;
-				dst += 4;
-				src += 2;
-			}
-			break;
-		default:
-			WARN_LOG(RENDERER, "dumpTexture: unsupported picture format %x", (u32)textype);
-			free(dst_buffer);
-			return;
-		}
+	case TextureType::_4444: texels = CUSTOM_IMAGE_4444; break;
+	case TextureType::_565:  texels = CUSTOM_IMAGE_565;  break;
+	case TextureType::_5551: texels = CUSTOM_IMAGE_5551; break;
+	case TextureType::_8888: texels = CUSTOM_IMAGE_8888; break;
+	default:
+		WARN_LOG(RENDERER, "dumpTexture: unsupported picture format %x", (u32)textype);
+		return;
 	}
-
-	stbi_flip_vertically_on_write(1);
-	stbi_write_png(path.str().c_str(), w, h, STBI_rgb_alpha, dst_buffer, 0);
-
-	free(dst_buffer);
+	if (!custom_image_dump(path.str().c_str(), src_buffer, (unsigned)w, (unsigned)h, texels))
+		WARN_LOG(RENDERER, "dumpTexture: %s not written", path.str().c_str());
 }
 
 void CustomTexture::LoadMap()

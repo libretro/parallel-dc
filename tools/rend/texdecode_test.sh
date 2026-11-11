@@ -66,7 +66,7 @@ ${CXX:-g++} -I./core/libretro -I./core -I./core/deps -I./core/libretro-common/in
    -DTARGET_LINUX_x64 -DHOST_CPU=0x20000004 -D__LIBRETRO__ -DHAVE_GLSYM_PRIVATE -DNO_VERIFY -DNDEBUG \
    -DHAVE_GL3 -DHAVE_GL4 -DCORE -DHAVE_TEXUPSCALE -DHAVE_OPENGL -DHAVE_VULKAN -O2 -w \
    -c -o "$WORK/cpu.o" tools/rend/texdecode_cpu.cpp
-${CXX:-g++} -o "$WORK/texdecode_test" "$WORK/test.o" "$WORK/cpu.o" core/rend/TexCache.o core/rend/band_pool.o core/deps/xxhash/xxhash.o \
+${CXX:-g++} -o "$WORK/texdecode_test" "$WORK/test.o" "$WORK/cpu.o" core/rend/TexCache.o core/rend/band_pool.o core/libretro-common/encodings/encoding_xxh32.o \
    -l:libvulkan.so.1 -Wl,--unresolved-symbols=ignore-all
 
 LVP=/usr/share/vulkan/icd.d/lvp_icd.json

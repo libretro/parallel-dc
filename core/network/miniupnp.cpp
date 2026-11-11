@@ -16,66 +16,52 @@
     You should have received a copy of the GNU General Public License
     along with Flycast.  If not, see <https://www.gnu.org/licenses/>.
 */
-#include <miniupnpc.h>
-#include <upnpcommands.h>
+#include <net/net_compat.h>
 #include "types.h"
 #include "miniupnp.h"
 
-#ifndef UPNP_LOCAL_PORT_ANY
-#define UPNP_LOCAL_PORT_ANY 0
-#endif
+/* how long to wait for the gateway, and for each of its answers */
+#define UPNP_TIMEOUT_MS 2000
 
 bool MiniUPnP::Init()
 {
-	int error = 0;
-#if MINIUPNPC_API_VERSION >= 14
-	UPNPDev *devlist = upnpDiscover(2000, nullptr, nullptr, UPNP_LOCAL_PORT_ANY, 0, 2, &error);
-#else
-	UPNPDev *devlist = upnpDiscover(2000, nullptr, nullptr, UPNP_LOCAL_PORT_ANY, 0, &error);
-#endif
-	if (devlist == nullptr)
+	char wan[64];
+	found = false;
+	count = 0;
+	if (!network_init() || !net_upnp_discover(&gateway, UPNP_TIMEOUT_MS))
 	{
-		INFO_LOG(MODEM, "UPnP discover failed: error %d", error);
+		INFO_LOG(MODEM, "UPnP: no Internet gateway found");
 		return false;
 	}
-	error = UPNP_GetValidIGD(devlist, &urls, &data, lanAddress, sizeof(lanAddress));
-	freeUPNPDevlist(devlist);
-	if (error != 1)
-	{
-		INFO_LOG(MODEM, "Internet Gateway not found: error %d", error);
-		return false;
-	}
-	wanAddress[0] = 0;
-	if (UPNP_GetExternalIPAddress(urls.controlURL, data.first.servicetype, wanAddress) != 0)
+	found = true;
+	if (net_upnp_external_address(&gateway, wan, sizeof(wan), UPNP_TIMEOUT_MS))
+		INFO_LOG(MODEM, "UPnP: this host %s, external address %s", gateway.lan_addr, wan);
+	else
 		INFO_LOG(MODEM, "Cannot determine external IP address");
 	return true;
 }
 
 void MiniUPnP::Term()
 {
-	for (const auto& port : mappedPorts)
-		UPNP_DeletePortMapping(urls.controlURL, data.first.servicetype, port.first.c_str(),
-							   port.second ? "TCP" : "UDP", nullptr);
-	mappedPorts.clear();
-	FreeUPNPUrls(&urls);
+	unsigned i;
+	if (found)
+		for (i = 0; i < count; i++)
+			net_upnp_delete_port_mapping(&gateway, mapped[i].port, !mapped[i].tcp, UPNP_TIMEOUT_MS);
+	count = 0;
+	found = false;
 }
 
 bool MiniUPnP::AddPortMapping(int port, bool tcp)
 {
-	std::string portStr(std::to_string(port));
-	int error = UPNP_AddPortMapping(urls.controlURL, data.first.servicetype,
-								portStr.c_str(), // WAN port
-								portStr.c_str(), // LAN port
-								lanAddress,
-								"Flycast",
-								tcp ? "TCP" : "UDP",
-								nullptr,   // remote (peer) host address or nullptr for no restriction
-								"86400");  // port map lease duration (in seconds) or zero for "as long as possible"
-	if (error != 0)
+	if (!found || port <= 0 || count == MOST)
+		return false;
+	if (!net_upnp_add_port_mapping(&gateway, (unsigned)port, !tcp, "Flycast", UPNP_TIMEOUT_MS))
 	{
-		INFO_LOG(MODEM, "Port %d redirection failed: error %d", port, error);
+		INFO_LOG(MODEM, "Port %d redirection failed", port);
 		return false;
 	}
-	mappedPorts.push_back(std::make_pair(portStr, tcp));
+	mapped[count].port = (unsigned)port;
+	mapped[count].tcp = tcp;
+	count++;
 	return true;
 }

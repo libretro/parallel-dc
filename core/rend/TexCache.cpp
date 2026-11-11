@@ -15,8 +15,7 @@
 
 #include <algorithm>
 // for a hash state that can be a local: ComputeHash() allocates nothing
-#define XXH_STATIC_LINKING_ONLY
-#include <deps/xxhash/xxhash.h>
+#include <encodings/xxh32.h>
 
 #ifdef HAVE_TEXUPSCALE
 #include <features/features_cpu.h>
@@ -153,9 +152,9 @@ void palette_update()
 		break;
 	}
 	for (int i = 0; i < 64; i++)
-		pal_hash_16[i] = XXH32(&PALETTE_RAM[i << 4], 16 * 4, 7);
+		pal_hash_16[i] = xxh32(&PALETTE_RAM[i << 4], 16 * 4, 7);
 	for (int i = 0; i < 4; i++)
-		pal_hash_256[i] = XXH32(&PALETTE_RAM[i << 8], 256 * 4, 7);
+		pal_hash_256[i] = xxh32(&PALETTE_RAM[i << 8], 256 * 4, 7);
 }
 
 /* The locks on each page of video memory: a list, the page being
@@ -802,7 +801,7 @@ bool BaseTextureCacheData::HashPieces(u32 *changed)
 	{
 		const u32 from = i == 0 ? start : (first + i) * TEX_HASH_PIECE;
 		const u32 to = i == count - 1 ? end : (first + i + 1) * TEX_HASH_PIECE;
-		const u32 hash = XXH32(&vram[from], to - from, 7);
+		const u32 hash = xxh32(&vram[from], to - from, 7);
 		if (all || hash != piece_hash[i])
 		{
 			piece_hash[i] = hash;
@@ -1131,25 +1130,25 @@ void BaseTextureCacheData::ComputeHash()
 		 * hash of the codebook and then of the whole texture, as upstream
 		 * names them; the old name is kept, and custom textures saved
 		 * under it are still found. */
-		XXH32_state_t state;
+		xxh32_state_t state;
 
-		old_vqtexture_hash = XXH32(&vram[sa], w * h / 8, 7);
+		old_vqtexture_hash = xxh32(&vram[sa], w * h / 8, 7);
 		if (IsPaletted())
 			old_vqtexture_hash ^= palette_hash;
 		old_texture_hash = old_vqtexture_hash;
 		old_vqtexture_hash ^= tcw.full & 0xFC000000;
 
-		XXH32_reset(&state, 7);
-		XXH32_update(&state, &vram[sa_tex], 256 * 4 * 2);
-		XXH32_update(&state, &vram[sa + 256 * 4 * 2], w * h / 4);
-		texture_hash = XXH32_digest(&state);
+		xxh32_reset(&state, 7);
+		xxh32_update(&state, &vram[sa_tex], 256 * 4 * 2);
+		xxh32_update(&state, &vram[sa + 256 * 4 * 2], w * h / 4);
+		texture_hash = xxh32_digest(&state);
 		if (IsPaletted())
 			texture_hash ^= palette_hash;
 		texture_hash ^= tcw.full & 0xFC000000;
 		return;
 	}
 	old_vqtexture_hash = 0;
-	texture_hash = XXH32(&vram[sa], size, 7);
+	texture_hash = xxh32(&vram[sa], size, 7);
 	if (IsPaletted())
 		texture_hash ^= palette_hash;
 	old_texture_hash = texture_hash;

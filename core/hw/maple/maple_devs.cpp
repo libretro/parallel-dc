@@ -17,7 +17,7 @@
 #include <algorithm>
 
 #include <encodings/deflate.h>
-#include "deps/xxhash/xxhash.h"
+#include <encodings/xxh32.h>
 
 #define LOGJVS(...) DEBUG_LOG(JVS, __VA_ARGS__)
 
@@ -3445,7 +3445,7 @@ struct maple_naomi_jamma : maple_sega_controller
 
 				if (dma_buffer_in[1] == 0xff)
 				{
-					u32 hash = XXH32(ram, 0x10000, 0);
+					u32 hash = xxh32(ram, 0x10000, 0);
 					LOGJVS("JVS Firmware hash %08x\n", hash);
 					hotd2p = hash == 0xa6784e26;
 					if (hash == 0xa7c50459			// CT

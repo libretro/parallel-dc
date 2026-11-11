@@ -61,7 +61,13 @@ template<typename P, typename F> static void run(const char *name, F fn, u32 w, 
 #include "rend/rtt_watch.h"
 
 extern VArray2 vram;
-extern "C" unsigned texconv_XXH32(const void *input, size_t length, unsigned seed);
+#include <encodings/xxh32.h>
+extern "C" {
+uint32_t texconv_xxh32(const void *data, size_t len, uint32_t seed);
+void texconv_xxh32_reset(xxh32_state_t *s, uint32_t seed);
+void texconv_xxh32_update(xxh32_state_t *s, const void *data, size_t len);
+uint32_t texconv_xxh32_digest(const xxh32_state_t *s);
+}
 
 settings_t settings;
 u32 FrameCount = 1;
@@ -72,10 +78,22 @@ u8 *rend_pvr_regs = cache_regs;
 static u8 cache_protected[(16 << 20) / PAGE_SIZE];
 static size_t cache_hashed;
 
-extern "C" unsigned XXH32(const void *input, size_t length, unsigned seed)
+extern "C" uint32_t xxh32(const void *data, size_t len, uint32_t seed)
 {
-	cache_hashed += length;
-	return texconv_XXH32(input, length, seed);
+	cache_hashed += len;
+	return texconv_xxh32(data, len, seed);
+}
+extern "C" void xxh32_reset(xxh32_state_t *s, uint32_t seed)
+{
+	texconv_xxh32_reset(s, seed);
+}
+extern "C" void xxh32_update(xxh32_state_t *s, const void *data, size_t len)
+{
+	texconv_xxh32_update(s, data, len);
+}
+extern "C" uint32_t xxh32_digest(const xxh32_state_t *s)
+{
+	return texconv_xxh32_digest(s);
 }
 void _vmem_protect_vram(u32 addr, u32 size)
 {

@@ -41,7 +41,7 @@ if [ ! -x "$WORK/refsw_frame" ] || [ -n "$REFSW_REBUILD" ]; then
          -c -o "$WORK/$f.o" tools/rend/refsw/$f.cpp
    done
    ${CXX:-g++} -o "$WORK/refsw_frame" "$WORK/refsw.o" "$WORK/refsw_pixel.o" "$WORK/refsw_frame.o" \
-      core/rend/TexCache.o core/rend/band_pool.o core/deps/xxhash/xxhash.o -lm -Wl,--unresolved-symbols=ignore-all
+      core/rend/TexCache.o core/rend/band_pool.o core/libretro-common/encodings/encoding_xxh32.o -lm -Wl,--unresolved-symbols=ignore-all
 fi
 
 draw() {
