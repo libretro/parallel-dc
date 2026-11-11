@@ -98,8 +98,8 @@ done
 
 # the comparison: the device and the reference, both without fused operations
 ${CC:-cc} -std=c89 -pedantic -O2 -ffp-contract=off -Wall -Icore/rend/tile -Icore/libretro-common/include -c -o "$WORK/tile_ref.o" tools/rend/tile_ref.c
-${CC:-cc} -std=c99 -O2 -ffp-contract=off -Wall -Icore/rend/tile -Icore/libretro-common/include -c -o "$WORK/tile_test.o" tools/rend/tile_test.c
-${CC:-cc} -o "$WORK/tile_test" "$WORK/tile_test.o" "$WORK/tile_ref.o" -lvulkan -lm
+${CC:-cc} -std=c99 -O2 -ffp-contract=off -Wall -Icore/rend/tile -Icore/libretro-common/include -Icore/deps/khronos -c -o "$WORK/tile_test.o" tools/rend/tile_test.c
+${CC:-cc} -o "$WORK/tile_test" "$WORK/tile_test.o" "$WORK/tile_ref.o" -l:libvulkan.so.1 -lm
 
 LVP=/usr/share/vulkan/icd.d/lvp_icd.json
 [ -f $LVP ] && [ -z "$VK_ICD_FILENAMES" ] && export VK_ICD_FILENAMES=$LVP
@@ -167,7 +167,7 @@ OBJS=$(make -n platform=unix -W core/hw/pvr/ta_vtx.cpp 2>/dev/null | tail -1 | t
 ${CC:-cc} -O1 -c -o "$WORK/headless.o" tools/threads/headless.c
 ${CXX:-g++} $CORE_FLAGS -w -c -o "$WORK/dump.o" tools/rend/tile_dump.cpp
 ${CXX:-g++} -rdynamic -o "$WORK/tile_dump" "$WORK/headless.o" "$WORK/dump.o" $OBJS \
-   -Wl,--wrap=dlopen -Wl,--wrap=_Z13ta_parse_vdrcP10TA_context -lvulkan -lGL -lrt -lpthread -lm -ldl
+   -Wl,--wrap=dlopen -Wl,--wrap=_Z13ta_parse_vdrcP10TA_context -l:libvulkan.so.1 -lGL -lrt -lpthread -lm -ldl
 nm -D --undefined-only "$WORK/tile_dump" | awk '{print $NF}' | sed 's/@.*//' | grep '^gl' \
    | python3 tools/threads/headless_gl.py > "$WORK/nogl.c" || true
 ${CC:-cc} -O1 -shared -fPIC -Wl,-soname,libGLESv2.so.2 -o "$WORK/libGLESv2.so.2" "$WORK/nogl.c"

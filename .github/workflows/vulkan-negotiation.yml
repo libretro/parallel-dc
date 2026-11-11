@@ -49,6 +49,15 @@ name: Vulkan negotiation
 # renders to textures drawn with the screen's attachments, made no larger
 # than a screen's render needs, and black past what they draw
 # (tools/vulkan/vk_vram.sh).
+# And the renderers' tests that were left to be run by hand, and rotted
+# there: the texture converters, cache and parts against upstream's and a
+# full upload (tools/rend/texconv_test.sh), the textures decoded on the GPU
+# (tools/rend/texdecode_test.sh), the tile renderer against its reference
+# (tools/rend/tile_test.sh), GPU-side TA processing against the parse
+# (tools/pvr/ta_gpu_test.sh, with Direct3D 11's and 12's kernels under
+# wine too), the background plane, the per-pixel bands,
+# the depth's invariance, SSAA's rules, the upload layout and the
+# transforms (tools/rend/*_test.sh).
 
 on:
   push:
@@ -87,6 +96,19 @@ on:
       - 'core/hw/sh4/sh4_mem.cpp'
       - 'tools/rend/rtt_watch_test.*'
       - 'tools/rend/tex_pool_test.*'
+      - 'tools/rend/texconv_*'
+      - 'tools/rend/texdecode_*'
+      - 'tools/rend/tile_*'
+      - 'tools/rend/refsw/**'
+      - 'tools/pvr/ta_gpu_test*'
+      - 'tools/rend/bg_plane_test.*'
+      - 'tools/rend/oit_bands_test.*'
+      - 'tools/rend/oit_depth_test.*'
+      - 'tools/rend/depth_test.*'
+      - 'tools/rend/speckle_test.*'
+      - 'tools/rend/ssaa_rules_*'
+      - 'tools/rend/upload_layout_test.*'
+      - 'tools/rend/xform_test.*'
       - 'core/rend/sorter.*'
       - 'core/rend/sort_pairs.h'
       - 'core/rend/grow_buf.h'
@@ -146,6 +168,19 @@ on:
       - 'core/hw/sh4/sh4_mem.cpp'
       - 'tools/rend/rtt_watch_test.*'
       - 'tools/rend/tex_pool_test.*'
+      - 'tools/rend/texconv_*'
+      - 'tools/rend/texdecode_*'
+      - 'tools/rend/tile_*'
+      - 'tools/rend/refsw/**'
+      - 'tools/pvr/ta_gpu_test*'
+      - 'tools/rend/bg_plane_test.*'
+      - 'tools/rend/oit_bands_test.*'
+      - 'tools/rend/oit_depth_test.*'
+      - 'tools/rend/depth_test.*'
+      - 'tools/rend/speckle_test.*'
+      - 'tools/rend/ssaa_rules_*'
+      - 'tools/rend/upload_layout_test.*'
+      - 'tools/rend/xform_test.*'
       - 'core/rend/sorter.*'
       - 'core/rend/sort_pairs.h'
       - 'core/rend/grow_buf.h'
@@ -226,6 +261,18 @@ jobs:
           sh tools/gl/gl_parse_arena.sh
       - name: The temporal upscaler's side in the core (strips matched, the request, the inputs)
         run: sh tools/rend/upscaler_test.sh
+      - name: The renderers' tests run by hand before (texture converters and cache, GPU decode, tiles, GPU TA processing, and the rest)
+        run: |
+          export VK_DRIVER_FILES=/usr/share/vulkan/icd.d/lvp_icd.json
+          for t in bg_plane oit_bands depth oit_depth speckle ssaa_rules upload_layout xform texconv texdecode; do
+            sh tools/rend/${t}_test.sh
+          done
+          mkdir -p "$RUNNER_TEMP/plain"
+          python3 tools/threads/live_disc.py "$RUNNER_TEMP/plain/plain.gdi" > /dev/null
+          sh tools/rend/tile_test.sh "$RUNNER_TEMP/plain/plain.gdi" 30
+          sh tools/pvr/ta_gpu_test.sh "$RUNNER_TEMP/plain/plain.gdi" 30
+          sh tools/pvr/ta_gpu_test_d3d11.sh "$RUNNER_TEMP/plain/plain.gdi" 30
+          sh tools/pvr/ta_gpu_test_d3d12.sh "$RUNNER_TEMP/plain/plain.gdi" 30
       - name: Vulkan - nothing made on the draw path, cold, every renderer, without the dynamic states, HDR (AGENTS.md)
         run: VK_DRIVER_FILES=/usr/share/vulkan/icd.d/lvp_icd.json sh tools/vulkan/vk_draw_path.sh
       - name: Vulkan - no allocation during play but the listed ones, every renderer (AGENTS.md)

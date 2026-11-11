@@ -47,7 +47,7 @@ command -v glslangValidator > /dev/null || { echo "oit_depth_test: glslangValida
 LVP=/usr/share/vulkan/icd.d/lvp_icd.json
 [ -f $LVP ] && [ -z "$VK_ICD_FILENAMES" ] && export VK_ICD_FILENAMES=$LVP
 
-${CC:-cc} -std=c99 -O1 -Wall -o "$WORK/oit_depth_test" tools/rend/oit_depth_test.c -lvulkan
+${CC:-cc} -std=c99 -O1 -Wall -o "$WORK/oit_depth_test" -Icore/deps/khronos tools/rend/oit_depth_test.c -l:libvulkan.so.1
 
 RS=core/rend/vulkan/shaders
 { echo "#version 450"; cat $RS/position.glsl; echo "layout (location = 0) in vec4 in_pos;"

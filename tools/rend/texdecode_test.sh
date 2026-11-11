@@ -61,13 +61,13 @@ glslangValidator -V --target-env vulkan1.1 -o "$WORK/sample.spv" "$WORK/sample.c
 glslangValidator -D -e main -S comp -V -I"$PWD/core/rend" -o "$WORK/hlsl.spv" tools/rend/texdecode_kernel.hlsl > "$WORK/log" || { cat "$WORK/log"; exit 1; }
 echo "texdecode: kernels compile (Vulkan GLSL r8ui, r16ui, r32ui; HLSL)"
 
-${CC:-cc} -std=c99 -O2 -Wall -iquote core/rend -Icore/libretro-common/include -iquote tools/rend -c -o "$WORK/test.o" tools/rend/texdecode_test.c
+${CC:-cc} -std=c99 -O2 -Wall -iquote core/rend -Icore/libretro-common/include -Icore/deps/khronos -iquote tools/rend -c -o "$WORK/test.o" tools/rend/texdecode_test.c
 ${CXX:-g++} -I./core/libretro -I./core -I./core/deps -I./core/libretro-common/include -I./core/deps/khronos -Itools/rend \
    -DTARGET_LINUX_x64 -DHOST_CPU=0x20000004 -D__LIBRETRO__ -DHAVE_GLSYM_PRIVATE -DNO_VERIFY -DNDEBUG \
    -DHAVE_GL3 -DHAVE_GL4 -DCORE -DHAVE_TEXUPSCALE -DHAVE_OPENGL -DHAVE_VULKAN -O2 -w \
    -c -o "$WORK/cpu.o" tools/rend/texdecode_cpu.cpp
 ${CXX:-g++} -o "$WORK/texdecode_test" "$WORK/test.o" "$WORK/cpu.o" core/rend/TexCache.o core/rend/band_pool.o core/deps/xxhash/xxhash.o \
-   -lvulkan -Wl,--unresolved-symbols=ignore-all
+   -l:libvulkan.so.1 -Wl,--unresolved-symbols=ignore-all
 
 LVP=/usr/share/vulkan/icd.d/lvp_icd.json
 [ -f $LVP ] && [ -z "$VK_ICD_FILENAMES" ] && export VK_ICD_FILENAMES=$LVP

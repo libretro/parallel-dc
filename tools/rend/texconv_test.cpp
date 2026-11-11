@@ -58,6 +58,7 @@ template<typename P, typename F> static void run(const char *name, F fn, u32 w, 
  * for 300 times a render: it may be hashed once a render. */
 #include "hw/pvr/pvr_regs.h"
 #include "rend/texdecode.h"
+#include "rend/rtt_watch.h"
 
 extern VArray2 vram;
 extern "C" unsigned texconv_XXH32(const void *input, size_t length, unsigned seed);
@@ -90,6 +91,9 @@ void _vmem_unprotect_vram(u32 addr, u32 size)
 }
 bool _vmem_vram_page_protected(u32 page) { return cache_protected[page] != 0; }
 void GenericLog(LogTypes::LOG_LEVELS level, LogTypes::LOG_TYPE type, const char *file, int line, const char *fmt, ...) { }
+/* (no render to a texture is watched here: rend/rtt_watch.h) */
+bool rtt_watch_pending(u32 offset, u32 size, RttWatch *watch) { return false; }
+void rtt_watch_overwrite(u32 offset, u32 size) { }
 
 /* How the test's textures are made: on the GPU (the kernel run here,
  * rend/texdecode.h, as the renderers run it there), and with parts of them
@@ -134,7 +138,7 @@ public:
 	size_t gpu_bytes;
 	bool made;
 
-	std::string GetId() override { return std::string(); }
+	void GetId(char *s, size_t n) override { if (n != 0) s[0] = '\0'; }
 	static size_t Pixel(TextureType type)
 	{
 		return type == TextureType::_8888 ? 4 : type == TextureType::_8 ? 1 : 2;
@@ -262,12 +266,11 @@ class CacheOf : public BaseTextureCache<CacheTex>
 public:
 	void Free()
 	{
-		std::unordered_map<u64, CacheTex>::iterator it;
-		for (it = cache.begin(); it != cache.end(); ++it)
-		{
-			free(it->second.gpu);
-			it->second.Delete();
-		}
+		cache.Each([](u64, CacheTex& t) {
+			free(t.gpu);
+			t.Delete();
+			return true;
+		});
 	}
 };
 

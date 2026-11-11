@@ -14,6 +14,7 @@
 #include <cstring>
 #include "types.h"
 #include "rend/TexCache.h"
+#include "rend/rtt_watch.h"
 #include "rend/texdecode.h"
 #include "hw/pvr/pvr_regs.h"
 #include "texdecode_case.h"
@@ -31,6 +32,9 @@ u32 _vmem_get_vram_offset(void *) { return (u32)-1; }
 bool _vmem_vram_page_protected(u32) { return false; }
 void os_DebugBreak() { abort(); }
 void GenericLog(LogTypes::LOG_LEVELS, LogTypes::LOG_TYPE, const char *, int, const char *, ...) {}
+/* (no render to a texture is watched here: rend/rtt_watch.h) */
+bool rtt_watch_pending(u32, u32, RttWatch *) { return false; }
+void rtt_watch_overwrite(u32, u32) {}
 extern VArray2 vram;
 
 namespace {
@@ -42,7 +46,7 @@ struct TestTexture : public BaseTextureCacheData
 	u8 *out = nullptr;
 	size_t cap = 0, bytes = 0;
 
-	std::string GetId() override { return "test"; }
+	void GetId(char *s, size_t n) override { snprintf(s, n, "test"); }
 	bool Force32BitTexture(TextureType type) const override { return force32; }
 	bool GpuDecode(const texd_plan& p) override
 	{

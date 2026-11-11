@@ -72,7 +72,7 @@ if [ -n "$TAG_GL" ] && [ "$TAG_GL" != 0 ]; then
    echo "ta_gpu: ...and for OpenGL"
 else
    DEVICE_FLAGS=
-   DEVICE_LIBS=-lvulkan
+   DEVICE_LIBS=-l:libvulkan.so.1
 fi
 
 # the program: the frontend, the comparison, and the core's objects, with
@@ -81,7 +81,7 @@ CORE_FLAGS=$(make -n platform=unix -W core/hw/pvr/ta_vtx.cpp core/hw/pvr/ta_vtx.
    | sed -e 's/^g++ //' -e 's/ -c / /' -e 's/ -MMD -MP .*$//' -e 's/-DGIT_VERSION=[^ ]* [^ ]*//')
 OBJS=$(make -n platform=unix -W core/hw/pvr/ta_vtx.cpp 2>/dev/null | tail -1 | tr ' ' '\n' | grep '\.o$' | grep -v 'glslang.js.o')
 ${CC:-cc} -O1 -c -o "$WORK/headless.o" tools/threads/headless.c
-${CC:-cc} -std=c99 -O2 -Wall $DEVICE_FLAGS -iquote core/rend -Icore/libretro-common/include -iquote tools/pvr -c -o "$WORK/test.o" tools/pvr/ta_gpu_test.c
+${CC:-cc} -std=c99 -O2 -Wall $DEVICE_FLAGS -iquote core/rend -Icore/libretro-common/include -Icore/deps/khronos -iquote tools/pvr -c -o "$WORK/test.o" tools/pvr/ta_gpu_test.c
 ${CXX:-g++} $CORE_FLAGS -Itools/pvr -w -c -o "$WORK/cpu.o" tools/pvr/ta_gpu_test_cpu.cpp
 ${CXX:-g++} -rdynamic -o "$WORK/ta_gpu_test" "$WORK/headless.o" "$WORK/test.o" "$WORK/cpu.o" $OBJS \
    -Wl,--wrap=dlopen -Wl,--wrap=_exit -Wl,--wrap=_Z13ta_parse_vdrcP10TA_context $DEVICE_LIBS -lGL -lrt -lpthread -lm -ldl

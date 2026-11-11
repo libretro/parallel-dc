@@ -37,7 +37,7 @@ command -v glslangValidator > /dev/null || { echo "depth_test: glslangValidator 
 LVP=/usr/share/vulkan/icd.d/lvp_icd.json
 [ -f $LVP ] && [ -z "$VK_ICD_FILENAMES" ] && export VK_ICD_FILENAMES=$LVP
 
-${CC:-cc} -std=c99 -O1 -Wall -o "$WORK/depth_test" tools/rend/depth_test.c -lvulkan
+${CC:-cc} -std=c99 -O1 -Wall -o "$WORK/depth_test" -Icore/deps/khronos tools/rend/depth_test.c -l:libvulkan.so.1
 
 RS=core/rend/vulkan/shaders
 # the position's depth, by the shipped text

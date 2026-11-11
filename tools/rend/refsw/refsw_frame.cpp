@@ -73,7 +73,7 @@ struct RefTexture : public BaseTextureCacheData
 {
 	std::vector<u8> texels;	/* the top level, RGBA as the cache makes it */
 	u32 got_w = 0, got_h = 0;
-	std::string GetId() override { return "refsw"; }
+	void GetId(char *s, size_t n) override { snprintf(s, n, "refsw"); }
 	bool Force32BitTexture(TextureType) const override { return true; }
 	void UploadToGPU(int width, int height, u8 *data, bool, bool) override
 	{

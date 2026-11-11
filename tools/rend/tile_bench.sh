@@ -48,7 +48,7 @@ for src in $(echo "$1" | tr ',' ' '); do
    i=$((i + 1))
 done
 shift
-[ -n "$BENCH_BIN" ] || ${CC:-cc} -std=c99 -D_GNU_SOURCE -O2 -Wall -Wno-unused-function -Icore/rend/tile -Icore/libretro-common/include -o "$WORK/tile_bench" tools/rend/tile_bench.c tools/rend/tile_ref.c -lvulkan -lm
+[ -n "$BENCH_BIN" ] || ${CC:-cc} -std=c99 -D_GNU_SOURCE -O2 -Wall -Wno-unused-function -Icore/rend/tile -Icore/libretro-common/include -Icore/deps/khronos -o "$WORK/tile_bench" tools/rend/tile_bench.c tools/rend/tile_ref.c -l:libvulkan.so.1 -lm
 LVP=/usr/share/vulkan/icd.d/lvp_icd.json
 [ -f $LVP ] && [ -z "$VK_ICD_FILENAMES" ] && export VK_ICD_FILENAMES=$LVP
 # (lavapipe: the kernels run in this thread, so that the CPU time is the
