@@ -5,7 +5,7 @@
 
 /* The pass: a thread a column and a remainder of the lines mod m, which
  * walks down its lines in place, as pvr_compute.h's PVRC_K_YFILTER does */
-static const char *const passSource =
+const char *const DX11WriteOutSource =
 "#define PVR_SHADER_HLSL\n#define PVR_LANE_NONE\n"
 #include "rend/tile/pvr_resolve_text.inc"
 #include "rend/tile/pvr_scaler_text.inc"
@@ -77,12 +77,11 @@ bool DX11WriteOut::Make(ID3D11Device *device, ID3D11DeviceContext *ctx, DX11Shad
 		WARN_LOG(RENDERER, "DX11: no typed loads of the picture: the PowerVR2 write-out pass is left out");
 		return false;
 	}
-	ComPtr<ID3DBlob> blob = shaders->Compile(passSource, "main", "cs_5_0", nullptr);
 	D3D11_BUFFER_DESC desc{};
 	desc.ByteWidth = 16;
 	desc.Usage = D3D11_USAGE_DEFAULT;
 	desc.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
-	if (!blob || FAILED(device->CreateComputeShader(blob->GetBufferPointer(), blob->GetBufferSize(), nullptr, shader.put()))
+	if (shaders->GetWriteOutShader(shader) == nullptr
 			|| FAILED(device->CreateBuffer(&desc, nullptr, constants.put())))
 	{
 		WARN_LOG(RENDERER, "DX11: the PowerVR2 write-out pass could not be made: the picture goes without it");

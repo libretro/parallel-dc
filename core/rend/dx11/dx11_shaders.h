@@ -55,7 +55,11 @@ struct DX11ShaderDesc
  * one. Without the thread (a device made for one thread, no threads) the
  * general one draws what the file did not have, for the run.
  *
- * Their bytecode is kept on disk (rend/d3d_shader_cache.h), whatever the
+ * The shaders the start makes are in the core as bytecode (dx11_dxbc.inc,
+ * tools/rend/kernels_dx11.sh), found by the hash of what they are compiled
+ * from: the renderers start with no compiler, and draw every polygon with
+ * the general shaders without one. A polygon's own is compiled when there
+ * is a compiler, and kept on disk (rend/d3d_shader_cache.h), whatever the
  * driver: a shader compiled once is not compiled again. */
 class DX11ShaderCompiler
 {
@@ -79,6 +83,7 @@ public:
 	u32 statGeneral = 0;		// draws with a general pixel shader, the polygon's own not there yet
 	u32 statCompiled = 0;		// compiled by the thread that renders
 	u32 statFromFile = 0;		// ...or found in the file
+	u32 statBuiltIn = 0;		// ...or in the core
 	u32 statAhead = 0;			// made by the thread, and taken
 	u32 statCompiledAhead = 0;	// of them, compiled (not in the file)
 
@@ -107,6 +112,8 @@ protected:
 	bool started = false;
 	/* A vertex shader, made here, and its bytecode for an input layout */
 	ID3D11VertexShader *MakeVS(u32 family, u32 variant, ComPtr<ID3D11VertexShader>& slot, ComPtr<ID3DBlob> *blob);
+	/* A compute shader, made here (the renderer's start) */
+	ID3D11ComputeShader *MakeCS(u32 family, u32 variant, ComPtr<ID3D11ComputeShader>& slot);
 	/* The thread stopped, what it made taken, the file saved */
 	void TermCompiler();
 
@@ -133,7 +140,10 @@ private:
 	/* The file's bytecode of @hash (both threads: the file is not changed
 	 * while the thread runs) */
 	const u8 *FromFile(u64 hash, u32 *size) const;
-	/* The bytecode of @d: the file's, this run's, or compiled now (and kept) */
+	/* The core's own bytecode of @hash (dx11_dxbc.inc) */
+	static const u8 *BuiltIn(u64 hash, u32 *size);
+	/* The bytecode of @d: the core's, the file's, this run's, or compiled
+	 * now (and kept) */
 	bool Bytecode(u32 family, u32 variant, const DX11ShaderDesc& d, ComPtr<ID3DBlob>& hold, const void **code, size_t *size, bool *fromFile);
 	/* @blob's bytecode kept, the blob held (nothing copied) */
 	void Keep(u64 hash, u32 family, u32 variant, ID3DBlob *blob);
@@ -192,7 +202,7 @@ class DX11Shaders : public DX11ShaderCompiler
 {
 public:
 	/* Their families (DX11ShaderCompiler; the file's numbers, kept) */
-	enum { VS, PS, ModVolVS, ModVolPS, QuadVS, QuadPS, GeneralPS };
+	enum { VS, PS, ModVolVS, ModVolPS, QuadVS, QuadPS, GeneralPS, WriteOutCS };
 	/* Everything a frame can want, made before the first: the vertex
 	 * shaders, the ones of a kind, the general pixel shaders */
 	bool Start();
@@ -206,6 +216,9 @@ public:
 	ID3D11PixelShader *GetModVolPixelShader();
 	ID3D11VertexShader *GetQuadVertexShader();
 	ID3D11PixelShader *GetQuadPixelShader();
+
+	/* The chip's write-out pass (dx11_writeout.h) */
+	ID3D11ComputeShader *GetWriteOutShader(ComPtr<ID3D11ComputeShader>& slot) { return MakeCS(WriteOutCS, 0, slot); }
 
 	/* For the input layouts: what the vertex shaders take */
 	ID3DBlob *GetVertexShaderBlob() { GetVertexShader(true); return vertexBlob; }
@@ -235,6 +248,9 @@ protected:
 	void MakeSources() override;
 	void Fixed(std::vector<d3d_warm_job_t>& jobs) const override;
 };
+
+/* The write-out pass's HLSL (dx11_writeout.cpp) */
+extern const char *const DX11WriteOutSource;
 
 /* The HLSL the per-pixel renderer shares with the other: the vertex
  * transform and the fog table */

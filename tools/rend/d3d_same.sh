@@ -12,10 +12,11 @@
 #   sh tools/rend/d3d_same.sh before.dll after.dll
 #
 # KEEP=1: the logs and pictures are kept, in $TMPDIR/d3d_same.<pid>.
-# Direct3D 9's shaders need a compiler for shader model 3, which wine's own
-# d3dcompiler is not yet: D3DCOMPILER=path/to/d3dcompiler_47.dll (Microsoft's)
-# is put beside the frontend and used; without it, Direct3D 9 is left out
-# where its shaders cannot be made, and said so.
+# A build whose Direct3D 9 shaders are compiled as it runs (before they were
+# the core's, dx9_dxbc.inc) needs a compiler for shader model 3, which
+# wine's own d3dcompiler is not yet: D3DCOMPILER=path/to/d3dcompiler_47.dll
+# (Microsoft's) is put beside the frontend and used; without it, Direct3D 9
+# is left out where its shaders cannot be made, and said so.
 # Direct3D 12 draws one draw at a time (D3DH_NO_INDIRECT; D3D_SAME_INDIRECT=1
 # to leave the core's ExecuteIndirect batches on): wine's vkd3d drops draws
 # of those batches, so two builds that batch differently would differ.

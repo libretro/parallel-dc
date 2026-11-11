@@ -35,6 +35,7 @@
  *   vertices have red there, and the vertex shader puts it back.
  * - Flat shading is the device's (D3DRS_SHADEMODE), as is culling. */
 #include "dx9_shaders.h"
+#include "rend/d3d_shader_cache.h"
 #include <cstring>
 #include <string>
 
@@ -375,12 +376,68 @@ float4 main(in float2 uv : TEXCOORD0) : COLOR0
 }
 )";
 
-static bool compileOne(pD3DCompile compile, const std::string& source, const char *profile,
-		const D3D_SHADER_MACRO *macros, std::vector<DWORD>& code)
+/* What each shader is compiled from: its source (two parts), profile and
+ * macros, by the enums' order (vertex shaders, then pixel shaders) */
+struct DX9ShaderDesc
 {
+	const char *head;
+	const char *body;
+	const char *profile;
+	const D3D_SHADER_MACRO *macros;
+};
+static const D3D_SHADER_MACRO PlainMacros[] = { { "pp_Texture", "0" }, { "pp_Palette", "0" }, { nullptr, nullptr } };
+static const D3D_SHADER_MACRO TextureMacros[] = { { "pp_Texture", "1" }, { "pp_Palette", "0" }, { nullptr, nullptr } };
+static const D3D_SHADER_MACRO PaletteMacros[] = { { "pp_Texture", "1" }, { "pp_Palette", "1" }, { nullptr, nullptr } };
+static const DX9ShaderDesc ShaderDescs[DX9VS_Count + DX9PS_Count] = {
+	{ VertexTransform, VertexShaderSource, "vs_3_0", nullptr },
+	{ VertexTransform, ModVolVertexShaderSource, "vs_3_0", nullptr },
+	{ "", QuadVertexShaderSource, "vs_3_0", nullptr },
+	{ PixelShaderHeader, PixelShaderSource, "ps_3_0", PlainMacros },
+	{ PixelShaderHeader, PixelShaderSource, "ps_3_0", TextureMacros },
+	{ PixelShaderHeader, PixelShaderSource, "ps_3_0", PaletteMacros },
+	{ PixelShaderHeader, ModVolPixelShaderSource, "ps_3_0", nullptr },
+	{ "", QuadPixelShaderSource, "ps_3_0", nullptr },
+};
+static_assert(DX9VS_Count == 3 && DX9PS_Count == 5, "ShaderDescs, by the enums");
+
+/* What it is compiled from, hashed as d3d_shader_cache.h does */
+static u64 descHash(const DX9ShaderDesc& d)
+{
+	u64 h = d3d_shcache_hash(D3D_SHCACHE_HASH_INIT, d.head, strlen(d.head));
+	h = d3d_shcache_hash(h, d.body, strlen(d.body) + 1);
+	h = d3d_shcache_hash(h, d.profile, strlen(d.profile) + 1);
+	for (const D3D_SHADER_MACRO *m = d.macros; m != nullptr && m->Name != nullptr; m++)
+	{
+		h = d3d_shcache_hash(h, m->Name, strlen(m->Name) + 1);
+		h = d3d_shcache_hash(h, m->Definition, strlen(m->Definition) + 1);
+	}
+	return h;
+}
+
+#ifndef DX9_DXBC_MAKE
+/* The core's bytecode of them (dx9_dxbc.inc, tools/rend/kernels_dx9.sh) */
+#include "dx9_dxbc.inc"
+
+static const u8 *builtIn(u64 hash, u32 *size)
+{
+	for (size_t i = 0; i < dx9_dxbc_count; i++)
+		if (dx9_dxbc_index[i].hash == hash)
+		{
+			*size = dx9_dxbc_index[i].size;
+			return &dx9_dxbc_bytes[dx9_dxbc_index[i].offset];
+		}
+	return nullptr;
+}
+#endif
+
+static bool compileOne(pD3DCompile compile, const DX9ShaderDesc& d, std::vector<DWORD>& code)
+{
+	if (compile == nullptr)
+		return false;
+	const std::string source = std::string(d.head) + d.body;
 	ComPtr<ID3DBlob> blob;
 	ComPtr<ID3DBlob> errors;
-	HRESULT hr = compile(source.c_str(), source.size(), nullptr, macros, nullptr, "main", profile,
+	HRESULT hr = compile(source.c_str(), source.size(), nullptr, d.macros, nullptr, "main", d.profile,
 			D3DCOMPILE_OPTIMIZATION_LEVEL3, 0, blob.put(), errors.put());
 	if (FAILED(hr) || !blob)
 	{
@@ -394,37 +451,37 @@ static bool compileOne(pD3DCompile compile, const std::string& source, const cha
 	return true;
 }
 
+#ifndef DX9_DXBC_MAKE
 bool DX9Shaders::Compile(pD3DCompile compile)
 {
 	if (compiled)
 		return true;
-	if (compile == nullptr)
-		return false;
-	const std::string vs = VertexTransform;
-	const std::string ps = PixelShaderHeader;
-	const D3D_SHADER_MACRO plain[] = { { "pp_Texture", "0" }, { "pp_Palette", "0" }, { nullptr, nullptr } };
-	const D3D_SHADER_MACRO texture[] = { { "pp_Texture", "1" }, { "pp_Palette", "0" }, { nullptr, nullptr } };
-	const D3D_SHADER_MACRO paletted[] = { { "pp_Texture", "1" }, { "pp_Palette", "1" }, { nullptr, nullptr } };
-
-	bool ok = compileOne(compile, vs + VertexShaderSource, "vs_3_0", nullptr, vsCode[DX9VS_Main])
-			&& compileOne(compile, vs + ModVolVertexShaderSource, "vs_3_0", nullptr, vsCode[DX9VS_ModVol])
-			&& compileOne(compile, QuadVertexShaderSource, "vs_3_0", nullptr, vsCode[DX9VS_Quad])
-			&& compileOne(compile, ps + PixelShaderSource, "ps_3_0", plain, psCode[DX9PS_Plain])
-			&& compileOne(compile, ps + PixelShaderSource, "ps_3_0", texture, psCode[DX9PS_Texture])
-			&& compileOne(compile, ps + PixelShaderSource, "ps_3_0", paletted, psCode[DX9PS_Palette])
-			&& compileOne(compile, ps + ModVolPixelShaderSource, "ps_3_0", nullptr, psCode[DX9PS_ModVol])
-			&& compileOne(compile, QuadPixelShaderSource, "ps_3_0", nullptr, psCode[DX9PS_Quad]);
-	if (!ok)
+	u32 builtIns = 0;
+	for (int i = 0; i < DX9VS_Count + DX9PS_Count; i++)
 	{
-		for (auto& code : vsCode)
-			code.clear();
-		for (auto& code : psCode)
-			code.clear();
-		return false;
+		std::vector<DWORD>& code = i < DX9VS_Count ? vsCode[i] : psCode[i - DX9VS_Count];
+		u32 size = 0;
+		const u8 *p = builtIn(descHash(ShaderDescs[i]), &size);
+		if (p != nullptr)
+		{
+			code.resize((size + 3) / 4);
+			memcpy(code.data(), p, size);
+			builtIns++;
+		}
+		else if (!compileOne(compile, ShaderDescs[i], code))
+		{
+			for (auto& c : vsCode)
+				c.clear();
+			for (auto& c : psCode)
+				c.clear();
+			return false;
+		}
 	}
+	NOTICE_LOG(RENDERER, "DX9: %u shaders the core's, %u compiled", builtIns, (u32)(DX9VS_Count + DX9PS_Count) - builtIns);
 	compiled = true;
 	return true;
 }
+#endif
 
 bool DX9Shaders::Init(IDirect3DDevice9 *device, pD3DCompile compile)
 {

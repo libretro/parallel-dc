@@ -14,8 +14,11 @@ What every renderer already does right:
 - Vulkan's and Direct3D 12's shaders are bytecode embedded in the core
   (SPIR-V, DXBC, DXIL), made by the `tools/rend/kernels_*.sh` scripts.
   OpenGL's programs are GLSL the driver compiles (its decoders' SPIR-V
-  where `GL_ARB_gl_spirv` is there); Direct3D 9's and 11's are HLSL
-  compiled with `D3DCompile` while the core runs.
+  where `GL_ARB_gl_spirv` is there). Direct3D 9's shaders, and every
+  shader Direct3D 11's start makes, are DXBC in the core too
+  (`tools/rend/kernels_dx9.sh`, `kernels_dx11.sh`), found by the hash of
+  their HLSL: they start with no compiler. Direct3D 11 compiles a
+  polygon's own pixel shader with `D3DCompile` when there is one.
 - A polygon's own pipeline is made on a worker (Vulkan `VkPsoWorker`,
   Direct3D 11 and 12 `d3d_warm`) or by the driver's own threads (OpenGL
   with `KHR_parallel_shader_compile`), and is never waited for.
@@ -39,9 +42,11 @@ shader, fixed pixel shader and reachable state is made at the start
 1. A shader the warm thread made is kept for `d3d11_shaders.bin` by the
    draw thread (`TakeBuilt` → `Keep`): a copy and a map insert, no
    compile.
-2. The shaders are still HLSL compiled while the core runs, so a
-   system without `d3dcompiler_47.dll` (or with wine's, which does not
-   compile the per-pixel renderer's) has fewer of them.
+2. A system without `d3dcompiler_47.dll` (or with wine's, which does not
+   compile the per-pixel renderer's) draws every polygon with the general
+   shaders: both renderers start from the core's bytecode
+   (`dx11_dxbc.inc`); `d3d_draw_path.sh` fails a run that compiles at the
+   start, and runs them with no compiler.
 3. The TA decoder's kernels on an option change (phase 5).
 
 **Vulkan**
@@ -97,8 +102,8 @@ general programs alone. Left:
 
 **Direct3D 9**
 
-Nothing: its eight shaders are made at the start, and its states are
-render states.
+Nothing: its eight shaders are the core's bytecode (`dx9_dxbc.inc`),
+made at the start with no compiler, and its states are render states.
 
 ### Measurement in the repo
 

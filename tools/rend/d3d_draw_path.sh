@@ -13,6 +13,12 @@
 # sampler states"). The polygons whose own shader was not there yet were
 # drawn with a general one: that it draws the same is
 # DX11_SHADER_TEST_GENERAL's (dx11_shaders.cpp) with tools/rend/d3d_same.sh.
+# Nothing compiled at the start either ("0 compiled": every shader the start
+# makes is the core's bytecode, dx11_dxbc.inc, still the sources'), so both
+# renderers start whatever the compiler, and with none at all (the plain
+# disc, d3dcompiler_47.dll taken away). Direct3D 9 the same: its shaders the
+# core's (dx9_dxbc.inc), none compiled, with a compiler and without
+# (tools/rend/d3d9_frames.c).
 # And with Direct3D 12, the same discs and renderers: every pipeline a
 # frame drew with made before the first ("0 of them in a frame"; its
 # shaders are the core's bytecode, no compiler wanted).
@@ -21,8 +27,8 @@
 #
 # KEEP=1: the logs are kept, in $TMPDIR/d3d_draw_path.<pid>.
 # D3DCOMPILER=path/to/d3dcompiler_47.dll: Microsoft's compiler used, not
-# wine's, which does not compile the per-pixel renderer's shaders: without
-# it, the per-triangle renderer it falls back to is what is judged.
+# wine's, which does not compile the per-pixel renderer's own shaders
+# (its polygons are then drawn with the general ones).
 # Needs mingw-w64, wine, Xvfb, python3 and a Vulkan driver (lavapipe:
 # VK_DRIVER_FILES=/usr/share/vulkan/icd.d/lvp_icd.json).
 set -e
@@ -41,6 +47,8 @@ if [ -n "${D3DCOMPILER:-}" ]; then
 fi
 ${CC_WIN:-x86_64-w64-mingw32-gcc} -O1 -Wall -I./core/libretro-common/include -I./core/deps/khronos \
    -o "$WORK/d3d_hdr.exe" tools/hdr/d3d_hdr.c tools/rend/alloc_count.c -ld3d11 -ld3d12 -ldxguid
+${CC_WIN:-x86_64-w64-mingw32-gcc} -std=c89 -O1 -Wall -I./core/libretro-common/include \
+   -o "$WORK/d3d9_frames.exe" tools/rend/d3d9_frames.c -ld3d9
 # (each disc in its own directory: their tracks have the same names)
 for d in plain atlas cull dma blend; do
    mkdir -p "$WORK/$d"
@@ -55,7 +63,7 @@ run() {
    name=$1; disc=$2; shift 2
    rm -rf "$WORK/dir"; mkdir -p "$WORK/dir"
    env -u TMPDIR DISPLAY=$DISPLAY_NO WINEDEBUG=-all WINE_D3D_CONFIG=renderer=vulkan VKD3D_CONFIG=virtual_heaps \
-      WINEDLLOVERRIDES="$OVERRIDES" D3DH_VERBOSE=1 D3DH_UNLOAD=1 D3DH_API=$api D3DH_FRONTEND=sdr D3DH_DIR="Z:$WORK/dir" \
+      WINEDLLOVERRIDES="${RUN_OVERRIDES:-$OVERRIDES}" D3DH_VERBOSE=1 D3DH_UNLOAD=1 D3DH_API=$api D3DH_FRONTEND=sdr D3DH_DIR="Z:$WORK/dir" \
       timeout 600 wine "$WORK/d3d_hdr.exe" "Z:$CORE" "Z:$WORK/$disc/$disc.gdi" "Z:$WORK/$name.raw" 100 "$@" \
       > "$WORK/$name.log" 2>&1 || { echo "  FAIL: the run failed:"; tail -5 "$WORK/$name.log"; return 1; }
 }
@@ -74,9 +82,14 @@ for d in plain atlas cull dma blend; do
          states=$(grep -o "DX11: [0-9]* depth-stencil, [0-9]* blend and [0-9]* sampler states made on the draw path" "$WORK/$name.log" || true)
          general=$(echo "$shaders" | sed -n 's/.*, \([0-9]*\) draws with a general shader.*/\1/p' | awk '{ n += $1 } END { print n + 0 }')
          echo "$name: $(echo "$shaders" | grep -o '[0-9]* made on the draw path' | tr '\n' ' ')/ $general draws with a general shader"
-         # (wine's own d3dcompiler does not compile the per-pixel renderer's shaders: the per-triangle one draws)
          if [ $m = pix ] && grep -q "per-pixel renderer initialization failed" "$WORK/$name.log"; then
-            echo "  the per-pixel renderer not made here: the per-triangle one judged (D3DCOMPILER for it)"
+            echo "  FAIL: the per-pixel renderer did not start"
+            fails=$((fails + 1))
+         fi
+         if echo "$shaders" | grep -v -q ": 0 compiled,"; then
+            echo "  FAIL: compiled at the start (dx11_dxbc.inc not the sources': tools/rend/kernels_dx11.sh):"
+            echo "$shaders" | sed 's/^/    /'
+            fails=$((fails + 1))
          fi
          if [ -z "$shaders" ] || [ -z "$states" ]; then
             echo "  FAIL: the renderer did not say what it made"
@@ -94,6 +107,38 @@ for d in plain atlas cull dma blend; do
          fi
       done
    done
+done
+# No compiler at all: both renderers start, every polygon drawn with the general shaders
+for m in tri pix; do
+   case $m in
+      tri) sort="reicast_alpha_sorting=per-triangle (normal)" ;;
+      pix) sort="reicast_alpha_sorting=per-pixel (accurate)" ;;
+   esac
+   name="nocompiler-$m"
+   RUN_OVERRIDES="winedbg.exe=d;d3dcompiler_47=d" run "$name" plain "$sort" || { fails=$((fails + 1)); continue; }
+   shaders=$(grep -o "DX11: d3d11[a-z_]*shaders.bin: .*" "$WORK/$name.log" || true)
+   echo "$name: $(echo "$shaders" | grep -o '[0-9]* the core.s' | tr '\n' ' ')"
+   if [ -z "$shaders" ] || echo "$shaders" | grep -v -q ": 0 compiled,.*, 0 made on the draw path" \
+         || grep -q "initialization failed" "$WORK/$name.log"; then
+      echo "  FAIL: did not start, or made something, with no compiler:"
+      echo "$shaders" | sed 's/^/    /'
+      fails=$((fails + 1))
+   fi
+done
+# Direct3D 9: its shaders the core's, with wine's compiler and with none
+for c in wine none; do
+   ov="$OVERRIDES"; [ $c = none ] && ov="winedbg.exe=d;d3dcompiler_47=d"
+   name="d3d9-$c"
+   rm -rf "$WORK/dir"; mkdir -p "$WORK/dir"
+   env -u TMPDIR DISPLAY=$DISPLAY_NO WINEDEBUG=-all WINE_D3D_CONFIG=renderer=vulkan WINEDLLOVERRIDES="$ov" \
+      D3D9F_VERBOSE=1 D3D9F_DIR="Z:$WORK/dir" timeout 600 wine "$WORK/d3d9_frames.exe" "Z:$CORE" \
+      "Z:$WORK/plain/plain.gdi" "Z:$WORK/$name.raw" 30 > "$WORK/$name.log" 2>&1 || true
+   said=$(grep -o "DX9: [0-9]* shaders the core's, [0-9]* compiled" "$WORK/$name.log" || true)
+   echo "$name: ${said#DX9: }"
+   if ! echo "$said" | grep -q ", 0 compiled$" || ! grep -q "^frame 29 " "$WORK/$name.log"; then
+      echo "  FAIL: Direct3D 9 compiled at its start (dx9_dxbc.inc not the sources': tools/rend/kernels_dx9.sh), or drew nothing"
+      fails=$((fails + 1))
+   fi
 done
 api=12
 for d in plain atlas cull dma blend; do

@@ -52,12 +52,10 @@ bool DX11Context::Init(const struct retro_hw_render_interface_d3d11 *iface)
 		compilerModule = LoadLibraryA("d3dcompiler_47.dll");
 		if (compilerModule != nullptr)
 			compile = (pD3DCompile)(void *)GetProcAddress(compilerModule, "D3DCompile");
+		/* (the renderers start with the core's bytecode, and draw every
+		 * polygon with the general shaders: dx11_shaders.h) */
 		if (compile == nullptr)
-		{
-			ERROR_LOG(RENDERER, "DX11: no shader compiler (d3dcompiler_47.dll)");
-			Term();
-			return false;
-		}
+			WARN_LOG(RENDERER, "DX11: no shader compiler (d3dcompiler_47.dll): polygons drawn with the general shaders");
 	}
 
 	if (iface->interface_version >= RETRO_HW_RENDER_INTERFACE_D3D11_VERSION_2

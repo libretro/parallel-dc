@@ -29,6 +29,10 @@
 
 extern std::string get_writable_data_path(const std::string& filename);
 
+/* The shaders the renderers' start makes, as bytecode (dx11_dxbc_index[]
+ * sorted by hash, the bytes in dx11_dxbc_bytes[]) */
+#include "dx11_dxbc.inc"
+
 const char * const DX11VertexTransform = R"(
 cbuffer VertexConstants : register(b0)
 {
@@ -483,6 +487,23 @@ u64 DX11ShaderCompiler::HashOf(const DX11ShaderDesc& d)
 	return h;
 }
 
+const u8 *DX11ShaderCompiler::BuiltIn(u64 hash, u32 *size)
+{
+	size_t lo = 0, hi = dx11_dxbc_count;
+	while (lo < hi)
+	{
+		const size_t mid = (lo + hi) / 2;
+		if (dx11_dxbc_index[mid].hash < hash)
+			lo = mid + 1;
+		else
+			hi = mid;
+	}
+	if (lo == dx11_dxbc_count || dx11_dxbc_index[lo].hash != hash)
+		return nullptr;
+	*size = dx11_dxbc_index[lo].size;
+	return &dx11_dxbc_bytes[dx11_dxbc_index[lo].offset];
+}
+
 const u8 *DX11ShaderCompiler::FromFile(u64 hash, u32 *size) const
 {
 	size_t lo = 0, hi = fileIndex.size();
@@ -517,7 +538,16 @@ bool DX11ShaderCompiler::Bytecode(u32 family, u32 variant, const DX11ShaderDesc&
 {
 	const u64 hash = HashOf(d);
 	u32 bytes = 0;
-	const u8 *p = FromFile(hash, &bytes);
+	const u8 *p = BuiltIn(hash, &bytes);
+	*fromFile = false;
+	if (p != nullptr)
+	{
+		statBuiltIn++;
+		*code = p;
+		*size = bytes;
+		return true;
+	}
+	p = FromFile(hash, &bytes);
 	*fromFile = p != nullptr;
 	if (p != nullptr)
 	{
@@ -553,7 +583,9 @@ bool DX11ShaderCompiler::WarmBuild(void *ctx, const d3d_warm_job_t *job, d3d_war
 		return false;
 	const u64 hash = HashOf(d);
 	u32 size = 0;
-	const void *code = self->FromFile(hash, &size);
+	const void *code = BuiltIn(hash, &size);
+	if (code == nullptr)
+		code = self->FromFile(hash, &size);
 	ID3DBlob *blob = nullptr;
 	if (code == nullptr)
 	{
@@ -669,6 +701,22 @@ ID3D11VertexShader *DX11ShaderCompiler::MakeVS(u32 family, u32 variant, ComPtr<I
 	return slot;
 }
 
+ID3D11ComputeShader *DX11ShaderCompiler::MakeCS(u32 family, u32 variant, ComPtr<ID3D11ComputeShader>& slot)
+{
+	DX11ShaderDesc d;
+	ComPtr<ID3DBlob> hold;
+	const void *code;
+	size_t size;
+	bool fromFile;
+	if (!Describe(family, variant, d) || !Bytecode(family, variant, d, hold, &code, &size, &fromFile))
+		return nullptr;
+	if (fromFile)
+		statFromFile++;
+	if (FAILED(device->CreateComputeShader(code, size, nullptr, slot.put())))
+		ERROR_LOG(RENDERER, "Compute shader creation failed");
+	return slot;
+}
+
 void DX11ShaderCompiler::LoadFile()
 {
 	file.clear();
@@ -761,7 +809,7 @@ void DX11ShaderCompiler::Init(ID3D11Device *device, pD3DCompile compile)
 	}
 	this->device = device;
 	this->compile = compile;
-	statCompiled = statFromFile = statAhead = statCompiledAhead = 0;
+	statCompiled = statFromFile = statBuiltIn = statAhead = statCompiledAhead = 0;
 	/* (room for what a run compiles; more is made, and said) */
 	kept.Name("DX11 shaders compiled");
 	kept.Clear();
@@ -812,8 +860,8 @@ void DX11ShaderCompiler::TermCompiler()
 		warm = nullptr;
 	}
 	if (device != nullptr)
-		NOTICE_LOG(RENDERER, "DX11: %s: %u compiled, %u from the file, %u made ahead (%u of them compiled), %u made on the draw path, %u draws with a general shader",
-				FileName(), statCompiled, statFromFile, statAhead, statCompiledAhead, statDrawPath, statGeneral);
+		NOTICE_LOG(RENDERER, "DX11: %s: %u compiled, %u the core's, %u from the file, %u made ahead (%u of them compiled), %u made on the draw path, %u draws with a general shader",
+				FileName(), statCompiled, statBuiltIn, statFromFile, statAhead, statCompiledAhead, statDrawPath, statGeneral);
 	SaveFile();
 	file.clear();
 	file.shrink_to_fit();
@@ -834,6 +882,7 @@ void DX11Shaders::MakeSources()
 	sources[ModVolPS] = std::string(PixelShaderHeader) + DX11FogFunction + ModVolPixelShaderSource;
 	sources[QuadVS] = QuadVertexShaderSource;
 	sources[QuadPS] = QuadPixelShaderSource;
+	sources[WriteOutCS] = DX11WriteOutSource;
 }
 
 bool DX11Shaders::Describe(u32 family, u32 variant, DX11ShaderDesc& d) const
@@ -886,6 +935,10 @@ bool DX11Shaders::Describe(u32 family, u32 variant, DX11ShaderDesc& d) const
 	case QuadPS:
 		d.source = &sources[QuadPS];
 		d.profile = "ps_4_0";
+		break;
+	case WriteOutCS:
+		d.source = &sources[WriteOutCS];
+		d.profile = "cs_5_0";
 		break;
 	default:
 		return false;

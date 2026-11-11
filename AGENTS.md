@@ -93,7 +93,9 @@ shrinks (`docs/ShaderStutterPlan.md`, phase 0).
 The embedded bytecode is made by the tools from its source, with the
 compiler each file records: `tools/rend/kernels_spv.sh` (SPIR-V),
 `tools/rend/kernels_dx12.sh` (Direct3D 12 DXBC and DXIL),
-`tools/rend/kernels_dxbc.sh` (Direct3D 11 and the shared kernels). A
+`tools/rend/kernels_dxbc.sh` (Direct3D 11 and the shared kernels),
+`tools/rend/kernels_dx11.sh` (what Direct3D 11's start makes, from the
+core's own run) and `tools/rend/kernels_dx9.sh` (Direct3D 9). A
 change to a shader source regenerates its include in the same commit,
 and `check` passes. Where a mode exists to make one include alone
 (`update-raster`, `update-dxil`, `update-hdr`), use it, so the others'
