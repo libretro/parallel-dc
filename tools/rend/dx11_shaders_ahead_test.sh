@@ -35,7 +35,8 @@ for f in core/rend/d3d_warm.c core/rend/d3d_shader_cache.c $LRC/queues/retro_sps
    $CC_WIN -O1 $DEFS $INC -c -o "$WORK/$(basename "$f" .c).o" "$f"
 done
 $CXX_WIN -std=c++11 -O1 -fpermissive -fno-operator-names $DEFS $INC -o "$WORK/dx11_shaders_ahead_test.exe" \
-   tools/rend/dx11_shaders_ahead_test.cpp core/rend/dx11/dx11_shaders.cpp core/rend/dx11/oit/dx11_oitshaders.cpp \
+   tools/rend/dx11_shaders_ahead_test.cpp core/rend/dx11/dx11_shaders.cpp core/rend/dx11/dx11_writeout_text.cpp \
+   core/rend/dx11/oit/dx11_oitshaders.cpp \
    "$WORK"/*.o -ld3d11 -ldxguid -static
 ARGS="Z:$(echo "$WORK/data/" | tr / '\\')"
 if [ -n "$D3DCOMPILER" ]; then

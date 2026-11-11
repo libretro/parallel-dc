@@ -207,8 +207,10 @@ static void run(const char *name, size_t (*use)(S&, size_t *), size_t total, siz
 	probe.device = device;
 	probe.compile = compileFn;
 
-	/* no file: all compiled - the polygons' own on the thread - none on
-	 * the draw path */
+	/* no file: all the core does not have built in compiled - the
+	 * polygons' own on the thread - none on the draw path; the file keeps
+	 * those it compiled */
+	size_t kept = 0;
 	{
 		S s;
 		s.Init(device, compileFn);
@@ -220,11 +222,12 @@ static void run(const char *name, size_t (*use)(S&, size_t *), size_t total, siz
 		s.TakeBuilt();
 		size_t own = 0;
 		CHECK(use(s, &own) == total && own == pixel - fixed);
-		CHECK(s.statAhead >= fixed + own && s.statCompiledAhead == s.statAhead);
+		CHECK(s.statAhead >= fixed + own && s.statCompiledAhead > 0 && s.statCompiledAhead <= s.statAhead);
 		CHECK(s.statFromFile == 0 && s.statDrawPath == 0);
+		kept = s.statCompiled + s.statCompiledAhead;
 		s.Term();
 	}
-	checkFile(probe, file, total);
+	checkFile(probe, file, kept);
 	const std::vector<u8> good = readFile(file);
 
 	/* the file: nothing compiled, every pixel shader ahead, the file as it was */
@@ -236,7 +239,7 @@ static void run(const char *name, size_t (*use)(S&, size_t *), size_t total, siz
 		size_t own = 0;
 		CHECK(use(s, &own) == total && own == pixel - fixed);
 		CHECK(s.statCompiled == 0 && s.statCompiledAhead == 0 && s.statDrawPath == 0);
-		CHECK(s.statAhead >= pixel && s.statFromFile > 0);
+		CHECK(s.statAhead >= pixel);	/* (those compiled before, from the file) */
 		s.Term();
 	}
 	CHECK(readFile(file) == good);
@@ -267,7 +270,7 @@ static void run(const char *name, size_t (*use)(S&, size_t *), size_t total, siz
 		CHECK(s.statFromFile == 0 && s.statDrawPath == 0);
 		s.Term();
 	}
-	checkFile(probe, file, total);
+	checkFile(probe, file, kept);
 
 	/* one compiled from another source: compiled again (ahead), and replaced */
 	{
@@ -295,7 +298,7 @@ static void run(const char *name, size_t (*use)(S&, size_t *), size_t total, siz
 		CHECK(s.statCompiled == 0 && s.statCompiledAhead == 1 && s.statDrawPath == 0);
 		s.Term();
 	}
-	checkFile(probe, file, total);
+	checkFile(probe, file, kept);
 
 	/* a device for one thread only: no thread, the file still (a device
 	 * that does not say it is one - wine's - is not known to be) */
