@@ -37,6 +37,7 @@ on:
       - 'tools/rend/custom_image*'
       - 'tools/rend/texhash_test.*'
       - 'tools/threads/upnp_*'
+      - 'tools/unused_sources.py'
       - 'tools/sh4/run.sh'
       - 'tools/sh4/vector_test.cpp'
       - 'tools/arm7/**'
@@ -56,6 +57,7 @@ on:
       - 'tools/rend/custom_image*'
       - 'tools/rend/texhash_test.*'
       - 'tools/threads/upnp_*'
+      - 'tools/unused_sources.py'
       - 'tools/sh4/run.sh'
       - 'tools/sh4/vector_test.cpp'
       - 'tools/arm7/**'
@@ -79,6 +81,8 @@ jobs:
           sudo apt-get install -y --no-install-recommends build-essential libgl1-mesa-dev python3 gcc-aarch64-linux-gnu libc6-dev-arm64-cross qemu-user-static
       - name: Build the core
         run: make -j"$(nproc)"
+      - name: Nothing built that the core does not use, and no libretro-common it does not
+        run: python3 tools/unused_sources.py
       - name: The disc with no display, its states and run-ahead among it
         run: sh tools/threads/headless.sh parallel_dc_libretro.so
       - name: The threads a texture scaled up is shared out to (TSan, ASan/UBSan, no threads), and no OpenMP in the core

@@ -22,7 +22,7 @@ export ASAN_OPTIONS=detect_leaks=1
 objs=
 for f in $L/net/net_upnp.c $L/net/net_http.c $L/net/net_socket.c $L/net/net_compat.c \
       $L/formats/xml/rxml.c $L/lists/string_list.c $L/encodings/encoding_base64.c \
-      $L/compat/compat_strl.c $L/compat/compat_strcasestr.c $L/string/stdstring.c \
+      $L/compat/compat_strl.c $L/string/stdstring.c \
       $L/encodings/encoding_utf.c $L/time/rtime.c $L/features/features_cpu.c; do
    o="$WORK/$(basename "$f" .c).o"
    $CC -g -O1 $SAN $INC -c -o "$o" "$f"

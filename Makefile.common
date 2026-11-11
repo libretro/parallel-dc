@@ -94,8 +94,6 @@ SOURCES_CXX := \
 					$(CORE_DIR)/core/serialize.cpp \
 					$(CORE_DIR)/core/stdclass.cpp \
 					\
-					$(DEPS_DIR)/crypto/sha256.cpp \
-					$(DEPS_DIR)/crypto/md5.cpp \
 					$(DEPS_DIR)/libelf/elf.cpp \
 					$(DEPS_DIR)/libelf/elf32.cpp \
 					$(DEPS_DIR)/libelf/elf64.cpp \
@@ -160,7 +158,6 @@ PICOTCP_SOURCES_C = \
 					$(DEPS_DIR)/picotcp/stack/pico_frame.c \
 					$(DEPS_DIR)/picotcp/stack/pico_md5.c \
 					$(DEPS_DIR)/picotcp/stack/pico_protocol.c \
-					$(DEPS_DIR)/picotcp/stack/pico_socket_multicast.c \
 					$(DEPS_DIR)/picotcp/stack/pico_socket.c \
 					$(DEPS_DIR)/picotcp/stack/pico_stack.c \
 					$(DEPS_DIR)/picotcp/stack/pico_tree.c
@@ -183,8 +180,6 @@ SOURCES_C += $(CORE_DIR)/core/hw/naomi/naomi_dimm.c
 SOURCES_C += $(CORE_DIR)/core/hw/pvr/ta_list.c
 # ...and a strip's indices (make_index()'s)
 SOURCES_C += $(CORE_DIR)/core/hw/pvr/ta_index.c
-# ...and where a renderer has them parsed to (core/rend/parse_arena.h)
-SOURCES_C += $(CORE_DIR)/core/rend/parse_arena.c
 
 SOURCES_ASM :=
 
@@ -318,6 +313,12 @@ ifeq ($(HAVE_D3D12), 1)
 					$(CORE_DIR)/core/rend/dx12/parse_arena_d3d12.c
 endif
 
+# Where a renderer has a frame parsed to (core/rend/parse_arena.h): the
+# Vulkan, OpenGL 4 and Direct3D 12 ones
+ifneq (,$(filter 1,$(HAVE_VULKAN) $(HAVE_GL4) $(HAVE_D3D12)))
+SOURCES_C += $(CORE_DIR)/core/rend/parse_arena.c
+endif
+
 # The HDR output's Display Transform (rend/hdr/, Color Format), for the
 # renderers that have the HDR output
 ifneq (,$(filter 1,$(HAVE_VULKAN) $(HAVE_D3D11) $(HAVE_D3D12)))
@@ -414,12 +415,9 @@ ifneq ($(filter $(WITH_DYNAREC), arm64 aarch64),)
 					$(DEPS_DIR)/vixl/cpu-features.cc \
 					$(DEPS_DIR)/vixl/utils-vixl.cc \
 					$(DEPS_DIR)/vixl/aarch64/assembler-aarch64.cc \
-					$(DEPS_DIR)/vixl/aarch64/cpu-aarch64.cc \
-					$(DEPS_DIR)/vixl/aarch64/cpu-features-auditor-aarch64.cc \
 					$(DEPS_DIR)/vixl/aarch64/decoder-aarch64.cc \
 					$(DEPS_DIR)/vixl/aarch64/disasm-aarch64.cc \
 					$(DEPS_DIR)/vixl/aarch64/instructions-aarch64.cc \
-					$(DEPS_DIR)/vixl/aarch64/instrument-aarch64.cc \
 					$(DEPS_DIR)/vixl/aarch64/logic-aarch64.cc \
 					$(DEPS_DIR)/vixl/aarch64/macro-assembler-aarch64.cc \
 					$(DEPS_DIR)/vixl/aarch64/operands-aarch64.cc \
@@ -450,17 +448,14 @@ SOURCES_C += $(CORE_DIR)/core/savewriter.c
 # symbols at link time. The headers stay -- they now match current upstream, so
 # the declarations agree with the objects RetroArch provides.
 ifneq ($(STATIC_LINKING), 1)
-SOURCES_C += $(LIBRETRO_COMM_DIR)/memmap/memalign.c \
-					$(LIBRETRO_COMM_DIR)/file/file_path.c \
+SOURCES_C += $(LIBRETRO_COMM_DIR)/file/file_path.c \
 					$(LIBRETRO_COMM_DIR)/file/file_path_io.c \
 					$(LIBRETRO_COMM_DIR)/vfs/vfs_implementation.c \
 					$(LIBRETRO_COMM_DIR)/vfs/vfs_prefetch.c \
 					$(LIBRETRO_COMM_DIR)/streams/file_stream.c \
-					$(LIBRETRO_COMM_DIR)/streams/file_stream_transforms.c \
 					$(LIBRETRO_COMM_DIR)/encodings/encoding_utf.c \
 					$(LIBRETRO_COMM_DIR)/compat/compat_strl.c \
 					$(LIBRETRO_COMM_DIR)/compat/fopen_utf8.c \
-					$(LIBRETRO_COMM_DIR)/compat/compat_strcasestr.c \
 					$(LIBRETRO_COMM_DIR)/file/retro_dirent.c \
 					$(LIBRETRO_COMM_DIR)/string/stdstring.c \
 					$(LIBRETRO_COMM_DIR)/string/rstrtod.c \

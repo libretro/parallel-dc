@@ -88,7 +88,7 @@ for san in thread address,undefined; do
       -o "$WORK/savewriter_test" tools/threads/savewriter_test.c core/savewriter.c \
       $L/streams/file_stream.c $L/vfs/vfs_implementation.c $L/file/file_path.c \
       $L/file/file_path_io.c $L/compat/compat_strl.c $L/compat/fopen_utf8.c \
-      $L/compat/compat_strcasestr.c $L/encodings/encoding_utf.c $L/string/stdstring.c \
+      $L/encodings/encoding_utf.c $L/string/stdstring.c \
       $L/string/rstrtod.c "$WORK/rthreads.o" "$WORK/retro_eventcount.o" \
       "$WORK/features_cpu.o" "$WORK/rtime.o" -lpthread -lm
    echo "== -fsanitize=$san"

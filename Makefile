@@ -17,7 +17,6 @@ STATIC_LINKING:= 0
 HAVE_TEXUPSCALE := 1
 HAVE_CHD      := 1
 HAVE_CLANG    ?= 0
-HAVE_CDROM    := 0
 ENABLE_MODEM  := 1
 
 ifeq ($(ECHO),1)
@@ -143,7 +142,6 @@ ifneq (,$(findstring unix,$(platform)))
 		HAVE_GL3 = 1
 	endif
 
-	HAVE_CDROM = 1
 	fpic = -fPIC
 
 	ifeq ($(WITH_DYNAREC), $(filter $(WITH_DYNAREC), x86_64 x64))
@@ -965,7 +963,6 @@ else
 	endif
 	EXT       ?= dll
 	HAVE_GENERIC_JIT = 0
-	HAVE_CDROM = 1
 	TARGET := $(TARGET_NAME)_libretro.$(EXT)
 	LDFLAGS += -shared -static-libgcc -static-libstdc++ -Wl,--version-script=link.T -lwinmm -lgdi32
 	GL_LIB := -lopengl32

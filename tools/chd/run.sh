@@ -63,9 +63,8 @@ $CC -O1 -g $VDEFS -fsanitize=address,undefined \
    $L/streams/file_stream.c $L/vfs/vfs_implementation.c \
    $L/file/file_path.c $L/file/file_path_io.c $L/file/retro_dirent.c \
    $L/compat/compat_strl.c $L/compat/fopen_utf8.c \
-   $L/compat/compat_strcasestr.c $L/encodings/encoding_utf.c \
+   $L/encodings/encoding_utf.c \
    $L/string/stdstring.c $L/string/rstrtod.c $L/time/rtime.c \
-   $L/memmap/memalign.c \
    -lm -lpthread
 done
 
@@ -83,9 +82,9 @@ STREAM_SRC="core/imgread/chd_image.c core/deps/coreio/coreio.c
    $L/features/features_cpu.c $L/streams/file_stream.c
    $L/vfs/vfs_implementation.c $L/vfs/vfs_prefetch.c $L/file/file_path.c
    $L/file/file_path_io.c $L/file/retro_dirent.c $L/compat/compat_strl.c
-   $L/compat/fopen_utf8.c $L/compat/compat_strcasestr.c
+   $L/compat/fopen_utf8.c
    $L/encodings/encoding_utf.c $L/string/stdstring.c $L/string/rstrtod.c
-   $L/time/rtime.c $L/memmap/memalign.c"
+   $L/time/rtime.c"
 for san in address,undefined thread; do
    v=$(echo $san | tr -d ,)
    mkdir -p "$WORK/o_$v"

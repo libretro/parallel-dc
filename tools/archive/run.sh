@@ -51,9 +51,7 @@ SOURCES="tools/archive/archive_test.c core/archive/archive.c \
    $L/streams/file_stream.c $L/vfs/vfs_implementation.c \
    $L/file/file_path.c $L/file/file_path_io.c $L/file/retro_dirent.c \
    $L/compat/compat_strl.c $L/compat/fopen_utf8.c \
-   $L/compat/compat_strcasestr.c \
-   $L/string/stdstring.c $L/string/rstrtod.c $L/time/rtime.c \
-   $L/memmap/memalign.c"
+   $L/string/stdstring.c $L/string/rstrtod.c $L/time/rtime.c"
 
 # The _seek builds read every deflated zip member through the index a
 # large one is read through (ARCHIVE_SEEK_MIN lowered to take them all):
