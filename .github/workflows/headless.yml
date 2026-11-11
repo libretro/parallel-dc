@@ -37,6 +37,7 @@ on:
       - 'tools/rend/custom_image*'
       - 'tools/rend/texhash_test.*'
       - 'tools/threads/upnp_*'
+      - 'tools/threads/**'
       - 'tools/unused_sources.py'
       - 'tools/c89/**'
       - 'tools/sh4/run.sh'
@@ -58,6 +59,7 @@ on:
       - 'tools/rend/custom_image*'
       - 'tools/rend/texhash_test.*'
       - 'tools/threads/upnp_*'
+      - 'tools/threads/**'
       - 'tools/unused_sources.py'
       - 'tools/c89/**'
       - 'tools/sh4/run.sh'
@@ -99,6 +101,8 @@ jobs:
         run: sh tools/rend/texhash_test.sh
       - name: The modem's UPnP against a gateway on the runner (found, TCP and UDP mapped and deleted; none found without)
         run: sh tools/threads/upnp_test.sh
+      - name: The threads' tests, built against the core's own sources (the lock-free handoffs, the save writer, the modem and the NAOMI network)
+        run: sh tools/threads/run.sh
       - name: A strip's indices (C89, ASan and UBSan; SIMD, scalar and NEON) against the loop they replaced
         run: NEON=required sh tools/pvr/ta_index_test.sh
       - name: The parse timed on the heavy disc, the strips known good making the indices a look at them does

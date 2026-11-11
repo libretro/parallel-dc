@@ -33,9 +33,9 @@ u8 net_device = NET_DEVICE_MODEM;
 u8 net_device_option = NET_DEVICE_MODEM;
 bool net_dcnet_option = false;
 void GenericLog(LogTypes::LOG_LEVELS, LogTypes::LOG_TYPE, const char *, int, const char *fmt, ...) {}
-bool MiniUPnP::Init() { return false; }
-void MiniUPnP::Term() {}
-bool MiniUPnP::AddPortMapping(int, bool) { return false; }
+bool miniupnp_init(miniupnp_t *) { return false; }
+void miniupnp_term(miniupnp_t *) {}
+bool miniupnp_add_port_mapping(miniupnp_t *, int, bool) { return false; }
 
 typedef std::pair<ThreadEntryFP *, void *> thread_start;
 static void thread_trampoline(void *p) { thread_start *s = (thread_start *)p; s->first(s->second); delete s; }
@@ -75,7 +75,7 @@ static void send_escaped(u8 b)
 static void pico_modem()
 {
 	static const u8 lcp[] = { 0xff, 0x03, 0xc0, 0x21, 0x01, 0x01, 0x00, 0x04 };
-	settings.network.dns = "8.8.8.8";
+	strcpy(settings.network.dns, "8.8.8.8");
 	net_device = NET_DEVICE_MODEM;
 	net_dcnet_option = false;
 	CHECK(start_pico());

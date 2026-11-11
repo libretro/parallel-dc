@@ -95,7 +95,7 @@ static int run_side(void)
 	settings.network.ActAsServer = is_server;
 	if (!is_server)
 	{
-		settings.network.server = "127.0.0.1";
+		strcpy(settings.network.server, "127.0.0.1");
 		retro_sleep(500);	/* let the server start listening */
 	}
 	CHECK(net.armWake());
