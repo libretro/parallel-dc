@@ -332,14 +332,17 @@ protected:
 		if (havePicture)
 			lastPicture.Draw(cmdBuffer, finalColorAttachments[(GetCurrentImage() + count - 1) % count]->GetImageView(), nullptr, true, commandPool);
 		else
-			lastPicture.Draw(cmdBuffer, restoredPicture, nullptr, false, commandPool);
+		{
+			QuadVertex area[4];
+			lastPicture.Draw(cmdBuffer, restoredPicture, QuadGameArea(area, restoredSize, viewport.extent) ? area : nullptr, false, commandPool);
+		}
 		return true;
 	}
 public:
 	/* rend/last_picture.h: the context is going */
 	void KeepPicture();
 	/* ...and in the new one, the picture that was kept is this image */
-	void SetRestoredPicture(vk::ImageView view) { restoredPicture = view; }
+	void SetRestoredPicture(vk::ImageView view, vk::Extent2D size) { restoredPicture = view; restoredSize = size; }
 	/* A quad pipeline made for the colour subpass of this drawer's render pass. */
 	void SetLastPicturePipeline(QuadPipeline *pipeline)
 	{
@@ -460,6 +463,7 @@ private:
 	QuadDrawer lastPicture;
 	bool havePicture = false;	/* the image before this one holds the last frame */
 	vk::ImageView restoredPicture;	/* ...or this does: the picture kept from the context before */
+	vk::Extent2D restoredSize;		// (its size: of another shape, its 4:3 drawn where this one's is)
 	/* ...or the image the last frame was drawn to at the size before this one (see the per-triangle screen drawer) */
 	std::unique_ptr<FramebufferAttachment> carriedPicture;
 	std::vector<vk::UniqueFramebuffer> framebuffers;

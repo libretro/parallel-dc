@@ -885,6 +885,7 @@ void ScreenDrawer::Init(SamplerManager *samplerManager, ShaderManager *shaderMan
 			{
 				carriedPicture = std::move(colorAttachments[GetCurrentImage()]);
 				restoredPicture = carriedPicture->GetImageView();
+				restoredSize = carriedPicture->getExtent();
 			}
 			for (auto& framebuffer : framebuffers)
 				if (framebuffer)
@@ -1180,7 +1181,10 @@ vk::CommandBuffer ScreenDrawer::BeginRenderPass()
 		if (havePicture)
 			lastPicture.Draw(commandBuffer, colorAttachments[(GetCurrentImage() + count - 1) % count]->GetImageView(), nullptr, true, commandPool);
 		else
-			lastPicture.Draw(commandBuffer, restoredPicture, nullptr, false, commandPool);
+		{
+			QuadVertex area[4];
+			lastPicture.Draw(commandBuffer, restoredPicture, QuadGameArea(area, restoredSize, viewport) ? area : nullptr, false, commandPool);
+		}
 	}
 	commandBuffer.setScissor(0, baseScissor);
 	currentCommandBuffer = commandBuffer;

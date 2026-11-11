@@ -9,40 +9,60 @@ const u32 *vk_compute_kernel(u32 kernel, size_t *size);
 static const u32 SlotBytes = 256;
 static_assert(PVRC_F_FLAGS < SlotBytes / 4 && PVRC_F_WIDTH < SlotBytes / 4 && PVRC_F_HEIGHT < SlotBytes / 4, "the pass's words in a slot");
 
-void VulkanWriteOut::Term()
+VulkanWriteOut::VulkanWriteOut()
+{
+	PsoOwnInit(this, &slot, 1);
+}
+
+void VulkanWriteOut::DropSized()
 {
 	overlayFramebuffers.clear();
 	overlayPass.reset();
 	sets.clear();
 	pool.reset();
-	pipeline.reset();
-	pipelineLayout.reset();
-	setLayout.reset();
 	words.reset();
 	mapped = nullptr;
 }
 
+void VulkanWriteOut::Term()
+{
+	DropSized();
+	PsoOwnDrop(this, &slot, 1, VulkanContext::Instance() != nullptr ? VulkanContext::Instance()->GetDevice() : vk::Device());
+	module.reset();
+	pipelineLayout.reset();
+	setLayout.reset();
+}
+
+VkPipeline VulkanWriteOut::BuildPipeline(u64 key, vk::PipelineCache cache)
+{
+	const vk::PipelineShaderStageCreateInfo stage(vk::PipelineShaderStageCreateFlags(), vk::ShaderStageFlagBits::eCompute, *module, "main");
+	return PsoCreateCompute(VulkanContext::Instance()->GetDevice(), cache,
+			vk::ComputePipelineCreateInfo(vk::PipelineCreateFlags(), stage, *pipelineLayout));
+}
+
 void VulkanWriteOut::Init(const std::vector<vk::ImageView>& views, vk::Extent2D pictureSize)
 {
-	Term();
+	DropSized();
+	VulkanContext *context = VulkanContext::Instance();
+	vk::Device device = context->GetDevice();
+	if (!setLayout)
+	{
+		// (the kernel's bindings: its frame's words, 0, and the picture, 3)
+		const vk::DescriptorSetLayoutBinding bindings[] = {
+			{ 0, vk::DescriptorType::eStorageBuffer, 1, vk::ShaderStageFlagBits::eCompute },
+			{ 3, vk::DescriptorType::eStorageImage, 1, vk::ShaderStageFlagBits::eCompute },
+		};
+		setLayout = device.createDescriptorSetLayoutUnique(vk::DescriptorSetLayoutCreateInfo(vk::DescriptorSetLayoutCreateFlags(), 2, bindings));
+		pipelineLayout = device.createPipelineLayoutUnique(vk::PipelineLayoutCreateInfo(vk::PipelineLayoutCreateFlags(), 1, &setLayout.get()));
+		size_t size = 0;
+		const u32 *code = vk_compute_kernel(PVRC_K_YFILTER, &size);
+		module = device.createShaderModuleUnique(vk::ShaderModuleCreateInfo(vk::ShaderModuleCreateFlags(), size, code));
+		PsoSlot *one = &slot;
+		VkPsoWorker::Instance().BuildSoon(&one, 1, context->GetPipelineCache());
+	}
 	const u32 count = (u32)views.size();
 	if (!Wanted() || count == 0)
 		return;
-	VulkanContext *context = VulkanContext::Instance();
-	vk::Device device = context->GetDevice();
-	// (the kernel's bindings: its frame's words, 0, and the picture, 3)
-	const vk::DescriptorSetLayoutBinding bindings[] = {
-		{ 0, vk::DescriptorType::eStorageBuffer, 1, vk::ShaderStageFlagBits::eCompute },
-		{ 3, vk::DescriptorType::eStorageImage, 1, vk::ShaderStageFlagBits::eCompute },
-	};
-	setLayout = device.createDescriptorSetLayoutUnique(vk::DescriptorSetLayoutCreateInfo(vk::DescriptorSetLayoutCreateFlags(), 2, bindings));
-	pipelineLayout = device.createPipelineLayoutUnique(vk::PipelineLayoutCreateInfo(vk::PipelineLayoutCreateFlags(), 1, &setLayout.get()));
-	size_t size = 0;
-	const u32 *code = vk_compute_kernel(PVRC_K_YFILTER, &size);
-	vk::UniqueShaderModule module = device.createShaderModuleUnique(vk::ShaderModuleCreateInfo(vk::ShaderModuleCreateFlags(), size, code));
-	const vk::PipelineShaderStageCreateInfo stage(vk::PipelineShaderStageCreateFlags(), vk::ShaderStageFlagBits::eCompute, *module, "main");
-	pipeline = device.createComputePipelineUnique(context->GetPipelineCache(),
-			vk::ComputePipelineCreateInfo(vk::PipelineCreateFlags(), stage, *pipelineLayout));
 
 	const vk::DescriptorPoolSize sizes[] = {
 		{ vk::DescriptorType::eStorageBuffer, count },
@@ -90,7 +110,10 @@ void VulkanWriteOut::BeginOverlay(vk::CommandBuffer cmd, u32 index)
 
 void VulkanWriteOut::Record(vk::CommandBuffer cmd, u32 index, vk::Image image, vk::ImageView view, u32 width, u32 height)
 {
-	if (!pipeline || index >= sets.size())
+	/* (the pipeline thread's, made before the first frame; one it could not
+	 * make leaves the picture as the render pass drew it) */
+	const VkPipeline pipeline = PsoGet(slot);
+	if (pipeline == VK_NULL_HANDLE || index >= sets.size())
 		return;
 	const u32 flags = ComputeFrame::WriteOut(height);
 	if (PVRC_FF_YLINES(flags) == 0)
@@ -110,7 +133,7 @@ void VulkanWriteOut::Record(vk::CommandBuffer cmd, u32 index, vk::Image image, v
 			vk::ImageLayout::eShaderReadOnlyOptimal, vk::ImageLayout::eGeneral, VK_QUEUE_FAMILY_IGNORED, VK_QUEUE_FAMILY_IGNORED, image, range);
 	cmd.pipelineBarrier(vk::PipelineStageFlagBits::eColorAttachmentOutput, vk::PipelineStageFlagBits::eComputeShader,
 			vk::DependencyFlags(), nullptr, nullptr, toGeneral);
-	cmd.bindPipeline(vk::PipelineBindPoint::eCompute, *pipeline);
+	cmd.bindPipeline(vk::PipelineBindPoint::eCompute, vk::Pipeline(pipeline));
 	cmd.bindDescriptorSets(vk::PipelineBindPoint::eCompute, *pipelineLayout, 0, 1, &sets[index], 0, nullptr);
 	cmd.dispatch((width + 63) / 64, PVRC_FF_YLINES(flags), 1);
 	// (for the frontend and the next frame's drawing over it, and a copy when the context goes)

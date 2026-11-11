@@ -103,7 +103,7 @@ public:
 	}
 
 	void KeepPicture() override { screenDrawer.KeepPicture(); }
-	void SetRestoredPicture(vk::ImageView view) override { screenDrawer.SetRestoredPicture(view); }
+	void SetRestoredPicture(vk::ImageView view, vk::Extent2D size) override { screenDrawer.SetRestoredPicture(view, size); }
 
 protected:
 	/* The per-pixel lists sort the translucent polygons, by depth and then

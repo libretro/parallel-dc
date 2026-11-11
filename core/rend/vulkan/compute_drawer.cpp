@@ -221,6 +221,15 @@ const char *ComputeDrawer::DeviceLacks()
 
 bool ComputeDrawer::Init(vk::Extent2D extent, u32 samples, CommandPool *pool, SamplerManager *samplerManager, bool depth)
 {
+	{
+		const u32 n = samples > 4 ? 8 : samples > 2 ? 4 : samples > 1 ? 2 : 1;
+		/* (a change of size alone: nothing for the pipeline thread to make,
+		 * and nothing to wait for before the next frame) */
+		if (res && !failed && res->samples == n && res->depth == depth && pool == commandPool
+				&& samplerManager == this->samplerManager && res->sumsOn == VulkanContext::Instance()->HdrSumsReady()
+				&& (size_t)pool->GetSize() == res->sets.size() && Resize(extent))
+			return true;
+	}
 	Term();
 	if (failed)
 		return false;
@@ -400,6 +409,78 @@ bool ComputeDrawer::Init(vk::Extent2D extent, u32 samples, CommandPool *pool, Sa
 	NOTICE_LOG(RENDERER, "Vulkan compute renderer: %u x %u, %u sample%s a pixel, tiles of %u, %u translucent fragments a sample at a time; %u KiB of video memory, %u KiB of host memory",
 			extent.width, extent.height, this->samples, this->samples > 1 ? "s" : "", 1u << res->tileLog2, res->keep,
 			(u32)(deviceBytes >> 10), (u32)(((u64)res->ringWords * 4 * slots) >> 10));
+	return true;
+}
+
+bool ComputeDrawer::Resize(vk::Extent2D extent)
+{
+	VulkanContext *context = VulkanContext::Instance();
+	const vk::Device device = context->GetDevice();
+	Resources& r = *res;
+	const int slots = (int)r.sets.size();
+	const u32 tileLog2 = ComputeFrame::TileLog2(extent.width);
+	const u32 tiles = ((extent.width + (1u << tileLog2) - 1) >> tileLog2) * ((extent.height + (1u << tileLog2) - 1) >> tileLog2);
+	const u32 runs = r.chunks * std::max(tiles, ComputeFrame::MaxRttTiles());
+	const u32 binWords = pvrc_bin_words(runs, PoolEntries);
+	const u64 most = std::min<u64>(context->GetMaxStorageBufferRange(), context->GetMaxMemoryAllocationSize());
+	if ((u64)binWords * 4 > most)
+		return false;
+	// (the bins' growth, against what the budget has left)
+	if (binWords > r.binWords && ((u64)(binWords - r.binWords) * 4 >> 10) > context->GetVramBudget().available_kib())
+		return false;
+	std::unique_ptr<BufferData> bins;
+	std::unique_ptr<FramebufferAttachment> sums;
+	std::vector<std::unique_ptr<FramebufferAttachment>> depths;
+	try {
+		bins = std::unique_ptr<BufferData>(new BufferData((vk::DeviceSize)binWords * 4,
+				vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eIndirectBuffer
+				| vk::BufferUsageFlagBits::eTransferDst | vk::BufferUsageFlagBits::eTransferSrc,
+				vk::MemoryPropertyFlagBits::eDeviceLocal));
+		if (r.sumsOn)
+		{
+			sums = std::unique_ptr<FramebufferAttachment>(new FramebufferAttachment(context->GetPhysicalDevice(), device));
+			sums->Init(extent.width, extent.height, vk::Format::eR16G16B16A16Uint,
+					vk::ImageUsageFlagBits::eStorage | vk::ImageUsageFlagBits::eSampled, false);
+		}
+		if (r.depth)
+			for (int i = 0; i < slots; i++)
+			{
+				depths.push_back(std::unique_ptr<FramebufferAttachment>(new FramebufferAttachment(context->GetPhysicalDevice(), device)));
+				depths.back()->Init(extent.width, extent.height, vk::Format::eR32Sfloat,
+						vk::ImageUsageFlagBits::eStorage | vk::ImageUsageFlagBits::eSampled | vk::ImageUsageFlagBits::eTransferSrc, false);
+			}
+	} catch (const vk::SystemError&) {
+		return false;
+	}
+	// (the renderer waited for the frames that used the old ones)
+	r.bins = std::move(bins);
+	r.binsZero = false;
+	if (sums)
+	{
+		r.sums = std::move(sums);
+		r.sumsLayout = false;
+		r.sumsStored = false;
+	}
+	if (r.depth)
+		r.depths = std::move(depths);
+	r.tileLog2 = tileLog2;
+	r.runs = runs;
+	r.binWords = binWords;
+	std::vector<vk::DescriptorBufferInfo> buffers(slots, vk::DescriptorBufferInfo(*r.bins->buffer, 0, VK_WHOLE_SIZE));
+	const vk::DescriptorImageInfo sumsInfo(vk::Sampler(), r.sums->GetImageView(), vk::ImageLayout::eGeneral);
+	std::vector<vk::DescriptorImageInfo> depthInfos;
+	std::vector<vk::WriteDescriptorSet> writes;
+	depthInfos.reserve(slots);
+	for (int s = 0; s < slots; s++)
+	{
+		writes.push_back(vk::WriteDescriptorSet(r.sets[s], B_BIN, 0, 1, vk::DescriptorType::eStorageBuffer, nullptr, &buffers[s]));
+		writes.push_back(vk::WriteDescriptorSet(r.sets[s], B_SUMS, 0, 1, vk::DescriptorType::eStorageImage, &sumsInfo));
+		depthInfos.push_back(vk::DescriptorImageInfo(vk::Sampler(), r.depths[r.depth ? s : 0]->GetImageView(), vk::ImageLayout::eGeneral));
+		writes.push_back(vk::WriteDescriptorSet(r.sets[s], B_DEPTH, 0, 1, vk::DescriptorType::eStorageImage, &depthInfos.back()));
+	}
+	device.updateDescriptorSets(writes, nullptr);
+	this->extent = extent;
+	NOTICE_LOG(RENDERER, "Vulkan compute renderer: %u x %u, tiles of %u, its kernels kept", extent.width, extent.height, 1u << r.tileLog2);
 	return true;
 }
 

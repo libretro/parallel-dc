@@ -831,6 +831,7 @@ void OITScreenDrawer::MakeFramebuffers()
 		{
 			carriedPicture = std::move(finalColorAttachments[GetCurrentImage()]);
 			restoredPicture = carriedPicture->GetImageView();
+			restoredSize = carriedPicture->getExtent();
 		}
 		for (auto& framebuffer : framebuffers)
 			if (framebuffer)

@@ -73,7 +73,7 @@ public:
 	}
 
 	void KeepPicture() override { screenDrawer.KeepPicture(); }
-	void SetRestoredPicture(vk::ImageView view) override { screenDrawer.SetRestoredPicture(view); }
+	void SetRestoredPicture(vk::ImageView view, vk::Extent2D size) override { screenDrawer.SetRestoredPicture(view, size); }
 
 protected:
 	/* A sorted pass's translucent triangles are sorted from the frame's

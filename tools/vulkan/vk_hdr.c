@@ -1267,6 +1267,7 @@ typedef size_t (*serialize_size_t)(void);
 typedef bool (*serialize_t)(void *, size_t);
 typedef bool (*unserialize_t)(const void *, size_t);
 typedef bool (*load_game_t)(const struct retro_game_info*);
+typedef void (*av_info_t)(struct retro_system_av_info*);
 #define CORE_FN(type, name) type name = (type)dlsym(core, #name)
 
 /* --post: the options as key=value */
@@ -1376,6 +1377,13 @@ int main(int argc, char **argv)
          fprintf(stderr, "vk_hdr: retro_load_game failed\n");
          return finish(2);
       }
+   }
+   {
+      /* (asked for after the game is loaded, before the context is made,
+       * as RetroArch asks: the picture's size is the options' from there) */
+      CORE_FN(av_info_t, retro_get_system_av_info);
+      struct retro_system_av_info av;
+      retro_get_system_av_info(&av);
    }
    if (getenv("VKH_UPSCALER") && sscanf(getenv("VKH_UPSCALER"), "%ux%u:%ux%u",
             &up_out_w, &up_out_h, &up_render_w, &up_render_h) != 4)

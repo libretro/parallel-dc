@@ -136,6 +136,10 @@ public:
 	u64 statWhy[ComputeFrame::Why_Count] = {};
 
 private:
+	/* Another size with the same kernels (samples, depth, channel sums): the
+	 * bins, sums and depths made again for it, the kernels kept. False when
+	 * it cannot (Init() then makes everything) */
+	bool Resize(vk::Extent2D extent);
 	struct Resources;
 	std::unique_ptr<Resources> res;
 	bool ready = false;

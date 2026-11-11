@@ -32,6 +32,32 @@ struct QuadVertex
 
 vk::PipelineVertexInputStateCreateInfo GetQuadInputStateCreateInfo(bool uv);
 
+/* A picture of the console's drawn at @from (widescreen or not: the
+ * console's 4:3 in the middle of a wider one) over one of size @to, its
+ * 4:3 where the other's is, and the rest of a wider one's not drawn: the
+ * quad's vertices into @v, and true; false when the two have the same
+ * shape, which the whole quad draws */
+static inline bool QuadGameArea(QuadVertex v[4], vk::Extent2D from, vk::Extent2D to)
+{
+	if (from.width == 0 || from.height == 0 || to.width == 0 || to.height == 0)
+		return false;
+	// (how much of each one's width the 4:3 is)
+	const float f = from.width * 3.f > from.height * 4.f ? from.height * 4.f / (from.width * 3.f) : 1.f;
+	const float t = to.width * 3.f > to.height * 4.f ? to.height * 4.f / (to.width * 3.f) : 1.f;
+	if (f == t)
+		return false;
+	const float u0 = 0.5f - f / 2.f, u1 = 0.5f + f / 2.f;
+	const QuadVertex quad[4] = {
+		{ { -t, -1.f, 0.f }, { u0, 0.f } },
+		{ {  t, -1.f, 0.f }, { u1, 0.f } },
+		{ { -t,  1.f, 0.f }, { u0, 1.f } },
+		{ {  t,  1.f, 0.f }, { u1, 1.f } },
+	};
+	for (int i = 0; i < 4; i++)
+		v[i] = quad[i];
+	return true;
+}
+
 class QuadBuffer
 {
 public:

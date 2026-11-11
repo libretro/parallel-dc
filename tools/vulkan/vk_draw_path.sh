@@ -19,7 +19,14 @@
 #    them (VKH_FRAME_MS): the new one's pipelines made on the worker while
 #    the frames show the kept picture, the game going on after (the core
 #    says how many frames that took), and the last picture the one the new
-#    options draw from the start.
+#    options draw from the start;
+#  - a change of size while the game runs, the same way: the internal
+#    resolution (each renderer), widescreen, and the PowerVR2 scaler's
+#    write-out turned on - its pipeline made with the renderer, whether
+#    the option is on or not, and kept through every size; a size alone
+#    (the compute renderer's kernels kept too) not stopping the machine
+#    for a frame, and a wider picture having the narrower's 4:3 where its
+#    own is.
 #
 # Allowed, and only shrinking (docs/ShaderStutterPlan.md): the device
 # without either extension, where the states a draw can reach are too many
@@ -103,13 +110,15 @@ for hide in $EDS $EDS3 $EDS,$EDS3; do
    run cull-pix-no-$short cull $hide sdr $judged "$PIX"
    run cull-tri-ssaa-no-$short cull $hide sdr $judged "$TRI" reicast_ssaa=4x
 done
-# switch <name> <option set at frame 20> <the option before>: 180 frames,
+# switch <name> <option set at frame 20> <the option before> [still]: 180 frames,
 # against the new options from the start for as many frames as the
 # machine ran - 180 less those that showed the kept picture, the machine
 # not running - so both end at the same frame of the program (whose
-# picture changes as it goes: its palette banks at its frames 90 and 100)
+# picture changes as it goes: its palette banks at its frames 90 and 100);
+# still: nothing new to make (a size alone), so no frame shows the kept
+# picture - the machine does not stop
 switch() {
-   sw=$1; at=$2; from=$3
+   sw=$1; at=$2; from=$3; still=${4:-}
    frames=180; opts_at="20:$at"; frame_ms=16
    run $sw cull - sdr 1 "$from"
    opts_at=; frame_ms=
@@ -117,6 +126,8 @@ switch() {
    echo "  ${held:-0} frames showed the kept picture"
    if [ "${held:-0}" -ge 150 ]; then
       echo "  FAIL: the new renderer's pipelines were never made"; fails=$((fails + 1))
+   elif [ -n "$still" ] && [ "${held:-0}" != 0 ]; then
+      echo "  FAIL: a change of size alone stopped the machine"; fails=$((fails + 1))
    fi
    frames=$((180 - ${held:-0}))
    if [ "${at%%=*}" = "${from%%=*}" ]; then
@@ -135,6 +146,14 @@ switch cull-tri-to-compute reicast_rendering_method=compute "$TRI"
 switch cull-pix-to-compute reicast_rendering_method=compute "$PIX"
 switch cull-tri-to-ssaa reicast_ssaa=4x "$TRI"
 switch cull-pix-to-ssaa reicast_ssaa=4x "$PIX"
+switch cull-tri-to-2x reicast_internal_resolution=2x "$TRI" still
+switch cull-pix-to-2x reicast_internal_resolution=2x "$PIX" still
+switch cull-compute-to-2x reicast_internal_resolution=2x reicast_rendering_method=compute still
+switch cull-ssaa-to-2x reicast_internal_resolution=2x reicast_ssaa=4x
+switch cull-tri-to-wide reicast_widescreen_hack=enabled "$TRI" still
+switch cull-pix-to-wide reicast_widescreen_hack=enabled "$PIX" still
+switch cull-tri-to-scaler reicast_pvr2_scaler=enabled "$TRI"
+switch cull-pix-to-scaler reicast_pvr2_scaler=enabled "$PIX"
 run cull-tri-hdr cull - hdr10 1 "$TRI" reicast_color_format=30bit_hdr reicast_hdr_bloom=standard reicast_hdr_chromatic=subtle
 run cull-pix-hdr cull - hdr10 1 "$PIX" reicast_color_format=30bit_hdr reicast_hdr_bloom=standard reicast_hdr_post_compact=enabled
 

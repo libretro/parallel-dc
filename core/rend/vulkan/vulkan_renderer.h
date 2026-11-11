@@ -303,7 +303,7 @@ protected:
 
 	/* In a new context, the picture kept from the old one (rend/last_picture.h)
 	 * is made a texture, and the screen's drawer starts its first frame from it. */
-	virtual void SetRestoredPicture(vk::ImageView view) = 0;
+	virtual void SetRestoredPicture(vk::ImageView view, vk::Extent2D size) = 0;
 
 	void CheckKeptPicture()
 	{
@@ -320,7 +320,7 @@ protected:
 		keptPicture->SetCommandBuffer(texCommandPool.Allocate());
 		keptPicture->UploadToGPU(width, height, (u8 *)pixels, false);
 		keptPicture->SetCommandBuffer(nullptr);
-		SetRestoredPicture(keptPicture->GetImageView());
+		SetRestoredPicture(keptPicture->GetImageView(), vk::Extent2D((u32)width, (u32)height));
 	}
 
 	bool RenderFramebuffer()

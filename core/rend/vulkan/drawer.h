@@ -395,7 +395,7 @@ public:
 	/* rend/last_picture.h: the context is going */
 	void KeepPicture();
 	/* ...and in the new one, the picture that was kept is this image */
-	void SetRestoredPicture(vk::ImageView view) { restoredPicture = view; }
+	void SetRestoredPicture(vk::ImageView view, vk::Extent2D size) { restoredPicture = view; restoredSize = size; }
 	/* What draws the last picture back: see BeginRenderPass(). */
 	void SetQuadPipeline(QuadPipeline *pipeline)
 	{
@@ -435,6 +435,7 @@ private:
 	QuadDrawer lastPicture;
 	bool havePicture = false;	/* the image before this one holds the last frame */
 	vk::ImageView restoredPicture;	/* ...or this does: the picture kept from the context before */
+	vk::Extent2D restoredSize;		// (its size: of another shape, its 4:3 drawn where this one's is)
 	/* ...or the image the last frame was drawn to at the size before this
 	 * one, which is then this: kept as it is, with nothing copied */
 	std::unique_ptr<FramebufferAttachment> carriedPicture;

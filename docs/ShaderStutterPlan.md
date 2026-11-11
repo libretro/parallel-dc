@@ -65,11 +65,15 @@ output's post effects come with it. `tools/vulkan/vk_draw_path.sh` holds
    start, and one not seen before in the frame (`BuildSync`, about one a
    new state). Folding the blend into the shader as Direct3D 12 does (64
    pairs to 15, with dual-source blending) brings them under it.
-2. Every resize (resolution, widescreen, SSAA, the upscaler's size):
-   write-out compiled there (`VulkanWriteOut::Init`), the compute
-   renderer's modules and kernels remade, SSAA resolve, the overlay quad
-   and the motion vector pass dropped and remade, made by the frame that
-   needs them first (`Need`).
+2. A resize: done. The write-out's pipeline is asked of the worker as the
+   renderer starts, whether the option is on or not, and kept through
+   every size (`VulkanWriteOut`); a change of size alone keeps the compute
+   renderer's kernels (`ComputeDrawer::Resize()`), and nothing stops the
+   machine for it; what a change of SSAA remakes is made on the worker
+   while the kept picture shows. A picture of another shape (widescreen
+   turned on or off) is carried with its 4:3 where the new one's is
+   (`QuadGameArea()`). `vk_draw_path.sh` changes the internal resolution,
+   widescreen and the scaler's write-out while the game runs.
 3. Option changes: `PipelineManager::Reset` waits for the worker and the
    device; the HDR subpass pipeline is made with the render pass; the TA
    decoder's modules are made when it is turned on. A change of renderer
@@ -149,9 +153,8 @@ Done, but for:
 1. The blend folded into the general shaders (dual-source blending,
    where the device has it), so a device with neither extension has its
    reachable states made at the start too.
-2. A pipeline remade for a resize made on the worker beside the old one,
-   which draws until the new one is ready (write-out, the compute
-   renderer, SSAA resolve, the overlay quad, the motion vector pass).
+2. Done: nothing made for a resize on the draw path, and a size alone
+   does not stop the machine (write-out, the compute renderer's kernels).
 3. No skipped draws: the general table sized for every reachable key.
 
 ## Phase 3: OpenGL
