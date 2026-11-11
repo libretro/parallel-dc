@@ -1,8 +1,26 @@
 #pragma once
 
+/* What every file of the core includes, C++ and C (MSVC C89) alike: what
+ * only C++ takes is in #ifdef __cplusplus, and goes as the code that
+ * uses it becomes C (AGENTS.md, MSVC C89, gradually). */
 #include <stddef.h>
+#include <boolean.h>
 #include "build.h"
 #include "log/Log.h"
+
+/* (inline, as C89 has it) */
+#ifdef __cplusplus
+#define TYPES_INLINE inline
+#else
+#define TYPES_INLINE __inline
+#endif
+
+/* (a union without a name, which MSVC takes and C89 does not) */
+#if defined(__GNUC__) && !defined(__cplusplus)
+#define TYPES_ANON __extension__
+#else
+#define TYPES_ANON
+#endif
 
 #ifdef HAVE_LIBNX
 #include <strings.h>
@@ -22,7 +40,7 @@
 #ifdef _MSC_VER
 #define DYNACALL  __fastcall
 #else
-//android defines fastcall as regparm(3), it doesn't work for us
+/* android defines fastcall as regparm(3), it doesn't work for us */
 #undef fastcall
 #define DYNACALL __attribute__((fastcall))
 #endif
@@ -42,13 +60,13 @@
 #endif
 
 #define _CRT_SECURE_NO_DEPRECATE 
-//unnamed struncts/unions
+/* unnamed struncts/unions */
 #pragma warning( disable : 4201)
 
-//unused parameters
+/* unused parameters */
 #pragma warning( disable : 4100)
 
-//SHUT UP M$ COMPILER !@#!@$#
+/* SHUT UP M$ COMPILER !@#!@$# */
 #ifdef _CRT_SECURE_CPP_OVERLOAD_STANDARD_NAMES
 #undef _CRT_SECURE_CPP_OVERLOAD_STANDARD_NAMES
 #endif
@@ -60,20 +78,20 @@
 #endif
 #define _CRT_SECURE_NO_DEPRECATE
 
-//Do not complain when i use enum::member
+/* Do not complain when i use enum::member */
 #pragma warning( disable : 4482)
 
-//unnamed struncts/unions
+/* unnamed struncts/unions */
 #pragma warning( disable : 4201)
 
-//unused parameters
+/* unused parameters */
 #pragma warning( disable : 4100)
 #endif
 
 #include <stdint.h>
 #include <stddef.h>
 
-//basic types
+/* basic types */
 typedef int8_t  s8;
 typedef int16_t s16;
 typedef int32_t s32;
@@ -88,29 +106,36 @@ typedef float f32;
 typedef double f64;
 
 #include <string.h>
+#include <stdlib.h>
+#include <stdio.h>
+
+/* (C linkage for what C and C++ both call; what only C++ has is outside it) */
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 /* Whether a value is a NaN, asked of its bits. Several targets - Android,
  * the Switch, the PlayStation Classic - are built with fast-math, which
  * tells the compiler there are no NaNs: it then drops std::isnan() and
  * every comparison a NaN would fail, and the code that depended on them
  * runs as if they were not there. It cannot drop these. */
-static inline u32 float_bits(f32 f)
+static TYPES_INLINE u32 float_bits(f32 f)
 {
 	u32 bits;
 	memcpy(&bits, &f, sizeof(bits));
 	return bits;
 }
 
-static inline bool float_is_nan(f32 f)
+static TYPES_INLINE bool float_is_nan(f32 f)
 {
 	return (float_bits(f) & 0x7fffffff) > 0x7f800000;
 }
 
-static inline bool double_is_nan(f64 f)
+static TYPES_INLINE bool double_is_nan(f64 f)
 {
 	u64 bits;
 	memcpy(&bits, &f, sizeof(bits));
-	return (bits & 0x7fffffffffffffffull) > 0x7ff0000000000000ull;
+	return (bits & (((u64)0x7fffffff << 32) | 0xffffffff)) > ((u64)0x7ff00000 << 32);
 }
 
 typedef ptrdiff_t snat;
@@ -134,10 +159,7 @@ enum page_access
    ACC_READWRITEEXEC
 };
 
-typedef float f32;
-typedef double f64;
-
-//intc function pointer and enums
+/* intc function pointer and enums */
 enum HollyInterruptType
 {
 	holly_nrm = 0x0000,
@@ -147,76 +169,77 @@ enum HollyInterruptType
 
 enum HollyInterruptID
 {		
-		// asic9a /sh4 external holly normal [internal]
-		holly_RENDER_DONE_vd = holly_nrm | 0,	//bit 0 = End of Render interrupt : Video
-		holly_RENDER_DONE_isp = holly_nrm | 1,	//bit 1 = End of Render interrupt : ISP
-		holly_RENDER_DONE = holly_nrm | 2,		//bit 2 = End of Render interrupt : TSP
+		/* asic9a /sh4 external holly normal [internal] */
+		holly_RENDER_DONE_vd = holly_nrm | 0,	/* bit 0 = End of Render interrupt : Video */
+		holly_RENDER_DONE_isp = holly_nrm | 1,	/* bit 1 = End of Render interrupt : ISP */
+		holly_RENDER_DONE = holly_nrm | 2,		/* bit 2 = End of Render interrupt : TSP */
 
-		holly_SCANINT1 = holly_nrm | 3,			//bit 3 = V Blank-in interrupt
-		holly_SCANINT2 = holly_nrm | 4,			//bit 4 = V Blank-out interrupt
-		holly_HBLank = holly_nrm | 5,			//bit 5 = H Blank-in interrupt
+		holly_SCANINT1 = holly_nrm | 3,			/* bit 3 = V Blank-in interrupt */
+		holly_SCANINT2 = holly_nrm | 4,			/* bit 4 = V Blank-out interrupt */
+		holly_HBLank = holly_nrm | 5,			/* bit 5 = H Blank-in interrupt */
 												
-		holly_YUV_DMA = holly_nrm | 6,			//bit 6 = End of Transferring interrupt : YUV
-		holly_OPAQUE = holly_nrm | 7,			//bit 7 = End of Transferring interrupt : Opaque List
-		holly_OPAQUEMOD = holly_nrm | 8,		//bit 8 = End of Transferring interrupt : Opaque Modifier Volume List
+		holly_YUV_DMA = holly_nrm | 6,			/* bit 6 = End of Transferring interrupt : YUV */
+		holly_OPAQUE = holly_nrm | 7,			/* bit 7 = End of Transferring interrupt : Opaque List */
+		holly_OPAQUEMOD = holly_nrm | 8,		/* bit 8 = End of Transferring interrupt : Opaque Modifier Volume List */
 		
-		holly_TRANS = holly_nrm | 9,			//bit 9 = End of Transferring interrupt : Translucent List
-		holly_TRANSMOD = holly_nrm | 10,		//bit 10 = End of Transferring interrupt : Translucent Modifier Volume List
-		holly_PVR_DMA = holly_nrm | 11,			//bit 11 = End of DMA interrupt : PVR-DMA
-		holly_MAPLE_DMA = holly_nrm | 12,		//bit 12 = End of DMA interrupt : Maple-DMA
+		holly_TRANS = holly_nrm | 9,			/* bit 9 = End of Transferring interrupt : Translucent List */
+		holly_TRANSMOD = holly_nrm | 10,		/* bit 10 = End of Transferring interrupt : Translucent Modifier Volume List */
+		holly_PVR_DMA = holly_nrm | 11,			/* bit 11 = End of DMA interrupt : PVR-DMA */
+		holly_MAPLE_DMA = holly_nrm | 12,		/* bit 12 = End of DMA interrupt : Maple-DMA */
 
-		holly_MAPLE_VBOI = holly_nrm | 13,		//bit 13 = Maple V blank over interrupt
-		holly_GDROM_DMA = holly_nrm | 14,		//bit 14 = End of DMA interrupt : GD-DMA
-		holly_SPU_DMA = holly_nrm | 15,			//bit 15 = End of DMA interrupt : AICA-DMA
+		holly_MAPLE_VBOI = holly_nrm | 13,		/* bit 13 = Maple V blank over interrupt */
+		holly_GDROM_DMA = holly_nrm | 14,		/* bit 14 = End of DMA interrupt : GD-DMA */
+		holly_SPU_DMA = holly_nrm | 15,			/* bit 15 = End of DMA interrupt : AICA-DMA */
 		
-		holly_EXT_DMA1 = holly_nrm | 16,		//bit 16 = End of DMA interrupt : Ext-DMA1(External 1)
-		holly_EXT_DMA2 = holly_nrm | 17,		//bit 17 = End of DMA interrupt : Ext-DMA2(External 2)
-		holly_DEV_DMA = holly_nrm | 18,			//bit 18 = End of DMA interrupt : Dev-DMA(Development tool DMA)
+		holly_EXT_DMA1 = holly_nrm | 16,		/* bit 16 = End of DMA interrupt : Ext-DMA1(External 1) */
+		holly_EXT_DMA2 = holly_nrm | 17,		/* bit 17 = End of DMA interrupt : Ext-DMA2(External 2) */
+		holly_DEV_DMA = holly_nrm | 18,			/* bit 18 = End of DMA interrupt : Dev-DMA(Development tool DMA) */
 		
-		holly_CH2_DMA = holly_nrm | 19,			//bit 19 = End of DMA interrupt : ch2-DMA 
-		holly_PVR_SortDMA = holly_nrm | 20,		//bit 20 = End of DMA interrupt : Sort-DMA (Transferring for alpha sorting)
-		holly_PUNCHTHRU = holly_nrm | 21,		//bit 21 = End of Transferring interrupt : Punch Through List
+		holly_CH2_DMA = holly_nrm | 19,			/* bit 19 = End of DMA interrupt : ch2-DMA */
+		holly_PVR_SortDMA = holly_nrm | 20,		/* bit 20 = End of DMA interrupt : Sort-DMA (Transferring for alpha sorting) */
+		holly_PUNCHTHRU = holly_nrm | 21,		/* bit 21 = End of Transferring interrupt : Punch Through List */
 
-		// asic9c/sh4 external holly external [EXTERNAL]
-		holly_GDROM_CMD = holly_ext | 0x00,	//bit 0 = GD-ROM interrupt
-		holly_SPU_IRQ = holly_ext | 0x01,	//bit 1 = AICA interrupt
-		holly_EXP_8BIT = holly_ext | 0x02,	//bit 2 = Modem interrupt
-		holly_EXP_PCI = holly_ext | 0x03,	//bit 3 = External Device interrupt
+		/* asic9c/sh4 external holly external [EXTERNAL] */
+		holly_GDROM_CMD = holly_ext | 0x00,	/* bit 0 = GD-ROM interrupt */
+		holly_SPU_IRQ = holly_ext | 0x01,	/* bit 1 = AICA interrupt */
+		holly_EXP_8BIT = holly_ext | 0x02,	/* bit 2 = Modem interrupt */
+		holly_EXP_PCI = holly_ext | 0x03,	/* bit 3 = External Device interrupt */
 
-		// asic9b/sh4 external holly err only error [error]
-		//missing quite a few ehh ?
-		//bit 0 = RENDER : ISP out of Cache(Buffer over flow)
-		//bit 1 = RENDER : Hazard Processing of Strip Buffer
-		holly_PRIM_NOMEM = holly_err | 0x02,	//bit 2 = TA : ISP/TSP Parameter Overflow
-		holly_MATR_NOMEM = holly_err | 0x03,	//bit 3 = TA : Object List Pointer Overflow
-		//bit 4 = TA : Illegal Parameter
-		//bit 5 = TA : FIFO Overflow
-		//bit 6 = PVRIF : Illegal Address set
-		//bit 7 = PVRIF : DMA over run
-		holly_MAPLE_ILLADDR = holly_err | 0x08,  //bit 8 = MAPLE : Illegal Address set
-		holly_MAPLE_OVERRUN = holly_err | 0x09,  //bit 9 = MAPLE : DMA over run
-		holly_MAPLE_FIFO = holly_err | 0x0a,     //bit 10 = MAPLE : Write FIFO overflow
-		holly_MAPLE_ILLCMD = holly_err | 0x0b,   //bit 11 = MAPLE : Illegal command
-		//bit 12 = G1 : Illegal Address set
-		//bit 13 = G1 : GD-DMA over run
-		//bit 14 = G1 : ROM/FLASH access at GD-DMA
-		holly_AICA_ILLADDR = holly_err | 0x0f,   //bit 15 = G2 : AICA-DMA Illegal Address set
-		holly_EXT1_ILLADDR = holly_err | 0x10,   //bit 16 = G2 : Ext-DMA1 Illegal Address set
-		holly_EXT2_ILLADDR = holly_err | 0x11,   //bit 17 = G2 : Ext-DMA2 Illegal Address set
-		holly_DEV_ILLADDR = holly_err | 0x12,    //bit 18 = G2 : Dev-DMA Illegal Address set
-		holly_AICA_OVERRUN = holly_err | 0x13,   //bit 19 = G2 : AICA-DMA over run
-		holly_EXT1_OVERRUN = holly_err | 0x14,   //bit 20 = G2 : Ext-DMA1 over run
-		holly_EXT2_OVERRUN = holly_err | 0x15,   //bit 21 = G2 : Ext-DMA2 over run
-		holly_DEV_OVERRUN = holly_err | 0x16,    //bit 22 = G2 : Dev-DMA over run
-		//bit 23 = G2 : AICA-DMA Time out
-		//bit 24 = G2 : Ext-DMA1 Time out
-		//bit 25 = G2 : Ext-DMA2 Time out
-		//bit 26 = G2 : Dev-DMA Time out
-		//bit 27 = G2 : Time out in CPU accessing
+		/* asic9b/sh4 external holly err only error [error] */
+		/* missing quite a few ehh ? */
+		/* bit 0 = RENDER : ISP out of Cache(Buffer over flow) */
+		/* bit 1 = RENDER : Hazard Processing of Strip Buffer */
+		holly_PRIM_NOMEM = holly_err | 0x02,	/* bit 2 = TA : ISP/TSP Parameter Overflow */
+		holly_MATR_NOMEM = holly_err | 0x03,	/* bit 3 = TA : Object List Pointer Overflow */
+		/* bit 4 = TA : Illegal Parameter */
+		/* bit 5 = TA : FIFO Overflow */
+		/* bit 6 = PVRIF : Illegal Address set */
+		/* bit 7 = PVRIF : DMA over run */
+		holly_MAPLE_ILLADDR = holly_err | 0x08,  /* bit 8 = MAPLE : Illegal Address set */
+		holly_MAPLE_OVERRUN = holly_err | 0x09,  /* bit 9 = MAPLE : DMA over run */
+		holly_MAPLE_FIFO = holly_err | 0x0a,     /* bit 10 = MAPLE : Write FIFO overflow */
+		holly_MAPLE_ILLCMD = holly_err | 0x0b,   /* bit 11 = MAPLE : Illegal command */
+		/* bit 12 = G1 : Illegal Address set */
+		/* bit 13 = G1 : GD-DMA over run */
+		/* bit 14 = G1 : ROM/FLASH access at GD-DMA */
+		holly_AICA_ILLADDR = holly_err | 0x0f,   /* bit 15 = G2 : AICA-DMA Illegal Address set */
+		holly_EXT1_ILLADDR = holly_err | 0x10,   /* bit 16 = G2 : Ext-DMA1 Illegal Address set */
+		holly_EXT2_ILLADDR = holly_err | 0x11,   /* bit 17 = G2 : Ext-DMA2 Illegal Address set */
+		holly_DEV_ILLADDR = holly_err | 0x12,    /* bit 18 = G2 : Dev-DMA Illegal Address set */
+		holly_AICA_OVERRUN = holly_err | 0x13,   /* bit 19 = G2 : AICA-DMA over run */
+		holly_EXT1_OVERRUN = holly_err | 0x14,   /* bit 20 = G2 : Ext-DMA1 over run */
+		holly_EXT2_OVERRUN = holly_err | 0x15,   /* bit 21 = G2 : Ext-DMA2 over run */
+		holly_DEV_OVERRUN = holly_err | 0x16     /* bit 22 = G2 : Dev-DMA over run */
+		/* bit 23 = G2 : AICA-DMA Time out */
+		/* bit 24 = G2 : Ext-DMA1 Time out */
+		/* bit 25 = G2 : Ext-DMA2 Time out */
+		/* bit 26 = G2 : Dev-DMA Time out */
+		/* bit 27 = G2 : Time out in CPU accessing */
 };
 
 
 
+typedef struct vram_block vram_block;
 struct vram_block
 {
 	u32 start;
@@ -237,30 +260,30 @@ extern unsigned ARAM_SIZE;
 extern unsigned VRAM_MASK;
 extern unsigned ARAM_MASK;
 
-#define GD_CLOCK 33868800				//GDROM XTAL -- 768fs
+#define GD_CLOCK 33868800				/* GDROM XTAL -- 768fs */
 
-#define AICA_CORE_CLOCK (GD_CLOCK*4/3)		//[45158400]  GD->PLL 3:4 -> AICA CORE	 -- 1024fs
-#define ADAC_CLOCK (AICA_CORE_CLOCK/2)		//[11289600]  44100*256, AICA CORE -> PLL 4:1 -> ADAC -- 256fs
-#define AICA_ARM_CLOCK (AICA_CORE_CLOCK/2)	//[22579200]  AICA CORE -> PLL 2:1 -> ARM
-#define AICA_SDRAM_CLOCK (GD_CLOCK*2)		//[67737600]  GD-> PLL 2 -> SDRAM
-#define SH4_MAIN_CLOCK (200*1000*1000)		//[200000000] XTal(13.5) -> PLL (33.3) -> PLL 1:6 (200)
-#define SH4_RAM_CLOCK (100*1000*1000)		//[100000000] XTal(13.5) -> PLL (33.3) -> PLL 1:3 (100)	, also suplied to HOLLY chip
-#define G2_BUS_CLOCK (25*1000*1000)			//[25000000]  from Holly, from SH4_RAM_CLOCK w/ 2 2:1 plls
+#define AICA_CORE_CLOCK (GD_CLOCK*4/3)		/* [45158400]  GD->PLL 3:4 -> AICA CORE	 -- 1024fs */
+#define ADAC_CLOCK (AICA_CORE_CLOCK/2)		/* [11289600]  44100*256, AICA CORE -> PLL 4:1 -> ADAC -- 256fs */
+#define AICA_ARM_CLOCK (AICA_CORE_CLOCK/2)	/* [22579200]  AICA CORE -> PLL 2:1 -> ARM */
+#define AICA_SDRAM_CLOCK (GD_CLOCK*2)		/* [67737600]  GD-> PLL 2 -> SDRAM */
+#define SH4_MAIN_CLOCK (200*1000*1000)		/* [200000000] XTal(13.5) -> PLL (33.3) -> PLL 1:6 (200) */
+#define SH4_RAM_CLOCK (100*1000*1000)		/* [100000000] XTal(13.5) -> PLL (33.3) -> PLL 1:3 (100)	, also suplied to HOLLY chip */
+#define G2_BUS_CLOCK (25*1000*1000)			/* [25000000]  from Holly, from SH4_RAM_CLOCK w/ 2 2:1 plls */
 
 
-////////////////////////////////////////////////////////////////////////////////////////////////////////////
+/* ////////////////////////////////////////////////////////////////////////////////////////////////////////// */
 
-//******************************************************
-//*********************** PowerVR **********************
-//******************************************************
+/* ****************************************************** */
+/* *********************** PowerVR ********************** */
+/* ****************************************************** */
  
 vram_block* libCore_vramlock_Lock(u32 start_offset,u32 end_offset,void* userdata);
 
 
 
-//******************************************************
-//************************ GDRom ***********************
-//******************************************************
+/* ****************************************************** */
+/* ************************ GDRom *********************** */
+/* ****************************************************** */
 enum DiscType
 {
 	CdDA=0x00,
@@ -270,10 +293,11 @@ enum DiscType
 	CdRom_CDI=0x40,
 	GdRom=0x80,		
 
-	NoDisk=0x1,			//These are a bit hacky .. but work for now ...
-	Open=0x2,			//tray is open :)
-	Busy=0x3			//busy -> needs to be automatically done by gdhost
+	NoDisk=0x1,			/* These are a bit hacky .. but work for now ... */
+	Open=0x2,			/* tray is open :) */
+	Busy=0x3			/* busy -> needs to be automatically done by gdhost */
 };
+typedef enum DiscType DiscType;
 
 enum DiskArea
 {
@@ -281,9 +305,9 @@ enum DiskArea
 	DoubleDensity
 };
 
-//******************************************************
-//************************ AICA ************************
-//******************************************************
+/* ****************************************************** */
+/* ************************ AICA ************************ */
+/* ****************************************************** */
 void libARM_InterruptChange(u32 bits,u32 L);
 /* The next CDDA sector: lent from the image, or read into @sector and
  * returned as @sector. */
@@ -293,20 +317,21 @@ const s16* libCore_CDDA_Sector(s16* sector);
 void libCore_CDDA_Detach(void);
 
 
-//passed on AICA init call
+/* passed on AICA init call */
 
 
-//Ram/Regs are managed by plugin , exept RTC regs (managed by main emu)
+/* Ram/Regs are managed by plugin , exept RTC regs (managed by main emu) */
 
-//******************************************************
-//******************** ARM Sound CPU *******************
-//******************************************************
+/* ****************************************************** */
+/* ******************** ARM Sound CPU ******************* */
+/* ****************************************************** */
 
-//******************************************************
-//****************** Maple devices ******************
-//******************************************************
+/* ****************************************************** */
+/* ****************** Maple devices ****************** */
+/* ****************************************************** */
 
 
+#ifdef __cplusplus
 enum MapleDeviceCreationFlags
 {
 	MDCF_None=0,
@@ -316,46 +341,48 @@ enum MapleDeviceCreationFlags
 struct maple_subdevice_instance;
 struct maple_device_instance;
 
-//buffer_out_len and responce need to be filled w/ proper info by the plugin
-//buffer_in must not be edited (its direct pointer on ram)
-//output buffer must contain the frame data , the frame header is generated by the maple routing code
-//typedef u32 FASTCALL MapleSubDeviceDMAFP(void* device_instance,u32 Command,u32* buffer_in,u32 buffer_in_len,u32* buffer_out,u32& buffer_out_len);
+/* buffer_out_len and responce need to be filled w/ proper info by the plugin */
+/* buffer_in must not be edited (its direct pointer on ram) */
+/* output buffer must contain the frame data , the frame header is generated by the maple routing code */
+/* typedef u32 FASTCALL MapleSubDeviceDMAFP(void* device_instance,u32 Command,u32* buffer_in,u32 buffer_in_len,u32* buffer_out,u32& buffer_out_len); */
 typedef u32 MapleDeviceDMAFP(void* device_instance,u32 Command,u32* buffer_in,u32 buffer_in_len,u32* buffer_out,u32& buffer_out_len);
 
 struct maple_subdevice_instance
 {
-	//port
+	/* port */
 	u8 port;
-	//user data
+	/* user data */
 	void* data;
-	//MapleDeviceDMA
+	/* MapleDeviceDMA */
 	MapleDeviceDMAFP* dma;
 	bool connected;
-	u32 reserved;	//reserved for the emu , DO NOT EDIT
+	u32 reserved;	/* reserved for the emu , DO NOT EDIT */
 };
 struct maple_device_instance
 {
-	//port
+	/* port */
 	u8 port;
-	//user data
+	/* user data */
 	void* data;
-	//MapleDeviceDMA
+	/* MapleDeviceDMA */
 	MapleDeviceDMAFP* dma;
 	bool connected;
 
 	maple_subdevice_instance subdevices[5];
 };
+#endif
 
 
-//includes from CRT
-#include <stdlib.h>
-#include <stdio.h>
 
-//includes from c++rt
+#ifdef __cplusplus
+}
+/* includes from c++rt */
 #include <vector>
 #include <string>
+extern "C" {
+#endif
 
-//used for asm-olny functions
+/* used for asm-olny functions */
 #if defined(X86) && defined(_MSC_VER)
 #define naked   __declspec( naked )
 #else
@@ -365,19 +392,19 @@ struct maple_device_instance
 
 #ifndef INLINE
 #if DEBUG
-//force
+/* force */
 #define INLINE
-//sugest
+/* sugest */
 #define SINLINE
 #else
-//force
+/* force */
 #define INLINE __forceinline
-//sugest
+/* sugest */
 #define SINLINE __inline
 #endif
 #endif
 
-//no inline -- fixme
+/* no inline -- fixme */
 #ifdef _MSC_VER
 #define NOINLINE __declspec(noinline)
 #else
@@ -394,8 +421,12 @@ struct maple_device_instance
 #define expected(x, y) __builtin_expect((x), (y))
 #endif
 
-//basic includes
+#ifdef __cplusplus
+}
+/* basic includes */
 #include "stdclass.h"
+extern "C" {
+#endif
 
 #ifdef _ANDROID
 #include <android/log.h>
@@ -464,8 +495,8 @@ void os_DebugBreak(void);
 #define die(reason) { dbgbreak;}
 
 
-//will be removed sometime soon
-//This shit needs to be moved to proper headers
+/* will be removed sometime soon */
+/* This shit needs to be moved to proper headers */
 typedef u32  RegReadAddrFP(u32 addr);
 
 typedef void RegWriteAddrFP(u32 addr, u32 data);
@@ -482,7 +513,7 @@ typedef void RegWriteAddrFP(u32 addr, u32 data);
 */
 enum RegStructFlags
 {
-	//Basic :
+	/* Basic : */
 	REG_ACCESS_8=1,
 	REG_ACCESS_16=2,
 	REG_ACCESS_32=4,
@@ -492,7 +523,7 @@ enum RegStructFlags
 	REG_RO=32,
 	REG_WO=64,
 	REG_CONST=128,
-	REG_NO_ACCESS=REG_RO|REG_WO,
+	REG_NO_ACCESS=REG_RO|REG_WO
 };
 
 enum RegIO
@@ -507,69 +538,73 @@ enum RegIO
 	RIO_NO_ACCESS = REG_WF | REG_RF | REG_NO_ACCESS
 };
 
+typedef struct RegisterStruct RegisterStruct;
 struct RegisterStruct
 {
-	union
+	TYPES_ANON union
 	{
-		u32 data32;					//stores data of reg variable [if used] 32b
-		u16 data16;					//stores data of reg variable [if used] 16b
-		u8  data8;					//stores data of reg variable [if used]	8b
+		u32 data32;					/* stores data of reg variable [if used] 32b */
+		u16 data16;					/* stores data of reg variable [if used] 16b */
+		u8  data8;					/* stores data of reg variable [if used]	8b */
 
-		RegReadAddrFP* readFunctionAddr;	//stored pointer to reg read function
+		RegReadAddrFP* readFunctionAddr;	/* stored pointer to reg read function */
 	};
 
 	RegWriteAddrFP* writeFunctionAddr;
 
-	u32 flags;					//Access flags !
+	u32 flags;					/* Access flags ! */
 
+#ifdef __cplusplus
 	void reset()
 	{
 		if (!(flags & (REG_RO | REG_RF)))
 			data32 = 0;
 	}
+#endif
 };
 
-enum class JVS {
-	Default,
-	FourPlayers,
-	RotaryEncoders,
-	SegaMarineFishing,
-	DualIOBoards4P,
-	Analog,
-	LightGun,
-	Mazan,
-	GunSurvivor,
-	DogWalking,
-	TouchDeUno,
-	WorldKicks,
-	WorldKicksPCB,
-	Keyboard,
-	OutTrigger,
-	LightGunAsAnalog,
-	WaveRunnerGP,
-	// The 837-13844 board wired to a drive board with force feedback
-	F355,
-	TokyoBus,
-	EighteenWheeler,
-	SambaDeAmigo,
+enum JVS {
+	JVS_Default,
+	JVS_FourPlayers,
+	JVS_RotaryEncoders,
+	JVS_SegaMarineFishing,
+	JVS_DualIOBoards4P,
+	JVS_Analog,
+	JVS_LightGun,
+	JVS_Mazan,
+	JVS_GunSurvivor,
+	JVS_DogWalking,
+	JVS_TouchDeUno,
+	JVS_WorldKicks,
+	JVS_WorldKicksPCB,
+	JVS_Keyboard,
+	JVS_OutTrigger,
+	JVS_LightGunAsAnalog,
+	JVS_WaveRunnerGP,
+	/* The 837-13844 board wired to a drive board with force feedback */
+	JVS_F355,
+	JVS_TokyoBus,
+	JVS_EighteenWheeler,
+	JVS_SambaDeAmigo
 };
 
+typedef struct settings_t settings_t;
 struct settings_t
 {
 	unsigned System;
 
 	struct {
 		bool UseReios;
-		bool UseRealBios;	// the option: the real BIOS if it is there; reios if it is not, or if this is off
+		bool UseRealBios;	/* the option: the real BIOS if it is there; reios if it is not, or if this is off */
 	} bios;
 
 	struct {
-      std::string ElfFile;
+		char ElfFile[4096];	/* the program to boot, "" for none */
 	} reios;
 
 	struct
 	{
-		bool ForceTextureLOD0;	// every texture drawn with its largest level only: mipmapping, which the console does, off
+		bool ForceTextureLOD0;	/* every texture drawn with its largest level only: mipmapping, which the console does, off */
 		bool WideScreen;
 		int RenderToTextureUpscale;
 		bool TranslucentPolygonDepthMask;
@@ -579,12 +614,12 @@ struct settings_t
 		bool ThreadedRendering;
 		bool CustomTextures;
 		bool DumpTextures;
-		bool TextureDebug;	// Vulkan: what each texture drawn is, and its levels read back, in the log now and then
+		bool TextureDebug;	/* Vulkan: what each texture drawn is, and its levels read back, in the log now and then */
 		bool WidescreenGameHacks;
 		int AnisotropicFiltering;
-		bool GpuTextureDecode;	// textures converted from their bytes in video memory by the GPU, where the renderer can
-		bool GpuTextureDecodeD3D9;	// ...on Direct3D 9 too, whose pixel shaders do it (not by default)
-		int Ssaa;	// samples a pixel asked for (1: off, 2, 4 or 8); the renderer may take fewer (rend/ssaa_pattern.h)
+		bool GpuTextureDecode;	/* textures converted from their bytes in video memory by the GPU, where the renderer can */
+		bool GpuTextureDecodeD3D9;	/* ...on Direct3D 9 too, whose pixel shaders do it (not by default) */
+		int Ssaa;	/* samples a pixel asked for (1: off, 2, 4 or 8); the renderer may take fewer (rend/ssaa_pattern.h) */
 	} rend;
 
 	struct
@@ -593,17 +628,17 @@ struct settings_t
 		bool disable_nvmem;
 		bool DisableDivMatching;
 		bool ForceDisableDivMatching;
-		bool PrecompileFpcb;	// eagerly commit the whole block-dispatch table
-		bool Arm7Interpreter;	// the sound chip's ARM7 interpreted, where there is the choice
-		bool AccurateTiming;	// SH4 instructions cost what hw/sh4/sh4_cycles.h says, not the old flat 8 or 0
+		bool PrecompileFpcb;	/* eagerly commit the whole block-dispatch table */
+		bool Arm7Interpreter;	/* the sound chip's ARM7 interpreted, where there is the choice */
+		bool AccurateTiming;	/* SH4 instructions cost what hw/sh4/sh4_cycles.h says, not the old flat 8 or 0 */
 	} dynarec;
 	
 	struct
 	{
-		u32 cable;			// 0 -> VGA, 1 -> VGA, 2 -> RGB, 3 -> TV
-		u32 region;			// 0 -> JP, 1 -> USA, 2 -> EU, 3 -> default
-		u32 broadcast;		// 0 -> NTSC, 1 -> PAL, 2 -> PAL/M, 3 -> PAL/N, 4 -> default
-		u32 language;		// 0 -> JP, 1 -> EN, 2 -> DE, 3 -> FR, 4 -> SP, 5 -> IT, 6 -> default
+		u32 cable;			/* 0 -> VGA, 1 -> VGA, 2 -> RGB, 3 -> TV */
+		u32 region;			/* 0 -> JP, 1 -> USA, 2 -> EU, 3 -> default */
+		u32 broadcast;		/* 0 -> NTSC, 1 -> PAL, 2 -> PAL/M, 3 -> PAL/N, 4 -> default */
+		u32 language;		/* 0 -> JP, 1 -> EN, 2 -> DE, 3 -> FR, 4 -> SP, 5 -> IT, 6 -> default */
 		bool FullMMU;
 		bool ForceWinCE;
 	} dreamcast;
@@ -628,13 +663,13 @@ struct settings_t
 
 
 	struct {
-		JVS JammaSetup;
+		enum JVS JammaSetup;
 	} mapping;
 
 	struct {
 		bool ActAsServer;
-		std::string dns;
-		std::string server;
+		char dns[256];
+		char server[256];
       bool EmulateBBA;
 	} network;
 };
@@ -647,29 +682,33 @@ extern settings_t settings;
 void LoadSettings(void);
 u32 GetRTC_now(void);
 
-static inline bool is_s8(u32 v) { return (s8)v==(s32)v; }
-static inline bool is_u8(u32 v) { return (u8)v==(s32)v; }
-static inline bool is_s16(u32 v) { return (s16)v==(s32)v; }
-static inline bool is_u16(u32 v) { return (u16)v==(u32)v; }
+static TYPES_INLINE bool is_s8(u32 v) { return (s8)v==(s32)v; }
+static TYPES_INLINE bool is_u8(u32 v) { return (u8)v==(s32)v; }
+static TYPES_INLINE bool is_s16(u32 v) { return (s16)v==(s32)v; }
+static TYPES_INLINE bool is_u16(u32 v) { return (u16)v==(u32)v; }
 
+#ifdef __cplusplus
+}
 #include "hw/sh4/sh4_if.h"
+extern "C" {
 
-//more to come
+/* more to come */
 
 extern sh4_if				  sh4_cpu;
+#endif
 
-//sh4 thread
+/* sh4 thread */
 s32 plugins_Init();
 void plugins_Term(void);
 void plugins_Reset(bool Manual);
 
-//PVR
+/* PVR */
 s32 libPvr_Init(void);
 void libPvr_Reset(bool hard);
 void libPvr_Term(void);
 
 
-//AICA
+/* AICA */
 s32 libAICA_Init(void);
 void libAICA_Reset(bool Manual);
 void libAICA_Term(void);
@@ -677,22 +716,24 @@ void libAICA_Term(void);
 
 u32  libAICA_ReadReg(u32 addr,u32 size);
 void libAICA_WriteReg(u32 addr,u32 data,u32 size);
-void libAICA_Update(u32 cycles);				//called every ~1800 cycles, set to 0 if not used
+void libAICA_Update(u32 cycles);				/* called every ~1800 cycles, set to 0 if not used */
 
 
-//GDR
+/* GDR */
 s32 libGDR_Init(void);
 void libGDR_Reset(bool hard);
 void libGDR_Term(void);
 
 void libCore_gdrom_disc_change(void);
 
-//IO
+/* IO */
 void libGDR_ReadSector(u8 * buff,u32 StartSector,u32 SectorCount,u32 secsz);
 u32 libGDR_LeadOutFAD();
 bool libGDR_DiscPresent();
+#ifdef __cplusplus
 void libGDR_GetTrackAdrAndControl(u32 track_num, u8& adr, u8& ctrl);
-// A disc put in while the game runs: see gdromv3.cpp
+#endif
+/* A disc put in while the game runs: see gdromv3.cpp */
 void gd_disc_inserted();
 bool gd_swap_pending();
 void gd_swap_cancel();
@@ -703,10 +744,12 @@ void libGDR_ReadSubChannel(u8 * buff, u32 format, u32 len);
 void libGDR_GetToc(u32* toc,u32 area);
 u32 libGDR_GetDiscType(void);
 void libGDR_GetSessionInfo(u8* pout,u8 session);
+#ifdef __cplusplus
 u32 libGDR_GetTrackNumber(u32 sector, u32& elapsed);
 bool libGDR_GetTrack(u32 track_num, u32& start_fad, u32& end_fad);
+#endif
 
-//ExtDev
+/* ExtDev */
 s32 libExtDevice_Init(void);
 void libExtDevice_Reset(bool M);
 void libExtDevice_Term(void);
@@ -714,18 +757,20 @@ void libExtDevice_Term(void);
 u32  libExtDevice_ReadMem_A0_006(u32 addr,u32 size);
 void libExtDevice_WriteMem_A0_006(u32 addr,u32 data,u32 size);
 
-//Area 0 , 0x01000000- 0x01FFFFFF	[Ext. Device]
-static u32 libExtDevice_ReadMem_A0_010(u32 addr,u32 size) { return 0; }
-static void libExtDevice_WriteMem_A0_010(u32 addr,u32 data,u32 size) { }
+/* Area 0 , 0x01000000- 0x01FFFFFF	[Ext. Device] */
+static TYPES_INLINE u32 libExtDevice_ReadMem_A0_010(u32 addr,u32 size) { (void)addr; (void)size; return 0; }
+static TYPES_INLINE void libExtDevice_WriteMem_A0_010(u32 addr,u32 data,u32 size) { (void)addr; (void)data; (void)size; }
 
-//Area 5
-static u32 libExtDevice_ReadMem_A5(u32 addr,u32 size){ return 0; }
-static void libExtDevice_WriteMem_A5(u32 addr,u32 data,u32 size) { }
+/* Area 5 */
+static TYPES_INLINE u32 libExtDevice_ReadMem_A5(u32 addr,u32 size){ (void)addr; (void)size; return 0; }
+static TYPES_INLINE void libExtDevice_WriteMem_A5(u32 addr,u32 data,u32 size) { (void)addr; (void)data; (void)size; }
 
-//ARM
+/* ARM */
 s32 libARM_Init();
 void libARM_Reset(bool hard);
 
+#ifdef __cplusplus
+}
 template<u32 sz>
 u32 ReadMemArr(u8 *array, u32 addr)
 {
@@ -768,6 +813,8 @@ struct OnLoad
 	typedef void OnLoadFP(void);
 	OnLoad(OnLoadFP* fp) { fp(); }
 };
+extern "C" {
+#endif
 
 bool ra_serialize(const void *src, unsigned int src_size, void **dest, unsigned int *total_size) ;
 bool ra_unserialize(void *src, unsigned int src_size, void **dest, unsigned int *total_size);
@@ -775,7 +822,7 @@ bool dc_serialize(void **data, unsigned int *total_size);
 bool dc_unserialize(void **data, unsigned int *total_size, size_t actual_data_size);
 void ra_unserialize_init(const void *base, size_t limit);
 bool ra_unserialize_failed(void);
-// whether the state being read has @size more bytes at @data: to look at them before they are read
+/* whether the state being read has @size more bytes at @data: to look at them before they are read */
 bool ra_unserialize_has(const void *data, size_t size);
 void ra_unserialize_fail(void);
 
@@ -786,8 +833,9 @@ void ra_unserialize_fail(void);
 #define LIBRETRO_USA(v_arr,num) ra_unserialize((v_arr), sizeof((v_arr)[0]) * (num), data, total_size)
 
 
-extern "C" void DYNACALL TAWriteSQ(u32 address,u8* sqb) ;
+void DYNACALL TAWriteSQ(u32 address,u8* sqb) ;
 
+typedef struct SoundFrame SoundFrame;
 struct SoundFrame
 {
    s16 l;
@@ -801,6 +849,7 @@ enum vmu_screen_position_enum
 	LOWER_LEFT,
 	LOWER_RIGHT
 };
+typedef enum vmu_screen_position_enum vmu_screen_position_enum;
 
 #define VMU_SCREEN_WIDTH 48
 #define VMU_SCREEN_HEIGHT 32
@@ -844,26 +893,30 @@ enum VMU_SCREEN_COLORS {
 	VMU_WHITE
 };
 
+typedef struct rgb_t rgb_t;
 struct rgb_t {
 	u8 r ;
 	u8 g ;
 	u8 b ;
 };
 
+/* (made as VMU_SCREEN_PARAMS_INIT has them: maple_cfg.cpp) */
+typedef struct vmu_screen_params_t vmu_screen_params_t;
 struct vmu_screen_params_t {
-	u8* vmu_lcd_screen = NULL ;
-	bool vmu_screen_display = false ;
-	u8 vmu_pixel_on_R = 128 ;
-	u8 vmu_pixel_on_G = 0 ;
-	u8 vmu_pixel_on_B = 0 ;
-	u8 vmu_pixel_off_R = 0;
-	u8 vmu_pixel_off_G = 0;
-	u8 vmu_pixel_off_B = 0;
-	u8 vmu_screen_size_mult = 2 ;
-	u8 vmu_screen_opacity = 0xBF ;
-	vmu_screen_position_enum vmu_screen_position = LOWER_RIGHT ;
-	bool vmu_screen_needs_update = true ;
+	u8* vmu_lcd_screen;
+	bool vmu_screen_display;
+	u8 vmu_pixel_on_R;
+	u8 vmu_pixel_on_G;
+	u8 vmu_pixel_on_B;
+	u8 vmu_pixel_off_R;
+	u8 vmu_pixel_off_G;
+	u8 vmu_pixel_off_B;
+	u8 vmu_screen_size_mult;
+	u8 vmu_screen_opacity;
+	vmu_screen_position_enum vmu_screen_position;
+	bool vmu_screen_needs_update;
 };
+#define VMU_SCREEN_PARAMS_INIT { NULL, false, 128, 0, 0, 0, 0, 0, 2, 0xBF, LOWER_RIGHT, true }
 
 extern const rgb_t VMU_SCREEN_COLOR_MAP[VMU_NUM_COLORS] ;
 extern const char* VMU_SCREEN_COLOR_NAMES[VMU_NUM_COLORS] ;
@@ -876,10 +929,10 @@ extern vmu_screen_params_t vmu_screen_params[4] ;
  * buffer. The emulation thread publishes a whole picture each time the
  * game changes it; the renderer takes the latest, and only ever sees a
  * whole one. Nothing is locked: the two exchange buffers (cTripleBuffer). */
-void vmu_lcd_publish(int screen, const u8 *pixels);	// emulation thread
-bool vmu_lcd_refresh(int screen);			// renderer: take the latest; true if it is a new one
-const u8 *vmu_lcd_pixels(int screen);			// renderer: the picture last taken, NULL before the first
-void vmu_lcd_reset(void);				// with neither running: no VMU has a picture
+void vmu_lcd_publish(int screen, const u8 *pixels);	/* emulation thread */
+bool vmu_lcd_refresh(int screen);			/* renderer: take the latest; true if it is a new one */
+const u8 *vmu_lcd_pixels(int screen);			/* renderer: the picture last taken, NULL before the first */
+void vmu_lcd_reset(void);				/* with neither running: no VMU has a picture */
 
 #define LIGHTGUN_CROSSHAIR_SIZE 16
 
@@ -892,6 +945,7 @@ enum LIGHTGUN_COLORS {
 	LIGHTGUN_COLORS_COUNT
 };
 
+typedef struct lightgun_params_t lightgun_params_t;
 struct lightgun_params_t {
 	bool offscreen;
 	float x;
@@ -936,5 +990,9 @@ enum serialize_version_enum {
    V29,
    V30,
    V31,
-   VCUR_LIBRETRO = V31,
+   VCUR_LIBRETRO = V31
 };
+
+#ifdef __cplusplus
+}
+#endif

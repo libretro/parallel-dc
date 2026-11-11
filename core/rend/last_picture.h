@@ -9,6 +9,9 @@
  *
  * R, G, B, A bytes, first line the top one. */
 #include "types.h"
+#include <retro_common_api.h>
+
+RETRO_BEGIN_DECLS
 
 /* A context is going: room for a picture of this size, to be filled in. */
 u8 *last_picture_keep(int width, int height);
@@ -16,3 +19,5 @@ u8 *last_picture_keep(int width, int height);
 const u8 *last_picture(int *width, int *height);
 /* It has been used, or is not wanted. */
 void last_picture_drop(void);
+
+RETRO_END_DECLS

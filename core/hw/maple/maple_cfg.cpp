@@ -149,7 +149,7 @@ const rgb_t VMU_SCREEN_COLOR_MAP[VMU_NUM_COLORS] = {
 		{ 0xFF, 0xFF, 0xFF }
 };
 
-vmu_screen_params_t vmu_screen_params[4] ;
+vmu_screen_params_t vmu_screen_params[4] = { VMU_SCREEN_PARAMS_INIT, VMU_SCREEN_PARAMS_INIT, VMU_SCREEN_PARAMS_INIT, VMU_SCREEN_PARAMS_INIT };
 
 u8 lightgun_img_crosshair[LIGHTGUN_CROSSHAIR_SIZE*LIGHTGUN_CROSSHAIR_SIZE] =
 {
@@ -446,18 +446,18 @@ void mcfg_CreateDevices()
 	  mcfg_Create(MDT_SegaController, 1, 5);
 	  switch (settings.mapping.JammaSetup)
 	  {
-	  case JVS::Analog:
+	  case JVS_Analog:
 		 // 2 players with analog axes
 		 mcfg_Create(MDT_SegaController, 2, 5, 0);
 		 mcfg_Create(MDT_SegaController, 3, 5, 1);
 		 break;
-	  case JVS::LightGun:
+	  case JVS_LightGun:
 		 // Light guns
 		 mcfg_Create(MDT_LightGun, 2, 5, 0);
 		 mcfg_Create(MDT_LightGun, 3, 5, 1);
 		 break;
-	  case JVS::RotaryEncoders:
-	  case JVS::SegaMarineFishing:
+	  case JVS_RotaryEncoders:
+	  case JVS_SegaMarineFishing:
 		 // Track-ball
 		 mcfg_Create(MDT_Mouse, 2, 5, 0);
 		 break;
@@ -582,12 +582,12 @@ static int mcfg_PlayerNum(MapleDeviceType type, int bus)
 {
 	switch (settings.mapping.JammaSetup)
 	{
-	case JVS::Analog:
+	case JVS_Analog:
 		return type == MDT_SegaController ? bus - 2 : -1;
-	case JVS::LightGun:
+	case JVS_LightGun:
 		return type == MDT_LightGun ? bus - 2 : -1;
-	case JVS::RotaryEncoders:
-	case JVS::SegaMarineFishing:
+	case JVS_RotaryEncoders:
+	case JVS_SegaMarineFishing:
 		return type == MDT_Mouse && bus == 2 ? 0 : -1;
 	default:
 		return -1;

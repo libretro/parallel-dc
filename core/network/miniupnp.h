@@ -17,29 +17,35 @@
     along with Flycast.  If not, see <https://www.gnu.org/licenses/>.
 */
 #pragma once
+#include <boolean.h>
+#include <retro_common_api.h>
 #include <net/net_upnp.h>
 
-/* The gateway's ports forwarded to this host while the network is up, and
- * given back when it goes (libretro-common's net/net_upnp.h). Init() and
- * AddPortMapping() wait on the network, up to a few seconds: they are
- * called off the emulation thread. */
-class MiniUPnP
-{
-public:
-	MiniUPnP() : found(false), count(0) {}
-	bool Init();
-	void Term();
-	bool AddPortMapping(int port, bool tcp);
+RETRO_BEGIN_DECLS
 
-private:
-	enum { MOST = 32 };
-	struct Mapping
-	{
-		unsigned port;
-		bool tcp;
-	};
+/* The gateway's ports forwarded to this host while the network is up, and
+ * given back when it goes (libretro-common's net/net_upnp.h).
+ * miniupnp_init() and miniupnp_add_port_mapping() wait on the network, up
+ * to a few seconds: they are called off the emulation thread. A miniupnp_t
+ * starts zeroed. */
+#define MINIUPNP_MOST 32
+
+typedef struct miniupnp
+{
 	struct net_upnp_gateway gateway;
 	bool found;
 	unsigned count;
-	Mapping mapped[MOST];
-};
+	struct
+	{
+		unsigned port;
+		bool tcp;
+	} mapped[MINIUPNP_MOST];
+} miniupnp_t;
+
+/* The gateway looked for: false when there is none */
+bool miniupnp_init(miniupnp_t *u);
+/* The ports mapped given back */
+void miniupnp_term(miniupnp_t *u);
+bool miniupnp_add_port_mapping(miniupnp_t *u, int port, bool tcp);
+
+RETRO_END_DECLS

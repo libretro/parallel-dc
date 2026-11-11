@@ -4,6 +4,7 @@
 //initialse Emu
 #include <retro_atomic.h>
 #include "types.h"
+#include <compat/strl.h>
 #include "hw/mem/_vmem.h"
 #include "stdclass.h"
 
@@ -428,7 +429,7 @@ static void LoadSpecialSettingsNaomi(const char *name)
          	settings.dynarec.ForceDisableDivMatching = settings.dynarec.DisableDivMatching = lut_games_naomi[i].disable_div;
          }
 
-         if (lut_games_naomi[i].jamma_setup != JVS::Default)
+         if (lut_games_naomi[i].jamma_setup != JVS_Default)
          {
          	NOTICE_LOG(BOOT, "[Hack]: Applying alternate Jamma I/O board setup.");
             settings.mapping.JammaSetup = lut_games_naomi[i].jamma_setup;
@@ -641,7 +642,7 @@ int dc_init()
    switch (settings.System)
    {
       case DC_PLATFORM_DREAMCAST:
-         if (libGDR_GetDiscType() == NoDisk && settings.reios.ElfFile.empty())
+         if (libGDR_GetDiscType() == NoDisk && (settings.reios.ElfFile[0] == 0))
          {
             /* Content loading failed so force HLE off and boot the BIOS */
             settings.bios.UseReios = false;
@@ -653,7 +654,7 @@ int dc_init()
             settings.imgread.DefaultImage[0] = '\0';
          }
          reios_disk_id();
-         if (libGDR_GetDiscType() != NoDisk && settings.reios.ElfFile.empty())
+         if (libGDR_GetDiscType() != NoDisk && (settings.reios.ElfFile[0] == 0))
             ChooseGameBios(new_system_dir, hle_bios);
          LoadSpecialSettings();
          break;
@@ -765,7 +766,7 @@ void LoadSettings(void)
 	settings.dynarec.Enable			= 1;
 	/* what the game loaded before this one had of its own */
 	forget_game_settings();
-	settings.mapping.JammaSetup = JVS::Default;
+	settings.mapping.JammaSetup = JVS_Default;
 	naomi_game_inputs = NULL;
 	//settings.dynarec.DisableDivMatching       = 0;
 	//disable_nvmem can't be loaded, because nvmem init is before cfg load
@@ -777,7 +778,7 @@ void LoadSettings(void)
 	settings.rend.TranslucentPolygonDepthMask = false;
 
 	settings.network.ActAsServer = false;
-	settings.network.dns = "46.101.91.123";		// Dreamcast Live DNS
-	settings.network.server = "";
+	strlcpy(settings.network.dns, "46.101.91.123", sizeof(settings.network.dns));		// Dreamcast Live DNS
+	settings.network.server[0] = 0;
 	settings.network.EmulateBBA = false;
 }

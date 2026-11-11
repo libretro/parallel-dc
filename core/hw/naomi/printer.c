@@ -9,28 +9,24 @@
 */
 #include "printer.h"
 
-namespace printer
-{
-
 static bool printerPresent;
 
-void init()
+void printer_init(void)
 {
 	printerPresent = true;
 }
 
-void term()
+void printer_term(void)
 {
 	printerPresent = false;
 }
 
-void print(char c)
+void printer_print(char c)
 {
+	(void)c;
 }
 
-bool present()
+bool printer_present(void)
 {
 	return printerPresent;
-}
-
 }

@@ -299,8 +299,10 @@ extern GD_HardwareInfo_t GD_HardwareInfo;
 #define GD_ERROR   0x09 // Reading of disc TOC failed (state does not allow access)
 
 //Response strings
-extern const u16 reply_a1[];
-extern const u16 reply_71[];
+/* (gdrom_response.c) */
+extern "C" const u16 reply_a1[];
+extern "C" const u16 reply_71[];
+extern "C" const u32 reply_71_sz;
 
 #define GD_IMPEDHI0_Read  0x005F7000 // (R) These are all 
 #define GD_IMPEDHI4_Read  0x005F7004 // (R) RData bus high imped

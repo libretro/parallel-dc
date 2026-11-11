@@ -10,6 +10,7 @@
 #include "hw/flashrom/flashrom.h"
 #include "hw/mem/_vmem.h"
 #include "hw/gdrom/gdromv3.h"
+#include "hw/maple/vmu_beep.h"
 #include "hw/maple/maple_devs.h"
 #include "hw/maple/maple_cfg.h"
 #include "hw/pvr/spg.h"
@@ -312,9 +313,6 @@ void lr_state_before_v23(void);
 void net_serialize_v24(void **data, unsigned int *total_size);
 bool net_unserialize_v24(void **data, unsigned int *total_size);
 void net_state_before_v24(void);
-void vmu_beep_serialize_v24(void **data, unsigned int *total_size);
-bool vmu_beep_unserialize_v24(void **data, unsigned int *total_size);
-void vmu_beep_state_before_v24(void);
 void naomi_periph_serialize_v24(void **data, unsigned int *total_size);
 bool naomi_periph_unserialize_v24(void **data, unsigned int *total_size);
 void naomi_periph_state_before_v24(void);

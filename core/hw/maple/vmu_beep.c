@@ -63,26 +63,29 @@ void vmu_beep_reset(void)
 	beep_step = 0;
 }
 
-static inline s16 clamp16(s32 v)
+static TYPES_INLINE s16 clamp16(s32 v)
 {
 	return v > 32767 ? 32767 : v < -32768 ? -32768 : (s16)v;
 }
 
 void vmu_beep_mix(SoundFrame *frames, u32 count)
 {
+	u32 i;
 	if (!vmu_beep_enabled || (!beep_active && beep_att >= BEEP_ATT_OFF))
 		return;
 
-	for (u32 i = 0; i < count; i++)
+	for (i = 0; i < count; i++)
 	{
+		u32 idx, next;
+		s32 fp, s;
 		if (!beep_active && beep_att >= BEEP_ATT_OFF)
 			break;
 
 		beep_pos = (beep_pos + beep_step) % BEEP_POS_END;
-		const u32 idx = beep_pos >> 10;
-		const s32 fp = beep_pos & 1023;
-		const u32 next = idx + 1 < BEEP_WAVE_LEN ? idx + 1 : 0;
-		s32 s = ((beep_wave[idx] * (1024 - fp)) >> 10) + ((beep_wave[next] * fp) >> 10);
+		idx = beep_pos >> 10;
+		fp = beep_pos & 1023;
+		next = idx + 1 < BEEP_WAVE_LEN ? idx + 1 : 0;
+		s = ((beep_wave[idx] * (1024 - fp)) >> 10) + ((beep_wave[next] * fp) >> 10);
 		s = (s * 2 * (s32)(att_frac[beep_att & 15] >> (beep_att >> 4))) >> 15;
 
 		if (!beep_active)

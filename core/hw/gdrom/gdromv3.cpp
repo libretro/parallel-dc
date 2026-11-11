@@ -872,7 +872,6 @@ void gd_process_spi_cmd()
 		{
 			printf_spicmd("SPI : unknown ? [0x71]");
 			//printf("SPI : unknown ? [0x71]\n");
-			extern const u32 reply_71_sz;
 
 			gd_spi_pio_end((const u8*)&reply_71[0], reply_71_sz);//uCount
 

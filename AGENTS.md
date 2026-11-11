@@ -149,6 +149,14 @@ code it touches closer, and never adds C++ that was not there.
   not, a function pointer and context in place of a callable. A list
   that is cleared keeps its storage, and its bound is reserved before
   play (No allocations during play).
+- **A C++ file that has become C89 is renamed `.c`** and goes in the
+  build's `SOURCES_C`. Headers it includes are made to compile as both
+  (`types.h` and `Log.h` do: C++-only parts behind `__cplusplus`, the
+  C side in `extern "C"` or `RETRO_BEGIN_DECLS`; the log's kinds are
+  `LOG_INPUT` and the like in C, where Windows has `INPUT`).
+  `sh tools/c89/c89_check.sh [make arguments]` compiles every `.c` file
+  of the core's own as `-std=c89 -pedantic` with the build's flags; CI
+  runs it natively and for Windows.
 - **Frames stay small.** A function's stack frame is 4 KiB at most.
 - **Threads are lock-free.** retro_atomic, SPSC rings and eventcount park
   and wake; no mutexes, no sleeps or polling with a wall clock.

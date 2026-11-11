@@ -89,7 +89,7 @@ private:
 
 	retro_atomic_int_t network_stopping;
 	sock_t wake_sock = INVALID_SOCKET;
-   MiniUPnP miniupnp;
+   miniupnp_t miniupnp = {};
 
 	static const uint16_t SERVER_PORT = 37391;
 };

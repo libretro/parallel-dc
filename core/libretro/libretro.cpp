@@ -6,6 +6,7 @@
 #endif
 #include <cstdio>
 #include <compat/fopen_utf8.h>
+#include <compat/strl.h>
 #include <cstdarg>
 #include <math.h>
 #include "types.h"
@@ -1062,7 +1063,7 @@ static void update_variables(bool first_startup)
       settings.bios.UseReios = !settings.bios.UseRealBios && !boot_to_bios;
       /* A program given as an ELF is started by the HLE BIOS, which is
        * what loads it; the real one would only see an empty drive. */
-      if (!settings.reios.ElfFile.empty())
+      if (settings.reios.ElfFile[0] != 0)
       	settings.bios.UseReios = true;
 
    }
@@ -3048,9 +3049,9 @@ bool retro_load_game(const struct retro_game_info *game)
     * into memory and starts it, with the drive empty. Said before the
     * options are read, which choose the BIOS. */
    if (ext && (!strcmp(ext, ".elf") || !strcmp(ext, ".ELF")))
-      settings.reios.ElfFile = content_path;
+      strlcpy(settings.reios.ElfFile, content_path, sizeof(settings.reios.ElfFile));
    else
-      settings.reios.ElfFile.clear();
+      settings.reios.ElfFile[0] = 0;
 
    merged_set_option(content_path);
    update_variables(true);
@@ -3117,10 +3118,10 @@ bool retro_load_game(const struct retro_game_info *game)
 	  else
 		 return false;
    }
-   if (settings.System != DC_PLATFORM_DREAMCAST || !settings.reios.ElfFile.empty())
+   if (settings.System != DC_PLATFORM_DREAMCAST || settings.reios.ElfFile[0] != 0)
    	boot_to_bios = false;
 
-   if (!boot_to_bios && settings.reios.ElfFile.empty())
+   if (!boot_to_bios && (settings.reios.ElfFile[0] == 0))
    {
       // if an m3u file was loaded, disk_paths will already be populated so load the game from there
       if (disk_paths.size() > 0)
@@ -3325,7 +3326,7 @@ void retro_unload_game(void)
    if (game_data)
       free(game_data);
    game_data = NULL;
-   settings.reios.ElfFile.clear();
+   settings.reios.ElfFile[0] = 0;
    /* The disc list belongs to this content: the next load starts its own */
    disk_paths.clear();
    disk_labels.clear();
@@ -4305,7 +4306,7 @@ static void UpdateInputStateNaomi(u32 port)
 	  // -- mouse, for rotary encoders
 	  updateMouseState(port);
 	  // -- a light gun game: the left stick aims
-	  if (settings.mapping.JammaSetup == JVS::LightGun || settings.mapping.JammaSetup == JVS::LightGunAsAnalog)
+	  if (settings.mapping.JammaSetup == JVS_LightGun || settings.mapping.JammaSetup == JVS_LightGunAsAnalog)
 	  {
 		 updateLightgunCoordinatesFromAnalogStick(port);
 		 if (input_cb(port, RETRO_DEVICE_LIGHTGUN, 0, RETRO_DEVICE_ID_LIGHTGUN_RELOAD))

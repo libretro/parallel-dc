@@ -405,7 +405,7 @@ void NaomiM3Comm::startThread()
 	 * only ask the local network, by broadcast and for ten seconds, for a
 	 * server no machine running this core can be. The board stays as it
 	 * is without a link, which is what the game saw at the end of that. */
-	if (!settings.network.ActAsServer && settings.network.server.empty())
+	if (!settings.network.ActAsServer && (settings.network.server[0] == 0))
 		return;
 	// The socket shutdown() ends the network thread's waits with
 	network.armWake();

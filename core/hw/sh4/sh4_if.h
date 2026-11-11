@@ -3,7 +3,7 @@
 
 enum Sh4RegType
 {
-	//GPRs
+	/* GPRs */
 	reg_r0,
 	reg_r1,
 	reg_r2,
@@ -21,7 +21,7 @@ enum Sh4RegType
 	reg_r14,
 	reg_r15,
 
-	//FPU, bank 0
+	/* FPU, bank 0 */
 	reg_fr_0,
 	reg_fr_1,
 	reg_fr_2,
@@ -39,7 +39,7 @@ enum Sh4RegType
 	reg_fr_14,
 	reg_fr_15,
 
-	//FPU, bank 1
+	/* FPU, bank 1 */
 	reg_xf_0,
 	reg_xf_1,
 	reg_xf_2,
@@ -57,7 +57,7 @@ enum Sh4RegType
 	reg_xf_14,
 	reg_xf_15,
 
-	//GPR Interrupt bank
+	/* GPR Interrupt bank */
 	reg_r0_Bank,
 	reg_r1_Bank,
 	reg_r2_Bank,
@@ -67,7 +67,7 @@ enum Sh4RegType
 	reg_r6_Bank,
 	reg_r7_Bank,
 
-	//Misc regs
+	/* Misc regs */
 	reg_gbr,
 	reg_ssr,
 	reg_spc,
@@ -79,14 +79,14 @@ enum Sh4RegType
 	reg_pr,
 	reg_fpul,
 	reg_nextpc,
-	reg_sr,            //Includes T (combined on read/separated on write)
-	reg_old_sr_status, //Only the status bits
-	reg_sr_status,     //Only the status bits
-	reg_sr_T,          //Only T
+	reg_sr,            /* Includes T (combined on read/separated on write) */
+	reg_old_sr_status, /* Only the status bits */
+	reg_sr_status,     /* Only the status bits */
+	reg_sr_T,          /* Only T */
 	reg_old_fpscr,
 	reg_fpscr,
 	
-	reg_pc_dyn,        //Write only, for dynarec only (dynamic block exit address)
+	reg_pc_dyn,        /* Write only, for dynarec only (dynamic block exit address) */
 	reg_temp,
 
 	sh4_reg_count,
@@ -123,40 +123,40 @@ enum Sh4RegType
 	NoReg=-1
 };
 
-//Varius sh4 registers
+/* Varius sh4 registers */
 
 union sr_status_t
 {
 	struct
 	{
 #ifdef MSB_FIRST
-		u32 rsvd3   : 1;//<<31
-		u32 MD      : 1;//<<20
-		u32 RB      : 1;//<<29
-		u32 BL      : 1;//<<28
-		u32 rsvd2   : 12;//<<16
-		u32 FD      : 1;//<<15
-		u32 rsvd1   : 5;//<<10
-		u32 M       : 1;//<<9
-		u32 Q       : 1;//<<8
-		u32 IMASK   : 4;//<<4
-		u32 rsvd0   : 2;//<<2
-		u32 S       : 1;//<<1
-		u32 T_h     : 1;//<<0
+		u32 rsvd3   : 1;/* <<31 */
+		u32 MD      : 1;/* <<20 */
+		u32 RB      : 1;/* <<29 */
+		u32 BL      : 1;/* <<28 */
+		u32 rsvd2   : 12;/* <<16 */
+		u32 FD      : 1;/* <<15 */
+		u32 rsvd1   : 5;/* <<10 */
+		u32 M       : 1;/* <<9 */
+		u32 Q       : 1;/* <<8 */
+		u32 IMASK   : 4;/* <<4 */
+		u32 rsvd0   : 2;/* <<2 */
+		u32 S       : 1;/* <<1 */
+		u32 T_h     : 1;/* <<0 */
 #else
-		u32 T_h     : 1;//<<0
-		u32 S       : 1;//<<1
-		u32 rsvd0   : 2;//<<2
-		u32 IMASK   : 4;//<<4
-		u32 Q       : 1;//<<8
-		u32 M       : 1;//<<9
-		u32 rsvd1   : 5;//<<10
-		u32 FD      : 1;//<<15
-		u32 rsvd2   : 12;//<<16
-		u32 BL      : 1;//<<28
-		u32 RB      : 1;//<<29
-		u32 MD      : 1;//<<20
-		u32 rsvd3   : 1;//<<31
+		u32 T_h     : 1;/* <<0 */
+		u32 S       : 1;/* <<1 */
+		u32 rsvd0   : 2;/* <<2 */
+		u32 IMASK   : 4;/* <<4 */
+		u32 Q       : 1;/* <<8 */
+		u32 M       : 1;/* <<9 */
+		u32 rsvd1   : 5;/* <<10 */
+		u32 FD      : 1;/* <<15 */
+		u32 rsvd2   : 12;/* <<16 */
+		u32 BL      : 1;/* <<28 */
+		u32 RB      : 1;/* <<29 */
+		u32 MD      : 1;/* <<20 */
+		u32 rsvd3   : 1;/* <<31 */
 #endif
 	};
 	u32 status;
@@ -164,7 +164,7 @@ union sr_status_t
 
 #define STATUS_MASK 0x700083F2
 
-//Status register bitfield
+/* Status register bitfield */
 struct sr_t
 {
 	union
@@ -172,33 +172,33 @@ struct sr_t
 		struct
 		{
 #ifdef MSB_FIRST
-			u32 rsvd3   : 1;//<<31
-			u32 MD      : 1;//<<20
-			u32 RB      : 1;//<<29
-			u32 BL      : 1;//<<28
-			u32 rsvd2   : 12;//<<16
-			u32 FD      : 1;//<<15
-			u32 rsvd1   : 5;//<<10
-			u32 M       : 1;//<<9
-			u32 Q       : 1;//<<8
-			u32 IMASK   : 4;//<<4
-			u32 rsvd0   : 2;//<<2
-			u32 S       : 1;//<<1
-			u32 T_h     : 1;//<<0
+			u32 rsvd3   : 1;/* <<31 */
+			u32 MD      : 1;/* <<20 */
+			u32 RB      : 1;/* <<29 */
+			u32 BL      : 1;/* <<28 */
+			u32 rsvd2   : 12;/* <<16 */
+			u32 FD      : 1;/* <<15 */
+			u32 rsvd1   : 5;/* <<10 */
+			u32 M       : 1;/* <<9 */
+			u32 Q       : 1;/* <<8 */
+			u32 IMASK   : 4;/* <<4 */
+			u32 rsvd0   : 2;/* <<2 */
+			u32 S       : 1;/* <<1 */
+			u32 T_h     : 1;/* <<0 */
 #else
-			u32 T_h     : 1;//<<0
-			u32 S       : 1;//<<1
-			u32 rsvd0   : 2;//<<2
-			u32 IMASK   : 4;//<<4
-			u32 Q       : 1;//<<8
-			u32 M       : 1;//<<9
-			u32 rsvd1   : 5;//<<10
-			u32 FD      : 1;//<<15
-			u32 rsvd2   : 12;//<<16
-			u32 BL      : 1;//<<28
-			u32 RB      : 1;//<<29
-			u32 MD      : 1;//<<20
-			u32 rsvd3   : 1;//<<31
+			u32 T_h     : 1;/* <<0 */
+			u32 S       : 1;/* <<1 */
+			u32 rsvd0   : 2;/* <<2 */
+			u32 IMASK   : 4;/* <<4 */
+			u32 Q       : 1;/* <<8 */
+			u32 M       : 1;/* <<9 */
+			u32 rsvd1   : 5;/* <<10 */
+			u32 FD      : 1;/* <<15 */
+			u32 rsvd2   : 12;/* <<16 */
+			u32 BL      : 1;/* <<28 */
+			u32 RB      : 1;/* <<29 */
+			u32 MD      : 1;/* <<20 */
+			u32 rsvd3   : 1;/* <<31 */
 #endif
 		};
 		u32 status;
@@ -208,7 +208,7 @@ struct sr_t
 };
 
 
-//FPSCR (fpu status and control register) bitfield
+/* FPSCR (fpu status and control register) bitfield */
 struct fpscr_t
 {
 	union
@@ -293,7 +293,7 @@ typedef bool IsCpuRunningFP();
 /*
 	The interface stuff should be replaced with something nicer
 */
-//sh4 interface
+/* sh4 interface */
 struct sh4_if
 {
 	RunFP* Run;
@@ -348,7 +348,7 @@ struct Sh4Context
 			int sh4_sched_next;
 			u32 interrupt_pend;
 
-			u32 exception_pc;	// not used any more; here so that what follows is where it was
+			u32 exception_pc;	/* not used any more; here so that what follows is where it was */
 			u32 temp_reg;
 
 			/* What is left of the time slice, for the timers (tmu.cpp) to
@@ -382,14 +382,14 @@ typedef void DYNACALL TaListVoidFP(void* data);
 
 #define FPCB_SIZE (RAM_SIZE_MAX/2)
 #define FPCB_MASK (FPCB_SIZE -1)
-//#defeine FPCB_PAD 0x40000
+/* #defeine FPCB_PAD 0x40000 */
 #define FPCB_PAD 0x100000
 #define FPCB_OFFSET (-(FPCB_SIZE*sizeof(void*) + FPCB_PAD)) 
 struct Sh4RCB
 {
 	void* fpcb[FPCB_SIZE];
 	u64 _pad[(FPCB_PAD-sizeof(Sh4Context)-64-sizeof(void*)*2)/8];
-	TaListVoidFP* tacmd_voud; //*TODO* remove (not used)
+	TaListVoidFP* tacmd_voud; /* *TODO* remove (not used) */
 	sqw_fp* do_sqw_nommu;
 	u64 sq_buffer[64/8];
 	Sh4Context cntx;
@@ -432,7 +432,7 @@ s32 rcb_poffs(T* ptr)
 #define sh4rcb (*p_sh4rcb)
 #define Sh4cntx (sh4rcb.cntx)
 
-//Get an interface to sh4 interpreter
+/* Get an interface to sh4 interpreter */
 void Get_Sh4Interpreter(sh4_if* cpu);
 void Get_Sh4Recompiler(sh4_if* cpu);
 #if defined(HOST_APPLE_JIT) && FEAT_SHREC == DYNAREC_JIT

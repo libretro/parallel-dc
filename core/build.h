@@ -115,8 +115,8 @@
 
 */
 
-//#define NO_MMU
-//#define STRICT_MODE
+/* #define NO_MMU */
+/* #define STRICT_MODE */
 #ifndef STRICT_MODE
 #define FAST_MMU
 #define USE_WINCE_HACK
@@ -132,21 +132,21 @@
 #define DC_PLATFORM_AURORA      6   /* Needs to be done, Uses newer 300 mhz sh4 + 150 mhz pvr mbx SoC */
 
 
-//HOST_CPU
+/* HOST_CPU */
 #define CPU_X86      0x20000001
 #define CPU_ARM      0x20000002
 #define CPU_MIPS     0x20000003
 #define CPU_X64      0x20000004
-#define CPU_GENERIC  0x20000005 //used for pnacl, emscripten, etc
+#define CPU_GENERIC  0x20000005 /* used for pnacl, emscripten, etc */
 #define CPU_ARM64    0x20000006
 
-//FEAT_SHREC, FEAT_AREC, FEAT_DSPREC
+/* FEAT_SHREC, FEAT_AREC, FEAT_DSPREC */
 #define DYNAREC_NONE	0x40000001
 #define DYNAREC_JIT		0x40000002
 #define DYNAREC_CPP		0x40000003
 
 
-//automatic
+/* automatic */
 
 #if defined(_WIN32) && !defined(TARGET_WIN86) && !defined(TARGET_WIN64)
 	#if !defined(_M_AMD64)
@@ -156,7 +156,7 @@
 	#endif
 #endif
 
-//Targets
+/* Targets */
 #if defined(TARGET_WIN86)
 #ifndef HOST_CPU
 #define HOST_CPU CPU_X86
@@ -220,7 +220,7 @@
 #define FEAT_DSPREC DYNAREC_NONE
 #endif
 
-//defaults
+/* defaults */
 
 #ifndef DC_PLATFORM 
 	#define DC_PLATFORM DC_PLATFORM_DREAMCAST
@@ -238,11 +238,11 @@
 	#endif
 #endif
 
-// Where the ARM7's recompiler can be switched for the interpreter while
-// running, which the build then also has: a core option does it. (The
-// x86-64, 32-bit x86 and ARM64 recompilers are one, arm7_rec.cpp, with a
-// backend for each, and run a sound program the same; so does the
-// interpreter.)
+/* Where the ARM7's recompiler can be switched for the interpreter while */
+/* running, which the build then also has: a core option does it. (The */
+/* x86-64, 32-bit x86 and ARM64 recompilers are one, arm7_rec.cpp, with a */
+/* backend for each, and run a sound program the same; so does the */
+/* interpreter.) */
 #if (HOST_CPU == CPU_X64 || HOST_CPU == CPU_X86 || HOST_CPU == CPU_ARM64) && FEAT_AREC != DYNAREC_NONE
 #define FEAT_AREC_SELECTABLE 1
 #endif
@@ -273,7 +273,7 @@
 #endif
 #endif
 
-// Some restrictions on FEAT_NO_RWX_PAGES
+/* Some restrictions on FEAT_NO_RWX_PAGES */
 #if defined(FEAT_NO_RWX_PAGES) && FEAT_SHREC == DYNAREC_JIT
 #if HOST_CPU != CPU_X64 && HOST_CPU != CPU_ARM64
 #error "FEAT_NO_RWX_PAGES Only implemented for X64 and ARMv8"

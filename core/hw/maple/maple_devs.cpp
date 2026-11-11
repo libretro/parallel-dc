@@ -1452,8 +1452,8 @@ bool naomi_cart_GetBootHeader(u8 *header, u32 size);	// naomi_cart.cpp
  * board (node 2) when the cabinet is set for more than two. */
 static bool jvs_dual_reversed_game(void)
 {
-	return settings.mapping.JammaSetup == JVS::WorldKicksPCB
-			|| (settings.mapping.JammaSetup == JVS::DualIOBoards4P
+	return settings.mapping.JammaSetup == JVS_WorldKicksPCB
+			|| (settings.mapping.JammaSetup == JVS_DualIOBoards4P
 				&& (!strcmp(naomi_game_id, "VIRTUA ATHLETE")
 					|| !strcmp(naomi_game_id, "ROYAL RUMBLE")
 					|| !strcmp(naomi_game_id, "BEACH SPIKERS JAPAN")
@@ -2840,7 +2840,7 @@ struct maple_naomi_jamma : maple_sega_controller
 		  return;
 	   switch (settings.mapping.JammaSetup)
 	   {
-	   case JVS::Default:
+	   case JVS_Default:
 	   default:
 		  if (!strncmp(naomi_game_id, "MKG TKOB", 8) || !strncmp(naomi_game_id, "MUSHIKING", 9)
 				|| !strcmp(naomi_game_id, "MUSHIUSA '04 1ST VER0.900-"))
@@ -2848,10 +2848,10 @@ struct maple_naomi_jamma : maple_sega_controller
 		  else
 			 io_boards.emplace_back(new jvs_837_13551(1, this));
 		  break;
-	   case JVS::FourPlayers:
+	   case JVS_FourPlayers:
 		  io_boards.emplace_back(new jvs_837_13551_4P(1, this));
 		  break;
-	   case JVS::RotaryEncoders:
+	   case JVS_RotaryEncoders:
 		  if (!strncmp(naomi_game_id, "SHOOTOUT POOL", 13))
 			 io_boards.emplace_back(new jvs_837_13938_shootout(1, this));
 		  else if (!strcmp(naomi_game_id, "KICK '4' CASH"))
@@ -2862,60 +2862,60 @@ struct maple_naomi_jamma : maple_sega_controller
 			 io_boards.emplace_back(new jvs_837_13938(1, this));
 		  io_boards.emplace_back(new jvs_837_13551(2, this));
 		  break;
-	   case JVS::OutTrigger:
+	   case JVS_OutTrigger:
 		  io_boards.emplace_back(new jvs_837_13938(1, this));
 		  io_boards.emplace_back(new jvs_837_13551_noanalog(2, this));
 		  break;
-	   case JVS::SegaMarineFishing:
+	   case JVS_SegaMarineFishing:
 		  io_boards.emplace_back(new jvs_837_13844(1, this));
 		  break;
-	   case JVS::DualIOBoards4P:
+	   case JVS_DualIOBoards4P:
 		  io_boards.emplace_back(new jvs_837_13551(1, this));
 		  io_boards.emplace_back(new jvs_837_13551(2, this, 2));
 		  cabinet_order = jvs_dual_reversed_game();
 		  break;
-	   case JVS::LightGun:
+	   case JVS_LightGun:
 		  io_boards.emplace_back(new jvs_namco_jyu(1, this));
 		  break;
-	   case JVS::LightGunAsAnalog:
+	   case JVS_LightGunAsAnalog:
 		  // Regular board sending lightgun coords as axis 0/1
 		  io_boards.emplace_back(new jvs_837_13551(1, this));
 		  io_boards.back()->lightgun_as_analog = true;
 		  break;
-	   case JVS::Mazan:
+	   case JVS_Mazan:
 		  io_boards.emplace_back(new jvs_namco_fcb(1, this));
 		  io_boards.emplace_back(new jvs_namco_fcb(2, this));
 		  break;
-	   case JVS::GunSurvivor:
+	   case JVS_GunSurvivor:
 		  io_boards.emplace_back(new jvs_namco_fca(1, this));
 		  break;
-	   case JVS::DogWalking:
+	   case JVS_DogWalking:
 		  io_boards.emplace_back(new jvs_837_13844_encoders(1, this));
 		  break;
-	   case JVS::TouchDeUno:
+	   case JVS_TouchDeUno:
 		  io_boards.emplace_back(new jvs_837_13844_touch(1, this));
 		  break;
-	   case JVS::WorldKicks:
+	   case JVS_WorldKicks:
 		  io_boards.emplace_back(new jvs_namco_v226(1, this));
 		  break;
-	   case JVS::WorldKicksPCB:
+	   case JVS_WorldKicksPCB:
 		  io_boards.emplace_back(new jvs_namco_v226_pcb(1, this));
 		  io_boards.emplace_back(new jvs_namco_v226_pcb(2, this, 2));
 		  cabinet_order = true;
 		  break;
-	   case JVS::WaveRunnerGP:
+	   case JVS_WaveRunnerGP:
 		  io_boards.emplace_back(new jvs_837_13844_wrungp(1, this));
 		  break;
-	   case JVS::F355:
+	   case JVS_F355:
 		  io_boards.emplace_back(new jvs_837_13844_racing(1, this));
 		  break;
-	   case JVS::TokyoBus:
+	   case JVS_TokyoBus:
 		  io_boards.emplace_back(new jvs_837_13844_racing(1, this, 0, true));
 		  break;
-	   case JVS::EighteenWheeler:
+	   case JVS_EighteenWheeler:
 		  io_boards.emplace_back(new jvs_837_13844_18wheeler(1, this));
 		  break;
-	   case JVS::SambaDeAmigo:
+	   case JVS_SambaDeAmigo:
 		  io_boards.emplace_back(new jvs_837_13844_samba(1, this));
 		  break;
 	   }
@@ -3850,7 +3850,7 @@ u32 jvs_io_board::handle_jvs_message(u8 *buffer_in, u32 length_in, u8 *buffer_ou
 		break;
 
 	default:
-		if ((jvs_cmd >= 0x20 && jvs_cmd <= 0x38) || (jvs_cmd == 0x74 && printer::present())) // Read inputs and more
+		if ((jvs_cmd >= 0x20 && jvs_cmd <= 0x38) || (jvs_cmd == 0x74 && printer_present())) // Read inputs and more
 		{
 			LOGJVS("JVS Node %d: ", node_id);
 			PlainJoystickState pjs;
@@ -4007,7 +4007,7 @@ u32 jvs_io_board::handle_jvs_message(u8 *buffer_in, u32 length_in, u8 *buffer_ou
 						   else
 							  axes_per_player = i;
 						}
-						if (settings.mapping.JammaSetup == JVS::DualIOBoards4P && !parent->cabinet_order)
+						if (settings.mapping.JammaSetup == JVS_DualIOBoards4P && !parent->cabinet_order)
 						   // Hack for Ring Out 4x4
 						   axes_per_player = 2;
 
@@ -4127,13 +4127,13 @@ u32 jvs_io_board::handle_jvs_message(u8 *buffer_in, u32 length_in, u8 *buffer_ou
 					break;
 
 				case 0x74:	// the board's serial port, which a printer is on (Touch de Uno)
-					if (!printer::present())
+					if (!printer_present())
 						goto unknown_input;
 					{
 						// (no more than the request has)
 						const u32 len = std::min<u32>(buffer_in[cmdi + 1], length_in - cmdi - 1);
 						for (u32 i = 0; i < len; i++)
-							printer::print(buffer_in[cmdi + 2 + i]);
+							printer_print(buffer_in[cmdi + 2 + i]);
 						cmdi += len + 2;
 					}
 					JVS_STATUS1();	// report

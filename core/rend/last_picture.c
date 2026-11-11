@@ -1,6 +1,6 @@
 /* See last_picture.h. */
 #include "last_picture.h"
-#include <cstdlib>
+#include <stdlib.h>
 
 static u8 *pixels;
 static int pixels_w, pixels_h;

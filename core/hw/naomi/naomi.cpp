@@ -773,7 +773,7 @@ void naomi_periph_term(void)
 	card_reader::barcodeTerm();
 	touchscreen::term();
 	hopper::term();
-	printer::term();
+	printer_term();
 	rfid_init(false, false);
 	periph_rfid = false;
 	periph_polled = false;
@@ -832,7 +832,7 @@ void naomi_periph_init(void)
 	if (!strcmp(naomi_game_id, " TOUCH DE UNOH -------------")
 			|| !strcmp(naomi_game_id, " TOUCH DE UNOH 2 -----------")
 			|| !strcmp(naomi_game_id, "MIRAI YOSOU STUDIO"))
-		printer::init();
+		printer_init();
 	if (!strcmp(naomi_set_name, "clubkprz") || set_starts("clubkpz")
 			|| set_starts("shootpl")
 			|| !strcmp(naomi_game_id, "KICK '4' CASH"))

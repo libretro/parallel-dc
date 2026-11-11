@@ -23,45 +23,45 @@
 /* how long to wait for the gateway, and for each of its answers */
 #define UPNP_TIMEOUT_MS 2000
 
-bool MiniUPnP::Init()
+bool miniupnp_init(miniupnp_t *u)
 {
 	char wan[64];
-	found = false;
-	count = 0;
-	if (!network_init() || !net_upnp_discover(&gateway, UPNP_TIMEOUT_MS))
+	u->found = false;
+	u->count = 0;
+	if (!network_init() || !net_upnp_discover(&u->gateway, UPNP_TIMEOUT_MS))
 	{
 		INFO_LOG(MODEM, "UPnP: no Internet gateway found");
 		return false;
 	}
-	found = true;
-	if (net_upnp_external_address(&gateway, wan, sizeof(wan), UPNP_TIMEOUT_MS))
-		INFO_LOG(MODEM, "UPnP: this host %s, external address %s", gateway.lan_addr, wan);
+	u->found = true;
+	if (net_upnp_external_address(&u->gateway, wan, sizeof(wan), UPNP_TIMEOUT_MS))
+		INFO_LOG(MODEM, "UPnP: this host %s, external address %s", u->gateway.lan_addr, wan);
 	else
 		INFO_LOG(MODEM, "Cannot determine external IP address");
 	return true;
 }
 
-void MiniUPnP::Term()
+void miniupnp_term(miniupnp_t *u)
 {
 	unsigned i;
-	if (found)
-		for (i = 0; i < count; i++)
-			net_upnp_delete_port_mapping(&gateway, mapped[i].port, !mapped[i].tcp, UPNP_TIMEOUT_MS);
-	count = 0;
-	found = false;
+	if (u->found)
+		for (i = 0; i < u->count; i++)
+			net_upnp_delete_port_mapping(&u->gateway, u->mapped[i].port, !u->mapped[i].tcp, UPNP_TIMEOUT_MS);
+	u->count = 0;
+	u->found = false;
 }
 
-bool MiniUPnP::AddPortMapping(int port, bool tcp)
+bool miniupnp_add_port_mapping(miniupnp_t *u, int port, bool tcp)
 {
-	if (!found || port <= 0 || count == MOST)
+	if (!u->found || port <= 0 || u->count == MINIUPNP_MOST)
 		return false;
-	if (!net_upnp_add_port_mapping(&gateway, (unsigned)port, !tcp, "Flycast", UPNP_TIMEOUT_MS))
+	if (!net_upnp_add_port_mapping(&u->gateway, (unsigned)port, !tcp, "Flycast", UPNP_TIMEOUT_MS))
 	{
 		INFO_LOG(MODEM, "Port %d redirection failed", port);
 		return false;
 	}
-	mapped[count].port = (unsigned)port;
-	mapped[count].tcp = tcp;
-	count++;
+	u->mapped[u->count].port = (unsigned)port;
+	u->mapped[u->count].tcp = tcp;
+	u->count++;
 	return true;
 }

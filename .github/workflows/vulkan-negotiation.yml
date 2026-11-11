@@ -134,6 +134,11 @@ on:
       - 'core/rend/tex_map.h'
       - 'tools/rend/tex_map_test.*'
       - 'core/log/**'
+      - 'core/types.h'
+      - 'core/network/**'
+      - 'core/reios/**'
+      - 'core/rend/last_picture.*'
+      - 'tools/c89/**'
       - 'tools/threads/live_prog.c'
       - 'Makefile*'
       - '.github/workflows/vulkan-negotiation.yml'
@@ -211,6 +216,11 @@ on:
       - 'core/rend/tex_map.h'
       - 'tools/rend/tex_map_test.*'
       - 'core/log/**'
+      - 'core/types.h'
+      - 'core/network/**'
+      - 'core/reios/**'
+      - 'core/rend/last_picture.*'
+      - 'tools/c89/**'
       - 'tools/threads/live_prog.c'
       - 'Makefile*'
       - '.github/workflows/vulkan-negotiation.yml'
@@ -320,6 +330,8 @@ jobs:
             build-essential mingw-w64 wine wine64 xvfb mesa-vulkan-drivers libvulkan1 python3
       - name: Build the core for Windows
         run: make -j"$(nproc)" platform=win CC=x86_64-w64-mingw32-gcc CXX=x86_64-w64-mingw32-g++
+      - name: The core's C as MSVC C89 takes it, with the Windows headers (AGENTS.md)
+        run: CC=x86_64-w64-mingw32-gcc sh tools/c89/c89_check.sh platform=win CC=x86_64-w64-mingw32-gcc CXX=x86_64-w64-mingw32-g++
       - name: Nothing built for Windows that the core does not use
         run: NM=x86_64-w64-mingw32-nm OBJDUMP=x86_64-w64-mingw32-objdump python3 tools/unused_sources.py platform=win
       - name: HDR output with Direct3D 11 and 12 (24-bit, refused, HDR10, scRGB, each renderer)

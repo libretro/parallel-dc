@@ -1,5 +1,5 @@
 #!/bin/sh
-# The modem's UPnP (core/network/miniupnp.cpp, on libretro-common's
+# The modem's UPnP (core/network/miniupnp.c, on libretro-common's
 # net_upnp) against a gateway on this host (upnp_gateway.py): found by an
 # SSDP search, its external address asked for, a TCP and a UDP port mapped
 # to this host and both deleted when let go, each as the gateway logs it.
@@ -28,8 +28,12 @@ for f in $L/net/net_upnp.c $L/net/net_http.c $L/net/net_socket.c $L/net/net_comp
    $CC -g -O1 $SAN $INC -c -o "$o" "$f"
    objs="$objs $o"
 done
+# (the core's own, C89 as MSVC takes it; libretro-common's headers others',
+# system headers as tools/c89/c89_check.sh has them)
+$CC -std=c89 -pedantic -Wno-long-long -Wno-variadic-macros -Werror -Wdeclaration-after-statement \
+   -g -O1 $SAN -Icore -Icore/libretro -isystem core/deps -isystem $L/include -DENABLE_MODEM -c -o "$WORK/miniupnp.o" core/network/miniupnp.c
 $CXX -std=c++11 -fpermissive -g -O1 $SAN $INC -DENABLE_MODEM -o "$WORK/upnp_test" \
-   tools/threads/upnp_test.cpp core/network/miniupnp.cpp $objs -lpthread
+   tools/threads/upnp_test.cpp "$WORK/miniupnp.o" $objs -lpthread
 
 fail() { echo "upnp_test: $1" >&2; exit 1; }
 

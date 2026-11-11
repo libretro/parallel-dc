@@ -1,5 +1,8 @@
 #pragma once
 #include "types.h"
+#include <retro_common_api.h>
+
+RETRO_BEGIN_DECLS
 
 /* The beeper of the Visual Memory units (the clock function's alarm). */
 
@@ -16,3 +19,5 @@ void vmu_beep_mix(SoundFrame *frames, u32 count);
 void vmu_beep_serialize_v24(void **data, unsigned int *total_size);
 bool vmu_beep_unserialize_v24(void **data, unsigned int *total_size);
 void vmu_beep_state_before_v24(void);
+
+RETRO_END_DECLS

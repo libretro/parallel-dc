@@ -1926,7 +1926,7 @@ static void reios_boot()
 	//Infinite loop for arm !
 	WriteMem32(0x80800000, 0xEAFFFFFE);
 
-	if (!settings.reios.ElfFile.empty()) {
+	if (settings.reios.ElfFile[0] != 0) {
 		/* Where a Dreamcast program is linked to start, unless the file
 		 * says otherwise and means main memory by it */
 		u32 entry = 0x8C010000;
@@ -1935,7 +1935,7 @@ static void reios_boot()
 			 * started, as it does when there is no disc to boot, and
 			 * does not go off into whatever memory holds. */
 			u16* idle = (u16*)GetMemPtr(0x8c010000, 4);
-			msgboxf("Failed to open %s", MBX_ICONERROR, settings.reios.ElfFile.c_str());
+			msgboxf("Failed to open %s", MBX_ICONERROR, settings.reios.ElfFile);
 			idle[0] = 0xAFFE;   /* bra to itself */
 			idle[1] = 0x0009;   /* nop in the delay slot */
 			entry = 0x8c010000;

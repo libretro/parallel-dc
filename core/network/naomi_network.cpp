@@ -159,8 +159,8 @@ bool NaomiNetwork::init()
 	if (settings.network.ActAsServer)
    {
 #ifdef ENABLE_MODEM
-        miniupnp.Init();
-		miniupnp.AddPortMapping(SERVER_PORT, true);
+        miniupnp_init(&miniupnp);
+		miniupnp_add_port_mapping(&miniupnp, SERVER_PORT, true);
 #endif // ENABLE_MODEM
 		return createBeaconSocket() && createServerSocket();
    }
@@ -378,11 +378,11 @@ bool NaomiNetwork::startNetwork()
 	}
 	else
 	{
-		if (!settings.network.server.empty())
+		if (!(settings.network.server[0] == 0))
 		{
 			struct addrinfo *resultAddr;
-			if (getaddrinfo(settings.network.server.c_str(), 0, nullptr, &resultAddr))
-				WARN_LOG(NETWORK, "Server %s is unknown", settings.network.server.c_str());
+			if (getaddrinfo(settings.network.server, 0, nullptr, &resultAddr))
+				WARN_LOG(NETWORK, "Server %s is unknown", settings.network.server);
 			else
 			{
 				for (struct addrinfo *ptr = resultAddr; ptr != nullptr; ptr = ptr->ai_next)
@@ -625,7 +625,7 @@ void NaomiNetwork::terminate()
 	closeSockets();
 #ifdef ENABLE_MODEM
    if (settings.network.ActAsServer)
-		miniupnp.Term();
+		miniupnp_term(&miniupnp);
 #endif // ENABLE_MODEM
 	if (beacon_sock != INVALID_SOCKET)
 	{

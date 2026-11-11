@@ -19,13 +19,14 @@
 #pragma once
 #include "types.h"
 
-namespace printer
-{
+#include <retro_common_api.h>
 
-void init();
-void term();
-void print(char c);
-// Whether the game has a printer
-bool present();
+RETRO_BEGIN_DECLS
 
-}
+void printer_init(void);
+void printer_term(void);
+void printer_print(char c);
+/* Whether the game has a printer */
+bool printer_present(void);
+
+RETRO_END_DECLS

@@ -1,4 +1,4 @@
-/* The modem's UPnP (core/network/miniupnp.cpp, on libretro-common's
+/* The modem's UPnP (core/network/miniupnp.c, on libretro-common's
  * net_upnp). See upnp_test.sh.
  *
  *   upnp_test found     a gateway is there: found, two ports mapped (TCP
@@ -26,29 +26,29 @@ static int failures;
 
 int main(int argc, char **argv)
 {
-	MiniUPnP upnp;
+	miniupnp_t upnp = {};
 
 	if (argc != 2)
 		return 2;
 	if (!strcmp(argv[1], "found"))
 	{
-		CHECK(upnp.Init());
-		CHECK(upnp.AddPortMapping(5000, true));
-		CHECK(upnp.AddPortMapping(5001, false));
-		CHECK(!upnp.AddPortMapping(0, true));
-		upnp.Term();
+		CHECK(miniupnp_init(&upnp));
+		CHECK(miniupnp_add_port_mapping(&upnp, 5000, true));
+		CHECK(miniupnp_add_port_mapping(&upnp, 5001, false));
+		CHECK(!miniupnp_add_port_mapping(&upnp, 0, true));
+		miniupnp_term(&upnp);
 		/* (let go once: nothing left to delete) */
-		upnp.Term();
-		CHECK(!upnp.AddPortMapping(5002, true));
+		miniupnp_term(&upnp);
+		CHECK(!miniupnp_add_port_mapping(&upnp, 5002, true));
 	}
 	else
 	{
 		time_t start = time(NULL);
-		CHECK(!upnp.Init());
+		CHECK(!miniupnp_init(&upnp));
 		/* (given up in its time, a few seconds) */
 		CHECK(time(NULL) - start < 10);
-		CHECK(!upnp.AddPortMapping(5000, true));
-		upnp.Term();
+		CHECK(!miniupnp_add_port_mapping(&upnp, 5000, true));
+		miniupnp_term(&upnp);
 	}
 	printf("upnp_test %s: %s\n", argv[1], failures ? "FAIL" : "ok");
 	return failures ? 1 : 0;

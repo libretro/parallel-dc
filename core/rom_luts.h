@@ -78,61 +78,61 @@ extern InputDescriptors deathcox_inputs;
 static struct game_type_naomi lut_games_naomi[] = 
 {
    /* Extra Depth Scaling */
-   { "CAPCOM VS SNK PRO  JAPAN"          , -1, -1, -1,  -1, JVS::Default, 10000.f },          /* Capcom vs. SNK Pro */
+   { "CAPCOM VS SNK PRO  JAPAN"          , -1, -1, -1,  -1, JVS_Default, 10000.f },          /* Capcom vs. SNK Pro */
 
    /* Translucent Polygon Depth Mask */
-   { "COSMIC SMASH IN JAPAN"             , -1, -1,  1,  -1, JVS::Default, 1 },                /* Cosmic Smash */
+   { "COSMIC SMASH IN JAPAN"             , -1, -1,  1,  -1, JVS_Default, 1 },                /* Cosmic Smash */
 
    /* Alternate Jamma I/O Setup */
-   { "WAVE RUNNER GP"                    , -1, -1, -1,  -1, JVS::WaveRunnerGP, 1 },           /* WaveRunner GP */
-   { "POWER STONE 2 JAPAN"               , -1, -1, -1,  -1, JVS::FourPlayers, 1 },            /* Power Stone 2 (4 players, also needs to be set in service menu) */
-   { "GUILTY GEAR isuka"                 , -1, -1, -1,  -1, JVS::FourPlayers, 1 },            /* Guilty Gear (AW) */
-   { "SHOOTOUT POOL"                     , -1, -1, -1,  -1, JVS::RotaryEncoders, 1 },         /* Shootout Pool: rotary encoders */
-   { "SHOOTOUT POOL MEDAL"               , -1, -1, -1,  -1, JVS::RotaryEncoders, 1 },         /* Shootout Pool The Medal: rotary encoders */
-   { "DYNAMIC GOLF"                      , -1, -1, -1,  -1, JVS::RotaryEncoders, 1 },         /* Virtua Golf/Dynamic Golf: rotary encoders */
-   { "CRACKIN'DJ  ver JAPAN"             , -1, -1, -1,  -1, JVS::RotaryEncoders, 1 },         /* Crackin'DJ: rotary encoders */
-   { "CRACKIN'DJ PART2  ver JAPAN"       , -1, -1, -1,  -1, JVS::RotaryEncoders, 1 },         /* Crackin'DJ 2: rotary encoders */
-   { "OUTTRIGGER     JAPAN"              , -1, -1, -1,  -1, JVS::OutTrigger, 1 },             /* Outtrigger: rotary encoders */
-   { "SEGA MARINE FISHING JAPAN"         , -1, -1, -1,  -1, JVS::SegaMarineFishing, 1 },      /* Sega Marine Fishing */
-   { "RINGOUT 4X4 JAPAN"                 , -1, -1, -1,  -1, JVS::DualIOBoards4P, 1 },         /* Ring Out 4x4 (4 players, also needs to be set in service menu) */
-   { "VIRTUA ATHLETE"                    , -1, -1, -1,  -1, JVS::DualIOBoards4P, 1 },         /* Virtua Athlete: 2 I/O boards, the second has P1/P2 (maple_devs.cpp) */
-   { "ROYAL RUMBLE"                      , -1, -1, -1,  -1, JVS::DualIOBoards4P, 1 },         /* WWF Royal Rumble: the same */
-   { "BEACH SPIKERS JAPAN"               , -1, -1, -1,  -1, JVS::DualIOBoards4P, 1 },         /* Beach Spikers: the same */
-   { "MJ JAPAN"                          , -1, -1, -1,  -1, JVS::DualIOBoards4P, 1 },         /* Sega Yonin Uchi Mahjong MJ: the same */
-   { "Sports Shooting USA"               , -1, -1, -1,  -1, JVS::LightGun, 1 },               /* Sports Shooting USA (light guns) */
-   { "SEGA CLAY CHALLENGE"               , -1, -1, -1,  -1, JVS::LightGun, 1 },               /* Sega Clay Challenge (light guns) */
-   { "RANGER MISSION"                    , -1, -1, -1,  -1, JVS::LightGun, 1 },               /* Ranger Mission (light guns) */
-   { "EXTREME HUNTING"                   , -1, -1, -1,  -1, JVS::LightGun, 1 },               /* Extreme Hunting (light guns) */
-   { "FASTER THAN SPEED"                 , -1, -1, -1,  -1, JVS::Analog, 1, &ftspeed_inputs },/* Faster Than Speed (analog axes) */
-   { "MAXIMUM SPEED"                     , -1, -1, -1,  -1, JVS::Analog, 1, &maxspeed_inputs },/* Maximum Speed (analog axes) */
-   { "BLOPON"                            , -1, -1, -1,  -1, JVS::Analog, 1 },                 /* Block Pong (analog axes) */
-   { "BASS FISHING SIMULATOR VER.A"      , -1, -1, -1,  -1, JVS::RotaryEncoders, 1 },         /* Sega Bass Fishing Challenge (Track-ball) */
-   { "DRIVE"                             , -1, -1, -1,  -1, JVS::RotaryEncoders, 1 },         /* WaiWai Drive */
-   { "KICK '4' CASH"                     , -1, -1, -1,  -1, JVS::RotaryEncoders, 1 },         /* Kick '4' Cash */
-   { "NINJA ASSAULT"                     , -1, -1, -1,  -1, JVS::LightGun, 1 },               /* Ninja Assault */
-   { "MAZAN"                             , -1, -1, -1,  -1, JVS::Mazan, 1 },                  /* Mazan */
-   { "WORLD KICKS"                       , -1, -1, -1,  -1, JVS::WorldKicks, 1 },             /* World Kicks */
-   { "WORLD KICKS PCB"                   , -1, -1, -1,  -1, JVS::WorldKicksPCB, 1 },          /* World Kicks 2 kit a.k.a. World Kicks PCB */
-   { "THE MAZE OF THE KINGS"             , -1, -1, -1,  -1, JVS::LightGunAsAnalog, 1 },
-   { " CONFIDENTIAL MISSION ---------"   , -1, -1, -1,  -1, JVS::LightGunAsAnalog, 1 },
-   { "LUPIN THE THIRD  -THE SHOOTING-"   , -1, -1, -1,  -1, JVS::LightGunAsAnalog, 1 },
-   { "hotd2"                             , -1, -1, -1,  -1, JVS::LightGunAsAnalog, 1 },		  /* The House of The Dead 2 */
-   { "hotd2o"                            , -1, -1, -1,  -1, JVS::LightGunAsAnalog, 1 },		  /* The House of The Dead 2 */
-   { "hotd2e"                            , -1, -1, -1,  -1, JVS::LightGunAsAnalog, 1 },		  /* The House of The Dead 2 (export) */
-   { "hotd2p"                            , -1, -1, -1,  -1, JVS::LightGunAsAnalog, 1 },		  /* The House of The Dead 2 (prototype) */
-   { "INU NO OSANPO"                     , -1, -1, -1,  -1, JVS::DogWalking, 1 },   		  	  /* Dog Walking */
-   { " TOUCH DE UNOH -------------"      , -1, -1, -1,  -1, JVS::TouchDeUno, 1 },				  /* Touch de Uno! */
-   { " TOUCH DE UNOH 2 -----------"      , -1, -1, -1,  -1, JVS::TouchDeUno, 1 },				  /* Touch de Uno! 2 */
-   { "MIRAI YOSOU STUDIO"                , -1, -1, -1,  -1, JVS::TouchDeUno, 1 },				  /* Nittere Shiki! Mirai Yosou Studio */
-   { "ANPANMAN POPCORN KOUJOU 2"         , -1, -1, -1,  -1, JVS::SegaMarineFishing, 1 },      /* Soreike! Anpanman Popcorn Koujou 2: I/O board 837-13844 */
-   { "F355 CHALLENGE JAPAN"              , -1, -1, -1,  -1, JVS::F355, 1 },                   /* F355 Challenge: 837-13844 with its drive board */
-   { "TOKYO BUS GUIDE"                   , -1, -1, -1,  -1, JVS::TokyoBus, 1 },               /* Tokyo Bus Guide: 837-13844 with its drive board */
-   { "  18WHEELER"                       , -1, -1, -1,  -1, JVS::EighteenWheeler, 1 },        /* 18 Wheeler: 837-13844 with its drive board and shifter */
-   { "SAMBA DE AMIGO"                    , -1, -1, -1,  -1, JVS::SambaDeAmigo, 1 },           /* Samba de Amigo: 837-13844, the maracas' sensors */
+   { "WAVE RUNNER GP"                    , -1, -1, -1,  -1, JVS_WaveRunnerGP, 1 },           /* WaveRunner GP */
+   { "POWER STONE 2 JAPAN"               , -1, -1, -1,  -1, JVS_FourPlayers, 1 },            /* Power Stone 2 (4 players, also needs to be set in service menu) */
+   { "GUILTY GEAR isuka"                 , -1, -1, -1,  -1, JVS_FourPlayers, 1 },            /* Guilty Gear (AW) */
+   { "SHOOTOUT POOL"                     , -1, -1, -1,  -1, JVS_RotaryEncoders, 1 },         /* Shootout Pool: rotary encoders */
+   { "SHOOTOUT POOL MEDAL"               , -1, -1, -1,  -1, JVS_RotaryEncoders, 1 },         /* Shootout Pool The Medal: rotary encoders */
+   { "DYNAMIC GOLF"                      , -1, -1, -1,  -1, JVS_RotaryEncoders, 1 },         /* Virtua Golf/Dynamic Golf: rotary encoders */
+   { "CRACKIN'DJ  ver JAPAN"             , -1, -1, -1,  -1, JVS_RotaryEncoders, 1 },         /* Crackin'DJ: rotary encoders */
+   { "CRACKIN'DJ PART2  ver JAPAN"       , -1, -1, -1,  -1, JVS_RotaryEncoders, 1 },         /* Crackin'DJ 2: rotary encoders */
+   { "OUTTRIGGER     JAPAN"              , -1, -1, -1,  -1, JVS_OutTrigger, 1 },             /* Outtrigger: rotary encoders */
+   { "SEGA MARINE FISHING JAPAN"         , -1, -1, -1,  -1, JVS_SegaMarineFishing, 1 },      /* Sega Marine Fishing */
+   { "RINGOUT 4X4 JAPAN"                 , -1, -1, -1,  -1, JVS_DualIOBoards4P, 1 },         /* Ring Out 4x4 (4 players, also needs to be set in service menu) */
+   { "VIRTUA ATHLETE"                    , -1, -1, -1,  -1, JVS_DualIOBoards4P, 1 },         /* Virtua Athlete: 2 I/O boards, the second has P1/P2 (maple_devs.cpp) */
+   { "ROYAL RUMBLE"                      , -1, -1, -1,  -1, JVS_DualIOBoards4P, 1 },         /* WWF Royal Rumble: the same */
+   { "BEACH SPIKERS JAPAN"               , -1, -1, -1,  -1, JVS_DualIOBoards4P, 1 },         /* Beach Spikers: the same */
+   { "MJ JAPAN"                          , -1, -1, -1,  -1, JVS_DualIOBoards4P, 1 },         /* Sega Yonin Uchi Mahjong MJ: the same */
+   { "Sports Shooting USA"               , -1, -1, -1,  -1, JVS_LightGun, 1 },               /* Sports Shooting USA (light guns) */
+   { "SEGA CLAY CHALLENGE"               , -1, -1, -1,  -1, JVS_LightGun, 1 },               /* Sega Clay Challenge (light guns) */
+   { "RANGER MISSION"                    , -1, -1, -1,  -1, JVS_LightGun, 1 },               /* Ranger Mission (light guns) */
+   { "EXTREME HUNTING"                   , -1, -1, -1,  -1, JVS_LightGun, 1 },               /* Extreme Hunting (light guns) */
+   { "FASTER THAN SPEED"                 , -1, -1, -1,  -1, JVS_Analog, 1, &ftspeed_inputs },/* Faster Than Speed (analog axes) */
+   { "MAXIMUM SPEED"                     , -1, -1, -1,  -1, JVS_Analog, 1, &maxspeed_inputs },/* Maximum Speed (analog axes) */
+   { "BLOPON"                            , -1, -1, -1,  -1, JVS_Analog, 1 },                 /* Block Pong (analog axes) */
+   { "BASS FISHING SIMULATOR VER.A"      , -1, -1, -1,  -1, JVS_RotaryEncoders, 1 },         /* Sega Bass Fishing Challenge (Track-ball) */
+   { "DRIVE"                             , -1, -1, -1,  -1, JVS_RotaryEncoders, 1 },         /* WaiWai Drive */
+   { "KICK '4' CASH"                     , -1, -1, -1,  -1, JVS_RotaryEncoders, 1 },         /* Kick '4' Cash */
+   { "NINJA ASSAULT"                     , -1, -1, -1,  -1, JVS_LightGun, 1 },               /* Ninja Assault */
+   { "MAZAN"                             , -1, -1, -1,  -1, JVS_Mazan, 1 },                  /* Mazan */
+   { "WORLD KICKS"                       , -1, -1, -1,  -1, JVS_WorldKicks, 1 },             /* World Kicks */
+   { "WORLD KICKS PCB"                   , -1, -1, -1,  -1, JVS_WorldKicksPCB, 1 },          /* World Kicks 2 kit a.k.a. World Kicks PCB */
+   { "THE MAZE OF THE KINGS"             , -1, -1, -1,  -1, JVS_LightGunAsAnalog, 1 },
+   { " CONFIDENTIAL MISSION ---------"   , -1, -1, -1,  -1, JVS_LightGunAsAnalog, 1 },
+   { "LUPIN THE THIRD  -THE SHOOTING-"   , -1, -1, -1,  -1, JVS_LightGunAsAnalog, 1 },
+   { "hotd2"                             , -1, -1, -1,  -1, JVS_LightGunAsAnalog, 1 },		  /* The House of The Dead 2 */
+   { "hotd2o"                            , -1, -1, -1,  -1, JVS_LightGunAsAnalog, 1 },		  /* The House of The Dead 2 */
+   { "hotd2e"                            , -1, -1, -1,  -1, JVS_LightGunAsAnalog, 1 },		  /* The House of The Dead 2 (export) */
+   { "hotd2p"                            , -1, -1, -1,  -1, JVS_LightGunAsAnalog, 1 },		  /* The House of The Dead 2 (prototype) */
+   { "INU NO OSANPO"                     , -1, -1, -1,  -1, JVS_DogWalking, 1 },   		  	  /* Dog Walking */
+   { " TOUCH DE UNOH -------------"      , -1, -1, -1,  -1, JVS_TouchDeUno, 1 },				  /* Touch de Uno! */
+   { " TOUCH DE UNOH 2 -----------"      , -1, -1, -1,  -1, JVS_TouchDeUno, 1 },				  /* Touch de Uno! 2 */
+   { "MIRAI YOSOU STUDIO"                , -1, -1, -1,  -1, JVS_TouchDeUno, 1 },				  /* Nittere Shiki! Mirai Yosou Studio */
+   { "ANPANMAN POPCORN KOUJOU 2"         , -1, -1, -1,  -1, JVS_SegaMarineFishing, 1 },      /* Soreike! Anpanman Popcorn Koujou 2: I/O board 837-13844 */
+   { "F355 CHALLENGE JAPAN"              , -1, -1, -1,  -1, JVS_F355, 1 },                   /* F355 Challenge: 837-13844 with its drive board */
+   { "TOKYO BUS GUIDE"                   , -1, -1, -1,  -1, JVS_TokyoBus, 1 },               /* Tokyo Bus Guide: 837-13844 with its drive board */
+   { "  18WHEELER"                       , -1, -1, -1,  -1, JVS_EighteenWheeler, 1 },        /* 18 Wheeler: 837-13844 with its drive board and shifter */
+   { "SAMBA DE AMIGO"                    , -1, -1, -1,  -1, JVS_SambaDeAmigo, 1 },           /* Samba de Amigo: 837-13844, the maracas' sensors */
 
    /* Input descriptors */
-   { " BIOHAZARD  GUN SURVIVOR2"         , -1, -1, -1,  -1, JVS::GunSurvivor, 1, &gunsur2_inputs }, /* Gun Survivor 2 Biohazard Code: Veronica */
-   { "MONKEY BALL JAPAN VERSION"         , -1, -1, -1,  -1, JVS::Default, 1, &monkeyba_inputs },/* Monkey Ball */
-   { "CAPCOM VS SNK 2  JAPAN"            , -1, -1, -1,  -1, JVS::Default, 1, &cvs2_inputs },  /* Capcom Vs. SNK 2 Mark Of The Millennium 2001 */
-   { "DEATH CRIMSON OX"                  , -1, -1, -1,  -1, JVS::LightGunAsAnalog, 1, &deathcox_inputs }, /* Death Crimson OX */
+   { " BIOHAZARD  GUN SURVIVOR2"         , -1, -1, -1,  -1, JVS_GunSurvivor, 1, &gunsur2_inputs }, /* Gun Survivor 2 Biohazard Code: Veronica */
+   { "MONKEY BALL JAPAN VERSION"         , -1, -1, -1,  -1, JVS_Default, 1, &monkeyba_inputs },/* Monkey Ball */
+   { "CAPCOM VS SNK 2  JAPAN"            , -1, -1, -1,  -1, JVS_Default, 1, &cvs2_inputs },  /* Capcom Vs. SNK 2 Mark Of The Millennium 2001 */
+   { "DEATH CRIMSON OX"                  , -1, -1, -1,  -1, JVS_LightGunAsAnalog, 1, &deathcox_inputs }, /* Death Crimson OX */
 };

@@ -1292,20 +1292,20 @@ static void *pico_thread_func(void *)
 	dont_reject_opt_vj_hack = gameId == "6107117" ? 1 : 0;
 	
 	// Find the gateway (UPnP) and map network ports
-	MiniUPnP upnp;
+	miniupnp_t upnp = {};
 	bool upnp_mapped = false;
 	if (ports != nullptr)
 	{
-		if (!upnp.Init())
+		if (!miniupnp_init(&upnp))
 			WARN_LOG(MODEM, "UPNP Init failed");
 		else
 		{
 			upnp_mapped = true;
 			for (u32 i = 0; i < ARRAY_SIZE(ports->udpPorts) && ports->udpPorts[i] != 0; i++)
-				if (!upnp.AddPortMapping(ports->udpPorts[i], false))
+				if (!miniupnp_add_port_mapping(&upnp, ports->udpPorts[i], false))
 					WARN_LOG(MODEM, "UPNP AddPortMapping UDP %d failed", ports->udpPorts[i]);
 			for (u32 i = 0; i < ARRAY_SIZE(ports->tcpPorts) && ports->tcpPorts[i] != 0; i++)
-				if (!upnp.AddPortMapping(ports->tcpPorts[i], true))
+				if (!miniupnp_add_port_mapping(&upnp, ports->tcpPorts[i], true))
 					WARN_LOG(MODEM, "UPNP AddPortMapping TCP %d failed", ports->tcpPorts[i]);
 		}
 	}
@@ -1473,7 +1473,7 @@ static void *pico_thread_func(void *)
 	}
 	pico_stack_tick();
 	if (upnp_mapped)
-		upnp.Term();
+		miniupnp_term(&upnp);
 
 	return NULL;
 }
