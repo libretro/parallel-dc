@@ -32,7 +32,7 @@ static int failures;
 
 /* ---- what the board needs from the rest of the core ------------------- */
 
-Array<RegisterStruct> sb_regs(0x540);
+RegisterStruct sb_regs[SB_REGS];
 
 static u8 guest_ram[0x10000];	/* the game's memory, for DMA */
 

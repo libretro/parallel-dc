@@ -468,10 +468,10 @@ static void SCFCR2_write(u32 addr, u32 data)
 void serial_init()
 {
 	//SCIF SCSMR2 0xFFE80000 0x1FE80000 16 0x0000 0x0000 Held Held Pclk
-	sh4_rio_reg(SCIF,SCIF_SCSMR2_addr,RIO_DATA,16);
+	sh4_rio_reg(SCIF,SCIF_SCSMR2_addr,RIO_DATA,16,0,0);
 
 	//SCIF SCBRR2 0xFFE80004 0x1FE80004 8 0xFF 0xFF Held Held Pclk
-	sh4_rio_reg(SCIF,SCIF_SCBRR2_addr,RIO_DATA,8);
+	sh4_rio_reg(SCIF,SCIF_SCBRR2_addr,RIO_DATA,8,0,0);
 
 	//SCIF SCSCR2 0xFFE80008 0x1FE80008 16 0x0000 0x0000 Held Held Pclk
 	sh4_rio_reg(SCIF, SCIF_SCSCR2_addr, RIO_FUNC, 16, &SCSCR2_read, &SCSCR2_write);
@@ -485,20 +485,20 @@ void serial_init()
 
 	//READ only
 	//SCIF SCFRDR2 0xFFE80014 0x1FE80014 8 Undefined Undefined Held Held Pclk
-	sh4_rio_reg(SCIF,SCIF_SCFRDR2_addr,RIO_RO_FUNC,8,&ReadSerialData);
+	sh4_rio_reg(SCIF,SCIF_SCFRDR2_addr,RIO_RO_FUNC,8,&ReadSerialData,0);
 
 	//SCIF SCFCR2 0xFFE80018 0x1FE80018 16 0x0000 0x0000 Held Held Pclk
 	sh4_rio_reg(SCIF,SCIF_SCFCR2_addr,RIO_WF,16,0,&SCFCR2_write);
 
 	//Read only
 	//SCIF SCFDR2 0xFFE8001C 0x1FE8001C 16 0x0000 0x0000 Held Held Pclk
-	sh4_rio_reg(SCIF,SCIF_SCFDR2_addr,RIO_RO_FUNC,16,&Read_SCFDR2);
+	sh4_rio_reg(SCIF,SCIF_SCFDR2_addr,RIO_RO_FUNC,16,&Read_SCFDR2,0);
 
 	//SCIF SCSPTR2 0xFFE80020 0x1FE80020 16 0x0000 0x0000 Held Held Pclk
-	sh4_rio_reg(SCIF,SCIF_SCSPTR2_addr,RIO_DATA,16);
+	sh4_rio_reg(SCIF,SCIF_SCSPTR2_addr,RIO_DATA,16,0,0);
 
 	//SCIF SCLSR2 0xFFE80024 0x1FE80024 16 0x0000 0x0000 Held Held Pclk
-	sh4_rio_reg(SCIF,SCIF_SCLSR2_addr,RIO_DATA,16);
+	sh4_rio_reg(SCIF,SCIF_SCLSR2_addr,RIO_DATA,16,0,0);
 }
 void serial_reset()
 {

@@ -16,36 +16,56 @@ Array<u8> OnChipRAM;
 
 //All registers are 4 byte aligned
 
-Array<RegisterStruct> CCN(18,true);  //CCN  : 16 registers
-Array<RegisterStruct> UBC(9,true);   //UBC  : 9 registers
-Array<RegisterStruct> BSC(19,true);  //BSC  : 18 registers
-Array<RegisterStruct> DMAC(17,true); //DMAC : 17 registers
-Array<RegisterStruct> CPG(5,true);   //CPG  : 5 registers
-Array<RegisterStruct> RTC(16,true);  //RTC  : 16 registers
-Array<RegisterStruct> INTC(5,true);  //INTC : 5 registers
-Array<RegisterStruct> TMU(12,true);  //TMU  : 12 registers
-Array<RegisterStruct> SCI(8,true);   //SCI  : 8 registers
-Array<RegisterStruct> SCIF(10,true); //SCIF : 10 registers
-
-Array<RegisterStruct> * const AllRegisters[] = { &CCN, &UBC, &BSC, &DMAC, &CPG, &RTC, &INTC, &TMU, &SCI, &SCIF };
+RegisterStruct CCN[SH4_CCN_REGS];
+RegisterStruct UBC[SH4_UBC_REGS];
+RegisterStruct BSC[SH4_BSC_REGS];
+RegisterStruct DMAC[SH4_DMAC_REGS];
+RegisterStruct CPG[SH4_CPG_REGS];
+RegisterStruct RTC[SH4_RTC_REGS];
+RegisterStruct INTC[SH4_INTC_REGS];
+RegisterStruct TMU[SH4_TMU_REGS];
+RegisterStruct SCI[SH4_SCI_REGS];
+RegisterStruct SCIF[SH4_SCIF_REGS];
 
 /* What a write keeps of a register that is plain data (RIO_DATA): the bits
  * the register has. The others are not there and read as 0. All of them
  * until sh4_rio_wmask() says which. As many as there are registers above,
- * and in the order of AllRegisters. (Beside the registers and not in their
+ * and in the order of sh4_modules. (Beside the registers and not in their
  * flags: those go into save states.) */
-static u32 CCN_wmask[18];
-static u32 UBC_wmask[9];
-static u32 BSC_wmask[19];
-static u32 DMAC_wmask[17];
-static u32 CPG_wmask[5];
-static u32 RTC_wmask[16];
-static u32 INTC_wmask[5];
-static u32 TMU_wmask[12];
-static u32 SCI_wmask[8];
-static u32 SCIF_wmask[10];
+static u32 CCN_wmask[SH4_CCN_REGS];
+static u32 UBC_wmask[SH4_UBC_REGS];
+static u32 BSC_wmask[SH4_BSC_REGS];
+static u32 DMAC_wmask[SH4_DMAC_REGS];
+static u32 CPG_wmask[SH4_CPG_REGS];
+static u32 RTC_wmask[SH4_RTC_REGS];
+static u32 INTC_wmask[SH4_INTC_REGS];
+static u32 TMU_wmask[SH4_TMU_REGS];
+static u32 SCI_wmask[SH4_SCI_REGS];
+static u32 SCIF_wmask[SH4_SCIF_REGS];
 
-static u32 * const AllWriteMasks[] = { CCN_wmask, UBC_wmask, BSC_wmask, DMAC_wmask, CPG_wmask, RTC_wmask, INTC_wmask, TMU_wmask, SCI_wmask, SCIF_wmask };
+struct sh4_module
+{
+	RegisterStruct *regs;
+	u32 *wmask;
+	u32 count;
+};
+
+static const struct sh4_module sh4_modules[] =
+{
+	{ CCN, CCN_wmask, SH4_CCN_REGS }, { UBC, UBC_wmask, SH4_UBC_REGS },
+	{ BSC, BSC_wmask, SH4_BSC_REGS }, { DMAC, DMAC_wmask, SH4_DMAC_REGS },
+	{ CPG, CPG_wmask, SH4_CPG_REGS }, { RTC, RTC_wmask, SH4_RTC_REGS },
+	{ INTC, INTC_wmask, SH4_INTC_REGS }, { TMU, TMU_wmask, SH4_TMU_REGS },
+	{ SCI, SCI_wmask, SH4_SCI_REGS }, { SCIF, SCIF_wmask, SH4_SCIF_REGS }
+};
+
+static const struct sh4_module *sh4_module_of(const RegisterStruct *arr)
+{
+	for (u32 i = 0; i < ARRAY_SIZE(sh4_modules); i++)
+		if (sh4_modules[i].regs == arr)
+			return &sh4_modules[i];
+	return NULL;
+}
 
 u32 sh4io_read_noacc(u32 addr) 
 { 
@@ -64,49 +84,47 @@ void sh4io_write_const(u32 addr, u32 data)
 	INFO_LOG(SH4, "sh4io: Const write ignored @@ %08X <- %08X", addr, data);
 }
 
-void sh4_rio_reg(Array<RegisterStruct>& arr, u32 addr, RegIO flags, u32 sz, RegReadAddrFP* rf, RegWriteAddrFP* wf)
+void sh4_rio_reg(RegisterStruct *arr, u32 addr, RegIO flags, u32 sz, RegReadAddrFP* rf, RegWriteAddrFP* wf)
 {
 	u32 idx=(addr&255)/4;
+	const struct sh4_module *m = sh4_module_of(arr);
 
-	verify(idx<arr.Size);
+	verify(m != NULL && idx < m->count);
 
-	arr.data[idx].flags = flags | REG_ACCESS_32;
+	arr[idx].flags = flags | REG_ACCESS_32;
 
    if (flags == RIO_NO_ACCESS)
    {
-      arr.data[idx].readFunctionAddr=&sh4io_read_noacc;
-      arr.data[idx].writeFunctionAddr=&sh4io_write_noacc;
+      arr[idx].readFunctionAddr=&sh4io_read_noacc;
+      arr[idx].writeFunctionAddr=&sh4io_write_noacc;
    }
    else if (flags == RIO_CONST)
    {
-      arr.data[idx].writeFunctionAddr=&sh4io_write_const;
+      arr[idx].writeFunctionAddr=&sh4io_write_const;
    }
    else
    {
-      arr.data[idx].data32=0;
+      arr[idx].data32=0;
 
       if (flags & REG_RF)
-         arr.data[idx].readFunctionAddr=rf;
+         arr[idx].readFunctionAddr=rf;
 
       if (flags & REG_WF)
-         arr.data[idx].writeFunctionAddr=wf==0?&sh4io_write_noacc:wf;
+         arr[idx].writeFunctionAddr=wf==0?&sh4io_write_noacc:wf;
    }
 }
 
-void sh4_rio_wmask(Array<RegisterStruct>& arr, u32 addr, u32 mask)
+void sh4_rio_wmask(RegisterStruct *arr, u32 addr, u32 mask)
 {
 	u32 idx=(addr&255)/4;
+	const struct sh4_module *m = sh4_module_of(arr);
 
-	if (idx >= arr.Size)
-		return;
-
-	for (u32 i = 0; i < ARRAY_SIZE(AllRegisters); i++)
-		if (AllRegisters[i] == &arr)
-			AllWriteMasks[i][idx] = mask;
+	if (m != NULL && idx < m->count)
+		m->wmask[idx] = mask;
 }
 
 template<u32 sz>
-u32 sh4_rio_read(Array<RegisterStruct>& sb_regs, u32 addr)
+u32 sh4_rio_read(const RegisterStruct *sb_regs, u32 addr)
 {	
    u32 offset = addr&255;
 #ifdef TRACE
@@ -122,18 +140,18 @@ u32 sh4_rio_read(Array<RegisterStruct>& sb_regs, u32 addr)
 	if (sb_regs[offset].flags & sz)
 	{
 #endif
-      if (!(sb_regs.data[offset].flags & REG_RF) )
+      if (!(sb_regs[offset].flags & REG_RF) )
 		{
 			if (sz==4)
-				return  sb_regs.data[offset].data32;
+				return  sb_regs[offset].data32;
 			else if (sz==2)
-				return  sb_regs.data[offset].data16;
+				return  sb_regs[offset].data16;
 			else 
-				return  sb_regs.data[offset].data8;
+				return  sb_regs[offset].data8;
 		}
 		else
 		{
-			return sb_regs.data[offset].readFunctionAddr(addr);
+			return sb_regs[offset].readFunctionAddr(addr);
 		}
 #ifdef TRACE
 	}
@@ -146,7 +164,7 @@ u32 sh4_rio_read(Array<RegisterStruct>& sb_regs, u32 addr)
 }
 
 template<u32 sz>
-void sh4_rio_write(Array<RegisterStruct>& sb_regs, const u32* wmask, u32 addr, u32 data)
+void sh4_rio_write(RegisterStruct *sb_regs, const u32* wmask, u32 addr, u32 data)
 {
 	u32 offset = addr&255;
 #ifdef TRACE
@@ -160,15 +178,15 @@ offset>>=2;
 	if (sb_regs[offset].flags & sz)
 	{
 #endif
-		if (!(sb_regs.data[offset].flags & REG_WF) )
+		if (!(sb_regs[offset].flags & REG_WF) )
 		{
 			data&=wmask[offset];
 			if (sz==4)
-				sb_regs.data[offset].data32=data;
+				sb_regs[offset].data32=data;
 			else if (sz==2)
-				sb_regs.data[offset].data16=(u16)data;
+				sb_regs[offset].data16=(u16)data;
 			else
-				sb_regs.data[offset].data8=(u8)data;
+				sb_regs[offset].data8=(u8)data;
 			return;
 		}
 		else
@@ -818,22 +836,22 @@ void sh4_mmr_init(void)
 {
 	OnChipRAM.Resize(OnChipRAM_SIZE,false);
 
-	for (u32 i = 0; i < ARRAY_SIZE(AllRegisters); i++)
-		for (u32 j = 0; j < AllRegisters[i]->Size; j++)
-			AllWriteMasks[i][j] = 0xFFFFFFFF;
+	for (u32 i = 0; i < ARRAY_SIZE(sh4_modules); i++)
+		for (u32 j = 0; j < sh4_modules[i].count; j++)
+			sh4_modules[i].wmask[j] = 0xFFFFFFFF;
 
 	for (u32 i=0;i<30;i++)
 	{
-		if (i<CCN.Size)  sh4_rio_reg(CCN,CCN_BASE_addr+i*4,RIO_NO_ACCESS,32);   //(16,true);    //CCN  : 14 registers
-		if (i<UBC.Size)  sh4_rio_reg(UBC,UBC_BASE_addr+i*4,RIO_NO_ACCESS,32);   //(9,true);     //UBC  : 9 registers
-		if (i<BSC.Size)  sh4_rio_reg(BSC,BSC_BASE_addr+i*4,RIO_NO_ACCESS,32);   //(19,true);    //BSC  : 18 registers
-		if (i<DMAC.Size) sh4_rio_reg(DMAC,DMAC_BASE_addr+i*4,RIO_NO_ACCESS,32); //(17,true);    //DMAC : 17 registers
-		if (i<CPG.Size)  sh4_rio_reg(CPG,CPG_BASE_addr+i*4,RIO_NO_ACCESS,32);   //(5,true);     //CPG  : 5 registers
-		if (i<RTC.Size)  sh4_rio_reg(RTC,RTC_BASE_addr+i*4,RIO_NO_ACCESS,32);   //(16,true);    //RTC  : 16 registers
-		if (i<INTC.Size) sh4_rio_reg(INTC,INTC_BASE_addr+i*4,RIO_NO_ACCESS,32); //(4,true);     //INTC : 4 registers
-		if (i<TMU.Size)  sh4_rio_reg(TMU,TMU_BASE_addr+i*4,RIO_NO_ACCESS,32);   //(12,true);    //TMU  : 12 registers
-		if (i<SCI.Size)  sh4_rio_reg(SCI,SCI_BASE_addr+i*4,RIO_NO_ACCESS,32);   //(8,true);     //SCI  : 8 registers
-		if (i<SCIF.Size) sh4_rio_reg(SCIF,SCIF_BASE_addr+i*4,RIO_NO_ACCESS,32); //(10,true);    //SCIF : 10 registers
+		if (i<SH4_CCN_REGS)  sh4_rio_reg(CCN,CCN_BASE_addr+i*4,RIO_NO_ACCESS,32,0,0);   //(16,true);    //CCN  : 14 registers
+		if (i<SH4_UBC_REGS)  sh4_rio_reg(UBC,UBC_BASE_addr+i*4,RIO_NO_ACCESS,32,0,0);   //(9,true);     //UBC  : 9 registers
+		if (i<SH4_BSC_REGS)  sh4_rio_reg(BSC,BSC_BASE_addr+i*4,RIO_NO_ACCESS,32,0,0);   //(19,true);    //BSC  : 18 registers
+		if (i<SH4_DMAC_REGS) sh4_rio_reg(DMAC,DMAC_BASE_addr+i*4,RIO_NO_ACCESS,32,0,0); //(17,true);    //DMAC : 17 registers
+		if (i<SH4_CPG_REGS)  sh4_rio_reg(CPG,CPG_BASE_addr+i*4,RIO_NO_ACCESS,32,0,0);   //(5,true);     //CPG  : 5 registers
+		if (i<SH4_RTC_REGS)  sh4_rio_reg(RTC,RTC_BASE_addr+i*4,RIO_NO_ACCESS,32,0,0);   //(16,true);    //RTC  : 16 registers
+		if (i<SH4_INTC_REGS) sh4_rio_reg(INTC,INTC_BASE_addr+i*4,RIO_NO_ACCESS,32,0,0); //(4,true);     //INTC : 4 registers
+		if (i<SH4_TMU_REGS)  sh4_rio_reg(TMU,TMU_BASE_addr+i*4,RIO_NO_ACCESS,32,0,0);   //(12,true);    //TMU  : 12 registers
+		if (i<SH4_SCI_REGS)  sh4_rio_reg(SCI,SCI_BASE_addr+i*4,RIO_NO_ACCESS,32,0,0);   //(8,true);     //SCI  : 8 registers
+		if (i<SH4_SCIF_REGS) sh4_rio_reg(SCIF,SCIF_BASE_addr+i*4,RIO_NO_ACCESS,32,0,0); //(10,true);    //SCIF : 10 registers
 	}
 
 	//initialise Register structs
@@ -852,9 +870,9 @@ void sh4_mmr_reset(bool hard)
 {
 	if (hard)
 	{
-		for (int i = 0; i < ARRAY_SIZE(AllRegisters); i++)
-			for (int j = 0; j < AllRegisters[i]->Size; j++)
-				(*AllRegisters[i])[j].reset();
+		for (u32 i = 0; i < ARRAY_SIZE(sh4_modules); i++)
+			for (u32 j = 0; j < sh4_modules[i].count; j++)
+				register_reset(&sh4_modules[i].regs[j]);
 	}
 	OnChipRAM.Zero();
 	//Reset register values

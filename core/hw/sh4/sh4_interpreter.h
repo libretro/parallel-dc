@@ -2,6 +2,10 @@
 #include "types.h"
 #include "sh4_if.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #undef sh4op
 #define sh4op(str) void  DYNACALL str (u32 op)
 typedef void (DYNACALL OpCallFP) (u32 op);
@@ -22,7 +26,7 @@ enum OpcodeType
 	NO_GP        = 512,
 	NO_SP        = 1024,
 
-	UsesFPU      = 2048, // Floating point op
+	UsesFPU      = 2048, /* Floating point op */
 	FWritesFPSCR = UsesFPU | WritesFPSCR,
 
 	ReadWritePC  = ReadsPC|WritesPC,     /* Read and writes PC */
@@ -55,10 +59,6 @@ void ExecuteDelayslot(void);
 void ExecuteDelayslot_RTE(void);
 
 #define SH4_TIMESLICE (448)
-
-#ifdef __cplusplus
-extern "C" {
-#endif
 
 int UpdateSystem(void);
 __attribute__((used)) int UpdateSystem_INTC(void);

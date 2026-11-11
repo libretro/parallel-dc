@@ -37,7 +37,7 @@ static inline u32 sh4_sched_clock()
 	return sh4_sched_ffb-Sh4cntx.sh4_sched_next;
 }
 
-static inline u32 sh4_sched_remaining(int id, u32 reference)
+static inline u32 sh4_sched_remaining_at(int id, u32 reference)
 {
 	if (sch_list[id].end != -1)
       return sch_list[id].end - reference;
@@ -53,7 +53,7 @@ bool sh4_sched_is_scheduled(int id)
 
 u32 sh4_sched_remaining(int id)
 {
-	return sh4_sched_remaining(id, sh4_sched_clock());
+	return sh4_sched_remaining_at(id, sh4_sched_clock());
 }
 
 /* What sh4_sched_ffb and the time to the next event were set to last. */
@@ -147,7 +147,7 @@ void sh4_sched_ffts(void)
 	for (size_t i=0;i<sch_list.size();i++)
 	{
 		sh4_sched_mark(i);
-		const u32 remaining=sh4_sched_remaining(i, now);
+		const u32 remaining=sh4_sched_remaining_at(i, now);
 		if (sch_list[i].end!=-1 && remaining>=0x80000000u)
 			overdue=true;
 		if (remaining<diff)
@@ -254,7 +254,7 @@ void sh4_sched_request(int id, int cycles)
 			&& sh4_sched_ffb==sh4_sched_set_ffb && (u32)next<=sh4_sched_set_diff)
 	{
 		const u32 diff=(u32)next;
-		const u32 remaining=sh4_sched_remaining(id, sch_list[id].start);
+		const u32 remaining=sh4_sched_remaining_at(id, sch_list[id].start);
 		// (when the one after the next is known: how far off it is now)
 		const u32 second=diff+sh4_sched_second_gap;
 		const int slot2=sh4_sched_second_id;
@@ -357,7 +357,7 @@ void sh4_sched_tick(int cycles)
 				if (!sh4_sched_tick_other && !sh4_sched_stale)
 				{
 					sh4_sched_ticking = false;
-					const u32 remaining = sh4_sched_remaining(slot0, now);
+					const u32 remaining = sh4_sched_remaining_at(slot0, now);
 					const u32 second = (u32)next + sh4_sched_second_gap;
 					if (slot2 == -1 || remaining < second || (remaining == second && slot0 < slot2))
 					{
@@ -394,11 +394,11 @@ void sh4_sched_tick(int cycles)
 			for (size_t i = first; i < sch_list.size(); i = sh4_sched_next_waiting(i + 1))
 			{
 				sh4_sched_tick_pos = i;
-				int remaining = sh4_sched_remaining(i, fztime);
+				int remaining = sh4_sched_remaining_at(i, fztime);
 				verify(remaining >= 0 || remaining == -1);
 				if (remaining >= 0 && remaining <= (u32)cycles)
 					handle_cb(i);
-				const u32 next = sh4_sched_remaining(i, now);
+				const u32 next = sh4_sched_remaining_at(i, now);
 				if (sch_list[i].end != -1 && next >= 0x80000000u)
 					overdue = true;
 				if (next < diff)

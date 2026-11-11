@@ -49,7 +49,6 @@ DECL_ALIGN(64) u32 InterruptBit[32] = { 0 };
 DECL_ALIGN(64) u32 InterruptLevelBit[16] = { 0 };
 
 bool Do_Interrupt(u32 intEvn);
-bool Do_Exception(u32 epc, u32 expEvn, u32 CallVect);
 
 u32 interrupt_vpend; // Vector of pending interrupts
 u32 interrupt_vmask; // Vector of masked interrupts             (-1 inhibits all interrupts)

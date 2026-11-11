@@ -19,7 +19,7 @@
 #include "hw/bba/bba.h"
 #include "network/netservice.h"
 
-Array<RegisterStruct> sb_regs(0x540, false);
+RegisterStruct sb_regs[SB_REGS];
 
 //(addr>= 0x005F6800) && (addr<=0x005F7CFF) -> 0x1500 bytes -> 0x540 possible registers , 125 actually exist only
 // System Control Reg.   //0x100 bytes
@@ -106,7 +106,7 @@ void sb_rio_register(u32 reg_addr, RegIO flags, RegReadAddrFP* rf, RegWriteAddrF
 {
 	u32 idx=(reg_addr-SB_BASE)/4;
 
-	verify(idx<sb_regs.Size);
+	verify(idx<SB_REGS);
 
 	sb_regs[idx].flags = flags | REG_ACCESS_32;
 
@@ -172,11 +172,11 @@ void sb_write_SUSP(u32 addr, u32 data)
 
 void sb_Init(void)
 {
-	sb_regs.Zero();
+	memset(sb_regs, 0, sizeof(sb_regs));
 
-	for (u32 i=0;i<sb_regs.Size;i++)
+	for (u32 i=0;i<SB_REGS;i++)
 	{
-		sb_rio_register(SB_BASE+i*4,RIO_NO_ACCESS);
+		sb_rio_register(SB_BASE+i*4,RIO_NO_ACCESS,0,0);
 	}
 
 	//0x005F6800    SB_C2DSTAT  RW  ch2-DMA destination address
@@ -207,7 +207,7 @@ void sb_Init(void)
    // pvr
 
 	//0x005F6860 SB_SDDIV R(?) Sort-DMA LAT index (guess)
-	sb_rio_register(SB_SDDIV_addr,RIO_RO);
+	sb_rio_register(SB_SDDIV_addr,RIO_RO,0,0);
 
 	//0x005F6840    SB_DBREQM   RW  DBREQ# signal mask control
    sb_rio_register(SB_DBREQM_addr, RIO_WF, 0, sb_write_reg<SB_DBREQM_addr, 1>);
@@ -222,7 +222,7 @@ void sb_Init(void)
    sb_rio_register(SB_C2DMAXL_addr, RIO_WF, 0, sb_write_reg<SB_C2DMAXL_addr, 3>);
 
 	//0x005F6880    SB_TFREM    R   TA FIFO remaining amount
-	sb_rio_register(SB_TFREM_addr,RIO_RO);
+	sb_rio_register(SB_TFREM_addr,RIO_RO,0,0);
 
 	//0x005F6884    SB_LMMODE0  RW  Via TA texture memory bus select 0
    sb_rio_register(SB_LMMODE0_addr, RIO_WF, 0, sb_write_reg<SB_LMMODE0_addr, 1>);
@@ -231,14 +231,14 @@ void sb_Init(void)
    sb_rio_register(SB_LMMODE1_addr, RIO_WF, 0, sb_write_reg<SB_LMMODE1_addr, 1>);
 
 	//0x005F688C    SB_FFST     R   FIFO status
-   sb_rio_register(SB_FFST_addr, RIO_RO_FUNC, sb_read_SB_FFST);
+   sb_rio_register(SB_FFST_addr, RIO_RO_FUNC, sb_read_SB_FFST,0);
 
 
 	//0x005F6890    SB_SFRES    W   System reset
    sb_rio_register(SB_SFRES_addr, RIO_WO_FUNC, 0, sb_write_SB_SFRES);
 
 	//0x005F689C    SB_SBREV    R   System bus revision number
-	sb_rio_register(SB_SBREV_addr,RIO_CONST);
+	sb_rio_register(SB_SBREV_addr,RIO_CONST,0,0);
 
 
 	//0x005F68A0    SB_RBSPLT   RW  SH4 Root Bus split enable
@@ -340,7 +340,7 @@ void sb_Init(void)
 
 
 	//0x005F6C84    SB_MST      R   Maple status
-	sb_rio_register(SB_MST_addr,RIO_RO);
+	sb_rio_register(SB_MST_addr,RIO_RO,0,0);
 
 
 	//0x005F6C88    SB_MSHTCL   W   Maple-DMA hard trigger clear
@@ -358,15 +358,15 @@ void sb_Init(void)
 
 
 	//0x005F6CF4    SB_MTXDAD   R   Maple Txd address counter
-	sb_rio_register(SB_MTXDAD_addr,RIO_RO);
+	sb_rio_register(SB_MTXDAD_addr,RIO_RO,0,0);
 
 
 	//0x005F6CF8    SB_MRXDAD   R   Maple Rxd address counter
-	sb_rio_register(SB_MRXDAD_addr,RIO_RO);
+	sb_rio_register(SB_MRXDAD_addr,RIO_RO,0,0);
 
 
 	//0x005F6CFC    SB_MRXDBD   R   Maple Rxd base address
-	sb_rio_register(SB_MRXDBD_addr,RIO_RO);
+	sb_rio_register(SB_MRXDBD_addr,RIO_RO,0,0);
 
 	//0x005F7404    SB_GDSTAR   RW  GD-DMA start address
    sb_rio_register(SB_GDSTAR_addr, RIO_WF, 0, sb_write_reg<SB_GDSTAR_addr, 0x1fffffe0>);
@@ -425,7 +425,7 @@ void sb_Init(void)
 
 
 	//0x005F74B0    SB_G1SYSM   R   System mode
-	sb_rio_register(SB_G1SYSM_addr,RIO_RO);
+	sb_rio_register(SB_G1SYSM_addr,RIO_RO,0,0);
 
 
 	//0x005F74B4    SB_G1CRDYC  W   G1IORDY signal control
@@ -438,11 +438,11 @@ void sb_Init(void)
 
 
 	//0x005F74F4    SB_GDSTARD  R   GD-DMA address count (on Root Bus)
-	sb_rio_register(SB_GDSTARD_addr,RIO_RO);
+	sb_rio_register(SB_GDSTARD_addr,RIO_RO,0,0);
 
 
 	//0x005F74F8    SB_GDLEND   R   GD-DMA transfer counter
-	sb_rio_register(SB_GDLEND_addr,RIO_RO);
+	sb_rio_register(SB_GDLEND_addr,RIO_RO,0,0);
 
 
 #ifndef STRICT_MODE
@@ -581,16 +581,16 @@ void sb_Init(void)
 
 
 	//0x005F7880    SB_G2ID     R   G2 bus version
-	sb_rio_register(SB_G2ID_addr,RIO_CONST);
+	sb_rio_register(SB_G2ID_addr,RIO_CONST,0,0);
 
 
 
 	//0x005F7890    SB_G2DSTO   RW  G2/DS timeout
-	sb_rio_register(SB_G2DSTO_addr,RIO_DATA);
+	sb_rio_register(SB_G2DSTO_addr,RIO_DATA,0,0);
 
 
 	//0x005F7894    SB_G2TRTO   RW  G2/TR timeout
-	sb_rio_register(SB_G2TRTO_addr,RIO_DATA);
+	sb_rio_register(SB_G2TRTO_addr,RIO_DATA,0,0);
 
 
 	//0x005F7898    SB_G2MDMTO  RW  Modem unit wait timeout
@@ -608,54 +608,54 @@ void sb_Init(void)
 
 
 	//0x005F78C0    SB_ADSTAGD  R   AICA-DMA address counter (on AICA)
-	sb_rio_register(SB_ADSTAGD_addr,RIO_RO);
+	sb_rio_register(SB_ADSTAGD_addr,RIO_RO,0,0);
 
 
 	//0x005F78C4    SB_ADSTARD  R   AICA-DMA address counter (on root bus)
-	sb_rio_register(SB_ADSTARD_addr,RIO_RO);
+	sb_rio_register(SB_ADSTARD_addr,RIO_RO,0,0);
 
 
 	//0x005F78C8    SB_ADLEND   R   AICA-DMA transfer counter
-	sb_rio_register(SB_ADLEND_addr,RIO_RO);
+	sb_rio_register(SB_ADLEND_addr,RIO_RO,0,0);
 
 
 
 	//0x005F78D0    SB_E1STAGD  R   Ext-DMA1 address counter (on Ext)
-	sb_rio_register(SB_E1STAGD_addr,RIO_RO);
+	sb_rio_register(SB_E1STAGD_addr,RIO_RO,0,0);
 
 
 	//0x005F78D4    SB_E1STARD  R   Ext-DMA1 address counter (on root bus)
-	sb_rio_register(SB_E1STARD_addr,RIO_RO);
+	sb_rio_register(SB_E1STARD_addr,RIO_RO,0,0);
 
 
 	//0x005F78D8    SB_E1LEND   R   Ext-DMA1 transfer counter
-	sb_rio_register(SB_E1LEND_addr,RIO_RO);
+	sb_rio_register(SB_E1LEND_addr,RIO_RO,0,0);
 
 
 
 	//0x005F78E0    SB_E2STAGD  R   Ext-DMA2 address counter (on Ext)
-	sb_rio_register(SB_E2STAGD_addr,RIO_RO);
+	sb_rio_register(SB_E2STAGD_addr,RIO_RO,0,0);
 
 
 	//0x005F78E4    SB_E2STARD  R   Ext-DMA2 address counter (on root bus)
-	sb_rio_register(SB_E2STARD_addr,RIO_RO);
+	sb_rio_register(SB_E2STARD_addr,RIO_RO,0,0);
 
 
 	//0x005F78E8    SB_E2LEND   R   Ext-DMA2 transfer counter
-	sb_rio_register(SB_E2LEND_addr,RIO_RO);
+	sb_rio_register(SB_E2LEND_addr,RIO_RO,0,0);
 
 
 
 	//0x005F78F0    SB_DDSTAGD  R   Dev-DMA address counter (on Ext)
-	sb_rio_register(SB_DDSTAGD_addr,RIO_RO);
+	sb_rio_register(SB_DDSTAGD_addr,RIO_RO,0,0);
 
 
 	//0x005F78F4    SB_DDSTARD  R   Dev-DMA address counter (on root bus)
-	sb_rio_register(SB_DDSTARD_addr,RIO_RO);
+	sb_rio_register(SB_DDSTARD_addr,RIO_RO,0,0);
 
 
 	//0x005F78F8    SB_DDLEND   R   Dev-DMA transfer counter
-	sb_rio_register(SB_DDLEND_addr,RIO_RO);
+	sb_rio_register(SB_DDLEND_addr,RIO_RO,0,0);
 
 
 
@@ -694,15 +694,15 @@ void sb_Init(void)
 
 
 	//0x005F7CF0    SB_PDSTAPD  R   PVR-DMA address counter (on Ext)
-	sb_rio_register(SB_PDSTAPD_addr,RIO_RO);
+	sb_rio_register(SB_PDSTAPD_addr,RIO_RO,0,0);
 
 
 	//0x005F7CF4    SB_PDSTARD  R   PVR-DMA address counter (on root bus)
-	sb_rio_register(SB_PDSTARD_addr,RIO_RO);
+	sb_rio_register(SB_PDSTARD_addr,RIO_RO,0,0);
 
 
 	//0x005F7CF8    SB_PDLEND   R   PVR-DMA transfer counter
-	sb_rio_register(SB_PDLEND_addr,RIO_RO);
+	sb_rio_register(SB_PDLEND_addr,RIO_RO,0,0);
 
 
 	//GDROM unlock register (bios checksumming, etc)
@@ -748,8 +748,8 @@ void sb_Reset(bool hard)
 {
 	if (hard)
 	{
-		for (u32 i = 0; i < sb_regs.Size; i++)
-			sb_regs[i].reset();
+		for (u32 i = 0; i < SB_REGS; i++)
+			register_reset(&sb_regs[i]);
 	}
 	SB_ISTNRM = 0;
 	SB_FFST_rc = 0;

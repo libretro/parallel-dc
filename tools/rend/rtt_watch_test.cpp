@@ -28,7 +28,7 @@ unsigned VRAM_SIZE = 8 * 1024 * 1024;
 VArray2 vram;
 settings_t settings;
 bool mmu_strict;
-Array<RegisterStruct> CCN(18, true);
+RegisterStruct CCN[SH4_CCN_REGS];
 
 static std::vector<bool> watched;
 

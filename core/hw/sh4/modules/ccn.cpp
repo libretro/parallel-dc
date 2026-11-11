@@ -2,6 +2,7 @@
 //CCN: Cache and TLB controller
 
 #include "types.h"
+#include "hw/sh4/modules/modules.h"
 #include "hw/sh4/sh4_mmr.h"
 #include "types.h"
 #include "ccn.h"
@@ -162,44 +163,44 @@ void ccn_init()
 	sh4_rio_reg(CCN,CCN_PTEH_addr,RIO_WF,32,0,&CCN_PTEH_write);
 
 	//CCN PTEL 0xFF000004 0x1F000004 32 Undefined Undefined Held Held Iclk
-	sh4_rio_reg(CCN,CCN_PTEL_addr,RIO_DATA,32);
+	sh4_rio_reg(CCN,CCN_PTEL_addr,RIO_DATA,32,0,0);
 	sh4_rio_wmask(CCN,CCN_PTEL_addr,0x1FFFFDFF);
 
 	//CCN TTB 0xFF000008 0x1F000008 32 Undefined Undefined Held Held Iclk
-	sh4_rio_reg(CCN,CCN_TTB_addr,RIO_DATA,32);
+	sh4_rio_reg(CCN,CCN_TTB_addr,RIO_DATA,32,0,0);
 
 	//CCN TEA 0xFF00000C 0x1F00000C 32 Undefined Held Held Held Iclk
-	sh4_rio_reg(CCN,CCN_TEA_addr,RIO_DATA,32);
+	sh4_rio_reg(CCN,CCN_TEA_addr,RIO_DATA,32,0,0);
 
 	//CCN MMUCR 0xFF000010 0x1F000010 32 0x00000000 0x00000000 Held Held Iclk
 	sh4_rio_reg(CCN,CCN_MMUCR_addr,RIO_WF,32,0,&CCN_MMUCR_write);
 
 	//CCN BASRA 0xFF000014 0x1F000014 8 Undefined Held Held Held Iclk
-	sh4_rio_reg(CCN,CCN_BASRA_addr,RIO_DATA,8);
+	sh4_rio_reg(CCN,CCN_BASRA_addr,RIO_DATA,8,0,0);
 
 	//CCN BASRB 0xFF000018 0x1F000018 8 Undefined Held Held Held Iclk
-	sh4_rio_reg(CCN,CCN_BASRB_addr,RIO_DATA,8);
+	sh4_rio_reg(CCN,CCN_BASRB_addr,RIO_DATA,8,0,0);
 
 	//CCN CCR 0xFF00001C 0x1F00001C 32 0x00000000 0x00000000 Held Held Iclk
 	sh4_rio_reg(CCN,CCN_CCR_addr,RIO_WF,32,0,&CCN_CCR_write);
 
 	//CCN TRA 0xFF000020 0x1F000020 32 Undefined Undefined Held Held Iclk
-	sh4_rio_reg(CCN,CCN_TRA_addr,RIO_DATA,32);
+	sh4_rio_reg(CCN,CCN_TRA_addr,RIO_DATA,32,0,0);
 	sh4_rio_wmask(CCN,CCN_TRA_addr,0x000003FC);
 
 	//CCN EXPEVT 0xFF000024 0x1F000024 32 0x00000000 0x00000020 Held Held Iclk
-	sh4_rio_reg(CCN,CCN_EXPEVT_addr,RIO_DATA,32);
+	sh4_rio_reg(CCN,CCN_EXPEVT_addr,RIO_DATA,32,0,0);
 	sh4_rio_wmask(CCN,CCN_EXPEVT_addr,0x00000FFF);
 
 	//CCN INTEVT 0xFF000028 0x1F000028 32 Undefined Undefined Held Held Iclk
-	sh4_rio_reg(CCN,CCN_INTEVT_addr,RIO_DATA,32);
+	sh4_rio_reg(CCN,CCN_INTEVT_addr,RIO_DATA,32,0,0);
 	sh4_rio_wmask(CCN,CCN_INTEVT_addr,0x00003FFF);
 
 	// CPU VERSION 0xFF000030 0x1F000030 (undocumented)
 	sh4_rio_reg(CCN,CPU_VERSION_addr, RIO_RO_FUNC, 32, &CPU_VERSION_read, 0);
 
 	//CCN PTEA 0xFF000034 0x1F000034 32 Undefined Undefined Held Held Iclk
-	sh4_rio_reg(CCN,CCN_PTEA_addr,RIO_DATA,32);
+	sh4_rio_reg(CCN,CCN_PTEA_addr,RIO_DATA,32,0,0);
 	sh4_rio_wmask(CCN,CCN_PTEA_addr,0x0000000F);
 
 	//CCN QACR0 0xFF000038 0x1F000038 32 Undefined Undefined Held Held Iclk

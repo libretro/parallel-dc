@@ -156,7 +156,12 @@ code it touches closer, and never adds C++ that was not there.
   `LOG_INPUT` and the like in C, where Windows has `INPUT`).
   `sh tools/c89/c89_check.sh [make arguments]` compiles every `.c` file
   of the core's own as `-std=c89 -pedantic` with the build's flags; CI
-  runs it natively and for Windows.
+  runs it natively and for Windows. A function the C side calls is
+  declared in a header the file that defines it includes, so both have
+  C linkage. In C, `bool` is `unsigned char` on the older MSVC:
+  what goes into one is 0 or 1 (`(x & 4) != 0`, not `x & 4`). A
+  template becomes a function with the parameter as an argument, and a
+  thin one per value where a function pointer needs it.
 - **Frames stay small.** A function's stack frame is 4 KiB at most.
 - **Threads are lock-free.** retro_atomic, SPSC rings and eventcount park
   and wake; no mutexes, no sleeps or polling with a wall clock.

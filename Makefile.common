@@ -68,13 +68,7 @@ SOURCES_CXX := \
 					$(CORE_DIR)/core/hw/sh4/interpr/sh4_fpu.cpp \
 					$(CORE_DIR)/core/hw/sh4/interpr/sh4_opcodes.cpp \
 					$(CORE_DIR)/core/hw/sh4/modules/serial.cpp \
-					$(CORE_DIR)/core/hw/sh4/modules/rtc.cpp  \
-					$(CORE_DIR)/core/hw/sh4/modules/bsc.cpp \
-					$(CORE_DIR)/core/hw/sh4/modules/tmu.cpp \
 					$(CORE_DIR)/core/hw/sh4/modules/ccn.cpp \
-					$(CORE_DIR)/core/hw/sh4/modules/intc.cpp \
-					$(CORE_DIR)/core/hw/sh4/modules/ubc.cpp \
-					$(CORE_DIR)/core/hw/sh4/modules/cpg.cpp \
 					$(CORE_DIR)/core/hw/sh4/modules/dmac.cpp \
 					$(CORE_DIR)/core/hw/sh4/modules/mmu.cpp \
 					$(CORE_DIR)/core/hw/sh4/modules/fastmmu.cpp \
@@ -181,7 +175,13 @@ SOURCES_C += $(CORE_DIR)/core/hw/gdrom/gdrom_response.c \
 					$(CORE_DIR)/core/hw/maple/vmu_beep.c \
 					$(CORE_DIR)/core/rend/last_picture.c \
 					$(CORE_DIR)/core/reios/descrambl.c \
-					$(CORE_DIR)/core/hw/naomi/printer.c
+					$(CORE_DIR)/core/hw/naomi/printer.c \
+					$(CORE_DIR)/core/hw/sh4/modules/bsc.c \
+					$(CORE_DIR)/core/hw/sh4/modules/cpg.c \
+					$(CORE_DIR)/core/hw/sh4/modules/intc.c \
+					$(CORE_DIR)/core/hw/sh4/modules/rtc.c \
+					$(CORE_DIR)/core/hw/sh4/modules/tmu.c \
+					$(CORE_DIR)/core/hw/sh4/modules/ubc.c
 
 SOURCES_ASM :=
 

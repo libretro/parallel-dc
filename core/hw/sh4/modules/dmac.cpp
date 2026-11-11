@@ -5,6 +5,7 @@
 		updating the dmac regs -- it works just fine really :|
 */
 #include "types.h"
+#include "hw/sh4/modules/modules.h"
 #include "hw/sh4/sh4_mmr.h"
 #include "hw/holly/sb.h"
 #include "hw/sh4/sh4_mem.h"
@@ -233,52 +234,52 @@ void WriteDMAOR(u32 addr, u32 data)
 void dmac_init()
 {
 	//DMAC SAR0 0xFFA00000 0x1FA00000 32 Undefined Undefined Held Held Bclk
-	sh4_rio_reg(DMAC,DMAC_SAR0_addr,RIO_DATA,32);
+	sh4_rio_reg(DMAC,DMAC_SAR0_addr,RIO_DATA,32,0,0);
 
 	//DMAC DAR0 0xFFA00004 0x1FA00004 32 Undefined Undefined Held Held Bclk
-	sh4_rio_reg(DMAC,DMAC_DAR0_addr,RIO_DATA,32);
+	sh4_rio_reg(DMAC,DMAC_DAR0_addr,RIO_DATA,32,0,0);
 
 	//DMAC DMATCR0 0xFFA00008 0x1FA00008 32 Undefined Undefined Held Held Bclk
-	sh4_rio_reg(DMAC,DMAC_DMATCR0_addr,RIO_DATA,32);
+	sh4_rio_reg(DMAC,DMAC_DMATCR0_addr,RIO_DATA,32,0,0);
 	sh4_rio_wmask(DMAC,DMAC_DMATCR0_addr,0x00FFFFFF);
 
 	//DMAC CHCR0 0xFFA0000C 0x1FA0000C 32 0x00000000 0x00000000 Held Held Bclk
 	sh4_rio_reg(DMAC,DMAC_CHCR0_addr,RIO_WF,32,0,&WriteCHCR<0>);
 
 	//DMAC SAR1 0xFFA00010 0x1FA00010 32 Undefined Undefined Held Held Bclk
-	sh4_rio_reg(DMAC,DMAC_SAR1_addr,RIO_DATA,32);
+	sh4_rio_reg(DMAC,DMAC_SAR1_addr,RIO_DATA,32,0,0);
 
 	//DMAC DAR1 0xFFA00014 0x1FA00014 32 Undefined Undefined Held Held Bclk
-	sh4_rio_reg(DMAC,DMAC_DAR1_addr,RIO_DATA,32);
+	sh4_rio_reg(DMAC,DMAC_DAR1_addr,RIO_DATA,32,0,0);
 
 	//DMAC DMATCR1 0xFFA00018 0x1FA00018 32 Undefined Undefined Held Held Bclk
-	sh4_rio_reg(DMAC,DMAC_DMATCR1_addr,RIO_DATA,32);
+	sh4_rio_reg(DMAC,DMAC_DMATCR1_addr,RIO_DATA,32,0,0);
 	sh4_rio_wmask(DMAC,DMAC_DMATCR1_addr,0x00FFFFFF);
 
 	//DMAC CHCR1 0xFFA0001C 0x1FA0001C 32 0x00000000 0x00000000 Held Held Bclk
 	sh4_rio_reg(DMAC,DMAC_CHCR1_addr,RIO_WF,32,0,&WriteCHCR<1>);
 
 	//DMAC SAR2 0xFFA00020 0x1FA00020 32 Undefined Undefined Held Held Bclk
-	sh4_rio_reg(DMAC,DMAC_SAR2_addr,RIO_DATA,32);
+	sh4_rio_reg(DMAC,DMAC_SAR2_addr,RIO_DATA,32,0,0);
 
 	//DMAC DAR2 0xFFA00024 0x1FA00024 32 Undefined Undefined Held Held Bclk
-	sh4_rio_reg(DMAC,DMAC_DAR2_addr,RIO_DATA,32);
+	sh4_rio_reg(DMAC,DMAC_DAR2_addr,RIO_DATA,32,0,0);
 
 	//DMAC DMATCR2 0xFFA00028 0x1FA00028 32 Undefined Undefined Held Held Bclk
-	sh4_rio_reg(DMAC,DMAC_DMATCR2_addr,RIO_DATA,32);
+	sh4_rio_reg(DMAC,DMAC_DMATCR2_addr,RIO_DATA,32,0,0);
 	sh4_rio_wmask(DMAC,DMAC_DMATCR2_addr,0x00FFFFFF);
 
 	//DMAC CHCR2 0xFFA0002C 0x1FA0002C 32 0x00000000 0x00000000 Held Held Bclk
 	sh4_rio_reg(DMAC,DMAC_CHCR2_addr,RIO_WF,32,0,&WriteCHCR<2>);
 
 	//DMAC SAR3 0xFFA00030 0x1FA00030 32 Undefined Undefined Held Held Bclk
-	sh4_rio_reg(DMAC,DMAC_SAR3_addr,RIO_DATA,32);
+	sh4_rio_reg(DMAC,DMAC_SAR3_addr,RIO_DATA,32,0,0);
 
 	//DMAC DAR3 0xFFA00034 0x1FA00034 32 Undefined Undefined Held Held Bclk
-	sh4_rio_reg(DMAC,DMAC_DAR3_addr,RIO_DATA,32);
+	sh4_rio_reg(DMAC,DMAC_DAR3_addr,RIO_DATA,32,0,0);
 
 	//DMAC DMATCR3 0xFFA00038 0x1FA00038 32 Undefined Undefined Held Held Bclk
-	sh4_rio_reg(DMAC,DMAC_DMATCR3_addr,RIO_DATA,32);
+	sh4_rio_reg(DMAC,DMAC_DMATCR3_addr,RIO_DATA,32,0,0);
 	sh4_rio_wmask(DMAC,DMAC_DMATCR3_addr,0x00FFFFFF);
 
 	//DMAC CHCR3 0xFFA0003C 0x1FA0003C 32 0x00000000 0x00000000 Held Held Bclk

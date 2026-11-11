@@ -1,6 +1,10 @@
 #pragma once
 #include "types.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 enum Sh4RegType
 {
 	/* GPRs */
@@ -122,12 +126,14 @@ enum Sh4RegType
 
 	NoReg=-1
 };
+typedef enum Sh4RegType Sh4RegType;
 
 /* Varius sh4 registers */
 
+typedef union sr_status_t sr_status_t;
 union sr_status_t
 {
-	struct
+	TYPES_ANON struct
 	{
 #ifdef MSB_FIRST
 		u32 rsvd3   : 1;/* <<31 */
@@ -165,11 +171,12 @@ union sr_status_t
 #define STATUS_MASK 0x700083F2
 
 /* Status register bitfield */
+typedef struct sr_t sr_t;
 struct sr_t
 {
-	union
+	TYPES_ANON union
 	{
-		struct
+		TYPES_ANON struct
 		{
 #ifdef MSB_FIRST
 			u32 rsvd3   : 1;/* <<31 */
@@ -209,12 +216,13 @@ struct sr_t
 
 
 /* FPSCR (fpu status and control register) bitfield */
-struct fpscr_t
+typedef struct fpscr_t fpscr_t;
+TYPES_ANON struct fpscr_t
 {
-	union
+	TYPES_ANON union
 	{
 		u32 full;
-		struct
+		TYPES_ANON struct
 		{
 #ifdef MSB_FIRST
 			u32 pad        : 10;
@@ -264,7 +272,7 @@ struct fpscr_t
 			u32 pad        : 10;
 #endif
 		};
-		struct
+		TYPES_ANON struct
 		{
 #ifdef MSB_FIRST
 			u32 nilz  : 11;
@@ -280,20 +288,21 @@ struct fpscr_t
 };
 
 
-typedef void RunFP();
-typedef void StopFP();
-typedef void StartFP();
-typedef void StepFP();
-typedef void SkipFP();
+typedef void RunFP(void);
+typedef void StopFP(void);
+typedef void StartFP(void);
+typedef void StepFP(void);
+typedef void SkipFP(void);
 typedef void ResetFP(bool hard);
-typedef void InitFP();
-typedef void TermFP();
-typedef bool IsCpuRunningFP();
+typedef void InitFP(void);
+typedef void TermFP(void);
+typedef bool IsCpuRunningFP(void);
 
 /*
 	The interface stuff should be replaced with something nicer
 */
 /* sh4 interface */
+typedef struct sh4_if sh4_if;
 struct sh4_if
 {
 	RunFP* Run;
@@ -311,11 +320,12 @@ struct sh4_if
 };
 
 
-struct Sh4Context
+typedef struct Sh4Context Sh4Context;
+TYPES_ANON struct Sh4Context
 {
-	union
+	TYPES_ANON union
 	{
-		struct
+		TYPES_ANON struct
 		{
 			f32 xffr[32];
 			u32 r[16];
@@ -323,7 +333,7 @@ struct Sh4Context
 			union
 			{
 				u64 full;
-				struct
+				TYPES_ANON struct
 				{
 					u32 l;
 					u32 h;
@@ -366,16 +376,16 @@ struct Sh4Context
 /* Whether an address is in area 7, where the on-chip registers are, in any
  * of the regions that reach it: a recompiler calling the handler of a
  * known address there writes cycle_counter first. */
-static inline bool sh4_area7(u32 addr)
+static TYPES_INLINE bool sh4_area7(u32 addr)
 {
 	return (addr & 0x1C000000) == 0x1C000000;
 }
 
 void DYNACALL do_sqw_mmu(u32 dst);
-extern "C" void DYNACALL do_sqw_nommu_area_3(u32 dst, u8* sqb);
-extern "C" void DYNACALL do_sqw_nommu_area_3_nonvmem(u32 dst, u8* sqb);
+void DYNACALL do_sqw_nommu_area_3(u32 dst, u8* sqb);
+void DYNACALL do_sqw_nommu_area_3_nonvmem(u32 dst, u8* sqb);
 void DYNACALL do_sqw_nommu_full(u32 dst, u8* sqb);
-void CCN_QACR_select();
+void CCN_QACR_select(void);
 
 typedef void DYNACALL sqw_fp(u32 dst,u8* sqb);
 typedef void DYNACALL TaListVoidFP(void* data);
@@ -385,6 +395,7 @@ typedef void DYNACALL TaListVoidFP(void* data);
 /* #defeine FPCB_PAD 0x40000 */
 #define FPCB_PAD 0x100000
 #define FPCB_OFFSET (-(FPCB_SIZE*sizeof(void*) + FPCB_PAD)) 
+typedef struct Sh4RCB Sh4RCB;
 struct Sh4RCB
 {
 	void* fpcb[FPCB_SIZE];
@@ -396,14 +407,18 @@ struct Sh4RCB
 };
 
 extern Sh4RCB* p_sh4rcb;
+
+/* Moved on by every store, and by whatever else can change something other
+ * than a register: see dyna/wait_site.h */
+extern u32 sh4_write_gen;
 extern u8* sh4_dyna_rcb;
 
-INLINE u32 sh4_sr_GetFull()
+static TYPES_INLINE u32 sh4_sr_GetFull(void)
 {
 	return (p_sh4rcb->cntx.sr.status & STATUS_MASK) | p_sh4rcb->cntx.sr.T;
 }
 
-INLINE void sh4_sr_SetFull(u32 value)
+static TYPES_INLINE void sh4_sr_SetFull(u32 value)
 {
 	p_sh4rcb->cntx.sr.status=value & STATUS_MASK;
 	p_sh4rcb->cntx.sr.T=value&1;
@@ -411,6 +426,8 @@ INLINE void sh4_sr_SetFull(u32 value)
 
 #define do_sqw_nommu sh4rcb.do_sqw_nommu
 
+#ifdef __cplusplus
+}
 template<typename T>
 s32 rcb_noffs(T* ptr)  
 { 
@@ -428,6 +445,8 @@ s32 rcb_poffs(T* ptr)
 
 	return rv;
 }
+extern "C" {
+#endif
 
 #define sh4rcb (*p_sh4rcb)
 #define Sh4cntx (sh4rcb.cntx)
@@ -439,3 +458,7 @@ void Get_Sh4Recompiler(sh4_if* cpu);
 bool recSh4_HaveCodeCache(void);
 #endif
 u32* GetRegPtr(u32 reg);
+
+#ifdef __cplusplus
+}
+#endif

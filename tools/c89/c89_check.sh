@@ -2,7 +2,8 @@
 # The core's C, as MSVC's C89 takes it (AGENTS.md: MSVC C89, gradually):
 # every .c file of the core's own that the build compiles (not deps/ or
 # libretro-common/, which are others'), with the build's own flags, compiled
-# again as -std=c89 -pedantic, declarations after statements and every
+# again as -std=c89 -pedantic, declarations after statements, functions
+# called undeclared (C89 takes them as int f(), as MSVC does) and every
 # warning an error. The headers they include are held to it with them -
 # types.h, which every file includes, first among them. Third-party
 # headers (deps/, libretro-common/) are system headers here.
@@ -26,7 +27,7 @@ n=0
 for f in $files; do
    n=$((n + 1))
    if ! out=$($CC $cflags -std=c89 -pedantic -Wno-long-long -Wno-variadic-macros -Werror \
-         -Wdeclaration-after-statement -fsyntax-only "$f" 2>&1); then
+         -Wdeclaration-after-statement -Werror=implicit-function-declaration -fsyntax-only "$f" 2>&1); then
       echo "$out" | grep -m 5 "error" | sed "s#^#  #"
       echo "c89_check: FAIL: $f"
       fails=$((fails + 1))

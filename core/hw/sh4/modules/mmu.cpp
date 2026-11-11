@@ -1,5 +1,6 @@
 #include <algorithm>
 #include "mmu.h"
+#include "modules.h"
 #include "hw/sh4/sh4_if.h"
 #include "hw/sh4/sh4_interrupts.h"
 #include "hw/sh4/sh4_core.h"
@@ -75,6 +76,7 @@ and a fast-hack mode for 1mb sqremaps (for katana)
 defining NO_MMU disables the full mmu emulation
 */
 #include "mmu.h"
+#include "modules.h"
 #include "mmu_impl.h"
 #include "hw/sh4/sh4_if.h"
 #include "ccn.h"

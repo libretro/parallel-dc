@@ -20,6 +20,7 @@
 #include "hw/sh4/sh4_sched.h"
 #include "hw/sh4/sh4_mmr.h"
 #include "hw/sh4/modules/mmu.h"
+#include "hw/sh4/modules/modules.h"
 #include "imgread/common.h"
 #include "reios/reios.h"
 #include "reios/gdrom_hle.h"
@@ -80,7 +81,6 @@ extern s16 cdda_sector[CDDA_SIZE];
 extern u32 cdda_index;
 
 //./core/hw/holly/sb.o
-extern Array<RegisterStruct> sb_regs;
 extern u32 SB_ISTNRM;
 extern u32 SB_FFST_rc;
 extern u32 SB_FFST;
@@ -176,16 +176,6 @@ extern VArray2 vram;
 
 //./core/hw/sh4/sh4_mmr.o
 extern Array<u8> OnChipRAM;
-extern Array<RegisterStruct> CCN;  //CCN  : 14 registers
-extern Array<RegisterStruct> UBC;   //UBC  : 9 registers
-extern Array<RegisterStruct> BSC;  //BSC  : 18 registers
-extern Array<RegisterStruct> DMAC; //DMAC : 17 registers
-extern Array<RegisterStruct> CPG;   //CPG  : 5 registers
-extern Array<RegisterStruct> RTC;  //RTC  : 16 registers
-extern Array<RegisterStruct> INTC;  //INTC : 4 registers
-extern Array<RegisterStruct> TMU;  //TMU  : 12 registers
-extern Array<RegisterStruct> SCI;   //SCI  : 8 registers
-extern Array<RegisterStruct> SCIF; //SCIF : 10 registers
 
 //./core/hw/sh4/sh4_mem.o
 extern VArray2 mem_b;
@@ -369,7 +359,6 @@ void naomi_cards_state_before_v30(void);
 void naomi_gd_serialize_v31(void **data, unsigned int *total_size);
 bool naomi_gd_unserialize_v31(void **data, unsigned int *total_size);
 void naomi_gd_state_before_v31(void);
-void tmu_state_loaded(void);
 
 /* The modem's part is this long on a Dreamcast (modem_serialize_v21() in
  * modem.cpp: 33 registers, the DSP's 4096 bytes, and 36 more), and a build
@@ -526,33 +515,33 @@ static void unserialize_vram(void **data, unsigned int *total_size)
 	LIBRETRO_USA(vram.data, vram.size);
 }
 
-bool register_serialize(Array<RegisterStruct>& regs,void **data, unsigned int *total_size )
+static bool register_serialize(const RegisterStruct *regs, u32 count, void **data, unsigned int *total_size)
 {
 	int i = 0 ;
 
-	for ( i = 0 ; i < regs.Size ; i++ )
+	for ( i = 0 ; i < (int)count ; i++ )
 	{
 		/* A register that is read through a function keeps the function's
 		 * address where the others keep their value. That is not state:
 		 * register_unserialize() reads it into a dummy. Writing its low
 		 * half out all the same put a host address, different in every
 		 * process, into the state for each such register; write zero. */
-		u32 value = (regs.data[i].flags & REG_RF) ? 0 : regs.data[i].data32 ;
+		u32 value = (regs[i].flags & REG_RF) ? 0 : regs[i].data32 ;
 
-		LIBRETRO_S(regs.data[i].flags) ;
+		LIBRETRO_S(regs[i].flags) ;
 		LIBRETRO_S(value) ;
 	}
 
 	return true ;
 }
 
-bool register_unserialize(Array<RegisterStruct>& regs,void **data, unsigned int *total_size, u32 force_size = 0)
+static bool register_unserialize(RegisterStruct *regs, u32 count, void **data, unsigned int *total_size, u32 force_size)
 {
 	int i = 0 ;
 	u32 dummy = 0 ;
 
 	if (force_size == 0)
-	   force_size = regs.Size;
+	   force_size = count;
 	for ( i = 0 ; i < force_size ; i++ )
 	{
 		/* What kind of register it is - a plain value or one read and
@@ -562,8 +551,8 @@ bool register_unserialize(Array<RegisterStruct>& regs,void **data, unsigned int 
 		 * address. The value is taken when both agree it is one. */
 		u32 flags = 0 ;
 		LIBRETRO_US(flags) ;
-		if ( ! ((flags | regs.data[i].flags) & REG_RF) )
-			LIBRETRO_US(regs.data[i].data32) ;
+		if ( ! ((flags | regs[i].flags) & REG_RF) )
+			LIBRETRO_US(regs[i].data32) ;
 		else
 			LIBRETRO_US(dummy) ;
 	}
@@ -654,7 +643,7 @@ bool dc_serialize(void **data, unsigned int *total_size)
 	LIBRETRO_SA(cdda_sector,CDDA_SIZE);
 	LIBRETRO_S(cdda_index);
 
-	STATE_PART("sb_regs"), register_serialize(sb_regs, data, total_size) ;
+	STATE_PART("sb_regs"), register_serialize(sb_regs, ARRAY_SIZE(sb_regs), data, total_size) ;
 	LIBRETRO_S(SB_ISTNRM);
 	LIBRETRO_S(SB_FFST_rc);
 	LIBRETRO_S(SB_FFST);
@@ -730,16 +719,16 @@ bool dc_serialize(void **data, unsigned int *total_size)
 
 	LIBRETRO_SA(OnChipRAM.data,OnChipRAM_SIZE);
 
-	STATE_PART("CCN"), register_serialize(CCN, data, total_size) ;
-	STATE_PART("UBC"), register_serialize(UBC, data, total_size) ;
-	STATE_PART("BSC"), register_serialize(BSC, data, total_size) ;
-	STATE_PART("DMAC"), register_serialize(DMAC, data, total_size) ;
-	STATE_PART("CPG"), register_serialize(CPG, data, total_size) ;
-	STATE_PART("RTC"), register_serialize(RTC, data, total_size) ;
-	STATE_PART("INTC"), register_serialize(INTC, data, total_size) ;
-	STATE_PART("TMU"), register_serialize(TMU, data, total_size) ;
-	STATE_PART("SCI"), register_serialize(SCI, data, total_size) ;
-	STATE_PART("SCIF"), register_serialize(SCIF, data, total_size) ;
+	STATE_PART("CCN"), register_serialize(CCN, ARRAY_SIZE(CCN), data, total_size) ;
+	STATE_PART("UBC"), register_serialize(UBC, ARRAY_SIZE(UBC), data, total_size) ;
+	STATE_PART("BSC"), register_serialize(BSC, ARRAY_SIZE(BSC), data, total_size) ;
+	STATE_PART("DMAC"), register_serialize(DMAC, ARRAY_SIZE(DMAC), data, total_size) ;
+	STATE_PART("CPG"), register_serialize(CPG, ARRAY_SIZE(CPG), data, total_size) ;
+	STATE_PART("RTC"), register_serialize(RTC, ARRAY_SIZE(RTC), data, total_size) ;
+	STATE_PART("INTC"), register_serialize(INTC, ARRAY_SIZE(INTC), data, total_size) ;
+	STATE_PART("TMU"), register_serialize(TMU, ARRAY_SIZE(TMU), data, total_size) ;
+	STATE_PART("SCI"), register_serialize(SCI, ARRAY_SIZE(SCI), data, total_size) ;
+	STATE_PART("SCIF"), register_serialize(SCIF, ARRAY_SIZE(SCIF), data, total_size) ;
 	STATE_PART("icache.Serialize"), icache.Serialize(data, total_size);
 	STATE_PART("ocache.Serialize"), ocache.Serialize(data, total_size);
 
@@ -1132,7 +1121,7 @@ bool dc_unserialize(void **data, unsigned int *total_size, size_t actual_data_si
 		LIBRETRO_SKIP(4);			// samples_gen
 	}
 
-	register_unserialize(sb_regs, data, total_size) ;
+	register_unserialize(sb_regs, ARRAY_SIZE(sb_regs), data, total_size, 0) ;
 	LIBRETRO_US(SB_ISTNRM);
 	LIBRETRO_US(SB_FFST_rc);
 	LIBRETRO_US(SB_FFST);
@@ -1341,16 +1330,16 @@ bool dc_unserialize(void **data, unsigned int *total_size, size_t actual_data_si
 
 	LIBRETRO_USA(OnChipRAM.data,OnChipRAM_SIZE);
 
-	register_unserialize(CCN, data, total_size, version < V4 ? 16 : 0) ;
-	register_unserialize(UBC, data, total_size) ;
-	register_unserialize(BSC, data, total_size) ;
-	register_unserialize(DMAC, data, total_size) ;
-	register_unserialize(CPG, data, total_size) ;
-	register_unserialize(RTC, data, total_size) ;
-	register_unserialize(INTC, data, total_size, version < V4 ? 4 : 0) ;
-	register_unserialize(TMU, data, total_size) ;
-	register_unserialize(SCI, data, total_size) ;
-	register_unserialize(SCIF, data, total_size) ;
+	register_unserialize(CCN, ARRAY_SIZE(CCN), data, total_size, version < V4 ? 16 : 0) ;
+	register_unserialize(UBC, ARRAY_SIZE(UBC), data, total_size, 0) ;
+	register_unserialize(BSC, ARRAY_SIZE(BSC), data, total_size, 0) ;
+	register_unserialize(DMAC, ARRAY_SIZE(DMAC), data, total_size, 0) ;
+	register_unserialize(CPG, ARRAY_SIZE(CPG), data, total_size, 0) ;
+	register_unserialize(RTC, ARRAY_SIZE(RTC), data, total_size, 0) ;
+	register_unserialize(INTC, ARRAY_SIZE(INTC), data, total_size, version < V4 ? 4 : 0) ;
+	register_unserialize(TMU, ARRAY_SIZE(TMU), data, total_size, 0) ;
+	register_unserialize(SCI, ARRAY_SIZE(SCI), data, total_size, 0) ;
+	register_unserialize(SCIF, ARRAY_SIZE(SCIF), data, total_size, 0) ;
 	if (version >= V9)
 		icache.Unserialize(data, total_size);
 	else

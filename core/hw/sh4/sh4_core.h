@@ -81,7 +81,7 @@ static INLINE void SetXD(u32 n, double val)
 	xf[(n<<1) | 0]=t.sgl[1];
 }
 
-bool Do_Exception(u32 epc, u32 expEvn, u32 CallVect);
+#include "sh4_interrupts.h"	/* (Do_Exception) */
 
 struct SH4ThrownException {
 	u32 epc;

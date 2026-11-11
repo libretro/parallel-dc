@@ -30,7 +30,7 @@
 #define DECL_ALIGN(x) __declspec(align(x))
 #else
 #ifndef __forceinline
-#define __forceinline inline
+#define __forceinline TYPES_INLINE
 #endif
 #define DECL_ALIGN(x) __attribute__((aligned(x)))
 #endif
@@ -537,6 +537,7 @@ enum RegIO
 	RIO_WO_FUNC = REG_WF | REG_RF | REG_WO, 
 	RIO_NO_ACCESS = REG_WF | REG_RF | REG_NO_ACCESS
 };
+typedef enum RegIO RegIO;
 
 typedef struct RegisterStruct RegisterStruct;
 struct RegisterStruct
@@ -554,14 +555,14 @@ struct RegisterStruct
 
 	u32 flags;					/* Access flags ! */
 
-#ifdef __cplusplus
-	void reset()
-	{
-		if (!(flags & (REG_RO | REG_RF)))
-			data32 = 0;
-	}
-#endif
 };
+
+/* A hard reset's: what is not read-only nor read through a function, 0 */
+static TYPES_INLINE void register_reset(RegisterStruct *r)
+{
+	if (!(r->flags & (REG_RO | REG_RF)))
+		r->data32 = 0;
+}
 
 enum JVS {
 	JVS_Default,

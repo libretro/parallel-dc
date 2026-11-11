@@ -50,8 +50,8 @@ struct WaitSite
 	u8 regs[offsetof(Sh4Context, CpuRunning)];	// everything from the first register to FPSCR and its shadow
 };
 
-// Moved on by every block that can change something other than a register
-extern u32 sh4_write_gen;
+// (sh4_write_gen, moved on by every block that can change something other
+// than a register, is in sh4_if.h)
 
 // A site for a block being compiled. NULL when there are no more, and for
 // a block whose site could never find the processor waiting: the block then
