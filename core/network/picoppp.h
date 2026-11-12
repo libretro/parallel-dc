@@ -22,20 +22,28 @@
 #pragma once
 #include "types.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 /* The network thread, for the modem and the broadband adapter: picoTCP, or
  * the DCNet service. Called on the emulation thread. */
-bool start_pico();
-// The thread is told to stop: it is not waited for
-void stop_pico();
-// The thread is stopped and waited for (the machine stops)
-void net_thread_join();
+bool start_pico(void);
+/* The thread is told to stop: it is not waited for */
+void stop_pico(void);
+/* The thread is stopped and waited for (the machine stops) */
+void net_thread_join(void);
 void write_pico(u8 b);
-int read_pico();
+int read_pico(void);
 
-// The longest frame that crosses between the adapter and the network
+/* The longest frame that crosses between the adapter and the network */
 #define NET_ETH_FRAME_MAX 1600
-// A frame the adapter has sent
+/* A frame the adapter has sent */
 void pico_receive_eth_frame(const u8 *frame, u32 size);
 /* The next frame from the network for the adapter, into @frame
  * (NET_ETH_FRAME_MAX bytes): its size, 0 if there is none */
 u32 net_eth_take(u8 *frame);
+
+#ifdef __cplusplus
+}
+#endif

@@ -1,7 +1,9 @@
+#include <string.h>
+
 #include "types.h"
 #include "sh4_rom.h"
 
-u32 sin_coefs[0x8000]=
+static const u32 sin_coefs[0x8000]=
 {
 0x00000000, 0x38C91000, 0x39491000, 0x3996CA00, 0x39C90E00, 0x39FB5200, 0x3A16CB00, 0x3A2FED00,
 0x3A490F00, 0x3A623100, 0x3A7B5300, 0x3A8A3A80, 0x3A96CB80, 0x3AA35C80, 0x3AAFED80, 0x3ABC7E80,
@@ -4103,21 +4105,20 @@ u32 sin_coefs[0x8000]=
 
 f32_x2 sin_table[0x10000];
 
-void sh4rom_init()
+void sh4rom_init(void)
 {
    unsigned i;
 	for (i=0x0000;i<0x10000;i++)
 	{
-		if (i<0x8000)
-			sin_table[i].u[0]=(f32&)sin_coefs[i];
-		else
-			sin_table[i].u[0]=-(f32&)sin_coefs[i-0x8000];
+		f32 v;
+		/* (the coefficients are the floats' bits) */
+		memcpy(&v, &sin_coefs[i & 0x7FFF], sizeof(v));
+		sin_table[i].u[0] = i<0x8000 ? v : -v;
 	}
 
-	verify(sin_table[0x8000].u[0]==0);//this is required by Ikaruga, for the bullets to behave normally
+	verify(sin_table[0x8000].u[0]==0);/* this is required by Ikaruga, for the bullets to behave normally */
 
 	for (i=0x0000;i<0x10000;i++)
-		sin_table[i].u[1]=sin_table[(i+0x4000)&0xFFFF].u[0];//fill in [1] (interleave sin/cos)
+		sin_table[i].u[1]=sin_table[(i+0x4000)&0xFFFF].u[0];/* fill in [1] (interleave sin/cos) */
 }
 
-static OnLoad ol_sh4rom(&sh4rom_init);

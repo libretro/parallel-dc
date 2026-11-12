@@ -83,7 +83,7 @@ static void send_ping(sock_t s, u32 addr)
 	to.sin_family = AF_INET;
 	to.sin_port = htons(AP_PORT);
 	to.sin_addr.s_addr = addr;
-	sendto(s, (const char *)buf, sizeof(buf), L_MSG_NOSIGNAL, (const sockaddr *)&to, sizeof(to));
+	sendto(s, (const char *)buf, sizeof(buf), MSG_NOSIGNAL, (const sockaddr *)&to, sizeof(to));
 }
 
 /* The address to connect to (network order): the access point that answers
@@ -110,7 +110,7 @@ static u32 find_access_point(std::string& apName)
 	to.sin_family = AF_INET;
 	to.sin_port = htons(AP_PORT);
 	to.sin_addr.s_addr = mainAddr;
-	sendto(s, (const char *)discover, sizeof(discover), L_MSG_NOSIGNAL, (const sockaddr *)&to, sizeof(to));
+	sendto(s, (const char *)discover, sizeof(discover), MSG_NOSIGNAL, (const sockaddr *)&to, sizeof(to));
 
 	std::vector<AccessPoint> aps;
 	bool listed = false;
@@ -443,7 +443,7 @@ void dcnet_run(bool bba)
 		}
 		if (!toNet.empty())
 		{
-			const int r = (int)send(sock, (const char *)&toNet[0], toNet.size(), L_MSG_NOSIGNAL);
+			const int r = (int)send(sock, (const char *)&toNet[0], toNet.size(), MSG_NOSIGNAL);
 			if (r < 0)
 			{
 				if (get_last_error() != L_EAGAIN && get_last_error() != L_EWOULDBLOCK)

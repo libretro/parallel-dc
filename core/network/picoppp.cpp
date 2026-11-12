@@ -123,7 +123,7 @@ static void wake_pico()
 {
 	retro_atomic_fetch_add_int(&pico_kicks, 1);
 	if (retro_atomic_load_acquire_int(&pico_waiting))
-		send(wake_sock, "", 1, L_MSG_NOSIGNAL);
+		send(wake_sock, "", 1, MSG_NOSIGNAL);
 }
 
 static pico_ip4 dcaddr;
@@ -171,7 +171,7 @@ struct socket_pair
 			data = &out_buffer[0];
 			len = out_buffer.size();
 		}
-		int r = (int)send(native_sock, data, len, L_MSG_NOSIGNAL);
+		int r = (int)send(native_sock, data, len, MSG_NOSIGNAL);
 		if (r < 0)
 		{
 			if (get_last_error() != L_EAGAIN && get_last_error() != L_EWOULDBLOCK)
@@ -686,7 +686,7 @@ static void udp_callback(uint16_t ev, pico_socket *s)
 				dst_addr.sin_family = AF_INET;
 				dst_addr.sin_addr.s_addr = msginfo.local_addr.ip4.addr;
 				dst_addr.sin_port = msginfo.local_port;
-				if (sendto(sockfd, buf, r, L_MSG_NOSIGNAL, (const sockaddr *)&dst_addr, addr_len) < 0)
+				if (sendto(sockfd, buf, r, MSG_NOSIGNAL, (const sockaddr *)&dst_addr, addr_len) < 0)
 					perror("sendto udp socket");
 			}
 		}
@@ -1578,7 +1578,7 @@ void stop_pico()
 	retro_atomic_store_release_int(&pico_thread_running, 0);
 	in_ring_ec.Notify();
 	if (VALID(wake_sock))
-		send(wake_sock, "", 1, L_MSG_NOSIGNAL);
+		send(wake_sock, "", 1, MSG_NOSIGNAL);
 }
 
 void net_thread_join()

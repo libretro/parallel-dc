@@ -17,31 +17,29 @@
     along with Flycast.  If not, see <https://www.gnu.org/licenses/>.
 */
 #pragma once
-#include <climits>
-#include <cinttypes>
+#include <string.h>
 #include "types.h"
 #include "hw/sh4/sh4_sched.h"
 
-typedef u8 uint8_t;
-typedef u16 uint16_t;
-typedef u64 uint64_t;
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 typedef uint64_t dma_addr_t;
 typedef uint64_t hwaddr;
 
 #define ETH_ALEN 6
 
-#define DMA_ADDR_FMT "%" PRIx64
 
-struct MACAddr {
+typedef struct MACAddr {
     uint8_t a[6];
-};
+} MACAddr;
 
 uint32_t net_crc32(const uint8_t *p, int len);
 
-struct NetClientState {
+typedef struct NetClientState {
     int link_down;
-};
+} NetClientState;
 
 typedef struct NICConf {
     MACAddr macaddr;
@@ -51,20 +49,20 @@ typedef struct NICConf {
  *
  * A struct representing a memory region.
  */
-struct MemoryRegion {
+typedef struct MemoryRegion {
     uint32_t size;
-};
+} MemoryRegion;
 
 /*
  * Byte swapping utilities
  */
-static inline uint16_t bswap16(uint16_t x)
+static TYPES_INLINE uint16_t bswap16(uint16_t x)
 {
     return (((x & 0x00ff) << 8) |
             ((x & 0xff00) >> 8));
 }
 
-static inline uint32_t bswap32(uint32_t x)
+static TYPES_INLINE uint32_t bswap32(uint32_t x)
 {
     return (((x & 0x000000ffU) << 24) |
             ((x & 0x0000ff00U) <<  8) |
@@ -87,22 +85,22 @@ static inline uint32_t bswap32(uint32_t x)
 #endif
 
 #define CPU_CONVERT(endian, size, type)\
-static inline type endian ## size ## _to_cpu(type v)\
+static TYPES_INLINE type endian ## size ## _to_cpu(type v)\
 {\
     return glue(endian, _bswap)(v, size);\
 }\
 \
-static inline type cpu_to_ ## endian ## size(type v)\
+static TYPES_INLINE type cpu_to_ ## endian ## size(type v)\
 {\
     return glue(endian, _bswap)(v, size);\
 }\
 \
-static inline void endian ## size ## _to_cpus(type *p)\
+static TYPES_INLINE void endian ## size ## _to_cpus(type *p)\
 {\
     glue(endian, _bswaps)(p, size);\
 }\
 \
-static inline void cpu_to_ ## endian ## size ## s(type *p)\
+static TYPES_INLINE void cpu_to_ ## endian ## size ## s(type *p)\
 {\
     glue(endian, _bswaps)(p, size);\
 }
@@ -111,22 +109,22 @@ CPU_CONVERT(le, 16, uint16_t)
 
 CPU_CONVERT(le, 32, uint32_t)
 
-static inline int lduw_he_p(const void *ptr)
+static TYPES_INLINE int lduw_he_p(const void *ptr)
 {
     uint16_t r;
-    __builtin_memcpy(&r, ptr, sizeof(r));
+    memcpy(&r, ptr, sizeof(r));
     return r;
 }
-static inline void stl_he_p(void *ptr, uint32_t v)
+static TYPES_INLINE void stl_he_p(void *ptr, uint32_t v)
 {
-    __builtin_memcpy(ptr, &v, sizeof(v));
+    memcpy(ptr, &v, sizeof(v));
 }
 
-static inline int lduw_le_p(const void *ptr)
+static TYPES_INLINE int lduw_le_p(const void *ptr)
 {
     return (uint16_t)le_bswap(lduw_he_p(ptr), 16);
 }
-static inline void stl_le_p(void *ptr, uint32_t v)
+static TYPES_INLINE void stl_le_p(void *ptr, uint32_t v)
 {
     stl_he_p(ptr, le_bswap(v, 32));
 }
@@ -134,11 +132,11 @@ static inline void stl_le_p(void *ptr, uint32_t v)
 /*
  * PCI support
  */
-static inline uint16_t pci_get_word(const uint8_t *config)
+static TYPES_INLINE uint16_t pci_get_word(const uint8_t *config)
 {
     return lduw_le_p(config);
 }
-static inline void pci_set_long(uint8_t *config, uint32_t val)
+static TYPES_INLINE void pci_set_long(uint8_t *config, uint32_t val)
 {
     stl_le_p(config, val);
 }
@@ -146,7 +144,7 @@ static inline void pci_set_long(uint8_t *config, uint32_t val)
 typedef uint64_t pcibus_t;
 
 #define PCI_DEVICE(d) ((PCIDevice *)(d))
-#define RTL8139(d) ((RTL8139State *)(d));
+#define RTL8139(d) ((RTL8139State *)(d))
 
 typedef struct PCIIORegion {
     pcibus_t addr; /* current PCI mapping address. -1 means not mapped */
@@ -158,7 +156,7 @@ typedef struct PCIIORegion {
 #define PCI_ROM_SLOT 6
 #define PCI_NUM_REGIONS 7
 
-struct PCIDevice {
+typedef struct PCIDevice {
     /* PCI config space */
     uint8_t *config;
 
@@ -170,7 +168,7 @@ struct PCIDevice {
     uint8_t *wmask;
 
     PCIIORegion io_regions[PCI_NUM_REGIONS];
-};
+} PCIDevice;
 
 void pci_set_irq(PCIDevice *pci_dev, int level);
 void pci_register_bar(PCIDevice *pci_dev, int region_num, uint8_t attr, MemoryRegion *memory);
@@ -184,7 +182,6 @@ void pci_dma_write(PCIDevice *dev, dma_addr_t addr, const void *buf, dma_addr_t 
 #define PCI_VENDOR_ID_REALTEK            0x10ec
 #define PCI_DEVICE_ID_REALTEK_8139       0x8139
 
-#define FMT_PCIBUS                      PRIx64
 
 #define PCI_HEADER_TYPE		0x0e	/* 8 bits */
 #define  PCI_HEADER_TYPE_BRIDGE		1
@@ -208,9 +205,9 @@ void pci_dma_write(PCIDevice *dev, dma_addr_t addr, const void *buf, dma_addr_t 
 
 #define PCI_ROM_ADDRESS1	0x38	/* Same as PCI_ROM_ADDRESS, but for htype 1 */
 
-struct RTL8139State;
+typedef struct RTL8139State RTL8139State;
 
-ssize_t qemu_send_packet(RTL8139State *s, const uint8_t *buf, int size);
+int qemu_send_packet(RTL8139State *s, const uint8_t *buf, int size);
 
 void pci_rtl8139_realize(PCIDevice *dev);
 
@@ -218,12 +215,16 @@ uint64_t rtl8139_ioport_read(void *opaque, hwaddr addr, unsigned size);
 void rtl8139_ioport_write(void *opaque, hwaddr addr, uint64_t val, unsigned size);
 void rtl8139_reset(RTL8139State *s);
 bool rtl8139_can_receive(RTL8139State *s);
-ssize_t rtl8139_receive(RTL8139State *s, const uint8_t *buf, size_t size);
+int rtl8139_receive(RTL8139State *s, const uint8_t *buf, size_t size);
 
 RTL8139State *rtl8139_init(NICConf *conf);
 void rtl8139_destroy(RTL8139State *state);
 void rtl8139_serialize(RTL8139State *state, void **data, unsigned int *total_size);
 bool rtl8139_unserialize(RTL8139State *state, void **data, unsigned int *total_size);
-// (since version 24: every field on its own, and checked when read)
+/* (since version 24: every field on its own, and checked when read) */
 void rtl8139_serialize_v24(RTL8139State *state, void **data, unsigned int *total_size);
 void rtl8139_unserialize_v24(RTL8139State *state, void **data, unsigned int *total_size);
+
+#ifdef __cplusplus
+}
+#endif

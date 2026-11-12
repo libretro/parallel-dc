@@ -25,10 +25,10 @@
 
 static RTL8139State *rtl8139device;
 
-// 1400 - 1600 GAPSPCI bridge registers
-// 1600 - 1700 standard PCI config
-// 1700 - 1800 rtl8139c I/O ports
-// 840000 - 847FFF RAM
+/* 1400 - 1600 GAPSPCI bridge registers */
+/* 1600 - 1700 standard PCI config */
+/* 1700 - 1800 rtl8139c I/O ports */
+/* 840000 - 847FFF RAM */
 #define	GAPSPCI_REGS			0x001400
 #define	GAPSPCI_REGS_SIZE		   0x200
 #define GAPSPCI_PCI_CONFIG		0x001600
@@ -40,7 +40,7 @@ static RTL8139State *rtl8139device;
 #define GAPSPCI_RAM_SIZE		  0x8000
 #define GAPSPCI_RAM_MASK (GAPSPCI_RAM_SIZE - 1)
 
-// GAPSPCI registers
+/* GAPSPCI registers */
 #define GAPS_INT_ENABLE 0x14
 #define GAPS_RESET      0x18
 #define GAPS_DMA_BASE   0x28
@@ -50,7 +50,7 @@ static u8 GAPS_ram[GAPSPCI_RAM_SIZE];
 static u8 GAPS_regs[GAPSPCI_REGS_SIZE];
 static u32 dmaOffset;
 static bool interruptPending;
-static const u32 MAX_ETH_FRAME_SIZE = 1514;
+#define MAX_ETH_FRAME_SIZE 1514
 
 
 /* The network session the adapter is on: the network thread (picoTCP or
@@ -65,25 +65,25 @@ static const u32 MAX_ETH_FRAME_SIZE = 1514;
  * frames it sends again are not sent twice. A state of another session
  * has the session that is up stopped: the game's next frame starts one. */
 #define ETH_LOG_FRAMES 128
-static u32 eth_session;		// the session the adapter is on, 0 for none (in the state)
-static u32 eth_rx_pos;		// frames received from it (in the state)
-static u32 eth_tx_pos;		// frames sent to it (in the state)
-static u32 live_session;	// the session up, 0 for none
-static u32 eth_rx_taken;	// frames taken from the live session
-static u32 eth_tx_sent;		// frames sent to it
-static u64 eth_looked;		// the last time the live session itself was read
-static u64 live_session_made;	// when the live session was started (emulated time)
-static u8 eth_log[ETH_LOG_FRAMES][NET_ETH_FRAME_MAX];	// the last frames taken from it
+static u32 eth_session;		/* the session the adapter is on, 0 for none (in the state) */
+static u32 eth_rx_pos;		/* frames received from it (in the state) */
+static u32 eth_tx_pos;		/* frames sent to it (in the state) */
+static u32 live_session;	/* the session up, 0 for none */
+static u32 eth_rx_taken;	/* frames taken from the live session */
+static u32 eth_tx_sent;		/* frames sent to it */
+static u64 eth_looked;		/* the last time the live session itself was read */
+static u64 live_session_made;	/* when the live session was started (emulated time) */
+static u8 eth_log[ETH_LOG_FRAMES][NET_ETH_FRAME_MAX];	/* the last frames taken from it */
 static u16 eth_log_size[ETH_LOG_FRAMES];
-static u64 eth_log_time[ETH_LOG_FRAMES];		// and when
+static u64 eth_log_time[ETH_LOG_FRAMES];		/* and when */
 static int deliver_schid = -1;
 
-static bool session_is_live()
+static bool session_is_live(void)
 {
 	return live_session != 0 && eth_session == live_session;
 }
 
-static void session_stop()
+static void session_stop(void)
 {
 	if (live_session != 0)
 	{
@@ -92,7 +92,7 @@ static void session_stop()
 	}
 }
 
-static bool session_start()
+static bool session_start(void)
 {
 	if (live_session != 0 && eth_session == 0 && live_session_made == sh4_sched_now64()
 			&& eth_rx_taken <= ETH_LOG_FRAMES)
@@ -112,8 +112,8 @@ static bool session_start()
 		WARN_LOG(NETWORK, "BBA: the network cannot be started");
 		return false;
 	}
-	// The time is the session's number: no other session, of this
-	// process or of another, was started at this microsecond
+	/* The time is the session's number: no other session, of this */
+	/* process or of another, was started at this microsecond */
 	live_session = (u32)cpu_features_get_time_usec();
 	if (live_session == 0)
 		live_session = 1;
@@ -133,27 +133,29 @@ static int bba_recv_frame(const u8 *data, u32 len);
  * many as it has room for. One it has no room for is offered again. */
 static int deliver_sched(int tag, int cycles, int jitter)
 {
+	u64 now;
 	if (!session_is_live())
 	{
 		eth_session = 0;
 		return 0;
 	}
-	const u64 now = sh4_sched_now64();
+	now = sh4_sched_now64();
 	for (;;)
 	{
 		const u32 slot = eth_rx_pos % ETH_LOG_FRAMES;
 		if (eth_rx_pos != eth_rx_taken)
 		{
-			// Again: at the time it was taken the first time
+			/* Again: at the time it was taken the first time */
 			if (eth_log_time[slot] > now)
 				break;
 		}
 		else
 		{
-			// The session had nothing more at this time when it was read
+			/* The session had nothing more at this time when it was read */
+			u32 size;
 			if (now <= eth_looked)
 				break;
-			const u32 size = net_eth_take(eth_log[slot]);
+			size = net_eth_take(eth_log[slot]);
 			if (size == 0)
 				break;
 			eth_log_size[slot] = (u16)size;
@@ -169,7 +171,7 @@ static int deliver_sched(int tag, int cycles, int jitter)
 	return SH4_MAIN_CLOCK / 1000;
 }
 
-static void setInterrupt()
+static void setInterrupt(void)
 {
 	if (interruptPending && GAPS_regs[GAPS_INT_ENABLE] != 0)
 		asic_RaiseInterrupt(holly_EXP_PCI);
@@ -183,13 +185,13 @@ void pci_set_irq(PCIDevice *pci_dev, int level)
 	setInterrupt();
 }
 
-void bba_Init()
+void bba_Init(void)
 {
+	NICConf nicConf = { { { 0xc, 0xa, 0xf, 0xe, 0, 0 } } };
 	deliver_schid = sh4_sched_register(0, &deliver_sched);
 	eth_session = 0;
 	eth_rx_pos = 0;
 	eth_tx_pos = 0;
-	NICConf nicConf = { 0xc, 0xa, 0xf, 0xe, 0, 0 };
 	rtl8139device = rtl8139_init(&nicConf);
 	pci_rtl8139_realize(PCI_DEVICE(rtl8139device));
 
@@ -198,16 +200,16 @@ void bba_Init()
 	memcpy(&GAPS_regs[0x1c], "SEGA", 4);
 }
 
-void bba_Term()
+void bba_Term(void)
 {
-	if (rtl8139device != nullptr)
+	if (rtl8139device != NULL)
 	{
 		session_stop();
 		eth_session = 0;
 		if (sh4_sched_is_scheduled(deliver_schid))
 			sh4_sched_request(deliver_schid, -1);
 		rtl8139_destroy(rtl8139device);
-		rtl8139device = nullptr;
+		rtl8139device = NULL;
 	}
 }
 
@@ -226,12 +228,12 @@ u32 bba_ReadMem(u32 addr, u32 sz)
 	if ((addr & GAPSPCI_RAM_BASE_MASK) == GAPSPCI_RAM_BASE)
 	{
 		if (addr & 0x8000)
-			// G2 DMA access
+			/* G2 DMA access */
 			addr += dmaOffset;
 		addr &= GAPSPCI_RAM_MASK;
 		if (addr + sz > GAPSPCI_RAM_SIZE)
 		{
-			// wrap around
+			/* wrap around */
 			memcpy(&data, &GAPS_ram[addr], GAPSPCI_RAM_SIZE - addr);
 			memcpy((u8 *)&data + (GAPSPCI_RAM_SIZE - addr), &GAPS_ram[0], sz - (GAPSPCI_RAM_SIZE - addr));
 		}
@@ -274,12 +276,12 @@ void bba_WriteMem(u32 addr, u32 data, u32 sz)
 	if ((addr & GAPSPCI_RAM_BASE_MASK) == GAPSPCI_RAM_BASE)
 	{
 		if (addr & 0x8000)
-			// G2 DMA access
+			/* G2 DMA access */
 			addr += dmaOffset;
 		addr &= GAPSPCI_RAM_MASK;
 		if (addr + sz > GAPSPCI_RAM_SIZE)
 		{
-			// wrap around
+			/* wrap around */
 			memcpy(&GAPS_ram[addr], &data, GAPSPCI_RAM_SIZE - addr);
 			memcpy(&GAPS_ram[0], (u8 *)&data + (GAPSPCI_RAM_SIZE - addr), sz - (GAPSPCI_RAM_SIZE - addr));
 		}
@@ -307,7 +309,7 @@ void bba_WriteMem(u32 addr, u32 data, u32 sz)
 			{
 				INFO_LOG(NETWORK, "BBA: GAPS reset");
 				rtl8139_reset(rtl8139device);
-				// A new session is started by the next frame the game sends
+				/* A new session is started by the next frame the game sends */
 				session_stop();
 				eth_session = 0;
 			}
@@ -321,7 +323,7 @@ void bba_WriteMem(u32 addr, u32 data, u32 sz)
 
 	case GAPSPCI_PCI_CONFIG:
 		DEBUG_LOG(NETWORK, "pcidev->config(w%d) %02x %x", sz, addr & (GAPSPCI_PCI_CONFIG_SIZE - 1), data);
-		//pci_default_write_config(pcidev, addr & 0xFF, data, sz);
+		/* pci_default_write_config(pcidev, addr & 0xFF, data, sz); */
 		break;
 
 	case GAPSPCI_RTL_REGS:
@@ -334,7 +336,7 @@ void bba_WriteMem(u32 addr, u32 data, u32 sz)
 	}
 }
 
-ssize_t qemu_send_packet(RTL8139State *s, const uint8_t *buf, int size)
+int qemu_send_packet(RTL8139State *s, const uint8_t *buf, int size)
 {
 	if (!session_is_live() && !session_start())
 		return size;
@@ -348,10 +350,10 @@ ssize_t qemu_send_packet(RTL8139State *s, const uint8_t *buf, int size)
 	return size;
 }
 
-// 0 if the adapter has no room for the frame now
+/* 0 if the adapter has no room for the frame now */
 static int bba_recv_frame(const u8 *data, u32 len)
 {
-	// (what no Ethernet frame is, is dropped)
+	/* (what no Ethernet frame is, is dropped) */
 	if (len < 6 || len > MAX_ETH_FRAME_SIZE)
 		return 1;
 	if (!rtl8139_can_receive(rtl8139device))
@@ -361,15 +363,16 @@ static int bba_recv_frame(const u8 *data, u32 len)
 	return 1;
 }
 
-// The address and the length are the guest's (a transmit descriptor, the
-// receive ring's place and size). A transfer that reaches the end of the
-// adapter's memory goes on at its start, as the reads and writes above do.
+/* The address and the length are the guest's (a transmit descriptor, the */
+/* receive ring's place and size). A transfer that reaches the end of the */
+/* adapter's memory goes on at its start, as the reads and writes above do. */
 void pci_dma_read(PCIDevice *dev, dma_addr_t addr, void *buf, dma_addr_t len)
 {
 	while (len != 0)
 	{
+		dma_addr_t chunk;
 		addr &= GAPSPCI_RAM_MASK;
-		const dma_addr_t chunk = len < GAPSPCI_RAM_SIZE - addr ? len : GAPSPCI_RAM_SIZE - addr;
+		chunk = len < GAPSPCI_RAM_SIZE - addr ? len : GAPSPCI_RAM_SIZE - addr;
 		memcpy(buf, &GAPS_ram[addr], chunk);
 		buf = (u8 *)buf + chunk;
 		addr += chunk;
@@ -381,8 +384,9 @@ void pci_dma_write(PCIDevice *dev, dma_addr_t addr, const void *buf, dma_addr_t 
 {
 	while (len != 0)
 	{
+		dma_addr_t chunk;
 		addr &= GAPSPCI_RAM_MASK;
-		const dma_addr_t chunk = len < GAPSPCI_RAM_SIZE - addr ? len : GAPSPCI_RAM_SIZE - addr;
+		chunk = len < GAPSPCI_RAM_SIZE - addr ? len : GAPSPCI_RAM_SIZE - addr;
 		memcpy(&GAPS_ram[addr], buf, chunk);
 		buf = (const u8 *)buf + chunk;
 		addr += chunk;
@@ -405,7 +409,7 @@ void bba_Unserialize(void **data, unsigned int *total_size)
 	LIBRETRO_US(GAPS_ram);
 	LIBRETRO_US(dmaOffset);
 	LIBRETRO_US(interruptPending);
-	// returns true if the receiver is enabled and the network stack must be started
+	/* returns true if the receiver is enabled and the network stack must be started */
 	if (rtl8139_unserialize(rtl8139device, data, total_size))
 		start_pico();
 }
@@ -456,8 +460,8 @@ bool bba_unserialize_v24(void **data, unsigned int *total_size)
 			&& (eth_session != live_session
 				|| eth_rx_taken - eth_rx_pos > ETH_LOG_FRAMES
 				|| eth_tx_sent - eth_tx_pos > 0x40000000)
-			// (but a session started after the state's time, which its
-			// machine may start again at the same time: see session_start())
+			/* (but a session started after the state's time, which its */
+			/* machine may start again at the same time: see session_start()) */
 			&& !(eth_session == 0 && live_session_made > sh4_sched_now64() && eth_rx_taken <= ETH_LOG_FRAMES))
 		session_stop();
 	if (!session_is_live())
@@ -513,7 +517,7 @@ uint32_t net_crc32(const uint8_t *p, int len)
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
  * THE SOFTWARE.
  */
-static inline bool is_power_of_2(uint64_t value)
+static TYPES_INLINE bool is_power_of_2(uint64_t value)
 {
     if (!value) {
         return false;

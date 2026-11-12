@@ -1,31 +1,24 @@
 #ifndef _NET_PLATFORM_H
 #define _NET_PLATFORM_H
 
-#ifndef _WIN32
-#include <sys/types.h>
-#include <sys/socket.h>
-#include <netinet/in.h>
-#include <arpa/inet.h>
+#include <string.h>
+#include "types.h"
+
+/* The platform's sockets are libretro-common's (net_compat.h); what the
+ * network code needs on top of them is here */
+#include <net/net_compat.h>
+#include <net/net_socket.h>
 
 #ifdef HAVE_LIBNX
 #include <switch.h>
-#define INADDR_NONE 0xffffffff
-#define INET_ADDRSTRLEN sizeof(struct sockaddr_in)
-#define SOL_TCP 6 // Shrug
-#else
-#include <netinet/ip.h>
-#endif // HAVE_LIBNX
-
-#include <netinet/tcp.h>
-#include <netdb.h>
-#include <unistd.h>
-#include <fcntl.h>
-#include <errno.h>
-#include <sys/select.h>
-#else
-#include <ws2tcpip.h>
 #endif
 
+#ifndef INADDR_NONE
+#define INADDR_NONE 0xffffffff
+#endif
+#ifndef INET_ADDRSTRLEN
+#define INET_ADDRSTRLEN 16
+#endif
 /* libnx's <netinet/in.h> has no INADDR_LOOPBACK. 127.0.0.1, host order. */
 #ifndef INADDR_LOOPBACK
 #define INADDR_LOOPBACK 0x7f000001
@@ -47,23 +40,20 @@ typedef SOCKET sock_t;
 #define L_EAGAIN WSAEWOULDBLOCK
 #define get_last_error() (WSAGetLastError())
 #define perror(s) do { INFO_LOG(MODEM, "%s: Winsock error: %d\n", (s) != NULL ? (s) : "", WSAGetLastError()); } while (false)
+#ifndef SHUT_WR
 #define SHUT_WR SD_SEND
 #define SHUT_RD SD_RECEIVE
 #define SHUT_RDWR SD_BOTH
 #endif
+#endif
 
 /* Writing to a TCP connection the other end has closed raises SIGPIPE, and
  * a SIGPIPE nothing handles ends the whole process. The signal's handling
- * belongs to the frontend, so it is never raised instead: by a flag on each
- * send where the system has one, and by an option set once on the socket
- * where it has that (Apple, the BSDs). Windows has no such signal. */
-#if !defined(_WIN32) && defined(MSG_NOSIGNAL)
-#define L_MSG_NOSIGNAL MSG_NOSIGNAL
-#else
-#define L_MSG_NOSIGNAL 0
-#endif
-
-static inline void set_no_sigpipe(sock_t fd)
+ * belongs to the frontend, so it is never raised instead: by MSG_NOSIGNAL
+ * on each send where the system has it (net_compat.h makes it 0 where it
+ * has not), and by an option set once on the socket where it has that
+ * (Apple, the BSDs). Windows has no such signal. */
+static TYPES_INLINE void set_no_sigpipe(sock_t fd)
 {
 #if !defined(_WIN32) && defined(SO_NOSIGPIPE)
 	int optval = 1;
@@ -78,7 +68,7 @@ static inline void set_no_sigpipe(sock_t fd)
  * the bind fails for a minute or more after a game is restarted. Not on
  * Windows: a port can be bound again there without it, and with it any
  * other program could bind the port while it is in use here. */
-static inline void set_reuse_addr(sock_t fd)
+static TYPES_INLINE void set_reuse_addr(sock_t fd)
 {
 #ifndef _WIN32
 	int optval = 1;
@@ -92,7 +82,7 @@ static inline void set_reuse_addr(sock_t fd)
  * room for the numbers below FD_SETSIZE and FD_SET does not look: a higher
  * one is written outside the set. Windows' sets hold the sockets themselves
  * and FD_SET leaves out what does not fit. */
-static inline bool fits_select(sock_t fd)
+static TYPES_INLINE bool fits_select(sock_t fd)
 {
 #ifndef _WIN32
 	return fd < FD_SETSIZE;
@@ -104,7 +94,7 @@ static inline bool fits_select(sock_t fd)
 
 /* The socket if it is valid and select() can wait on it; otherwise it is
  * closed and INVALID_SOCKET is returned. */
-static inline sock_t selectable_socket(sock_t fd)
+static TYPES_INLINE sock_t selectable_socket(sock_t fd)
 {
 	if (VALID(fd) && !fits_select(fd))
 	{
@@ -114,58 +104,15 @@ static inline sock_t selectable_socket(sock_t fd)
 	return fd;
 }
 
-static inline void set_non_blocking(sock_t fd)
+static TYPES_INLINE void set_non_blocking(sock_t fd)
 {
-#ifndef _WIN32
-	fcntl(fd, F_SETFL, O_NONBLOCK);
-#else
-	u_long optl = 1;
-	ioctlsocket(fd, FIONBIO, &optl);
-#endif
+	socket_nonblock((int)fd);
 }
 
-static inline void set_tcp_nodelay(sock_t fd)
+static TYPES_INLINE void set_tcp_nodelay(sock_t fd)
 {
 	int optval = 1;
-	socklen_t optlen = sizeof(optval);
-#if defined(_WIN32)
-	struct protoent *tcp_proto = getprotobyname("TCP");
-	setsockopt(fd, tcp_proto->p_proto, TCP_NODELAY, (const char *)&optval, optlen);
-#elif !defined(__APPLE__) && !defined(__FreeBSD__) && !defined(__NetBSD__) && !defined(__HAIKU__)
-	setsockopt(fd, SOL_TCP, TCP_NODELAY, (const void *)&optval, optlen);
-#else
-	struct protoent *tcp_proto = getprotobyname("TCP");
-	setsockopt(fd, tcp_proto->p_proto, TCP_NODELAY, &optval, optlen);
-#endif
+	setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, (const char *)&optval, sizeof(optval));
 }
-
-static inline bool set_recv_timeout(sock_t fd, int delayms)
-{
-#ifdef _WIN32
-    const DWORD dwDelay = delayms;
-    return setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, (const char *)&dwDelay, sizeof(DWORD)) == 0;
-#else
-    struct timeval tv;
-    tv.tv_sec = delayms / 1000;
-    tv.tv_usec = (delayms % 1000) * 1000;
-    return setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv)) == 0;
-#endif
-}
-
-#if defined(_WIN32) && _WIN32_WINNT < 0x0600
-static inline const char *inet_ntop(int af, const void* src, char* dst, int cnt)
-{
-    struct sockaddr_in srcaddr;
-
-    memset(&srcaddr, 0, sizeof(struct sockaddr_in));
-    memcpy(&srcaddr.sin_addr, src, sizeof(srcaddr.sin_addr));
-
-    srcaddr.sin_family = af;
-    if (WSAAddressToString((struct sockaddr *)&srcaddr, sizeof(struct sockaddr_in), 0, dst, (LPDWORD)&cnt) != 0)
-        return nullptr;
-    else
-    	return dst;
-}
-#endif
 
 #endif

@@ -52,7 +52,7 @@
 #include "rtl8139c.h"
 
 /* debug RTL8139 card */
-//#define DEBUG_RTL8139 1
+/* #define DEBUG_RTL8139 1 */
 
 #define PCI_PERIOD 30    /* 30 ns period = 33.333333 Mhz frequency */
 
@@ -123,20 +123,20 @@ enum RTL8139_registers {
     IntrMitigate    = 0xE2,    /* rx/tx interrupt mitigation control */
     RxRingAddrLO    = 0xE4, /* 64-bit start addr of Rx ring */
     RxRingAddrHI    = 0xE8, /* 64-bit start addr of Rx ring */
-    TxThresh    = 0xEC, /* Early Tx threshold */
+    TxThresh    = 0xEC /* Early Tx threshold */
 };
 
 enum ClearBitMasks {
     MultiIntrClear = 0xF000,
     ChipCmdClear = 0xE2,
-    Config1Clear = (1<<7)|(1<<6)|(1<<3)|(1<<2)|(1<<1),
+    Config1Clear = (1<<7)|(1<<6)|(1<<3)|(1<<2)|(1<<1)
 };
 
 enum ChipCmdBits {
     CmdReset = 0x10,
     CmdRxEnb = 0x08,
     CmdTxEnb = 0x04,
-    RxBufEmpty = 0x01,
+    RxBufEmpty = 0x01
 };
 
 /* Interrupt register bits, using my own meaningful names. */
@@ -151,7 +151,7 @@ enum IntrStatusBits {
     RxErr = 0x02,
     RxOK = 0x01,
 
-    RxAckBits = RxFIFOOver | RxOverflow | RxOK,
+    RxAckBits = RxFIFOOver | RxOverflow | RxOK
 };
 
 enum TxStatusBits {
@@ -159,9 +159,9 @@ enum TxStatusBits {
     TxUnderrun = 0x4000,
     TxStatOK = 0x8000,
     TxOutOfWindow = 0x20000000,
-    TxAborted = 0x40000000,
-    TxCarrierLost = 0x80000000,
+    TxAborted = 0x40000000
 };
+#define TxCarrierLost 0x80000000u
 enum RxStatusBits {
     RxMulticast = 0x8000,
     RxPhysical = 0x4000,
@@ -171,7 +171,7 @@ enum RxStatusBits {
     RxTooLong = 0x0008,
     RxCRCErr = 0x0004,
     RxBadAlign = 0x0002,
-    RxStatusOK = 0x0001,
+    RxStatusOK = 0x0001
 };
 
 /* Bits in RxConfig. */
@@ -181,7 +181,7 @@ enum rx_mode_bits {
     AcceptBroadcast = 0x08,
     AcceptMulticast = 0x04,
     AcceptMyPhys = 0x02,
-    AcceptAllPhys = 0x01,
+    AcceptAllPhys = 0x01
 };
 
 /* Bits in TxConfig. */
@@ -200,28 +200,28 @@ enum tx_config_bits {
     TxDMAShift = 8,        /* DMA burst value (0-7) is shifted this many bits */
     TxRetryShift = 4,    /* TXRR value (0-15) is shifted this many bits */
 
-    TxVersionMask = 0x7C800000, /* mask out version bits 30-26, 23 */
+    TxVersionMask = 0x7C800000 /* mask out version bits 30-26, 23 */
 };
 
 
 /* Transmit Status of All Descriptors (TSAD) Register */
 enum TSAD_bits {
- TSAD_TOK3 = 1<<15, // TOK bit of Descriptor 3
- TSAD_TOK2 = 1<<14, // TOK bit of Descriptor 2
- TSAD_TOK1 = 1<<13, // TOK bit of Descriptor 1
- TSAD_TOK0 = 1<<12, // TOK bit of Descriptor 0
- TSAD_TUN3 = 1<<11, // TUN bit of Descriptor 3
- TSAD_TUN2 = 1<<10, // TUN bit of Descriptor 2
- TSAD_TUN1 = 1<<9, // TUN bit of Descriptor 1
- TSAD_TUN0 = 1<<8, // TUN bit of Descriptor 0
- TSAD_TABT3 = 1<<07, // TABT bit of Descriptor 3
- TSAD_TABT2 = 1<<06, // TABT bit of Descriptor 2
- TSAD_TABT1 = 1<<05, // TABT bit of Descriptor 1
- TSAD_TABT0 = 1<<04, // TABT bit of Descriptor 0
- TSAD_OWN3 = 1<<03, // OWN bit of Descriptor 3
- TSAD_OWN2 = 1<<02, // OWN bit of Descriptor 2
- TSAD_OWN1 = 1<<01, // OWN bit of Descriptor 1
- TSAD_OWN0 = 1<<00, // OWN bit of Descriptor 0
+ TSAD_TOK3 = 1<<15, /* TOK bit of Descriptor 3 */
+ TSAD_TOK2 = 1<<14, /* TOK bit of Descriptor 2 */
+ TSAD_TOK1 = 1<<13, /* TOK bit of Descriptor 1 */
+ TSAD_TOK0 = 1<<12, /* TOK bit of Descriptor 0 */
+ TSAD_TUN3 = 1<<11, /* TUN bit of Descriptor 3 */
+ TSAD_TUN2 = 1<<10, /* TUN bit of Descriptor 2 */
+ TSAD_TUN1 = 1<<9, /* TUN bit of Descriptor 1 */
+ TSAD_TUN0 = 1<<8, /* TUN bit of Descriptor 0 */
+ TSAD_TABT3 = 1<<07, /* TABT bit of Descriptor 3 */
+ TSAD_TABT2 = 1<<06, /* TABT bit of Descriptor 2 */
+ TSAD_TABT1 = 1<<05, /* TABT bit of Descriptor 1 */
+ TSAD_TABT0 = 1<<04, /* TABT bit of Descriptor 0 */
+ TSAD_OWN3 = 1<<03, /* OWN bit of Descriptor 3 */
+ TSAD_OWN2 = 1<<02, /* OWN bit of Descriptor 2 */
+ TSAD_OWN1 = 1<<01, /* OWN bit of Descriptor 1 */
+ TSAD_OWN0 = 1<<00 /* OWN bit of Descriptor 0 */
 };
 
 
@@ -236,7 +236,7 @@ enum Config1Bits {
     Cfg1_LED0 = 0x40,
     Cfg1_LED1 = 0x80,
     SLEEP = (1 << 1),    /* only on 8139, 8139A */
-    PWRDN = (1 << 0),    /* only on 8139, 8139A */
+    PWRDN = (1 << 0)    /* only on 8139, 8139A */
 };
 
 /* Bits in Config3 */
@@ -248,12 +248,12 @@ enum Config3Bits {
     Cfg3_LinkUp    = (1 << 4), /* 1 = wake up on link up */
     Cfg3_Magic     = (1 << 5), /* 1 = wake up on Magic Packet (tm) */
     Cfg3_PARM_En   = (1 << 6), /* 0 = software can set twister parameters */
-    Cfg3_GNTSel    = (1 << 7), /* 1 = delay 1 clock from PCI GNT signal */
+    Cfg3_GNTSel    = (1 << 7) /* 1 = delay 1 clock from PCI GNT signal */
 };
 
 /* Bits in Config4 */
 enum Config4Bits {
-    LWPTN = (1 << 2),    /* not on 8139, 8139A */
+    LWPTN = (1 << 2)    /* not on 8139, 8139A */
 };
 
 /* Bits in Config5 */
@@ -264,7 +264,7 @@ enum Config5Bits {
     Cfg5_FIFOAddrPtr = (1 << 3), /* Realtek internal SRAM testing */
     Cfg5_UWF         = (1 << 4), /* 1 = accept unicast wakeup frame */
     Cfg5_MWF         = (1 << 5), /* 1 = accept multicast wakeup frame */
-    Cfg5_BWF         = (1 << 6), /* 1 = accept broadcast wakeup frame */
+    Cfg5_BWF         = (1 << 6) /* 1 = accept broadcast wakeup frame */
 };
 
 enum RxConfigBits {
@@ -283,7 +283,7 @@ enum RxConfigBits {
     RxCfgRcv64K = (1 << 11) | (1 << 12),
 
     /* Disable packet wrap at end of Rx buffer. (not possible with 64k) */
-    RxNoWrap = (1 << 7),
+    RxNoWrap = (1 << 7)
 };
 
 /* Twister tuning parameters from RealTek.
@@ -305,14 +305,14 @@ enum CSCRBits {
     CSCR_F_Connect  = 1<<5,  /* Assertion of this bit forces the disconnect function to be bypassed. def 0*/
     CSCR_Con_status = 1<<3, /* This bit indicates the status of the connection. 1 = valid connected link detected; 0 = disconnected link detected. RO def 0*/
     CSCR_Con_status_En = 1<<2, /* Assertion of this bit configures LED1 pin to indicate connection status. def 0*/
-    CSCR_PASS_SCR = 1<<0, /* Bypass Scramble, def 0*/
+    CSCR_PASS_SCR = 1<<0 /* Bypass Scramble, def 0*/
 };
 
 enum Cfg9346Bits {
     Cfg9346_Normal = 0x00,
     Cfg9346_Autoload = 0x40,
     Cfg9346_Programming = 0x80,
-    Cfg9346_ConfigWrite = 0xC0,
+    Cfg9346_ConfigWrite = 0xC0
 };
 
 typedef enum {
@@ -325,12 +325,12 @@ typedef enum {
     CH_8139C,
     CH_8100,
     CH_8100B_8139D,
-    CH_8101,
+    CH_8101
 } chip_t;
 
 enum chip_flags {
     HasHltClk = (1 << 0),
-    HasLWake = (1 << 1),
+    HasLWake = (1 << 1)
 };
 
 #define HW_REVID(b30, b29, b28, b27, b26, b23, b22) \
@@ -355,7 +355,7 @@ enum Chip9346Operation
     Chip9346_op_ext_mask = 0xf0,      /* 11 zzzzzz */
     Chip9346_op_write_enable = 0x30,  /* 00 11zzzz */
     Chip9346_op_write_all = 0x10,     /* 00 01zzzz */
-    Chip9346_op_write_disable = 0x00, /* 00 00zzzz */
+    Chip9346_op_write_disable = 0x00 /* 00 00zzzz */
 };
 
 enum Chip9346Mode
@@ -365,7 +365,7 @@ enum Chip9346Mode
     Chip9346_read_command,
     Chip9346_data_read,      /* from output register */
     Chip9346_data_write,     /* to input register, then to contents at specified address */
-    Chip9346_data_write_all, /* to input register, then filling contents */
+    Chip9346_data_write_all /* to input register, then filling contents */
 };
 
 typedef struct EEprom9346
@@ -533,16 +533,16 @@ static void prom9346_shift_clock(EEprom9346 *eeprom)
             if (eeprom->tick == 16)
             {
 #if 1
-        // the FreeBSD drivers (rl and re) don't explicitly toggle
-        // CS between reads (or does setting Cfg9346 to 0 count too?),
-        // so we need to enter wait-for-command state here
+        /* the FreeBSD drivers (rl and re) don't explicitly toggle */
+        /* CS between reads (or does setting Cfg9346 to 0 count too?), */
+        /* so we need to enter wait-for-command state here */
                 eeprom->mode = Chip9346_enter_command_mode;
                 eeprom->input = 0;
                 eeprom->tick = 0;
 
                 DPRINTF("eeprom: +++ end of read, awaiting next command");
 #else
-        // original behaviour
+        /* original behaviour */
                 ++eeprom->address;
                 eeprom->address &= EEPROM_9346_ADDR_MASK;
                 eeprom->output = eeprom->contents[eeprom->address];
@@ -719,10 +719,13 @@ bool rtl8139_can_receive(RTL8139State *s)
     return avail == 0 || avail >= 1514 || (s->IntrMask & RxOverflow);
 }
 
-static ssize_t rtl8139_do_receive(RTL8139State *s, const uint8_t *buf, size_t size_, int do_interrupt)
+static int rtl8139_do_receive(RTL8139State *s, const uint8_t *buf, size_t size_, int do_interrupt)
 {
     /* size is the length of the buffer passed to the driver */
     size_t size = size_;
+    int mcast_idx;
+    uint32_t avail;
+    uint32_t val;
 
     uint32_t packet_header = 0;
 
@@ -775,7 +778,7 @@ static ssize_t rtl8139_do_receive(RTL8139State *s, const uint8_t *buf, size_t si
                 return size;
             }
 
-            int mcast_idx = net_crc32(buf, ETH_ALEN) >> 26;
+            mcast_idx = net_crc32(buf, ETH_ALEN) >> 26;
 
             if (!(s->mult[mcast_idx >> 3] & (1 << (mcast_idx & 7))))
             {
@@ -828,7 +831,7 @@ static ssize_t rtl8139_do_receive(RTL8139State *s, const uint8_t *buf, size_t si
 	DPRINTF("in ring Rx mode ================");
 
 	/* begin ring receiver mode */
-	uint32_t avail = MOD2(s->RxBufferSize + s->RxBufPtr - s->RxBufAddr, s->RxBufferSize);
+	avail = MOD2(s->RxBufferSize + s->RxBufPtr - s->RxBufAddr, s->RxBufferSize);
 
 	/* if receiver buffer is empty then avail == 0 */
 
@@ -851,7 +854,7 @@ static ssize_t rtl8139_do_receive(RTL8139State *s, const uint8_t *buf, size_t si
 	packet_header |= (((size+4) << 16) & 0xffff0000);
 
 	/* write header */
-	uint32_t val = cpu_to_le32(packet_header);
+	val = cpu_to_le32(packet_header);
 
 	rtl8139_write_buffer(s, (uint8_t *)&val, 4);
 
@@ -879,7 +882,7 @@ static ssize_t rtl8139_do_receive(RTL8139State *s, const uint8_t *buf, size_t si
     return size_;
 }
 
-ssize_t rtl8139_receive(RTL8139State *s, const uint8_t *buf, size_t size)
+int rtl8139_receive(RTL8139State *s, const uint8_t *buf, size_t size)
 {
     return rtl8139_do_receive(s, buf, size, 1);
 }
@@ -896,7 +899,7 @@ static void rtl8139_reset_phy(RTL8139State *s)
     s->BasicModeStatus  = 0x7809;
     s->BasicModeStatus |= 0x0020; /* autonegotiation completed */
     /* preserve link state */
-	s->BasicModeStatus |= 0x04; // Link up;
+	s->BasicModeStatus |= 0x04; /* Link up; */
 
     s->NWayAdvert    = 0x05e1; /* all modes, full duplex */
     s->NWayLPAR      = 0x05e1; /* all modes, full duplex */
@@ -916,7 +919,7 @@ void rtl8139_reset(RTL8139State *s)
 
     /* restore MAC address */
     memcpy(s->phys, s->conf.macaddr.a, 6);
-    //qemu_format_nic_info_str(qemu_get_queue(s->nic), s->phys);
+    /* qemu_format_nic_info_str(qemu_get_queue(s->nic), s->phys); */
 
     /* reset interrupt mask */
     s->IntrStatus = 0;
@@ -940,10 +943,10 @@ void rtl8139_reset(RTL8139State *s)
     s->TxConfig = 0;
 
 #if 0
-//    s->TxConfig |= HW_REVID(1, 0, 0, 0, 0, 0, 0); // RTL-8139  HasHltClk
+/*    s->TxConfig |= HW_REVID(1, 0, 0, 0, 0, 0, 0); // RTL-8139  HasHltClk */
     s->clock_enabled = 0;
 #else
-    s->TxConfig |= HW_REVID(1, 1, 1, 0, 1, 1, 0); // RTL-8139C+ HasLWake
+    s->TxConfig |= HW_REVID(1, 1, 1, 0, 1, 1, 0); /* RTL-8139C+ HasLWake */
     s->clock_enabled = 1;
 #endif
 
@@ -955,9 +958,9 @@ void rtl8139_reset(RTL8139State *s)
     s->Config3 = 0x1; /* fast back-to-back compatible */
     s->Config5 = 0x0;
 
-//    s->BasicModeCtrl = 0x3100; // 100Mbps, full duplex, autonegotiation
-//    s->BasicModeCtrl = 0x2100; // 100Mbps, full duplex
-    s->BasicModeCtrl = 0x1000; // autonegotiation
+/*    s->BasicModeCtrl = 0x3100; // 100Mbps, full duplex, autonegotiation */
+/*    s->BasicModeCtrl = 0x2100; // 100Mbps, full duplex */
+    s->BasicModeCtrl = 0x1000; /* autonegotiation */
 
     rtl8139_reset_phy(s);
 
@@ -1038,12 +1041,12 @@ static int rtl8139_config_writable(RTL8139State *s)
 
 static void rtl8139_BasicModeCtrl_write(RTL8139State *s, uint32_t val)
 {
+    /* mask unwritable bits */
+    uint32_t mask = 0xccff;
+
     val &= 0xffff;
 
     DPRINTF("BasicModeCtrl register write(w) val=0x%04x", val);
-
-    /* mask unwritable bits */
-    uint32_t mask = 0xccff;
 
     if (1 || !rtl8139_config_writable(s))
     {
@@ -1095,6 +1098,9 @@ static uint32_t rtl8139_BasicModeStatus_read(RTL8139State *s)
 
 static void rtl8139_Cfg9346_write(RTL8139State *s, uint32_t val)
 {
+    uint32_t opmode;
+    uint32_t eeprom_val;
+
     val &= 0xff;
 
     DPRINTF("Cfg9346 write val=0x%02x", val);
@@ -1102,8 +1108,8 @@ static void rtl8139_Cfg9346_write(RTL8139State *s, uint32_t val)
     /* mask unwritable bits */
     val = SET_MASKED(val, 0x31, s->Cfg9346);
 
-    uint32_t opmode = val & 0xc0;
-    uint32_t eeprom_val = val & 0xf;
+    opmode = val & 0xc0;
+    eeprom_val = val & 0xf;
 
     if (opmode == 0x80) {
         /* eeprom access */
@@ -1283,9 +1289,10 @@ static void rtl8139_TxConfig_write(RTL8139State *s, uint32_t val)
 
 static void rtl8139_TxConfig_writeb(RTL8139State *s, uint32_t val)
 {
+    uint32_t tc = s->TxConfig;
+
     DPRINTF("RTL8139C TxConfig via write(b) val=0x%02x", val);
 
-    uint32_t tc = s->TxConfig;
     tc &= 0xFFFFFF00;
     tc |= (val & 0x000000FF);
     rtl8139_TxConfig_write(s, tc);
@@ -1346,6 +1353,11 @@ static void rtl8139_transfer_frame(RTL8139State *s, uint8_t *buf, int size,
 
 static int rtl8139_transmit_one(RTL8139State *s, int descriptor)
 {
+    /* (one device, on the emulation thread) */
+    static uint8_t txbuffer[0x2000];
+    PCIDevice *d;
+    int txsize;
+
     if (!rtl8139_transmitter_enabled(s))
     {
         DPRINTF("+++ cannot transmit from descriptor %d: transmitter "
@@ -1362,9 +1374,8 @@ static int rtl8139_transmit_one(RTL8139State *s, int descriptor)
 
     DPRINTF("+++ transmitting from descriptor %d", descriptor);
 
-    PCIDevice *d = PCI_DEVICE(s);
-    int txsize = s->TxStatus[descriptor] & 0x1fff;
-    uint8_t txbuffer[0x2000];
+    d = PCI_DEVICE(s);
+    txsize = s->TxStatus[descriptor] & 0x1fff;
 
     DPRINTF("+++ transmit reading %d bytes from host memory at 0x%08x",
         txsize, s->TxAddr[descriptor]);
@@ -1520,7 +1531,7 @@ static void rtl8139_RxBufPtr_write(RTL8139State *s, uint32_t val)
     s->RxBufPtr = MOD2(val + 0x10, s->RxBufferSize);
 
     /* more buffer space may be available so try to receive */
-    // qemu_flush_queued_packets(qemu_get_queue(s->nic));
+    /* qemu_flush_queued_packets(qemu_get_queue(s->nic)); */
 
     DPRINTF(" CAPR write: rx buffer length %d head 0x%04x read 0x%04x",
         s->RxBufferSize, s->RxBufAddr, s->RxBufPtr);
@@ -1588,16 +1599,9 @@ static uint32_t rtl8139_IntrMask_read(RTL8139State *s)
 
 static void rtl8139_IntrStatus_write(RTL8139State *s, uint32_t val)
 {
-    DPRINTF("IntrStatus write(w) val=0x%04x", val);
-
-#if 0
-
-    /* writing to ISR has no effect */
-
-    return;
-
-#else
     uint16_t newStatus = s->IntrStatus & ~val;
+
+    DPRINTF("IntrStatus write(w) val=0x%04x", val);
 
     /* mask unwritable bits */
     newStatus = SET_MASKED(newStatus, 0x1e00, s->IntrStatus);
@@ -1609,8 +1613,6 @@ static void rtl8139_IntrStatus_write(RTL8139State *s, uint32_t val)
     s->IntrStatus = newStatus;
     rtl8139_set_next_tctr_time(s);
     rtl8139_update_irq(s);
-
-#endif
 }
 
 static uint32_t rtl8139_IntrStatus_read(RTL8139State *s)
@@ -1656,17 +1658,19 @@ static void rtl8139_io_writeb(void *opaque, uint8_t addr, uint32_t val)
 
     switch (addr)
     {
-        case MAC0 ... MAC0+4:
+        case MAC0: case MAC0+1: case MAC0+2: case MAC0+3:
+        case MAC0+4:
             s->phys[addr - MAC0] = val;
             break;
         case MAC0+5:
             s->phys[addr - MAC0] = val;
-            //qemu_format_nic_info_str(qemu_get_queue(s->nic), s->phys);
+            /* qemu_format_nic_info_str(qemu_get_queue(s->nic), s->phys); */
             break;
-        case MAC0+6 ... MAC0+7:
+        case MAC0+6: case MAC0+7:
             /* reserved */
             break;
-        case MAR0 ... MAR0+7:
+        case MAR0: case MAR0+1: case MAR0+2: case MAR0+3:
+        case MAR0+4: case MAR0+5: case MAR0+6: case MAR0+7:
             s->mult[addr - MAR0] = val;
             break;
         case ChipCmd:
@@ -1833,11 +1837,17 @@ static void rtl8139_io_writel(void *opaque, uint8_t addr, uint32_t val)
             rtl8139_RxConfig_write(s, val);
             break;
 
-        case TxStatus0 ... TxStatus0+4*4-1:
+        case TxStatus0: case TxStatus0+1: case TxStatus0+2: case TxStatus0+3:
+        case TxStatus0+4: case TxStatus0+5: case TxStatus0+6: case TxStatus0+7:
+        case TxStatus0+8: case TxStatus0+9: case TxStatus0+10: case TxStatus0+11:
+        case TxStatus0+12: case TxStatus0+13: case TxStatus0+14: case TxStatus0+15:
             rtl8139_TxStatus_write(s, addr-TxStatus0, val);
             break;
 
-        case TxAddr0 ... TxAddr0+4*4-1:
+        case TxAddr0: case TxAddr0+1: case TxAddr0+2: case TxAddr0+3:
+        case TxAddr0+4: case TxAddr0+5: case TxAddr0+6: case TxAddr0+7:
+        case TxAddr0+8: case TxAddr0+9: case TxAddr0+10: case TxAddr0+11:
+        case TxAddr0+12: case TxAddr0+13: case TxAddr0+14: case TxAddr0+15:
             rtl8139_TxAddr_write(s, addr-TxAddr0, val);
             break;
 
@@ -1885,16 +1895,21 @@ static uint32_t rtl8139_io_readb(void *opaque, uint8_t addr)
 
     switch (addr)
     {
-        case MAC0 ... MAC0+5:
+        case MAC0: case MAC0+1: case MAC0+2: case MAC0+3:
+        case MAC0+4: case MAC0+5:
             ret = s->phys[addr - MAC0];
             break;
-        case MAC0+6 ... MAC0+7:
+        case MAC0+6: case MAC0+7:
             ret = 0;
             break;
-        case MAR0 ... MAR0+7:
+        case MAR0: case MAR0+1: case MAR0+2: case MAR0+3:
+        case MAR0+4: case MAR0+5: case MAR0+6: case MAR0+7:
             ret = s->mult[addr - MAR0];
             break;
-        case TxStatus0 ... TxStatus0+4*4-1:
+        case TxStatus0: case TxStatus0+1: case TxStatus0+2: case TxStatus0+3:
+        case TxStatus0+4: case TxStatus0+5: case TxStatus0+6: case TxStatus0+7:
+        case TxStatus0+8: case TxStatus0+9: case TxStatus0+10: case TxStatus0+11:
+        case TxStatus0+12: case TxStatus0+13: case TxStatus0+14: case TxStatus0+15:
             ret = rtl8139_TxStatus_TxAddr_read(s, s->TxStatus, TxStatus0,
                                                addr, 1);
             break;
@@ -1962,7 +1977,10 @@ static uint32_t rtl8139_io_readw(void *opaque, uint8_t addr)
 
     switch (addr)
     {
-        case TxAddr0 ... TxAddr0+4*4-1:
+        case TxAddr0: case TxAddr0+1: case TxAddr0+2: case TxAddr0+3:
+        case TxAddr0+4: case TxAddr0+5: case TxAddr0+6: case TxAddr0+7:
+        case TxAddr0+8: case TxAddr0+9: case TxAddr0+10: case TxAddr0+11:
+        case TxAddr0+12: case TxAddr0+13: case TxAddr0+14: case TxAddr0+15:
             ret = rtl8139_TxStatus_TxAddr_read(s, s->TxAddr, TxAddr0, addr, 2);
             break;
         case IntrMask:
@@ -2056,12 +2074,18 @@ static uint32_t rtl8139_io_readl(void *opaque, uint8_t addr)
             ret = rtl8139_RxConfig_read(s);
             break;
 
-        case TxStatus0 ... TxStatus0+4*4-1:
+        case TxStatus0: case TxStatus0+1: case TxStatus0+2: case TxStatus0+3:
+        case TxStatus0+4: case TxStatus0+5: case TxStatus0+6: case TxStatus0+7:
+        case TxStatus0+8: case TxStatus0+9: case TxStatus0+10: case TxStatus0+11:
+        case TxStatus0+12: case TxStatus0+13: case TxStatus0+14: case TxStatus0+15:
             ret = rtl8139_TxStatus_TxAddr_read(s, s->TxStatus, TxStatus0,
                                                addr, 4);
             break;
 
-        case TxAddr0 ... TxAddr0+4*4-1:
+        case TxAddr0: case TxAddr0+1: case TxAddr0+2: case TxAddr0+3:
+        case TxAddr0+4: case TxAddr0+5: case TxAddr0+6: case TxAddr0+7:
+        case TxAddr0+8: case TxAddr0+9: case TxAddr0+10: case TxAddr0+11:
+        case TxAddr0+12: case TxAddr0+13: case TxAddr0+14: case TxAddr0+15:
             ret = rtl8139_TxAddr_read(s, addr-TxAddr0);
             break;
 
@@ -2181,7 +2205,7 @@ void pci_rtl8139_realize(PCIDevice *dev)
     s->bar_io.size = 0x100;
     s->bar_mem.size = 0x100;
 
-	// write to pci config
+	/* write to pci config */
     pci_register_bar(dev, 0, PCI_BASE_ADDRESS_SPACE_IO, &s->bar_io);
     pci_register_bar(dev, 1, PCI_BASE_ADDRESS_SPACE_MEMORY, &s->bar_mem);
 
@@ -2203,9 +2227,9 @@ void pci_rtl8139_realize(PCIDevice *dev)
 
 static int rtl8139_link_sched(int tag, int cycles, int jitter)
 {
-	if (link_device != nullptr)
+	if (link_device != NULL)
 	{
-		link_device->IntrStatus |= RxUnderrun;	// Link change
+		link_device->IntrStatus |= RxUnderrun;	/* Link change */
 		rtl8139_update_irq(link_device);
 	}
 	return 0;
@@ -2215,7 +2239,7 @@ RTL8139State *rtl8139_init(NICConf *conf)
 {
 	RTL8139State *state = (RTL8139State *)calloc(1, sizeof(RTL8139State));
 	memcpy(&state->conf, conf, sizeof(state->conf));
-	// pci config
+	/* pci config */
 	state->parent_obj.config = (uint8_t *)calloc(256, 1);
 	state->parent_obj.wmask = (uint8_t *)calloc(256, 1);
 	state->parent_obj.cmask = (uint8_t *)calloc(256, 1);
@@ -2230,7 +2254,7 @@ void rtl8139_destroy(RTL8139State *state)
 	if (sh4_sched_is_scheduled(state->schedId))
 		sh4_sched_request(state->schedId, -1);
 	if (link_device == state)
-		link_device = nullptr;
+		link_device = NULL;
 	pci_rtl8139_uninit(PCI_DEVICE(state));
 	free(state->parent_obj.config);
 	free(state->parent_obj.wmask);
@@ -2373,11 +2397,12 @@ void rtl8139_serialize_v24(RTL8139State *s, void **data, unsigned int *total_siz
 	s32 mode = s->eeprom.mode;
 	s32 link_start = sch_list[s->schedId].start;
 	s32 link_end = sch_list[s->schedId].end;
+	int i;
 
 	LIBRETRO_SA(s->parent_obj.config, 256);
 	LIBRETRO_SA(s->parent_obj.cmask, 256);
 	LIBRETRO_SA(s->parent_obj.wmask, 256);
-	for (int i = 0; i < PCI_NUM_REGIONS; i++)
+	for (i = 0; i < PCI_NUM_REGIONS; i++)
 	{
 		LIBRETRO_S(s->parent_obj.io_regions[i].addr);
 		LIBRETRO_S(s->parent_obj.io_regions[i].size);
@@ -2435,11 +2460,13 @@ void rtl8139_unserialize_v24(RTL8139State *s, void **data, unsigned int *total_s
 	s32 mode = 0;
 	s32 link_start = -1;
 	s32 link_end = -1;
+	u32 ringSize;
+	int i;
 
 	LIBRETRO_USA(s->parent_obj.config, 256);
 	LIBRETRO_USA(s->parent_obj.cmask, 256);
 	LIBRETRO_USA(s->parent_obj.wmask, 256);
-	for (int i = 0; i < PCI_NUM_REGIONS; i++)
+	for (i = 0; i < PCI_NUM_REGIONS; i++)
 	{
 		LIBRETRO_US(s->parent_obj.io_regions[i].addr);
 		LIBRETRO_US(s->parent_obj.io_regions[i].size);
@@ -2493,12 +2520,12 @@ void rtl8139_unserialize_v24(RTL8139State *s, void **data, unsigned int *total_s
 
 	/* What indexes something or sizes the receive ring is one of the values
 	 * the chip can have */
-	const u32 ringSize = 8192 << ((s->RxConfig >> 11) & 0x3);
+	ringSize = 8192 << ((s->RxConfig >> 11) & 0x3);
 	if (s->RxBufferSize != ringSize)
 		s->RxBufferSize = ringSize;
 	s->currTxDesc &= 3;
 	s->eeprom.address &= EEPROM_9346_ADDR_MASK;
-	s->eeprom.mode = mode >= Chip9346_none && mode <= Chip9346_data_write_all ? (Chip9346Mode)mode : Chip9346_none;
+	s->eeprom.mode = mode >= Chip9346_none && mode <= Chip9346_data_write_all ? (enum Chip9346Mode)mode : Chip9346_none;
 	if (s->eeprom.tick > 16)
 		s->eeprom.tick = 0;
 	sch_list[s->schedId].start = link_start;

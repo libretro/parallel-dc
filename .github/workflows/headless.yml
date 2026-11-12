@@ -18,7 +18,8 @@ name: Headless
 # against the interpreters, each built alone with the assembler they share
 # (tools/sh4/run.sh, tools/arm7/run.sh, tools/aica/run.sh), and the sound
 # chip's channels against what they made before (tools/aica/sgc_run.sh), and
-# the G2 bus's expansion DMA channels (tools/aica/g2dma_run.sh).
+# the G2 bus's expansion DMA channels (tools/aica/g2dma_run.sh), and the
+# broadband adapter, a frame each way and its state (tools/bba/run.sh).
 # And the threads a texture scaled up is shared out to, and the core needing
 # no OpenMP runtime (tools/rend/band_pool_test.sh). And custom textures'
 # pictures, read as stb_image read them and dumped
@@ -47,6 +48,7 @@ on:
       - 'tools/sh4/vector_test.cpp'
       - 'tools/arm7/**'
       - 'tools/aica/**'
+      - 'tools/bba/**'
       - 'Makefile*'
       - '.github/workflows/headless.yml'
   pull_request:
@@ -69,6 +71,7 @@ on:
       - 'tools/sh4/vector_test.cpp'
       - 'tools/arm7/**'
       - 'tools/aica/**'
+      - 'tools/bba/**'
       - 'Makefile*'
       - '.github/workflows/headless.yml'
   workflow_dispatch:
@@ -131,3 +134,7 @@ jobs:
         run: |
           sh tools/aica/g2dma_run.sh
           sh tools/aica/g2dma_run.sh -fsanitize=address,undefined -fno-sanitize-recover=all
+      - name: The broadband adapter, a frame each way and its state (and with the sanitizers)
+        run: |
+          sh tools/bba/run.sh
+          sh tools/bba/run.sh -fsanitize=address,undefined -fno-sanitize-recover=all

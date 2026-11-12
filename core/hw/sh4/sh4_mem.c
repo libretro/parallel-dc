@@ -5,6 +5,7 @@
 #include "types.h"
 
 #include "sh4_mem.h"
+#include "sh4_rom.h"
 #include "hw/holly/sb_mem.h"
 #include "sh4_mmr.h"
 #include "modules/modules.h"
@@ -191,6 +192,7 @@ void mem_map_default(void)
 }
 void mem_Init(void)
 {
+	sh4rom_init();
 	/* Allocate mem for memory/bios/flash */
 
 	sh4_area0_Init();

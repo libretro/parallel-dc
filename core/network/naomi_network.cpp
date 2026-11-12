@@ -214,7 +214,7 @@ void NaomiNetwork::processBeacon()
 		{
 			DEBUG_LOG(NETWORK, "NaomiServer: beacon received %ld bytes", n);
 			if (n == sizeof(buf) && !strncmp(buf, "flycast", n))
-				sendto(beacon_sock, buf, n, L_MSG_NOSIGNAL, (const struct sockaddr *)&addr, addrlen);
+				sendto(beacon_sock, buf, n, MSG_NOSIGNAL, (const struct sockaddr *)&addr, addrlen);
 		}
 	} while (n != -1);
 }
@@ -250,7 +250,7 @@ bool NaomiNetwork::findServer()
 
     for (int i = 0; i < 3 && !stopping(); i++)
     {
-        if (sendto(sockfd, "flycast", 6, L_MSG_NOSIGNAL, (struct sockaddr *)&addr, sizeof addr) == -1)
+        if (sendto(sockfd, "flycast", 6, MSG_NOSIGNAL, (struct sockaddr *)&addr, sizeof addr) == -1)
         {
             WARN_LOG(NETWORK, "Send datagram failed. errno=%d", get_last_error());
             // Try again in a tenth of a second
@@ -361,7 +361,7 @@ bool NaomiNetwork::startNetwork()
 			{
 				buf[1] = { (u8)slot_num };
 				slot_num++;
-				::send(socket, (const char *)buf, 2, L_MSG_NOSIGNAL);
+				::send(socket, (const char *)buf, 2, MSG_NOSIGNAL);
 				set_non_blocking(socket);
 				set_tcp_nodelay(socket);
 			}
@@ -480,7 +480,7 @@ void NaomiNetwork::pipeSlaves()
 	{
 		ssize_t l = ::recv(*it, buf, sizeof(buf), 0);
 		if (l > 0)
-			::send(*(it + 1), buf, l, L_MSG_NOSIGNAL);
+			::send(*(it + 1), buf, l, MSG_NOSIGNAL);
 		// TODO handle errors
 	}
 }
@@ -567,7 +567,7 @@ void NaomiNetwork::send(u8 *data, u32 size)
 		return;
 
 	u16 pktnum = packet_number + 1;
-	if (::send(sockfd, (const char *)&pktnum, sizeof(pktnum), L_MSG_NOSIGNAL) < 2)
+	if (::send(sockfd, (const char *)&pktnum, sizeof(pktnum), MSG_NOSIGNAL) < 2)
 	{
 		if (errno != L_EAGAIN && errno != L_EWOULDBLOCK)
 		{
@@ -580,7 +580,7 @@ void NaomiNetwork::send(u8 *data, u32 size)
 		}
 		return;
 	}
-	if (::send(sockfd, (const char *)data, size, L_MSG_NOSIGNAL) < (ssize_t)size)
+	if (::send(sockfd, (const char *)data, size, MSG_NOSIGNAL) < (ssize_t)size)
 	{
 		WARN_LOG(NETWORK, "send failed. errno=%d", get_last_error());
 		if (isMaster())
@@ -602,7 +602,7 @@ void NaomiNetwork::shutdown()
 	retro_atomic_store_release_int(&network_stopping, 1);
 	// Ends whatever wait the network thread is in
 	if (wake_sock != INVALID_SOCKET)
-		::send(wake_sock, "", 1, L_MSG_NOSIGNAL);
+		::send(wake_sock, "", 1, MSG_NOSIGNAL);
 }
 void NaomiNetwork::closeSockets()
 {
