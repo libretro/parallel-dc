@@ -92,6 +92,8 @@ on:
       - 'tools/rend/band_pool_test.*'
       - 'tools/rend/custom_image*'
       - 'tools/rend/texhash_test.*'
+      - 'core/deps/libelf/**'
+      - 'tools/libelf/**'
       - 'tools/unused_sources.py'
       - 'core/rend/custom_image.*'
       - 'core/libretro-common/**'
@@ -174,6 +176,8 @@ on:
       - 'tools/rend/band_pool_test.*'
       - 'tools/rend/custom_image*'
       - 'tools/rend/texhash_test.*'
+      - 'core/deps/libelf/**'
+      - 'tools/libelf/**'
       - 'tools/unused_sources.py'
       - 'core/rend/custom_image.*'
       - 'core/libretro-common/**'
@@ -355,6 +359,8 @@ jobs:
         run: |
           WINDOWS=1 sh tools/rend/custom_image_test.sh
           WINDOWS=1 sh tools/rend/texhash_test.sh
+      - name: The ELF reader on 64-bit Windows, the file above 4 GiB (wine)
+        run: WINDOWS=1 sh tools/libelf/elf_test.sh
       - name: Direct3D 11's shaders made ahead and kept on disk, on a device
         run: sh tools/rend/dx11_shaders_ahead_test.sh
       - name: Direct3D 12's pipelines made ahead, on a device

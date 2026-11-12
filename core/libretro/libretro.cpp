@@ -78,6 +78,7 @@ void texcache_scratch_largest(void);
 #include "hw/maple/maple_cfg.h"
 #include "hw/maple/maple_if.h"
 #include "hw/maple/vmu_beep.h"
+#include "oslib/audiostream.h"
 #include "hw/maple/maple_cfg.h"
 #include "../hw/pvr/spg.h"
 #include "../hw/pvr/ta.h"
@@ -303,8 +304,6 @@ static void rumble_stop(void)
    }
 }
 
-void ResetAudioBuffer(void);
-void FlushAudioFrame(void);	// emit one frame's accumulated audio (non-threaded)
 void CaptureInput(void);	// sample input on the main thread, once per frame
 void UpdateInputStateArcade(void);
 void UpdateInputState(u32 port);
@@ -4467,8 +4466,6 @@ void UpdateInputStateMouse(u32 port)
  * one is read at the end of a frame in which the game did not ask
  * (os_DoEvents). The motion is whole steps of the frontend's, the same in a
  * float as in the latch's counts. 49 bytes. */
-void AudioHoldbackSerialize(void **data, unsigned int *total_size);
-void AudioHoldbackUnserialize(void **data, unsigned int *total_size);
 
 void lr_serialize_v23(void **data, unsigned int *total_size)
 {

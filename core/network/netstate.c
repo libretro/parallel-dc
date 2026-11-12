@@ -76,7 +76,7 @@ void net_device_reset(bool hard)
 {
 	if (settings.System != DC_PLATFORM_DREAMCAST)
 		return;
-	// The option's device, if it is not this one, is put in at a hard reset
+	/* The option's device, if it is not this one, is put in at a hard reset */
 	if (hard && device_for_machine(net_device_option) != net_device)
 		switch_device(net_device_option, false);
 #ifdef ENABLE_MODEM
@@ -94,13 +94,13 @@ void net_device_detach(void)
 		bba_Term();
 	else
 		ModemTerm();
-	// No thread of this core's is left running
+	/* No thread of this core's is left running */
 	net_thread_join();
 #endif
 	net_device = NET_DEVICE_NONE;
 }
 
-// Zeroes, @size bytes
+/* Zeroes, @size bytes */
 static void write_zeroes(void **data, unsigned int *total_size, unsigned size)
 {
 	static const u8 zeroes[1024] = { 0 };
@@ -127,18 +127,20 @@ static void skip(void **data, unsigned int *total_size, unsigned size)
  * others: a byte for the device, then the device's part. */
 void net_serialize_v24(void **data, unsigned int *total_size)
 {
+	u8 dev;
+	unsigned start, used;
 	if (settings.System != DC_PLATFORM_DREAMCAST)
 		return;
-	u8 dev = net_device;
+	dev = net_device;
 	LIBRETRO_S(dev);
-	const unsigned start = *total_size;
+	start = *total_size;
 #ifdef ENABLE_MODEM
 	if (dev == NET_DEVICE_MODEM)
 		modem_serialize_v24(data, total_size);
 	else if (dev == NET_DEVICE_BBA)
 		bba_serialize_v24(data, total_size);
 #endif
-	const unsigned used = *total_size - start;
+	used = *total_size - start;
 	if (used > NET_V24_PAYLOAD)
 		ERROR_LOG(MODEM, "The network device's part of the state is %d bytes: no more than %d fit", used, NET_V24_PAYLOAD);
 	else
@@ -147,13 +149,14 @@ void net_serialize_v24(void **data, unsigned int *total_size)
 
 bool net_unserialize_v24(void **data, unsigned int *total_size)
 {
+	u8 dev = NET_DEVICE_NONE;
+	unsigned start, used;
 	if (settings.System != DC_PLATFORM_DREAMCAST)
 		return true;
-	u8 dev = NET_DEVICE_NONE;
 	LIBRETRO_US(dev);
-	const unsigned start = *total_size;
-	// The state's machine had this device: so does this one from now on
-	// (a device this build has not, or not known, is no device)
+	start = *total_size;
+	/* The state's machine had this device: so does this one from now on */
+	/* (a device this build has not, or not known, is no device) */
 	switch_device(dev, true);
 	dev = net_device;
 #ifdef ENABLE_MODEM
@@ -166,7 +169,7 @@ bool net_unserialize_v24(void **data, unsigned int *total_size)
 			bba_unserialize_v24(data, total_size);
 	}
 #endif
-	const unsigned used = *total_size - start;
+	used = *total_size - start;
 	if (used < NET_V24_PAYLOAD)
 		skip(data, total_size, NET_V24_PAYLOAD - used);
 	return true;

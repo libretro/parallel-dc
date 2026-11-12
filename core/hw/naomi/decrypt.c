@@ -7,12 +7,12 @@
  */
 
 #include <stdlib.h>
-#include "naomi_cart.h"
+#include "decrypt.h"
 
 typedef struct sbox_s {
   u8 table[64];
-  u8 inputs[6];      // positions of the inputs bits, -1 means no input except from key
-  u8 outputs[2];     // positions of the output bits
+  u8 inputs[6];      /* positions of the inputs bits, -1 means no input except from key */
+  u8 outputs[2];     /* positions of the output bits */
 } sbox;
 
 #define FN1GK 38
@@ -25,7 +25,7 @@ typedef struct sbox_s {
 #define BIT(A, B) ((A >> B)&0X1)
 
 static const sbox fn1_sboxes[4][4] = {
-	{   // 1st round
+	{   /* 1st round */
 		{
 			{
 				0,3,2,2,1,3,1,2,3,2,1,2,1,2,3,1,3,2,2,0,2,1,3,0,0,3,2,3,2,1,2,0,
@@ -62,7 +62,7 @@ static const sbox fn1_sboxes[4][4] = {
 			{5,7}
 		},
 	},
-	{   // 2nd round
+	{   /* 2nd round */
 		{
 			{
 				3,3,1,2,0,0,2,2,2,1,2,1,3,1,1,3,3,0,0,3,0,3,3,2,1,1,3,2,3,2,1,3,
@@ -99,7 +99,7 @@ static const sbox fn1_sboxes[4][4] = {
 			{3,6}
 		},
 	},
-	{   // 3rd round
+	{   /* 3rd round */
 		{
 			{
 				0,0,1,0,1,0,0,3,2,0,0,3,0,1,0,2,0,3,0,0,2,0,3,2,2,1,3,2,2,1,1,2,
@@ -121,7 +121,7 @@ static const sbox fn1_sboxes[4][4] = {
 		{
 			{
 				0,3,0,2,1,2,0,0,1,1,0,0,3,1,1,0,0,3,0,0,2,3,3,2,3,1,2,0,0,2,3,0,
-				// unused?
+				/* unused? */
 				255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,
 			},
 			{0,2,4,6,7,255},
@@ -137,7 +137,7 @@ static const sbox fn1_sboxes[4][4] = {
 			{4,7}
 		},
 	},
-	{   // 4th round
+	{   /* 4th round */
 		{
 			{
 				0,3,3,3,3,3,2,0,0,1,2,0,2,2,2,2,1,1,0,2,2,1,3,2,3,2,0,1,2,3,2,1,
@@ -178,7 +178,7 @@ static const sbox fn1_sboxes[4][4] = {
 
 
 static const sbox fn2_sboxes[4][4] = {
-	{   // 1st round
+	{   /* 1st round */
 		{
 			{
 				3,3,0,1,0,1,0,0,0,3,0,0,1,3,1,2,0,3,3,3,2,1,0,1,1,1,2,2,2,3,2,2,
@@ -215,7 +215,7 @@ static const sbox fn2_sboxes[4][4] = {
 			{5,6}
 		},
 	},
-	{   // 2nd round
+	{   /* 2nd round */
 		{
 			{
 				2,3,1,3,1,0,3,3,3,2,3,3,2,0,0,3,2,3,0,3,1,1,2,3,1,1,2,2,0,1,0,0,
@@ -252,7 +252,7 @@ static const sbox fn2_sboxes[4][4] = {
 			{4,6}
 		},
 	},
-	{   // 3rd round
+	{   /* 3rd round */
 		{
 			{
 				0,3,0,1,3,0,0,2,1,0,1,3,2,2,2,0,3,3,3,0,2,2,0,3,0,0,2,3,0,3,2,1,
@@ -274,7 +274,7 @@ static const sbox fn2_sboxes[4][4] = {
 		{
 			{
 				2,2,0,3,0,3,1,0,1,1,2,3,2,3,1,0,0,0,3,2,2,0,2,3,1,3,2,0,3,3,1,3,
-				// unused?
+				/* unused? */
 				255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,255,
 			},
 			{1,2,4,7,2,255},
@@ -290,7 +290,7 @@ static const sbox fn2_sboxes[4][4] = {
 			{3,6}
 		},
 	},
-	{   // 4th round
+	{   /* 4th round */
 		{
 			{
 				0,1,1,0,0,1,0,2,3,3,0,1,2,3,0,2,1,0,3,3,2,0,3,0,0,2,1,0,1,0,1,3,
@@ -418,7 +418,7 @@ static int feistel_function(int input, const sbox *sboxes, uint32_t subkeys)
 	int aux;
 	int result=0;
 
-	for (m=0; m<4; ++m) { // 4 sboxes
+	for (m=0; m<4; ++m) { /* 4 sboxes */
 		for (k=0, aux=0; k<6; ++k)
 			if (sboxes[m].inputs[k]!=255)
 				aux |= BIT(input, sboxes[m].inputs[k]) << k;
@@ -463,8 +463,8 @@ static u16 buffer2a = 0;
 static u8 buffer2[2];
 
 static u8 buffer[BUFFER_SIZE];
-// (a line is LINE_SIZE bytes at most; the run that ends one is written
-// whole, up to 7 bytes past the line's end)
+/* (a line is LINE_SIZE bytes at most; the run that ends one is written */
+/* whole, up to 7 bytes past the line's end) */
 static u8 line_buffer[LINE_SIZE + 8];
 static u8 line_buffer_prev[LINE_SIZE];
 
@@ -499,7 +499,10 @@ void cryptoReset(void)
  * is next looked at; nor buffer2, which is buffer2a's two bytes. */
 void cryptoSerialize(void **data, unsigned int *total_size)
 {
-  u8 bits[2] = { (u8)bufferBit, (u8)bufferBit2 };
+  u8 bits[2];
+
+  bits[0] = (u8)bufferBit;
+  bits[1] = (u8)bufferBit2;
 
   LIBRETRO_S(cryptoSubKey);
   LIBRETRO_S(cryptoAddr);
@@ -540,8 +543,8 @@ void cryptoUnserialize(void **data, unsigned int *total_size)
   LIBRETRO_USA(buffer, BUFFER_SIZE);
   LIBRETRO_USA(line_buffer, LINE_SIZE);
 
-  // A bit of a byte, and of a word; a place in the two-byte buffer and
-  // in a line.
+  /* A bit of a byte, and of a word; a place in the two-byte buffer and */
+  /* in a line. */
   bufferBit = bits[0] & 7;
   bufferBit2 = bits[1] & 15;
   buffer2[0] = buffer2a;
@@ -582,7 +585,8 @@ void cyptoSetSubkey(u16 subKey)
 static u16 bitswap16(u16 in, const u8* vec)
 {
   u16 ret = 0;
-  for (int i = 0; i<16; i++) {
+  int i;
+  for (i = 0; i<16; i++) {
     ret |= ((in >> vec[i])&0x1)<<(15-i);
   }
   return ret;
@@ -641,20 +645,20 @@ static u16 block_decrypt(uint32_t game_key, uint16_t sequence_key, uint16_t coun
 
 	/**************************************************************/
 
-	// First Feistel Network
+	/* First Feistel Network */
 	aux = bitswap16(counter, vec1);
 
-	// 1st round
+	/* 1st round */
 	B = aux >> 8;
 	A = (aux & 0xff) ^ feistel_function(B, fn1_sboxes[0], fn1_subkeys[0]);
 
-	// 2nd round
+	/* 2nd round */
 	B ^= feistel_function(A, fn1_sboxes[1], fn1_subkeys[1]);
 
-	// 3rd round
+	/* 3rd round */
 	A ^= feistel_function(B, fn1_sboxes[2], fn1_subkeys[2]);
 
-	// 4th round
+	/* 4th round */
 	B ^= feistel_function(A, fn1_sboxes[3], fn1_subkeys[3]);
 
 	middle_result = (B << 8) | A;
@@ -670,21 +674,21 @@ static u16 block_decrypt(uint32_t game_key, uint16_t sequence_key, uint16_t coun
 	}
 	/*********************/
 
-	// Second Feistel Network
+	/* Second Feistel Network */
 
 	aux = bitswap16(data, vec2);
 
-	// 1st round
+	/* 1st round */
 	B = aux >> 8;
 	A = (aux & 0xff) ^ feistel_function(B, fn2_sboxes[0], fn2_subkeys[0]);
 
-	// 2nd round
+	/* 2nd round */
 	B ^= feistel_function(A, fn2_sboxes[1], fn2_subkeys[1]);
 
-	// 3rd round
+	/* 3rd round */
 	A ^= feistel_function(B, fn2_sboxes[2], fn2_subkeys[2]);
 
-	// 4th round
+	/* 4th round */
 	B ^= feistel_function(A, fn2_sboxes[3], fn2_subkeys[3]);
 
 	aux = (B << 8) | A;
@@ -695,18 +699,18 @@ static u16 block_decrypt(uint32_t game_key, uint16_t sequence_key, uint16_t coun
 
 static u16 m_read(uint32_t addr)
 {
-	return ((M2Cartridge *)CurrentCartridge)->ReadCipheredData(addr);
+	return naomi_m2_read_ciphered(addr);
 }
 
-static u16 get_decrypted_16()
+static u16 get_decrypted_16(void)
 {
-  uint16_t enc;
+  uint16_t enc, dec, res;
 
   enc = m_read(cryptoAddr);
 
-  uint16_t dec = block_decrypt(cryptoKey, cryptoSubKey, cryptoAddr, enc);
+  dec = block_decrypt(cryptoKey, cryptoSubKey, cryptoAddr, enc);
 
-  uint16_t res = (dec & 3) | (dec_hist & 0xfffc);
+  res = (dec & 3) | (dec_hist & 0xfffc);
   dec_hist = dec;
 
   cryptoAddr ++;
@@ -714,8 +718,10 @@ static u16 get_decrypted_16()
   return res;
 }
 
-static void cryptoStart()
+static void cryptoStart(void)
 {
+  u32 blocky;
+
   block_pos = 0;
   done_compression = 0;
   buffer_pos = BUFFER_SIZE;
@@ -726,14 +732,14 @@ static void cryptoStart()
   }
   else
   {
-    dec_hist = 0; // seems to be needed by astrass at least otherwise any call after the first one will be influenced by the one before it.
+    dec_hist = 0; /* seems to be needed by astrass at least otherwise any call after the first one will be influenced by the one before it. */
     dec_header = get_decrypted_16() << 16;
   }
 
   dec_header |= get_decrypted_16();
 
   block_numlines = ((dec_header & 0x000000ff) >> 0) + 1;
-  u32 blocky = ((dec_header & 0x0001ff00) >> 8) + 1;
+  blocky = ((dec_header & 0x0001ff00) >> 8) + 1;
   block_size = block_numlines * blocky;
 
   if(dec_header & FLAG_COMPRESSED)
@@ -746,10 +752,12 @@ static void cryptoStart()
   cryptoReady = 1;
 }
 
-static u32 get_compressed_bit()
+static u32 get_compressed_bit(void)
 {
-//  if(buffer_pos == BUFFER_SIZE)
-//      enc_fill();
+	u32 res;
+
+/*  if(buffer_pos == BUFFER_SIZE) */
+/*      enc_fill(); */
 
 	if (bufferBit2 == 15)
 	{
@@ -757,7 +765,7 @@ static u32 get_compressed_bit()
 		buffer2a = get_decrypted_16();
 		buffer2[0] = buffer2a;
 		buffer2[1] = buffer2a >> 8;
-	//  block_pos+=2;
+	/*  block_pos+=2; */
 		buffer_pos = 0;
 
 	}
@@ -766,9 +774,9 @@ static u32 get_compressed_bit()
 		bufferBit2++;
 	}
 
-//  if (bufferBit ==7) printf("using byte %02x\n", buffer2[(buffer_pos&1) ^ 1]);
+/*  if (bufferBit ==7) printf("using byte %02x\n", buffer2[(buffer_pos&1) ^ 1]); */
 
-	u32 res = (buffer2[(buffer_pos&1)^1] >> bufferBit) & 1;
+	res = (buffer2[(buffer_pos&1)^1] >> bufferBit) & 1;
 	bufferBit--;
 	if(bufferBit == -1) {
 		bufferBit = 7;
@@ -777,19 +785,20 @@ static u32 get_compressed_bit()
 	return res;
 }
 
-static void line_fill()
+static void line_fill(void)
 {
 	uint8_t *lc = line_buffer;
 	uint8_t *lp = line_buffer_prev;
+	int i, j;
 
 	memcpy(line_buffer_prev, line_buffer, LINE_SIZE);
 
 	line_buffer_pos = 0;
 
-	for(int i=0; i < line_buffer_size;) {
-		// vlc 0: start of line
-		// vlc 1: interior of line
-		// vlc 2-9: 7-1 bytes from end of line
+	for(i=0; i < line_buffer_size;) {
+		/* vlc 0: start of line */
+		/* vlc 1: interior of line */
+		/* vlc 2-9: 7-1 bytes from end of line */
 		int slot = i ? i < line_buffer_size - 7 ? 1 : (i & 7) + 1 : 0;
 		uint32_t tmp = 0;
 		while (!(tmp&0x80)) {
@@ -803,16 +812,16 @@ static void line_fill()
 			int count = (tmp & 7) + 1;
 
 			if(tmp&0x40) {
-				// Copy from previous line
+				/* Copy from previous line */
 
 				static int offsets[4] = {0, 1, 0, -1};
 				int offset = offsets[(tmp & 0x18) >> 3];
-				for(int j=0; j != count; j++) {
+				for(j=0; j != count; j++) {
 					lc[i^1] = lp[((i+offset) % line_buffer_size)^1];
 					i++;
 				}
 			} else {
-				// Get a byte in the stream and write n times
+				/* Get a byte in the stream and write n times */
 				uint8_t byte;
 				byte =         get_compressed_bit()  << 1;
 				byte = (byte | get_compressed_bit()) << 1;
@@ -822,7 +831,7 @@ static void line_fill()
 				byte = (byte | get_compressed_bit()) << 1;
 				byte = (byte | get_compressed_bit()) << 1;
 				byte =  byte | get_compressed_bit();
-				for(int j=0; j != count; j++)
+				for(j=0; j != count; j++)
 					lc[(i++)^1] = byte;
 			}
 		}
@@ -837,9 +846,10 @@ static void line_fill()
 	}
 }
 
-static void enc_fill()
+static void enc_fill(void)
 {
-	for(int i = 0; i != BUFFER_SIZE; i+=2) {
+	int i;
+	for(i = 0; i != BUFFER_SIZE; i+=2) {
 		uint16_t val = get_decrypted_16();
 		buffer[i] = val;
 		buffer[i+1] = val >> 8;
@@ -849,8 +859,8 @@ static void enc_fill()
 		{
 			if (block_pos == block_size)
 			{
-				// if we reach the size specified we need to read a new header
-				// todo: for compressed blocks this depends on OUTPUT size, not input size, so things get messy
+				/* if we reach the size specified we need to read a new header */
+				/* todo: for compressed blocks this depends on OUTPUT size, not input size, so things get messy */
 
 				cryptoStart();
 			}
@@ -859,14 +869,14 @@ static void enc_fill()
 	buffer_pos = 0;
 }
 
-u16 cryptoDecrypt()
+u16 cryptoDecrypt(void)
 {
   u8* base;
   if(!cryptoReady)
     cryptoStart();
 	if(dec_header & FLAG_COMPRESSED) {
-		// (a line of an odd number of bytes ends in the middle of a word)
-		if (line_buffer_pos >= line_buffer_size) // if there's no data left to read..
+		/* (a line of an odd number of bytes ends in the middle of a word) */
+		if (line_buffer_pos >= line_buffer_size) /* if there's no data left to read.. */
 		{
 			if (done_compression == 1)
 				cryptoStart();
@@ -877,12 +887,12 @@ u16 cryptoDecrypt()
 		base = line_buffer + line_buffer_pos;
 		line_buffer_pos += 2;
 	} else {
-		// (no whole word left: after a compressed stream, which counts its
-		// bytes with this, there may be half of one)
+		/* (no whole word left: after a compressed stream, which counts its */
+		/* bytes with this, there may be half of one) */
 		if(buffer_pos + 2 > BUFFER_SIZE)
 			enc_fill();
 		base = &buffer[buffer_pos];
 		buffer_pos += 2;
 	}
-	return (base[1] << 8) | base[0];	// Swapping the bytes now
+	return (base[1] << 8) | base[0];	/* Swapping the bytes now */
 }

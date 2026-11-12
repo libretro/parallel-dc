@@ -57,9 +57,6 @@ SOURCES_CXX := \
 					$(CORE_DIR)/core/serialize.cpp \
 					$(CORE_DIR)/core/stdclass.cpp \
 					\
-					$(DEPS_DIR)/libelf/elf.cpp \
-					$(DEPS_DIR)/libelf/elf32.cpp \
-					$(DEPS_DIR)/libelf/elf64.cpp \
 					\
 					$(CORE_DIR)/core/reios/reios_elf.cpp \
 					$(CORE_DIR)/core/reios/reios.cpp \
@@ -154,6 +151,11 @@ SOURCES_C += $(CORE_DIR)/core/hw/gdrom/gdrom_response.c \
 					$(CORE_DIR)/core/hw/sh4/sh4_mmr.c \
 					$(CORE_DIR)/core/hw/sh4/sh4_mem.c \
 					$(CORE_DIR)/core/hw/sh4/sh4_rom.c \
+					$(CORE_DIR)/core/hw/naomi/decrypt.c \
+					$(CORE_DIR)/core/libretro/audiostream.c \
+					$(DEPS_DIR)/libelf/elf.c \
+					$(DEPS_DIR)/libelf/elf32.c \
+					$(DEPS_DIR)/libelf/elf64.c \
 					$(CORE_DIR)/core/hw/aica/aica_if.c \
 					$(CORE_DIR)/core/hw/sh4/modules/ccn.c \
 					$(CORE_DIR)/core/hw/sh4/modules/rtc.c \
@@ -362,7 +364,6 @@ endif
 
 SOURCES_CXX += $(CORE_DIR)/core/hw/naomi/naomi.cpp \
 					$(CORE_DIR)/core/hw/naomi/naomi_cart.cpp \
-					$(CORE_DIR)/core/hw/naomi/decrypt.cpp \
 					$(CORE_DIR)/core/hw/naomi/m1cartridge.cpp \
 					$(CORE_DIR)/core/hw/naomi/m4cartridge.cpp \
 					$(CORE_DIR)/core/hw/naomi/awcartridge.cpp \
@@ -384,7 +385,7 @@ ifneq ($(STATIC_LINKING), 1)
 endif
 
 # The device in the Dreamcast's expansion port, in every build
-SOURCES_CXX += $(CORE_DIR)/core/network/netstate.cpp
+SOURCES_C += $(CORE_DIR)/core/network/netstate.c
 
 ifeq ($(HAVE_GENERIC_JIT), 1)
 	DYNAREC_USED = 1
@@ -444,7 +445,6 @@ SOURCES_CXX += $(CORE_DIR)/core/hw/sh4/dyna/decoder.cpp \
 endif
 
 SOURCES_CXX += $(CORE_DIR)/core/libretro/libretro.cpp \
-					$(CORE_DIR)/core/libretro/audiostream.cpp \
 					$(CORE_DIR)/core/libretro/common.cpp \
 					$(CORE_DIR)/core/libretro/vmem_utils.cpp
 

@@ -80,6 +80,11 @@
 #define __ELF_ELF_32_H__
 
 #include <stdint.h>
+#include <retro_inline.h>
+
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 /*
  * File header 
@@ -105,6 +110,7 @@ struct Elf32_Header {
 					 * string table for section header 
 					 * * names */
 };
+typedef struct Elf32_Header Elf32_Header;
 
 /*
  * Section header 
@@ -121,6 +127,7 @@ struct Elf32_Shdr {
 	uint32_t        sh_addralign;
 	uint32_t        sh_entsize;
 };
+typedef struct Elf32_Shdr Elf32_Shdr;
 
 /*
  * Program header 
@@ -144,6 +151,7 @@ struct Elf32_Phdr {
 	uint32_t p_align;	/* Reqd alignment of segment in
 					 * memory */
 };
+typedef struct Elf32_Phdr Elf32_Phdr;
 
 int elf32_checkFile(struct Elf32_Header *file);
 struct Elf32_Phdr * elf32_getProgramSegmentTable(struct Elf32_Header *file);
@@ -151,7 +159,7 @@ unsigned elf32_getNumSections(struct Elf32_Header *file);
 char * elf32_getStringTable(struct Elf32_Header *file);
 char * elf32_getSegmentStringTable(struct Elf32_Header *file);
 
-static inline struct Elf32_Shdr *
+static INLINE struct Elf32_Shdr *
 elf32_getSectionTable(struct Elf32_Header *file)
 {
 	/* Cast heaven! */
@@ -159,13 +167,13 @@ elf32_getSectionTable(struct Elf32_Header *file)
 }
 
 /* accessor functions */
-static inline uint32_t 
+static INLINE uint32_t
 elf32_getSectionType(struct Elf32_Header *file, uint16_t s)
 {
 	return elf32_getSectionTable(file)[s].sh_type;
 }
 
-static inline uint32_t 
+static INLINE uint32_t
 elf32_getSectionFlags(struct Elf32_Header *file, uint16_t s)
 {
 	return elf32_getSectionTable(file)[s].sh_flags;
@@ -186,7 +194,7 @@ uint32_t elf32_getEntryPoint (struct Elf32_Header *file);
 /* Program header functions */
 uint16_t elf32_getNumProgramHeaders(struct Elf32_Header *file);
 
-static inline struct Elf32_Phdr *
+static INLINE struct Elf32_Phdr *
 elf32_getProgramHeaderTable(struct Elf32_Header *file)
 {
 	/* Cast heaven! */
@@ -194,46 +202,50 @@ elf32_getProgramHeaderTable(struct Elf32_Header *file)
 }
 
 /* accessor functions */
-static inline uint32_t 
+static INLINE uint32_t
 elf32_getProgramHeaderFlags(struct Elf32_Header *file, uint16_t ph)
 {
 	return elf32_getProgramHeaderTable(file)[ph].p_flags;
 }
 
-static inline uint32_t 
+static INLINE uint32_t
 elf32_getProgramHeaderType(struct Elf32_Header *file, uint16_t ph)
 {
 	return elf32_getProgramHeaderTable(file)[ph].p_type;
 }
 
-static inline uint32_t 
+static INLINE uint32_t
 elf32_getProgramHeaderFileSize(struct Elf32_Header *file, uint16_t ph)
 {
 	return elf32_getProgramHeaderTable(file)[ph].p_filesz;
 }
 
-static inline uint32_t
+static INLINE uint32_t
 elf32_getProgramHeaderMemorySize(struct Elf32_Header *file, uint16_t ph)
 {
 	return elf32_getProgramHeaderTable(file)[ph].p_memsz;
 }
 
-static inline uint32_t
+static INLINE uint32_t
 elf32_getProgramHeaderVaddr(struct Elf32_Header *file, uint16_t ph)
 {
 	return elf32_getProgramHeaderTable(file)[ph].p_vaddr;
 }
 
-static inline uint32_t
+static INLINE uint32_t
 elf32_getProgramHeaderPaddr(struct Elf32_Header *file, uint16_t ph)
 {
 	return elf32_getProgramHeaderTable(file)[ph].p_paddr;
 }
 
-static inline uint32_t
+static INLINE uint32_t
 elf32_getProgramHeaderOffset(struct Elf32_Header *file, uint16_t ph)
 {
 	return elf32_getProgramHeaderTable(file)[ph].p_offset;
 }
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* __ELF_ELF_32_H__ */

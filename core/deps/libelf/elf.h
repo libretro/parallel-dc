@@ -103,17 +103,22 @@ ELF file into memory.
 
 #include <stdint.h>
 #include <stdio.h>
+#include <boolean.h>
 
 #include "elf32.h"
 #include "elf64.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 struct elf_symbol {
-  uint32_t st_name;               // Symbol name (string table index)
-  uint32_t st_value;              // Symbol value
-  uint32_t st_size;               // Symbol size
-  uint8_t  st_info;               // Symbol type and binding
-  uint8_t  st_other;              // No defined meaning, 0 
-  uint16_t st_shndx;              // Section index
+  uint32_t st_name;               /* Symbol name (string table index) */
+  uint32_t st_value;              /* Symbol value */
+  uint32_t st_size;               /* Symbol size */
+  uint8_t  st_info;               /* Symbol type and binding */
+  uint8_t  st_other;              /* No defined meaning, 0 */
+  uint16_t st_shndx;              /* Section index */
 };
 
 struct elf64_symbol {
@@ -387,6 +392,10 @@ struct Elf32_Phdr *elf_getProgramSegmentTable(void *elfFile);
  * getNumProgramSegments. 
  */
 struct Elf32_Shdr *elf_getSectionTable(void *elfFile);
+#endif
+
+#ifdef __cplusplus
+}
 #endif
 
 #endif

@@ -1823,6 +1823,11 @@ bool M2Cartridge::Write(u32 offset, u32 size, u32 data)
 	return NaomiCartridge::Write(offset, size, data);
 }
 
+u16 naomi_m2_read_ciphered(u32 addr)
+{
+	return ((M2Cartridge *)CurrentCartridge)->ReadCipheredData(addr);
+}
+
 u16 M2Cartridge::ReadCipheredData(u32 offset)
 {
 	if ((offset & 0xffff0000) == 0x01000000)

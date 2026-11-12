@@ -82,6 +82,14 @@
 #include <stdio.h>
 #include "elf32.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 void elf32_fprintf(FILE *f, struct Elf32_Header *file, int size, const char *name, int flags);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* __ELF_DEBUG_32_H__ */

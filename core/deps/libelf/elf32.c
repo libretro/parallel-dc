@@ -117,7 +117,7 @@ struct Elf32_Phdr *
 elf32_getProgramSegmentTable(struct Elf32_Header *elfFile)
 {
 	struct Elf32_Header *fileHdr = elfFile;
-	return (struct Elf32_Phdr *) (fileHdr->e_phoff + (long) elfFile);
+	return (struct Elf32_Phdr *) (uintptr_t) ((uintptr_t) elfFile + fileHdr->e_phoff);
 }
 
 /* Returns the number of program segments in this elf file. */
@@ -257,13 +257,14 @@ elf32_fprintf(FILE *f, struct Elf32_Header *file, int size, const char *name, in
 	char *str_table;
 
 	fprintf(f, "Found an elf32 file called \"%s\" located "
-		"at address 0x%p\n", name, file);
+		"at address 0x%p\n", name, (void *)file);
 
 	if ((r = elf32_checkFile(file)) != 0) {
 		char *magic = (char*) file;
 		fprintf(f, "Invalid elf file (%d)\n", r);
-		fprintf(f, "Magic is: %2.2hhx %2.2hhx %2.2hhx %2.2hhx\n",
-			magic[0], magic[1], magic[2], magic[3]);
+		fprintf(f, "Magic is: %2.2x %2.2x %2.2x %2.2x\n",
+			(unsigned char)magic[0], (unsigned char)magic[1],
+			(unsigned char)magic[2], (unsigned char)magic[3]);
 		return;
 	}
 
@@ -315,13 +316,13 @@ elf32_fprintf(FILE *f, struct Elf32_Header *file, int size, const char *name, in
 		printf("Section Headers:\n");
 		printf("  [Nr] Name              Type            Addr     Off\n");
 		for (i = 0; i < numSections; i++) {
-			//if (elf_checkSection(file, i) == 0) {
+			/* if (elf_checkSection(file, i) == 0) { */
 			fprintf(f, "[%2d] %s %x %x\n", i, elf32_getSectionName(file, i),
-				//fprintf(f, "[%2d] %-17.17s %-15.15s %x %x\n", i, elf32_getSectionName(file, i), " ", 
-				///fprintf(f, "%-17.17s %-15.15s %08x %06x\n", elf32_getSectionName(file, i), " "	/* sections[i].sh_type 
-				//									 */ ,
+				/* fprintf(f, "[%2d] %-17.17s %-15.15s %x %x\n", i, elf32_getSectionName(file, i), " ", */
+				/* /fprintf(f, "%-17.17s %-15.15s %08x %06x\n", elf32_getSectionName(file, i), " "	/ * sections[i].sh_type */
+				/* 									 * / , */
 				sections[i].sh_addr, sections[i].sh_offset);
-			//}
+			/* } */
 		}
 	}
 }

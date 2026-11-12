@@ -29,8 +29,6 @@
  * holds back: a state has room for this many. */
 #define AUDIO_TICK_SAMPLES 32
 
-extern retro_audio_sample_batch_t audio_batch_cb;
-
 /* Samples of the current AICA tick the hardware has put out by now, plus the
  * ones a tick shorter than 32 samples does not have: 0..31. */
 
@@ -103,9 +101,10 @@ void AudioHoldbackSerialize(void **data, unsigned int *total_size)
 {
    s16 samples[AUDIO_TICK_SAMPLES * 2];
    u32 count = writePtr <= AUDIO_TICK_SAMPLES ? writePtr : 0;
+   u32 i;
 
    memset(samples, 0, sizeof(samples));
-   for (u32 i = 0; i < count; i++)
+   for (i = 0; i < count; i++)
    {
       samples[i * 2]     = Buffer[i].l;
       samples[i * 2 + 1] = Buffer[i].r;
@@ -118,12 +117,13 @@ void AudioHoldbackUnserialize(void **data, unsigned int *total_size)
 {
    s16 samples[AUDIO_TICK_SAMPLES * 2];
    u32 count = 0;
+   u32 i;
 
    LIBRETRO_US(count);
    LIBRETRO_USA(samples, AUDIO_TICK_SAMPLES * 2);
    if (count > AUDIO_TICK_SAMPLES)
       count = 0;
-   for (u32 i = 0; i < count; i++)
+   for (i = 0; i < count; i++)
    {
       Buffer[i].l = samples[i * 2];
       Buffer[i].r = samples[i * 2 + 1];

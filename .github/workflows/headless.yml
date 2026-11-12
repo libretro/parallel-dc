@@ -19,7 +19,9 @@ name: Headless
 # (tools/sh4/run.sh, tools/arm7/run.sh, tools/aica/run.sh), and the sound
 # chip's channels against what they made before (tools/aica/sgc_run.sh), and
 # the G2 bus's expansion DMA channels (tools/aica/g2dma_run.sh), and the
-# broadband adapter, a frame each way and its state (tools/bba/run.sh).
+# broadband adapter, a frame each way and its state (tools/bba/run.sh), and
+# NAOMI's 315-5881 decryption against what it gave before
+# (tools/naomi/decrypt_run.sh), and the ELF reader (tools/libelf/elf_test.sh).
 # And the threads a texture scaled up is shared out to, and the core needing
 # no OpenMP runtime (tools/rend/band_pool_test.sh). And custom textures'
 # pictures, read as stb_image read them and dumped
@@ -49,6 +51,8 @@ on:
       - 'tools/arm7/**'
       - 'tools/aica/**'
       - 'tools/bba/**'
+      - 'tools/naomi/**'
+      - 'tools/libelf/**'
       - 'Makefile*'
       - '.github/workflows/headless.yml'
   pull_request:
@@ -72,6 +76,8 @@ on:
       - 'tools/arm7/**'
       - 'tools/aica/**'
       - 'tools/bba/**'
+      - 'tools/naomi/**'
+      - 'tools/libelf/**'
       - 'Makefile*'
       - '.github/workflows/headless.yml'
   workflow_dispatch:
@@ -138,3 +144,9 @@ jobs:
         run: |
           sh tools/bba/run.sh
           sh tools/bba/run.sh -fsanitize=address,undefined -fno-sanitize-recover=all
+      - name: NAOMI's 315-5881 decryption, the same streams as the C++ it replaces, and its state (and with the sanitizers)
+        run: |
+          sh tools/naomi/decrypt_run.sh
+          sh tools/naomi/decrypt_run.sh -fsanitize=address,undefined -fno-sanitize-recover=all
+      - name: The ELF reader, an SH-4 executable's headers every way they are read (C89, ASan/UBSan)
+        run: sh tools/libelf/elf_test.sh
