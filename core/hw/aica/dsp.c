@@ -19,13 +19,14 @@
 
 DECL_ALIGN(4096) dsp_t dsp;
 
-//float format is ?
+/* float format is ? */
 u16 DYNACALL PACK(s32 val)
 {
 	int sign = (val >> 23) & 0x1;
 	u32 temp = (val ^ (val << 1)) & 0xFFFFFF;
 	int exponent = 0;
-	for (int k = 0; k < 12; k++)
+	int k;
+	for (k = 0; k < 12; k++)
 	{
 		if (temp & 0x800000)
 			break;
@@ -36,7 +37,7 @@ u16 DYNACALL PACK(s32 val)
 		val <<= exponent;
 	else
 		val <<= 11;
-	val = (val >> 11) & 0x7FF;	// avoid sign extension of mantissa
+	val = (val >> 11) & 0x7FF;	/* avoid sign extension of mantissa */
 	val |= sign << 15;
 	val |= exponent << 11;
 
@@ -49,12 +50,12 @@ s32 DYNACALL UNPACK(u16 val)
 	int exponent = (val >> 11) & 0xF;
 	int mantissa = val & 0x7FF;
 	s32 uval = mantissa << 11;
-	uval |= sign << 22;		// take the sign in bit 22
+	uval |= sign << 22;		/* take the sign in bit 22 */
 	if (exponent > 11)
-		exponent = 11;		// cap exponent to 11 for denormals
+		exponent = 11;		/* cap exponent to 11 for denormals */
 	else
-		uval ^= 1 << 22;	// reverse bit 22 for normals
-	uval |= sign << 23;		// actual sign bit
+		uval ^= 1 << 22;	/* reverse bit 22 for normals */
+	uval |= sign << 23;		/* actual sign bit */
 	uval <<= 8;
 	uval >>= 8;
 	uval >>= exponent;
@@ -65,30 +66,30 @@ s32 DYNACALL UNPACK(u16 val)
 void DecodeInst(const u32 *IPtr, _INST *i)
 {
 	i->TRA = (IPtr[0] >> 9) & 0x7F;
-	i->TWT = IPtr[0] & 0x100;
+	i->TWT = (IPtr[0] & 0x100) != 0;
 	i->TWA = (IPtr[0] >> 1) & 0x7F;
 
-	i->XSEL = IPtr[1] & 0x8000;
+	i->XSEL = (IPtr[1] & 0x8000) != 0;
 	i->YSEL = (IPtr[1] >> 13) & 3;
 	i->IRA = (IPtr[1] >> 7) & 0x3F;
-	i->IWT = IPtr[1] & 0x40;
+	i->IWT = (IPtr[1] & 0x40) != 0;
 	i->IWA = (IPtr[1] >> 1) & 0x1F;
 
-	i->TABLE = IPtr[2] & 0x8000;
-	i->MWT = IPtr[2] & 0x4000;
-	i->MRD = IPtr[2] & 0x2000;
-	i->EWT = IPtr[2] & 0x1000;
+	i->TABLE = (IPtr[2] & 0x8000) != 0;
+	i->MWT = (IPtr[2] & 0x4000) != 0;
+	i->MRD = (IPtr[2] & 0x2000) != 0;
+	i->EWT = (IPtr[2] & 0x1000) != 0;
 	i->EWA = (IPtr[2] >> 8) & 0x0F;
-	i->ADRL = IPtr[2] & 0x80;
-	i->FRCL = IPtr[2] & 0x40;
+	i->ADRL = (IPtr[2] & 0x80) != 0;
+	i->FRCL = (IPtr[2] & 0x40) != 0;
 	i->SHIFT = (IPtr[2] >> 4) & 3;
-	i->YRL = IPtr[2] & 8;
-	i->NEGB = IPtr[2] & 4;
-	i->ZERO = IPtr[2] & 2;
-	i->BSEL = IPtr[2] & 1;
+	i->YRL = (IPtr[2] & 8) != 0;
+	i->NEGB = (IPtr[2] & 4) != 0;
+	i->ZERO = (IPtr[2] & 2) != 0;
+	i->BSEL = (IPtr[2] & 1) != 0;
 
-	i->NOFL = IPtr[3] & 0x8000;
+	i->NOFL = (IPtr[3] & 0x8000) != 0;
 	i->MASA = (IPtr[3] >> 9) & 0x3f;
-	i->ADREB = IPtr[3] & 0x100;
-	i->NXADR = IPtr[3] & 0x80;
+	i->ADREB = (IPtr[3] & 0x100) != 0;
+	i->NXADR = (IPtr[3] & 0x80) != 0;
 }

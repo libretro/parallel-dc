@@ -155,8 +155,9 @@ code it touches closer, and never adds C++ that was not there.
   C side in `extern "C"` or `RETRO_BEGIN_DECLS`; the log's kinds are
   `LOG_INPUT` and the like in C, where Windows has `INPUT`).
   `sh tools/c89/c89_check.sh [make arguments]` compiles every `.c` file
-  of the core's own as `-std=c89 -pedantic` with the build's flags; CI
-  runs it natively and for Windows. A function the C side calls is
+  of the core's own as `-std=c89 -pedantic` with the build's flags, and
+  again with no recompilers where a file has code for that; CI runs it
+  natively and for Windows. A function the C side calls is
   declared in a header the file that defines it includes, so both have
   C linkage. In C, `bool` is `unsigned char` on the older MSVC:
   what goes into one is 0 or 1 (`(x & 4) != 0`, not `x & 4`). A

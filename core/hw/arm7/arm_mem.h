@@ -2,6 +2,8 @@
 #include "types.h"
 #include "hw/aica/aica_if.h"
 
+#ifdef __cplusplus
+/* (the memory accessors: C++ for now) */
 template <u32 sz,class T>
 T arm_ReadReg(u32 addr);
 template <u32 sz,class T>
@@ -50,6 +52,8 @@ static inline void DYNACALL WriteMemArm(u32 addr,T data)
 #define arm_WriteMem8 WriteMemArm<1,u8>
 #define arm_WriteMem16 WriteMemArm<2,u16>
 #define arm_WriteMem32 WriteMemArm<4,u32>
+extern "C" {
+#endif
 
 extern bool aica_interr;
 extern u32 aica_reg_L;
@@ -57,4 +61,8 @@ extern bool e68k_out;
 extern u32 e68k_reg_L;
 extern u32 e68k_reg_M;
 
-void update_armintc();
+void update_armintc(void);
+
+#ifdef __cplusplus
+}
+#endif

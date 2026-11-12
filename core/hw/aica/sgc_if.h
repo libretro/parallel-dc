@@ -1,17 +1,22 @@
 #pragma once
 #include "aica.h"
 
-void AICA_Sample();
+#ifdef __cplusplus
+extern "C" {
+#endif
 
-//u32 ReadChannelReg(u32 channel,u32 reg);
+void AICA_Sample(void);
+
+/* u32 ReadChannelReg(u32 channel,u32 reg); */
 void WriteChannelReg(u32 channel, u32 reg, int size);
 
-void sgc_Init();
-void sgc_Term();
+void sgc_Init(void);
+void sgc_Term(void);
 
+typedef union fp_22_10 fp_22_10;
 union fp_22_10
 {
-	struct
+	TYPES_ANON struct
 	{
 #ifdef MSB_FIRST
 		u32 ip:22;
@@ -23,9 +28,10 @@ union fp_22_10
 	};
 	u32 full;
 };
+typedef union fp_s_22_10 fp_s_22_10;
 union fp_s_22_10
 {
-	struct
+	TYPES_ANON struct
 	{
 #ifdef MSB_FIRST
 		s32 ip:22;
@@ -37,9 +43,10 @@ union fp_s_22_10
 	};
 	s32 full;
 };
+typedef union fp_20_12 fp_20_12;
 union fp_20_12
 {
-	struct
+	TYPES_ANON struct
 	{
 #ifdef MSB_FIRST
 		u32 ip:20;
@@ -52,9 +59,10 @@ union fp_20_12
 	u32 full;
 };
 
+typedef struct DSP_OUT_VOL_REG DSP_OUT_VOL_REG;
 struct DSP_OUT_VOL_REG
 {
-	//--	EFSDL[3:0]	--	EFPAN[4:0]
+	/* --	EFSDL[3:0]	--	EFPAN[4:0] */
 
 	u32 EFPAN:5;
 	u32 res_1:3;
@@ -65,7 +73,7 @@ struct DSP_OUT_VOL_REG
 	u32 pad:16;
 };
 
-//#define SAMPLE_TYPE_SHIFT (8)
+/* #define SAMPLE_TYPE_SHIFT (8) */
 typedef s32 SampleType;
 
 void ReadCommonReg(u32 reg,bool byte);
@@ -76,3 +84,7 @@ bool channel_serialize(void **data, unsigned int *total_size);
 bool channel_unserialize(void **data, unsigned int *total_size, serialize_version_enum version);
 void channel_serialize_v21(void **data, unsigned int *total_size);
 void channel_unserialize_v21(void **data, unsigned int *total_size);
+
+#ifdef __cplusplus
+}
+#endif

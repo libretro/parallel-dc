@@ -1,3 +1,6 @@
+/* The sound chip's registers, interrupts, timers and the clock it runs by */
+#include <string.h>
+
 #include "aica.h"
 #include "aica_if.h"
 #include "aica_mem.h"
@@ -18,15 +21,16 @@ InterruptInfo* SCIEB;
 InterruptInfo* SCIPD;
 InterruptInfo* SCIRE;
 
-//Interrupts
-//arm side
+/* Interrupts */
+/* arm side */
 static u32 GetL(u32 which)
 {
-   if (which > 7)
-      which = 7; //higher bits share bit 7
+   u32 bit, rv = 0;
 
-   u32 bit = 1 << which;
-   u32 rv  = 0;
+   if (which > 7)
+      which = 7; /* higher bits share bit 7 */
+
+   bit = 1 << which;
 
    if (CommonData->SCILV0 & bit)
       rv = 1;
@@ -40,43 +44,44 @@ static u32 GetL(u32 which)
    return rv;
 }
 
-static void update_arm_interrupts()
+static void update_arm_interrupts(void)
 {
    u32 p_ints=SCIEB->full & SCIPD->full;
+   u32 Lval=0;
 
    /* Nothing pending and nothing raised: there is nothing to tell the ARM.
     * This is how it is for nearly every sample, and each of them asks. */
    if (p_ints == 0 && !aica_interr)
       return;
 
-   u32 Lval=0;
    if (p_ints)
    {
-      u32 bit_value=1;//first bit
-      //scan all interrupts , lo to hi bit.I assume low bit ints have higher priority over others
-      for (u32 i=0;i<11;i++)
+      u32 bit_value=1;/* first bit */
+      u32 i;
+      /* scan all interrupts , lo to hi bit.I assume low bit ints have higher priority over others */
+      for (i=0;i<11;i++)
       {
          if (p_ints & bit_value)
          {
-            //for the first one , Set the L reg & exit
+            /* for the first one , Set the L reg & exit */
             Lval=GetL(i);
             break;
          }
-         bit_value<<=1; //next bit
+         bit_value<<=1; /* next bit */
       }
    }
 
    libARM_InterruptChange(p_ints,Lval);
 }
 
-//sh4 side
-static void UpdateSh4Ints()
+/* sh4 side */
+static void UpdateSh4Ints(void)
 {
    u32 p_ints = MCIEB->full & MCIPD->full;
    if (p_ints)
    {
       if ((SB_ISTEXT & SH4_IRQ_BIT) == 0)
-         //if no interrupt is already pending then raise one :)
+         /* if no interrupt is already pending then raise one :) */
          asic_RaiseInterrupt(holly_SPU_IRQ);
    }
    else
@@ -89,6 +94,57 @@ static void UpdateSh4Ints()
 
 
 AicaTimer timers[3];
+
+/* A timer: its register at @regbase's, and its count from its prescaler */
+static void aica_timer_init(AicaTimer *t, u8* regbase, u32 timer)
+{
+	t->data=(AicaTimerData*)&regbase[0x2890 + timer*4];
+	t->id=timer;
+	t->m_step=1<<(t->data->md);
+	t->c_step=t->m_step;
+}
+
+static void aica_timer_step(AicaTimer *t, u32 samples)
+{
+	do
+	{
+		t->c_step--;
+		if (t->c_step==0)
+		{
+			t->c_step=t->m_step;
+			t->data->count++;
+			if (t->data->count==0)
+			{
+				if (t->id==0)
+				{
+					SCIPD->TimerA=1;
+					MCIPD->TimerA=1;
+				}
+				else if (t->id==1)
+				{
+					SCIPD->TimerB=1;
+					MCIPD->TimerB=1;
+				}
+				else
+				{
+					SCIPD->TimerC=1;
+					MCIPD->TimerC=1;
+				}
+			}
+		}
+	} while(--samples);
+}
+
+/* (its prescaler written) */
+static void aica_timer_register_write(AicaTimer *t)
+{
+	u32 n_step=1<<(t->data->md);
+	if (n_step!=t->m_step)
+	{
+		t->m_step=n_step;
+		t->c_step=t->m_step;
+	}
+}
 int aica_schid = -1;
 /* The sound chip, and its ARM7 with it, is run AICA_TICK_SAMPLES samples
  * at a time, at most 32. It is run one sample at a time: in batches of 32
@@ -102,7 +158,7 @@ int aica_schid = -1;
  * the rate is 44100 Hz exactly. */
 #define AICA_TICK_SAMPLES 1
 #define AICA_TICK_DEN 44100
-const int AICA_TICK = (int)((u64)SH4_MAIN_CLOCK * AICA_TICK_SAMPLES / AICA_TICK_DEN);
+static const int AICA_TICK = (int)((u64)SH4_MAIN_CLOCK * AICA_TICK_SAMPLES / AICA_TICK_DEN);
 static const u32 AICA_TICK_REM = (u32)((u64)SH4_MAIN_CLOCK * AICA_TICK_SAMPLES % AICA_TICK_DEN);
 /* What is left over after the tick that is on its way, 0 to 44099. */
 static u32 aica_tick_frac;
@@ -110,38 +166,37 @@ static u32 aica_tick_frac;
 /* How long the tick that is on its way is: the long one is the one that
  * took a whole cycle out of the count, which leaves less in it than a tick
  * adds. A count of 0 is a long one, as the first tick of a machine is. */
-static inline int aica_tick_cycles()
+static TYPES_INLINE int aica_tick_cycles(void)
 {
 	return AICA_TICK + (aica_tick_frac < AICA_TICK_REM);
 }
-
-u32 sh4_sched_remaining(int id);
 
 /* The sound output holds back 32 samples less this, 0 to 31: those of the
  * tick in progress the hardware has not put out by now. The tick is
  * emulated in one go when it ends, but the AICA makes a sample every
  * 1/44100 s. (With ticks of fewer than 32 samples, the ones a tick does
  * not have count as out.) */
-u32 libAICA_SamplesIntoTick()
+u32 libAICA_SamplesIntoTick(void)
 {
 	const u32 others = 32 - AICA_TICK_SAMPLES;
+	u32 tick, remaining, samples;
 
 	if (aica_schid == -1)
 		return others;
 
-	const u32 tick = (u32)aica_tick_cycles();
-	u32 remaining = sh4_sched_remaining(aica_schid);
+	tick = (u32)aica_tick_cycles();
+	remaining = sh4_sched_remaining(aica_schid);
 	if (remaining >= tick)
-		// not scheduled, or due this instant
+		/* not scheduled, or due this instant */
 		return others;
 
-	u32 samples = (u32)(((u64)(tick - remaining) * AICA_TICK_SAMPLES) / tick);
+	samples = (u32)(((u64)(tick - remaining) * AICA_TICK_SAMPLES) / tick);
 	return others + (samples > AICA_TICK_SAMPLES - 1 ? AICA_TICK_SAMPLES - 1 : samples);
 }
 
 static int AicaUpdate(int tag, int c, int j)
 {
-   aicaarm::run(AICA_TICK_SAMPLES);
+   aicaarm_run(AICA_TICK_SAMPLES);
 
 	aica_tick_frac += AICA_TICK_REM;
 	if (aica_tick_frac >= AICA_TICK_DEN)
@@ -152,24 +207,25 @@ static int AicaUpdate(int tag, int c, int j)
 	return AICA_TICK;
 }
 
-//Mainloop
+/* Mainloop */
 
-void libAICA_TimeStep()
+void libAICA_TimeStep(void)
 {
-   for (int i=0;i<3;i++)
-		timers[i].StepTimer(1);
+   int i;
+   for (i=0;i<3;i++)
+		aica_timer_step(&timers[i], 1);
 
 	SCIPD->SAMPLE_DONE = 1;
 	MCIPD->SAMPLE_DONE = 1;
 
 	AICA_Sample();
 
-	//Make sure sh4/arm interrupt system is up to date :)
+	/* Make sure sh4/arm interrupt system is up to date :) */
 	update_arm_interrupts();
 	UpdateSh4Ints();	
 }
 
-static void AicaInternalDMA()
+static void AicaInternalDMA(void)
 {
 	/* A transfer to the registers can reach the register that starts one, and
 	 * set its start bit again: the transfer is already running, and that is
@@ -181,47 +237,49 @@ static void AicaInternalDMA()
 		return;
 	running = true;
 
-	// Start dma
+	/* Start dma */
 	DEBUG_LOG(AICA, "AICA internal DMA: DGATE %d DDIR %d DLG %x", CommonData->DGATE, CommonData->DDIR, CommonData->DLG);
 	if (CommonData->DGATE)
 	{
-		// Clear memory/registers
+		/* Clear memory/registers */
 		if (CommonData->DDIR)
 		{
-			// to wave mem
+			/* to wave mem */
 			u32 addr = ((CommonData->DMEA_hi << 16) | (CommonData->DMEA_lo << 2)) & ARAM_MASK;
-			// (DLG counts 32-bit words; what is left of memory is in bytes)
-			u32 len = std::min(CommonData->DLG, (ARAM_SIZE - addr) / 4);
+			/* (DLG counts 32-bit words; what is left of memory is in bytes) */
+			u32 len = CommonData->DLG < (ARAM_SIZE - addr) / 4 ? CommonData->DLG : (ARAM_SIZE - addr) / 4;
 			memset(&aica_ram.data[addr], 0, len * 4);
 		}
 		else
 		{
-			// to regs
-			// (the length is taken once: it is one of the registers
-			// this may clear)
+			/* to regs */
+			/* (the length is taken once: it is one of the registers */
+			/* this may clear) */
 			u32 addr = CommonData->DRGA << 2;
 			const u32 len = CommonData->DLG;
-			for (u32 i = 0; i < len; i++, addr += 4)
+			u32 i;
+			for (i = 0; i < len; i++, addr += 4)
 				WriteMem_aica_reg(addr, 0, 4);
 		}
 	}
 	else
 	{
-		// Data xfer
+		/* Data xfer */
 		u32 waddr = ((CommonData->DMEA_hi << 16) | (CommonData->DMEA_lo << 2)) & ARAM_MASK;
 		u32 raddr = CommonData->DRGA << 2;
-		u32 len = std::min(CommonData->DLG, (ARAM_SIZE - waddr) / 4);
+		u32 len = CommonData->DLG < (ARAM_SIZE - waddr) / 4 ? CommonData->DLG : (ARAM_SIZE - waddr) / 4;
+		u32 i;
 		if (CommonData->DDIR)
 		{
-			// reg to wave mem
-			for (u32 i = 0; i < len; i++, waddr += 4, raddr += 4)
-				*(u32*)&aica_ram[waddr] = ReadMem_aica_reg(raddr, 4);
+			/* reg to wave mem */
+			for (i = 0; i < len; i++, waddr += 4, raddr += 4)
+				*(u32*)&aica_ram.data[waddr] = ReadMem_aica_reg(raddr, 4);
 		}
 		else
 		{
-			// wave mem to regs
-			for (u32 i = 0; i < len; i++, waddr += 4, raddr += 4)
-				WriteMem_aica_reg(raddr, *(u32*)&aica_ram[waddr], 4);
+			/* wave mem to regs */
+			for (i = 0; i < len; i++, waddr += 4, raddr += 4)
+				WriteMem_aica_reg(raddr, *(u32*)&aica_ram.data[waddr], 4);
 		}
 	}
 	running = false;
@@ -232,9 +290,8 @@ static void AicaInternalDMA()
 	update_arm_interrupts();
 }
 
-//Memory i/o
-template<u32 sz>
-void WriteAicaReg(u32 reg,u32 data)
+/* Memory i/o */
+void WriteAicaReg(u32 reg,u32 data,u32 sz)
 {
 	switch (reg)
 	{
@@ -248,18 +305,18 @@ void WriteAicaReg(u32 reg,u32 data)
 			SCIPD->SCPU=1;
 			update_arm_interrupts();
 		}
-		//Read only
+		/* Read only */
 		return;
 
 	case SCIPD_addr + 1:
 	case MCIPD_addr + 1:
-		//Read only, and bit 5 is in the other byte
+		/* Read only, and bit 5 is in the other byte */
 		return;
 
 	case SCIRE_addr:
 		{
-			SCIPD->full&=~(data /*& SCIEB->full*/ );	//is the & SCIEB->full needed ? doesn't seem like it
-			data=0;//Write only
+			SCIPD->full&=~(data /*& SCIEB->full*/ );	/* is the & SCIEB->full needed ? doesn't seem like it */
+			data=0;/* Write only */
 			update_arm_interrupts();
 		}
 		break;
@@ -275,14 +332,14 @@ void WriteAicaReg(u32 reg,u32 data)
 			MCIPD->SCPU=1;
 			UpdateSh4Ints();
 		}
-		//Read only
+		/* Read only */
 		return;
 
 	case MCIRE_addr:
 		{
 			MCIPD->full&=~data;
 			UpdateSh4Ints();
-			//Write only
+			/* Write only */
 		}
 		break;
 
@@ -291,65 +348,64 @@ void WriteAicaReg(u32 reg,u32 data)
 		UpdateSh4Ints();
 		break;
 
-	// (the prescaler is in a timer's high byte)
+	/* (the prescaler is in a timer's high byte) */
 	case TIMER_A:
 	case TIMER_A + 1:
-		WriteMemArr<sz>(aica_reg, reg, data);
-		timers[0].RegisterWrite();
+		mem_arr_write(aica_reg, reg, data, sz);
+		aica_timer_register_write(&timers[0]);
 		break;
 
 	case TIMER_B:
 	case TIMER_B + 1:
-		WriteMemArr<sz>(aica_reg, reg, data);
-		timers[1].RegisterWrite();
+		mem_arr_write(aica_reg, reg, data, sz);
+		aica_timer_register_write(&timers[1]);
 		break;
 
 	case TIMER_C:
 	case TIMER_C + 1:
-		WriteMemArr<sz>(aica_reg, reg, data);
-		timers[2].RegisterWrite();
+		mem_arr_write(aica_reg, reg, data, sz);
+		aica_timer_register_write(&timers[2]);
 		break;
 
-	// DEXE, DDIR, DLG
+	/* DEXE, DDIR, DLG */
 	case 0x288C:
-		WriteMemArr<sz>(aica_reg, reg, data);
+		mem_arr_write(aica_reg, reg, data, sz);
 		AicaInternalDMA();
 		break;
 
 	default:
-		WriteMemArr<sz>(aica_reg, reg, data);
+		mem_arr_write(aica_reg, reg, data, sz);
 		break;
 	}
 }
 
 
 
-template void WriteAicaReg<1>(u32 reg,u32 data);
-template void WriteAicaReg<2>(u32 reg,u32 data);
 
-//misc :p
-s32 libAICA_Init()
+/* misc :p */
+/* (the registers' layouts are the chip's: a size that is not fails to build) */
+typedef char aica_common_size_check[sizeof(CommonData_struct) == 0x508 ? 1 : -1];
+typedef char aica_dsp_size_check[sizeof(DSPData_struct) == 0x15C8 ? 1 : -1];
+
+s32 libAICA_Init(void)
 {
 	init_mem();
 	aica_Init();
 
-	static_assert(sizeof(*CommonData) == 0x508, "Invalid CommonData size");
-	static_assert(sizeof(*DSPData) == 0x15C8, "Invalid DSPData size");
-
 	CommonData=(CommonData_struct*)&aica_reg[0x2800];
 	DSPData=(DSPData_struct*)&aica_reg[0x3000];
-	//slave cpu (arm7)
+	/* slave cpu (arm7) */
 
 	SCIEB=(InterruptInfo*)&aica_reg[0x289C];
 	SCIPD=(InterruptInfo*)&aica_reg[0x289C+4];
 	SCIRE=(InterruptInfo*)&aica_reg[0x289C+8];
-	//Main cpu (sh4)
+	/* Main cpu (sh4) */
 	MCIEB=(InterruptInfo*)&aica_reg[0x28B4];
 	MCIPD=(InterruptInfo*)&aica_reg[0x28B4+4];
 	MCIRE=(InterruptInfo*)&aica_reg[0x28B4+8];
 
 	sgc_Init();
-	// (asked for by the reset that follows)
+	/* (asked for by the reset that follows) */
 	aica_schid = sh4_sched_register(0, &AicaUpdate);
 
 	return 0;
@@ -357,13 +413,15 @@ s32 libAICA_Init()
 
 void libAICA_Reset(bool hard)
 {
+	u32 i;
+
 	if (hard)
 	{
 		init_mem();
 		sgc_Init();
 	}
-	for (u32 i = 0; i < 3; i++)
-		timers[i].Init(aica_reg, i);
+	for (i = 0; i < 3; i++)
+		aica_timer_init(&timers[i], aica_reg, i);
 	aica_Reset(hard);
 	/* The sample clock does not stop for a reset: a tick that is on its
 	 * way comes when it was going to. It is asked for here only when there
@@ -375,7 +433,7 @@ void libAICA_Reset(bool hard)
 	}
 }
 
-void libAICA_Term()
+void libAICA_Term(void)
 {
 	sgc_Term();
 	term_mem();
@@ -396,7 +454,7 @@ bool aica_unserialize_v21(void **data, unsigned int *total_size)
 {
 	u16 frac = 0;
 	LIBRETRO_US(frac);
-	// (one that is not a count starts again)
+	/* (one that is not a count starts again) */
 	aica_tick_frac = frac < AICA_TICK_DEN ? frac : 0;
 	channel_unserialize_v21(data, total_size);
 	return true;

@@ -521,6 +521,11 @@ void VArray2::UnLockRegion(u32 offset,u32 size_bytes)
 }
 #endif
 
+void varray2_zero(VArray2 *a)
+{
+   a->Zero();
+}
+
 #if defined(_WIN64) && defined(_DEBUG)
 static void ReserveBottomMemory(void)
 {

@@ -1,6 +1,7 @@
 #include "types.h"
 #include "emulator.h"
 #include "hw/maple/vmu_beep.h"
+#include "hw/aica/aica.h"
 
 #include <string.h>
 #include <libretro.h>
@@ -31,7 +32,6 @@ extern retro_audio_sample_batch_t audio_batch_cb;
 
 /* Samples of the current AICA tick the hardware has put out by now, plus the
  * ones a tick shorter than 32 samples does not have: 0..31. */
-u32 libAICA_SamplesIntoTick();
 
 /* File-scope so the batch boundary can be reset deterministically on state
  * load / reset. If writePtr survived a load, two states saved at different

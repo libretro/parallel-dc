@@ -1,7 +1,7 @@
 /* Runs the sound chip's DSP on made-up programs and prints what each leaves
  * behind. tools/aica/run.sh builds this twice, once around the DSP's
  * compiler (core/hw/aica/dsp_x64.cpp) and once around its interpreter
- * (core/hw/aica/dsp_interp.cpp), runs both, and compares what they print:
+ * (core/hw/aica/dsp_interp.c), runs both, and compares what they print:
  * the two are separate implementations of the same machine and have to
  * agree on every program, to the last bit.
  *

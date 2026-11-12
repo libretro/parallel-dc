@@ -904,4 +904,10 @@ void run(u32 samples)
 }
 
 } // namespace aicaarm
+
+// (what arm7.h has the sound chip run the ARM7 by)
+void aicaarm_run(u32 samples)
+{
+	aicaarm::run(samples);
+}
 #endif // FEAT_AREC != DYNAREC_NONE

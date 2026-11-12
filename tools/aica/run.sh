@@ -5,7 +5,7 @@
 #
 # The DSP runs a 128-step program for every sample. The core has it twice:
 # a compiler that turns the program into machine code (dsp_x64.cpp here,
-# dsp_arm64.cpp on ARM64) and an interpreter (dsp_interp.cpp) for
+# dsp_arm64.cpp on ARM64) and an interpreter (dsp_interp.c) for
 # everything else. Nothing ran the two against each other.
 #
 # dsp_test.cpp is built around each of them in turn, with nothing of the
@@ -47,12 +47,21 @@ CMD=$(make -n -B core/hw/aica/dsp_x64.o 2>/dev/null | grep 'dsp_x64\.cpp' | tail
 CMD=${CMD% -o *}
 FLAGS=$(echo "$CMD" | sed 's| [^ ]*dsp_x64\.cpp||; s/ -MMD -MP//')
 CXX=${FLAGS%% *}
+# ...and the C files (dsp.c, dsp_interp.c) with what it compiles C with
+CCMD=$(make -n -B core/hw/aica/dsp.o 2>/dev/null | grep 'dsp\.c' | tail -n 1)
+[ -n "$CCMD" ] || { echo "cannot get the core's C compile flags from make" >&2; exit 1; }
+CCMD=${CCMD% -o *}
+CFLAGS_DSP=$(echo "$CCMD" | sed 's| [^ ]*dsp\.c||; s/ -MMD -MP//')
 
 build() {
    # $1: name, $2: extra define
-   for SRC in core/hw/aica/dsp.cpp core/hw/aica/dsp_x64.cpp core/hw/aica/dsp_interp.cpp tools/aica/dsp_test.cpp; do
+   for SRC in core/hw/aica/dsp.c core/hw/aica/dsp_x64.cpp core/hw/aica/dsp_interp.c tools/aica/dsp_test.cpp; do
       # the flags come out of make quoted for a shell
-      eval "$FLAGS $2 \"$SRC\" -o \"$WORK/$1-$(basename "$SRC" .cpp).o\""
+      case "$SRC" in
+         *.c) F=$CFLAGS_DSP ;;
+         *)   F=$FLAGS ;;
+      esac
+      eval "$F $2 \"$SRC\" -o \"$WORK/$1-$(basename "$SRC" | sed 's/\.[a-z]*$//').o\""
    done
    "$CXX" -o "$WORK/dsp_test_$1" "$WORK/$1"-*.o
 }

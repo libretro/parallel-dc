@@ -343,38 +343,7 @@ bool mem_region_release(void *start, std::size_t len);
 void *mem_region_map_file(void *file_handle, void *dest, std::size_t len, std::size_t offset, bool readwrite);
 bool mem_region_unmap_file(void *start, std::size_t len);
 
-class VArray2
-{
-public:
-
-	u8* data;
-	u32 size;
-	//void Init(void* data,u32 sz);
-	//void Term();
-#ifdef TARGET_NO_EXCEPTIONS
-	void UnLockRegion(u32 offset,u32 size) {}
-#else
-	void UnLockRegion(u32 offset,u32 size);
-#endif
-
-	void Zero()
-	{
-		UnLockRegion(0,size);
-		memset(data,0,size);
-	}
-
-	INLINE u8& operator [](const u32 i)
-    {
-#ifdef MEM_BOUND_CHECK
-        if (i>=size)
-		{
-			printf("Error: VArray2 , index out of range (%d>%d)\n",i,size-1);
-			MEM_DO_BREAK;
-		}
-#endif
-		return data[i];
-    }
-};
+/* (VArray2 is in types.h, for C too) */
 
 int ExeptionHandler(u32 dwCode, void* pExceptionPointers);
 static inline std::string trim_trailing_ws(const std::string& str,

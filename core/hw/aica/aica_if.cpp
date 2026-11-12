@@ -116,7 +116,7 @@ u32 ReadMem_aica_reg(u32 addr,u32 sz)
 static void ArmSetRST()
 {
 	ARMRST &= 1;
-   aicaarm::enable(ARMRST == 0);
+   aicaarm_enable(ARMRST == 0);
 }
 void WriteMem_aica_reg(u32 addr,u32 data,u32 sz)
 {

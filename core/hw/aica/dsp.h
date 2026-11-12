@@ -1,20 +1,25 @@
 #pragma once
 #include "aica.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+typedef struct dsp_t dsp_t;
 struct dsp_t
 {
-	//Dynarec
-	u8 DynCode[4096*8];	//32 kb, 8 pages
+	/* Dynarec */
+	u8 DynCode[4096*8];	/* 32 kb, 8 pages */
 
-	//buffered DSP state
-	//24 bit wide
+	/* buffered DSP state */
+	/* 24 bit wide */
 	s32 TEMP[128];
-	//24 bit wide
+	/* 24 bit wide */
 	s32 MEMS[32];
-	//20 bit wide
+	/* 20 bit wide */
 	s32 MIXS[16];
 	
-	//RBL/RBP (decoded)
+	/* RBL/RBP (decoded) */
 	u32 RBP;
 	u32 RBL;
 
@@ -31,7 +36,7 @@ struct dsp_t
 		bool MDEC_CT;
 		bool MWT_1;
 		bool MRD_1;
-		//bool MADRS;
+		/* bool MADRS; */
 		bool MEMS;
 		bool NOFL_1;
 		bool NOFL_2;
@@ -40,7 +45,7 @@ struct dsp_t
 		bool EFREG;
 	}regs_init;
 
-	//s32 -> stored as signed extended to 32 bits
+	/* s32 -> stored as signed extended to 32 bits */
 	struct
 	{
 		s32 MAD_OUT;
@@ -58,41 +63,42 @@ struct dsp_t
 		u32 NOFL_1;
 		u32 NOFL_2;
 	}regs;
-	//DEC counter :)
-	//u32 DEC;
+	/* DEC counter :) */
+	/* u32 DEC; */
 
-	//various dsp regs
-	signed int ACC;        //26 bit
-	signed int SHIFTED;    //24 bit
-	signed int B;          //26 bit
+	/* various dsp regs */
+	signed int ACC;        /* 26 bit */
+	signed int SHIFTED;    /* 24 bit */
+	signed int B;          /* 26 bit */
 	signed int MEMVAL[4];
-	signed int FRC_REG;    //13 bit
-	signed int Y_REG;      //24 bit
+	signed int FRC_REG;    /* 13 bit */
+	signed int Y_REG;      /* 24 bit */
 	unsigned int ADDR;
-	unsigned int ADRS_REG; //13 bit
+	unsigned int ADRS_REG; /* 13 bit */
 
-	//Direct Mapped data :
-	//COEF  *128
-	//MADRS *64
-	//MPRO(dsp code) *4 *128
-	//EFREG *16
-	//EXTS  *2
+	/* Direct Mapped data : */
+	/* COEF  *128 */
+	/* MADRS *64 */
+	/* MPRO(dsp code) *4 *128 */
+	/* EFREG *16 */
+	/* EXTS  *2 */
 
-	// Interpreter flags
+	/* Interpreter flags */
 	bool Stopped;
 
-	//Dynarec flags
+	/* Dynarec flags */
 	bool dyndirty;
 };
 
 DECL_ALIGN(4096)
 extern dsp_t dsp;
 
-void dsp_init();
-void dsp_term();
-void dsp_step();
+void dsp_init(void);
+void dsp_term(void);
+void dsp_step(void);
 void dsp_writenmem(u32 addr);
 
+typedef struct _INST _INST;
 struct _INST
 {
 	u8 TRA;
@@ -115,15 +121,19 @@ struct _INST
 	bool ZERO;
 	bool BSEL;
 
-	bool NOFL;  //MRQ set
-	bool TABLE; //MRQ set
-	bool MWT;   //MRQ set
-	bool MRD;   //MRQ set
-	u8 MASA;    //MRQ set
-	bool ADREB; //MRQ set
-	bool NXADR; //MRQ set
+	bool NOFL;  /* MRQ set */
+	bool TABLE; /* MRQ set */
+	bool MWT;   /* MRQ set */
+	bool MRD;   /* MRQ set */
+	u8 MASA;    /* MRQ set */
+	bool ADREB; /* MRQ set */
+	bool NXADR; /* MRQ set */
 };
 
 void DecodeInst(const u32 *IPtr, _INST *i);
 u16 DYNACALL PACK(s32 val);
 s32 DYNACALL UNPACK(u16 val);
+
+#ifdef __cplusplus
+}
+#endif

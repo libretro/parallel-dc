@@ -1,13 +1,16 @@
 #pragma once
 #include "types.h"
 
-namespace aicaarm {
-   void init();
-   void reset();
-   void run(u32 samples);
-   void enable(bool enabled);
+#ifdef __cplusplus
+extern "C" {
+#endif
 
-}
+/* The sound chip's ARM7: made ready, reset, run for @samples of the
+ * chip's, held in reset or let go */
+void aicaarm_init(void);
+void aicaarm_reset(void);
+void aicaarm_run(u32 samples);
+void aicaarm_enable(bool enabled);
 
 enum Arm7Reg
 {
@@ -49,11 +52,11 @@ enum Arm7Reg
 	 * value down in. It is not a register and is not counted with them:
 	 * a save state holds RN_ARM_REG_COUNT of these and must not grow. */
 	RN_SCRATCH   = RN_ARM_REG_COUNT,
-	RN_ARM_REG_SLOTS,
+	RN_ARM_REG_SLOTS
 };
 
-// What the ARM7 gets to run for each sample the sound chip makes: it is
-// clocked at 22.5792 MHz (AICA_ARM_CLOCK), 512 cycles a sample at 44.1 kHz
+/* What the ARM7 gets to run for each sample the sound chip makes: it is */
+/* clocked at 22.5792 MHz (AICA_ARM_CLOCK), 512 cycles a sample at 44.1 kHz */
 #define ARM_CYCLES_PER_SAMPLE 512
 
 typedef union
@@ -72,32 +75,32 @@ typedef union
 		u16 W1;
 	} W;
 
-	union
+	TYPES_ANON union
 	{
-		struct
+		TYPES_ANON struct
 		{
 			u32 _pad0 : 28;
-			u32 V     : 1; //Bit 28
-			u32 C     : 1; //Bit 29
-			u32 Z     : 1; //Bit 30
-			u32 N     : 1; //Bit 31
+			u32 V     : 1; /* Bit 28 */
+			u32 C     : 1; /* Bit 29 */
+			u32 Z     : 1; /* Bit 30 */
+			u32 N     : 1; /* Bit 31 */
 		};
 
-		struct
+		TYPES_ANON struct
 		{
 			u32 _pad1 : 28;
-			u32 NZCV  : 4; //Bits [31:28]
+			u32 NZCV  : 4; /* Bits [31:28] */
 		};
 	} FLG;
 
 	struct
 	{
-		u32 M     : 5;  //mode, PSR[4:0]
-		u32 _pad0 : 1;  //not used / zero
-		u32 F     : 1;  //FIQ disable, PSR[6]
-		u32 I     : 1;  //IRQ disable, PSR[7]
-		u32 _pad1 : 20; //not used / zero
-		u32 NZCV  : 4;  //Bits [31:28]
+		u32 M     : 5;  /* mode, PSR[4:0] */
+		u32 _pad0 : 1;  /* not used / zero */
+		u32 F     : 1;  /* FIQ disable, PSR[6] */
+		u32 I     : 1;  /* IRQ disable, PSR[7] */
+		u32 _pad1 : 20; /* not used / zero */
+		u32 NZCV  : 4;  /* Bits [31:28] */
 	} PSR;
 
 	u32 I;
@@ -106,9 +109,13 @@ typedef union
 extern DECL_ALIGN(8) reg_pair arm_Reg[RN_ARM_REG_SLOTS];
 extern bool Arm7Enabled;
 extern u8 cpuBitsSet[256];
-extern "C" void CPUFiq();
-void CPUUpdateCPSR();
-void libAICA_TimeStep();
-// The interpreter, for that many of the ARM's cycles: all there is where
-// there is no recompiler, and there to be chosen where FEAT_AREC_SELECTABLE
+void CPUFiq(void);
+void CPUUpdateCPSR(void);
+void libAICA_TimeStep(void);
+/* The interpreter, for that many of the ARM's cycles: all there is where
+ * there is no recompiler, and there to be chosen where FEAT_AREC_SELECTABLE */
 void arm_Run_(u32 CycleCount);
+
+#ifdef __cplusplus
+}
+#endif

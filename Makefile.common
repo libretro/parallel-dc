@@ -15,16 +15,11 @@ SOURCES_CXX := \
 					$(CORE_DIR)/core/hw/arm7/arm7_rec_x64.cpp \
 					$(CORE_DIR)/core/hw/arm7/arm7_rec_x86.cpp \
 					$(CORE_DIR)/core/hw/arm7/arm7_rec_arm64.cpp \
-					$(CORE_DIR)/core/hw/arm7/vbaARM.cpp \
 					\
-					$(CORE_DIR)/core/hw/aica/dsp.cpp \
 					$(CORE_DIR)/core/hw/aica/dsp_arm64.cpp \
-					$(CORE_DIR)/core/hw/aica/dsp_interp.cpp \
 					$(CORE_DIR)/core/hw/aica/dsp_x64.cpp \
 					$(CORE_DIR)/core/hw/aica/dsp_x86.cpp \
-					$(CORE_DIR)/core/hw/aica/aica.cpp \
 					$(CORE_DIR)/core/hw/aica/aica_if.cpp \
-					$(CORE_DIR)/core/hw/aica/aica_mem.cpp \
 					$(CORE_DIR)/core/hw/aica/sgc_if.cpp \
 					\
 					$(CORE_DIR)/core/hw/holly/holly_intc.cpp \
@@ -175,6 +170,11 @@ SOURCES_C += $(CORE_DIR)/core/hw/gdrom/gdrom_response.c \
 					$(CORE_DIR)/core/hw/sh4/sh4_core_regs.c \
 					$(CORE_DIR)/core/hw/sh4/sh4_interrupts.c \
 					$(CORE_DIR)/core/hw/sh4/sh4_sched.c \
+					$(CORE_DIR)/core/hw/aica/aica.c \
+					$(CORE_DIR)/core/hw/aica/aica_mem.c \
+					$(CORE_DIR)/core/hw/aica/dsp.c \
+					$(CORE_DIR)/core/hw/aica/dsp_interp.c \
+					$(CORE_DIR)/core/hw/arm7/vbaARM.c \
 					$(CORE_DIR)/core/imgread/ImgReader.c \
 					$(CORE_DIR)/core/imgread/cdi.c \
 					$(CORE_DIR)/core/imgread/chd.c \

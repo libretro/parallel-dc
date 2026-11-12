@@ -1,6 +1,10 @@
 #pragma once
 #include "types.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #define SCIEB_addr 0x289C
 #define SCIPD_addr (0x289C+4)
 #define SCIRE_addr (0x289C+8)
@@ -19,10 +23,11 @@
 #define SCILV1_addr 0x28AC
 #define SCILV2_addr 0x28B0
 
-#define entry(name,sz) u32 name:sz;
+#define entry(name,sz) u32 name:sz
+typedef struct CommonData_struct CommonData_struct;
 struct CommonData_struct
 {
-	//+0
+	/* +0 */
 	entry(MVOL,4);
 	entry(VER,4);
 	entry(DAC18B,1);
@@ -31,14 +36,14 @@ struct CommonData_struct
 	entry(Mono,1);
 	
 	u32 :16;
-	//+4
+	/* +4 */
 	entry(RBP,12);
 	entry(pad1_0,1);
 	entry(RBL,2);
 	entry(TESTB0,1);
 
 	u32 :16;
-	//+8
+	/* +8 */
 	entry(MIBUF,8);
 	entry(MIEMP,1);
 	entry(MIFUL ,1);
@@ -48,130 +53,130 @@ struct CommonData_struct
 	entry(pad3_0,3);
 
 	u32 :16;
-	//+C
+	/* +C */
 	entry(MOBUF,8);
 	entry(MSLC,6);
 	entry(AFSEL,1);
 	entry(padC_0,1);
 
 	u32 :16;
-	//+10
+	/* +10 */
 	entry(EG,13);
 	entry(SGC,2);
 	entry(LP,1);
 	
 	u32 :16;
-	//+14
+	/* +14 */
 	entry(CA,16);
 
 	u32 :16;
 	
-	//quite a bit padding here :)
+	/* quite a bit padding here :) */
 	u8 pad_med_0[0x6C-4];
 
-	//+80
+	/* +80 */
 	entry(MRWINH,4);
-	entry($T,1);
-	entry($TSCD,3);
+	entry(T_,1);	/* ($T) */
+	entry(TSCD_,3);	/* ($TSCD) */
 	entry(pad80_0,1);
 	entry(DMEA_hi,7);
 
 	u32 :16;
-	//+84
+	/* +84 */
 	entry(pad84_0,2);
 	entry(DMEA_lo,14);
 
 	u32 :16;
-	//+88
+	/* +88 */
 	entry(pad88_0,2);
 	entry(DRGA,13);
 	entry(DGATE,1);
 
 	u32 :16;
-	//+8C
+	/* +8C */
 	entry(DEXE,1);
 	entry(pad8C_0,1);
 	entry(DLG,13);
 	entry(DDIR,1);
 
 	u32 :16;
-	//+90
+	/* +90 */
 	entry(TIMA,8);
 	entry(TACTL,3);
 	entry(pad90_0,5);
 
 	u32 :16;
-	//+94
+	/* +94 */
 	entry(TIMB,8);
 	entry(TBCTL,3);
 	entry(pad94_0,5);
 
 	u32 :16;
-	//+98
+	/* +98 */
 	entry(TIMC,8);
 	entry(TCCTL,3);
 	entry(pad98_0,5);
 
 	u32 :16;
 
-	//+9C
+	/* +9C */
 	entry(SCIEB,11);
 	entry(pad9C_0,5);
 
 	u32 :16;
 
-	//+A0
+	/* +A0 */
 	entry(SCIPD,11);
 	entry(padA0_0,5);
 
 	u32 :16;
 
-	//+A4
+	/* +A4 */
 	entry(SCIRE,11);
 	entry(padA4_0,5);
 
 	u32 :16;
 
-	//+A8
+	/* +A8 */
 	entry(SCILV0,8);
 	entry(padA8_0,8);
 
 	u32 :16;
 
-	//+AC
+	/* +AC */
 	entry(SCILV1,8);
 	entry(padAC_0,8);
 
 	u32 :16;
 
-	//+B0
+	/* +B0 */
 	entry(SCILV2,8);
 	entry(padB0_0,8);
 
 	u32 :16;
 
-	//+B4
+	/* +B4 */
 	entry(MCIEB,11);
-	entry(padB4_0,5)
+	entry(padB4_0,5);
 
 	u32 :16;
 
-	//+B8
+	/* +B8 */
 	entry(MCIPD,11);
-	entry(padB8_0,5)
+	entry(padB8_0,5);
 
 	u32 :16;
 
-	//+BC
+	/* +BC */
 	entry(MCIRE,11);
-	entry(padBC_0,5)
+	entry(padBC_0,5);
 
 	u32 :16;
 	
-	//some other misc shit FAR away is here :p
+	/* some other misc shit FAR away is here :p */
 	u8 pad_lot_0[0x344-4];
 
-	//+400 , hopefully :p
+	/* +400 , hopefully :p */
 	entry(AR,1);
 	entry(pad400_0,7);
 	entry(VREG,2);
@@ -179,10 +184,10 @@ struct CommonData_struct
 
 	u32 :16;
 
-	//Even more
+	/* Even more */
 	u8 pad_lot_1[0x100-4];
 
-	//+500 , hopefully :p
+	/* +500 , hopefully :p */
 	entry(L0_r,1);
 	entry(L1_r,1);
 	entry(L2_r,1);
@@ -196,7 +201,7 @@ struct CommonData_struct
 
 	u32 :16;
 
-	//+504
+	/* +504 */
 
 	entry(M0_r,1);
 	entry(M1_r,1);
@@ -213,82 +218,84 @@ struct CommonData_struct
 	u32 :16;
 };
 
-//should be 0x15C8 in size
+/* should be 0x15C8 in size */
+typedef struct DSPData_struct DSPData_struct;
 struct DSPData_struct
 {
-	//+0x000
-	u32 COEF[128];		//15:3
+	/* +0x000 */
+	u32 COEF[128];		/* 15:3 */
 
-	//+0x200
-	u32 MADRS[64];		//15:0
+	/* +0x200 */
+	u32 MADRS[64];		/* 15:0 */
 	
-	//+0x300
+	/* +0x300 */
 	u8 PAD0[0x100];
 
-	//+0x400
-	u32 MPRO[128*4];	//15:0
+	/* +0x400 */
+	u32 MPRO[128*4];	/* 15:0 */
 	
-	//+0xC00
+	/* +0xC00 */
 	u8 PAD1[0x400];
 
-	//+0x1000
+	/* +0x1000 */
 	struct 
 	{ 
-		u32 l;			//7:0
-		u32 h;			//15:0 (23:8)
+		u32 l;			/* 7:0 */
+		u32 h;			/* 15:0 (23:8) */
 	} 
 	TEMP[128];
 
-	//+0x1400
+	/* +0x1400 */
 	struct 
 	{ 
-		u32 l;			//7:0
-		u32 h;			//15:0 (23:8)
+		u32 l;			/* 7:0 */
+		u32 h;			/* 15:0 (23:8) */
 	} 
 	MEMS[32];
 	
-	//+0x1500
+	/* +0x1500 */
 	struct 
 	{ 
-		u32 l;			//3:0
-		u32 h;			//15:0 (19:4)
+		u32 l;			/* 3:0 */
+		u32 h;			/* 15:0 (19:4) */
 	} 
 	MIXS[16];
 
-	//+0x1580
-	u32 EFREG[16];		//15:0
+	/* +0x1580 */
+	u32 EFREG[16];		/* 15:0 */
 	
-	//+0x15C0
-	u32 EXTS[2];		//15:0
+	/* +0x15C0 */
+	u32 EXTS[2];		/* 15:0 */
 };
+typedef union InterruptInfo InterruptInfo;
 union InterruptInfo
 {
-	struct
+	TYPES_ANON struct
 	{
-		//Bit 0 (R): Requests interrupt to external interrupt input pin "INTON". (SCSI) 
+		/* Bit 0 (R): Requests interrupt to external interrupt input pin "INTON". (SCSI) */
 		entry(INTON,1);
-		//Bit 1 (R): Reserved. 
+		/* Bit 1 (R): Reserved. */
 		entry(res_1,1);
-		//Bit 2 (R): Reserved. 
+		/* Bit 2 (R): Reserved. */
 		entry(res_3,1);
-		//Bit 3 (R): MIDI input interrupt. 
-		//(Interrupt request generated when input FIFO has fetched valid data. Hence, if the CPU reads FIFO data, it must read the lot once and leave the FIFO empty. When the FIFO has changed to empty status, the interrupt request is canceled automatically.) 
+		/* Bit 3 (R): MIDI input interrupt. */
+		/* (Interrupt request generated when input FIFO has fetched valid data. Hence, if the CPU reads FIFO data, it must read the lot once and leave the FIFO empty. When the FIFO has changed to empty status, the interrupt request is canceled automatically.) */
 		entry(MIDI_IN,1);
-		//Bit 4 (R): DMA end interrupt 
+		/* Bit 4 (R): DMA end interrupt */
 		entry(DMA_END,1);
-		//Bit 5 (R/W): SCPU interrupt caused by data being written to the CPU, so only "1" can be written. (Writing "0" has no effect.) This flag can be set from either the MCPU or the SCPU. 
+		/* Bit 5 (R/W): SCPU interrupt caused by data being written to the CPU, so only "1" can be written. (Writing "0" has no effect.) This flag can be set from either the MCPU or the SCPU. */
 		entry(SCPU,1);
-		//Bit 6 (R): Timer A interrupt 
+		/* Bit 6 (R): Timer A interrupt */
 		entry(TimerA,1);
-		//Bit 7 (R): Timer B interrupt 
+		/* Bit 7 (R): Timer B interrupt */
 		entry(TimerB,1);
-		//Bit 8 (R): Timer C interrupt 
+		/* Bit 8 (R): Timer C interrupt */
 		entry(TimerC,1);
-		//Bit 9 (R): MIDI output interrupt. 
-		//(If the output FIFO changes to empty status, an interrupt request is generated.)
-		//(If the status is no longer empty because data is written to the output FIFO, the interrupt request is canceled automatically.) 
+		/* Bit 9 (R): MIDI output interrupt. */
+		/* (If the output FIFO changes to empty status, an interrupt request is generated.) */
+		/* (If the status is no longer empty because data is written to the output FIFO, the interrupt request is canceled automatically.) */
 		entry(MIDI_OUT,1);
-		//Bit 10 (R): Interrupt of one sample interval 
+		/* Bit 10 (R): Interrupt of one sample interval */
 		entry(SAMPLE_DONE,1);
 	};
 	u32 full;
@@ -307,90 +314,55 @@ extern DSPData_struct*	  DSPData;
 
 void UpdateAICA(u32 Cycles);
 
-void AICA_Init();
-void AICA_Term();
+void AICA_Init(void);
+void AICA_Term(void);
 
-//u32 ReadAicaReg(u32 reg);
+/* u32 ReadAicaReg(u32 reg); */
 void WriteAicaReg8(u32 reg,u32 data);
 
-template<u32 sz>
-void WriteAicaReg(u32 reg,u32 data);
+/* @sz bytes, 1 or 2 */
+void WriteAicaReg(u32 reg,u32 data,u32 sz);
 
-////
-//Timers :)
-struct AicaTimerData
+/* // */
+/* Timers :) */
+typedef union AicaTimerData
 {
-	union
+	TYPES_ANON struct
 	{
-		struct
-		{
 #ifdef MSB_FIRST
-			u32 pad:16;
-			u32 :5;
-			u32 md:3;
-			u32 count:8;
+		u32 pad:16;
+		u32 :5;
+		u32 md:3;
+		u32 count:8;
 #else
-			u32 count:8;
-			u32 md:3;
-			u32 :5;
-			u32 pad:16;
+		u32 count:8;
+		u32 md:3;
+		u32 :5;
+		u32 pad:16;
 #endif
-		};
-		u32 data;
 	};
-};
-class AicaTimer
+	u32 data;
+} AicaTimerData;
+
+/* A timer: its register, and the samples to its next count (aica.c) */
+typedef struct AicaTimer
 {
-public:
 	AicaTimerData* data;
 	s32 c_step;
 	u32 m_step;
 	u32 id;
-	void Init(u8* regbase,u32 timer)
-	{
-		data=(AicaTimerData*)&regbase[0x2890 + timer*4];
-		id=timer;
-		m_step=1<<(data->md);
-		c_step=m_step;
-	}
-	void StepTimer(u32 samples)
-	{
-		do
-		{
-			c_step--;
-			if (c_step==0)
-			{
-				c_step=m_step;
-				data->count++;
-				if (data->count==0)
-				{
-					if (id==0)
-					{
-						SCIPD->TimerA=1;
-						MCIPD->TimerA=1;
-					}
-					else if (id==1)
-					{
-						SCIPD->TimerB=1;
-						MCIPD->TimerB=1;
-					}
-					else
-					{
-						SCIPD->TimerC=1;
-						MCIPD->TimerC=1;
-					}
-				}
-			}
-		} while(--samples);
-	}
+} AicaTimer;
 
-	void RegisterWrite()
-	{
-		u32 n_step=1<<(data->md);
-		if (n_step!=m_step)
-		{
-			m_step=n_step;
-			c_step=m_step;
-		}
-	}
-};
+extern AicaTimer timers[3];
+
+/* The samples of the tick on its way the sound output holds back (aica.c) */
+u32 libAICA_SamplesIntoTick(void);
+/* What a V21 save state has of the sound chip that the ones before it
+ * have not (see serialize.cpp) */
+void aica_serialize_v21(void **data, unsigned int *total_size);
+bool aica_unserialize_v21(void **data, unsigned int *total_size);
+void aica_state_before_v21(void);
+
+#ifdef __cplusplus
+}
+#endif

@@ -225,8 +225,8 @@ static void run_case(unsigned number)
    for (i = 0x100000; i < 0x100000 + 0x10000; i += 4)
       *(u32*)&ram[i] = rnd();
 
-   aicaarm::enable(false);
-   aicaarm::enable(true);                               /* which resets it */
+   aicaarm_enable(false);
+   aicaarm_enable(true);                               /* which resets it */
    for (i = 0; i < 13; i++)
       arm_Reg[i].I = pick(4) ? 0x100000 + (pick(0x4000) << 2) + pick(4) : rnd();
    arm_Reg[13].I = 0x180000;
@@ -242,7 +242,7 @@ static void run_case(unsigned number)
    if (getenv("ARM7_TEST_INTERPRET"))
    {
       settings.dynarec.Arm7Interpreter = true;
-      aicaarm::run(64);
+      aicaarm_run(64);
       settings.dynarec.Arm7Interpreter = false;
    }
    else if (getenv("ARM7_TEST_SWITCH"))
@@ -253,13 +253,13 @@ static void run_case(unsigned number)
       for (i = 0; i < 4; i++)
       {
          settings.dynarec.Arm7Interpreter = (number + i) & 1;
-         aicaarm::run(1);
+         aicaarm_run(1);
       }
       settings.dynarec.Arm7Interpreter = false;
-      aicaarm::run(60);
+      aicaarm_run(60);
    }
    else
-      aicaarm::run(64);
+      aicaarm_run(64);
 
    if (memcmp(&ram[PROGRAM], program, (count + 1) * 4) || *(u32*)&ram[0] != (0xEA000000 | ((PROGRAM - 8) / 4)))
    {
@@ -282,7 +282,7 @@ int main(int argc, char **argv)
    modes = getenv("ARM7_TEST_MODES") != NULL;
    aica_ram.data = ram;
    aica_ram.size = sizeof(ram);
-   aicaarm::init();
+   aicaarm_init();
    if (getenv("ARM7_TEST_CASE"))
       run_case((unsigned)atoi(getenv("ARM7_TEST_CASE")));
    else

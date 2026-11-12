@@ -547,6 +547,44 @@ enum RegIO
 };
 typedef enum RegIO RegIO;
 
+/* A block of the machine's memory - main RAM, video RAM, the sound
+ * chip's - its bytes and how many: C indexes data, C++ has an indexer and
+ * Zero() */
+typedef struct VArray2 VArray2;
+struct VArray2
+{
+	u8* data;
+	u32 size;
+#ifdef __cplusplus
+#ifdef TARGET_NO_EXCEPTIONS
+	void UnLockRegion(u32 offset,u32 size) {}
+#else
+	void UnLockRegion(u32 offset,u32 size);
+#endif
+
+	void Zero()
+	{
+		UnLockRegion(0,size);
+		memset(data,0,size);
+	}
+
+	INLINE u8& operator [](const u32 i)
+	{
+#ifdef MEM_BOUND_CHECK
+		if (i>=size)
+		{
+			printf("Error: VArray2 , index out of range (%d>%d)\n",i,size-1);
+			MEM_DO_BREAK;
+		}
+#endif
+		return data[i];
+	}
+#endif
+};
+
+/* All of it 0 (VArray2::Zero(), for C: libretro/common.cpp) */
+void varray2_zero(VArray2 *a);
+
 typedef struct RegisterStruct RegisterStruct;
 struct RegisterStruct
 {
@@ -828,8 +866,33 @@ static TYPES_INLINE u32 libExtDevice_ReadMem_A5(u32 addr,u32 size){ (void)addr; 
 static TYPES_INLINE void libExtDevice_WriteMem_A5(u32 addr,u32 data,u32 size) { (void)addr; (void)data; (void)size; }
 
 /* ARM */
-s32 libARM_Init();
+s32 libARM_Init(void);
 void libARM_Reset(bool hard);
+
+/* @sz bytes (1, 2 or 4) of @array at @addr: C's ReadMemArr<sz> and
+ * WriteMemArr<sz>, the size a constant where it is used */
+static TYPES_INLINE u32 mem_arr_read(const u8 *array, u32 addr, u32 sz)
+{
+	switch (sz)
+	{
+		case 1: return array[addr];
+		case 2: return *(const u16 *)&array[addr];
+		case 4: return *(const u32 *)&array[addr];
+		default: die("invalid size");
+	}
+	return 0;
+}
+
+static TYPES_INLINE void mem_arr_write(u8 *array, u32 addr, u32 data, u32 sz)
+{
+	switch (sz)
+	{
+		case 1: array[addr] = (u8)data; break;
+		case 2: *(u16 *)&array[addr] = (u16)data; break;
+		case 4: *(u32 *)&array[addr] = data; break;
+		default: die("invalid size"); break;
+	}
+}
 
 #ifdef __cplusplus
 }
@@ -1054,6 +1117,7 @@ enum serialize_version_enum {
    V31,
    VCUR_LIBRETRO = V31
 };
+typedef enum serialize_version_enum serialize_version_enum;
 
 #ifdef __cplusplus
 }
