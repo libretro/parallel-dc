@@ -9,7 +9,6 @@ INCFLAGS    += -I$(CORE_DIR)/core/libretro \
 
 SOURCES_C   ?=
 SOURCES_CXX := \
-					$(CORE_DIR)/core/hw/arm7/arm_mem.cpp \
 					$(CORE_DIR)/core/hw/arm7/arm7.cpp \
 					$(CORE_DIR)/core/hw/arm7/arm7_rec.cpp \
 					$(CORE_DIR)/core/hw/arm7/arm7_rec_x64.cpp \
@@ -23,14 +22,12 @@ SOURCES_CXX := \
 					$(CORE_DIR)/core/hw/holly/sb_mem.cpp \
 					\
 					\
-					$(CORE_DIR)/core/hw/maple/maple_helper.cpp \
 					$(CORE_DIR)/core/hw/maple/maple_devs.cpp \
 					$(CORE_DIR)/core/hw/maple/maple_if.cpp \
 					$(CORE_DIR)/core/hw/maple/maple_cfg.cpp \
 					\
 					$(CORE_DIR)/core/hw/mem/_vmem.cpp \
 					\
-					$(CORE_DIR)/core/hw/pvr/drkPvr.cpp \
 					$(CORE_DIR)/core/hw/pvr/elan_host.cpp \
 					$(CORE_DIR)/core/hw/pvr/Renderer_if.cpp \
 					$(CORE_DIR)/core/hw/pvr/ta.cpp \
@@ -58,7 +55,6 @@ SOURCES_CXX := \
 					$(CORE_DIR)/core/stdclass.cpp \
 					\
 					\
-					$(CORE_DIR)/core/reios/reios_elf.cpp \
 					$(CORE_DIR)/core/reios/reios.cpp \
 					$(CORE_DIR)/core/reios/gdrom_hle.cpp \
 					\
@@ -152,6 +148,11 @@ SOURCES_C += $(CORE_DIR)/core/hw/gdrom/gdrom_response.c \
 					$(CORE_DIR)/core/hw/sh4/sh4_mem.c \
 					$(CORE_DIR)/core/hw/sh4/sh4_rom.c \
 					$(CORE_DIR)/core/hw/naomi/decrypt.c \
+					$(CORE_DIR)/core/hw/arm7/arm_mem.c \
+					$(CORE_DIR)/core/hw/maple/maple_helper.c \
+					$(CORE_DIR)/core/hw/pvr/drkPvr.c \
+					$(CORE_DIR)/core/reios/reios_elf.c \
+					$(CORE_DIR)/core/hw/flashrom/x76f100.c \
 					$(CORE_DIR)/core/libretro/audiostream.c \
 					$(DEPS_DIR)/libelf/elf.c \
 					$(DEPS_DIR)/libelf/elf32.c \
@@ -368,7 +369,6 @@ SOURCES_CXX += $(CORE_DIR)/core/hw/naomi/naomi.cpp \
 					$(CORE_DIR)/core/hw/naomi/m4cartridge.cpp \
 					$(CORE_DIR)/core/hw/naomi/awcartridge.cpp \
 					$(CORE_DIR)/core/hw/naomi/gdcartridge.cpp \
-					$(CORE_DIR)/core/hw/flashrom/x76f100.cpp \
 					$(CORE_DIR)/core/hw/naomi/naomi_m3comm.cpp \
 					$(CORE_DIR)/core/hw/naomi/card_reader.cpp \
 					$(CORE_DIR)/core/hw/naomi/touchscreen.cpp \

@@ -49,6 +49,13 @@ void rend_resize(int width, int height);
 
 extern bool renderer_changed;
 
+/* Every texture made again before it is next used (TexCache.cpp) */
+extern bool KillTex;
+/* The tile accelerator's contexts emptied (ta_ctx.cpp) */
+void tactx_Reset(void);
+/* The custom textures' loader stopped (CustomTexture.cpp) */
+void custom_texture_terminate(void);
+
 #ifdef __cplusplus
 }
 

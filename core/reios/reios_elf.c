@@ -1,11 +1,13 @@
-#include "reios.h"
+#include <stdlib.h>
+#include <string.h>
+#include "reios_elf.h"
 
 #include "deps/libelf/elf.h"
 
 #include "hw/sh4/sh4_mem.h"
 #include "deps/coreio/coreio.h"
 
-bool reios_loadElf(const std::string& elf, u32* entry)
+bool reios_loadElf(const char *path, u32* entry)
 {
    void *elfFile;
    u8 *buf = NULL;
@@ -13,7 +15,7 @@ bool reios_loadElf(const std::string& elf, u32* entry)
    bool phys = false;
    size_t size;
    bool ok = true;
-   core_file* f = core_fopen(elf.c_str());
+   core_file* f = core_fopen(path);
    if (!f)
       return false;
 
@@ -59,6 +61,7 @@ bool reios_loadElf(const std::string& elf, u32* entry)
    {
       /* Load that section, if it is one that is loaded */
       uint64_t dest, src, offset, len, memlen;
+      u8* ptr;
       if (elf_getProgramHeaderType(elfFile, i) != PT_LOAD)
          continue;
       if (phys)
@@ -83,7 +86,7 @@ bool reios_loadElf(const std::string& elf, u32* entry)
        * main memory, all of it: GetMemPtr() looks only at where it starts. */
       /* (asked first whether it is main memory at all: GetMemPtr() stops
        * the emulator when handed an address in the CPU's own area) */
-      u8* ptr = dest <= 0xFFFFFFFFu && IsOnRam((u32)dest) ? GetMemPtr((u32)dest, (u32)len) : NULL;
+      ptr = dest <= 0xFFFFFFFFu && IsOnRam((u32)dest) ? GetMemPtr((u32)dest, (u32)len) : NULL;
       if (ptr == NULL || memlen > RAM_SIZE - ((u32)dest & RAM_MASK))
       {
          WARN_LOG(REIOS, "Invalid load address for section %d: %08lx", i, (unsigned long)dest);

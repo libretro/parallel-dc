@@ -12,43 +12,53 @@
 #pragma once
 #include "types.h"
 
-class X76F100SerialFlash
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+enum
 {
-public:
-	void reset();
-	// the whole chip, 0x84 bytes: the response to reset (4), the write
-	// password (8), the read password (8) and the data (112)
-	void setData(const u8 *data);
-	const u8 *getProtectedData() const { return data; }
-	void writeCS(bool v);
-	void writeRST(bool v);
-	void writeSCL(bool v);
-	void writeSDA(bool v);
-	bool readSDA() const { return lastCS ? true : sda; }
-	// 142 bytes: the lines and the command under way, the buffer, the
-	// data and the passwords
-	void serialize(void **data, unsigned int *total_size);
-	void unserialize(void **data, unsigned int *total_size);
-
-private:
-	enum { STOP, RESPONSE_TO_RESET, LOAD_COMMAND, LOAD_PASSWORD,
-		VERIFY_PASSWORD, READ_DATA, WRITE_DATA };
-	int dataOffset() const;
-
-	u8 data[112] {};
-	u8 readPassword[8] {};
-	u8 writePassword[8] {};
-	u8 responseToReset[4] {};
-	u8 writeBuffer[8] {};
-	bool lastSCL = false;
-	bool lastSDA = false;
-	bool sda = false;
-	bool lastRST = false;
-	bool lastCS = false;
-	bool SCLChanged = false;
-	u8 state = STOP;
-	u8 command = 0;
-	u8 byteOffset = 0;
-	u8 bit = 0;
-	u8 shift = 0;
+	X76F100_STOP, X76F100_RESPONSE_TO_RESET, X76F100_LOAD_COMMAND,
+	X76F100_LOAD_PASSWORD, X76F100_VERIFY_PASSWORD, X76F100_READ_DATA,
+	X76F100_WRITE_DATA
 };
+
+/* All zeroes is a chip with nothing in it, stopped */
+typedef struct X76F100
+{
+	u8 data[112];
+	u8 readPassword[8];
+	u8 writePassword[8];
+	u8 responseToReset[4];
+	u8 writeBuffer[8];
+	bool lastSCL;
+	bool lastSDA;
+	bool sda;
+	bool lastRST;
+	bool lastCS;
+	bool SCLChanged;
+	u8 state;
+	u8 command;
+	u8 byteOffset;
+	u8 bit;
+	u8 shift;
+} X76F100;
+
+void x76f100_reset(X76F100 *f);
+/* The whole chip, 0x84 bytes: the response to reset (4), the write
+ * password (8), the read password (8) and the data (112) */
+void x76f100_setData(X76F100 *f, const u8 *data);
+static TYPES_INLINE const u8 *x76f100_getProtectedData(const X76F100 *f) { return f->data; }
+void x76f100_writeCS(X76F100 *f, bool v);
+void x76f100_writeRST(X76F100 *f, bool v);
+void x76f100_writeSCL(X76F100 *f, bool v);
+void x76f100_writeSDA(X76F100 *f, bool v);
+static TYPES_INLINE bool x76f100_readSDA(const X76F100 *f) { return f->lastCS ? true : f->sda; }
+/* 142 bytes: the lines and the command under way, the buffer, the data
+ * and the passwords */
+void x76f100_serialize(X76F100 *f, void **data, unsigned int *total_size);
+void x76f100_unserialize(X76F100 *f, void **data, unsigned int *total_size);
+
+#ifdef __cplusplus
+}
+#endif

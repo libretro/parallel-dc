@@ -4,10 +4,15 @@
 #ifdef __cplusplus
 #include "maple_devs.h"
 
-extern maple_device* MapleDevices[4][6];
-
 extern "C" {
+#else
+struct maple_device;
+typedef struct maple_device maple_device;
 #endif
+
+/* The devices on each port's bus: [bus][5] the main one, [bus][0..4] the
+ * ones plugged into it (C sees them only as present or not) */
+extern maple_device* MapleDevices[4][6];
 
 void maple_Init(void);
 void maple_Reset(bool Manual);

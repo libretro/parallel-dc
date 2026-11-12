@@ -21,7 +21,8 @@ name: Headless
 # the G2 bus's expansion DMA channels (tools/aica/g2dma_run.sh), and the
 # broadband adapter, a frame each way and its state (tools/bba/run.sh), and
 # NAOMI's 315-5881 decryption against what it gave before
-# (tools/naomi/decrypt_run.sh), and the ELF reader (tools/libelf/elf_test.sh).
+# (tools/naomi/decrypt_run.sh), the ELF reader (tools/libelf/elf_test.sh),
+# and the NAOMI's X76F100 serial flash (tools/flashrom/x76f100_run.sh).
 # And the threads a texture scaled up is shared out to, and the core needing
 # no OpenMP runtime (tools/rend/band_pool_test.sh). And custom textures'
 # pictures, read as stb_image read them and dumped
@@ -53,6 +54,7 @@ on:
       - 'tools/bba/**'
       - 'tools/naomi/**'
       - 'tools/libelf/**'
+      - 'tools/flashrom/**'
       - 'Makefile*'
       - '.github/workflows/headless.yml'
   pull_request:
@@ -78,6 +80,7 @@ on:
       - 'tools/bba/**'
       - 'tools/naomi/**'
       - 'tools/libelf/**'
+      - 'tools/flashrom/**'
       - 'Makefile*'
       - '.github/workflows/headless.yml'
   workflow_dispatch:
@@ -150,3 +153,7 @@ jobs:
           sh tools/naomi/decrypt_run.sh -fsanitize=address,undefined -fno-sanitize-recover=all
       - name: The ELF reader, an SH-4 executable's headers every way they are read (C89, ASan/UBSan)
         run: sh tools/libelf/elf_test.sh
+      - name: The NAOMI's X76F100 serial flash, its protocol and its state, and lines at random as before (and with the sanitizers)
+        run: |
+          sh tools/flashrom/x76f100_run.sh
+          sh tools/flashrom/x76f100_run.sh -fsanitize=address,undefined -fno-sanitize-recover=all

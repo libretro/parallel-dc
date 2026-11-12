@@ -1,13 +1,5 @@
-// drkPvr.cpp : Defines the entry point for the DLL application.
-//
-
-/*
-	Plugin structure
-	Interface
-	SPG
-	TA
-	Renderer
-*/
+/* The PowerVR's entry points: its registers, the sync generator, the tile
+ * accelerator and the renderer, together */
 
 #include "elan_host.h"
 #include "spg.h"
@@ -15,15 +7,13 @@
 #include "pvr_mem.h"
 #include "ta.h"
 #include "Renderer_if.h"
-#include "rend/CustomTexture.h"
-#include "rend/TexCache.h"
 
 void libPvr_Reset(bool hard)
 {
    KillTex = true;
    Regs_Reset(hard);
    spg_Reset(hard);
-   // what the last run left half sent to the tile accelerator is not this run's
+   /* what the last run left half sent to the tile accelerator is not this run's */
    tactx_Reset();
    ta_vtx_Reset();
    elan_host_reset(hard);
@@ -43,7 +33,7 @@ s32 libPvr_Init(void)
 {
    if (!spg_Init())
    {
-      //failed
+      /* failed */
       return -1;
    }
    elan_host_init();
@@ -51,10 +41,10 @@ s32 libPvr_Init(void)
 	return 0;
 }
 
-//called when exiting from sh4 thread , from the new thread context (for any thread specific de init) :P
+/* called when exiting from sh4 thread, from the new thread context (for any thread specific de init) */
 void libPvr_Term(void)
 {
-   custom_texture.Terminate();	// Avoid deadlock on exit (win32)
+   custom_texture_terminate();	/* Avoid deadlock on exit (win32) */
    rend_term();
    spg_Term();
    elan_host_term();

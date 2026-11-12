@@ -31,6 +31,7 @@
 #include "hw/sh4/modules/tmu.h"
 #include "hw/sh4/modules/ccn.h"
 #include "hw/aica/aica_if.h"
+#include "hw/arm7/arm_mem.h"
 #include "reios/reios.h"
 #include "reios/gdrom_hle.h"
 #include <map>
@@ -49,12 +50,6 @@
  * search for "maybe" to find items that were left out that may be needed
  */
 
-//./core/hw/arm7/arm_mem.cpp
-extern bool aica_interr;
-extern u32 aica_reg_L;
-extern bool e68k_out;
-extern u32 e68k_reg_L;
-extern u32 e68k_reg_M;
 
 //./core/hw/arm7/arm7.cpp
 extern DECL_ALIGN(8) reg_pair arm_Reg[RN_ARM_REG_SLOTS];

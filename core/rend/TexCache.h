@@ -16,7 +16,6 @@ extern u32 palette16_ram[1024];
 extern u32 palette32_ram[1024];
 extern u32 pal_hash_256[4];
 extern u32 pal_hash_16[64];
-extern bool KillTex;
 extern bool palette_updated;
 
 extern u32 detwiddle[2][11][1024];

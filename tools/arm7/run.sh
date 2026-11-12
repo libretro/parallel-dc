@@ -57,14 +57,20 @@ CMD=$(make -n -B $MAKEARGS core/hw/arm7/arm7.o 2>/dev/null | grep 'arm7\.cpp' | 
 CMD=${CMD% -o *}
 FLAGS=$(echo "$CMD" | sed 's| [^ ]*arm7\.cpp||; s/ -MMD -MP//')
 CXX=${FLAGS%% *}
+# and its C (arm_mem.c)
+CCMD=$(make -n -B $MAKEARGS core/hw/arm7/arm_mem.o 2>/dev/null | grep 'arm_mem\.c' | tail -n 1)
+[ -n "$CCMD" ] || { echo "cannot get the core's C compile flags from make" >&2; exit 1; }
+CCMD=${CCMD% -o *}
+CFLAGS_C=$(echo "$CCMD" | sed 's| [^ ]*arm_mem\.c||; s/ -MMD -MP//')
 
 build() {
    # $1: name, $2: extra define, $3: more sources
-   for SRC in core/hw/arm7/arm7.cpp core/hw/arm7/arm_mem.cpp core/hw/arm7/arm7_rec.cpp \
+   for SRC in core/hw/arm7/arm7.cpp core/hw/arm7/arm7_rec.cpp \
               tools/arm7/arm7_test.cpp $3; do
       # the flags come out of make quoted for a shell
       eval "$FLAGS $2 \"$SRC\" -o \"$WORK/$1-$(basename "$SRC" | sed 's/\.[a-z]*$//').o\""
    done
+   eval "$CFLAGS_C $2 core/hw/arm7/arm_mem.c -o \"$WORK/$1-arm_mem.o\""
    "$CXX" -o "$WORK/arm7_test_$1" "$WORK/$1"-*.o
 }
 

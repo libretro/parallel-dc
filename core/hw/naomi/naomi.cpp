@@ -31,8 +31,8 @@ static NaomiM3Comm m3comm;
 
 /* The serial EEPROMs of the main board (read through the SH4's port A) and
  * of the ROM board (5f7078/5f707c), both X76F100. */
-static X76F100SerialFlash mainSerialId;
-static X76F100SerialFlash romSerialId;
+static X76F100 mainSerialId;
+static X76F100 romSerialId;
 // what the ROM board's chip holds at the start: its set's or the default
 static u8 romSerialSet[0x84];
 /* What stood for them before, which the save state still holds: not used,
@@ -87,59 +87,59 @@ static const u8 defaultSerialData[0x84] = {
 void naomi_serial_id_load(const u8 *rom_board)
 {
 	memcpy(romSerialSet, rom_board != NULL ? rom_board : defaultSerialData, sizeof(romSerialSet));
-	mainSerialId.setData(defaultSerialData);
-	romSerialId.setData(romSerialSet);
-	mainSerialId.reset();
-	romSerialId.reset();
+	x76f100_setData(&mainSerialId, defaultSerialData);
+	x76f100_setData(&romSerialId, romSerialSet);
+	x76f100_reset(&mainSerialId);
+	x76f100_reset(&romSerialId);
 }
 
 const u8 *naomi_rom_serial_data(void)
 {
-	return romSerialId.getProtectedData();
+	return x76f100_getProtectedData(&romSerialId);
 }
 
 void naomi_rom_serial_reset(void)
 {
-	romSerialId.reset();
+	x76f100_reset(&romSerialId);
 }
 
 void naomi_rom_serial_serialize(void **data, unsigned int *total_size)
 {
-	romSerialId.serialize(data, total_size);
+	x76f100_serialize(&romSerialId, data, total_size);
 }
 
 void naomi_rom_serial_unserialize(void **data, unsigned int *total_size)
 {
-	romSerialId.unserialize(data, total_size);
+	x76f100_unserialize(&romSerialId, data, total_size);
 }
 
 void NaomiBoardIDWrite(const u16 Data)
 {
 	// bit 2 the clock, bit 3 the data, bit 4 reset, bit 5 chip select
-	mainSerialId.writeCS(Data & 0x20);
-	mainSerialId.writeRST(Data & 0x10);
-	mainSerialId.writeSCL(Data & 4);
-	mainSerialId.writeSDA(Data & 8);
+	x76f100_writeCS(&mainSerialId, Data & 0x20);
+	x76f100_writeRST(&mainSerialId, Data & 0x10);
+	x76f100_writeSCL(&mainSerialId, Data & 4);
+	x76f100_writeSDA(&mainSerialId, Data & 8);
 }
 
 u16 NaomiBoardIDRead()
 {
 	// bit 0 set: the chip is an X76F100 (clear, the BIOS expects an
 	// AT93C46); bit 3 its data line
-	return (mainSerialId.readSDA() << 3) | 1;
+	return (x76f100_readSDA(&mainSerialId) << 3) | 1;
 }
 
 void NaomiGameIDWrite(const u16 Data)
 {
-	romSerialId.writeCS(Data & 4);
-	romSerialId.writeRST(Data & 8);
-	romSerialId.writeSCL(Data & 2);
-	romSerialId.writeSDA(Data & 1);
+	x76f100_writeCS(&romSerialId, Data & 4);
+	x76f100_writeRST(&romSerialId, Data & 8);
+	x76f100_writeSCL(&romSerialId, Data & 2);
+	x76f100_writeSDA(&romSerialId, Data & 1);
 }
 
 u16 NaomiGameIDRead()
 {
-	return romSerialId.readSDA() ? 1 : 0;
+	return x76f100_readSDA(&romSerialId) ? 1 : 0;
 }
 
 //DIMM board
@@ -421,8 +421,8 @@ void naomi_reg_Reset(bool hard)
 	// (the chips keep what they hold: only a power cycle stops what they were doing)
 	if (hard)
 	{
-		mainSerialId.reset();
-		romSerialId.reset();
+		x76f100_reset(&mainSerialId);
+		x76f100_reset(&romSerialId);
 	}
 	// (a hard reset is a power cycle: the devices start again, from their files)
 	if (hard)
@@ -573,23 +573,23 @@ static void naomi_serial_legacy_clear(void)
 /* What the save states before V26 did not hold, on a NAOMI and NAOMI 2 (and
  * a System SP): the main board's serial EEPROM, and the ROM board's unless
  * the DIMM board's part of the state has it already (142 bytes each, see
- * X76F100SerialFlash::serialize()). */
+ * x76f100_serialize()). */
 void naomi_serial_serialize_v26(void **data, unsigned int *total_size)
 {
 	if (!SYSTEM_IS_NAOMI())
 		return;
-	mainSerialId.serialize(data, total_size);
+	x76f100_serialize(&mainSerialId, data, total_size);
 	if (!naomi_gd_serial_in_v25())
-		romSerialId.serialize(data, total_size);
+		x76f100_serialize(&romSerialId, data, total_size);
 }
 
 bool naomi_serial_unserialize_v26(void **data, unsigned int *total_size)
 {
 	if (!SYSTEM_IS_NAOMI())
 		return true;
-	mainSerialId.unserialize(data, total_size);
+	x76f100_unserialize(&mainSerialId, data, total_size);
 	if (!naomi_gd_serial_in_v25())
-		romSerialId.unserialize(data, total_size);
+		x76f100_unserialize(&romSerialId, data, total_size);
 	naomi_serial_legacy_clear();
 	return true;
 }
@@ -601,12 +601,12 @@ void naomi_serial_state_before_v26(void)
 {
 	if (!SYSTEM_IS_NAOMI())
 		return;
-	mainSerialId.setData(defaultSerialData);
-	mainSerialId.reset();
+	x76f100_setData(&mainSerialId, defaultSerialData);
+	x76f100_reset(&mainSerialId);
 	if (!naomi_gd_serial_in_v25())
 	{
-		romSerialId.setData(romSerialSet);
-		romSerialId.reset();
+		x76f100_setData(&romSerialId, romSerialSet);
+		x76f100_reset(&romSerialId);
 	}
 	naomi_serial_legacy_clear();
 }

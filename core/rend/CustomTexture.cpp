@@ -34,6 +34,11 @@ extern const char *retro_get_system_directory();
 
 CustomTexture custom_texture;
 
+void custom_texture_terminate(void)
+{
+	custom_texture.Terminate();
+}
+
 /* Loader thread: load the custom image for one queued texture. Requests
  * that arrive for it meanwhile are not queued again (the count is not
  * zero), so go round until the count this pass answered is all there is.
