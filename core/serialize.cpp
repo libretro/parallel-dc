@@ -27,6 +27,7 @@
 #include "hw/pvr/pvr_regs.h"
 #include "hw/pvr/pvr_mem.h"
 #include "hw/sh4/sh4_if.h"
+#include "hw/sh4/sh4_mem.h"
 #include "hw/sh4/modules/tmu.h"
 #include "hw/sh4/modules/ccn.h"
 #include "hw/aica/aica_if.h"
@@ -118,10 +119,8 @@ extern u32 ta_fsm_cl;
 extern VArray2 vram;
 
 //./core/hw/sh4/sh4_mmr.o
-extern Array<u8> OnChipRAM;
 
 //./core/hw/sh4/sh4_mem.o
-extern VArray2 mem_b;
 
 //./core/hw/sh4/sh4_interrupts.o
 
@@ -629,7 +628,7 @@ bool dc_serialize(void **data, unsigned int *total_size)
 
 	LIBRETRO_SA(vram.data, vram.size);
 
-	LIBRETRO_SA(OnChipRAM.data,OnChipRAM_SIZE);
+	LIBRETRO_SA(OnChipRAM,OnChipRAM_SIZE);
 
 	STATE_PART("CCN"), register_serialize(CCN, ARRAY_SIZE(CCN), data, total_size) ;
 	STATE_PART("UBC"), register_serialize(UBC, ARRAY_SIZE(UBC), data, total_size) ;
@@ -1240,7 +1239,7 @@ bool dc_unserialize(void **data, unsigned int *total_size, size_t actual_data_si
 
 	unserialize_vram(data, total_size);
 
-	LIBRETRO_USA(OnChipRAM.data,OnChipRAM_SIZE);
+	LIBRETRO_USA(OnChipRAM,OnChipRAM_SIZE);
 
 	register_unserialize(CCN, ARRAY_SIZE(CCN), data, total_size, version < V4 ? 16 : 0) ;
 	register_unserialize(UBC, ARRAY_SIZE(UBC), data, total_size, 0) ;

@@ -13,6 +13,8 @@ void map_p4(void);
 
 #define OnChipRAM_SIZE (0x2000)
 #define OnChipRAM_MASK (OnChipRAM_SIZE-1)
+/* The operand cache used as RAM (CCR.ORA) */
+extern u8 OnChipRAM[OnChipRAM_SIZE];
 
 #define sq_both ((u8*)sh4rcb.sq_buffer)
 

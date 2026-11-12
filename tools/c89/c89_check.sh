@@ -2,8 +2,8 @@
 # The core's C, as MSVC's C89 takes it (AGENTS.md: MSVC C89, gradually):
 # every .c file of the core's own that the build compiles (not deps/ or
 # libretro-common/, which are others'), with the build's own flags, compiled
-# again as -std=c89 -pedantic (and again with no recompilers, where a file
-# has code for that), declarations after statements, functions
+# again as -std=c89 -pedantic (and again with no recompilers, and with no
+# MMU, where a file has code for that), declarations after statements, functions
 # called undeclared (C89 takes them as int f(), as MSVC does) and every
 # warning an error. The headers they include are held to it with them -
 # types.h, which every file includes, first among them. Third-party
@@ -28,14 +28,23 @@ n=0
 # (a file with code for where there is no recompiler - the DSP's
 # interpreter where there is a DSP recompiler - is held to it there too)
 NOREC="-DFEAT_SHREC=DYNAREC_NONE -DFEAT_AREC=DYNAREC_NONE -DFEAT_DSPREC=DYNAREC_NONE"
+# (and a file with code for a build with no MMU, or that has mmu.h's)
+NOMMU="-DNO_MMU"
 for f in $files; do
    n=$((n + 1))
-   for extra in "" "$NOREC"; do
-      [ -z "$extra" ] || grep -q 'FEAT_[A-Z]*REC' "$f" || continue
+   for extra in "" "$NOREC" "$NOMMU"; do
+      case $extra in
+      "$NOREC") grep -q 'FEAT_[A-Z]*REC' "$f" || continue ;;
+      "$NOMMU") grep -q 'NO_MMU\|mmu\.h' "$f" || continue ;;
+      esac
       if ! out=$($CC $cflags $extra -std=c89 -pedantic -Wno-long-long -Wno-variadic-macros -Werror \
             -Wdeclaration-after-statement -Werror=implicit-function-declaration -fsyntax-only "$f" 2>&1); then
          echo "$out" | grep -m 5 "error" | sed "s#^#  #"
-         echo "c89_check: FAIL: $f${extra:+ (no recompilers)}"
+         case $extra in
+         "$NOREC") echo "c89_check: FAIL: $f (no recompilers)" ;;
+         "$NOMMU") echo "c89_check: FAIL: $f (no MMU)" ;;
+         *) echo "c89_check: FAIL: $f" ;;
+         esac
          fails=$((fails + 1))
          break
       fi

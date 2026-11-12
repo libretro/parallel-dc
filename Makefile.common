@@ -43,8 +43,6 @@ SOURCES_CXX := \
 					$(CORE_DIR)/core/rend/rtt_watch.cpp \
 					$(CORE_DIR)/core/rend/tile/compute_frame.cpp \
 					\
-					$(CORE_DIR)/core/hw/sh4/sh4_mmr.cpp \
-					$(CORE_DIR)/core/hw/sh4/sh4_mem.cpp \
 					$(CORE_DIR)/core/hw/sh4/sh4_rom.cpp \
 					$(CORE_DIR)/core/hw/sh4/sh4_opcode_list.cpp \
 					$(CORE_DIR)/core/hw/sh4/interpr/sh4_interpreter.cpp \
@@ -154,6 +152,8 @@ SOURCES_C += $(CORE_DIR)/core/hw/gdrom/gdrom_response.c \
 					$(CORE_DIR)/core/hw/sh4/modules/cpg.c \
 					$(CORE_DIR)/core/hw/sh4/modules/intc.c \
 					$(CORE_DIR)/core/hw/sh4/modules/dmac.c \
+					$(CORE_DIR)/core/hw/sh4/sh4_mmr.c \
+					$(CORE_DIR)/core/hw/sh4/sh4_mem.c \
 					$(CORE_DIR)/core/hw/aica/aica_if.c \
 					$(CORE_DIR)/core/hw/sh4/modules/ccn.c \
 					$(CORE_DIR)/core/hw/sh4/modules/rtc.c \

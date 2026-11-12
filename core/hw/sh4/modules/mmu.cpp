@@ -900,3 +900,70 @@ bool mmu_TranslateSQW(u32 adr, u32* out)
 	return true;
 }
 #endif
+
+/* The SH4's memory functions, as the MMU, the interpreter's caches
+ * (STRICT_MODE) and the recompiler want them (from sh4_mem.cpp, which is C
+ * and has none of the templates) */
+#ifdef STRICT_MODE
+#include "hw/sh4/sh4_cache.h"
+#endif
+
+static bool interpreterRunning = false;
+
+void SetMemoryHandlers(void)
+{
+#ifndef NO_MMU
+#ifdef STRICT_MODE
+	if (settings.dynarec.Enable && interpreterRunning)
+	{
+		// Flush caches when interp -> dynarec
+		ocache.WriteBackAll();
+		icache.Invalidate();
+	}
+
+	if (!settings.dynarec.Enable)
+	{
+		interpreterRunning = true;
+		IReadMem16 = &IReadCachedMem;
+		ReadMem8 = &ReadCachedMem<u8>;
+		ReadMem16 = &ReadCachedMem<u16>;
+		ReadMem32 = &ReadCachedMem<u32>;
+		ReadMem64 = &ReadCachedMem<u64>;
+
+		WriteMem8 = &WriteCachedMem<u8>;
+		WriteMem16 = &WriteCachedMem<u16>;
+		WriteMem32 = &WriteCachedMem<u32>;
+		WriteMem64 = &WriteCachedMem<u64>;
+
+		return;
+	}
+	interpreterRunning = false;
+#endif
+	if (mmu_enabled())
+	{
+		IReadMem16 = &mmu_IReadMem16;
+		ReadMem8 = &mmu_ReadMem<u8>;
+		ReadMem16 = &mmu_ReadMem<u16>;
+		ReadMem32 = &mmu_ReadMem<u32>;
+		ReadMem64 = &mmu_ReadMem<u64>;
+
+		WriteMem8 = &mmu_WriteMem<u8>;
+		WriteMem16 = &mmu_WriteMem<u16>;
+		WriteMem32 = &mmu_WriteMem<u32>;
+		WriteMem64 = &mmu_WriteMem<u64>;
+	}
+	else
+	{
+		ReadMem8 = &_vmem_ReadMem8;
+		ReadMem16 = &_vmem_ReadMem16;
+		IReadMem16 = &_vmem_ReadMem16;
+		ReadMem32 = &_vmem_ReadMem32;
+		ReadMem64 = &_vmem_ReadMem64;
+
+		WriteMem8 = &_vmem_WriteMem8;
+		WriteMem16 = &_vmem_WriteMem16;
+		WriteMem32 = &_vmem_WriteMem32;
+		WriteMem64 = &_vmem_WriteMem64;
+	}
+#endif
+}

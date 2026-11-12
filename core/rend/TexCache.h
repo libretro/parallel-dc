@@ -1,6 +1,7 @@
 #pragma once
 #include "oslib/oslib.h"
 #include "hw/pvr/Renderer_if.h"
+#include "hw/pvr/pvr_mem.h"
 
 #include <algorithm>
 #include <array>
@@ -965,7 +966,6 @@ class BaseTextureCacheData;
 
 bool VramLockedWriteOffset(size_t offset);
 void VramLockedWriteRange(u32 offset, u32 size);
-void VramBlockWrite(u32 offset, u32 size);
 void VramRendered(u32 offset, u32 size, const BaseTextureCacheData *target);
 void vram_load(const u8 *from);
 void libCore_vramlock_Lock(u32 start_offset, u32 end_offset, BaseTextureCacheData *texture);

@@ -27,6 +27,15 @@ extern "C" {
  * and OCI ask (sh4_interpreter.cpp) */
 void sh4_icache_invalidate(void);
 void sh4_ocache_invalidate(void);
+/* Their address and data arrays, as P4 maps them (sh4_mmr.c) */
+u32 sh4_icache_read_address_array(u32 addr);
+void sh4_icache_write_address_array(u32 addr, u32 data);
+u32 sh4_icache_read_data_array(u32 addr);
+void sh4_icache_write_data_array(u32 addr, u32 data);
+u32 sh4_ocache_read_address_array(u32 addr);
+void sh4_ocache_write_address_array(u32 addr, u32 data);
+u32 sh4_ocache_read_data_array(u32 addr);
+void sh4_ocache_write_data_array(u32 addr, u32 data);
 
 #ifdef __cplusplus
 }

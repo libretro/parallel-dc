@@ -113,12 +113,15 @@ void _vmem_map_handler(_vmem_handler Handler,u32 start,u32 end);
 /* Where a write of @sz bytes to @addr goes: the memory, and *@ismem true,
  * or the handler's write function, and *@ismem false */
 void *_vmem_write_ptr(u32 addr, bool *ismem, u32 sz);
+/* And of a read */
+void *_vmem_read_ptr(u32 addr, bool *ismem, u32 sz);
 void _vmem_map_block(void* base,u32 start,u32 end,u32 mask);
 void _vmem_mirror_mapping(u32 new_region,u32 start,u32 size);
 
 #define _vmem_map_block_mirror(base, start, end, blck_size) { \
 	u32 block_size = (blck_size) >> 24; \
-	for (u32 _maip = (start); _maip <= (end); _maip += block_size) \
+	u32 _maip; \
+	for (_maip = (start); _maip <= (end); _maip += block_size) \
 		_vmem_map_block((base), _maip, _maip + block_size - 1, blck_size - 1); \
 }
 

@@ -48,6 +48,9 @@ extern u32 YUV_x_size;
 extern u32 YUV_y_size;
 extern u32 YUV_index;
 
+/* Video memory about to be written whole, by a block (rend/TexCache.cpp) */
+void VramBlockWrite(u32 offset, u32 size);
+
 /* A store queue to video memory (the 32-bit ARM's TAWriteSQ has it too) */
 void TAWriteSQ_to_vram(u32 address, u8* sq);
 
