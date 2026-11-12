@@ -1,8 +1,58 @@
 #ifndef NAOMI_CART_H
 #define NAOMI_CART_H
 
-#include <string>
 #include "types.h"
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+/* The romset is a Sega System SP's (from naomi_cart_GetSystemType()) */
+extern bool naomi_cart_systemsp;
+
+/* The game's buttons and axes, as the core's descriptors and the boards read them */
+typedef struct ButtonDescriptor ButtonDescriptor;
+struct ButtonDescriptor
+{
+   u32 mask;
+   const char *name;
+   u32 p2_mask;     /* read as these of the second player's switches */
+   /* Read as this other switch of the player's own; or, 0xffffffff, a
+    * switch of the cabinet's that no button is for and that is always on
+    * (the player's own, or the second player's p2_mask if there is one). */
+   u32 target;
+};
+
+enum AxisType {
+   Full,
+   Half
+};
+typedef enum AxisType AxisType;
+
+typedef struct AxisDescriptor AxisDescriptor;
+struct AxisDescriptor
+{
+   const char *name;
+   AxisType type;
+   u32 axis;
+   bool inverted;
+};
+
+typedef struct InputDescriptors InputDescriptors;
+struct InputDescriptors
+{
+   ButtonDescriptor buttons[18];
+   AxisDescriptor axes[8];
+};
+
+extern InputDescriptors *naomi_game_inputs;
+/* The game's name, as its ROM header has it */
+extern char naomi_game_id[];
+
+#ifdef __cplusplus
+}
+
+#include <string>
 
 class Cartridge
 {
@@ -25,9 +75,9 @@ public:
 	virtual std::string GetGameId();
 	virtual void Serialize(void **data, unsigned int *total_size) {}
 	virtual void Unserialize(void **data, unsigned int *total_size) {}
-	// What a cartridge keeps that the save states before V21 did not hold:
-	// written and read after everything else, by naomi_serialize_v21() and
-	// naomi_unserialize_v21().
+	/* What a cartridge keeps that the save states before V21 did not hold: */
+	/* written and read after everything else, by naomi_serialize_v21() and */
+	/* naomi_unserialize_v21(). */
 	virtual void SerializeV21(void **data, unsigned int *total_size) {}
 	virtual void UnserializeV21(void **data, unsigned int *total_size) {}
 	virtual void SetKey(u32 key) { }
@@ -35,7 +85,7 @@ public:
 	u32 GetSize() const { return RomSize; }
 
 protected:
-	// a cartridge that is memory someone else has: none is allocated for it
+	/* a cartridge that is memory someone else has: none is allocated for it */
 	Cartridge(u8 *rom_ptr, u32 size) : RomPtr(rom_ptr), RomSize(size) {}
 
 	u8* RomPtr;
@@ -100,8 +150,8 @@ private:
 class M2Cartridge : public NaomiCartridge
 {
 public:
-	// (its RAM starts as zeroes: it was whatever the host's memory had, and
-	// two machines that should be the same, in netplay, were not)
+	/* (its RAM starts as zeroes: it was whatever the host's memory had, and */
+	/* two machines that should be the same, in netplay, were not) */
 	M2Cartridge(u32 size) : NaomiCartridge(size) { memset(naomi_cart_ram, 0, sizeof(naomi_cart_ram)); }
 
 	virtual bool Read(u32 offset, u32 size, void* dst) override;
@@ -134,43 +184,11 @@ void naomi_cart_WantSet(const char *name);
 int naomi_cart_GetRotation();
 void naomi_cart_Close();
 
-extern char naomi_game_id[];
 extern u8 *naomi_default_eeprom;
 
 extern Cartridge *CurrentCartridge;
-// The romset is a Sega System SP's (from naomi_cart_GetSystemType())
-extern bool naomi_cart_systemsp;
 
-struct ButtonDescriptor
-{
-   u32 mask;
-   const char *name;
-   u32 p2_mask;     /* read as these of the second player's switches */
-   /* Read as this other switch of the player's own; or, 0xffffffff, a
-    * switch of the cabinet's that no button is for and that is always on
-    * (the player's own, or the second player's p2_mask if there is one). */
-   u32 target;
-};
 
-enum AxisType {
-   Full,
-   Half
-};
+#endif /* __cplusplus */
 
-struct AxisDescriptor
-{
-   const char *name;
-   AxisType type;
-   u32 axis;
-   bool inverted;
-};
-
-struct InputDescriptors
-{
-   ButtonDescriptor buttons[18];
-   AxisDescriptor axes[8];
-};
-
-extern InputDescriptors *naomi_game_inputs;
-
-#endif //NAOMI_CART_H
+#endif /* NAOMI_CART_H */

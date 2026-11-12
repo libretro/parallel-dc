@@ -159,6 +159,7 @@ static bool libretro_supports_bitmasks = false;
 
 static bool categoriesSupported = false;
 
+#include "pad_state.h"
 u32 kcode[4] = {0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF};
 u8 rt[4] = {0, 0, 0, 0};
 u8 lt[4] = {0, 0, 0, 0};
@@ -616,7 +617,7 @@ static struct retro_system_av_info g_av_info;
 static double last_av_fps = 0.0;
 static double pending_av_fps = 0.0;
 static int    pending_av_fps_count = 0;
-extern int GDROM_TICK;
+#include "hw/gdrom/gdromv3.h"
 static bool rotate_screen = false;
 
 /* Whether the OpenGL context can have GPU-side TA processing (OpenGL 4.3,

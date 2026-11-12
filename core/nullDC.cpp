@@ -4,6 +4,7 @@
 //initialse Emu
 #include <retro_atomic.h>
 #include "types.h"
+#include "emulator.h"
 #include <compat/strl.h>
 #include "hw/mem/_vmem.h"
 #include "stdclass.h"
@@ -672,7 +673,6 @@ int dc_init()
    return 0;
 }
 
-void dc_stop();
 
 /*
  * Hard backstop guaranteeing dc_run() returns within a bounded emulated-cycle

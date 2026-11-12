@@ -74,9 +74,7 @@ void UpdateInputStateMouse(u32 port);
 extern InputLatch input_latch;
 void UpdateVibration(u32 port, u32 value, u32 max_duration);
 
-extern u32 kcode[4];
-extern s8 joyx[4], joyy[4], joyrx[4], joyry[4];
-extern u8 rt[4],lt[4];
+#include "libretro/pad_state.h"
 extern bool enable_purupuru;
 extern f32 mo_x_abs[4];
 extern f32 mo_y_abs[4];

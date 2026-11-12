@@ -1,3 +1,4 @@
+
 /*
 	Copyright 2021 flyinghead
 
@@ -19,8 +20,12 @@
 #pragma once
 #include "types.h"
 
-void bba_Init();
-void bba_Term();
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+void bba_Init(void);
+void bba_Term(void);
 void bba_Reset(bool hard);
 u32 bba_ReadMem(u32 addr, u32 sz);
 void bba_WriteMem(u32 addr, u32 data, u32 sz);
@@ -32,3 +37,7 @@ void bba_Unserialize(void **data, unsigned int *total_size);
  * events, and which network session it is on. */
 void bba_serialize_v24(void **data, unsigned int *total_size);
 bool bba_unserialize_v24(void **data, unsigned int *total_size);
+
+#ifdef __cplusplus
+}
+#endif

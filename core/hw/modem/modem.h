@@ -1,3 +1,4 @@
+
 /*
 	Originally based on nullDC: nullExtDev/modem.h
 
@@ -24,12 +25,20 @@
 #pragma once
 #include "types.h"
 
-void ModemInit();
-void ModemTerm();
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+void ModemInit(void);
+void ModemTerm(void);
 u32 ModemReadMem_A0_006(u32 addr,u32 size);
 void ModemWriteMem_A0_006(u32 addr,u32 data,u32 size);
 
-// The modem in a save state, since version 24 (see net_serialize_v24())
+/* The modem in a save state, since version 24 (see net_serialize_v24()) */
 void modem_serialize_v24(void **data, unsigned int *total_size);
 bool modem_unserialize_v24(void **data, unsigned int *total_size);
 void modem_state_before_v24(void);
+
+#ifdef __cplusplus
+}
+#endif

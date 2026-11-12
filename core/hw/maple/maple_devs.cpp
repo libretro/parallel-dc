@@ -1830,9 +1830,7 @@ struct atomiswave_lightgun : maple_lightgun
 	}
 };
 
-extern u32 kcode[4];
-extern s8 joyx[4], joyy[4], joyrx[4], joyry[4];
-extern u8 rt[4], lt[4];
+#include "libretro/pad_state.h"
 extern char eeprom_file[PATH_MAX];
 
 /*

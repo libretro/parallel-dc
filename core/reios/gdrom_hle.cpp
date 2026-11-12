@@ -64,7 +64,7 @@ void gdhle_state_before_v21(void)
 	memcpy(SecMode, fresh_mode, sizeof(SecMode));
 }
 
-extern int GDROM_TICK;
+#include "hw/gdrom/gdromv3.h"
 
 /* Main memory at @addr, if all of the @size bytes from there are in it.
  * GetMemPtr() looks only at where they start: what was read or copied to an
@@ -318,7 +318,7 @@ static void GDCC_HLE_GETSCD() {
 		gd_hle_state.result[3] = 0;
 		return;
 	}
-	if (cdda.status == cdda_t::Playing)
+	if (cdda.status == CDDA_PLAYING)
 		gd_hle_state.cur_sector = cdda.CurrAddr.FAD;
 	u8 scd[100];
 	gd_get_subcode(format, gd_hle_state.cur_sector, scd);
@@ -470,7 +470,7 @@ static void GD_HLE_Command(u32 cc)
 		debugf("GDROM: CMD INIT");
 		gd_hle_state.multi_callback = 0;
 		gd_hle_state.multi_read_count = 0;
-		cdda.status = cdda_t::NoInfo;
+		cdda.status = CDDA_NOINFO;
 		break;
 
 	case GDCC_PIOREAD:
@@ -481,13 +481,13 @@ static void GD_HLE_Command(u32 cc)
 		 * is: paused, which is what the drive itself says once it has been
 		 * started. Stopped is what it says after the command that stops it. */
 		SecNumber.Status = GD_PAUSE;
-		cdda.status = cdda_t::NoInfo;
+		cdda.status = CDDA_NOINFO;
 		break;
 
 	case GDCC_DMAREAD:
 		if (GDROM_HLE_BadRead())
 			break;
-		cdda.status = cdda_t::NoInfo;
+		cdda.status = CDDA_NOINFO;
 		if (gd_hle_state.xfer_end_time == 0)
 			GDROM_HLE_ReadDMA();
 		GDROM_HLE_ReadDMA_step();          /* read <=32 sectors this poll */
@@ -511,11 +511,11 @@ static void GD_HLE_Command(u32 cc)
 			{
 				// nothing to play
 				GDROM_HLE_NoDisc();
-				cdda.status = cdda_t::NoInfo;
+				cdda.status = CDDA_NOINFO;
 				SecNumber.Status = GD_STANDBY;
 				break;
 			}
-			cdda.status = cdda_t::Playing;
+			cdda.status = CDDA_PLAYING;
 			cdda.StartAddr.FAD = start_fad;
 			cdda.EndAddr.FAD = end_fad;
 			// the drive keeps four bits of repeat count (15: for ever)
@@ -527,14 +527,14 @@ static void GD_HLE_Command(u32 cc)
 
 	case GDCC_RELEASE:
 		debugf("GDROM: CMD RELEASE");
-		if (cdda.status == cdda_t::Paused)
-			cdda.status = cdda_t::Playing;
+		if (cdda.status == CDDA_PAUSED)
+			cdda.status = CDDA_PLAYING;
 		SecNumber.Status = GD_PLAY;
 		break;
 
 	case GDCC_STOP:
 		debugf("GDROM: CMD STOP");
-		cdda.status = cdda_t::NoInfo;
+		cdda.status = CDDA_NOINFO;
 		SecNumber.Status = GD_STANDBY;
 		break;
 
@@ -542,7 +542,7 @@ static void GD_HLE_Command(u32 cc)
 		debugf("GDROM: CMD SEEK");
 		// the drive goes where it is sent, and is paused there
 		cdda.CurrAddr.FAD = cdda.StartAddr.FAD = gd_hle_state.params[0] & 0xffffff;
-		cdda.status = cdda_t::Paused;
+		cdda.status = CDDA_PAUSED;
 		SecNumber.Status = GD_PAUSE;
 		break;
 
@@ -557,7 +557,7 @@ static void GD_HLE_Command(u32 cc)
 			{
 				// no disc, no tracks: asking for one was a crash
 				GDROM_HLE_NoDisc();
-				cdda.status = cdda_t::NoInfo;
+				cdda.status = CDDA_NOINFO;
 				SecNumber.Status = GD_STANDBY;
 				break;
 			}
@@ -573,7 +573,7 @@ static void GD_HLE_Command(u32 cc)
 			}
 			debugf("GDROM: CMD PLAY first_track %x last_track %x repeats %x start_fad %x end_fad %x param4 %x", first_track, last_track, repeats,
 					start_fad, end_fad, gd_hle_state.params[3]);
-			cdda.status = cdda_t::Playing;
+			cdda.status = CDDA_PLAYING;
 			cdda.StartAddr.FAD = start_fad;
 			cdda.EndAddr.FAD = end_fad;
 			cdda.repeats = repeats;
@@ -590,8 +590,8 @@ static void GD_HLE_Command(u32 cc)
 
 	case GDCC_PAUSE:
 		debugf("GDROM: CMD PAUSE");
-		if (cdda.status == cdda_t::Playing)
-			cdda.status = cdda_t::Paused;
+		if (cdda.status == CDDA_PLAYING)
+			cdda.status = CDDA_PAUSED;
 		SecNumber.Status = GD_PAUSE;
 		break;
 
@@ -700,7 +700,7 @@ static void GD_HLE_Command(u32 cc)
 			 * in it, and otherwise where it last read - what the drive's
 			 * own status command gives. (It was always the last read, so
 			 * a game watching its music saw it stand still.) */
-			const u32 fad = cdda.status == cdda_t::Playing || cdda.status == cdda_t::Paused
+			const u32 fad = cdda.status == CDDA_PLAYING || cdda.status == CDDA_PAUSED
 					? cdda.CurrAddr.FAD : gd_hle_state.cur_sector;
 			u32 elapsed;
 			u32 tracknum = libGDR_GetTrackNumber(fad, &elapsed);

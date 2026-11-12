@@ -611,7 +611,7 @@ void naomi_serial_state_before_v26(void)
 	naomi_serial_legacy_clear();
 }
 
-extern u32 kcode[4];
+#include "libretro/pad_state.h"
 
 u32 libExtDevice_ReadMem_A0_006(u32 addr,u32 size) {
 	addr &= 0x7ff;

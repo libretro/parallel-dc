@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Data the core's C files define, declared with C++ linkage.
+"""Data shared by the core's C and C++ files, with C++ linkage on one side.
 
 A variable defined in a .c file has C linkage. A C++ file that declares it
 itself - "extern u32 foo;" in the file, or in a header outside its
@@ -7,10 +7,16 @@ extern "C" block - gives it C++ linkage, and GCC and Clang name the two
 alike: everything links, and works. MSVC does not, and the link fails.
 So every such declaration is an error here, wherever it is built.
 
+The other way round as well: a variable a C file uses and a C++ file
+defines has C linkage only if that file has seen it declared in an
+extern "C" block first (the C file's header, included). The C++ file is
+run through the preprocessor to see that it has.
+
     python3 tools/c89/linkage_check.py [objects...]
 
-The objects are those of the core's C files, built (the default: every
-core/**/*.o that has a .c next to it). Functions need no check: their C++
+The objects are those of the core's C files, built for this machine (the
+default: every core/**/*.o that has a .c next to it); the C++ files are
+preprocessed as make builds them here. Functions need no check: their C++
 names are mangled everywhere, and the link fails on every compiler.
 """
 import os, re, subprocess, sys
@@ -71,9 +77,67 @@ for d, _, files in os.walk('core'):
                 continue
             bad.append('%s:%d: %s' % (p, n + 1, line.strip()))
 
+# the variables C files use that C++ files define
+def nm_syms(o, flag):
+    out = subprocess.run(['nm', '-g', flag, o], capture_output=True, text=True).stdout
+    return out.splitlines()
+
+used = set()
+for o in objs:
+    for line in nm_syms(o, '--undefined-only'):
+        parts = line.split()
+        if parts and parts[0] == 'U':
+            used.add(parts[-1])
+cxx_defs = {}
+for d, _, files in os.walk('core'):
+    if 'deps' in d.split(os.sep) or 'libretro-common' in d:
+        continue
+    for f in files:
+        if not f.endswith('.o'):
+            continue
+        base = os.path.join(d, f[:-2])
+        src = next((base + e for e in ('.cpp', '.mm') if os.path.exists(base + e)), None)
+        if src is None:
+            continue
+        for line in nm_syms(base + '.o', '--defined-only'):
+            parts = line.split()
+            if len(parts) == 3 and parts[1] in 'BDRCGSV' and parts[2] in used:
+                cxx_defs.setdefault(src, set()).add(parts[2])
+
+def extern_c_text(src):
+    """What of @src, preprocessed with the build's flags, is in extern "C" blocks"""
+    obj = os.path.splitext(src)[0] + '.o'
+    cmd = subprocess.run(['make', '-n', '-B', obj], capture_output=True, text=True).stdout
+    line = next((l for l in cmd.splitlines() if src in l and ' -c' in l), None)
+    if line is None:
+        return None
+    args = line.split()
+    keep = [a for a in args if a.startswith(('-I', '-D', '-isystem', '-std', '-U'))]
+    pre = subprocess.run([args[0], '-E', '-P'] + keep + [src], capture_output=True, text=True).stdout
+    out = []
+    for m in re.finditer(r'extern\s+"C"\s*\{', pre):
+        i, depth = m.end(), 1
+        while depth and i < len(pre):
+            if pre[i] == '{':
+                depth += 1
+            elif pre[i] == '}':
+                depth -= 1
+            i += 1
+        out.append(pre[m.end():i])
+    return '\n'.join(out)
+
+for src, names in sorted(cxx_defs.items()):
+    text = extern_c_text(src)
+    if text is None:
+        bad.append('%s: cannot get its compile command' % src)
+        continue
+    for n in sorted(names):
+        if not re.search(r'\b' + re.escape(n) + r'\b', text):
+            bad.append('%s: defines %s, which C files use, without an extern "C" declaration of it before' % (src, n))
+
 for b in bad:
     print(b)
 if bad:
-    print('linkage_check: %d declaration(s) of C data with C++ linkage: take them from the C file\'s header' % len(bad))
+    print('linkage_check: %d variable(s) with C++ linkage on one side: declare them once, in extern "C", in a header both include' % len(bad))
     sys.exit(1)
-print('linkage_check: %d C data symbols, none declared with C++ linkage' % len(data))
+print('linkage_check: %d variables of the C files and %d of C++ files the C files use, all with C linkage' % (len(data), sum(len(v) for v in cxx_defs.values())))

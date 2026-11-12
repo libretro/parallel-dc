@@ -1,5 +1,6 @@
 #pragma once
 #include "types.h"
+#include "emulator.h"
 
 #ifdef __cplusplus
 #include "ta_ctx.h"
@@ -51,8 +52,6 @@ extern bool renderer_changed;
 #ifdef __cplusplus
 }
 
-/* forward declaration */
-void dc_stop();
 
 extern TA_context* _pvrrc;
 

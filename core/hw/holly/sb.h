@@ -359,8 +359,9 @@ extern RegisterStruct sb_regs[SB_REGS];
 #define SB_LMMODE0 SB_REG_32(LMMODE0)
 /* 0x005F6888    SB_LMMODE1  RW  Via TA texture memory bus select 1 */
 #define SB_LMMODE1 SB_REG_32(LMMODE1)
-/* 0x005F688C    SB_FFST R   FIFO status */
+/* 0x005F688C    SB_FFST R   FIFO status (and the reads of it, which fake it) */
 extern u32 SB_FFST;
+extern u32 SB_FFST_rc;
 /* 0x005F6890    SB_SFRES    W   System reset */
 #define SB_SFRES SB_REG_32(SFRES)
 

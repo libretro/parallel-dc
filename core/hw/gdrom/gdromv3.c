@@ -18,10 +18,10 @@
 #include "hw/sh4/sh4_mmr.h"
 #include "hw/sh4/sh4_sched.h"
 
-// (-1 on a machine that has no drive, and has never registered the event)
+/* (-1 on a machine that has no drive, and has never registered the event) */
 int gdrom_sched = -1;
 
-//Sense: ASC - ASCQ - Key
+/* Sense: ASC - ASCQ - Key */
 signed int sns_asc=0;
 signed int sns_ascq=0;
 signed int sns_key=0;
@@ -29,10 +29,10 @@ signed int sns_key=0;
 read_params_t read_params ;
 packet_cmd_t packet_cmd;
 
-//Buffer for sector reads [dma]
+/* Buffer for sector reads [dma] */
 read_buff_t read_buff ;
 
-//pio buffer
+/* pio buffer */
 pio_buff_t pio_buff ;
 
 u32 set_mode_offset;
@@ -51,7 +51,7 @@ DiscType gd_disk_type;
 */
 u32 data_write_mode=0;
 
-//Registers
+/* Registers */
 	u32 DriveSel;
 	GD_ErrRegT Error;
 	GD_InterruptReasonT IntReason;
@@ -63,7 +63,7 @@ u32 data_write_mode=0;
 
 	
 ByteCount_t GDByteCount ;
-//end
+/* end */
 GD_HardwareInfo_t GD_HardwareInfo;
 
 #define printf_rm(...)  DEBUG_LOG(GDROM, __VA_ARGS__)
@@ -76,24 +76,25 @@ const s16* libCore_CDDA_Sector(s16* sector)
 {
 	const s16* out = sector;
 
-	//silence ! :p
-	if (cdda.status == cdda_t::Playing)
+	/* silence ! :p */
+	if (cdda.status == CDDA_PLAYING)
 	{
 		/* The end of the disc. Playing stops there, whatever end the game
 		 * gave, and the drive stays on the last sector there was: a game
 		 * that waits for the music to be over would otherwise wait while
 		 * silence is played up to an end that is not on the disc. */
 		const u32 lead_out = libGDR_LeadOutFAD();
+		const u8* lent;
 		if (lead_out != 0 && cdda.CurrAddr.FAD >= lead_out)
 		{
 			if (cdda.CurrAddr.FAD != 0)
 				cdda.CurrAddr.FAD--;
-			cdda.status = cdda_t::Terminated;
+			cdda.status = CDDA_TERMINATED;
 			SecNumber.Status = GD_PAUSE;
 			memset(sector, 0, 2352);
 			return out;
 		}
-		const u8* lent = libGDR_LendRawSector(cdda.CurrAddr.FAD);
+		lent = libGDR_LendRawSector(cdda.CurrAddr.FAD);
 		if (lent)
 			out = (const s16*)lent;
 		else
@@ -103,13 +104,13 @@ const s16* libCore_CDDA_Sector(s16* sector)
 		{
 			if (cdda.repeats==0)
 			{
-				//stop
-				cdda.status = cdda_t::Terminated;
+				/* stop */
+				cdda.status = CDDA_TERMINATED;
 				SecNumber.Status = GD_PAUSE;
 			}
 			else
 			{
-				//Repeat ;)
+				/* Repeat ;) */
 				if (cdda.repeats!=0xf)
 					cdda.repeats--;
 
@@ -123,16 +124,16 @@ const s16* libCore_CDDA_Sector(s16* sector)
 	}
 	return out;
 }
-void gd_spi_pio_end(const u8* buffer, u32 len, gd_states next_state = gds_pio_end);
-void gd_process_spi_cmd();
-void gd_process_ata_cmd();
+void gd_spi_pio_end(const u8* buffer, u32 len, gd_states next_state);
+void gd_process_spi_cmd(void);
+void gd_process_ata_cmd(void);
 
 /* The cache only ever holds the sector a transfer consumed part of:
  * whole sectors go from the image to RAM without it. */
 static void FillReadBuffer(void)
 {
-	read_buff.cache_index=0;
 	u32 count = read_params.remaining_sectors;
+	read_buff.cache_index=0;
 
 	if (count > 1)
 		count = 1;
@@ -151,53 +152,53 @@ void gd_set_state(gd_states state)
 	switch(state)
 	{
 		case gds_waitcmd:
-			GDStatus.DRDY=1;   // Can accept ATA command :)
-			GDStatus.BSY=0;    // Does not access command block
+			GDStatus.DRDY=1;   /* Can accept ATA command :) */
+			GDStatus.BSY=0;    /* Does not access command block */
 			break;
 
 		case gds_procata:
 
-			GDStatus.DRDY=0;   // Can't accept ATA command
-			GDStatus.BSY=1;    // Accessing command block to process command
+			GDStatus.DRDY=0;   /* Can't accept ATA command */
+			GDStatus.BSY=1;    /* Accessing command block to process command */
 			gd_process_ata_cmd();
 			break;
 
 		case gds_waitpacket:
 
-			// Prepare for packet command
+			/* Prepare for packet command */
 			packet_cmd.index=0;
 
-			// Set CoD, clear BSY and IO
+			/* Set CoD, clear BSY and IO */
 			IntReason.CoD=1;
 			GDStatus.BSY = 0;
 			IntReason.IO=0;
 
-			// Make DRQ valid
+			/* Make DRQ valid */
 			GDStatus.DRQ = 1;
 
-			// ATA can optionally raise the interrupt ...
-			// RaiseInterrupt(holly_GDROM_CMD);
+			/* ATA can optionally raise the interrupt ... */
+			/* RaiseInterrupt(holly_GDROM_CMD); */
 			break;
 
 		case gds_procpacket:
 
-			GDStatus.DRQ=0;     // Can't accept ATA command
-			GDStatus.BSY=1;     // Accessing command block to process command
+			GDStatus.DRQ=0;     /* Can't accept ATA command */
+			GDStatus.BSY=1;     /* Accessing command block to process command */
 			gd_process_spi_cmd();
 			break;
-			//yep , get/set are the same !
+			/* yep , get/set are the same ! */
 		case gds_pio_get_data:
 		case gds_pio_send_data:
-			//  When preparations are complete, the following steps are carried out at the device.
-			//(1)   Number of bytes to be read is set in "Byte Count" register. 
+			/*  When preparations are complete, the following steps are carried out at the device. */
+			/* (1)   Number of bytes to be read is set in "Byte Count" register. */
 			GDByteCount.full =(u16)(pio_buff.size<<1);
-			//(2)   IO bit is set and CoD bit is cleared. 
+			/* (2)   IO bit is set and CoD bit is cleared. */
 			IntReason.IO=1;
 			IntReason.CoD=0;
-			//(3)   DRQ bit is set, BSY bit is cleared. 
+			/* (3)   DRQ bit is set, BSY bit is cleared. */
 			GDStatus.DRQ=1;
 			GDStatus.BSY=0;
-			//(4)   INTRQ is set, and a host interrupt is issued.
+			/* (4)   INTRQ is set, and a host interrupt is issued. */
 			asic_RaiseInterrupt(holly_GDROM_CMD);
 			/*
 			The number of bytes normally is the byte number in the register at the time of receiving 
@@ -211,10 +212,10 @@ void gd_set_state(gd_states state)
 				If more data are to be sent, the device sets the BSY bit and repeats the above sequence 
 				from step 7. 
 				*/
-				GDStatus.BSY=1;
-
 				u32 sector_count = read_params.remaining_sectors;
 				gd_states next_state=gds_pio_end;
+
+				GDStatus.BSY=1;
 
 				if (sector_count > 27)
 				{
@@ -235,7 +236,7 @@ void gd_set_state(gd_states state)
 
 		case gds_pio_end:
 			
-			GDStatus.DRQ=0;//all data is sent !
+			GDStatus.DRQ=0;/* all data is sent ! */
 
 			gd_set_state(gds_procpacketdone);
 			break;
@@ -246,18 +247,18 @@ void gd_set_state(gd_states state)
 			final status (IO, CoD, DRDY set, BSY, DRQ cleared) to the "Status" register before making INTRQ valid. 
 			After checking INTRQ, the host reads the "Status" register to check the completion status. 
 			*/
-			//Set IO, CoD, DRDY
+			/* Set IO, CoD, DRDY */
 			GDStatus.DRDY=1;
 			IntReason.CoD=1;
 			IntReason.IO=1;
 
-			//Clear DRQ,BSY
+			/* Clear DRQ,BSY */
 			GDStatus.DRQ=0;
 			GDStatus.BSY=0;
-			//Make INTRQ valid
+			/* Make INTRQ valid */
 			asic_RaiseInterrupt(holly_GDROM_CMD);
 
-			//command finished !
+			/* command finished ! */
 			gd_set_state(gds_waitcmd);
 			break;
 
@@ -266,7 +267,9 @@ void gd_set_state(gd_states state)
 				/* As many bytes as the command said, which is one less
 				 * than the words hold when that is an odd number, and no
 				 * further than the ten that can be set. */
-				u32 count = std::min((u32)packet_cmd.data_8[4], pio_buff.size << 1);
+				u32 count = packet_cmd.data_8[4];
+				if (count > pio_buff.size << 1)
+					count = pio_buff.size << 1;
 				if (set_mode_offset >= 10)
 					count = 0;
 				else if (count > 10 - set_mode_offset)
@@ -274,7 +277,7 @@ void gd_set_state(gd_states state)
 				if (count != 0)
 					memcpy((u8 *)&GD_HardwareInfo + set_mode_offset, pio_buff.data, count);
 			}
-			//end pio transfer ;)
+			/* end pio transfer ;) */
 			gd_set_state(gds_pio_end);
 			break;
 
@@ -285,23 +288,25 @@ void gd_set_state(gd_states state)
 }
 
 
-void gd_setdisc()
+void gd_setdisc(void)
 {
-	cdda.status = cdda_t::NoInfo;
+	DiscType newd;
 
-	DiscType newd = (DiscType)libGDR_GetDiscType();
+	cdda.status = CDDA_NOINFO;
+
+	newd = (DiscType)libGDR_GetDiscType();
 	
 	switch(newd)
 	{
 	case NoDisk:
 		SecNumber.Status = GD_NODISC;
-		//GDStatus.BSY=0;
-		//GDStatus.DRDY=1;
+		/* GDStatus.BSY=0; */
+		/* GDStatus.DRDY=1; */
 		break;
 
 	case Open:
 		SecNumber.Status = GD_OPEN;
-		//GDStatus.BSY=0;
+		/* GDStatus.BSY=0; */
 		GDStatus.DRDY=1;
 		break;
 
@@ -316,8 +321,8 @@ void gd_setdisc()
 			SecNumber.Status = GD_PAUSE;
 		else
 			SecNumber.Status = GD_STANDBY;
-		//GDStatus.BSY=0;
-		//GDStatus.DRDY=1;
+		/* GDStatus.BSY=0; */
+		/* GDStatus.DRDY=1; */
 		break;
 	}
 
@@ -350,47 +355,56 @@ int gd_swap_schid = -1;
 static int gd_swap_sched(int tag, int cycl, int jitter)
 {
 	if (libGDR_DiscPresent())
-		sns_asc = 0x28;		// not ready to ready: the medium may have changed
+		sns_asc = 0x28;		/* not ready to ready: the medium may have changed */
 	else
-		sns_asc = 0x29;		// nothing there to read
+		sns_asc = 0x29;		/* nothing there to read */
 	sns_ascq = 0;
-	sns_key = 6;				// unit attention
+	sns_key = 6;				/* unit attention */
 	gd_setdisc();
 	return 0;
 }
 
-bool gd_swap_pending()
+bool gd_swap_pending(void)
 {
 	return gd_swap_schid >= 0 && sh4_sched_is_scheduled(gd_swap_schid);
 }
 
-// The lid is opened again, or the disc is taken away, before the drive is done looking
-void gd_swap_cancel()
+/* The lid is opened again, or the disc is taken away, before the drive is done looking */
+void gd_swap_cancel(void)
 {
 	if (gd_swap_pending())
 		sh4_sched_request(gd_swap_schid, -1);
 }
 
-void gd_disc_inserted()
+/* The drive's transfers, and the CD audio, as they are with no command:
+ * all of them zero, which is gds_waitcmd and CDDA_NOINFO */
+static void gd_clear_transfers(void)
 {
-	read_params = { 0 };
+	memset(&read_params, 0, sizeof(read_params));
 	set_mode_offset = 0;
-	packet_cmd = { 0 };
+	memset(&packet_cmd, 0, sizeof(packet_cmd));
 	memset(&read_buff, 0, sizeof(read_buff));
-	pio_buff = { gds_waitcmd, 0 };
-	ata_cmd = { 0 };
-	cdda = { cdda_t::NoInfo, 0 };
-
-	sns_asc = 4;				// in the process of becoming ready
-	sns_ascq = 1;
-	sns_key = 2;				// not ready
-	SecNumber.Status = GD_BUSY;
-	sh4_sched_request(gd_swap_schid, SH4_MAIN_CLOCK);	// 1 s
+	memset(&pio_buff, 0, sizeof(pio_buff));
+	pio_buff.next_state = gds_waitcmd;
+	memset(&ata_cmd, 0, sizeof(ata_cmd));
+	memset(&cdda, 0, sizeof(cdda));
+	cdda.status = CDDA_NOINFO;
 }
 
-void gd_reset()
+void gd_disc_inserted(void)
 {
-	//Reset the drive
+	gd_clear_transfers();
+
+	sns_asc = 4;				/* in the process of becoming ready */
+	sns_ascq = 1;
+	sns_key = 2;				/* not ready */
+	SecNumber.Status = GD_BUSY;
+	sh4_sched_request(gd_swap_schid, SH4_MAIN_CLOCK);	/* 1 s */
+}
+
+void gd_reset(void)
+{
+	/* Reset the drive */
 	gd_setdisc();
 	gd_set_state(gds_waitcmd);
 }
@@ -403,20 +417,14 @@ static u32 GetFAD(u8* data, bool msf)
 		return (data[0] << 16) | (data[1] << 8) | data[2];
 }
 
-//disk changes etc
-void libCore_gdrom_disc_change()
+/* disk changes etc */
+void libCore_gdrom_disc_change(void)
 {
 	gd_setdisc();
-	read_params = { 0 };
-	set_mode_offset = 0;
-	packet_cmd = { 0 };
-	memset(&read_buff, 0, sizeof(read_buff));
-	pio_buff = { gds_waitcmd, 0 };
-	ata_cmd = { 0 };
-	cdda = { cdda_t::NoInfo, 0 };
+	gd_clear_transfers();
 }
 
-//This handles the work of setting up the pio regs/state :)
+/* This handles the work of setting up the pio regs/state :) */
 void gd_spi_pio_end(const u8* buffer, u32 len, gd_states next_state)
 {
 	pio_buff.index=0;
@@ -454,13 +462,13 @@ static void gd_spi_pio_reply(const u8 *reply, u32 size, u32 offset, u32 len)
 	if (have != 0)
 		memcpy(pio_buff.data, reply + offset, have);
 	memset((u8 *)pio_buff.data + have, 0, len - have);
-	gd_spi_pio_end(NULL, len);
+	gd_spi_pio_end(NULL, len, gds_pio_end);
 }
 
 void gd_spi_pio_read_end(u32 len, gd_states next_state)
 {
 	pio_buff.index=0;
-	// (an odd number of bytes comes in one word more: see gd_spi_pio_end)
+	/* (an odd number of bytes comes in one word more: see gd_spi_pio_end) */
 	pio_buff.size=(len+1)>>1;
 	pio_buff.next_state=next_state;
 
@@ -475,15 +483,15 @@ void gd_spi_pio_read_end(u32 len, gd_states next_state)
 }
 void gd_process_ata_cmd()
 {
-	//Any ATA command clears these bits, unless aborted/error :p
+	/* Any ATA command clears these bits, unless aborted/error :p */
 	Error.ABRT=0;
 
 	/* (Unit attention - a disc was changed - is for the packet command that
 	 * comes next to report, which it does: see gd_process_spi_cmd. An ATA
 	 * command is not failed by it.) */
-	if (sns_key == 0x0 			// No sense
-			|| sns_key == 0xB	// Aborted
-			|| sns_key == 6)	// Unit attention
+	if (sns_key == 0x0 			/* No sense */
+			|| sns_key == 0xB	/* Aborted */
+			|| sns_key == 6)	/* Unit attention */
 		GDStatus.CHECK=0;
 	else
 		GDStatus.CHECK=1;
@@ -502,7 +510,7 @@ void gd_process_ata_cmd()
 		Error.Sense = sns_key;
 		GDStatus.BSY = 0;
 		GDStatus.CHECK = 1;
-		// no data is on offer after this: Sentimental Graffiti 2 waits on it when the disc is changed
+		/* no data is on offer after this: Sentimental Graffiti 2 waits on it when the disc is changed */
 		GDStatus.DRQ = 0;
 
 		asic_RaiseInterrupt(holly_GDROM_CMD);
@@ -518,7 +526,7 @@ void gd_process_ata_cmd()
 			sns_key = 0;
 			SecNumber.Status = GD_PAUSE;
 			IntReason.full = 1;
-			// DC Checker expects these values
+			/* DC Checker expects these values */
 			GDByteCount.low = 0x14;
 			GDByteCount.hi = 0xEB;
 		}
@@ -526,7 +534,7 @@ void gd_process_ata_cmd()
 
 	case ATA_EXEC_DIAG:
 		printf_ata("ATA_EXEC_DIAG");
-		Error.full = 1;	// No error
+		Error.full = 1;	/* No error */
 		sns_key = 0;
 		GDStatus.BSY = 0;
 		GDStatus.CHECK = 1;
@@ -543,18 +551,18 @@ void gd_process_ata_cmd()
 	case ATA_IDENTIFY_DEV:
 		printf_ata("ATA_IDENTIFY_DEV: offset %d len %d", packet_cmd.data_8[2], packet_cmd.data_8[4]);
 		GDStatus.BSY = 0;
-		gd_spi_pio_end((const u8*)&reply_a1[0], 0x50);
+		gd_spi_pio_end((const u8*)&reply_a1[0], 0x50, gds_pio_end);
 		break;
 
 	case ATA_SET_FEATURES:
 		printf_ata("ATA_SET_FEATURES");
 
-		//Set features sets :
-		//Error : ABRT
-		Error.ABRT=0;  // Command was not aborted ;) [hopefully ...]
+		/* Set features sets : */
+		/* Error : ABRT */
+		Error.ABRT=0;  /* Command was not aborted ;) [hopefully ...] */
 
-		//status : DRDY , DSC , DF , CHECK
-		//DRDY is set on state change
+		/* status : DRDY , DSC , DF , CHECK */
+		/* DRDY is set on state change */
 		GDStatus.DSC=0;
 		GDStatus.DF=0;
 		GDStatus.DRQ = 0;
@@ -565,7 +573,7 @@ void gd_process_ata_cmd()
 	case ATA_IDENTIFY:
 		printf_ata("ATA_IDENTIFY\n");
 
-		// Set Signature
+		/* Set Signature */
 		DriveSel = 0xa0;
 
 		SecCount.full = 1;
@@ -573,7 +581,7 @@ void gd_process_ata_cmd()
 		GDByteCount.low = 0x14;
 		GDByteCount.hi = 0xeb;
 
-		// ABORT command
+		/* ABORT command */
 		Error.full = 0x4;
 
 		GDStatus.full = 0;
@@ -585,10 +593,10 @@ void gd_process_ata_cmd()
 		break;
 
 	default:
-		// not a command the drive has: it says so, as it does for NOP
+		/* not a command the drive has: it says so, as it does for NOP */
 		WARN_LOG(GDROM, "Unknown ATA command %x", ata_cmd.command);
 		Error.ABRT = 1;
-		Error.Sense = 5;	// illegal request
+		Error.Sense = 5;	/* illegal request */
 		GDStatus.BSY = 0;
 		GDStatus.CHECK = 1;
 		asic_RaiseInterrupt(holly_GDROM_CMD);
@@ -602,11 +610,12 @@ void gd_process_ata_cmd()
 static u16 subq_crc(const u8 *data, int len)
 {
 	u16 crc = 0;
+	int bit;
 
 	while (len-- > 0)
 	{
 		crc ^= (u16)(*data++ << 8);
-		for (int bit = 0; bit < 8; bit++)
+		for (bit = 0; bit < 8; bit++)
 			crc = (crc & 0x8000) ? (u16)((crc << 1) ^ 0x1021) : (u16)(crc << 1);
 	}
 	return (u16)~crc;
@@ -621,7 +630,7 @@ static u8 bin2bcd(u32 v)
  * in the middle of playing, and otherwise where it last read. */
 static u32 gd_current_fad(u32 read_fad)
 {
-	return cdda.status == cdda_t::Playing || cdda.status == cdda_t::Paused ? cdda.CurrAddr.FAD : read_fad;
+	return cdda.status == CDDA_PLAYING || cdda.status == CDDA_PAUSED ? cdda.CurrAddr.FAD : read_fad;
 }
 
 u32 gd_get_subcode(u32 format, u32 fad, u8 *subc_info)
@@ -629,24 +638,24 @@ u32 gd_get_subcode(u32 format, u32 fad, u8 *subc_info)
 	subc_info[0] = 0;
 	switch (cdda.status)
 	{
-	case cdda_t::NoInfo:
+	case CDDA_NOINFO:
 	default:
-		subc_info[1] = 0x15;	// No audio status info
+		subc_info[1] = 0x15;	/* No audio status info */
 		break;
-	case cdda_t::Playing:
-		subc_info[1] = 0x11;	// Audio playback in progress
+	case CDDA_PLAYING:
+		subc_info[1] = 0x11;	/* Audio playback in progress */
 		break;
-	case cdda_t::Paused:
-		subc_info[1] = 0x12;	// Audio playback paused
+	case CDDA_PAUSED:
+		subc_info[1] = 0x12;	/* Audio playback paused */
 		break;
-	case cdda_t::Terminated:
-		subc_info[1] = 0x13;	// Audio playback ended normally
+	case CDDA_TERMINATED:
+		subc_info[1] = 0x13;	/* Audio playback ended normally */
 		break;
 	}
 
 	switch (format)
 	{
-	case 0:	// Raw subcode
+	case 0:	/* Raw subcode */
 		subc_info[2] = 0;
 		subc_info[3] = 100;
 		/* Images seldom carry the subcode, and what was read here was that
@@ -659,57 +668,61 @@ u32 gd_get_subcode(u32 format, u32 fad, u8 *subc_info)
 			u32 elapsed;
 			const u32 tracknum = libGDR_GetTrackNumber(cur_fad, &elapsed);
 			u8 adr, ctrl, q[12];
+			u16 crc;
+			int i, bit;
 
 			libGDR_GetTrackAdrAndControl(tracknum, &adr, &ctrl);
 			q[0] = (u8)((ctrl << 4) | adr);
 			q[1] = bin2bcd(tracknum);
-			q[2] = bin2bcd(1);						// index
-			q[3] = bin2bcd(elapsed / 60 / 75);		// minutes,
-			q[4] = bin2bcd((elapsed / 75) % 60);	// seconds
-			q[5] = bin2bcd(elapsed % 75);			// and frames into the track
+			q[2] = bin2bcd(1);						/* index */
+			q[3] = bin2bcd(elapsed / 60 / 75);		/* minutes, */
+			q[4] = bin2bcd((elapsed / 75) % 60);	/* seconds */
+			q[5] = bin2bcd(elapsed % 75);			/* and frames into the track */
 			q[6] = 0;
-			q[7] = bin2bcd(cur_fad / 60 / 75);		// and into the disc
+			q[7] = bin2bcd(cur_fad / 60 / 75);		/* and into the disc */
 			q[8] = bin2bcd((cur_fad / 75) % 60);
 			q[9] = bin2bcd(cur_fad % 75);
-			const u16 crc = subq_crc(q, 10);
+			crc = subq_crc(q, 10);
 			q[10] = (u8)(crc >> 8);
 			q[11] = (u8)crc;
-			for (int i = 0; i < 12; i++)
-				for (int bit = 0; bit < 8; bit++)
+			for (i = 0; i < 12; i++)
+				for (bit = 0; bit < 8; bit++)
 					subc_info[4 + i * 8 + bit] = (q[i] & (0x80 >> bit)) ? 0x40 : 0;
 		}
 		break;
 
-	case 1:	// Q data only
+	case 1:	/* Q data only */
 	default:
 		{
-			// where the drive is, not where it last read, while music plays
-			fad = gd_current_fad(fad);
-			u32 elapsed;
-			u32 tracknum = libGDR_GetTrackNumber(fad, &elapsed);
-
-			//2 DATA Length MSB (0 = 0h)
-			subc_info[2] = 0;
-			//3 DATA Length LSB (14 = Eh)
-			subc_info[3] = 0xE;
-			//4 Control ADR: of the track the drive is on, not of the disc
+			u32 elapsed, tracknum;
 			u8 adr, ctrl;
+			u8* data_q;
+
+			/* where the drive is, not where it last read, while music plays */
+			fad = gd_current_fad(fad);
+			tracknum = libGDR_GetTrackNumber(fad, &elapsed);
+
+			/* 2 DATA Length MSB (0 = 0h) */
+			subc_info[2] = 0;
+			/* 3 DATA Length LSB (14 = Eh) */
+			subc_info[3] = 0xE;
+			/* 4 Control ADR: of the track the drive is on, not of the disc */
 			libGDR_GetTrackAdrAndControl(tracknum, &adr, &ctrl);
 			subc_info[4] = (u8)((ctrl << 4) | adr);
-			//5-13	DATA-Q
-			u8* data_q = &subc_info[5 - 1];
-			//-When ADR = 1
-			//1 TNO - track number
+			/* 5-13	DATA-Q */
+			data_q = &subc_info[5 - 1];
+			/* -When ADR = 1 */
+			/* 1 TNO - track number */
 			data_q[1] = tracknum;
-			//2 X - index within track
+			/* 2 X - index within track */
 			data_q[2] = 1;
-			//3-5   Elapsed FAD within track
+			/* 3-5   Elapsed FAD within track */
 			data_q[3] = elapsed >> 16;
 			data_q[4] = elapsed >> 8;
 			data_q[5] = elapsed;
-			//6 ZERO
+			/* 6 ZERO */
 			data_q[6] = 0;
-			//7-9 FAD
+			/* 7-9 FAD */
 			data_q[7] = fad >> 16;
 			data_q[8] = fad >> 8;
 			data_q[9] = fad;
@@ -721,23 +734,23 @@ u32 gd_get_subcode(u32 format, u32 fad, u8 *subc_info)
 		}
 		break;
 
-	case 2:	// Media catalog number (UPC/bar code)
+	case 2:	/* Media catalog number (UPC/bar code) */
 		{
-			//2 DATA Length MSB (0 = 0h)
+			/* 2 DATA Length MSB (0 = 0h) */
 			subc_info[2] = 0;
-			//3 DATA Length LSB (24 = 18h)
+			/* 3 DATA Length LSB (24 = 18h) */
 			subc_info[3] = 0x18;
-			//4 Format Code
+			/* 4 Format Code */
 			subc_info[4] = 2;
-			//5-7 reserved
+			/* 5-7 reserved */
 			subc_info[5] = 0;
 			subc_info[6] = 0;
 			subc_info[7] = 0;
-			//8 MCVal (bit 7)
-			subc_info[8] = 0;	// not valid
-			//9-21 Media catalog number
+			/* 8 MCVal (bit 7) */
+			subc_info[8] = 0;	/* not valid */
+			/* 9-21 Media catalog number */
 			memcpy(&subc_info[9], "0000000000000", 13);
-			//22-23 reserved
+			/* 22-23 reserved */
 			subc_info[22] = 0;
 			subc_info[23] = 0;
 			DEBUG_LOG(GDROM, "gd_get_subcode: format 2 (Media catalog number). audio %x", subc_info[1]);
@@ -753,8 +766,8 @@ u32 gd_get_subcode(u32 format, u32 fad, u8 *subc_info)
 static void gd_spi_invalid_field()
 {
 	GDStatus.CHECK = 1;
-	sns_key = 5;	// Illegal request
-	sns_asc = 0x24;	// Invalid field in command packet
+	sns_key = 5;	/* Illegal request */
+	sns_asc = 0x24;	/* Invalid field in command packet */
 	sns_ascq = 0;
 }
 
@@ -768,8 +781,8 @@ void gd_process_spi_cmd()
 		packet_cmd.data_8[0], packet_cmd.data_8[1], packet_cmd.data_8[2], packet_cmd.data_8[3], packet_cmd.data_8[4], packet_cmd.data_8[5],
 		packet_cmd.data_8[6], packet_cmd.data_8[7], packet_cmd.data_8[8], packet_cmd.data_8[9], packet_cmd.data_8[10], packet_cmd.data_8[11] );
 
-	if (sns_key == 0x0 			// No sense
-			|| sns_key == 0xB)	// Aborted
+	if (sns_key == 0x0 			/* No sense */
+			|| sns_key == 0xB)	/* Aborted */
 		GDStatus.CHECK=0;
 	else
 		GDStatus.CHECK=1;
@@ -779,13 +792,13 @@ void gd_process_spi_cmd()
 	case SPI_TEST_UNIT:
 		printf_spicmd("SPI_TEST_UNIT");
 
-		GDStatus.CHECK=SecNumber.Status==GD_BUSY; // Drive is ready ;)
+		GDStatus.CHECK=SecNumber.Status==GD_BUSY; /* Drive is ready ;) */
 
 		gd_set_state(gds_procpacketdone);
 		break;
 
 	case SPI_REQ_MODE:
-		GD_HardwareInfo.speed = 0;	// doesn't seem to be settable, or perhaps not for GD-Roms
+		GD_HardwareInfo.speed = 0;	/* doesn't seem to be settable, or perhaps not for GD-Roms */
 		GD_HardwareInfo._res0[0] = 0;
 		GD_HardwareInfo._res0[1] = 0;
 		GD_HardwareInfo._res1 = 0;
@@ -796,29 +809,29 @@ void gd_process_spi_cmd()
 		gd_spi_pio_reply((const u8 *)&GD_HardwareInfo, sizeof(GD_HardwareInfo), packet_cmd.data_8[2], packet_cmd.data_8[4]);
 		break;
 
-		/////////////////////////////////////////////////
-		// *FIXME* CHECK FOR DMA, Diff Settings !?!@$#!@%
+		/* /////////////////////////////////////////////// */
+		/* *FIXME* CHECK FOR DMA, Diff Settings !?!@$#!@% */
 	case SPI_CD_READ:
 	case SPI_CD_READ2:
 		{
 #define readcmd packet_cmd.GDReadBlock
-
-			cdda.status = cdda_t::NoInfo;
 			u32 sector_type=2048;
+
+			cdda.status = CDDA_NOINFO;
 			if (readcmd.head ==1 && readcmd.subh==1 && readcmd.data==1 && readcmd.expdtype==3 && readcmd.other==0)
 				sector_type=2340;
 			else if (readcmd.other == 1 || readcmd.expdtype == 1)
-				sector_type = 2352;		// an audio sector, whole: NBA Hoopz reads its voices this way
-			else if(readcmd.head ||readcmd.subh || readcmd.other || (!readcmd.data)) // assert
+				sector_type = 2352;		/* an audio sector, whole: NBA Hoopz reads its voices this way */
+			else if(readcmd.head ||readcmd.subh || readcmd.other || (!readcmd.data)) /* assert */
 				WARN_LOG(GDROM, "GDROM: *FIXME* ADD MORE CD READ SETTINGS %d %d %d %d 0x%01X",readcmd.head,readcmd.subh,readcmd.other,readcmd.data,readcmd.expdtype);
 
 			read_params.start_sector = GetFAD(&packet_cmd.data_8[2],packet_cmd.GDReadBlock.prmtype);
-			// *FIXME LIBRETRO* : packet_cmd.data_8 should probably be rebased to readcmd.b
+			/* *FIXME LIBRETRO* : packet_cmd.data_8 should probably be rebased to readcmd.b */
 			if (packet_cmd.data_8[0] == SPI_CD_READ)
 				read_params.remaining_sectors = (packet_cmd.data_8[8]<<16) | (packet_cmd.data_8[9]<<8) | (packet_cmd.data_8[10]);
 			else
 				read_params.remaining_sectors = (packet_cmd.data_8[6] << 8) | packet_cmd.data_8[7];
-			read_params.sector_type = sector_type;//yeah i know , not really many types supported...
+			read_params.sector_type = sector_type;/* yeah i know , not really many types supported... */
 			/* What is left of a sector of the read before, if that one
 			 * was given up halfway, is not the start of this one. (It was
 			 * sent first, since the cache stopped being filled afresh
@@ -840,22 +853,22 @@ void gd_process_spi_cmd()
 
 	case SPI_GET_TOC:
 		{
-			printf_spicmd("SPI_GET_TOC");
-			//printf("SPI_GET_TOC - %d\n",(packet_cmd.data_8[4]) | (packet_cmd.data_8[3]<<8) );
 			u32 toc_gd[102];
+			printf_spicmd("SPI_GET_TOC");
+			/* printf("SPI_GET_TOC - %d\n",(packet_cmd.data_8[4]) | (packet_cmd.data_8[3]<<8) ); */
 			
-			//toc - dd/sd
+			/* toc - dd/sd */
 			libGDR_GetToc(&toc_gd[0],packet_cmd.data_8[1]&0x1);
 			 
 			gd_spi_pio_reply((const u8 *)&toc_gd[0], sizeof(toc_gd), 0, (packet_cmd.data_8[4]) | (packet_cmd.data_8[3]<<8));
 		}
 		break;
 
-		//mount/map drive ? some kind of reset/unlock ??
-		//seems like a non data command :)
+		/* mount/map drive ? some kind of reset/unlock ?? */
+		/* seems like a non data command :) */
 	case 0x70:
 		printf_spicmd("SPI : unknown ? [0x70]");
-		//printf("SPI : unknown ? [0x70]\n");
+		/* printf("SPI : unknown ? [0x70]\n"); */
 		/*GDStatus.full=0x50; //FIXME
 		RaiseInterrupt(holly_GDROM_CMD);*/
 
@@ -863,17 +876,17 @@ void gd_process_spi_cmd()
 		break;
 
 
-	// Command 71 seems to trigger some sort of authentication check(?).
-	// Update Sept 1st 2010: It looks like after a sequence of events the drive ends up having a specific state.
-	// If the drive is fed with a "bootable" disc it ends up in "PAUSE" state. On all other cases it ends up in "STANDBY".
-	// Cmd 70 and Error Handling / Sense also seem to take part in the above mentioned sequence of events.
-	// This is more or less a hack until more info about this command becomes available. ~Psy
+	/* Command 71 seems to trigger some sort of authentication check(?). */
+	/* Update Sept 1st 2010: It looks like after a sequence of events the drive ends up having a specific state. */
+	/* If the drive is fed with a "bootable" disc it ends up in "PAUSE" state. On all other cases it ends up in "STANDBY". */
+	/* Cmd 70 and Error Handling / Sense also seem to take part in the above mentioned sequence of events. */
+	/* This is more or less a hack until more info about this command becomes available. ~Psy */
 	case 0x71:
 		{
 			printf_spicmd("SPI : unknown ? [0x71]");
-			//printf("SPI : unknown ? [0x71]\n");
+			/* printf("SPI : unknown ? [0x71]\n"); */
 
-			gd_spi_pio_end((const u8*)&reply_71[0], reply_71_sz);//uCount
+			gd_spi_pio_end((const u8*)&reply_71[0], reply_71_sz, gds_pio_end);/* uCount */
 
 
 			if (libGDR_GetDiscType()==GdRom || libGDR_GetDiscType()==CdRom_XA)
@@ -884,10 +897,10 @@ void gd_process_spi_cmd()
 		break;
 	case SPI_SET_MODE:
 		{
-			printf_spicmd("SPI_SET_MODE");
 			u32 Offset = packet_cmd.data_8[2];
-			// limit to writable area (the first ten bytes; from past them, nothing)
-			u32 Count = Offset >= 10 ? 0 : std::min((u32)packet_cmd.data_8[4], 10 - Offset);
+			/* limit to writable area (the first ten bytes; from past them, nothing) */
+			u32 Count = Offset >= 10 ? 0 : packet_cmd.data_8[4] < 10 - Offset ? packet_cmd.data_8[4] : 10 - Offset;
+			printf_spicmd("SPI_SET_MODE");
 			set_mode_offset=Offset;
 			gd_spi_pio_read_end(Count,gds_process_set_mode);
 		}
@@ -896,37 +909,38 @@ void gd_process_spi_cmd()
 
 	case SPI_REQ_STAT:
 		{
-			printf_spicmd("SPI_REQ_STAT");
-			// where the drive is: see gd_current_fad()
+			/* where the drive is: see gd_current_fad() */
 			const u32 cur_fad = gd_current_fad(read_params.start_sector - 1);
 			u32 elapsed;
 			u32 tracknum = libGDR_GetTrackNumber(cur_fad, &elapsed);
 			u8 stat[10];
 
-			//0  0   0   0   0   STATUS
-			stat[0]=SecNumber.Status;   //low nibble 
-			//1 Disc Format Repeat Count
+			printf_spicmd("SPI_REQ_STAT");
+
+			/* 0  0   0   0   0   STATUS */
+			stat[0]=SecNumber.Status;   /* low nibble */
+			/* 1 Disc Format Repeat Count */
 			stat[1]=(u8)(SecNumber.DiscFormat<<4) | (cdda.repeats);
-			//2 Address Control
+			/* 2 Address Control */
 			{
-				// of the track the drive is on: an audio track on a disc with data is still audio
+				/* of the track the drive is on: an audio track on a disc with data is still audio */
 				u8 adr, ctrl;
 				libGDR_GetTrackAdrAndControl(tracknum, &adr, &ctrl);
 				stat[2] = (u8)((ctrl << 4) | adr);
 			}
-			//3 TNO
+			/* 3 TNO */
 			stat[3] = tracknum;
-			//4 X
+			/* 4 X */
 			stat[4] = 1;
-			//5 FAD
+			/* 5 FAD */
 			stat[5] = (u8)(cur_fad >> 16);
-			//6 FAD
+			/* 6 FAD */
 			stat[6] = (u8)(cur_fad >> 8);
-			//7 FAD
+			/* 7 FAD */
 			stat[7] = (u8)cur_fad;
-			//8 Max Read Error Retry Times
+			/* 8 Max Read Error Retry Times */
 			stat[8]=0;
-			//9 0   0   0   0   0   0   0   0
+			/* 9 0   0   0   0   0   0   0   0 */
 			stat[9]=0;
 
 			gd_spi_pio_reply(stat, sizeof(stat), packet_cmd.data_8[2], packet_cmd.data_8[4]);
@@ -935,15 +949,15 @@ void gd_process_spi_cmd()
 
 	case SPI_REQ_ERROR:
 		{
-			printf_spicmd("SPI_REQ_ERROR");
 			u8 resp[10];
+			printf_spicmd("SPI_REQ_ERROR");
 			resp[0]=0xF0;
 			resp[1]=0;
-			resp[2]=sns_key;//sense
+			resp[2]=sns_key;/* sense */
 			resp[3]=0;
-			resp[4]=resp[5]=resp[6]=resp[7]=0; //Command Specific Information
-			resp[8]=sns_asc;//Additional Sense Code
-			resp[9]=sns_ascq;//Additional Sense Code Qualifier
+			resp[4]=resp[5]=resp[6]=resp[7]=0; /* Command Specific Information */
+			resp[8]=sns_asc;/* Additional Sense Code */
+			resp[9]=sns_ascq;/* Additional Sense Code Qualifier */
 
 			gd_spi_pio_reply(resp, sizeof(resp), 0, packet_cmd.data_8[4]);
 			sns_key = 0;
@@ -955,9 +969,9 @@ void gd_process_spi_cmd()
 
 	case SPI_REQ_SES:
 		{
+			u8 ses_inf[6];
 			printf_spicmd("SPI_REQ_SES");
 
-			u8 ses_inf[6];
 			libGDR_GetSessionInfo(ses_inf,packet_cmd.data_8[2]);
 			ses_inf[0]=SecNumber.Status;
 			gd_spi_pio_reply(ses_inf, sizeof(ses_inf), 0, packet_cmd.data_8[4]);
@@ -977,16 +991,16 @@ void gd_process_spi_cmd()
 
 			if (param_type == 1 || param_type == 2)
 			{
-				cdda.status = cdda_t::Playing;
+				bool min_sec_frame = param_type == 2;
+				cdda.status = CDDA_PLAYING;
 				SecNumber.Status = GD_PLAY;
 
-				bool min_sec_frame = param_type == 2;
 				cdda.StartAddr.FAD = cdda.CurrAddr.FAD = GetFAD(&packet_cmd.data_8[2], min_sec_frame);
 				cdda.EndAddr.FAD = GetFAD(&packet_cmd.data_8[8], min_sec_frame);
 				if (cdda.EndAddr.FAD == 0)
 				{
-					// Get the last sector of the disk
-					u8 ses_inf[6] = {};
+					/* Get the last sector of the disk */
+					u8 ses_inf[6] = { 0 };
 					libGDR_GetSessionInfo(ses_inf, 0);
 
 					cdda.EndAddr.FAD = ses_inf[3] << 16 | ses_inf[4] << 8 | ses_inf[5];
@@ -996,17 +1010,17 @@ void gd_process_spi_cmd()
 			}
 			else if (param_type == 7)
 			{
-				if (cdda.status == cdda_t::Paused)
+				if (cdda.status == CDDA_PAUSED)
 				{
-					// Resume from previous pos unless we're at the end
+					/* Resume from previous pos unless we're at the end */
 					if (cdda.CurrAddr.FAD > cdda.EndAddr.FAD)
 					{
-						cdda.status = cdda_t::Terminated;
+						cdda.status = CDDA_TERMINATED;
 						SecNumber.Status = GD_STANDBY;
 					}
 					else
 					{
-						cdda.status = cdda_t::Playing;
+						cdda.status = CDDA_PLAYING;
 						SecNumber.Status = GD_PLAY;
 					}
 				}
@@ -1042,8 +1056,8 @@ void gd_process_spi_cmd()
 				break;
 			}
 			SecNumber.Status = GD_PAUSE;
-			if (cdda.status == cdda_t::Playing)
-				cdda.status = cdda_t::Paused;
+			if (cdda.status == CDDA_PLAYING)
+				cdda.status = CDDA_PAUSED;
 
 			if (param_type == 1 || param_type == 2)
 			{
@@ -1052,20 +1066,20 @@ void gd_process_spi_cmd()
 #ifdef STRICT_MODE
 				SecNumber.Status = GD_SEEK;
 				GDStatus.DSC = 0;
-				sh4_sched_request(gdrom_schid, SH4_MAIN_CLOCK / 50);	// 20 ms
+				sh4_sched_request(gdrom_schid, SH4_MAIN_CLOCK / 50);	/* 20 ms */
 #else
 				GDStatus.DSC = 1;
 #endif
 			}
 			else if (param_type == 3)
 			{
-				//stop audio , goto home
+				/* stop audio , goto home */
 				cdda.StartAddr.FAD = cdda.CurrAddr.FAD = 150;
-				cdda.status = cdda_t::NoInfo;
+				cdda.status = CDDA_NOINFO;
 #ifdef STRICT_MODE
 				SecNumber.Status = GD_BUSY;
 				GDStatus.DSC = 0;
-				sh4_sched_request(gdrom_schid, SH4_MAIN_CLOCK / 50);	// 20 ms
+				sh4_sched_request(gdrom_schid, SH4_MAIN_CLOCK / 50);	/* 20 ms */
 #else
 				SecNumber.Status = GD_STANDBY;
 				GDStatus.DSC = 1;
@@ -1073,7 +1087,7 @@ void gd_process_spi_cmd()
 			}
 			else if (param_type == 4)
 			{
-				//pause audio -- nothing more
+				/* pause audio -- nothing more */
 			}
 
 			DEBUG_LOG(GDROM, "CDDA StartAddr=%d EndAddr=%d repeats=%d status=%d CurrAddr=%d",cdda.StartAddr.FAD,
@@ -1092,21 +1106,20 @@ void gd_process_spi_cmd()
 
 	case SPI_GET_SCD:
 		{
-			printf_spicmd("SPI_GET_SCD");
-
 			const u32 format = packet_cmd.data_8[1] & 0xF;
 			const u32 alloc_len = (packet_cmd.data_8[3] << 8) | packet_cmd.data_8[4];
 			u8 subc_info[100];
 			u32 size = gd_get_subcode(format, read_params.start_sector - 1, subc_info);
-			gd_spi_pio_end(subc_info, std::min(size, alloc_len));
+			printf_spicmd("SPI_GET_SCD");
+			gd_spi_pio_end(subc_info, size < alloc_len ? size : alloc_len, gds_pio_end);
 		}
 		break;
 
 	default:
 		INFO_LOG(GDROM, "GDROM: Unhandled Sega SPI frame: %X", packet_cmd.data_8[0]);
 		GDStatus.CHECK = 1;
-		sns_key = 5;	// Illegal request
-		sns_asc = 0x20;	// Unsupported command was received
+		sns_key = 5;	/* Illegal request */
+		sns_asc = 0x20;	/* Unsupported command was received */
 		sns_ascq = 0;
 		/* And the command is over (upstream): without this the drive
 		 * stayed busy with it, no interrupt came, and it took nothing
@@ -1115,21 +1128,21 @@ void gd_process_spi_cmd()
 		break;
 	}
 }
-//Read handler
+/* Read handler */
 u32 ReadMem_gdrom(u32 Addr, u32 sz)
 {	
 	switch (Addr)
 	{
-		//cancel interrupt
+		/* cancel interrupt */
 	case GD_STATUS_Read :
-		asic_CancelInterrupt(holly_GDROM_CMD);	//Clear INTRQ signal
+		asic_CancelInterrupt(holly_GDROM_CMD);	/* Clear INTRQ signal */
 		if (DriveSel & 0x10)
-			return 0;		// the second drive: there is none
+			return 0;		/* the second drive: there is none */
 		printf_rm("GDROM: STATUS [cancel int](v=%X)",GDStatus.full);
 		return GDStatus.full;
 
 	case GD_ALTSTAT_Read:
-		//printf_rm("GDROM: AltStatus (v=%X)",GDStatus.full);
+		/* printf_rm("GDROM: AltStatus (v=%X)",GDStatus.full); */
 		return GDStatus.full;
 
 	case GD_BYCTLLO	:
@@ -1144,8 +1157,8 @@ u32 ReadMem_gdrom(u32 Addr, u32 sz)
 		if(2!=sz)
 			INFO_LOG(GDROM, "GDROM: Bad size on DATA REG Read");
 
-		//if (gd_state == gds_pio_send_data)
-		//{
+		/* if (gd_state == gds_pio_send_data) */
+		/* { */
 			if (pio_buff.index == pio_buff.size)
 			{
 				INFO_LOG(GDROM, "GDROM: Illegal Read From DATA (underflow)");
@@ -1156,15 +1169,15 @@ u32 ReadMem_gdrom(u32 Addr, u32 sz)
 				pio_buff.index+=1;
 				GDByteCount.full-=2;
 
-            //end of pio transfer !
+            /* end of pio transfer ! */
 				if (pio_buff.index==pio_buff.size)
 					gd_set_state(pio_buff.next_state);
 				return rv;
 			}
 
-		//}
-		//else
-		//	printf("GDROM: Illegal Read From DATA (wrong mode)\n");
+		/* } */
+		/* else */
+		/* 	printf("GDROM: Illegal Read From DATA (wrong mode)\n"); */
 
 		return 0;
 
@@ -1191,7 +1204,7 @@ u32 ReadMem_gdrom(u32 Addr, u32 sz)
 	}
 }
 
-//Write Handler
+/* Write Handler */
 void WriteMem_gdrom(u32 Addr, u32 data, u32 sz)
 {
 	switch(Addr)
@@ -1236,15 +1249,15 @@ void WriteMem_gdrom(u32 Addr, u32 data, u32 sz)
 		break;
 
 	case GD_DRVSEL: 
-		// the top three bits are not the game's to change
+		/* the top three bits are not the game's to change */
 		DriveSel = (DriveSel & 0xe0) | (data & 0x1f);
 		if (DriveSel & 0x10)
 			INFO_LOG(GDROM, "GDROM: the second drive, which there is not, selected: %02X", data);
 		break;
 
-		// By writing "3" as Feature Number and issuing the Set Feature command,
-		// the PIO or DMA transfer mode set in the Sector Count register can be selected.
-		// The actual transfer mode is specified by the Sector Counter Register. 
+		/* By writing "3" as Feature Number and issuing the Set Feature command, */
+		/* the PIO or DMA transfer mode set in the Sector Count register can be selected. */
+		/* The actual transfer mode is specified by the Sector Counter Register. */
 
 	case GD_FEATURES_Write:
 		printf_rm("GDROM: Write to GD_FEATURES");
@@ -1261,10 +1274,10 @@ void WriteMem_gdrom(u32 Addr, u32 data, u32 sz)
 		break;
 
 	case GD_COMMAND_Write:
-		//printf("\nGDROM:\tCOMMAND: %X !\n", data);
+		/* printf("\nGDROM:\tCOMMAND: %X !\n", data); */
 		if (DriveSel & 0x10)
 		{
-			// for the second drive: nobody takes it
+			/* for the second drive: nobody takes it */
 			DEBUG_LOG(GDROM, "ATA command to slave drive ignored: %x", data);
 			break;
 		}
@@ -1284,19 +1297,20 @@ int GDROM_TICK=1500000;
  * goes 32 bytes at a time, so a length that is not so many of those is
  * carried on to the end of the 32 bytes it stops in. (Such a length stopped
  * the emulator.) */
-static inline u32 gd_dma_len()
+static TYPES_INLINE u32 gd_dma_len(void)
 {
 	return (SB_GDLEN + 31) & 0x01ffffe0;
 }
 
-static int getGDROMTicks()
+static int getGDROMTicks(void)
 {
    if (SB_GDST & 1)
    {
+     u32 gdlen, len;
 	  if (GDROM_TICK < 1500000)
 		 return GDROM_TICK;
-     const u32 gdlen = gd_dma_len();
-     u32 len = gdlen == 0 ? 0x02000000 : gdlen;
+     gdlen = gd_dma_len();
+     len = gdlen == 0 ? 0x02000000 : gdlen;
      /* A large transfer comes off the disc as it turns: 10240 bytes at the
       * drive's 1.8 MB/s. This was a round 1000000 cycles, which is 2 MB/s,
       * faster than the drive goes; upstream found Sakura Taisen 3's music
@@ -1309,15 +1323,17 @@ static int getGDROMTicks()
      if (len - SB_GDLEND > 10240)
 		 return (int)((u64)SH4_MAIN_CLOCK * 10240 / 1800000);
 	  else
-        return (int)((u64)SH4_MAIN_CLOCK * std::min((u32)10240, len - SB_GDLEND) / 25000000);
+        return (int)((u64)SH4_MAIN_CLOCK * (len - SB_GDLEND) / 25000000);
    }
    else
 	  return 0;
 }
 
-//is this needed ?
+/* is this needed ? */
 static int GDRomschd(int i, int c, int j)
 {
+	u32 src, gdlen, len, len_backup;
+
 	if (SecNumber.Status == GD_SEEK)
 	{
 		SecNumber.Status = GD_PAUSE;
@@ -1331,9 +1347,9 @@ static int GDRomschd(int i, int c, int j)
 	if(!(SB_GDST&1) || !(SB_GDEN &1) || (read_buff.cache_size==0 && read_params.remaining_sectors==0))
 		return 0;
 
-   u32 src = SB_GDSTARD;
-   const u32 gdlen = gd_dma_len();
-   u32 len = (gdlen == 0 ? 0x02000000 : gdlen) - SB_GDLEND;
+   src = SB_GDSTARD;
+   gdlen = gd_dma_len();
+   len = (gdlen == 0 ? 0x02000000 : gdlen) - SB_GDLEND;
 
 	/* No more than the drive has to give: what is left in the cache and
 	 * the sectors still to be read. This used to be checked only when no
@@ -1349,14 +1365,15 @@ static int GDRomschd(int i, int c, int j)
 			len = (u32)have;
 	}
 
-	len = std::min(len, (u32)10240);
+	if (len > 10240)
+		len = 10240;
 
 #if 0
-	// do we need to do this for GDROM DMA?
+	/* do we need to do this for GDROM DMA? */
    if (0x8201 != (DMAC_DMAOR.full & DMAOR_MASK))
 	{
       INFO_LOG(GDROM, "GDROM: DMAOR has invalid settings (%X)", DMAC_DMAOR.full);
-		//return;
+		/* return; */
 	}
 
 	if(len == 0)
@@ -1365,7 +1382,7 @@ static int GDRomschd(int i, int c, int j)
 	}
 #endif
 
-	u32 len_backup = len;
+	len_backup = len;
 	if(1 == SB_GDDIR) 
 	{
 		while(len)
@@ -1379,7 +1396,7 @@ static int GDRomschd(int i, int c, int j)
 					&& read_params.remaining_sectors)
 			{
 				bool  dst_ismem;
-				void* dst_ptr = _vmem_write_const(src, dst_ismem, 4);
+				void* dst_ptr = _vmem_write_ptr(src, &dst_ismem, 4);
 				/* (no further than the memory goes on from there: as far
 				 * as the end of it or of its 16 MB of the address space.
 				 * The sector that would cross that goes through the
@@ -1388,8 +1405,8 @@ static int GDRomschd(int i, int c, int j)
 				if (dst_ismem)
 				{
 					bool end_ismem;
-					const u32 run = (u32)((u8*)_vmem_write_const(src | 0x00FFFFFF, end_ismem, 4) - (u8*)dst_ptr) + 1;
-					n = std::min(len, run) / read_params.sector_type;
+					const u32 run = (u32)((u8*)_vmem_write_ptr(src | 0x00FFFFFF, &end_ismem, 4) - (u8*)dst_ptr) + 1;
+					n = (len < run ? len : run) / read_params.sector_type;
 				}
 				if (n != 0)
 				{
@@ -1403,11 +1420,11 @@ static int GDRomschd(int i, int c, int j)
 					continue;
 				}
 			}
-         //buffer is empty , fill it
+         /* buffer is empty , fill it */
 			if (buff_size==0)
 				FillReadBuffer();
 
-			//transfer up to len bytes
+			/* transfer up to len bytes */
 			if (buff_size>len)
 				buff_size=len;
 			WriteMemBlock_nommu_ptr(src,(u32*)&read_buff.cache[read_buff.cache_index], buff_size);
@@ -1431,10 +1448,10 @@ static int GDRomschd(int i, int c, int j)
       SB_GDST = 0;
 		asic_RaiseInterrupt(holly_GDROM_DMA);
 	}
-	//Read ALL sectors
+	/* Read ALL sectors */
 	if (read_params.remaining_sectors==0)
 	{
-		//And all buffer :p
+		/* And all buffer :p */
 		if (read_buff.cache_size==0)
 			gd_set_state(gds_procpacketdone);
 	}
@@ -1442,7 +1459,7 @@ static int GDRomschd(int i, int c, int j)
    return getGDROMTicks();
 }
 
-//DMA Start
+/* DMA Start */
 void GDROM_DmaStart(u32 addr, u32 data)
 {
 	if (SB_GDEN==0)
@@ -1454,13 +1471,14 @@ void GDROM_DmaStart(u32 addr, u32 data)
 
 	if (SB_GDST==1)
 	{
+      int ticks;
 		SB_GDSTARD=SB_GDSTAR;
 		SB_GDLEND=0;
 		DEBUG_LOG(GDROM, "GDROM-DMA start addr %08X len %d", SB_GDSTAR, SB_GDLEN);
 		if (SB_GDLEN & 0x1F)
 			WARN_LOG(GDROM, "GDROM: SB_GDLEN %X is not a multiple of 32: %X transferred", SB_GDLEN, gd_dma_len());
 
-      int ticks = getGDROMTicks();
+      ticks = getGDROMTicks();
 		if (ticks < SH4_TIMESLICE)
 		{
 			ticks = GDRomschd(0,0,0);
@@ -1486,7 +1504,7 @@ void GDROM_DmaEnable(u32 addr, u32 data)
  * was made to be, had the drive read and write outside its buffers. What
  * does not fit is made to, and a transfer that cannot be is called off.
  * Nothing changes for a state this drive wrote. */
-void gdrom_state_loaded()
+void gdrom_state_loaded(void)
 {
 	const u32 pio_words = sizeof(pio_buff.data) / sizeof(pio_buff.data[0]);
 
@@ -1500,22 +1518,22 @@ void gdrom_state_loaded()
 	if (pio_buff.next_state != gds_waitcmd && pio_buff.next_state != gds_pio_end
 			&& pio_buff.next_state != gds_readsector_pio && pio_buff.next_state != gds_process_set_mode)
 		pio_buff.next_state = gds_pio_end;
-	// SET_MODE's data goes into the first ten bytes of the drive's settings
-	// (and, for an odd number of them, one byte of padding in the last word)
+	/* SET_MODE's data goes into the first ten bytes of the drive's settings */
+	/* (and, for an odd number of them, one byte of padding in the last word) */
 	if (pio_buff.next_state == gds_process_set_mode
 			&& (set_mode_offset > 10 || (pio_buff.size << 1) > 11 - set_mode_offset))
 		pio_buff.index = pio_buff.size = 0;
-	// data is taken until the buffer is full, and it is full already
+	/* data is taken until the buffer is full, and it is full already */
 	if (gd_state == gds_pio_get_data && pio_buff.index >= pio_buff.size)
 		gd_state = gds_waitcmd;
-	// a packet is six words
+	/* a packet is six words */
 	if (gd_state == gds_waitpacket && packet_cmd.index >= 6)
 		packet_cmd.index = 0;
-	// sectors are read as 2048, 2340 or 2352 bytes: of any other size, none
+	/* sectors are read as 2048, 2340 or 2352 bytes: of any other size, none */
 	if (read_params.sector_type != 2048 && read_params.sector_type != 2340
 			&& read_params.sector_type != 2352)
 		read_params.remaining_sectors = 0;
-	// one of the states there are
+	/* one of the states there are */
 	if ((u32)gd_state > (u32)gds_process_set_mode)
 		gd_state = gds_waitcmd;
 	/* How long a piece of a DMA transfer takes when disc loading is set to
@@ -1552,7 +1570,7 @@ bool gdrom_unserialize_v21(void **data, unsigned int *total_size)
 
 	LIBRETRO_US(left);
 	LIBRETRO_USA(read_buff.cache, GD_CACHE_SAVED);
-	// (no more than the room that was saved; a count that says more is of nothing)
+	/* (no more than the room that was saved; a count that says more is of nothing) */
 	if (left > GD_CACHE_SAVED)
 		left = 0;
 	read_buff.cache_index = 0;
@@ -1577,31 +1595,34 @@ bool gdrom_unserialize_v21(void **data, unsigned int *total_size)
  * the cache is empty, as it was for every such state. */
 void gdrom_state_before_v21(void)
 {
+	const u32 cmd = packet_cmd.data_8[0];
+	const u32 sector_type = read_params.sector_type;
+	u32 first, count, taken, whole, part;
+	u64 sent;
+
 	read_buff.cache_index = 0;
 	read_buff.cache_size = 0;
 
-	const u32 cmd = packet_cmd.data_8[0];
-	const u32 sector_type = read_params.sector_type;
 	if (gd_state != gds_readsector_dma || !(SB_GDST & 1) || SB_GDDIR != 1
 			|| (cmd != SPI_CD_READ && cmd != SPI_CD_READ2)
 			|| (sector_type != 2048 && sector_type != 2340 && sector_type != 2352))
 		return;
 
-	const u32 first = GetFAD(&packet_cmd.data_8[2], packet_cmd.GDReadBlock.prmtype);
-	const u32 count = cmd == SPI_CD_READ
+	first = GetFAD(&packet_cmd.data_8[2], packet_cmd.GDReadBlock.prmtype);
+	count = cmd == SPI_CD_READ
 			? (u32)((packet_cmd.data_8[8] << 16) | (packet_cmd.data_8[9] << 8) | packet_cmd.data_8[10])
 			: (u32)((packet_cmd.data_8[6] << 8) | packet_cmd.data_8[7]);
-	const u32 taken = read_params.start_sector - first;		// sectors read from the disc so far
-	// (a transfer's length is in 32s of bytes, and not every number of sectors is)
+	taken = read_params.start_sector - first;		/* sectors read from the disc so far */
+	/* (a transfer's length is in 32s of bytes, and not every number of sectors is) */
 	if (taken > count || read_params.remaining_sectors != count - taken
 			|| (((u64)count * sector_type + 31) & ~(u64)31) != gd_dma_len())
 		return;
 
-	const u64 sent = SB_GDLEND;
+	sent = SB_GDLEND;
 	if (sent >= (u64)taken * sector_type)
 		return;
-	const u32 whole = (u32)(((u64)taken * sector_type - sent) / sector_type);
-	const u32 part = (u32)(((u64)taken * sector_type - sent) % sector_type);
+	whole = (u32)(((u64)taken * sector_type - sent) / sector_type);
+	part = (u32)(((u64)taken * sector_type - sent) % sector_type);
 
 	read_params.start_sector -= whole;
 	read_params.remaining_sectors += whole;
@@ -1613,8 +1634,8 @@ void gdrom_state_before_v21(void)
 	}
 }
 
-//Init/Term/Res
-void gdrom_reg_Init()
+/* Init/Term/Res */
+void gdrom_reg_Init(void)
 {
 	sb_rio_register(SB_GDST_addr, RIO_WF, 0, &GDROM_DmaStart);
 	sb_rio_register(SB_GDEN_addr, RIO_WF, 0, &GDROM_DmaEnable);
@@ -1636,7 +1657,7 @@ void gdrom_reg_Reset(bool hard)
 {
 	SB_GDST = 0;
 	SB_GDEN = 0;
-	// (and the next piece of the transfer that was under way is not to come)
+	/* (and the next piece of the transfer that was under way is not to come) */
 	if (sh4_sched_is_scheduled(gdrom_sched))
 		sh4_sched_request(gdrom_sched, -1);
 
@@ -1647,23 +1668,23 @@ void gdrom_reg_Reset(bool hard)
 	sns_ascq = 0;
 	sns_key = 0;
 	set_mode_offset = 0;
-	read_params = {};
-	packet_cmd = {};
-	read_buff = {};
-	pio_buff = {};
-	ata_cmd = {};
-	cdda = {};
+	memset(&read_params, 0, sizeof(read_params));
+	memset(&packet_cmd, 0, sizeof(packet_cmd));
+	memset(&read_buff, 0, sizeof(read_buff));
+	memset(&pio_buff, 0, sizeof(pio_buff));
+	memset(&ata_cmd, 0, sizeof(ata_cmd));
+	memset(&cdda, 0, sizeof(cdda));
 	gd_disk_type = NoDisk;
 	data_write_mode = 0;
 	DriveSel = 0xa0;
-	Error = {};
-	IntReason = {};
-	Features = {};
-	SecCount = {};
-	SecNumber = {};
-	GDStatus = {};
-	GDByteCount = {};
-	// and looks at what disc is in it
+	memset(&Error, 0, sizeof(Error));
+	memset(&IntReason, 0, sizeof(IntReason));
+	memset(&Features, 0, sizeof(Features));
+	memset(&SecCount, 0, sizeof(SecCount));
+	memset(&SecNumber, 0, sizeof(SecNumber));
+	memset(&GDStatus, 0, sizeof(GDStatus));
+	memset(&GDByteCount, 0, sizeof(GDByteCount));
+	/* and looks at what disc is in it */
 	gd_swap_cancel();
 	gd_setdisc();
 	/* With no disc at power-on the drive spends a second finding that out,
@@ -1671,14 +1692,14 @@ void gdrom_reg_Reset(bool hard)
 	 * plays its boot animation in that time. */
 	if (hard && gd_swap_schid >= 0 && libGDR_GetDiscType() == NoDisk)
 	{
-		sns_asc = 4;			// in the process of becoming ready
+		sns_asc = 4;			/* in the process of becoming ready */
 		sns_ascq = 1;
-		sns_key = 2;			// not ready
+		sns_key = 2;			/* not ready */
 		SecNumber.Status = GD_BUSY;
-		sh4_sched_request(gd_swap_schid, SH4_MAIN_CLOCK);	// 1 s
+		sh4_sched_request(gd_swap_schid, SH4_MAIN_CLOCK);	/* 1 s */
 	}
 
-	// set default hardware information
+	/* set default hardware information */
 	memset(&GD_HardwareInfo, 0, sizeof(GD_HardwareInfo));
 	GD_HardwareInfo.speed = 0x0;
 	GD_HardwareInfo.standby_hi = 0x00;

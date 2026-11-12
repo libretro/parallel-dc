@@ -35,23 +35,22 @@
 #include "hw/aica/aica.h"
 #include <math.h>
 #include <string.h>
-#include <algorithm>
 
 bool midiffb_enabled;
 
-extern s8 joyx[4];
+#include "libretro/pad_state.h"
 
-// The command on its way from the game
+/* The command on its way from the game */
 static u8 tx_buf[4];
 static u8 tx_index;
-// The board has been told to work, and is finding the wheel's centre
+/* The board has been told to work, and is finding the wheel's centre */
 static bool active;
 static bool calibrating;
-// The power the game has set, 0 to 15
+/* The power the game has set, 0 to 15 */
 static u8 power_level = 12;
-// The force the game has set: from -0x80 (right) to 0x3f7f
+/* The force the game has set: from -0x80 (right) to 0x3f7f */
 static s16 torque;
-// Where the wheel is, from 0 to 16383, 8192 at the centre
+/* Where the wheel is, from 0 to 16383, 8192 at the centre */
 static f32 position = 8192.f;
 
 /* The MIDI input of the sound chip: what the board has sent, not yet read
@@ -68,7 +67,7 @@ static float power(void)
 
 static void midi_in_put(u8 b)
 {
-	// (a game that does not read what comes in does not get more of it)
+	/* (a game that does not read what comes in does not get more of it) */
 	if (midi_in_count >= MIDI_IN_SIZE)
 		return;
 	midi_in[(midi_in_head + midi_in_count) % MIDI_IN_SIZE] = b;
@@ -81,9 +80,10 @@ static void midi_in_put(u8 b)
 
 int midiffb_in_byte(bool pop)
 {
+	u8 b;
 	if (midi_in_count == 0)
 		return -1;
-	const u8 b = midi_in[midi_in_head];
+	b = midi_in[midi_in_head];
 	if (pop)
 	{
 		midi_in_head = (midi_in_head + 1) % MIDI_IN_SIZE;
@@ -100,16 +100,23 @@ static void midi_send(u8 b1, u8 b2, u8 b3)
 	midi_in_put((b1 ^ b2 ^ b3) & 0x7f);
 }
 
+/* (a place the wheel can be turned to) */
+static float wheel_clamp(float v)
+{
+	const float m = 0.f < v ? v : 0.f;
+	return m < 16383.f ? m : 16383.f;
+}
+
 static void rumble_torque(void)
 {
-	float v = fabsf(torque / 128.f * power());
+	float v = (float)fabs(torque / 128.f * power());
 	naomi_ffb_rumble(NAOMI_FFB_FORCE, v > 1.f ? 1.f : v, 0);
 }
 
 void midiffb_receive(u8 data)
 {
-	// The position the wheel is turned to while the board looks for its centre
-	position = std::min(16383.f, std::max(0.f, position + torque));
+	/* The position the wheel is turned to while the board looks for its centre */
+	position = wheel_clamp(position + torque);
 	if (data & 0x80)
 		tx_index = 0;
 	tx_buf[tx_index] = data;
@@ -119,7 +126,7 @@ void midiffb_receive(u8 data)
 		switch (cmd)
 		{
 		case 0:
-			// Force feedback off (0) or on (1)
+			/* Force feedback off (0) or on (1) */
 			if (tx_buf[2] == 0)
 			{
 				active = false;
@@ -131,19 +138,19 @@ void midiffb_receive(u8 data)
 			break;
 
 		case 3:
-			// Power: 0 to 0x7f
+			/* Power: 0 to 0x7f */
 			power_level = tx_buf[1] >> 3;
 			break;
 
 		case 4:
-			// The force: 0 is the most to the right, 0x17f the most to the left
+			/* The force: 0 is the most to the right, 0x17f the most to the left */
 			torque = (s16)(((tx_buf[1] << 7) | tx_buf[2]) - 0x80);
 			if (active && !calibrating)
 				rumble_torque();
 			break;
 
 		case 5:
-			// Shaking: its frequency in half Hz, then its amplitude
+			/* Shaking: its frequency in half Hz, then its amplitude */
 			if (active)
 			{
 				float v = (tx_buf[2] - 1) / 80.f * power();
@@ -152,7 +159,7 @@ void midiffb_receive(u8 data)
 			break;
 
 		case 0x7f:
-			// The board is reset, and finds the wheel's centre
+			/* The board is reset, and finds the wheel's centre */
 			calibrating = true;
 			position = 8192.f;
 			break;
@@ -166,13 +173,13 @@ void midiffb_receive(u8 data)
 
 		if (!calibrating)
 		{
-			// The wheel as the first player turns it
+			/* The wheel as the first player turns it */
 			const bool inverted = naomi_game_inputs != NULL && naomi_game_inputs->axes[0].inverted;
 			const int axis = ((u8)joyx[0] - 128) * 256;
 			const float v = axis * (inverted ? 1 : -1) / 4.f + 8192.f;
-			position = std::min(16383.f, std::max(0.f, v));
+			position = wheel_clamp(v);
 		}
-		// (the game wants bits 0-4 of the first byte to be 0x10, and bit 6 clear)
+		/* (the game wants bits 0-4 of the first byte to be 0x10, and bit 6 clear) */
 		midi_send(0x90, ((int)position >> 7) & 0x7f, (int)position & 0x7f);
 	}
 	tx_index = (tx_index + 1) % 4;
@@ -203,9 +210,11 @@ void midiffb_init(void)
 		"SEGA DRIVING SIMULATOR",
 	};
 
+	size_t i;
+
 	midiffb_enabled = false;
 	if (SYSTEM_IS_NAOMI() && !naomi_cart_systemsp)
-		for (size_t i = 0; i < sizeof(games) / sizeof(games[0]); i++)
+		for (i = 0; i < sizeof(games) / sizeof(games[0]); i++)
 			if (!strcmp(naomi_game_id, games[i]))
 				midiffb_enabled = true;
 	position = 8192.f;
@@ -230,9 +239,10 @@ void midiffb_term(void)
  *   u8  midi_in[64], midi_in_head, midi_in_count */
 void midiffb_serialize_v27(void **data, unsigned int *total_size)
 {
+	u8 flags;
 	if (!midiffb_enabled)
 		return;
-	const u8 flags = (active ? 1 : 0) | (calibrating ? 2 : 0);
+	flags = (active ? 1 : 0) | (calibrating ? 2 : 0);
 	LIBRETRO_SA(tx_buf, 4);
 	LIBRETRO_S(tx_index);
 	LIBRETRO_S(flags);
@@ -246,9 +256,9 @@ void midiffb_serialize_v27(void **data, unsigned int *total_size)
 
 bool midiffb_unserialize_v27(void **data, unsigned int *total_size)
 {
+	u8 flags = 0;
 	if (!midiffb_enabled)
 		return true;
-	u8 flags = 0;
 	LIBRETRO_USA(tx_buf, 4);
 	LIBRETRO_US(tx_index);
 	LIBRETRO_US(flags);

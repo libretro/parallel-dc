@@ -110,6 +110,9 @@ _vmem_handler _vmem_register_handler(_vmem_ReadMem8FP* read8,_vmem_ReadMem16FP* 
 #endif
 
 void _vmem_map_handler(_vmem_handler Handler,u32 start,u32 end);
+/* Where a write of @sz bytes to @addr goes: the memory, and *@ismem true,
+ * or the handler's write function, and *@ismem false */
+void *_vmem_write_ptr(u32 addr, bool *ismem, u32 sz);
 void _vmem_map_block(void* base,u32 start,u32 end,u32 mask);
 void _vmem_mirror_mapping(u32 new_region,u32 start,u32 size);
 

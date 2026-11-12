@@ -19,11 +19,20 @@
     along with flycast.  If not, see <https://www.gnu.org/licenses/>.
  */
 #pragma once
+#include "types.h"
 
-int dc_init();
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+int dc_init(void);
 void dc_reset(bool hard);
-void dc_run();
-void dc_term();
-void dc_stop();
-void dc_request_reset();
-bool dc_is_running();
+void dc_run(void);
+void dc_term(void);
+void dc_stop(void);
+void dc_request_reset(void);
+bool dc_is_running(void);
+
+#ifdef __cplusplus
+}
+#endif

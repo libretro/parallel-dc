@@ -74,6 +74,12 @@ void* _vmem_read_const(u32 addr,bool& ismem,u32 sz)
 	return 0;
 }
 
+/* (for C, which has no references) */
+void *_vmem_write_ptr(u32 addr, bool *ismem, u32 sz)
+{
+	return _vmem_write_const(addr, *ismem, sz);
+}
+
 void* _vmem_write_const(u32 addr,bool& ismem,u32 sz)
 {
 	u32   page=addr>>24;

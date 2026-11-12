@@ -22,6 +22,7 @@
 #include "hw/sh4/modules/mmu.h"
 #include "hw/sh4/modules/modules.h"
 #include "imgread/common.h"
+#include "network/netservice.h"
 #include "hw/aica/aica_mem.h"
 #include "hw/pvr/pvr_regs.h"
 #include "hw/pvr/pvr_mem.h"
@@ -74,9 +75,6 @@ extern int dma_sched_id;
 //./core/hw/aica/aica_mem.o
 
 //./core/hw/holly/sb.o
-extern u32 SB_ISTNRM;
-extern u32 SB_FFST_rc;
-extern u32 SB_FFST;
 
 //./core/hw/holly/sb_mem.o
 extern SRamChip sys_nvmem_sram;
@@ -87,36 +85,7 @@ extern DCFlashChip sys_nvmem_flash;
 #include "hw/pvr/elan_host.h"
 #include "hw/holly/holly_intc.h"
 
-//./core/hw/gdrom/gdromv3.o
-extern int gdrom_sched;
-extern int gd_swap_schid;
-extern signed int sns_asc;
-extern signed int sns_ascq;
-extern signed int sns_key;
-extern packet_cmd_t packet_cmd;
-extern u32 set_mode_offset;
-extern read_params_t read_params ;
-extern packet_cmd_t packet_cmd;
-//Buffer for sector reads [dma]
-extern read_buff_t read_buff ;
-//pio buffer
-extern pio_buff_t pio_buff ;
-extern u32 set_mode_offset;
-extern ata_cmd_t ata_cmd ;
-extern cdda_t cdda ;
-extern gd_states gd_state;
-extern DiscType gd_disk_type;
-extern u32 data_write_mode;
-//Registers
-extern u32 DriveSel;
-extern GD_ErrRegT Error;
-extern GD_InterruptReasonT IntReason;
-extern GD_FeaturesT Features;
-extern GD_SecCountT SecCount;
-extern GD_SecNumbT SecNumber;
-extern GD_StatusT GDStatus;
-extern ByteCount_t GDByteCount ;
-extern int GDROM_TICK;
+//./core/hw/gdrom/gdromv3.o: hw/gdrom/gdromv3.h
 
 //./core/hw/maple/maple_devs.o
 extern char EEPROM[0x100];
@@ -258,9 +227,6 @@ void lr_state_before_v23(void);
  * Broadband Adapter holds (netstate.cpp), the VMU's beep (vmu_beep.cpp),
  * the NAOMI's serial port and the card readers, touchscreen and hopper on
  * it (naomi_periph.h), and a System SP's own hardware (systemsp.cpp) */
-void net_serialize_v24(void **data, unsigned int *total_size);
-bool net_unserialize_v24(void **data, unsigned int *total_size);
-void net_state_before_v24(void);
 void naomi_periph_serialize_v24(void **data, unsigned int *total_size);
 bool naomi_periph_unserialize_v24(void **data, unsigned int *total_size);
 void naomi_periph_state_before_v24(void);
@@ -1133,8 +1099,8 @@ bool dc_unserialize(void **data, unsigned int *total_size, size_t actual_data_si
 	 * the four states, and is read as the flag. This was done to every
 	 * state, and made a drive that was paused, or had played to the end,
 	 * play. */
-	if ((u32)cdda.status > (u32)cdda_t::Terminated)
-		cdda.status = ((u32)cdda.status & 0xFF) ? cdda_t::Playing : cdda_t::NoInfo;
+	if ((u32)cdda.status > (u32)CDDA_TERMINATED)
+		cdda.status = ((u32)cdda.status & 0xFF) ? CDDA_PLAYING : CDDA_NOINFO;
 	// the drive keeps four bits of repeat count (15: for ever)
 	cdda.repeats &= 0xF;
 	LIBRETRO_US(gd_state);
