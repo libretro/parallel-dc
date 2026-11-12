@@ -59,10 +59,7 @@ SOURCES_CXX := \
 					\
 					$(CORE_DIR)/core/hw/sh4/sh4_mmr.cpp \
 					$(CORE_DIR)/core/hw/sh4/sh4_mem.cpp \
-					$(CORE_DIR)/core/hw/sh4/sh4_interrupts.cpp \
 					$(CORE_DIR)/core/hw/sh4/sh4_rom.cpp \
-					$(CORE_DIR)/core/hw/sh4/sh4_core_regs.cpp \
-					$(CORE_DIR)/core/hw/sh4/sh4_sched.cpp \
 					$(CORE_DIR)/core/hw/sh4/sh4_opcode_list.cpp \
 					$(CORE_DIR)/core/hw/sh4/interpr/sh4_interpreter.cpp \
 					$(CORE_DIR)/core/hw/sh4/interpr/sh4_fpu.cpp \
@@ -175,6 +172,9 @@ SOURCES_C += $(CORE_DIR)/core/hw/gdrom/gdrom_response.c \
 					$(CORE_DIR)/core/hw/sh4/modules/rtc.c \
 					$(CORE_DIR)/core/hw/sh4/modules/tmu.c \
 					$(CORE_DIR)/core/hw/sh4/modules/ubc.c \
+					$(CORE_DIR)/core/hw/sh4/sh4_core_regs.c \
+					$(CORE_DIR)/core/hw/sh4/sh4_interrupts.c \
+					$(CORE_DIR)/core/hw/sh4/sh4_sched.c \
 					$(CORE_DIR)/core/imgread/ImgReader.c \
 					$(CORE_DIR)/core/imgread/cdi.c \
 					$(CORE_DIR)/core/imgread/chd.c \

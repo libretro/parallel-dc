@@ -193,7 +193,6 @@ extern Sh4RCB* p_sh4rcb;
 
 //./core/hw/sh4/sh4_sched.o
 extern u64 sh4_sched_ffb;
-extern std::vector<sched_list> sch_list;
 
 //./core/hw/sh4/interpr/sh4_interpreter.o
 extern int aica_schid;
@@ -991,7 +990,7 @@ static void sched_events_loaded(void)
 {
 	const u32 now = sh4_sched_now();
 
-	for (size_t i = 0; i < sch_list.size(); i++)
+	for (size_t i = 0; i < sch_count; i++)
 	{
 		sched_list &ev = sch_list[i];
 

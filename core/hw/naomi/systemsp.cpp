@@ -39,7 +39,6 @@ extern char eeprom_file[PATH_MAX];
 extern char nvmem_file[PATH_MAX];
 extern char g_roms_dir[PATH_MAX];
 extern char g_base_name[128];
-extern std::vector<sched_list> sch_list;
 extern u32 kcode[4];
 extern s8 joyx[4];
 extern f32 mo_x_abs[4];

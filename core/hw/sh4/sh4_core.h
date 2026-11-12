@@ -2,6 +2,10 @@
 #include "types.h"
 #include "sh4_if.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 
 #define r Sh4cntx.r
 #define r_bank Sh4cntx.r_bank
@@ -30,19 +34,16 @@
 
 
 
-void UpdateFPSCR();
-bool UpdateSR();
-void RestoreHostRoundingMode();
-void HostFloatModeSave();
-void HostFloatModeBack();
+void UpdateFPSCR(void);
+bool UpdateSR(void);
 
-union DoubleReg
+typedef union DoubleReg
 {
 	double dbl;
 	f32 sgl[2];
-};
+} DoubleReg;
 
-static INLINE double GetDR(u32 n)
+static TYPES_INLINE double GetDR(u32 n)
 {
 	DoubleReg t;
 
@@ -52,7 +53,7 @@ static INLINE double GetDR(u32 n)
 	return t.dbl;
 }
 
-static INLINE double GetXD(u32 n)
+static TYPES_INLINE double GetXD(u32 n)
 {
 	DoubleReg t;
 
@@ -62,7 +63,7 @@ static INLINE double GetXD(u32 n)
 	return t.dbl;
 }
 
-static INLINE void SetDR(u32 n, double val)
+static TYPES_INLINE void SetDR(u32 n, double val)
 {
 	DoubleReg t;
 	t.dbl=val;
@@ -72,7 +73,7 @@ static INLINE void SetDR(u32 n, double val)
 	fr[(n<<1) | 0]=t.sgl[1];
 }
 
-static INLINE void SetXD(u32 n, double val)
+static TYPES_INLINE void SetXD(u32 n, double val)
 {
 	DoubleReg t;
 	t.dbl=val;
@@ -83,13 +84,16 @@ static INLINE void SetXD(u32 n, double val)
 
 #include "sh4_interrupts.h"	/* (Do_Exception) */
 
+#ifdef __cplusplus
+}
+/* The MMU's exceptions, thrown (C++ for now) */
 struct SH4ThrownException {
 	u32 epc;
 	u32 expEvn;
 	u32 callVect;
 };
 
-static INLINE void RaiseFPUDisableException()
+static TYPES_INLINE void RaiseFPUDisableException()
 {
 #if !defined(NO_MMU)
 	extern bool mmu_strict;
@@ -104,32 +108,34 @@ static INLINE void RaiseFPUDisableException()
 #endif
 }
 
-static INLINE void AdjustDelaySlotException(SH4ThrownException& ex)
+static TYPES_INLINE void AdjustDelaySlotException(SH4ThrownException& ex)
 {
 	ex.epc -= 2;
-	if (ex.expEvn == 0x800)	// FPU disable exception
-		ex.expEvn = 0x820;	// Slot FPU disable exception
-	else if (ex.expEvn == 0x180)	// Illegal instruction exception
-		ex.expEvn = 0x1A0;			// Slot illegal instruction exception
+	if (ex.expEvn == 0x800)	/* FPU disable exception */
+		ex.expEvn = 0x820;	/* Slot FPU disable exception */
+	else if (ex.expEvn == 0x180)	/* Illegal instruction exception */
+		ex.expEvn = 0x1A0;			/* Slot illegal instruction exception */
 }
+extern "C" {
+#endif
 
-// The SH4 sets the signaling bit to 0 for qNaN (unlike all recent CPUs). Some games relies on this.
+/* The SH4 sets the signaling bit to 0 for qNaN (unlike all recent CPUs). Some games relies on this. */
 /* Otherwise a NaN is the one NaN an ARM host gives, its default NaN, which
  * the SH4's thread asks for there (sh4_core_regs.cpp): the same on every
  * host, as what a game works out has to be. An x86 one gives a NaN made
  * from an operand's, or one with the sign set, and comes here to be given
  * that one; an ARM one has nothing to do. (The x86-64 recompiler does the
  * same in its code.) */
-static INLINE float fixNaN(f32 f)
+static TYPES_INLINE float fixNaN(f32 f)
 {
 #ifdef STRICT_MODE
-	u32& hex = *(u32 *)&f;
-	// no fast-math
+	u32 *hex = (u32 *)&f;
+	/* no fast-math */
 	if (f != f)
-		hex = 0x7fbfffff;
-//	// fast-math
-//	if ((hex & 0x7fffffff) > 0x7f800000)
-//		hex = 0x7fbfffff;
+		*hex = 0x7fbfffff;
+/* 	// fast-math */
+/* 	if ((hex & 0x7fffffff) > 0x7f800000) */
+/* 		hex = 0x7fbfffff; */
 #elif HOST_CPU == CPU_X86 || HOST_CPU == CPU_X64
 	if (f != f)
 	{
@@ -140,15 +146,15 @@ static INLINE float fixNaN(f32 f)
 	return f;
 }
 
-static INLINE f64 fixNaN64(f64 f)
+static TYPES_INLINE f64 fixNaN64(f64 f)
 {
 #ifdef STRICT_MODE
-	// no fast-math
-	u64& hex = *(u64 *)&f;
+	/* no fast-math */
+	u64 *hex = (u64 *)&f;
 	if (f != f)
-		hex = 0x7ff7ffffffffffffll;
-	// fast-math
-//	return (*(u64 *)&f & 0x7fffffffffffffffll) <= 0x7f80000000000000ll ? f : 0x7ff7ffffffffffffll;
+		*hex = 0x7ff7ffffffffffffll;
+	/* fast-math */
+/* 	return (*(u64 *)&f & 0x7fffffffffffffffll) <= 0x7f80000000000000ll ? f : 0x7ff7ffffffffffffll; */
 #elif HOST_CPU == CPU_X86 || HOST_CPU == CPU_X64
 	if (f != f)
 	{
@@ -158,3 +164,7 @@ static INLINE f64 fixNaN64(f64 f)
 #endif
 	return f;
  }
+
+#ifdef __cplusplus
+}
+#endif

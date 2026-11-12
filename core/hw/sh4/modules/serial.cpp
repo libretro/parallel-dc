@@ -11,7 +11,6 @@
 #include <algorithm>
 #include <vector>
 
-extern std::vector<sched_list> sch_list;
 
 SCIF_SCFSR2_type SCIF_SCFSR2;
 SCIF_SCSCR2_type SCIF_SCSCR2;

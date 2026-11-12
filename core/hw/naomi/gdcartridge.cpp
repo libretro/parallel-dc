@@ -676,7 +676,6 @@ std::string GDCartridge::GetGameId()
  * reg_dimm_offsetl, reg_dimm_parameterl and reg_dimm_parameterh, which
  * the save state has always held. */
 
-extern std::vector<sched_list> sch_list;
 
 // the cartridge with a DIMM board that answers (at most one at a time)
 static GDCartridge *dimm_cart;

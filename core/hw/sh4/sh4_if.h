@@ -459,6 +459,13 @@ bool recSh4_HaveCodeCache(void);
 #endif
 u32* GetRegPtr(u32 reg);
 
+/* The SH4's rounding and very small numbers on the host's thread that
+ * runs it: set again, and the thread's own saved and given back
+ * (sh4_core_regs.c) */
+void RestoreHostRoundingMode(void);
+void HostFloatModeSave(void);
+void HostFloatModeBack(void);
+
 #ifdef __cplusplus
 }
 #endif

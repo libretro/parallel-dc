@@ -52,7 +52,6 @@ static u32 dmaOffset;
 static bool interruptPending;
 static const u32 MAX_ETH_FRAME_SIZE = 1514;
 
-extern std::vector<sched_list> sch_list;
 
 /* The network session the adapter is on: the network thread (picoTCP or
  * DCNet) that is up while the game uses the network, started when the

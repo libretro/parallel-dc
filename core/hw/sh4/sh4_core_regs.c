@@ -12,49 +12,43 @@ Sh4RCB* p_sh4rcb;
 sh4_if  sh4_cpu;
 u8* sh4_dyna_rcb;
 
-static INLINE void ChangeGPR()
+static TYPES_INLINE void ChangeGPR(void)
 {
-#ifdef HAVE_MODERN_CXX
-   std::swap((u32 (&)[8])r, r_bank);
-#else
 	u32 temp;
-	for (int i=0;i<8;i++)
+	int i;
+	for (i=0;i<8;i++)
 	{
 		temp      = r[i];
 		r[i]      = r_bank[i];
 		r_bank[i] = temp;
 	}
-#endif
 }
 
-static INLINE void ChangeFP()
+static TYPES_INLINE void ChangeFP(void)
 {
-#ifdef HAVE_MODERN_CXX
-   std::swap((f32 (&)[16])Sh4cntx.xffr, *(f32 (*)[16])&Sh4cntx.xffr[16]);
-#else
 	u32 temp;
-	for (int i=0;i<16;i++)
+	int i;
+	for (i=0;i<16;i++)
 	{
 		temp=fr_hex[i];
 		fr_hex[i]=xf_hex[i];
 		xf_hex[i]=temp;
 	}
-#endif
 }
 
-//called when sr is changed and we must check for reg banks etc.
-//returns true if interrupt pending
-bool UpdateSR()
+/* called when sr is changed and we must check for reg banks etc. */
+/* returns true if interrupt pending */
+bool UpdateSR(void)
 {
 	if (sr.MD)
 	{
 		if (old_sr.RB != sr.RB)
-			ChangeGPR();//bank change
+			ChangeGPR();/* bank change */
 	}
 	else
 	{
 		if (old_sr.RB)
-			ChangeGPR();//switch
+			ChangeGPR();/* switch */
 	}
 
 	old_sr.status=sr.status;
@@ -63,25 +57,26 @@ bool UpdateSR()
 	return SRdecode();
 }
 
-//make host and sh4 rounding and denormal modes match
+/* make host and sh4 rounding and denormal modes match */
 static u32 old_rm = 0xFF;
 static u32 old_dn = 0xFF;
 
-static void setHostRoundingMode()
+static void setHostRoundingMode(void)
 {
 	if ((old_rm!=fpscr.RM) || (old_dn!=fpscr.DN))
 	{
 		old_rm=fpscr.RM ;
 		old_dn=fpscr.DN ;
-        
-        //Correct rounding is required by some games (SOTB, etc)
+	{	/* (the host's way, in a block of its own) */
+
+        /* Correct rounding is required by some games (SOTB, etc) */
 #ifdef _MSC_VER
-        if (fpscr.RM == 1)  //if round to 0 , set the flag
+        if (fpscr.RM == 1)  /* if round to 0 , set the flag */
             _controlfp(_RC_CHOP, _MCW_RC);
         else
             _controlfp(_RC_NEAR, _MCW_RC);
         
-        if (fpscr.DN)     //denormals are considered 0
+        if (fpscr.DN)     /* denormals are considered 0 */
             _controlfp(_DN_FLUSH, _MCW_DN);
         else
             _controlfp(_DN_SAVE, _MCW_DN);
@@ -89,9 +84,9 @@ static void setHostRoundingMode()
 
 #if HOST_CPU==CPU_X86 || HOST_CPU==CPU_X64
 
-        u32 temp=0x1f80;	//no flush to zero && round to nearest
+        u32 temp=0x1f80;	/* no flush to zero && round to nearest */
 
-        if (fpscr.RM==1)  //if round to 0 , set the flag
+        if (fpscr.RM==1)  /* if round to 0 , set the flag */
            temp|=(3<<13);
 
         /* Denormals are zero, as results (FTZ, bit 15) and as operands
@@ -100,11 +95,11 @@ static void setHostRoundingMode()
          * it was here and as zero there: two machines came out different. */
         if (fpscr.DN)
            temp|=(1<<15)|(1<<6);
-        asm("ldmxcsr %0" : : "m"(temp));
+        __asm__("ldmxcsr %0" : : "m"(temp));
 #elif HOST_CPU==CPU_ARM
         static const unsigned int x = 0x04086060;
         unsigned int y = 0x02000000;
-        if (fpscr.RM==1)  //if round to 0 , set the flag
+        if (fpscr.RM==1)  /* if round to 0 , set the flag */
            y|=3<<22;
 
         if (fpscr.DN)
@@ -122,7 +117,7 @@ static void setHostRoundingMode()
 #else
         int raa;
 
-        asm volatile
+        __asm__ __volatile__
            (
             "fmrx   %0, fpscr   \n\t"
             "and    %0, %0, %1  \n\t"
@@ -134,15 +129,15 @@ static void setHostRoundingMode()
 #endif
 #elif HOST_CPU == CPU_ARM64
 		static const unsigned long off_mask = 0x04080000;
-        unsigned long on_mask = 0x02000000;    // DN=1 Any operation involving one or more NaNs returns the Default NaN
+        unsigned long on_mask = 0x02000000;    /* DN=1 Any operation involving one or more NaNs returns the Default NaN */
 
-        if (fpscr.RM == 1)		// if round to 0, set the flag
-        	on_mask |= 3 << 22;
+        if (fpscr.RM == 1)		/* if round to 0, set the flag */
+		on_mask |= 3 << 22;
 
         if (fpscr.DN)
-        	on_mask |= 1 << 24;	// flush denormalized numbers to zero
+		on_mask |= 1 << 24;	/* flush denormalized numbers to zero */
 
-        asm volatile
+        __asm__ __volatile__
             (
                 "MRS    x10, FPCR     \n\t"
                 "AND    x10, x10, %0  \n\t"
@@ -156,12 +151,12 @@ static void setHostRoundingMode()
 	#error "SetFloatStatusReg: Unsupported platform"
 #endif
 #endif
-
+	}
 	}
 }
 
-//called when fpscr is changed and we must check for reg banks etc..
-void UpdateFPSCR()
+/* called when fpscr is changed and we must check for reg banks etc.. */
+void UpdateFPSCR(void)
 {
 	/* The cause field (bits 12 to 17) is what the last FPU instruction
 	 * found: the processor clears it before each one and sets a bit only
@@ -175,13 +170,13 @@ void UpdateFPSCR()
 	 * with no FPU instruction in between can tell. */
 	fpscr.full &= ~0x0003F000u;
 	if (fpscr.FR !=old_fpscr.FR)
-		ChangeFP(); // FPU bank change
+		ChangeFP(); /* FPU bank change */
 
    old_fpscr=fpscr;
    setHostRoundingMode();
 }
 
-void RestoreHostRoundingMode()
+void RestoreHostRoundingMode(void)
 {
 	old_rm = 0xFF;
 	old_dn = 0xFF;
@@ -197,13 +192,13 @@ void RestoreHostRoundingMode()
  * of the frame, which the other thread does with its own. */
 static fenv_t host_float_mode;
 
-// (when the SH4 is about to run, before its mode is set)
+/* (when the SH4 is about to run, before its mode is set) */
 void HostFloatModeSave()
 {
 	fegetenv(&host_float_mode);
 }
 
-// (when it has run, or for something done on its thread that is not its own)
+/* (when it has run, or for something done on its thread that is not its own) */
 void HostFloatModeBack()
 {
 	fesetenv(&host_float_mode);

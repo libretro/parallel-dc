@@ -19,57 +19,105 @@
 
 */
 
-//these are fixed
-const u16 IRLPriority = 0x0246;
-#define IRLP9 &IRLPriority,0
-#define IRLP11 &IRLPriority,4
-#define IRLP13 &IRLPriority,8
+/* Where each source's priority is: the IRL lines' are fixed, the others'
+ * are 4 bits of INTC's IPRA, IPRB or IPRC */
+static const u16 IRLPriority = 0x0246;
+enum { PRIO_IRL, PRIO_IPRA, PRIO_IPRB, PRIO_IPRC };
 
-#define GIPA(p) &INTC_IPRA.reg_data,4*p
-#define GIPB(p) &INTC_IPRB.reg_data,4*p
-#define GIPC(p) &INTC_IPRC.reg_data,4*p
-
-struct InterptSourceList_Entry
+typedef struct InterptSourceList_Entry
 {
 	const u16* PrioReg;
 	u32 Shift;
 	u32 IntEvnCode;
+} InterptSourceList_Entry;
 
-	u32 GetPrLvl() const { return ((*PrioReg)>>Shift)&0xF; }
+static u32 GetPrLvl(const InterptSourceList_Entry *e)
+{
+	return ((*e->PrioReg)>>e->Shift)&0xF;
+}
+
+/* The sources, in the order of their ids (see sh4_interrupts.h): their
+ * priority's register and the place in it, and their event code */
+static const struct
+{
+	u8 reg;
+	u8 shift;
+	u16 code;
+} InterruptSources[28] =
+{
+	/* IRL */
+	{ PRIO_IRL, 0, 0x320 },	/* sh4_IRL_9 */
+	{ PRIO_IRL, 4, 0x360 },	/* sh4_IRL_11 */
+	{ PRIO_IRL, 8, 0x3A0 },	/* sh4_IRL_13 */
+	/* HUDI */
+	{ PRIO_IPRC, 0, 0x600 },	/* sh4_HUDI_HUDI: H-UDI underflow */
+	/* GPIO (missing on dc ?) */
+	{ PRIO_IPRC, 12, 0x620 },	/* sh4_GPIO_GPIOI */
+	/* DMAC */
+	{ PRIO_IPRC, 8, 0x640 },	/* sh4_DMAC_DMTE0 */
+	{ PRIO_IPRC, 8, 0x660 },	/* sh4_DMAC_DMTE1 */
+	{ PRIO_IPRC, 8, 0x680 },	/* sh4_DMAC_DMTE2 */
+	{ PRIO_IPRC, 8, 0x6A0 },	/* sh4_DMAC_DMTE3 */
+	{ PRIO_IPRC, 8, 0x6C0 },	/* sh4_DMAC_DMAE */
+	/* TMU */
+	{ PRIO_IPRA, 12, 0x400 },	/* sh4_TMU0_TUNI0: TMU0 underflow */
+	{ PRIO_IPRA, 8, 0x420 },	/* sh4_TMU1_TUNI1: TMU1 underflow */
+	{ PRIO_IPRA, 4, 0x440 },	/* sh4_TMU2_TUNI2: TMU2 underflow */
+	{ PRIO_IPRA, 4, 0x460 },	/* sh4_TMU2_TICPI2 */
+	/* RTC */
+	{ PRIO_IPRA, 0, 0x480 },	/* sh4_RTC_ATI */
+	{ PRIO_IPRA, 0, 0x4A0 },	/* sh4_RTC_PRI */
+	{ PRIO_IPRA, 0, 0x4C0 },	/* sh4_RTC_CUI */
+	/* SCI */
+	{ PRIO_IPRB, 4, 0x4E0 },	/* sh4_SCI1_ERI */
+	{ PRIO_IPRB, 4, 0x500 },	/* sh4_SCI1_RXI */
+	{ PRIO_IPRB, 4, 0x520 },	/* sh4_SCI1_TXI */
+	{ PRIO_IPRB, 4, 0x540 },	/* sh4_SCI1_TEI */
+	/* SCIF */
+	{ PRIO_IPRC, 4, 0x700 },	/* sh4_SCIF_ERI */
+	{ PRIO_IPRC, 4, 0x720 },	/* sh4_SCIF_RXI */
+	{ PRIO_IPRC, 4, 0x740 },	/* sh4_SCIF_BRI */
+	{ PRIO_IPRC, 4, 0x760 },	/* sh4_SCIF_TXI */
+	/* WDT */
+	{ PRIO_IPRB, 12, 0x560 },	/* sh4_WDT_ITI */
+	/* REF */
+	{ PRIO_IPRB, 8, 0x580 },	/* sh4_REF_RCMI */
+	{ PRIO_IPRB, 8, 0x5A0 }	/* sh4_REF_ROVI */
 };
 
-//Can't be statically initialised because registers are dynamically allocated
-InterptSourceList_Entry InterruptSourceList[28];
+/* The sources with where their priorities are, made by interrupts_init() */
+static InterptSourceList_Entry InterruptSourceList[28];
 
-//Maps siid -> EventID
+/* Maps siid -> EventID */
 DECL_ALIGN(64) u16 InterruptEnvId[32] = { 0 };
-//Maps piid -> 1<<siid
+/* Maps piid -> 1<<siid */
 DECL_ALIGN(64) u32 InterruptBit[32] = { 0 };
-//Maps sh4 interrupt level to inclusive bitfield
+/* Maps sh4 interrupt level to inclusive bitfield */
 DECL_ALIGN(64) u32 InterruptLevelBit[16] = { 0 };
 
-bool Do_Interrupt(u32 intEvn);
+static bool Do_Interrupt(u32 intEvn);
 
-u32 interrupt_vpend; // Vector of pending interrupts
-u32 interrupt_vmask; // Vector of masked interrupts             (-1 inhibits all interrupts)
-u32 decoded_srimask; // Vector of interrupts allowed by SR.IMSK (-1 inhibits all interrupts)
+u32 interrupt_vpend; /* Vector of pending interrupts */
+u32 interrupt_vmask; /* Vector of masked interrupts             (-1 inhibits all interrupts) */
+u32 decoded_srimask; /* Vector of interrupts allowed by SR.IMSK (-1 inhibits all interrupts) */
 
-//bit 0 ~ 27 : interrupt source 27:0. 0 = lowest level, 27 = highest level.
+/* bit 0 ~ 27 : interrupt source 27:0. 0 = lowest level, 27 = highest level. */
 static void recalc_pending_itrs(void)
 {
 	Sh4cntx.interrupt_pend=interrupt_vpend&interrupt_vmask&decoded_srimask;
 }
 
-//Rebuild sorted interrupt id table (priorities were updated)
+/* Rebuild sorted interrupt id table (priorities were updated) */
 void SIIDRebuild(void)
 {
 	u32 cnt=0;
 	u32 vpend=interrupt_vpend;
 	u32 vmask=interrupt_vmask;
+	u32 ilevel, isrc;
 	interrupt_vpend=0;
 	interrupt_vmask=0x00000000;
-	//rebuild interrupt table
-	for (u32 ilevel=0;ilevel<16;ilevel++)
+	/* rebuild interrupt table */
+	for (ilevel=0;ilevel<16;ilevel++)
 	{
 	   /* Among sources of one level the first in the list of sources
 	    * (in interrupts_init) comes first - IRL before the on-chip ones,
@@ -77,13 +125,13 @@ void SIIDRebuild(void)
 	    * is given the highest bit of the level, and the list is gone
 	    * through from its end. (It was gone through from its start, and
 	    * the order within a level was the reverse of the processor's.) */
-	   for (u32 isrc=28;isrc-->0;)
+	   for (isrc=28;isrc-->0;)
        {
-	      if (InterruptSourceList[isrc].GetPrLvl()==ilevel)
+	      if (GetPrLvl(&InterruptSourceList[isrc])==ilevel)
 	      {
-             InterruptEnvId[cnt]=InterruptSourceList[isrc].IntEvnCode;
              u32 p=InterruptBit[isrc]&vpend;
              u32 m=InterruptBit[isrc]&vmask;
+             InterruptEnvId[cnt]=(u16)InterruptSourceList[isrc].IntEvnCode;
              InterruptBit[isrc]=1<<cnt;
              if (p)
                 interrupt_vpend|=InterruptBit[isrc];
@@ -98,7 +146,7 @@ void SIIDRebuild(void)
 	SRdecode();
 }
 
-//Decode SR.IMSK into a interrupt mask, update and return the interrupt state
+/* Decode SR.IMSK into a interrupt mask, update and return the interrupt state */
 bool SRdecode(void)
 {
    decoded_srimask = (sr.BL) ? ~0xFFFFFFFF : ~InterruptLevelBit[sr.IMASK];
@@ -141,7 +189,7 @@ void ResetInterruptMask(InterruptID intr)
 }
 
 
-bool Do_Interrupt(u32 intEvn)
+static bool Do_Interrupt(u32 intEvn)
 {
 	CCN_INTEVT = intEvn;
 
@@ -176,81 +224,47 @@ bool Do_Exception(u32 epc, u32 expEvn, u32 CallVect)
 	UpdateSR();
 
 	next_pc = vbr + CallVect;
-	//printf("RaiseException: from %08X , pc errh %08X, %08X vect\n", spc, epc, next_pc);
+	/* printf("RaiseException: from %08X , pc errh %08X, %08X vect\n", spc, epc, next_pc); */
 
 	return true;
 }
 
-//Init/Res/Term
+/* Init/Res/Term */
 void interrupts_init(void)
 {
-	InterptSourceList_Entry InterruptSourceList2[]=
+	u32 i;
+
+	for (i = 0; i < 28; i++)
 	{
-		//IRL
-		{IRLP9,0x320},//sh4_IRL_9           = KMIID(sh4_int,0x320,0),
-		{IRLP11,0x360},//sh4_IRL_11         = KMIID(sh4_int,0x360,1),
-		{IRLP13,0x3A0},//sh4_IRL_13         = KMIID(sh4_int,0x3A0,2),
+		const u16 *reg;
 
-		//HUDI
-		{GIPC(0),0x600},//sh4_HUDI_HUDI     = KMIID(sh4_int,0x600,3),  /* H-UDI underflow */
-
-		//GPIO (missing on dc ?)
-		{GIPC(3),0x620},//sh4_GPIO_GPIOI    = KMIID(sh4_int,0x620,4),
-
-		//DMAC
-		{GIPC(2),0x640},//sh4_DMAC_DMTE0    = KMIID(sh4_int,0x640,5),
-		{GIPC(2),0x660},//sh4_DMAC_DMTE1    = KMIID(sh4_int,0x660,6),
-		{GIPC(2),0x680},//sh4_DMAC_DMTE2    = KMIID(sh4_int,0x680,7),
-		{GIPC(2),0x6A0},//sh4_DMAC_DMTE3    = KMIID(sh4_int,0x6A0,8),
-		{GIPC(2),0x6C0},//sh4_DMAC_DMAE     = KMIID(sh4_int,0x6C0,9),
-
-		//TMU
-		{GIPA(3),0x400},//sh4_TMU0_TUNI0    =  KMIID(sh4_int,0x400,10), /* TMU0 underflow */
-		{GIPA(2),0x420},//sh4_TMU1_TUNI1    =  KMIID(sh4_int,0x420,11), /* TMU1 underflow */
-		{GIPA(1),0x440},//sh4_TMU2_TUNI2    =  KMIID(sh4_int,0x440,12), /* TMU2 underflow */
-		{GIPA(1),0x460},//sh4_TMU2_TICPI2   =  KMIID(sh4_int,0x460,13),
-
-		//RTC
-		{GIPA(0),0x480},//sh4_RTC_ATI       = KMIID(sh4_int,0x480,14),
-		{GIPA(0),0x4A0},//sh4_RTC_PRI       = KMIID(sh4_int,0x4A0,15),
-		{GIPA(0),0x4C0},//sh4_RTC_CUI       = KMIID(sh4_int,0x4C0,16),
-
-		//SCI
-		{GIPB(1),0x4E0},//sh4_SCI1_ERI      = KMIID(sh4_int,0x4E0,17),
-		{GIPB(1),0x500},//sh4_SCI1_RXI      = KMIID(sh4_int,0x500,18),
-		{GIPB(1),0x520},//sh4_SCI1_TXI      = KMIID(sh4_int,0x520,19),
-		{GIPB(1),0x540},//sh4_SCI1_TEI      = KMIID(sh4_int,0x540,20),
-
-		//SCIF
-		{GIPC(1),0x700},//sh4_SCIF_ERI      = KMIID(sh4_int,0x700,21),
-		{GIPC(1),0x720},//sh4_SCIF_RXI      = KMIID(sh4_int,0x720,22),
-		{GIPC(1),0x740},//sh4_SCIF_BRI      = KMIID(sh4_int,0x740,23),
-		{GIPC(1),0x760},//sh4_SCIF_TXI      = KMIID(sh4_int,0x760,24),
-
-		//WDT
-		{GIPB(3),0x560},//sh4_WDT_ITI       = KMIID(sh4_int,0x560,25),
-
-		//REF
-		{GIPB(2),0x580},//sh4_REF_RCMI      = KMIID(sh4_int,0x580,26),
-		{GIPB(2),0x5A0},//sh4_REF_ROVI      = KMIID(sh4_int,0x5A0,27),
-	};
-
-	verify(sizeof(InterruptSourceList)==sizeof(InterruptSourceList2));
-
-	memcpy(InterruptSourceList,InterruptSourceList2,sizeof(InterruptSourceList));
+		switch (InterruptSources[i].reg)
+		{
+			case PRIO_IRL:  reg = &IRLPriority; break;
+			case PRIO_IPRA: reg = &INTC_IPRA.reg_data; break;
+			case PRIO_IPRB: reg = &INTC_IPRB.reg_data; break;
+			default:        reg = &INTC_IPRC.reg_data; break;
+		}
+		InterruptSourceList[i].PrioReg = reg;
+		InterruptSourceList[i].Shift = InterruptSources[i].shift;
+		InterruptSourceList[i].IntEvnCode = InterruptSources[i].code;
+	}
 }
 
 void interrupts_reset(void)
 {
-	//reset interrupts cache
+	/* reset interrupts cache */
 	interrupt_vpend=0x00000000;
 	interrupt_vmask=0xFFFFFFFF;
 	decoded_srimask=0;
 
-	for (u32 i=0;i<28;i++)
-		InterruptBit[i]=1<<i;
+	{
+		u32 i;
+		for (i=0;i<28;i++)
+			InterruptBit[i]=1<<i;
+	}
 
-	//rebuild the interrupts table
+	/* rebuild the interrupts table */
 	SIIDRebuild();
 }
 

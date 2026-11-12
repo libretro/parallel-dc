@@ -1,15 +1,19 @@
 #pragma once
 #include "types.h"
 
-double os_GetSeconds();
-
-void os_DoEvents();
-
 #ifdef _MSC_VER
 #include <intrin.h>
 #endif
 
-u32 static INLINE bitscanrev(u32 v)
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+double os_GetSeconds(void);
+
+void os_DoEvents(void);
+
+static TYPES_INLINE u32 bitscanrev(u32 v)
 {
 #ifdef __GNUC__
 	return 31-__builtin_clz(v);
@@ -20,4 +24,8 @@ u32 static INLINE bitscanrev(u32 v)
 #endif
 }
 
-void os_DebugBreak();
+void os_DebugBreak(void);
+
+#ifdef __cplusplus
+}
+#endif

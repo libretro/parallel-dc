@@ -62,6 +62,12 @@ struct sched_list
 	int end;
 };
 
+/* The events registered, by id: room for every device's, made with the
+ * process (registering the same callback and tag again keeps its place) */
+#define SH4_SCHED_SLOTS 128
+extern sched_list sch_list[SH4_SCHED_SLOTS];
+extern u32 sch_count;
+
 #ifdef __cplusplus
 }
 #endif

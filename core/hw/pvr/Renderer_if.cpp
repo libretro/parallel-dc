@@ -10,8 +10,7 @@
 #include "spg.h"
 
 // (hw/sh4/sh4_core.h, which has a name for every register of the SH4)
-void RestoreHostRoundingMode();
-void HostFloatModeBack();
+#include "hw/sh4/sh4_if.h"	/* (RestoreHostRoundingMode, HostFloatModeBack) */
 
 /*
 

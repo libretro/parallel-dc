@@ -447,7 +447,6 @@ struct RTL8139State {
     int schedId;	/* the link change after a reset */
 };
 
-extern std::vector<sched_list> sch_list;
 /* The scheduler's callbacks have no argument: there is one adapter */
 static RTL8139State *link_device;
 

@@ -236,6 +236,7 @@ enum HollyInterruptID
 		/* bit 26 = G2 : Dev-DMA Time out */
 		/* bit 27 = G2 : Time out in CPU accessing */
 };
+typedef enum HollyInterruptID HollyInterruptID;
 
 
 
@@ -397,6 +398,12 @@ extern "C" {
 #define INLINE
 /* sugest */
 #define SINLINE
+#elif !defined(__cplusplus) && defined(__GNUC__)
+/* force; in C as "static INLINE" takes it (MinGW's __forceinline is
+ * extern, and so is libretro-common's INLINE once this is it) */
+#define INLINE __inline__ __attribute__((__always_inline__))
+/* sugest */
+#define SINLINE __inline
 #else
 /* force */
 #define INLINE __forceinline

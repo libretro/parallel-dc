@@ -48,7 +48,6 @@ int vblank_schid;
  * next line (more than beam_stay) or still at the line's start (beam_span
  * or more). Anything else that moves the answer - a register written, a
  * gun, the run's window - aims the event again, and its end is another. */
-extern std::vector<sched_list> sch_list;
 static u32 beam_line = ~0u;
 static int beam_end;
 static u32 beam_gen, line_gen = 1;

@@ -7,7 +7,7 @@
 #include <compat/intrinsics.h>
 
 
-//sh4 scheduler
+/* sh4 scheduler */
 
 /*
 
@@ -25,30 +25,31 @@
 u64 sh4_sched_ffb;
 
 
-std::vector<sched_list> sch_list;
+sched_list sch_list[SH4_SCHED_SLOTS];
+u32 sch_count;
 
 int sh4_sched_next_id=-1;
 
 /* The clock, as sh4_sched_now() reads it: inline here, where it is read for
  * every event of every tick. (The functions the other files call can be
  * replaced from outside a shared library, and are not made inline.) */
-static inline u32 sh4_sched_clock()
+static TYPES_INLINE u32 sh4_sched_clock(void)
 {
 	return sh4_sched_ffb-Sh4cntx.sh4_sched_next;
 }
 
-static inline u32 sh4_sched_remaining_at(int id, u32 reference)
+static TYPES_INLINE u32 sh4_sched_remaining_at(int id, u32 reference)
 {
 	if (sch_list[id].end != -1)
       return sch_list[id].end - reference;
    return -1;
 }
 
-// Whether there is a request waiting for this one
+/* Whether there is a request waiting for this one */
 bool sh4_sched_is_scheduled(int id)
 {
-	// (an id that was never given out - a device this machine does not have - is waiting for nothing)
-	return (size_t)id < sch_list.size() && sch_list[id].end != -1;
+	/* (an id that was never given out - a device this machine does not have - is waiting for nothing) */
+	return (u32)id < sch_count && sch_list[id].end != -1;
 }
 
 u32 sh4_sched_remaining(int id)
@@ -104,7 +105,7 @@ static void sh4_sched_set_second(int id, u32 remaining, u32 diff)
  * bit each: the tick goes through these alone. */
 static u32 sh4_sched_waiting;
 
-static inline void sh4_sched_mark(size_t id)
+static TYPES_INLINE void sh4_sched_mark(size_t id)
 {
 	if (id >= 32)
 		return;
@@ -116,12 +117,14 @@ static inline void sh4_sched_mark(size_t id)
 
 /* The first id from @from on that may be waiting: with more than 32 events
  * there is no knowing, and it is @from. */
-static inline size_t sh4_sched_next_waiting(size_t from)
+static TYPES_INLINE size_t sh4_sched_next_waiting(size_t from)
 {
-	if (sch_list.size() > 32)
+	u32 left;
+
+	if (sch_count > 32)
 		return from;
-	const u32 left = from < 32 ? sh4_sched_waiting >> from : 0;
-	return left ? from + compat_ctz(left) : sch_list.size();
+	left = from < 32 ? sh4_sched_waiting >> from : 0;
+	return left ? from + compat_ctz(left) : sch_count;
 }
 
 /* While sh4_sched_tick() goes through the list: the first id it has not
@@ -130,7 +133,7 @@ static inline size_t sh4_sched_next_waiting(size_t from)
 static bool sh4_sched_ticking;
 static size_t sh4_sched_tick_pos;
 static bool sh4_sched_tick_passed;
-// (and whether an event other than the one being called was asked for)
+/* (and whether an event other than the one being called was asked for) */
 static bool sh4_sched_tick_other;
 
 void sh4_sched_ffts(void)
@@ -141,13 +144,15 @@ void sh4_sched_ffts(void)
 	int slot2=-1;
 	bool overdue=false;
 	const u32 now=sh4_sched_clock();
+	size_t i;
 
-	// (the times may have been put in place from a state: the bits are made again)
+	/* (the times may have been put in place from a state: the bits are made again) */
 	sh4_sched_waiting=0;
-	for (size_t i=0;i<sch_list.size();i++)
+	for (i=0;i<sch_count;i++)
 	{
+		u32 remaining;
 		sh4_sched_mark(i);
-		const u32 remaining=sh4_sched_remaining_at(i, now);
+		remaining=sh4_sched_remaining_at(i, now);
 		if (sch_list[i].end!=-1 && remaining>=0x80000000u)
 			overdue=true;
 		if (remaining<diff)
@@ -172,7 +177,13 @@ void sh4_sched_ffts(void)
 
 int sh4_sched_register(int tag, sh4_sched_callback* ssc)
 {
-	sched_list t={ssc,tag,-1,-1};
+	sched_list t;
+	size_t i;
+
+	t.cb=ssc;
+	t.tag=tag;
+	t.start=-1;
+	t.end=-1;
 
 	/* The list is the process's and outlives the machine: every game
 	 * loaded after the first has its devices register again. A callback
@@ -183,7 +194,7 @@ int sh4_sched_register(int tag, sh4_sched_callback* ssc)
 	 * its scanline event, which asks for itself again for ever - went on
 	 * being called beside the new one's. */
 	sh4_sched_stale=true;
-	for (size_t i=0;i<sch_list.size();i++)
+	for (i=0;i<sch_count;i++)
 	{
 		if (sch_list[i].cb==ssc && sch_list[i].tag==tag)
 		{
@@ -193,10 +204,17 @@ int sh4_sched_register(int tag, sh4_sched_callback* ssc)
 		}
 	}
 
-	sch_list.push_back(t);
-	sh4_sched_mark(sch_list.size()-1);
+	/* (every device's fits: one more is a device added that the room was not made for) */
+	if (sch_count >= SH4_SCHED_SLOTS)
+	{
+		ERROR_LOG(SH4, "sh4_sched: no room for another event (SH4_SCHED_SLOTS)");
+		die("sh4_sched: no room for another event");
+		return -1;
+	}
+	sch_list[sch_count++]=t;
+	sh4_sched_mark(sch_count-1);
 
-	return sch_list.size()-1;
+	return (int)sch_count-1;
 }
 
 /*
@@ -216,6 +234,8 @@ u64 sh4_sched_now64(void)
 }
 void sh4_sched_request(int id, int cycles)
 {
+	int next, slot;
+
 	verify(cycles== -1 || (cycles >= 0 && cycles <= SH4_MAIN_CLOCK));
 
 	sch_list[id].start = sh4_sched_clock();
@@ -223,7 +243,7 @@ void sh4_sched_request(int id, int cycles)
 
 	if (cycles != -1)
 	{
-		// (the time is 32 bits and wraps: added as unsigned, a signed sum past the top is not defined)
+		/* (the time is 32 bits and wraps: added as unsigned, a signed sum past the top is not defined) */
 		sch_list[id].end = (int)((u32)sch_list[id].start + (u32)cycles);
 		if (sch_list[id].end == -1)
 			sch_list[id].end++;
@@ -248,14 +268,14 @@ void sh4_sched_request(int id, int cycles)
 	 * unless this one was the next and now comes later. That holds while
 	 * the clock has only gone on since: a state loaded or a CPU reset
 	 * leaves it to sh4_sched_ffts(). */
-	const int next=Sh4cntx.sh4_sched_next;
-	const int slot=sh4_sched_next_id;
+	next=Sh4cntx.sh4_sched_next;
+	slot=sh4_sched_next_id;
 	if (!sh4_sched_stale && slot!=-1 && next>=0
 			&& sh4_sched_ffb==sh4_sched_set_ffb && (u32)next<=sh4_sched_set_diff)
 	{
 		const u32 diff=(u32)next;
 		const u32 remaining=sh4_sched_remaining_at(id, sch_list[id].start);
-		// (when the one after the next is known: how far off it is now)
+		/* (when the one after the next is known: how far off it is now) */
 		const u32 second=diff+sh4_sched_second_gap;
 		const int slot2=sh4_sched_second_id;
 		if (id==slot)
@@ -272,7 +292,7 @@ void sh4_sched_request(int id, int cycles)
 		{
 			if (remaining<diff || (remaining==diff && id<slot))
 			{
-				// the next one is the one after this now
+				/* the next one is the one after this now */
 				sh4_sched_set_next(id, remaining);
 				sh4_sched_set_second(slot, diff, remaining);
 			}
@@ -299,10 +319,12 @@ void sh4_sched_request(int id, int cycles)
 /* Returns how much time has passed for this callback */
 static int sh4_sched_elapsed(int id)
 {
+   int rv;
+
    if (sch_list[id].end == -1)
       return -1;
 
-   int rv=sh4_sched_clock()-sch_list[id].start;
+   rv=sh4_sched_clock()-sch_list[id].start;
    sch_list[id].start=sh4_sched_clock();
    return rv;
 }
@@ -312,117 +334,128 @@ static void handle_cb(int id)
 	int remain=(int)((u32)sch_list[id].end-(u32)sch_list[id].start);
 	int elapsd=sh4_sched_elapsed(id);
 	int jitter=elapsd-remain;
+	int re_sch;
 
 	sch_list[id].end=-1;
 	sh4_sched_mark(id);
-	int re_sch=sch_list[id].cb(sch_list[id].tag,remain,jitter);
+	re_sch=sch_list[id].cb(sch_list[id].tag,remain,jitter);
 
 	if (re_sch > 0)
-		sh4_sched_request(id, std::max(0, re_sch - jitter));
+		sh4_sched_request(id, re_sch - jitter > 0 ? re_sch - jitter : 0);
 }
 
 void sh4_sched_tick(int cycles)
 {
+	u32 now, fztime;
+	size_t first, i;
+	int next, slot0, slot2;
+	/* (what sh4_sched_ffts() would find after the tick) */
+	u32 diff, diff2;
+	int slot, slot2b;
+	bool overdue;
+
 	/*
 	Sh4cntx.sh4_sched_time+=cycles;
 	Sh4cntx.sh4_sched_next-=cycles;
 	*/
 
-	if (Sh4cntx.sh4_sched_next<0)
+	if (Sh4cntx.sh4_sched_next>=0)
+		return;
+	now=sh4_sched_clock();
+	fztime=now-cycles;
+	if (sh4_sched_next_id!=-1)
 	{
-		const u32 now=sh4_sched_clock();
-		u32 fztime=now-cycles;
-		if (sh4_sched_next_id!=-1)
+		first = sh4_sched_next_waiting(0);
+
+		sh4_sched_ticking = true;
+		sh4_sched_tick_passed = false;
+		sh4_sched_tick_other = false;
+
+		/* Most ticks, the next event alone has come: the one after it
+		 * comes after now, and the next is called alone. That is known
+		 * when the clock has only gone on since the next and the one
+		 * after it were found, by no more than this tick (the next one
+		 * is in it), and no time had gone by. */
+		next = Sh4cntx.sh4_sched_next;
+		slot0 = sh4_sched_next_id;
+		slot2 = sh4_sched_second_id;
+		if (sh4_sched_second_ok && !sh4_sched_stale && !sh4_sched_far
+				&& sh4_sched_ffb == sh4_sched_set_ffb && next >= -cycles
+				&& (slot2 == -1 || (s64)next + sh4_sched_second_gap > 0))
 		{
-			size_t first = sh4_sched_next_waiting(0);
-
-			sh4_sched_ticking = true;
-			sh4_sched_tick_passed = false;
-			sh4_sched_tick_other = false;
-
-			/* Most ticks, the next event alone has come: the one after it
-			 * comes after now, and the next is called alone. That is known
-			 * when the clock has only gone on since the next and the one
-			 * after it were found, by no more than this tick (the next one
-			 * is in it), and no time had gone by. */
-			const int next = Sh4cntx.sh4_sched_next;
-			const int slot0 = sh4_sched_next_id;
-			const int slot2 = sh4_sched_second_id;
-			if (sh4_sched_second_ok && !sh4_sched_stale && !sh4_sched_far
-					&& sh4_sched_ffb == sh4_sched_set_ffb && next >= -cycles
-					&& (slot2 == -1 || (s64)next + sh4_sched_second_gap > 0))
+			sh4_sched_tick_pos = slot0;
+			handle_cb(slot0);
+			if (!sh4_sched_tick_other && !sh4_sched_stale)
 			{
-				sh4_sched_tick_pos = slot0;
-				handle_cb(slot0);
-				if (!sh4_sched_tick_other && !sh4_sched_stale)
+				const u32 remaining = sh4_sched_remaining_at(slot0, now);
+				const u32 second = (u32)next + sh4_sched_second_gap;
+				sh4_sched_ticking = false;
+				if (slot2 == -1 || remaining < second || (remaining == second && slot0 < slot2))
 				{
-					sh4_sched_ticking = false;
-					const u32 remaining = sh4_sched_remaining_at(slot0, now);
-					const u32 second = (u32)next + sh4_sched_second_gap;
-					if (slot2 == -1 || remaining < second || (remaining == second && slot0 < slot2))
-					{
-						const int slot = remaining != (u32)-1 ? slot0 : -1;
-						sh4_sched_set_next(slot, remaining);
-						if (slot != -1)
-							sh4_sched_set_second(slot2, second, remaining);
-						else
-							sh4_sched_set_second(-1, 0, 0);
-					}
+					const int slot1 = remaining != (u32)-1 ? slot0 : -1;
+					sh4_sched_set_next(slot1, remaining);
+					if (slot1 != -1)
+						sh4_sched_set_second(slot2, second, remaining);
 					else
-					{
-						sh4_sched_set_next(slot2, second);
-						sh4_sched_second_ok = false;
-					}
-					return;
+						sh4_sched_set_second(-1, 0, 0);
 				}
-				// the others asked for are looked at as ever, and then all of them again
-				first = sh4_sched_next_waiting(slot0 + 1);
-				sh4_sched_tick_passed = true;
-			}
-
-			/* What sh4_sched_ffts() would find after: each event is looked
-			 * at once it is done with, and again only if it is asked for
-			 * after that. (The clock does not move during a tick.) The ones
-			 * not waiting are passed over: they are neither called nor
-			 * the next. */
-			u32 diff=-1;
-			int slot=-1;
-			u32 diff2=-1;
-			int slot2b=-1;
-			bool overdue=false;
-
-			for (size_t i = first; i < sch_list.size(); i = sh4_sched_next_waiting(i + 1))
-			{
-				sh4_sched_tick_pos = i;
-				int remaining = sh4_sched_remaining_at(i, fztime);
-				verify(remaining >= 0 || remaining == -1);
-				if (remaining >= 0 && remaining <= (u32)cycles)
-					handle_cb(i);
-				const u32 next = sh4_sched_remaining_at(i, now);
-				if (sch_list[i].end != -1 && next >= 0x80000000u)
-					overdue = true;
-				if (next < diff)
+				else
 				{
-					slot2b = slot;
-					diff2 = diff;
-					slot = i;
-					diff = next;
+					sh4_sched_set_next(slot2, second);
+					sh4_sched_second_ok = false;
 				}
-				else if (next < diff2)
-				{
-					slot2b = i;
-					diff2 = next;
-				}
-			}
-			sh4_sched_ticking = false;
-			if (!sh4_sched_tick_passed && !sh4_sched_stale)
-			{
-				sh4_sched_far = overdue;
-				sh4_sched_set_next(slot, diff);
-				sh4_sched_set_second(slot2b, diff2, diff);
 				return;
 			}
+			/* the others asked for are looked at as ever, and then all of them again */
+			first = sh4_sched_next_waiting(slot0 + 1);
+			sh4_sched_tick_passed = true;
 		}
-		sh4_sched_ffts();
+
+		/* What sh4_sched_ffts() would find after: each event is looked
+		 * at once it is done with, and again only if it is asked for
+		 * after that. (The clock does not move during a tick.) The ones
+		 * not waiting are passed over: they are neither called nor
+		 * the next. */
+		diff=(u32)-1;
+		slot=-1;
+		diff2=(u32)-1;
+		slot2b=-1;
+		overdue=false;
+
+		for (i = first; i < sch_count; i = sh4_sched_next_waiting(i + 1))
+		{
+			int remaining;
+			u32 next_at;
+
+			sh4_sched_tick_pos = i;
+			remaining = sh4_sched_remaining_at(i, fztime);
+			verify(remaining >= 0 || remaining == -1);
+			if (remaining >= 0 && remaining <= (u32)cycles)
+				handle_cb(i);
+			next_at = sh4_sched_remaining_at(i, now);
+			if (sch_list[i].end != -1 && next_at >= 0x80000000u)
+				overdue = true;
+			if (next_at < diff)
+			{
+				slot2b = slot;
+				diff2 = diff;
+				slot = i;
+				diff = next_at;
+			}
+			else if (next_at < diff2)
+			{
+				slot2b = i;
+				diff2 = next_at;
+			}
+		}
+		sh4_sched_ticking = false;
+		if (!sh4_sched_tick_passed && !sh4_sched_stale)
+		{
+			sh4_sched_far = overdue;
+			sh4_sched_set_next(slot, diff);
+			sh4_sched_set_second(slot2b, diff2, diff);
+			return;
+		}
 	}
+	sh4_sched_ffts();
 }

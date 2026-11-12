@@ -63,7 +63,6 @@ static int naomi_dma_schid = -1;
 // SH4 cycles for a byte: 10 is 20 MB a second, 27 is 7
 static int naomi_dma_delay = 10;
 
-extern std::vector<sched_list> sch_list;
 
 #ifdef NAOMI_COMM
 	u32 CommOffset;
@@ -697,7 +696,6 @@ static bool periph_polled;
 static u8 periph_card_button[2];
 
 extern char eeprom_file[PATH_MAX];
-extern std::vector<sched_list> sch_list;
 
 static void periph_path(char *path, size_t size, const char *suffix)
 {

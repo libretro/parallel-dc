@@ -25,7 +25,6 @@
 #include <algorithm>
 #include <vector>
 
-extern std::vector<sched_list> sch_list;
 
 namespace touchscreen
 {
