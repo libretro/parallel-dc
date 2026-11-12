@@ -800,6 +800,8 @@ static void update_variables(bool first_startup)
          per_content_vmus = 1;
       else if (!strcmp("All VMUs", var.value))
          per_content_vmus = 2;
+      else if (!strcmp("Libretro standard", var.value))
+         per_content_vmus = 3;
    }
 
    if (!first_startup && per_content_vmus != previous_per_content_vmus
