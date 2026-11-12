@@ -1,0 +1,69 @@
+name: webOS libc
+
+# tools/webos/libc_check.sh: every C file the webOS build compiles,
+# checked with the openlgtv SDK the buildbot uses. Its glibc 2.12 hides
+# names a desktop glibc declares, so a missing declaration fails here
+# rather than on the buildbot.
+
+on:
+  push:
+    paths:
+      - 'core/**.c'
+      - 'core/**.h'
+      - 'Makefile'
+      - 'Makefile.common'
+      - 'tools/webos/**'
+      - '.github/workflows/webos.yml'
+  pull_request:
+    paths:
+      - 'core/**.c'
+      - 'core/**.h'
+      - 'Makefile'
+      - 'Makefile.common'
+      - 'tools/webos/**'
+      - '.github/workflows/webos.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  libc:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      SDK_NAME: arm-webos-linux-gnueabi_sdk-buildroot
+    steps:
+      - uses: actions/checkout@v4
+      - name: Resolve the SDK release
+        id: sdk
+        run: |
+          url=$(curl -sS --retry 5 --retry-all-errors -o /dev/null \
+            -w '%{redirect_url}' \
+            "https://github.com/openlgtv/buildroot-nc4/releases/latest/download/${SDK_NAME}-x86_64.tar.gz")
+          tag=$(echo "$url" | sed -n 's#.*/releases/download/\([^/]*\)/.*#\1#p')
+          test -n "$tag"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+      - name: Cache the SDK
+        id: cache
+        uses: actions/cache@v4
+        with:
+          path: /tmp/webos-sdk
+          key: webos-sdk-${{ steps.sdk.outputs.tag }}
+      - name: Download the SDK
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p /tmp/webos-sdk
+          curl -fsSL --retry 8 --retry-all-errors --connect-timeout 30 \
+            -o /tmp/webos-sdk/sdk.tar.gz \
+            "https://github.com/openlgtv/buildroot-nc4/releases/download/${{ steps.sdk.outputs.tag }}/${SDK_NAME}-x86_64.tar.gz"
+      - name: Extract the SDK
+        working-directory: /tmp
+        run: |
+          tar xzf /tmp/webos-sdk/sdk.tar.gz
+          "./$SDK_NAME/relocate-sdk.sh"
+      - name: Every C file of the webOS build against the SDK's libc
+        shell: bash
+        run: |
+          . "/tmp/$SDK_NAME/environment-setup"
+          sh tools/webos/libc_check.sh

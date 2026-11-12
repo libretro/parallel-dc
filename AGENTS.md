@@ -224,7 +224,8 @@ reason a reader can see.
   is delivered: `headless.yml`, `sanitizers.yml` (AddressSanitizer,
   UndefinedBehaviorSanitizer and LeakSanitizer, `make clean` between
   them), `vulkan-negotiation.yml` (the Vulkan, OpenGL and Direct3D tests
-  under lavapipe and wine), `old-stl.yml`, `chd.yml`.
+  under lavapipe and wine), `old-stl.yml`, `chd.yml`, `webos.yml` (every
+  C file against the webOS SDK's glibc 2.12).
 - **Every platform.** A touched C++ file also builds for Windows with
   mingw-w64, for AArch64, and is checked in an Apple shape; the
   buildbot's targets (macOS, iOS, Android, Switch) build from the same
