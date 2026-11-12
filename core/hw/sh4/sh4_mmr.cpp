@@ -647,12 +647,12 @@ void DYNACALL WriteMem_p4mmr(u32 addr,T data)
 	constexpr size_t sz = sizeof(T);
 	if (likely(addr==0xFF000038))
 	{
-		CCN_QACR_write<0>(addr,data);
+		CCN_QACR_write(0, (u32)data);
 		return;
 	}
 	else if (likely(addr==0xFF00003C))
 	{
-		CCN_QACR_write<1>(addr,data);
+		CCN_QACR_write(1, (u32)data);
 		return;
 	}	
 

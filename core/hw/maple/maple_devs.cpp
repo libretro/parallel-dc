@@ -608,7 +608,7 @@ struct MapleSaveState
 	}
 };
 
-extern u32 RealTimeClock;
+#include "hw/aica/aica_if.h"
 
 /* A date as a memory card gives it, from the console's clock (seconds since
  * 1950-01-01, local time): year (two bytes, low first), month, day, hour,

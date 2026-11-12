@@ -20,6 +20,16 @@
 sh4_icache icache;
 sh4_ocache ocache;
 
+void sh4_icache_invalidate(void)
+{
+	icache.Invalidate();
+}
+
+void sh4_ocache_invalidate(void)
+{
+	ocache.Invalidate();
+}
+
 // The cycles of what is being run, for the accurate setting
 static Sh4Cycles timing;
 

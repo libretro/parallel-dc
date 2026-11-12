@@ -319,6 +319,9 @@ struct sh4_if
 	IsCpuRunningFP* IsCpuRunning;
 };
 
+/* The SH4 as it runs, interpreter or recompiler (types.h has it for C++) */
+extern sh4_if sh4_cpu;
+
 
 typedef struct Sh4Context Sh4Context;
 TYPES_ANON struct Sh4Context

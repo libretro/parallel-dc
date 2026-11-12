@@ -1,14 +1,39 @@
 /*
 	In case you wonder, the extern "C" stuff are for the assembly code on beagleboard/pandora
 */
+#pragma once
+#include "types.h"
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+typedef void (*DynarecCodeEntryPtr)(void);
+
+#ifdef __GNUC__
+__attribute__((used))
+#endif
+DynarecCodeEntryPtr DYNACALL bm_GetCodeByVAddr(u32 addr);
+/* What bm_GetCodeByVAddr() keeps of where it found the code for an address
+ * with the MMU on is to go: an address may be another page now, or a
+ * block is gone. */
+#if FEAT_SHREC != DYNAREC_NONE
+void bm_ForgetVaddrs(void);
+#else
+static TYPES_INLINE void bm_ForgetVaddrs(void) {}
+#endif
+
+/* The recompiler's once a second: its statistics, and code that keeps
+ * being rewritten */
+void bm_Periodical_1s(void);
+
+#ifdef __cplusplus
+}
+
 #include <memory>
 #include <map>
-#include "types.h"
 #include "decoder.h"
 #include "node_pool.h"
-#pragma once
-
-typedef void (*DynarecCodeEntryPtr)();
 typedef std::shared_ptr<RuntimeBlockInfo> RuntimeBlockInfoPtr;
 
 #define CODE_SIZE   (16*1024*1024)
@@ -134,19 +159,6 @@ struct RuntimeBlockInfo: RuntimeBlockInfo_Core
 	bool temp_listed;
 };
 
-
-extern "C" {
-__attribute__((used)) DynarecCodeEntryPtr DYNACALL bm_GetCodeByVAddr(u32 addr);
-/* What bm_GetCodeByVAddr() keeps of where it found the code for an address
- * with the MMU on is to go: an address may be another page now, or a
- * block is gone. */
-#if FEAT_SHREC != DYNAREC_NONE
-void bm_ForgetVaddrs();
-#else
-static inline void bm_ForgetVaddrs() {}
-#endif
-}
-
 RuntimeBlockInfoPtr bm_GetBlock2(void* dynarec_code);
 RuntimeBlockInfoPtr bm_GetStaleBlock(void* dynarec_code);
 RuntimeBlockInfoPtr DYNACALL bm_GetBlock(u32 addr);
@@ -158,7 +170,6 @@ void bm_LoadRam(const u8 *from);
 // @nothing_since: no block has been compiled since the last time
 void bm_ResetCache(bool nothing_since = false);
 void bm_ResetTempCache(bool full);
-void bm_Periodical_1s();
 
 void bm_Init();
 void bm_Term();
@@ -166,3 +177,4 @@ void bm_Term();
 void bm_vmem_pagefill(void** ptr,u32 size_bytes);
 bool bm_RamWriteAccess(void *p);
 void bm_RamWriteAccess(u32 addr);
+#endif

@@ -28,6 +28,8 @@
 #include "hw/pvr/pvr_mem.h"
 #include "hw/sh4/sh4_if.h"
 #include "hw/sh4/modules/tmu.h"
+#include "hw/sh4/modules/ccn.h"
+#include "hw/aica/aica_if.h"
 #include "reios/reios.h"
 #include "reios/gdrom_hle.h"
 #include <map>
@@ -65,12 +67,6 @@ extern bool Arm7Enabled;
 //./core/hw/aica/aica.o
 
 //./core/hw/aica/aica_if.o
-extern VArray2 aica_ram;
-extern u32 VREG;//video reg =P
-extern u32 ARMRST;//arm reset reg
-extern u32 rtc_EN;
-extern u32 RealTimeClock;
-extern int dma_sched_id;
 
 //./core/hw/aica/aica_mem.o
 
@@ -134,7 +130,6 @@ extern VArray2 mem_b;
 //./core/hw/sh4/sh4_sched.o
 
 //./core/hw/sh4/interpr/sh4_interpreter.o
-extern int rtc_schid;
 
 //./core/hw/sh4/modules/serial.o
 extern SCIF_SCFSR2_type SCIF_SCFSR2;
@@ -145,7 +140,6 @@ extern SCIF_SCSCR2_type SCIF_SCSCR2;
 //./core/hw/sh4/modules/tmu.o
 
 //./core/hw/sh4/modules/ccn.o
-extern u32 CCN_QACR_TR[2];
 
 //./core/hw/sh4/modules/mmu.o
 extern u32 ITLB_LRU_USE[64];
@@ -267,9 +261,6 @@ bool pvr_unserialize_v28(void **data, unsigned int *total_size);
 void pvr_state_before_v28(void);
 /* and since V29: SB_ADST, the AICA DMA's start register, which is read
  * through a function and so is not in the register block (aica_if.cpp) */
-void aica_sb_serialize_v29(void **data, unsigned int *total_size);
-bool aica_sb_unserialize_v29(void **data, unsigned int *total_size);
-void aica_sb_state_before_v29(void);
 /* and since V30: the cards the NAOMI's card readers and IC card readers
  * keep out of the reader, as the game last wrote them (card_reader.cpp) */
 void naomi_cards_serialize_v30(void **data, unsigned int *total_size);

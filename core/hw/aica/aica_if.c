@@ -27,16 +27,17 @@ int rtc_schid = -1;
 
 u32 GetRTC_now(void)
 {
-	// The Dreamcast Epoch time is 1/1/50 00:00 but without support for time zone or DST.
-	// We compute the TZ/DST current time offset and add it to the result
-	// as if we were in the UTC time zone (as well as the DC Epoch)
+	/* The Dreamcast Epoch time is 1/1/50 00:00 but without support for time zone or DST. */
+	/* We compute the TZ/DST current time offset and add it to the result */
+	/* as if we were in the UTC time zone (as well as the DC Epoch) */
 	time_t rawtime = time(NULL);
 	struct tm localtm, gmtm;
+	time_t time_offset;
 	localtm = *localtime(&rawtime);
 	gmtm = *gmtime(&rawtime);
 	gmtm.tm_isdst = -1;
-	time_t time_offset = mktime(&localtm) - mktime(&gmtm);
-	// 1/1/50 to 1/1/70 is 20 years and 5 leap days
+	time_offset = mktime(&localtm) - mktime(&gmtm);
+	/* 1/1/50 to 1/1/70 is 20 years and 5 leap days */
 	return (20 * 365 + 5) * 24 * 60 * 60 + rawtime + time_offset;
 }
 
@@ -73,7 +74,7 @@ void WriteMem_aica_rtc(u32 addr,u32 data,u32 sz)
 		{
 			RealTimeClock&=0xFFFF0000;
 			RealTimeClock|= data&0xFFFF;
-			//TODO: Clean the internal timer ?
+			/* TODO: Clean the internal timer ? */
 		}
 		return;
 	case 8:
@@ -113,7 +114,7 @@ u32 ReadMem_aica_reg(u32 addr,u32 sz)
 	}
 }
 
-static void ArmSetRST()
+static void ArmSetRST(void)
 {
 	ARMRST &= 1;
    aicaarm_enable(ARMRST == 0);
@@ -167,11 +168,11 @@ static int DreamcastSecond(int tag, int c, int j)
 	return SH4_MAIN_CLOCK;
 }
 
-//Init/res/term
-void aica_Init()
+/* Init/res/term */
+void aica_Init(void)
 {
 	RealTimeClock = GetRTC_now();
-	// (asked for by the reset that follows)
+	/* (asked for by the reset that follows) */
 	rtc_schid = sh4_sched_register(0, &DreamcastSecond);
 }
 
@@ -198,10 +199,10 @@ static int dma_end_sched(int tag, int cycl, int jitt)
 
 	SB_ADSTAR+=len;
 	SB_ADSTAG+=len;
-	SB_ADST = 0;	// dma done
+	SB_ADST = 0;	/* dma done */
 	SB_ADLEN = 0;
 
-	// indicate that dma is not happening, or has been paused
+	/* indicate that dma is not happening, or has been paused */
 	SB_ADSUSP |= 0x10;
 
 	asic_RaiseInterrupt(holly_SPU_DMA);
@@ -213,8 +214,8 @@ static bool check_STAG(u32 addr)
 {
 #ifdef STRICT_MODE
 	const u32 area = (addr >> 26) & 7;
-	// Aica and G2 Ext dev #1 and #2 on area 0
-	// G2 Ext dev #3 on area 5
+	/* Aica and G2 Ext dev #1 and #2 on area 0 */
+	/* G2 Ext dev #3 on area 5 */
 	return area == 0 || area == 5;
 #else
 	return true;
@@ -225,7 +226,7 @@ static bool check_STAR(u32 addr)
 {
 #ifdef STRICT_MODE
 	const u32 area = (addr >> 26) & 7;
-	// System RAM and VRAM
+	/* System RAM and VRAM */
 	return area == 3 || area == 1;
 #else
 	return true;
@@ -244,47 +245,76 @@ static bool check_STAR_overrun(u32 addr)
 #endif
 }
 
-template<u32 ENABLE, u32 START, u32 SRC, u32 DEST, u32 LEN, u32 DIR, HollyInterruptID interrupt, HollyInterruptID iainterrupt, HollyInterruptID ovinterrupt, const char *LogTag>
-void Write_DmaStart(u32 addr, u32 data)
+/* The three G2 channels other than the AICA's (and the AICA's, for its
+ * address registers): their registers and interrupts */
+typedef struct g2_dma
 {
-	u32& enableReg = SB_REGN_32(ENABLE);
-	u32& startReg = SB_REGN_32(START);
-	u32& sourceReg = SB_REGN_32(SRC);
-	u32& destReg = SB_REGN_32(DEST);
-	u32& lenReg = SB_REGN_32(LEN);
-	const u32 dirReg = SB_REGN_32(DIR);
+	u32 en, st, star, stag, len, dir;
+	HollyInterruptID done, illaddr, overrun;
+	const char *tag;
+} g2_dma;
 
-	if (!(data & 1) || !(enableReg & 1))
+static const g2_dma g2_dmas[] = {
+	{ SB_ADEN_addr, SB_ADST_addr, SB_ADSTAR_addr, SB_ADSTAG_addr, SB_ADLEN_addr, SB_ADDIR_addr,
+			holly_SPU_DMA, holly_AICA_ILLADDR, holly_AICA_OVERRUN, "G2-AICA DMA" },
+	{ SB_E1EN_addr, SB_E1ST_addr, SB_E1STAR_addr, SB_E1STAG_addr, SB_E1LEN_addr, SB_E1DIR_addr,
+			holly_EXT_DMA1, holly_EXT1_ILLADDR, holly_EXT1_OVERRUN, "G2-EXT1 DMA" },
+	{ SB_E2EN_addr, SB_E2ST_addr, SB_E2STAR_addr, SB_E2STAG_addr, SB_E2LEN_addr, SB_E2DIR_addr,
+			holly_EXT_DMA2, holly_EXT2_ILLADDR, holly_EXT2_OVERRUN, "G2-EXT2 DMA" },
+	{ SB_DDEN_addr, SB_DDST_addr, SB_DDSTAR_addr, SB_DDSTAG_addr, SB_DDLEN_addr, SB_DDDIR_addr,
+			holly_DEV_DMA, holly_DEV_ILLADDR, holly_DEV_OVERRUN, "G2-DDev DMA" },
+};
+
+/* The channel one of whose registers is at @addr */
+static const g2_dma *g2_dma_of(u32 addr)
+{
+	unsigned i;
+	addr &= ~3u;
+	for (i = 1; i < sizeof(g2_dmas) / sizeof(g2_dmas[0]); i++)
+		if (addr == g2_dmas[i].st || addr == g2_dmas[i].star || addr == g2_dmas[i].stag)
+			return &g2_dmas[i];
+	return &g2_dmas[0];
+}
+
+#define G2_REG(a) sb_regs[((a) - SB_BASE) / 4].data32
+
+static void Write_DmaStart(u32 addr, u32 data)
+{
+	const g2_dma *c = g2_dma_of(addr);
+	const u32 dirReg = G2_REG(c->dir);
+	u32 src, dst, len;
+
+	if (!(data & 1) || !(G2_REG(c->en) & 1))
 		return;
-	u32 src = sourceReg;
-	u32 dst = destReg;
-	u32 len = lenReg & 0x7FFFFFFF;
+	src = G2_REG(c->star);
+	dst = G2_REG(c->stag);
+	len = G2_REG(c->len) & 0x7FFFFFFF;
 
-	// STAR
+	/* STAR */
 	if (!check_STAR(src))
 	{
-		INFO_LOG(AICA, "%s: Invalid src address %08x", LogTag, src);
-		startReg = 0;
-		enableReg = 0;
-		asic_RaiseInterrupt(iainterrupt);
+		INFO_LOG(AICA, "%s: Invalid src address %08x", c->tag, src);
+		G2_REG(c->st) = 0;
+		G2_REG(c->en) = 0;
+		asic_RaiseInterrupt(c->illaddr);
 		return;
 	}
-	// STAG
+	/* STAG */
 	if (!check_STAG(dst))
 	{
-		INFO_LOG(AICA, "%s: Invalid dst address %08x", LogTag, dst);
-		startReg = 0;
-		enableReg = 0;
-		asic_RaiseInterrupt(iainterrupt);
+		INFO_LOG(AICA, "%s: Invalid dst address %08x", c->tag, dst);
+		G2_REG(c->st) = 0;
+		G2_REG(c->en) = 0;
+		asic_RaiseInterrupt(c->illaddr);
 		return;
 	}
-	// Overrun
+	/* Overrun */
 	if (!check_STAR_overrun(src) || !check_STAR_overrun(src + len - 1))
 	{
-		INFO_LOG(AICA, "%s: Overrun address %08x len %x", LogTag, src, len);
-		startReg = 0;
-		enableReg = 0;
-		asic_RaiseInterrupt(ovinterrupt);
+		INFO_LOG(AICA, "%s: Overrun address %08x len %x", c->tag, src, len);
+		G2_REG(c->st) = 0;
+		G2_REG(c->en) = 0;
+		asic_RaiseInterrupt(c->overrun);
 		return;
 	}
 
@@ -293,38 +323,38 @@ void Write_DmaStart(u32 addr, u32 data)
 		u32 t = src;
 		src = dst;
 		dst = t;
-		DEBUG_LOG(AICA, "%s: DIR == 1 DMA Read to 0x%X from 0x%X %d bytes", LogTag, dst, src, len);
+		DEBUG_LOG(AICA, "%s: DIR == 1 DMA Read to 0x%X from 0x%X %d bytes", c->tag, dst, src, len);
 	}
 	else
-		DEBUG_LOG(AICA, "%s: DIR == 0 DMA Write to 0x%X from 0x%X %d bytes", LogTag, dst, src, len);
+		DEBUG_LOG(AICA, "%s: DIR == 0 DMA Write to 0x%X from 0x%X %d bytes", c->tag, dst, src, len);
 
 	WriteMemBlock_nommu_dma(dst, src, len);
 
-	if (lenReg & 0x80000000)
-		enableReg = 0;
+	if (G2_REG(c->len) & 0x80000000)
+		G2_REG(c->en) = 0;
 	else
-		enableReg = 1;
+		G2_REG(c->en) = 1;
 
-	sourceReg += len;
-	destReg += len;
-	startReg = 0; // dma done
-	lenReg = 0;
+	G2_REG(c->star) += len;
+	G2_REG(c->stag) += len;
+	G2_REG(c->st) = 0; /* dma done */
+	G2_REG(c->len) = 0;
 
-	asic_RaiseInterrupt(interrupt);
+	asic_RaiseInterrupt(c->done);
 }
 
 static void Write_SB_ADST(u32 addr, u32 data)
 {
-	//0x005F7800	SB_ADSTAG	RW	AICA:G2-DMA G2 start address 
-	//0x005F7804	SB_ADSTAR	RW	AICA:G2-DMA system memory start address 
-	//0x005F7808	SB_ADLEN	RW	AICA:G2-DMA length 
-	//0x005F780C	SB_ADDIR	RW	AICA:G2-DMA direction 
-	//0x005F7810	SB_ADTSEL	RW	AICA:G2-DMA trigger select 
-	//0x005F7814	SB_ADEN		RW	AICA:G2-DMA enable
-	//0x005F7818	SB_ADST		RW	AICA:G2-DMA start
-	//0x005F781C	SB_ADSUSP	RW	AICA:G2-DMA suspend 
+	/* 0x005F7800	SB_ADSTAG	RW	AICA:G2-DMA G2 start address */
+	/* 0x005F7804	SB_ADSTAR	RW	AICA:G2-DMA system memory start address */
+	/* 0x005F7808	SB_ADLEN	RW	AICA:G2-DMA length */
+	/* 0x005F780C	SB_ADDIR	RW	AICA:G2-DMA direction */
+	/* 0x005F7810	SB_ADTSEL	RW	AICA:G2-DMA trigger select */
+	/* 0x005F7814	SB_ADEN		RW	AICA:G2-DMA enable */
+	/* 0x005F7818	SB_ADST		RW	AICA:G2-DMA start */
+	/* 0x005F781C	SB_ADSUSP	RW	AICA:G2-DMA suspend */
 	
-	// a start while a transfer is under way is not taken: the one under way goes on to its end
+	/* a start while a transfer is under way is not taken: the one under way goes on to its end */
 	if ((data&1) && !(SB_ADST&1))
 	{
 		if (SB_ADEN&1)
@@ -332,6 +362,7 @@ static void Write_SB_ADST(u32 addr, u32 data)
 			u32 src = SB_ADSTAR;
 			u32 dst = SB_ADSTAG;
 			u32 len = SB_ADLEN & 0x7FFFFFFF;
+			int cycles;
 
 			if (!check_STAR(src))
 			{
@@ -349,7 +380,7 @@ static void Write_SB_ADST(u32 addr, u32 data)
 				asic_RaiseInterrupt(holly_AICA_ILLADDR);
 				return;
 			}
-			// Overrun
+			/* Overrun */
 			if (!check_STAR_overrun(src) || !check_STAR_overrun(src + len - 1))
 			{
 				INFO_LOG(AICA, "AICA-DMA : Overrun address %08x len %x", src, len);
@@ -361,7 +392,7 @@ static void Write_SB_ADST(u32 addr, u32 data)
 
 			if ((SB_ADDIR&1)==1)
 			{
-				//swap direction
+				/* swap direction */
 				u32 tmp=src;
 				src=dst;
 				dst=tmp;
@@ -372,12 +403,12 @@ static void Write_SB_ADST(u32 addr, u32 data)
 
 			WriteMemBlock_nommu_dma(dst,src,len);
 
-			// indicate that dma is in progress
+			/* indicate that dma is in progress */
 			SB_ADST = 1;
 			SB_ADSUSP &= ~0x10;
 
-			// Schedule the end of DMA transfer interrupt
-			int cycles = len * (SH4_MAIN_CLOCK / 2 / 25000000);       // 16 bits @ 25 MHz
+			/* Schedule the end of DMA transfer interrupt */
+			cycles = len * (SH4_MAIN_CLOCK / 2 / 25000000);       /* 16 bits @ 25 MHz */
 			/* Only a very short transfer ends at once: Sports Jam's
 			 * announcer and The Nomad Soul need longer ones to take the
 			 * time they take. */
@@ -406,29 +437,27 @@ static u32 Read_SB_ADST(u32 addr)
 	return SB_ADST;
 }
 
-template<u32 STAG, HollyInterruptID iainterrupt, const char *LogTag>
-void Write_SB_STAG(u32 addr, u32 data)
+static void Write_SB_STAG(u32 addr, u32 data)
 {
-	u32& stagReg = sb_regs[(STAG - SB_BASE) / 4].data32;
-	stagReg = data & 0x1FFFFFE0;
+	const g2_dma *c = g2_dma_of(addr);
+	G2_REG(c->stag) = data & 0x1FFFFFE0;
 
 	if (!check_STAG(data))
 	{
-		INFO_LOG(AICA, "%s Write_SB_STAG: Invalid address %08x", LogTag, data);
-		asic_RaiseInterrupt(iainterrupt);
+		INFO_LOG(AICA, "%s Write_SB_STAG: Invalid address %08x", c->tag, data);
+		asic_RaiseInterrupt(c->illaddr);
 	}
 }
 
-template<u32 STAR, HollyInterruptID iainterrupt, const char *LogTag>
-void Write_SB_STAR(u32 addr, u32 data)
+static void Write_SB_STAR(u32 addr, u32 data)
 {
-	u32& starReg = sb_regs[(STAR - SB_BASE) / 4].data32;
-	starReg = data & 0x1FFFFFE0;
+	const g2_dma *c = g2_dma_of(addr);
+	G2_REG(c->star) = data & 0x1FFFFFE0;
 
 	if (!check_STAR(data))
 	{
-		INFO_LOG(AICA, "%s Write_SB_STAR: Invalid address %08x", LogTag, data);
-		asic_RaiseInterrupt(iainterrupt);
+		INFO_LOG(AICA, "%s Write_SB_STAR: Invalid address %08x", c->tag, data);
+		asic_RaiseInterrupt(c->illaddr);
 	}
 }
 
@@ -438,41 +467,33 @@ void Write_SB_G2APRO(u32 addr, u32 data)
 		SB_G2APRO = data & 0x00007f7f;
 }
 
-extern const char AICA_TAG[] = "G2-AICA DMA";
-extern const char EXT1_TAG[] = "G2-EXT1 DMA";
-extern const char EXT2_TAG[] = "G2-EXT2 DMA";
-extern const char DDEV_TAG[] = "G2-DDev DMA";
-
-void aica_sb_Init()
+void aica_sb_Init(void)
 {
-	// G2-DMA registers
+	/* G2-DMA registers */
 
-	// AICA
+	/* AICA */
 	sb_rio_register(SB_ADST_addr, RIO_FUNC, &Read_SB_ADST, &Write_SB_ADST);
 #ifdef STRICT_MODE
-	sb_rio_register(SB_ADSTAR_addr, RIO_WF, nullptr, &Write_SB_STAR<SB_ADSTAR_addr, holly_AICA_ILLADDR, AICA_TAG>);
-	sb_rio_register(SB_ADSTAG_addr, RIO_WF, nullptr, &Write_SB_STAG<SB_ADSTAG_addr, holly_AICA_ILLADDR, AICA_TAG>);
+	sb_rio_register(SB_ADSTAR_addr, RIO_WF, NULL, &Write_SB_STAR);
+	sb_rio_register(SB_ADSTAG_addr, RIO_WF, NULL, &Write_SB_STAG);
 #endif
 
-	// G2 Ext device #1
-	sb_rio_register(SB_E1ST_addr, RIO_WF, nullptr, &Write_DmaStart<SB_E1EN_addr, SB_E1ST_addr, SB_E1STAR_addr, SB_E1STAG_addr, SB_E1LEN_addr,
-			SB_E1DIR_addr, holly_EXT_DMA1, holly_EXT1_ILLADDR, holly_EXT1_OVERRUN, EXT1_TAG>);
-	sb_rio_register(SB_E1STAR_addr, RIO_WF, nullptr, &Write_SB_STAR<SB_E1STAR_addr, holly_EXT1_ILLADDR, EXT1_TAG>);
-	sb_rio_register(SB_E1STAG_addr, RIO_WF, nullptr, &Write_SB_STAG<SB_E1STAG_addr, holly_EXT1_ILLADDR, EXT1_TAG>);
+	/* G2 Ext device #1 */
+	sb_rio_register(SB_E1ST_addr, RIO_WF, NULL, &Write_DmaStart);
+	sb_rio_register(SB_E1STAR_addr, RIO_WF, NULL, &Write_SB_STAR);
+	sb_rio_register(SB_E1STAG_addr, RIO_WF, NULL, &Write_SB_STAG);
 
-	// G2 Ext device #2
-	sb_rio_register(SB_E2ST_addr, RIO_WF, nullptr, &Write_DmaStart<SB_E2EN_addr, SB_E2ST_addr, SB_E2STAR_addr, SB_E2STAG_addr, SB_E2LEN_addr,
-			SB_E2DIR_addr, holly_EXT_DMA2, holly_EXT2_ILLADDR, holly_EXT2_OVERRUN, EXT2_TAG>);
-	sb_rio_register(SB_E2STAR_addr, RIO_WF, nullptr, &Write_SB_STAR<SB_E2STAR_addr, holly_EXT2_ILLADDR, EXT2_TAG>);
-	sb_rio_register(SB_E2STAG_addr, RIO_WF, nullptr, &Write_SB_STAG<SB_E2STAG_addr, holly_EXT2_ILLADDR, EXT2_TAG>);
+	/* G2 Ext device #2 */
+	sb_rio_register(SB_E2ST_addr, RIO_WF, NULL, &Write_DmaStart);
+	sb_rio_register(SB_E2STAR_addr, RIO_WF, NULL, &Write_SB_STAR);
+	sb_rio_register(SB_E2STAG_addr, RIO_WF, NULL, &Write_SB_STAG);
 
-	// G2 Ext device #3
-	sb_rio_register(SB_DDST_addr, RIO_WF, nullptr, &Write_DmaStart<SB_DDEN_addr, SB_DDST_addr, SB_DDSTAR_addr, SB_DDSTAG_addr, SB_DDLEN_addr,
-			SB_DDDIR_addr, holly_DEV_DMA, holly_DEV_ILLADDR, holly_DEV_OVERRUN, DDEV_TAG>);
-	sb_rio_register(SB_DDSTAR_addr, RIO_WF, nullptr, &Write_SB_STAR<SB_DDSTAR_addr, holly_DEV_ILLADDR, DDEV_TAG>);
-	sb_rio_register(SB_DDSTAG_addr, RIO_WF, nullptr, &Write_SB_STAG<SB_DDSTAG_addr, holly_DEV_ILLADDR, DDEV_TAG>);
+	/* G2 Ext device #3 */
+	sb_rio_register(SB_DDST_addr, RIO_WF, NULL, &Write_DmaStart);
+	sb_rio_register(SB_DDSTAR_addr, RIO_WF, NULL, &Write_SB_STAR);
+	sb_rio_register(SB_DDSTAG_addr, RIO_WF, NULL, &Write_SB_STAG);
 
-	sb_rio_register(SB_G2APRO_addr, RIO_WO_FUNC, nullptr, &Write_SB_G2APRO);
+	sb_rio_register(SB_G2APRO_addr, RIO_WO_FUNC, NULL, &Write_SB_G2APRO);
 
 	dma_sched_id = sh4_sched_register(0, &dma_end_sched);
 }
@@ -498,7 +519,7 @@ void aica_sb_serialize_v29(void **data, unsigned int *total_size)
 bool aica_sb_unserialize_v29(void **data, unsigned int *total_size)
 {
 	LIBRETRO_US(sb_adst);
-	// bit 0, a transfer under way, and bit 1, its end told once (see above)
+	/* bit 0, a transfer under way, and bit 1, its end told once (see above) */
 	sb_adst &= 3;
 	return true;
 }
@@ -511,6 +532,6 @@ void aica_sb_state_before_v29(void)
 	sb_adst = 1;
 }
 
-void aica_sb_Term()
+void aica_sb_Term(void)
 {
 }

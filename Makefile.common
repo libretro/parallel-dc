@@ -19,7 +19,6 @@ SOURCES_CXX := \
 					$(CORE_DIR)/core/hw/aica/dsp_arm64.cpp \
 					$(CORE_DIR)/core/hw/aica/dsp_x64.cpp \
 					$(CORE_DIR)/core/hw/aica/dsp_x86.cpp \
-					$(CORE_DIR)/core/hw/aica/aica_if.cpp \
 					\
 					$(CORE_DIR)/core/hw/holly/sb_mem.cpp \
 					\
@@ -52,7 +51,6 @@ SOURCES_CXX := \
 					$(CORE_DIR)/core/hw/sh4/interpr/sh4_fpu.cpp \
 					$(CORE_DIR)/core/hw/sh4/interpr/sh4_opcodes.cpp \
 					$(CORE_DIR)/core/hw/sh4/modules/serial.cpp \
-					$(CORE_DIR)/core/hw/sh4/modules/ccn.cpp \
 					$(CORE_DIR)/core/hw/sh4/modules/mmu.cpp \
 					$(CORE_DIR)/core/hw/sh4/modules/fastmmu.cpp \
 					$(CORE_DIR)/core/log/LogManagerLibretro.cpp \
@@ -156,6 +154,8 @@ SOURCES_C += $(CORE_DIR)/core/hw/gdrom/gdrom_response.c \
 					$(CORE_DIR)/core/hw/sh4/modules/cpg.c \
 					$(CORE_DIR)/core/hw/sh4/modules/intc.c \
 					$(CORE_DIR)/core/hw/sh4/modules/dmac.c \
+					$(CORE_DIR)/core/hw/aica/aica_if.c \
+					$(CORE_DIR)/core/hw/sh4/modules/ccn.c \
 					$(CORE_DIR)/core/hw/sh4/modules/rtc.c \
 					$(CORE_DIR)/core/hw/sh4/modules/tmu.c \
 					$(CORE_DIR)/core/hw/sh4/modules/ubc.c \

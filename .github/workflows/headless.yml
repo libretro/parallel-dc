@@ -17,7 +17,8 @@ name: Headless
 # given back at random (tools/sh4/node_pool_test.sh). And the recompilers
 # against the interpreters, each built alone with the assembler they share
 # (tools/sh4/run.sh, tools/arm7/run.sh, tools/aica/run.sh), and the sound
-# chip's channels against what they made before (tools/aica/sgc_run.sh).
+# chip's channels against what they made before (tools/aica/sgc_run.sh), and
+# the G2 bus's expansion DMA channels (tools/aica/g2dma_run.sh).
 # And the threads a texture scaled up is shared out to, and the core needing
 # no OpenMP runtime (tools/rend/band_pool_test.sh). And custom textures'
 # pictures, read as stb_image read them and dumped
@@ -126,3 +127,7 @@ jobs:
         run: |
           sh tools/aica/sgc_run.sh
           sh tools/aica/sgc_run.sh -fsanitize=address,undefined -fno-sanitize-recover=all
+      - name: The G2 bus's expansion DMA channels, each its own (and with the sanitizers)
+        run: |
+          sh tools/aica/g2dma_run.sh
+          sh tools/aica/g2dma_run.sh -fsanitize=address,undefined -fno-sanitize-recover=all

@@ -17,8 +17,21 @@
     along with Flycast.  If not, see <https://www.gnu.org/licenses/>.
 */
 #pragma once
-#include <array>
 #include "types.h"
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+/* The interpreter's instruction and operand caches emptied, as CCR's ICI
+ * and OCI ask (sh4_interpreter.cpp) */
+void sh4_icache_invalidate(void);
+void sh4_ocache_invalidate(void);
+
+#ifdef __cplusplus
+}
+
+#include <array>
 #include "sh4_mem.h"
 #include "modules/mmu.h"
 #include "hw/sh4/sh4_core.h"
@@ -591,3 +604,4 @@ static inline u16 IReadCachedMem(u32 address)
 {
 	return icache.ReadMem(address);
 }
+#endif

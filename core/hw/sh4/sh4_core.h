@@ -84,6 +84,11 @@ static TYPES_INLINE void SetXD(u32 n, double val)
 
 #include "sh4_interrupts.h"	/* (Do_Exception) */
 
+/* The MMU done the strict way (modules/mmu.h) */
+#ifndef NO_MMU
+extern bool mmu_strict;
+#endif
+
 #ifdef __cplusplus
 }
 /* The MMU's exceptions, thrown (C++ for now) */
@@ -96,8 +101,6 @@ struct SH4ThrownException {
 static TYPES_INLINE void RaiseFPUDisableException()
 {
 #if !defined(NO_MMU)
-	extern bool mmu_strict;
-
 	if (settings.dreamcast.FullMMU || mmu_strict)
 	{
 		SH4ThrownException ex = { next_pc - 2, 0x800, 0x100 };

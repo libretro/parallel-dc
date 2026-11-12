@@ -1,5 +1,5 @@
-//gah , ccn emulation
-//CCN: Cache and TLB controller
+/* gah , ccn emulation */
+/* CCN: Cache and TLB controller */
 
 #include "types.h"
 #include "hw/sh4/modules/modules.h"
@@ -12,8 +12,9 @@
 #include "hw/mem/_vmem.h"
 #include "hw/sh4/dyna/blockmanager.h"
 #include "mmu.h"
+#include "hw/sh4/sh4_if.h"
 
-//Types
+/* Types */
 
 
 u32 CCN_QACR_TR[2];
@@ -33,7 +34,7 @@ u32 CCN_QACR_TR[2];
  *
  * From the translated values, so that it can be done again after a save
  * state is loaded. */
-void CCN_QACR_select()
+void CCN_QACR_select(void)
 {
 	if (CCN_QACR_TR[0] != CCN_QACR_TR[1])
 	{
@@ -56,15 +57,18 @@ void CCN_QACR_select()
 	}
 }
 
-template<u32 idx>
-void CCN_QACR_write(u32 addr, u32 value)
+void CCN_QACR_write(u32 idx, u32 value)
 {
-	// only the area is there to be read back
+	CCN_QACR_type qacr;
+	u32 area;
+
+	/* only the area is there to be read back */
 	SH4IO_REGN(CCN,CCN_QACR0_addr+idx*4,32)=value & 0x1c;
 
-	u32 area=((CCN_QACR_type&)value).Area;
+	qacr.reg_data = value;
+	area=qacr.Area;
 
-	CCN_QACR_TR[idx]=(area<<26)-0xE0000000; //-0xE0000000 because 0xE0000000 is added on the translation again ...
+	CCN_QACR_TR[idx]=(area<<26)-0xE0000000; /* -0xE0000000 because 0xE0000000 is added on the translation again ... */
 
 	CCN_QACR_select();
 }
@@ -72,9 +76,9 @@ void CCN_QACR_write(u32 addr, u32 value)
 void CCN_PTEH_write(u32 addr, u32 value)
 {
 	CCN_PTEH_type temp;
-	// VPN and ASID; the two bits between them are not there
+	/* VPN and ASID; the two bits between them are not there */
 	temp.reg_data = value & 0xFFFFFCFF;
-	// (the strict way keeps what it finds by address space, and nothing else)
+	/* (the strict way keeps what it finds by address space, and nothing else) */
 	if (temp.ASID != CCN_PTEH.ASID && !mmu_strict)
 		mmu_lut_flush();
 
@@ -84,13 +88,14 @@ void CCN_PTEH_write(u32 addr, u32 value)
 void CCN_MMUCR_write(u32 addr, u32 value)
 {
 	CCN_MMUCR_type temp;
+	bool mmu_changed_state;
 	/* The bits there are: LRUI 31-26, URB 23-18, URC 15-10, SQMD, SV, TI
 	 * and AT. The rest read as 0. (URB and LRUI used to be laid out two
 	 * and four bits low, in the gaps: the URB a program wrote was not the
 	 * one URC was held against.) */
 	temp.reg_data = value & 0xFCFCFF05;
 
-	bool mmu_changed_state = temp.AT != CCN_MMUCR.AT;
+	mmu_changed_state = temp.AT != CCN_MMUCR.AT;
 	if (temp.SV != CCN_MMUCR.SV)
 		mmu_lut_flush();
 	
@@ -100,7 +105,7 @@ void CCN_MMUCR_write(u32 addr, u32 value)
 		temp.TI=0;
 	}
 	CCN_MMUCR=temp;
-	// (SV has a say in which entries match)
+	/* (SV has a say in which entries match) */
 	mmu_strict_changed();
 	bm_ForgetVaddrs();
 
@@ -122,24 +127,24 @@ void CCN_MMUCR_write(u32 addr, u32 value)
 void CCN_CCR_write(u32 addr, u32 value)
 {
 	CCN_CCR_type temp;
-	// IIX, ICI, ICE, OIX, ORA, OCI, CB, WT and OCE: the rest read as 0
+	/* IIX, ICI, ICE, OIX, ORA, OCI, CB, WT and OCE: the rest read as 0 */
 	temp.reg_data=value & 0x89AF;
 
-	//what is 0xAC13DBF8 from ?
+	/* what is 0xAC13DBF8 from ? */
 	if (temp.ICI && curr_pc!=0xAC13DBF8)
 	{
 		DEBUG_LOG(SH4, "Sh4: i-cache invalidation %08X", curr_pc);
-		// Shikigami No Shiro II sets ICI frequently
-		// No reason to flush the dynarec cache for this
-		//sh4_cpu.ResetCache();
+		/* Shikigami No Shiro II sets ICI frequently */
+		/* No reason to flush the dynarec cache for this */
+		/* sh4_cpu.ResetCache(); */
 		if (!settings.dynarec.Enable)
-			icache.Invalidate();
+			sh4_icache_invalidate();
 		temp.ICI = 0;
 	}
 	if (temp.OCI) {
 		DEBUG_LOG(SH4, "Sh4: o-cache invalidation %08X", curr_pc);
 		if (!settings.dynarec.Enable)
-			ocache.Invalidate();
+			sh4_ocache_invalidate();
 		temp.OCI = 0;
 	}
 
@@ -148,7 +153,7 @@ void CCN_CCR_write(u32 addr, u32 value)
 
 static u32 CPU_VERSION_read(u32 addr)
 {
-	return 0x040205c1;	// this is what a real SH7091 in a Dreamcast returns - the later Naomi BIOSes check and care!
+	return 0x040205c1;	/* this is what a real SH7091 in a Dreamcast returns - the later Naomi BIOSes check and care! */
 }
 
 static u32 CCN_PRR_read(u32 addr)
@@ -156,60 +161,64 @@ static u32 CCN_PRR_read(u32 addr)
 	return 0;
 }
 
-//Init/Res/Term
-void ccn_init()
+/* (the two registers' writes) */
+static void CCN_QACR0_write(u32 addr, u32 value) { (void)addr; CCN_QACR_write(0, value); }
+static void CCN_QACR1_write(u32 addr, u32 value) { (void)addr; CCN_QACR_write(1, value); }
+
+/* Init/Res/Term */
+void ccn_init(void)
 {
-	//CCN PTEH 0xFF000000 0x1F000000 32 Undefined Undefined Held Held Iclk
+	/* CCN PTEH 0xFF000000 0x1F000000 32 Undefined Undefined Held Held Iclk */
 	sh4_rio_reg(CCN,CCN_PTEH_addr,RIO_WF,32,0,&CCN_PTEH_write);
 
-	//CCN PTEL 0xFF000004 0x1F000004 32 Undefined Undefined Held Held Iclk
+	/* CCN PTEL 0xFF000004 0x1F000004 32 Undefined Undefined Held Held Iclk */
 	sh4_rio_reg(CCN,CCN_PTEL_addr,RIO_DATA,32,0,0);
 	sh4_rio_wmask(CCN,CCN_PTEL_addr,0x1FFFFDFF);
 
-	//CCN TTB 0xFF000008 0x1F000008 32 Undefined Undefined Held Held Iclk
+	/* CCN TTB 0xFF000008 0x1F000008 32 Undefined Undefined Held Held Iclk */
 	sh4_rio_reg(CCN,CCN_TTB_addr,RIO_DATA,32,0,0);
 
-	//CCN TEA 0xFF00000C 0x1F00000C 32 Undefined Held Held Held Iclk
+	/* CCN TEA 0xFF00000C 0x1F00000C 32 Undefined Held Held Held Iclk */
 	sh4_rio_reg(CCN,CCN_TEA_addr,RIO_DATA,32,0,0);
 
-	//CCN MMUCR 0xFF000010 0x1F000010 32 0x00000000 0x00000000 Held Held Iclk
+	/* CCN MMUCR 0xFF000010 0x1F000010 32 0x00000000 0x00000000 Held Held Iclk */
 	sh4_rio_reg(CCN,CCN_MMUCR_addr,RIO_WF,32,0,&CCN_MMUCR_write);
 
-	//CCN BASRA 0xFF000014 0x1F000014 8 Undefined Held Held Held Iclk
+	/* CCN BASRA 0xFF000014 0x1F000014 8 Undefined Held Held Held Iclk */
 	sh4_rio_reg(CCN,CCN_BASRA_addr,RIO_DATA,8,0,0);
 
-	//CCN BASRB 0xFF000018 0x1F000018 8 Undefined Held Held Held Iclk
+	/* CCN BASRB 0xFF000018 0x1F000018 8 Undefined Held Held Held Iclk */
 	sh4_rio_reg(CCN,CCN_BASRB_addr,RIO_DATA,8,0,0);
 
-	//CCN CCR 0xFF00001C 0x1F00001C 32 0x00000000 0x00000000 Held Held Iclk
+	/* CCN CCR 0xFF00001C 0x1F00001C 32 0x00000000 0x00000000 Held Held Iclk */
 	sh4_rio_reg(CCN,CCN_CCR_addr,RIO_WF,32,0,&CCN_CCR_write);
 
-	//CCN TRA 0xFF000020 0x1F000020 32 Undefined Undefined Held Held Iclk
+	/* CCN TRA 0xFF000020 0x1F000020 32 Undefined Undefined Held Held Iclk */
 	sh4_rio_reg(CCN,CCN_TRA_addr,RIO_DATA,32,0,0);
 	sh4_rio_wmask(CCN,CCN_TRA_addr,0x000003FC);
 
-	//CCN EXPEVT 0xFF000024 0x1F000024 32 0x00000000 0x00000020 Held Held Iclk
+	/* CCN EXPEVT 0xFF000024 0x1F000024 32 0x00000000 0x00000020 Held Held Iclk */
 	sh4_rio_reg(CCN,CCN_EXPEVT_addr,RIO_DATA,32,0,0);
 	sh4_rio_wmask(CCN,CCN_EXPEVT_addr,0x00000FFF);
 
-	//CCN INTEVT 0xFF000028 0x1F000028 32 Undefined Undefined Held Held Iclk
+	/* CCN INTEVT 0xFF000028 0x1F000028 32 Undefined Undefined Held Held Iclk */
 	sh4_rio_reg(CCN,CCN_INTEVT_addr,RIO_DATA,32,0,0);
 	sh4_rio_wmask(CCN,CCN_INTEVT_addr,0x00003FFF);
 
-	// CPU VERSION 0xFF000030 0x1F000030 (undocumented)
+	/* CPU VERSION 0xFF000030 0x1F000030 (undocumented) */
 	sh4_rio_reg(CCN,CPU_VERSION_addr, RIO_RO_FUNC, 32, &CPU_VERSION_read, 0);
 
-	//CCN PTEA 0xFF000034 0x1F000034 32 Undefined Undefined Held Held Iclk
+	/* CCN PTEA 0xFF000034 0x1F000034 32 Undefined Undefined Held Held Iclk */
 	sh4_rio_reg(CCN,CCN_PTEA_addr,RIO_DATA,32,0,0);
 	sh4_rio_wmask(CCN,CCN_PTEA_addr,0x0000000F);
 
-	//CCN QACR0 0xFF000038 0x1F000038 32 Undefined Undefined Held Held Iclk
-	sh4_rio_reg(CCN,CCN_QACR0_addr,RIO_WF,32,0,&CCN_QACR_write<0>);
+	/* CCN QACR0 0xFF000038 0x1F000038 32 Undefined Undefined Held Held Iclk */
+	sh4_rio_reg(CCN,CCN_QACR0_addr,RIO_WF,32,0,&CCN_QACR0_write);
 
-	//CCN QACR1 0xFF00003C 0x1F00003C 32 Undefined Undefined Held Held Iclk
-	sh4_rio_reg(CCN,CCN_QACR1_addr,RIO_WF,32,0,&CCN_QACR_write<1>);
+	/* CCN QACR1 0xFF00003C 0x1F00003C 32 Undefined Undefined Held Held Iclk */
+	sh4_rio_reg(CCN,CCN_QACR1_addr,RIO_WF,32,0,&CCN_QACR1_write);
 
-	// CCN PRR 0xFF000044 0x1F000044 (undocumented)
+	/* CCN PRR 0xFF000044 0x1F000044 (undocumented) */
 	sh4_rio_reg(CCN,CCN_PRR_addr, RIO_RO_FUNC, 32, &CCN_PRR_read, 0);
 
 }
@@ -222,6 +231,6 @@ void ccn_reset(bool hard)
 	CCN_CCR.reg_data   = 0x0;
 }
 
-void ccn_term()
+void ccn_term(void)
 {
 }
