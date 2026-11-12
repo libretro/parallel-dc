@@ -657,10 +657,10 @@ u32 gd_get_subcode(u32 format, u32 fad, u8 *subc_info)
 		{
 			const u32 cur_fad = gd_current_fad(fad);
 			u32 elapsed;
-			const u32 tracknum = libGDR_GetTrackNumber(cur_fad, elapsed);
+			const u32 tracknum = libGDR_GetTrackNumber(cur_fad, &elapsed);
 			u8 adr, ctrl, q[12];
 
-			libGDR_GetTrackAdrAndControl(tracknum, adr, ctrl);
+			libGDR_GetTrackAdrAndControl(tracknum, &adr, &ctrl);
 			q[0] = (u8)((ctrl << 4) | adr);
 			q[1] = bin2bcd(tracknum);
 			q[2] = bin2bcd(1);						// index
@@ -686,7 +686,7 @@ u32 gd_get_subcode(u32 format, u32 fad, u8 *subc_info)
 			// where the drive is, not where it last read, while music plays
 			fad = gd_current_fad(fad);
 			u32 elapsed;
-			u32 tracknum = libGDR_GetTrackNumber(fad, elapsed);
+			u32 tracknum = libGDR_GetTrackNumber(fad, &elapsed);
 
 			//2 DATA Length MSB (0 = 0h)
 			subc_info[2] = 0;
@@ -694,7 +694,7 @@ u32 gd_get_subcode(u32 format, u32 fad, u8 *subc_info)
 			subc_info[3] = 0xE;
 			//4 Control ADR: of the track the drive is on, not of the disc
 			u8 adr, ctrl;
-			libGDR_GetTrackAdrAndControl(tracknum, adr, ctrl);
+			libGDR_GetTrackAdrAndControl(tracknum, &adr, &ctrl);
 			subc_info[4] = (u8)((ctrl << 4) | adr);
 			//5-13	DATA-Q
 			u8* data_q = &subc_info[5 - 1];
@@ -900,7 +900,7 @@ void gd_process_spi_cmd()
 			// where the drive is: see gd_current_fad()
 			const u32 cur_fad = gd_current_fad(read_params.start_sector - 1);
 			u32 elapsed;
-			u32 tracknum = libGDR_GetTrackNumber(cur_fad, elapsed);
+			u32 tracknum = libGDR_GetTrackNumber(cur_fad, &elapsed);
 			u8 stat[10];
 
 			//0  0   0   0   0   STATUS
@@ -911,7 +911,7 @@ void gd_process_spi_cmd()
 			{
 				// of the track the drive is on: an audio track on a disc with data is still audio
 				u8 adr, ctrl;
-				libGDR_GetTrackAdrAndControl(tracknum, adr, ctrl);
+				libGDR_GetTrackAdrAndControl(tracknum, &adr, &ctrl);
 				stat[2] = (u8)((ctrl << 4) | adr);
 			}
 			//3 TNO

@@ -1,0 +1,661 @@
+== cue_basic/a.cue
+type 16 end 450 leadout 450/4/1 tracks 2 sessions 1
+ track 1: 150-309 ctrl 4 addr 0 file 1
+ track 2: 310-449 ctrl 0 addr 0 file 1
+ session 1: track 1 fad 150
+ toc 0: 0=96000041 1=36010001 99=00000141 100=00000201 101=c2010041
+ toc 1:
+ sessinfo 0: 02 00 01 00 01 c2
+ sessinfo 1: 02 00 01 00 00 96
+ sessinfo 2: 02 00 00 00 00 00
+ gettrack 0: 0 0 0 adr 0 ctrl 0
+ gettrack 1: 1 150 309 adr 1 ctrl 4
+ gettrack 2: 1 310 449 adr 1 ctrl 0
+ gettrack 3: 0 0 0 adr 0 ctrl 0
+ leadoutfad 450 disctype 16 present 1
+ many 04f730fd
+ crc 86a01703 00f7fc8e cace4ba0 05d92650 lookup f90d33a5
+== cue_two_files/x.cue
+type 16 end 470 leadout 470/4/1 tracks 2 sessions 1
+ track 1: 150-349 ctrl 4 addr 0 file 1
+ track 2: 380-469 ctrl 0 addr 0 file 1
+ session 1: track 1 fad 150
+ toc 0: 0=96000041 1=7c010001 99=00000141 100=00000201 101=d6010041
+ toc 1:
+ sessinfo 0: 02 00 01 00 01 d6
+ sessinfo 1: 02 00 01 00 00 96
+ sessinfo 2: 02 00 00 00 00 00
+ gettrack 0: 0 0 0 adr 0 ctrl 0
+ gettrack 1: 1 150 349 adr 1 ctrl 4
+ gettrack 2: 1 380 469 adr 1 ctrl 0
+ gettrack 3: 0 0 0 adr 0 ctrl 0
+ leadoutfad 470 disctype 16 present 1
+ many a6b76da1
+ crc 8b71d229 8936d5f0 857f7da7 a5aea137 lookup 828f28e9
+== cue_2336_2048/y.cue
+type 16 end 340 leadout 340/4/1 tracks 2 sessions 1
+ track 1: 150-249 ctrl 4 addr 0 file 1
+ track 2: 250-339 ctrl 4 addr 0 file 1
+ session 1: track 1 fad 150
+ toc 0: 0=96000041 1=fa000041 99=00000141 100=00000241 101=54010041
+ toc 1:
+ sessinfo 0: 02 00 01 00 01 54
+ sessinfo 1: 02 00 01 00 00 96
+ sessinfo 2: 02 00 00 00 00 00
+ gettrack 0: 0 0 0 adr 0 ctrl 0
+ gettrack 1: 1 150 249 adr 1 ctrl 4
+ gettrack 2: 1 250 339 adr 1 ctrl 4
+ gettrack 3: 0 0 0 adr 0 ctrl 0
+ leadoutfad 340 disctype 16 present 1
+ many 761f0a37
+ crc ea187846 afec3eb6 0e0200d8 2e604ca4 lookup 6e8e2f00
+== cue_gd/gd.cue
+type 128 end 549300 leadout 549300/4/1 tracks 3 sessions 2
+ track 1: 150-449 ctrl 4 addr 0 file 1
+ track 2: 600-649 ctrl 0 addr 0 file 1
+ track 3: 45150-45549 ctrl 4 addr 0 file 1
+ session 1: track 1 fad 150
+ session 2: track 3 fad 45150
+ toc 0: 0=96000041 1=58020001 99=00000141 100=00000201 101=8a020041
+ toc 1: 2=5eb00041 99=00000341 100=00000341 101=b4610841
+ sessinfo 0: 02 00 02 08 61 b4
+ sessinfo 1: 02 00 01 00 00 96
+ sessinfo 2: 02 00 03 00 b0 5e
+ sessinfo 3: 02 00 00 00 00 00
+ gettrack 0: 0 0 0 adr 0 ctrl 0
+ gettrack 1: 1 150 449 adr 1 ctrl 4
+ gettrack 2: 1 600 649 adr 1 ctrl 0
+ gettrack 3: 1 45150 45549 adr 1 ctrl 4
+ gettrack 4: 0 0 0 adr 0 ctrl 0
+ leadoutfad 549300 disctype 128 present 1
+ many 3ea549d4
+ crc 833c4642 874bd9a3 650ef805 4daebb57 lookup beba5c7a
+== cue_sessions/s.cue
+type 32 end 11875 leadout 11875/4/1 tracks 2 sessions 2
+ track 1: 150-299 ctrl 0 addr 0 file 1
+ track 2: 11700-11874 ctrl 4 addr 0 file 1
+ session 1: track 1 fad 150
+ session 2: track 2 fad 11700
+ toc 0: 0=96000001 1=b42d0041 99=00000101 100=00000241 101=632e0041
+ toc 1:
+ sessinfo 0: 02 00 02 00 2e 63
+ sessinfo 1: 02 00 01 00 00 96
+ sessinfo 2: 02 00 02 00 2d b4
+ sessinfo 3: 02 00 00 00 00 00
+ gettrack 0: 0 0 0 adr 0 ctrl 0
+ gettrack 1: 1 150 299 adr 1 ctrl 0
+ gettrack 2: 1 11700 11874 adr 1 ctrl 4
+ gettrack 3: 0 0 0 adr 0 ctrl 0
+ leadoutfad 11875 disctype 32 present 1
+ many eb69b5d0
+ crc 49d320c5 caf3d826 1fb2b0f5 37dffb72 lookup f91037d6
+== cue_sessions_long/s.cue
+type 32 end 12000 leadout 12000/4/1 tracks 2 sessions 2
+ track 1: 150-299 ctrl 0 addr 0 file 1
+ track 2: 11775-11999 ctrl 4 addr 0 file 1
+ session 1: track 1 fad 150
+ session 2: track 2 fad 11700
+ toc 0: 0=96000001 1=ff2d0041 99=00000101 100=00000241 101=e02e0041
+ toc 1:
+ sessinfo 0: 02 00 02 00 2e e0
+ sessinfo 1: 02 00 01 00 00 96
+ sessinfo 2: 02 00 02 00 2d b4
+ sessinfo 3: 02 00 00 00 00 00
+ gettrack 0: 0 0 0 adr 0 ctrl 0
+ gettrack 1: 1 150 299 adr 1 ctrl 0
+ gettrack 2: 1 11775 11999 adr 1 ctrl 4
+ gettrack 3: 0 0 0 adr 0 ctrl 0
+ leadoutfad 12000 disctype 32 present 1
+ many 5559d399
+ crc 88f48f32 67a84201 b2ae6894 251f2392 lookup 1afc6f74
+== cue_no_file/b.cue
+not opened
+== cue_bad_type/b.cue
+not opened
+== cue_index_past/b.cue
+type 16 end 200 leadout 200/4/1 tracks 1 sessions 1
+ track 1: 200-199 ctrl 0 addr 0 file 1
+ session 1: track 1 fad 200
+ toc 0: 0=c8000001 99=00000101 100=00000101 101=c8000041
+ toc 1:
+ sessinfo 0: 02 00 01 00 00 c8
+ sessinfo 1: 02 00 01 00 00 c8
+ sessinfo 2: 02 00 00 00 00 00
+ gettrack 0: 0 0 0 adr 0 ctrl 0
+ gettrack 1: 1 200 199 adr 1 ctrl 0
+ gettrack 2: 0 0 0 adr 0 ctrl 0
+ leadoutfad 200 disctype 16 present 1
+ many cdfed59d
+ crc 9d78f771 afec3eb6 3bf02bb8 5d69d6f5 lookup f9f7326a
+== cue_index_word/b.cue
+type 16 end 200 leadout 200/4/1 tracks 1 sessions 1
+ track 1: 150-199 ctrl 0 addr 0 file 1
+ session 1: track 1 fad 150
+ toc 0: 0=96000001 99=00000101 100=00000101 101=c8000041
+ toc 1:
+ sessinfo 0: 02 00 01 00 00 c8
+ sessinfo 1: 02 00 01 00 00 96
+ sessinfo 2: 02 00 00 00 00 00
+ gettrack 0: 0 0 0 adr 0 ctrl 0
+ gettrack 1: 1 150 199 adr 1 ctrl 0
+ gettrack 2: 0 0 0 adr 0 ctrl 0
+ leadoutfad 200 disctype 16 present 1
+ many 7be821f4
+ crc 62250b79 0840f8eb 77f685e1 94409996 lookup 57572907
+== cue_track_word/b.cue
+not opened
+== cue_index_word2/b.cue
+type 16 end 200 leadout 200/4/1 tracks 1 sessions 1
+ track 1: 155-199 ctrl 0 addr 0 file 1
+ session 1: track 1 fad 155
+ toc 0: 0=9b000001 99=00000101 100=00000101 101=c8000041
+ toc 1:
+ sessinfo 0: 02 00 01 00 00 c8
+ sessinfo 1: 02 00 01 00 00 9b
+ sessinfo 2: 02 00 00 00 00 00
+ gettrack 0: 0 0 0 adr 0 ctrl 0
+ gettrack 1: 1 155 199 adr 1 ctrl 0
+ gettrack 2: 0 0 0 adr 0 ctrl 0
+ leadoutfad 200 disctype 16 present 1
+ many bd5d7a39
+ crc cc23d65f f08df5da 484f5091 9134d635 lookup 4f69fcab
+== cue_glued/b.cue
+type 16 end 200 leadout 200/4/1 tracks 1 sessions 1
+ track 1: 150-199 ctrl 0 addr 0 file 1
+ session 1: track 1 fad 150
+ toc 0: 0=96000001 99=00000101 100=00000101 101=c8000041
+ toc 1:
+ sessinfo 0: 02 00 01 00 00 c8
+ sessinfo 1: 02 00 01 00 00 96
+ sessinfo 2: 02 00 00 00 00 00
+ gettrack 0: 0 0 0 adr 0 ctrl 0
+ gettrack 1: 1 150 199 adr 1 ctrl 0
+ gettrack 2: 0 0 0 adr 0 ctrl 0
+ leadoutfad 200 disctype 16 present 1
+ many c346885c
+ crc 96c5d28f 987e6ba7 c1b2dd34 16b3c741 lookup 57572907
+== cue_open_quote/b.cue
+not opened
+== cue_empty/b.cue
+not opened
+== cue_spaces/b.cue
+type 16 end 210 leadout 210/4/1 tracks 1 sessions 1
+ track 1: 150-209 ctrl 0 addr 0 file 1
+ session 1: track 1 fad 150
+ toc 0: 0=96000001 99=00000101 100=00000101 101=d2000041
+ toc 1:
+ sessinfo 0: 02 00 01 00 00 d2
+ sessinfo 1: 02 00 01 00 00 96
+ sessinfo 2: 02 00 00 00 00 00
+ gettrack 0: 0 0 0 adr 0 ctrl 0
+ gettrack 1: 1 150 209 adr 1 ctrl 0
+ gettrack 2: 0 0 0 adr 0 ctrl 0
+ leadoutfad 210 disctype 16 present 1
+ many e0367e27
+ crc 49c0c205 1d50392f e1f123c8 630dc479 lookup fc8c0645
+== cue_missing_bin/b.cue
+not opened
+== cue_odd_size/b.cue
+type 16 end 210 leadout 210/4/1 tracks 1 sessions 1
+ track 1: 150-209 ctrl 0 addr 0 file 1
+ session 1: track 1 fad 150
+ toc 0: 0=96000001 99=00000101 100=00000101 101=d2000041
+ toc 1:
+ sessinfo 0: 02 00 01 00 00 d2
+ sessinfo 1: 02 00 01 00 00 96
+ sessinfo 2: 02 00 00 00 00 00
+ gettrack 0: 0 0 0 adr 0 ctrl 0
+ gettrack 1: 1 150 209 adr 1 ctrl 0
+ gettrack 2: 0 0 0 adr 0 ctrl 0
+ leadoutfad 210 disctype 16 present 1
+ many 99a9683e
+ crc 0c4e4217 250b5317 051cb9f5 6da6a61b lookup fc8c0645
+== cue_three_in_one/b.cue
+type 16 end 550 leadout 550/4/1 tracks 3 sessions 1
+ track 1: 150-234 ctrl 4 addr 0 file 1
+ track 2: 235-374 ctrl 0 addr 0 file 1
+ track 3: 375-549 ctrl 0 addr 0 file 1
+ session 1: track 1 fad 150
+ toc 0: 0=96000041 1=eb000001 2=77010001 99=00000141 100=00000301 101=26020041
+ toc 1:
+ sessinfo 0: 02 00 01 00 02 26
+ sessinfo 1: 02 00 01 00 00 96
+ sessinfo 2: 02 00 00 00 00 00
+ gettrack 0: 0 0 0 adr 0 ctrl 0
+ gettrack 1: 1 150 234 adr 1 ctrl 4
+ gettrack 2: 1 235 374 adr 1 ctrl 0
+ gettrack 3: 1 375 549 adr 1 ctrl 0
+ gettrack 4: 0 0 0 adr 0 ctrl 0
+ leadoutfad 550 disctype 16 present 1
+ many 83612606
+ crc 138c3ead b054e5f3 b09a1841 6d64c41a lookup 0e816826
+== cue_neg/b.cue
+type 32 end 200 leadout 200/4/1 tracks 1 sessions 1
+ track 1: 150-199 ctrl 0 addr 0 file 1
+ session 1: track 1 fad 150
+ toc 0: 0=96000001 99=00000101 100=00000101 101=c8000041
+ toc 1:
+ sessinfo 0: 02 00 01 00 00 c8
+ sessinfo 1: 02 00 01 00 00 96
+ sessinfo 2: 02 00 00 00 00 00
+ gettrack 0: 0 0 0 adr 0 ctrl 0
+ gettrack 1: 1 150 199 adr 1 ctrl 0
+ gettrack 2: 0 0 0 adr 0 ctrl 0
+ leadoutfad 200 disctype 32 present 1
+ many c13fc88a
+ crc f9603211 ddac4442 620ca012 68e0dc52 lookup 57572907
+== cue_big/b.cue
+type 32 end 200 leadout 200/4/1 tracks 1 sessions 1
+ track 1: 150-199 ctrl 0 addr 0 file 1
+ session 1: track 1 fad 150
+ toc 0: 0=96000001 99=00000101 100=00000101 101=c8000041
+ toc 1:
+ sessinfo 0: 02 00 01 00 00 c8
+ sessinfo 1: 02 00 01 00 00 96
+ sessinfo 2: 02 00 00 00 00 00
+ gettrack 0: 0 0 0 adr 0 ctrl 0
+ gettrack 1: 1 150 199 adr 1 ctrl 0
+ gettrack 2: 0 0 0 adr 0 ctrl 0
+ leadoutfad 200 disctype 32 present 1
+ many 14ab7b76
+ crc 48d95b4d c44e872d 36cc54cd e01152ba lookup 57572907
+== cue_rem_junk/b.cue
+not opened
+== cue_plus/b.cue
+type 16 end 200 leadout 200/4/1 tracks 1 sessions 1
+ track 1: 150-199 ctrl 0 addr 0 file 1
+ session 1: track 1 fad 150
+ toc 0: 0=96000001 99=00000101 100=00000101 101=c8000041
+ toc 1:
+ sessinfo 0: 02 00 01 00 00 c8
+ sessinfo 1: 02 00 01 00 00 96
+ sessinfo 2: 02 00 00 00 00 00
+ gettrack 0: 0 0 0 adr 0 ctrl 0
+ gettrack 1: 1 150 199 adr 1 ctrl 0
+ gettrack 2: 0 0 0 adr 0 ctrl 0
+ leadoutfad 200 disctype 16 present 1
+ many b7cea8a3
+ crc b4c94073 aa1624df 7ff7d6c3 4bdd2c41 lookup 57572907
+== gdi_basic/d.gdi
+type 128 end 549300 leadout 549300/4/1 tracks 3 sessions 2
+ track 1: 150-449 ctrl 4 addr 0 file 1
+ track 2: 600-799 ctrl 0 addr 0 file 1
+ track 3: 45150-45649 ctrl 4 addr 0 file 1
+ session 1: track 1 fad 150
+ session 2: track 3 fad 45150
+ toc 0: 0=96000041 1=58020001 99=00000141 100=00000201 101=20030041
+ toc 1: 2=5eb00041 99=00000341 100=00000341 101=b4610841
+ sessinfo 0: 02 00 02 08 61 b4
+ sessinfo 1: 02 00 01 00 00 96
+ sessinfo 2: 02 00 03 00 b0 5e
+ sessinfo 3: 02 00 00 00 00 00
+ gettrack 0: 0 0 0 adr 0 ctrl 0
+ gettrack 1: 1 150 449 adr 1 ctrl 4
+ gettrack 2: 1 600 799 adr 1 ctrl 0
+ gettrack 3: 1 45150 45649 adr 1 ctrl 4
+ gettrack 4: 0 0 0 adr 0 ctrl 0
+ leadoutfad 549300 disctype 128 present 1
+ many 21efe132
+ crc e5bf733f 819bc305 4ddf2a50 59354595 lookup ccba3312
+== gdi_quoted/d.gdi
+type 128 end 549300 leadout 549300/4/1 tracks 3 sessions 2
+ track 1: 150-449 ctrl 4 addr 0 file 1
+ track 2: 600-699 ctrl 0 addr 0 file 1
+ track 3: 45150-45549 ctrl 4 addr 0 file 1
+ session 1: track 1 fad 150
+ session 2: track 3 fad 45150
+ toc 0: 0=96000041 1=58020001 99=00000141 100=00000201 101=bc020041
+ toc 1: 2=5eb00041 99=00000341 100=00000341 101=b4610841
+ sessinfo 0: 02 00 02 08 61 b4
+ sessinfo 1: 02 00 01 00 00 96
+ sessinfo 2: 02 00 03 00 b0 5e
+ sessinfo 3: 02 00 00 00 00 00
+ gettrack 0: 0 0 0 adr 0 ctrl 0
+ gettrack 1: 1 150 449 adr 1 ctrl 4
+ gettrack 2: 1 600 699 adr 1 ctrl 0
+ gettrack 3: 1 45150 45549 adr 1 ctrl 4
+ gettrack 4: 0 0 0 adr 0 ctrl 0
+ leadoutfad 549300 disctype 128 present 1
+ many 90883fd3
+ crc 145b7b17 3474acaf e41b80df e8ee91c4 lookup 016a6d5e
+== gdi_sizes/d.gdi
+type 128 end 549300 leadout 549300/4/1 tracks 3 sessions 2
+ track 1: 150-249 ctrl 4 addr 0 file 1
+ track 2: 450-549 ctrl 4 addr 0 file 1
+ track 3: 45150-45249 ctrl 4 addr 0 file 1
+ session 1: track 1 fad 150
+ session 2: track 3 fad 45150
+ toc 0: 0=96000041 1=c2010041 99=00000141 100=00000241 101=26020041
+ toc 1: 2=5eb00041 99=00000341 100=00000341 101=b4610841
+ sessinfo 0: 02 00 02 08 61 b4
+ sessinfo 1: 02 00 01 00 00 96
+ sessinfo 2: 02 00 03 00 b0 5e
+ sessinfo 3: 02 00 00 00 00 00
+ gettrack 0: 0 0 0 adr 0 ctrl 0
+ gettrack 1: 1 150 249 adr 1 ctrl 4
+ gettrack 2: 1 450 549 adr 1 ctrl 4
+ gettrack 3: 1 45150 45249 adr 1 ctrl 4
+ gettrack 4: 0 0 0 adr 0 ctrl 0
+ leadoutfad 549300 disctype 128 present 1
+ many 138b4887
+ crc b9cdea06 e9027960 1b896808 12197f0f lookup 38a5a463
+== gdi_offset/d.gdi
+type 128 end 549300 leadout 549300/4/1 tracks 3 sessions 2
+ track 1: 150-249 ctrl 4 addr 0 file 1
+ track 2: 450-549 ctrl 0 addr 0 file 1
+ track 3: 45150-45249 ctrl 4 addr 0 file 1
+ session 1: track 1 fad 150
+ session 2: track 3 fad 45150
+ toc 0: 0=96000041 1=c2010001 99=00000141 100=00000201 101=26020041
+ toc 1: 2=5eb00041 99=00000341 100=00000341 101=b4610841
+ sessinfo 0: 02 00 02 08 61 b4
+ sessinfo 1: 02 00 01 00 00 96
+ sessinfo 2: 02 00 03 00 b0 5e
+ sessinfo 3: 02 00 00 00 00 00
+ gettrack 0: 0 0 0 adr 0 ctrl 0
+ gettrack 1: 1 150 249 adr 1 ctrl 4
+ gettrack 2: 1 450 549 adr 1 ctrl 0
+ gettrack 3: 1 45150 45249 adr 1 ctrl 4
+ gettrack 4: 0 0 0 adr 0 ctrl 0
+ leadoutfad 549300 disctype 128 present 1
+ many b4917eca
+ crc 5c9ee907 ebf13e17 15a15a4c e8844328 lookup 38a5a463
+== gdi_nofile/d.gdi
+type 128 end 549300 leadout 549300/4/1 tracks 3 sessions 2
+ track 1: 150-249 ctrl 4 addr 0 file 1
+ track 2: 450-45149 ctrl 0 addr 0 file 0
+ track 3: 45150-45249 ctrl 4 addr 0 file 1
+ session 1: track 1 fad 150
+ session 2: track 3 fad 45150
+ toc 0: 0=96000041 1=c2010001 99=00000141 100=00000201 101=5eb00041
+ toc 1: 2=5eb00041 99=00000341 100=00000341 101=b4610841
+ sessinfo 0: 02 00 02 08 61 b4
+ sessinfo 1: 02 00 01 00 00 96
+ sessinfo 2: 02 00 03 00 b0 5e
+ sessinfo 3: 02 00 00 00 00 00
+ gettrack 0: 0 0 0 adr 0 ctrl 0
+ gettrack 1: 1 150 249 adr 1 ctrl 4
+ gettrack 2: 1 450 45149 adr 1 ctrl 0
+ gettrack 3: 1 45150 45249 adr 1 ctrl 4
+ gettrack 4: 0 0 0 adr 0 ctrl 0
+ leadoutfad 549300 disctype 128 present 1
+ many a8212a1e
+ crc 7405951b 6d619ada ba7c4d37 986e5072 lookup 7a69149b
+== gdi_short/d.gdi
+not opened
+== gdi_zero/d.gdi
+not opened
+== gdi_hundred/d.gdi
+not opened
+== gdi_missing/d.gdi
+not opened
+== gdi_badsize/d.gdi
+not opened
+== gdi_oddlen/d.gdi
+type 128 end 549300 leadout 549300/4/1 tracks 1 sessions 2
+ track 1: 150-160 ctrl 4 addr 0 file 1
+ session 1: track 1 fad 150
+ session 2: track 1 fad 150
+ toc 0:
+ toc 1:
+ sessinfo 0: 02 00 02 08 61 b4
+ sessinfo 1: 02 00 01 00 00 96
+ sessinfo 2: 02 00 01 00 00 96
+ sessinfo 3: 02 00 00 00 00 00
+ gettrack 0: 0 0 0 adr 0 ctrl 0
+ gettrack 1: 1 150 160 adr 1 ctrl 4
+ gettrack 2: 0 0 0 adr 0 ctrl 0
+ leadoutfad 549300 disctype 128 present 1
+ many a30bf3de
+ crc faff012c 4bf1582f 7cac0f62 19ff9d6e lookup 5547846f
+== gdi_nooffset/d.gdi
+type 128 end 549300 leadout 549300/4/1 tracks 1 sessions 2
+ track 1: 150-159 ctrl 4 addr 0 file 1
+ session 1: track 1 fad 150
+ session 2: track 1 fad 150
+ toc 0:
+ toc 1:
+ sessinfo 0: 02 00 02 08 61 b4
+ sessinfo 1: 02 00 01 00 00 96
+ sessinfo 2: 02 00 01 00 00 96
+ sessinfo 3: 02 00 00 00 00 00
+ gettrack 0: 0 0 0 adr 0 ctrl 0
+ gettrack 1: 1 150 159 adr 1 ctrl 4
+ gettrack 2: 0 0 0 adr 0 ctrl 0
+ leadoutfad 549300 disctype 128 present 1
+ many abb117ee
+ crc e64b1f20 457e3319 81983954 3db3c8b0 lookup 9c0505a2
+== gdi_words/d.gdi
+not opened
+== gdi_openquote/d.gdi
+not opened
+== gdi_neg/d.gdi
+type 128 end 549300 leadout 549300/4/1 tracks 1 sessions 2
+ track 1: 150-162 ctrl 4 addr 0 file 1
+ session 1: track 1 fad 150
+ session 2: track 1 fad 150
+ toc 0:
+ toc 1:
+ sessinfo 0: 02 00 02 08 61 b4
+ sessinfo 1: 02 00 01 00 00 96
+ sessinfo 2: 02 00 01 00 00 96
+ sessinfo 3: 02 00 00 00 00 00
+ gettrack 0: 0 0 0 adr 0 ctrl 0
+ gettrack 1: 1 150 162 adr 1 ctrl 4
+ gettrack 2: 0 0 0 adr 0 ctrl 0
+ leadoutfad 549300 disctype 128 present 1
+ many e3fe6b1c
+ crc 1a68f6a1 7a213247 d81ee66f 22b0b60a lookup e4b7f776
+== gdi_two/d.gdi
+type 128 end 549300 leadout 549300/4/1 tracks 2 sessions 2
+ track 1: 150-249 ctrl 4 addr 0 file 1
+ track 2: 450-549 ctrl 0 addr 0 file 1
+ session 1: track 1 fad 150
+ session 2: track 2 fad 450
+ toc 0: 0=96000041 1=c2010001 99=00000141 100=00000201 101=26020041
+ toc 1:
+ sessinfo 0: 02 00 02 08 61 b4
+ sessinfo 1: 02 00 01 00 00 96
+ sessinfo 2: 02 00 02 00 01 c2
+ sessinfo 3: 02 00 00 00 00 00
+ gettrack 0: 0 0 0 adr 0 ctrl 0
+ gettrack 1: 1 150 249 adr 1 ctrl 4
+ gettrack 2: 1 450 549 adr 1 ctrl 0
+ gettrack 3: 0 0 0 adr 0 ctrl 0
+ leadoutfad 549300 disctype 128 present 1
+ many 0a3455af
+ crc f7ccff4b 30332d3c 1284818c ded84371 lookup 52f139ec
+== gdi_x/d.gdi
+not opened
+== cdi_v2/image.cdi
+type 16 end 352 leadout 352/4/1 tracks 1 sessions 1
+ track 1: 150-349 ctrl 4 addr 1 file 1
+ session 1: track 1 fad 150
+ toc 0: 0=96000041 99=00000141 100=00000141 101=60010041
+ toc 1:
+ sessinfo 0: 02 00 01 00 01 60
+ sessinfo 1: 02 00 01 00 00 96
+ sessinfo 2: 02 00 00 00 00 00
+ gettrack 0: 0 0 0 adr 0 ctrl 0
+ gettrack 1: 1 150 349 adr 1 ctrl 4
+ gettrack 2: 0 0 0 adr 0 ctrl 0
+ leadoutfad 352 disctype 16 present 1
+ many 63597b0d
+ crc bfc62c65 f90d26ec 31b6b53f 80b2f4e5 lookup 091da7dc
+== cdi_v3_two/image.cdi
+type 32 end 12102 leadout 12102/4/1 tracks 2 sessions 2
+ track 1: 150-249 ctrl 0 addr 1 file 1
+ track 2: 11802-12101 ctrl 4 addr 1 file 1
+ session 1: track 1 fad 150
+ session 2: track 2 fad 11802
+ toc 0: 0=96000001 1=1a2e0041 99=00000101 100=00000241 101=462f0041
+ toc 1:
+ sessinfo 0: 02 00 02 00 2f 46
+ sessinfo 1: 02 00 01 00 00 96
+ sessinfo 2: 02 00 02 00 2e 1a
+ sessinfo 3: 02 00 00 00 00 00
+ gettrack 0: 0 0 0 adr 0 ctrl 0
+ gettrack 1: 1 150 249 adr 1 ctrl 0
+ gettrack 2: 1 11802 12101 adr 1 ctrl 4
+ gettrack 3: 0 0 0 adr 0 ctrl 0
+ leadoutfad 12102 disctype 32 present 1
+ many cc7efb6b
+ crc 83b1d64b 8f1b2a93 85159f1a ea7c9ec6 lookup 9ec08f20
+== cdi_v35_mixed/image.cdi
+type 32 end 12220 leadout 12220/4/1 tracks 4 sessions 2
+ track 1: 150-229 ctrl 0 addr 1 file 1
+ track 2: 380-439 ctrl 0 addr 1 file 1
+ track 3: 11990-12189 ctrl 4 addr 1 file 1
+ track 4: 12190-12219 ctrl 4 addr 1 file 1
+ session 1: track 1 fad 150
+ session 2: track 3 fad 11990
+ toc 0: 0=96000001 1=7c010001 2=d62e0041 3=9e2f0041 99=00000101 100=00000441 101=bc2f0041
+ toc 1:
+ sessinfo 0: 02 00 02 00 2f bc
+ sessinfo 1: 02 00 01 00 00 96
+ sessinfo 2: 02 00 03 00 2e d6
+ sessinfo 3: 02 00 00 00 00 00
+ gettrack 0: 0 0 0 adr 0 ctrl 0
+ gettrack 1: 1 150 229 adr 1 ctrl 0
+ gettrack 2: 1 380 439 adr 1 ctrl 0
+ gettrack 3: 1 11990 12189 adr 1 ctrl 4
+ gettrack 4: 1 12190 12219 adr 1 ctrl 4
+ gettrack 5: 0 0 0 adr 0 ctrl 0
+ leadoutfad 12220 disctype 32 present 1
+ many f61389f0
+ crc 8e8db1de 875ee5f0 9c1b1103 54b93b0a lookup 4dd12882
+== cdi_truncated/image.cdi
+not opened
+== cdi_badmark/image.cdi
+not opened
+== cdi_short_track/image.cdi
+type 16 end 0 leadout 0/4/1 tracks 1 sessions 1
+ track 1: 150-249 ctrl 4 addr 1 file 1
+ session 1: track 1 fad 150
+ toc 0: 0=96000041 99=00000141 100=00000141 101=00000041
+ toc 1:
+ sessinfo 0: 02 00 01 00 00 00
+ sessinfo 1: 02 00 01 00 00 96
+ sessinfo 2: 02 00 00 00 00 00
+ gettrack 0: 0 0 0 adr 0 ctrl 0
+ gettrack 1: 1 150 249 adr 1 ctrl 4
+ gettrack 2: 0 0 0 adr 0 ctrl 0
+ leadoutfad 0 disctype 16 present 1
+ many 01b8b11f
+ crc 945cc71c 19cb029d 0b921212 c6c72dc7 lookup 5697e4d9
+== cdi_garbage/image.cdi
+not opened
+== chd_cue_basic.chd
+type 32 end 450 leadout 450/4/1 tracks 2 sessions 1
+ track 1: 150-299 ctrl 4 addr 0 file 1
+ track 2: 310-449 ctrl 0 addr 0 file 1
+ session 1: track 1 fad 150
+ toc 0: 0=96000041 1=36010001 99=00000141 100=00000201 101=c2010041
+ toc 1:
+ sessinfo 0: 02 00 01 00 01 c2
+ sessinfo 1: 02 00 01 00 00 96
+ sessinfo 2: 02 00 00 00 00 00
+ gettrack 0: 0 0 0 adr 0 ctrl 0
+ gettrack 1: 1 150 299 adr 1 ctrl 4
+ gettrack 2: 1 310 449 adr 1 ctrl 0
+ gettrack 3: 0 0 0 adr 0 ctrl 0
+ leadoutfad 450 disctype 32 present 1
+ many 04f730fd
+ crc 06928293 e9ac4215 0b9c783f ba0b4385 lookup 88880a19
+== chd_cue_two_files.chd
+type 32 end 470 leadout 470/4/1 tracks 2 sessions 1
+ track 1: 150-349 ctrl 4 addr 0 file 1
+ track 2: 380-469 ctrl 0 addr 0 file 1
+ session 1: track 1 fad 150
+ toc 0: 0=96000041 1=7c010001 99=00000141 100=00000201 101=d6010041
+ toc 1:
+ sessinfo 0: 02 00 01 00 01 d6
+ sessinfo 1: 02 00 01 00 00 96
+ sessinfo 2: 02 00 00 00 00 00
+ gettrack 0: 0 0 0 adr 0 ctrl 0
+ gettrack 1: 1 150 349 adr 1 ctrl 4
+ gettrack 2: 1 380 469 adr 1 ctrl 0
+ gettrack 3: 0 0 0 adr 0 ctrl 0
+ leadoutfad 470 disctype 32 present 1
+ many a6b76da1
+ crc 8b71d229 8936d5f0 857f7da7 a5aea137 lookup 4280c952
+== chd_gdi_basic.chd
+type 128 end 549300 leadout 549300/4/1 tracks 3 sessions 2
+ track 1: 150-449 ctrl 4 addr 0 file 1
+ track 2: 600-799 ctrl 0 addr 0 file 1
+ track 3: 45150-45649 ctrl 4 addr 0 file 1
+ session 1: track 1 fad 150
+ session 2: track 3 fad 45150
+ toc 0: 0=96000041 1=58020001 99=00000141 100=00000201 101=20030041
+ toc 1: 2=5eb00041 99=00000341 100=00000341 101=b4610841
+ sessinfo 0: 02 00 02 08 61 b4
+ sessinfo 1: 02 00 01 00 00 96
+ sessinfo 2: 02 00 03 00 b0 5e
+ sessinfo 3: 02 00 00 00 00 00
+ gettrack 0: 0 0 0 adr 0 ctrl 0
+ gettrack 1: 1 150 449 adr 1 ctrl 4
+ gettrack 2: 1 600 799 adr 1 ctrl 0
+ gettrack 3: 1 45150 45649 adr 1 ctrl 4
+ gettrack 4: 0 0 0 adr 0 ctrl 0
+ leadoutfad 549300 disctype 128 present 1
+ many 21efe132
+ crc e5bf733f 819bc305 4ddf2a50 59354595 lookup 10a6368c
+== chd_cue_sessions.chd
+type 32 end 11875 leadout 11875/4/1 tracks 2 sessions 2
+ track 1: 150-299 ctrl 0 addr 0 file 1
+ track 2: 11700-11874 ctrl 4 addr 0 file 1
+ session 1: track 1 fad 150
+ session 2: track 2 fad 11700
+ toc 0: 0=96000001 1=b42d0041 99=00000101 100=00000241 101=632e0041
+ toc 1:
+ sessinfo 0: 02 00 02 00 2e 63
+ sessinfo 1: 02 00 01 00 00 96
+ sessinfo 2: 02 00 02 00 2d b4
+ sessinfo 3: 02 00 00 00 00 00
+ gettrack 0: 0 0 0 adr 0 ctrl 0
+ gettrack 1: 1 150 299 adr 1 ctrl 0
+ gettrack 2: 1 11700 11874 adr 1 ctrl 4
+ gettrack 3: 0 0 0 adr 0 ctrl 0
+ leadoutfad 11875 disctype 32 present 1
+ many eb69b5d0
+ crc 49d320c5 caf3d826 1fb2b0f5 37dffb72 lookup 4b5edd76
+== chd_cue_2336_2048.chd
+type 32 end 11740 leadout 11740/4/1 tracks 2 sessions 2
+ track 1: 150-249 ctrl 4 addr 0 file 1
+ track 2: 11650-11739 ctrl 4 addr 0 file 1
+ session 1: track 1 fad 150
+ session 2: track 2 fad 11650
+ toc 0: 0=96000041 1=822d0041 99=00000141 100=00000241 101=dc2d0041
+ toc 1:
+ sessinfo 0: 02 00 02 00 2d dc
+ sessinfo 1: 02 00 01 00 00 96
+ sessinfo 2: 02 00 02 00 2d 82
+ sessinfo 3: 02 00 00 00 00 00
+ gettrack 0: 0 0 0 adr 0 ctrl 0
+ gettrack 1: 1 150 249 adr 1 ctrl 4
+ gettrack 2: 1 11650 11739 adr 1 ctrl 4
+ gettrack 3: 0 0 0 adr 0 ctrl 0
+ leadoutfad 11740 disctype 32 present 1
+ many 761f0a37
+ crc 4027a70a 7ec1b2d2 dc99c424 8b159513 lookup 6c5f6932
+== chd_gdi_sizes.chd
+type 128 end 549300 leadout 549300/4/1 tracks 3 sessions 2
+ track 1: 150-249 ctrl 4 addr 0 file 1
+ track 2: 450-549 ctrl 4 addr 0 file 1
+ track 3: 45150-45249 ctrl 4 addr 0 file 1
+ session 1: track 1 fad 150
+ session 2: track 3 fad 45150
+ toc 0: 0=96000041 1=c2010041 99=00000141 100=00000241 101=26020041
+ toc 1: 2=5eb00041 99=00000341 100=00000341 101=b4610841
+ sessinfo 0: 02 00 02 08 61 b4
+ sessinfo 1: 02 00 01 00 00 96
+ sessinfo 2: 02 00 03 00 b0 5e
+ sessinfo 3: 02 00 00 00 00 00
+ gettrack 0: 0 0 0 adr 0 ctrl 0
+ gettrack 1: 1 150 249 adr 1 ctrl 4
+ gettrack 2: 1 450 549 adr 1 ctrl 4
+ gettrack 3: 1 45150 45249 adr 1 ctrl 4
+ gettrack 4: 0 0 0 adr 0 ctrl 0
+ leadoutfad 549300 disctype 128 present 1
+ many cdfed59d
+ crc c483bf67 90656daf 86f7910a 63f794ad lookup ad50724c

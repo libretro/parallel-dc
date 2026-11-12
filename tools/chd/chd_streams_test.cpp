@@ -26,10 +26,6 @@
 #include "imgread/common.h"
 #include "imgread/chd_image.h"
 
-Disc* chd_parse(const char* file);
-
-u8 q_subchannel[96];
-
 void GenericLog(LogTypes::LOG_LEVELS, LogTypes::LOG_TYPE, const char*, int,
 		const char* fmt, ...)
 {
@@ -125,7 +121,7 @@ int main(int argc, char **argv)
 	if (pace_us < 50)
 		pace_us = 50;
 	reader_thread = sthread_get_current_thread_id();
-	if (!(disc = chd_parse(argv[1])) || disc->tracks.size() != 2
+	if (!(disc = chd_parse(argv[1])) || disc->track_count != 2
 			|| disc->tracks[1].CTRL != 0)
 	{
 		printf("FAIL: open as a data track and an audio track\n");
@@ -146,18 +142,18 @@ int main(int argc, char **argv)
 		for (i = 0; i < AUDIO_STEPS && audio_fad <= audio_end; i++, audio_fad++)
 		{
 			audio_lba = audio_fad - 150;
-			if (!disc->ReadSector(audio_fad, sector, &fmt, NULL, &sub)
+			if (!disc_read_sector(disc, audio_fad, sector, &fmt, NULL, &sub)
 					|| memcmp(sector, bin + (size_t)audio_lba * 2352, 2352))
 				bad++;
 			pace(pace_us);
 		}
 		/* the drive seeks before the first sector comes */
-		disc->Prefetch(data_fad, BURST_SECTORS);
+		disc_prefetch(disc, data_fad, BURST_SECTORS);
 		pace(pace_us * 16);
 		for (i = 0; i < BURST_SECTORS && data_fad <= data_end; i++, data_fad++)
 		{
 			data_lba = data_fad - 150;
-			if (!disc->ReadSector(data_fad, sector, &fmt, NULL, &sub)
+			if (!disc_read_sector(disc, data_fad, sector, &fmt, NULL, &sub)
 					|| memcmp(sector, bin + (size_t)data_lba * 2352, 2352))
 				bad++;
 			pace(pace_us);
@@ -165,7 +161,7 @@ int main(int argc, char **argv)
 	}
 
 	/* the threads stop with the disc, and their count with them */
-	delete disc;
+	disc_free(disc);
 
 	/* A decode here as each stream starts, and room for a thread now and
 	 * then late; reads that throw out each other's hunks decode here at

@@ -13,6 +13,7 @@
 #include "hw/maple/maple_cfg.h"
 #include "hw/sh4/sh4_mem.h"
 #include "hw/sh4/sh4_sched.h"
+#include "imgread/common.h"	/* (GetFile) */
 #include "hw/pvr/spg.h"
 #include "hw/maple/maple_if.h"
 #include "hw/arm7/arm7.h"
@@ -62,7 +63,7 @@ extern retro_atomic_int_t reset_requested;
 	ndc_term()
 */
 
-int GetFile(char *szFileName, char *szParse=0,u32 flags=0) 
+int GetFile(char *szFileName, char *szParse, u32 flags)
 {
    /* No disc image when the content is an ELF: the drive stays empty */
    if (!boot_to_bios && game_data)

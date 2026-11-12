@@ -2,9 +2,10 @@ name: CHD reading
 
 # tools/chd/run.sh: every frame of CHDs made with each CD codec, a GD-ROM
 # image and a parent chain against the files they came from; and CD audio
-# and data read at once through chd.cpp, where the read-ahead threads must
+# and data read at once through chd.c, where the read-ahead threads must
 # decode the hunks and neither stream throw out the other's (ASan + UBSan,
-# TSan).
+# TSan). tools/imgread/run.sh: every kind of image, well made and not,
+# read as the disc layer read it before (ASan + UBSan).
 
 on:
   push:
@@ -18,6 +19,8 @@ on:
       - 'core/libretro-common/streams/**'
       - 'core/libretro-common/rthreads/**'
       - 'tools/chd/**'
+      - 'tools/imgread/**'
+      - 'core/deps/chdpsr/**'
       - '.github/workflows/chd.yml'
   pull_request:
     paths:
@@ -30,6 +33,8 @@ on:
       - 'core/libretro-common/streams/**'
       - 'core/libretro-common/rthreads/**'
       - 'tools/chd/**'
+      - 'tools/imgread/**'
+      - 'core/deps/chdpsr/**'
       - '.github/workflows/chd.yml'
   workflow_dispatch:
 
@@ -48,3 +53,5 @@ jobs:
           sudo apt-get install -y --no-install-recommends build-essential mame-tools python3
       - name: CHD reads, and CD audio and data at once
         run: sh tools/chd/run.sh
+      - name: Every kind of disc image (cue, gdi, cdi, chd; well made and not) read as before
+        run: sh tools/imgread/run.sh

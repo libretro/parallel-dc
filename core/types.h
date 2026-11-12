@@ -304,6 +304,7 @@ enum DiskArea
 	SingleDensity,
 	DoubleDensity
 };
+typedef enum DiskArea DiskArea;
 
 /* ****************************************************** */
 /* ************************ AICA ************************ */
@@ -681,6 +682,61 @@ extern settings_t settings;
 #define SYSTEM_IS_NAOMI() (settings.System == DC_PLATFORM_NAOMI || settings.System == DC_PLATFORM_NAOMI2)
 
 void LoadSettings(void);
+
+/* A message for the user (a log line here) */
+int msgboxf(const char* text,unsigned int type,...);
+
+#define MBX_OK                       0x00000000L
+#define MBX_OKCANCEL                 0x00000001L
+#define MBX_ABORTRETRYIGNORE         0x00000002L
+#define MBX_YESNOCANCEL              0x00000003L
+#define MBX_YESNO                    0x00000004L
+#define MBX_RETRYCANCEL              0x00000005L
+
+
+#define MBX_ICONHAND                 0x00000010L
+#define MBX_ICONQUESTION             0x00000020L
+#define MBX_ICONEXCLAMATION          0x00000030L
+#define MBX_ICONASTERISK             0x00000040L
+
+
+#define MBX_USERICON                 0x00000080L
+#define MBX_ICONWARNING              MBX_ICONEXCLAMATION
+#define MBX_ICONERROR                MBX_ICONHAND
+
+
+#define MBX_ICONINFORMATION          MBX_ICONASTERISK
+#define MBX_ICONSTOP                 MBX_ICONHAND
+
+#define MBX_DEFBUTTON1               0x00000000L
+#define MBX_DEFBUTTON2               0x00000100L
+#define MBX_DEFBUTTON3               0x00000200L
+
+#define MBX_DEFBUTTON4               0x00000300L
+
+
+#define MBX_APPLMODAL                0x00000000L
+#define MBX_SYSTEMMODAL              0x00001000L
+#define MBX_TASKMODAL                0x00002000L
+
+#define MBX_HELP                     0x00004000L /* Help Button */
+
+
+#define MBX_NOFOCUS                  0x00008000L
+#define MBX_SETFOREGROUND            0x00010000L
+#define MBX_DEFAULT_DESKTOP_ONLY     0x00020000L
+
+#define MBX_TOPMOST                  0x00040000L
+#define MBX_RIGHT                    0x00080000L
+#define MBX_RTLREADING               0x00100000L
+
+#define MBX_RV_OK                1
+#define MBX_RV_CANCEL            2
+#define MBX_RV_ABORT             3
+#define MBX_RV_RETRY             4
+#define MBX_RV_IGNORE            5
+#define MBX_RV_YES               6
+#define MBX_RV_NO                7
 u32 GetRTC_now(void);
 
 static TYPES_INLINE bool is_s8(u32 v) { return (s8)v==(s32)v; }
@@ -729,15 +785,15 @@ void libCore_gdrom_disc_change(void);
 
 /* IO */
 void libGDR_ReadSector(u8 * buff,u32 StartSector,u32 SectorCount,u32 secsz);
-u32 libGDR_LeadOutFAD();
-bool libGDR_DiscPresent();
-#ifdef __cplusplus
-void libGDR_GetTrackAdrAndControl(u32 track_num, u8& adr, u8& ctrl);
-#endif
+u32 libGDR_LeadOutFAD(void);
+bool libGDR_DiscPresent(void);
+void libGDR_GetTrackAdrAndControl(u32 track_num, u8 *adr, u8 *ctrl);
 /* A disc put in while the game runs: see gdromv3.cpp */
-void gd_disc_inserted();
-bool gd_swap_pending();
-void gd_swap_cancel();
+void gd_disc_inserted(void);
+bool gd_swap_pending(void);
+void gd_swap_cancel(void);
+/* The drive told the disc in it has changed (gdromv3.cpp) */
+void gd_setdisc(void);
 /* Read-ahead hint for a read about to be made of those sectors. */
 void libGDR_Prefetch(u32 StartSector, u32 SectorCount);
 const u8* libGDR_LendRawSector(u32 Sector);
@@ -745,10 +801,8 @@ void libGDR_ReadSubChannel(u8 * buff, u32 format, u32 len);
 void libGDR_GetToc(u32* toc,u32 area);
 u32 libGDR_GetDiscType(void);
 void libGDR_GetSessionInfo(u8* pout,u8 session);
-#ifdef __cplusplus
-u32 libGDR_GetTrackNumber(u32 sector, u32& elapsed);
-bool libGDR_GetTrack(u32 track_num, u32& start_fad, u32& end_fad);
-#endif
+u32 libGDR_GetTrackNumber(u32 sector, u32 *elapsed);
+bool libGDR_GetTrack(u32 track_num, u32 *start_fad, u32 *end_fad);
 
 /* ExtDev */
 s32 libExtDevice_Init(void);

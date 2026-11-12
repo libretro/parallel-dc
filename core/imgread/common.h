@@ -1,35 +1,18 @@
-#pragma once
-#include "gd_driver.h"
-#include <vector>
+/* The disc in the drive: the images' readers (gdi.c, cue.c, cdi.c, chd.c)
+ * make a Disc (disc.c) of tracks, each read through a track_file_t of its
+ * own kind, and the drive (common.c, ImgReader.c: the GD-ROM's and the HLE
+ * BIOS's code) reads its sectors and table of contents. C89. */
+#ifndef IMGREAD_COMMON_H
+#define IMGREAD_COMMON_H
 
+#include "gd_driver.h"
 #include "deps/coreio/coreio.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 extern u32 NullDriveDiscType;
-struct TocTrackInfo
-{
-	u32 FAD;    //fad, Intel format
-	u8 Control; //control info
-	u8 Addr;    //address info
-	u8 Session; //Session where the track belongs
-};
-struct TocInfo
-{
-	//0-98 ->1-99
-	TocTrackInfo tracks[99];
-
-	u8 FistTrack;
-	u8 LastTrack;
-
-	TocTrackInfo LeadOut; //session set to 0 on that one
-};
-
-struct SessionInfo
-{
-	u32 SessionsEndFAD;   //end of Disc (?)
-	u8 SessionCount;      //must be at least 1
-	u32 SessionStart[99]; //start track for session
-	u32 SessionFAD[99];   //for sessions 1-99 ;)
-};
 
 /*
 Mode2 Subheader:
@@ -58,392 +41,153 @@ MODE1:
 SYNC (12) | HEAD (4) | data (2048) | edc (4) | space (8) | ecc (276)
 MODE2:
 SYNC (12) | HEAD (4) | sub-head (8) | sector_data (2328)
-  -form1 sector_data: 
+  -form1 sector_data:
    data (2048) | edc (4) | ecc (276)
 
-  -form2 sector_data: 
+  -form2 sector_data:
    data (2324) |edc(4)
 */
 
-enum SectorFormat
+typedef enum SectorFormat
 {
-	SECFMT_2352,				//full sector
-	SECFMT_2048_MODE1,			//2048 user byte, form1 sector
-	SECFMT_2048_MODE2_FORM1,	//2048 user bytes, form2m1 sector
-	SECFMT_2336_MODE2,			//2336 user bytes, 
-	SECFMT_2448_MODE2,			//2048 user bytes, ? SYNC (12) | HEAD (4) | sub-head (8) | data (2048) | edc (4) | ecc (276) + subcodes (96) ?
-};
+	SECFMT_2352,				/* full sector */
+	SECFMT_2048_MODE1,			/* 2048 user byte, form1 sector */
+	SECFMT_2048_MODE2_FORM1,	/* 2048 user bytes, form2m1 sector */
+	SECFMT_2336_MODE2,			/* 2336 user bytes, */
+	SECFMT_2448_MODE2			/* a whole sector and its 96 bytes of subcode */
+} SectorFormat;
 
-enum SubcodeFormat
+typedef enum SubcodeFormat
 {
-	SUBFMT_NONE,				//No subcode info
-	SUBFMT_96					//raw 96-byte subcode info
-};
+	SUBFMT_NONE,				/* No subcode info */
+	SUBFMT_96					/* raw 96-byte subcode info */
+} SubcodeFormat;
 
 bool ConvertSector(const u8* in_buff , u8* out_buff , int from , int to,int sector);
 
-bool InitDrive(u32 fileflags=0);
-void TermDrive();
-bool DiscSwap(u32 fileflags=0);
-void DiscOpenLid();
-void DiscCloseEmpty();
+/* @fileflags for GetFile() (0 for none) */
+bool InitDrive(u32 fileflags);
+void TermDrive(void);
+bool DiscSwap(u32 fileflags);
+void DiscOpenLid(void);
+void DiscCloseEmpty(void);
 bool DiscPutBack(const char* fn);
 extern signed int sns_asc;
 extern signed int sns_ascq;
 extern signed int sns_key;
 
-void ConvToc(u32* to,TocInfo* from);
 void GetDriveToc(u32* to,DiskArea area);
 void GetDriveSector(u8 * buff,u32 StartSector,u32 SectorCount,u32 secsz);
 
 void GetDriveSessionInfo(u8* to,u8 session);
-int GetFile(char *szFileName, char *szParse=0,u32 flags=0);
-int msgboxf(char* text,unsigned int type,...);
+/* @szParse and @flags 0 for none */
+int GetFile(char *szFileName, char *szParse, u32 flags);
 extern u8 q_subchannel[96];
 
-
-struct Session
+typedef struct Session
 {
-	u32 StartFAD;			//session's start fad
-	u8 FirstTrack;			//session's first track
+	u32 StartFAD;			/* session's start fad */
+	u8 FirstTrack;			/* session's first track */
+} Session;
+
+/* Where a track's sectors come from: an image's kind of track embeds one
+ * first, and the disc reads through its ops */
+typedef struct track_file track_file_t;
+typedef struct track_file_ops
+{
+	void (*read)(track_file_t *f, u32 FAD, u8 *dst, SectorFormat *sector_type,
+			u8 *subcode, SubcodeFormat *subcode_type);
+	/* The sector's bytes where they already are - a mapped file, a
+	 * decoded hunk - or NULL when they have to be read into a buffer.
+	 * Valid until the next call on the same disc. (NULL: never) */
+	const u8 *(*view)(track_file_t *f, u32 FAD, SectorFormat *sector_type);
+	/* Read-ahead hint for the sectors a read is about to ask for (NULL:
+	 * none) */
+	void (*prefetch)(track_file_t *f, u32 FAD, u32 count);
+	/* Like view, but the bytes stay where they are until the disc is
+	 * closed: a mapped file can lend them, a decoded hunk cannot. (NULL:
+	 * never) */
+	const u8 *(*lend)(track_file_t *f, u32 FAD, SectorFormat *sector_type);
+	void (*destroy)(track_file_t *f);
+} track_file_ops_t;
+struct track_file
+{
+	const track_file_ops_t *ops;
 };
 
-struct TrackFile
+typedef struct Track
 {
-	virtual void Read(u32 FAD,u8* dst,SectorFormat* sector_type,u8* subcode,SubcodeFormat* subcode_type)=0;
-	/* The sector's bytes where they already are - a mapped file, a decoded
-	 * hunk - or NULL when they have to be read into a buffer. Valid until
-	 * the next call on the same disc. */
-	virtual const u8* View(u32 FAD, SectorFormat* sector_type) { return NULL; }
-	/* Read-ahead hint for the sectors a read is about to ask for. */
-	virtual void Prefetch(u32 FAD, u32 count) {}
-	/* Like View(), but the bytes stay where they are until the disc is
-	 * closed: a mapped file can lend them, a decoded hunk cannot. */
-	virtual const u8* Lend(u32 FAD, SectorFormat* sector_type) { return NULL; }
-	virtual ~TrackFile() {};
-};
-
-struct Track
-{
-	TrackFile* file;	//handler for actual IO
-	u32 StartFAD;		//Start FAD
-	u32 EndFAD;			//End FAD
+	track_file_t *file;	/* handler for actual IO, NULL for none */
+	u32 StartFAD;		/* Start FAD */
+	u32 EndFAD;			/* End FAD, 0 for up to the next track */
 	u8 CTRL;
 	u8 ADDR;
+} Track;
 
-	Track()
-	{
-		file = 0;
-		StartFAD = 0;
-		EndFAD = 0;
-		CTRL = 0;
-		ADDR = 0;
-	}
-	bool Read(u32 FAD,u8* dst,SectorFormat* sector_type,u8* subcode,SubcodeFormat* subcode_type)
-	{
-		if (FAD>=StartFAD && (FAD<=EndFAD || EndFAD==0) && file)
-		{
-			file->Read(FAD,dst,sector_type,subcode,subcode_type);
-			return true;
-		}
-      return false;
-	}
-	bool Holds(u32 FAD) const
-	{
-		return FAD>=StartFAD && (FAD<=EndFAD || EndFAD==0) && file;
-	}
-	void Destroy() { if (file) delete file; file=0; }
-};
+/* A disc has 99 tracks at most, and so has its table of contents; and as
+ * many sessions, a track each */
+#define DISC_TRACKS   99
+#define DISC_SESSIONS 99
 
-struct Disc
+typedef struct Disc
 {
-   std::wstring path;
-   std::vector<Session> sessions;	//info for sessions
-   std::vector<Track> tracks;		//info for tracks
-	Track LeadOut;				//info for lead out track (can't read from here)
-	u32 EndFAD;					//Last valid disc sector
+	Session sessions[DISC_SESSIONS];	/* info for sessions */
+	u32 session_count;
+	Track tracks[DISC_TRACKS];			/* info for tracks */
+	u32 track_count;
+	Track LeadOut;				/* info for lead out track (can't read from here) */
+	u32 EndFAD;					/* Last valid disc sector */
 	DiscType type;
+	/* What an image's reader keeps for the disc's lifetime, let go of by
+	 * owner_free() when the disc is (NULL for nothing) */
+	void *owner;
+	void (*owner_free)(void *owner);
+} Disc;
 
-	//functions !
-	bool ReadSector(u32 FAD,u8* dst,SectorFormat* sector_type,u8* subcode,SubcodeFormat* subcode_type)
-	{
-		for (size_t i=tracks.size();i-->0;)
-		{
-			*subcode_type=SUBFMT_NONE;
-			if (tracks[i].Read(FAD,dst,sector_type,subcode,subcode_type))
-				return true;
-		}
-
-		return false;
-	}
-
-	/* Hints the tracks holding [FAD, FAD + count) that it is about to be
-	 * read, before the reads themselves land. */
-	void Prefetch(u32 FAD, u32 count)
-	{
-		while (count)
-		{
-			size_t i;
-			u32 n = count;
-			for (i=tracks.size();i-->0;)
-				if (tracks[i].Holds(FAD))
-					break;
-			if (i == (size_t)-1)
-				return;
-			if (tracks[i].EndFAD && tracks[i].EndFAD - FAD + 1 < n)
-				n = tracks[i].EndFAD - FAD + 1;
-			// (a track an image gives no length ends one sector before it starts, and has none to give: this went round for ever)
-			if (n == 0)
-				return;
-			tracks[i].file->Prefetch(FAD, n);
-			FAD += n;
-			count -= n;
-		}
-	}
-
-	/* The sector in place from the track that holds it, or NULL. */
-	const u8* SectorView(u32 FAD, SectorFormat* sector_type)
-	{
-		for (size_t i=tracks.size();i-->0;)
-			if (tracks[i].Holds(FAD))
-				return tracks[i].file->View(FAD, sector_type);
-		return NULL;
-	}
-
-	/* The sector lent for the disc's lifetime, or NULL. */
-	const u8* SectorLend(u32 FAD, SectorFormat* sector_type)
-	{
-		for (size_t i=tracks.size();i-->0;)
-			if (tracks[i].Holds(FAD))
-				return tracks[i].file->Lend(FAD, sector_type);
-		return NULL;
-	}
-
-	/* Each sector is converted straight out of the image when the track
-	 * can show it in place; only a track that cannot goes through temp. */
-	void ReadSectors(u32 FAD,u32 count,u8* dst,u32 fmt)
-	{
-		u8 temp[2448];
-		SectorFormat secfmt;
-		SubcodeFormat subfmt;
-
-		while(count)
-		{
-			const u8* src = SectorView(FAD, &secfmt);
-			if (!src && ReadSector(FAD,temp,&secfmt,q_subchannel,&subfmt))
-				src = temp;
-			if (src)
-			{
-				//TODO: Proper sector conversions
-				if (secfmt==SECFMT_2352)
-				{
-					ConvertSector(src,dst,2352,fmt,FAD);
-				}
-				else if (fmt == 2048 && secfmt==SECFMT_2336_MODE2)
-					memcpy(dst,src+8,2048);
-				else if (fmt == 2340 && secfmt==SECFMT_2336_MODE2)
-					ConvertSector(src, dst, 2336, fmt, FAD);
-				else if (fmt == 2352 && secfmt==SECFMT_2336_MODE2)
-				{
-					/* The whole sector from one kept without its first
-					 * sixteen bytes: those are the sync pattern, which is
-					 * the same in every sector, and the header, which is
-					 * made as it is for 2340. (Nothing was written.) */
-					static const u8 sync[12] = { 0x00, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0x00 };
-					memcpy(dst, sync, 12);
-					ConvertSector(src, dst + 12, 2336, 2340, FAD);
-				}
-				else if (fmt==2048 && (secfmt==SECFMT_2048_MODE1 || secfmt==SECFMT_2048_MODE2_FORM1 ))
-				{
-					memcpy(dst,src,2048);
-				}
-				else if (fmt==2352 && (secfmt==SECFMT_2048_MODE1 || secfmt==SECFMT_2048_MODE2_FORM1 ))
-				{
-					INFO_LOG(GDROM, "GDR:fmt=2352;secfmt=2048");
-					memcpy(dst,src,2048);
-					// (and the rest of what was asked for is blank, not what the buffer held)
-					memset(dst+2048,0,2352-2048);
-				}
-				else if (secfmt==SECFMT_2448_MODE2)
-				{
-					/* A whole sector with its 96 bytes of subcode after
-					 * it: without those it is a whole sector, and is
-					 * converted as one. (Only to 2048 was: Pier Solar and
-					 * the Great Architects. Asked for whole, as music is,
-					 * nothing was written.) */
-					ConvertSector(src, dst, 2448, fmt, FAD);
-				}
-				else
-				{
-					/* No way from one to the other - the header and the
-					 * error correction of a sector kept as 2048 bytes are
-					 * not there to give: a blank sector, not what the
-					 * buffer held before. */
-					WARN_LOG(GDROM, "Unable to convert sector. Format: %d Sector format: %d", fmt, secfmt);
-					memset(dst, 0, fmt);
-				}
-			}
-			else
-			{
-				// nothing there: a blank sector, not whatever was in the buffer
-				INFO_LOG(GDROM, "Sector Read miss FAD: %d", FAD);
-				memset(dst, 0, fmt);
-			}
-			dst+=fmt;
-			FAD++;
-			count--;
-		}
-	}
-	virtual ~Disc() 
-	{
-		for (size_t i=0;i<tracks.size();i++)
-			tracks[i].Destroy();
-	};
-
-	void FillGDSession()
-	{
-		Session ses;
-
-		if (tracks.empty())
-			return;
-
-		//session 1 : start @ track 1, and its fad
-		ses.FirstTrack=1;
-		ses.StartFAD=tracks[0].StartFAD;
-		sessions.push_back(ses);
-
-		//session 2 : start @ track 3, and its fad
-		/* (An image with fewer tracks is no GD-ROM, and gets here all the
-		 * same - a cue sheet with one file, a CHD of a CD: its last track
-		 * then, where the third of two was read. Such an image is not
-		 * made a CD of yet.) */
-		ses.FirstTrack = tracks.size() < 3 ? (u32)tracks.size() : 3;
-		ses.StartFAD = tracks[ses.FirstTrack - 1].StartFAD;
-		sessions.push_back(ses);
-
-		//this isn't always true for gdroms, depends on area look @ the get-toc code
-		type=GdRom;
-		LeadOut.ADDR=1;	// subcode-q channel
-		LeadOut.CTRL=4;	// data
-		LeadOut.StartFAD=549300;
-
-		EndFAD=549300;
-	}
-
-	void Dump(const std::string& path)
-	{
-		for (u32 i=0;i<tracks.size();i++)
-		{
-			u32 fmt=tracks[i].CTRL==4?2048:2352;
-			char fsto[1024];
-			sprintf(fsto,"%s%s%d.img",path.c_str(),".track",i);
-			
-			FILE* fo=fopen(fsto,"wb");
-
-			for (u32 j=tracks[i].StartFAD;j<=tracks[i].EndFAD;j++)
-			{
-				u8 temp[2352];
-				ReadSectors(j,1,temp,fmt);
-				fwrite(temp,fmt,1,fo);
-			}
-			fclose(fo);
-		}
-	}
-};
+/* All zero, no tracks: NULL for no memory */
+Disc *disc_new(void);
+/* What the disc's reader kept, its tracks' files, and it */
+void disc_free(Disc *d);
+/* @t, its file the disc's now: false, and its file closed, past
+ * DISC_TRACKS */
+bool disc_add_track(Disc *d, const Track *t);
+/* false past DISC_SESSIONS */
+bool disc_add_session(Disc *d, u32 first_track, u32 start_fad);
+/* From the track that holds FAD, or false */
+bool disc_read_sector(Disc *d, u32 FAD, u8 *dst, SectorFormat *sector_type,
+		u8 *subcode, SubcodeFormat *subcode_type);
+/* Hints the tracks holding [FAD, FAD + count) that it is about to be
+ * read, before the reads themselves land. */
+void disc_prefetch(Disc *d, u32 FAD, u32 count);
+/* The sector in place from the track that holds it, or NULL. */
+const u8 *disc_sector_view(Disc *d, u32 FAD, SectorFormat *sector_type);
+/* The sector lent for the disc's lifetime, or NULL. */
+const u8 *disc_sector_lend(Disc *d, u32 FAD, SectorFormat *sector_type);
+/* @count sectors of @fmt bytes from FAD into @dst: each sector converted
+ * straight out of the image when the track can show it in place; only a
+ * track that cannot goes through a buffer. */
+void disc_read_sectors(Disc *d, u32 FAD, u32 count, u8 *dst, u32 fmt);
+/* The two sessions and the lead-out of a GD-ROM */
+void disc_fill_gd_session(Disc *d);
 
 extern Disc* disc;
 
 Disc* OpenDisc(const char* fn);
 
-struct RawTrackFile : TrackFile
-{
-	core_file* file;
-	s32 offset;
-	u32 fmt;
-	bool cleanup;
-
-	RawTrackFile(core_file* file,u32 file_offs,u32 first_fad,u32 secfmt)
-	{
-		verify(file!=0);
-		this->file=file;
-		this->offset=file_offs-first_fad*secfmt;
-		this->fmt=secfmt;
-		this->cleanup=true;
-	}
-
-	virtual void Read(u32 FAD,u8* dst,SectorFormat* sector_type,u8* subcode,SubcodeFormat* subcode_type)
-	{
-		//for now hackish
-      switch (fmt)
-      {
-         case 2352:
-            *sector_type=SECFMT_2352;
-            break;
-         case 2048:
-            *sector_type=SECFMT_2048_MODE2_FORM1;
-            break;
-         case 2336:
-            *sector_type=SECFMT_2336_MODE2;
-            break;
-         case 2448:
-            *sector_type=SECFMT_2448_MODE2;
-            break;
-         default:
-            /* A size there is no sector of: nothing is read. (That many
-             * bytes were read into the caller's one sector of room.) */
-            *sector_type=SECFMT_2352;
-            memset(dst, 0, 2352);
-            return;
-      }
-
-		/* A file shorter than its track says gives part of a sector, or
-		 * none of it: the rest is blank, not what the buffer held before. */
-		const size_t got = core_fread_at(file, (u32)(offset + FAD * fmt), dst, fmt);
-		if (got < fmt)
-			memset(dst + got, 0, fmt - got);
-	}
-	virtual void Prefetch(u32 FAD, u32 count)
-	{
-		core_fprefetch(file, (u32)(offset + FAD * fmt), (size_t)count * fmt);
-	}
-	/* Lent until the disc is closed: only from a file that is all there
-	 * (mapped, or in memory). */
-	virtual const u8* Lend(u32 FAD, SectorFormat* sector_type)
-	{
-		size_t map_len;
-		const u8* map = core_fmap(file, &map_len);
-		u32 at = (u32)(offset + FAD * fmt);
-
-		if (!map || at > map_len || fmt > map_len - at || !Format(sector_type))
-			return NULL;
-		return map + at;
-	}
-	/* Until the next call: from such a file, and also from the piece of a
-	 * large deflated archive member that is decoded around the sector. */
-	virtual const u8* View(u32 FAD, SectorFormat* sector_type)
-	{
-		if (!Format(sector_type))
-			return NULL;
-		return core_fview(file, (u32)(offset + FAD * fmt), fmt);
-	}
-	bool Format(SectorFormat* sector_type) const
-	{
-		switch (fmt)
-		{
-			case 2352: *sector_type=SECFMT_2352; return true;
-			case 2048: *sector_type=SECFMT_2048_MODE2_FORM1; return true;
-			case 2336: *sector_type=SECFMT_2336_MODE2; return true;
-			case 2448: *sector_type=SECFMT_2448_MODE2; return true;
-			default: return false;
-		}
-	}
-	virtual ~RawTrackFile()
-	{
-		if (cleanup && file)
-			core_fclose(file);
-	}
-};
+/* A track read straight from a file, @secfmt bytes a sector, its sector
+ * at @first_fad at @file_offs: NULL, and @file closed, for no memory */
+track_file_t *raw_track_new(core_file *file, u32 file_offs, u32 first_fad, u32 secfmt);
 
 DiscType GuessDiscType(bool m1, bool m2, bool da);
 
-extern void gd_setdisc();
+/* (each image kind's: NULL for not one, or not one that can be read) */
+Disc* chd_parse(const char* file);
+Disc* gdi_parse(const char* file);
+Disc* cdi_parse(const char* file);
+Disc* cue_parse(const char* file);
+
+#ifdef __cplusplus
+}
+#endif
+
+#endif

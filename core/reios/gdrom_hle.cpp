@@ -561,8 +561,8 @@ static void GD_HLE_Command(u32 cc)
 				SecNumber.Status = GD_STANDBY;
 				break;
 			}
-			if (!libGDR_GetTrack(first_track, start_fad, dummy)
-					|| !libGDR_GetTrack(last_track, dummy, end_fad))
+			if (!libGDR_GetTrack(first_track, &start_fad, &dummy)
+					|| !libGDR_GetTrack(last_track, &dummy, &end_fad))
 			{
 				/* A track the disc has not got. Nothing says where it would
 				 * be: the command fails and the drive goes on as it was.
@@ -703,7 +703,7 @@ static void GD_HLE_Command(u32 cc)
 			const u32 fad = cdda.status == cdda_t::Playing || cdda.status == cdda_t::Paused
 					? cdda.CurrAddr.FAD : gd_hle_state.cur_sector;
 			u32 elapsed;
-			u32 tracknum = libGDR_GetTrackNumber(fad, elapsed);
+			u32 tracknum = libGDR_GetTrackNumber(fad, &elapsed);
 			WriteMem32(dst1, tracknum);
 
 			// bit   |  7  |  6  |  5  |  4  |  3  |  2  |  1  |  0
@@ -714,7 +714,7 @@ static void GD_HLE_Command(u32 cc)
 			// 3    | address                | control
 			// (of the track the drive is on: an audio track on a disc with data is still audio)
 			u8 adr, ctrl;
-			libGDR_GetTrackAdrAndControl(tracknum, adr, ctrl);
+			libGDR_GetTrackAdrAndControl(tracknum, &adr, &ctrl);
 			u32 out = ((u32)(u8)((ctrl << 4) | adr) << 24)
 					| (fad & 0x00ffffff);
 			WriteMem32(dst2, out);

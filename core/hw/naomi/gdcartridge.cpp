@@ -454,7 +454,7 @@ void GDCartridge::find_file(const char *name, const u8 *dir_sector, u32 &file_st
 
 void GDCartridge::read_gdrom(Disc *gdrom, u32 sector, u8* dst, u32 count)
 {
-	gdrom->ReadSectors(sector + 150, count, dst, 2048);
+	disc_read_sectors(gdrom, sector + 150, count, dst, 2048);
 }
 
 bool GDCartridge::device_start()
@@ -600,7 +600,7 @@ bool GDCartridge::device_start()
 			{
 				ERROR_LOG(NAOMI, "Naomi GDROM: no memory for a file of %u bytes", file_size);
 				dimm_data_size = 0;
-				delete gdrom;
+				disc_free(gdrom);
 				return false;
 			}
 			if (dimm_data_size != file_rounded_size)
@@ -618,7 +618,7 @@ bool GDCartridge::device_start()
 				*(u64 *)(dimm_data + i) = des_encrypt_decrypt<true>(*(u64 *)(dimm_data + i), des_subkeys);
 		}
 
-		delete gdrom;
+		disc_free(gdrom);
 
 		if (!dimm_data)
 		{

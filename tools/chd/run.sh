@@ -14,7 +14,7 @@
 # test decodes with exactly the codec set the core is built with.
 #
 # chd_streams_test then reads CD audio and data from the CD at once, as a
-# game playing music while it streams does, through the core's chd.cpp,
+# game playing music while it streams does, through the core's chd.c,
 # under ASan + UBSan and under TSan: the read-ahead threads must decode the
 # hunks, and neither stream throw out the other's.
 #
@@ -69,7 +69,7 @@ $CC -O1 -g $VDEFS -fsanitize=address,undefined \
 done
 
 CXX=${CXX:-c++}
-STREAM_SRC="core/imgread/chd_image.c core/deps/coreio/coreio.c
+STREAM_SRC="core/imgread/chd_image.c core/imgread/chd.c core/imgread/disc.c core/deps/coreio/coreio.c
    core/archive/archive.c $L/formats/chd/rchd.c
    $L/encodings/encoding_huffman.c $L/encodings/encoding_rzstd.c
    $L/encodings/encoding_deflate.c $L/encodings/encoding_crc32.c
@@ -97,7 +97,7 @@ for san in address,undefined thread; do
       -fno-sanitize-recover=undefined \
       -Icore -Icore/libretro -Icore/deps -I$L/include \
       -o "$WORK/chd_streams_test_$v" tools/chd/chd_streams_test.cpp \
-      core/imgread/chd.cpp "$WORK/o_$v"/*.o \
+      "$WORK/o_$v"/*.o \
       -Wl,--wrap=chd_image_read_hunk -lm -lpthread
 done
 

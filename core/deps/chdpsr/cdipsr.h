@@ -2,6 +2,11 @@
 #define __CDI_H__
 
 #include "deps/coreio/coreio.h"
+#include <boolean.h>
+
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 /* Basic structures */
 
@@ -44,5 +49,9 @@ void CDI_get_sessions(core_file *fsource, image_s *image);
 void CDI_get_tracks(core_file *fsource, image_s *image);
 void CDI_read_track(core_file *fsource, image_s *image, track_s *track);
 void CDI_skip_next_session(core_file *fsource, image_s *image);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

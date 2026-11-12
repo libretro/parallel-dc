@@ -72,12 +72,6 @@ SOURCES_CXX := \
 					$(CORE_DIR)/core/hw/sh4/modules/dmac.cpp \
 					$(CORE_DIR)/core/hw/sh4/modules/mmu.cpp \
 					$(CORE_DIR)/core/hw/sh4/modules/fastmmu.cpp \
-					$(CORE_DIR)/core/imgread/ImgReader.cpp \
-					$(CORE_DIR)/core/imgread/cdi.cpp \
-					$(CORE_DIR)/core/imgread/chd.cpp \
-					$(CORE_DIR)/core/imgread/common.cpp \
-					$(CORE_DIR)/core/imgread/cue.cpp \
-					$(CORE_DIR)/core/imgread/gdi.cpp \
 					$(CORE_DIR)/core/log/LogManagerLibretro.cpp \
 					\
 					$(CORE_DIR)/core/cheats.cpp \
@@ -88,7 +82,6 @@ SOURCES_CXX := \
 					$(DEPS_DIR)/libelf/elf.cpp \
 					$(DEPS_DIR)/libelf/elf32.cpp \
 					$(DEPS_DIR)/libelf/elf64.cpp \
-					$(DEPS_DIR)/chdpsr/cdipsr.cpp \
 					\
 					$(CORE_DIR)/core/reios/reios_elf.cpp \
 					$(CORE_DIR)/core/reios/reios.cpp \
@@ -181,7 +174,16 @@ SOURCES_C += $(CORE_DIR)/core/hw/gdrom/gdrom_response.c \
 					$(CORE_DIR)/core/hw/sh4/modules/intc.c \
 					$(CORE_DIR)/core/hw/sh4/modules/rtc.c \
 					$(CORE_DIR)/core/hw/sh4/modules/tmu.c \
-					$(CORE_DIR)/core/hw/sh4/modules/ubc.c
+					$(CORE_DIR)/core/hw/sh4/modules/ubc.c \
+					$(CORE_DIR)/core/imgread/ImgReader.c \
+					$(CORE_DIR)/core/imgread/cdi.c \
+					$(CORE_DIR)/core/imgread/chd.c \
+					$(CORE_DIR)/core/imgread/common.c \
+					$(CORE_DIR)/core/imgread/disc.c \
+					$(CORE_DIR)/core/imgread/cue.c \
+					$(CORE_DIR)/core/imgread/gdi.c \
+					$(CORE_DIR)/core/imgread/sheet.c \
+					$(DEPS_DIR)/chdpsr/cdipsr.c
 
 SOURCES_ASM :=
 

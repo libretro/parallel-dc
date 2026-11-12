@@ -1,15 +1,14 @@
+/* The disc in the drive: see common.h */
+#include <stdlib.h>
+#include <string.h>
+
 #include "common.h"
 #include "archive/archive.h"
-
-Disc* chd_parse(const char* file);
-Disc* gdi_parse(const char* file);
-Disc* cdi_parse(const char* file);
-Disc* cue_parse(const char* file);
 
 u32 NullDriveDiscType;
 Disc* disc;
 
-Disc*(*drivers[])(const char* path)=
+static Disc*(* const drivers[])(const char* path)=
 {
 	chd_parse,
 	gdi_parse,
@@ -18,100 +17,28 @@ Disc*(*drivers[])(const char* path)=
 	0
 };
 
-u8 q_subchannel[96];
-
-bool ConvertSector(const u8* in_buff , u8* out_buff , int from , int to,int sector)
-{
-   //get subchannel data, if any
-   if (from==2448)
-   {
-      memcpy(q_subchannel,in_buff+2352,96);
-      from-=96;
-   }
-   //if no conversion
-   if (to==from)
-   {
-      memcpy(out_buff,in_buff,to);
-      return true;
-   }
-   switch (to)
-   {
-      case 2340:
-         verify((from==2352) || (from==2336));
-         if (from == 2336)
-         {
-            /* A sector kept without its sync and header (a .cue's
-             * MODE2/2336) and asked for with the header: that is made
-             * from where the sector is - minutes, seconds and frames in
-             * BCD, mode 2. A PlayStation disc is read this way.
-             * (flyinghead/flycast#2443, Bruceleeto) */
-            out_buff[0] = (u8)(((sector / 75 / 60) % 10) | (((sector / 75 / 60) / 10) << 4));
-            out_buff[1] = (u8)((((sector / 75) % 60) % 10) | ((((sector / 75) % 60) / 10) << 4));
-            out_buff[2] = (u8)(((sector % 75) % 10) | (((sector % 75) / 10) << 4));
-            out_buff[3] = 2;
-            memcpy(out_buff + 4, in_buff, 2336);
-         }
-         else
-            memcpy(out_buff,&in_buff[12],2340);
-         break;
-      case 2328:
-         verify((from==2352));
-         memcpy(out_buff,&in_buff[24],2328);
-         break;
-      case 2336:
-         verify(from>=2336);
-         verify((from==2352));
-         memcpy(out_buff,&in_buff[0x10],2336);
-         break;
-      case 2048:
-         verify(from>=2048);
-         verify((from==2448) || (from==2352) || (from==2336));
-         if ((from == 2352) || (from == 2448))
-         {
-            if (in_buff[15]==1)
-               memcpy(out_buff,&in_buff[0x10],2048); //0x10 -> mode1
-            else
-               memcpy(out_buff,&in_buff[0x18],2048); //0x18 -> mode2 (all forms ?)
-         }
-         else
-            memcpy(out_buff,&in_buff[0x8],2048);	//hmm only possible on mode2.Skip the mode2 header
-         break;
-      case 2352:
-         //if (from >= 2352)
-         memcpy(out_buff,&in_buff[0],2352);
-         break;
-      default :
-		INFO_LOG(GDROM, "Sector conversion from %d to %d not supported \n", from , to);
-         // (a blank sector, not what the buffer held before)
-         if (to > 0)
-            memset(out_buff, 0, to);
-         break;
-   }
-
-   return true;
-}
-
 Disc* OpenDisc(const char* fn)
 {
-	Disc* rv;
+	Disc* rv = NULL;
 	char archived[1024];
+	int i;
 
 	if (archive_resolve_disc(fn, archived, sizeof(archived)))
 		fn = archived;
 
-	for (int i=0;drivers[i] && !(rv=drivers[i](fn));i++) ;
+	for (i=0;drivers[i] && !(rv=drivers[i](fn));i++) ;
 
 	return rv;
 }
 
-// @swap: a disc put in while the game runs. The drive is told with
-// gd_disc_inserted(), and is not ready at once.
-bool InitDrive_(char* fn, bool swap = false)
+/* @swap: a disc put in while the game runs. The drive is told with
+ * gd_disc_inserted(), and is not ready at once. */
+static bool InitDrive_(char* fn, bool swap)
 {
 	gd_swap_cancel();
 	TermDrive();
 
-	//try all drivers
+	/* try all drivers */
 	disc = OpenDisc(fn);
 
 	if (disc != NULL)
@@ -127,7 +54,7 @@ bool InitDrive_(char* fn, bool swap = false)
 	else
 	{
 		INFO_LOG(GDROM, "gdrom: Failed to open image \"%s\"", fn);
-		NullDriveDiscType = NoDisk; //no disc :)
+		NullDriveDiscType = NoDisk; /* no disc :) */
 	}
 	libCore_gdrom_disc_change();
 
@@ -136,10 +63,13 @@ bool InitDrive_(char* fn, bool swap = false)
 
 bool InitDrive(u32 fileflags)
 {
+	char fn[512];
+	int gfrv = 0;
+
 	if (settings.imgread.LoadDefaultImage)
 	{
 		INFO_LOG(GDROM, "Loading default image \"%s\"", settings.imgread.DefaultImage);
-		if (!InitDrive_(settings.imgread.DefaultImage))
+		if (!InitDrive_(settings.imgread.DefaultImage, false))
 		{
 			msgboxf("Default image \"%s\" failed to load", MBX_ICONERROR, settings.imgread.DefaultImage);
 			return false;
@@ -147,9 +77,7 @@ bool InitDrive(u32 fileflags)
       return true;
 	}
 
-	char fn[512];
 	fn[0] = '\0';
-   int gfrv = 0;
    if (settings.System == DC_PLATFORM_DREAMCAST)
       gfrv=GetFile(fn,0,fileflags);
 
@@ -166,9 +94,9 @@ bool InitDrive(u32 fileflags)
          return false;
    }
 
-	if (!InitDrive_(fn))
+	if (!InitDrive_(fn, false))
 	{
-		//msgboxf("Selected image failed to load",MBX_ICONERROR);
+		/* msgboxf("Selected image failed to load",MBX_ICONERROR); */
 			NullDriveDiscType=NoDisk;
 			gd_setdisc();
 			sns_asc=0x29;
@@ -178,7 +106,7 @@ bool InitDrive(u32 fileflags)
    return true;
 }
 
-void DiscOpenLid()
+void DiscOpenLid(void)
 {
 	gd_swap_cancel();
 	TermDrive();
@@ -186,8 +114,8 @@ void DiscOpenLid()
 	gd_setdisc();
 }
 
-// The lid shut on an empty drive: there is nothing to spin up
-void DiscCloseEmpty()
+/* The lid shut on an empty drive: there is nothing to spin up */
+void DiscCloseEmpty(void)
 {
 	gd_swap_cancel();
 	TermDrive();
@@ -195,8 +123,8 @@ void DiscCloseEmpty()
 	gd_setdisc();
 }
 
-// A save state made with this image in the drive: the image is opened and
-// nothing else is done, since what the drive was doing comes with the state.
+/* A save state made with this image in the drive: the image is opened and */
+/* nothing else is done, since what the drive was doing comes with the state. */
 bool DiscPutBack(const char* fn)
 {
 	TermDrive();
@@ -206,7 +134,10 @@ bool DiscPutBack(const char* fn)
 
 bool DiscSwap(u32 fileflags)
 {
-	// What the game is told, and when: see gd_disc_inserted()
+	char fn[512];
+	int gfrv = 0;
+
+	/* What the game is told, and when: see gd_disc_inserted() */
 	if (settings.imgread.LoadDefaultImage)
 	{
 		INFO_LOG(GDROM, "Loading default image \"%s\"", settings.imgread.DefaultImage);
@@ -218,9 +149,7 @@ bool DiscSwap(u32 fileflags)
       return true;
 	}
 
-	char fn[512];
 	fn[0] = '\0';
-   int gfrv = 0;
    if (settings.System == DC_PLATFORM_DREAMCAST)
       gfrv=GetFile(fn,0,fileflags);
 	if (gfrv == 0)
@@ -236,26 +165,26 @@ bool DiscSwap(u32 fileflags)
 
 	if (!InitDrive_(fn, true))
 	{
-		//msgboxf("Selected image failed to load",MBX_ICONERROR);
+		/* msgboxf("Selected image failed to load",MBX_ICONERROR); */
 		NullDriveDiscType=Open;
 		gd_setdisc();
 	}
 	return true;
 }
 
-void TermDrive()
+void TermDrive(void)
 {
 	libCore_CDDA_Detach();
 	if (disc != NULL)
-		delete disc;
+		disc_free(disc);
 
 	disc = NULL;
 	core_archive_release();
 }
 
 
-//
-//convert our nice toc struct to dc's native one :)
+/* */
+/* convert our nice toc struct to dc's native one :) */
 
 static u32 CreateTrackInfo(u32 ctrl,u32 addr,u32 fad)
 {
@@ -295,18 +224,20 @@ static u32 CreateTrackInfo_se(u32 ctrl,u32 addr,u32 tracknum)
 
 void GetDriveSector(u8 * buff,u32 StartSector,u32 SectorCount,u32 secsz)
 {
-   //printf("GD: read %08X, %d\n",StartSector,SectorCount);
+   /* printf("GD: read %08X, %d\n",StartSector,SectorCount); */
    if (!disc)
    {
-      // no disc: blank sectors, not what the buffer held before
+      /* no disc: blank sectors, not what the buffer held before */
       memset(buff, 0, (size_t)SectorCount * secsz);
       return;
    }
 
-   disc->ReadSectors(StartSector,SectorCount,buff,secsz);
+   disc_read_sectors(disc,StartSector,SectorCount,buff,secsz);
 }
 void GetDriveToc(u32* to,DiskArea area)
 {
+	u32 first_track, last_track, adr, i;
+
 	/* (filled first: with no disc in the drive the table was left as the
 	 * caller had it, which is whatever was on its stack, and sent) */
 	memset(to, 0xFF, 102 * 4);
@@ -320,12 +251,12 @@ void GetDriveToc(u32* to,DiskArea area)
 	if (area == DoubleDensity && disc->type != GdRom)
 		return;
 
-	//normal CDs: 1 .. tc
-	//GDROM: area0 is 1 .. 2, area1 is 3 ... tc
+	/* normal CDs: 1 .. tc */
+	/* GDROM: area0 is 1 .. 2, area1 is 3 ... tc */
 
-	u32 first_track=1;
-	u32 last_track=disc->tracks.size();
-	// the table has room for 99 tracks, and a disc has no more
+	first_track=1;
+	last_track=disc->track_count;
+	/* the table has room for 99 tracks, and a disc has no more */
 	if (last_track > 99)
 		last_track = 99;
 	if (area==DoubleDensity)
@@ -333,16 +264,16 @@ void GetDriveToc(u32* to,DiskArea area)
 	else if (disc->type==GdRom)
 		last_track=2;
 
-	if (first_track - 1 >= disc->tracks.size() || last_track - 1 >= disc->tracks.size())
+	if (first_track - 1 >= disc->track_count || last_track - 1 >= disc->track_count)
 		return;
 
 	/* Generate the TOC info. ADR is 1 in every entry - "what follows is a
 	 * position" - whatever the image said or did not say of it: it was 0
 	 * for gdi, cue and chd images, and upstream has Eldorado Gate 4 to 7
 	 * and V-Rally 2's music down to that. */
-	const u32 adr = 1;
+	adr = 1;
 
-	//-1 for 1..99 0 ..98
+	/* -1 for 1..99 0 ..98 */
 	to[99]  = CreateTrackInfo_se(disc->tracks[first_track-1].CTRL, adr, first_track);
 	to[100] = CreateTrackInfo_se(disc->tracks[last_track-1].CTRL, adr, last_track);
 	
@@ -357,7 +288,7 @@ void GetDriveToc(u32* to,DiskArea area)
 		 * the 0xFFFFFFFF the table is filled with) */
 		to[101] = CreateTrackInfo(disc->LeadOut.CTRL, adr, disc->LeadOut.StartFAD);
 
-	for (u32 i=first_track-1;i<last_track;i++)
+	for (i=first_track-1;i<last_track;i++)
 		to[i] = CreateTrackInfo(disc->tracks[i].CTRL, adr, disc->tracks[i].StartFAD);
 }
 
@@ -365,29 +296,29 @@ void GetDriveSessionInfo(u8* to,u8 session)
 {
 	if (!disc)
 	{
-		// no disc, no sessions: said, and not left as the caller's buffer was
+		/* no disc, no sessions: said, and not left as the caller's buffer was */
 		memset(to, 0, 6);
 		return;
 	}
-	to[0]=2;//status, will get overwritten anyway
-	to[1]=0;//0's
+	to[0]=2;/* status, will get overwritten anyway */
+	to[1]=0;/* 0's */
 	
 	if (session==0)
 	{
-		to[2]=disc->sessions.size();//count of sessions
-		to[3]=disc->EndFAD>>16;//fad is sessions end
+		to[2]=(u8)disc->session_count;/* count of sessions */
+		to[3]=disc->EndFAD>>16;/* fad is sessions end */
 		to[4]=disc->EndFAD>>8;
 		to[5]=disc->EndFAD>>0;
 	}
-	else if (session > disc->sessions.size())
+	else if (session > disc->session_count)
 	{
-		// no such session (upstream)
+		/* no such session (upstream) */
 		to[2] = to[3] = to[4] = to[5] = 0;
 	}
 	else
 	{
-		to[2]=disc->sessions[session-1].FirstTrack;//start track of this session
-		to[3]=disc->sessions[session-1].StartFAD>>16;//fad is session start
+		to[2]=disc->sessions[session-1].FirstTrack;/* start track of this session */
+		to[3]=disc->sessions[session-1].StartFAD>>16;/* fad is session start */
 		to[4]=disc->sessions[session-1].StartFAD>>8;
 		to[5]=disc->sessions[session-1].StartFAD>>0;
 	}

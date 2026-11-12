@@ -5037,7 +5037,7 @@ static bool disk_close_lid(void)
    emu_hold();
 #endif
    if (disk_select_image())
-      ok = DiscSwap();
+      ok = DiscSwap(0);
    else
       DiscCloseEmpty();
 #if !defined(TARGET_NO_THREADS)
