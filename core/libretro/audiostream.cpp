@@ -2,6 +2,7 @@
 #include "emulator.h"
 #include "hw/maple/vmu_beep.h"
 #include "hw/aica/aica.h"
+#include "oslib/audiostream.h"
 
 #include <string.h>
 #include <libretro.h>

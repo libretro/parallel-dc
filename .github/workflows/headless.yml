@@ -16,10 +16,12 @@ name: Headless
 # (tools/sh4/reglist_test.sh), and the recompilers' pool, pieces taken and
 # given back at random (tools/sh4/node_pool_test.sh). And the recompilers
 # against the interpreters, each built alone with the assembler they share
-# (tools/sh4/run.sh, tools/arm7/run.sh, tools/aica/run.sh). And the threads
-# a texture scaled up is shared out to, and the core needing no OpenMP
-# runtime (tools/rend/band_pool_test.sh). And custom textures' pictures,
-# read as stb_image read them and dumped (tools/rend/custom_image_test.sh),
+# (tools/sh4/run.sh, tools/arm7/run.sh, tools/aica/run.sh), and the sound
+# chip's channels against what they made before (tools/aica/sgc_run.sh).
+# And the threads a texture scaled up is shared out to, and the core needing
+# no OpenMP runtime (tools/rend/band_pool_test.sh). And custom textures'
+# pictures, read as stb_image read them and dumped
+# (tools/rend/custom_image_test.sh),
 # the textures' hashes as XXH32 made them (tools/rend/texhash_test.sh), and
 # the modem's UPnP against a gateway on the runner (tools/threads/upnp_test.sh).
 
@@ -118,3 +120,7 @@ jobs:
           sh tools/sh4/run.sh
           sh tools/arm7/run.sh
           sh tools/aica/run.sh
+      - name: The sound chip's channels, the same sound as the C++ ones they replace (and with the sanitizers)
+        run: |
+          sh tools/aica/sgc_run.sh
+          sh tools/aica/sgc_run.sh -fsanitize=address,undefined -fno-sanitize-recover=all

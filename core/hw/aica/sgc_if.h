@@ -80,6 +80,11 @@ void ReadCommonReg(u32 reg,bool byte);
 void WriteCommonReg8(u32 reg,u32 data);
 #define clip(x,min,max) do { if ((x)<(min)) (x)=(min); else if ((x)>(max)) (x)=(max); } while (false)
 #define clip16(x) clip(x,-32768,32767)
+/* The CD audio sector being mixed, and the place in it */
+#define CDDA_SIZE  (2352/2)
+extern s16 cdda_sector[CDDA_SIZE];
+extern u32 cdda_index;
+
 bool channel_serialize(void **data, unsigned int *total_size);
 bool channel_unserialize(void **data, unsigned int *total_size, serialize_version_enum version);
 void channel_serialize_v21(void **data, unsigned int *total_size);

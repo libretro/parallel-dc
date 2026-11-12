@@ -30,6 +30,7 @@
 #include "hw/sh4/dyna/ngen.h"
 #include "hw/naomi/naomi.h"
 #include "hw/naomi/naomi_cart.h"
+#include "hw/naomi/midiffb.h"
 #include "hw/sh4/sh4_cache.h"
 #include "hw/bba/bba.h"
 
@@ -69,16 +70,6 @@ extern int dma_sched_id;
 
 //./core/hw/aica/aica_mem.o
 extern u8 aica_reg[0x8000];
-
-//./core/hw/aica/sgc_if.o
-struct ChannelEx;
-#define AicaChannel ChannelEx
-//special handling
-//extern AicaChannel AicaChannel::Chans[64];
-#define Chans AicaChannel::Chans
-#define CDDA_SIZE  (2352/2)
-extern s16 cdda_sector[CDDA_SIZE];
-extern u32 cdda_index;
 
 //./core/hw/holly/sb.o
 extern u32 SB_ISTNRM;
@@ -326,14 +317,11 @@ void naomi_serial_serialize_v26(void **data, unsigned int *total_size);
 bool naomi_serial_unserialize_v26(void **data, unsigned int *total_size);
 void naomi_serial_state_before_v26(void);
 /* and since V27: what the racing and other I/O boards keep (maple_devs.cpp),
- * the MIDI force feedback board of the driving games (midiffb.cpp), and
- * F355's printer status (sb_mem.cpp) */
+ * the MIDI force feedback board of the driving games (midiffb.cpp: its
+ * header), and F355's printer status (sb_mem.cpp) */
 void maple_jvs_serialize_v27(void **data, unsigned int *total_size);
 bool maple_jvs_unserialize_v27(void **data, unsigned int *total_size);
 void maple_jvs_state_before_v27(void);
-void midiffb_serialize_v27(void **data, unsigned int *total_size);
-bool midiffb_unserialize_v27(void **data, unsigned int *total_size);
-void midiffb_state_before_v27(void);
 void naomi_printer_serialize_v27(void **data, unsigned int *total_size);
 bool naomi_printer_unserialize_v27(void **data, unsigned int *total_size);
 void naomi_printer_state_before_v27(void);

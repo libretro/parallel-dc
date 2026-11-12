@@ -20,7 +20,6 @@ SOURCES_CXX := \
 					$(CORE_DIR)/core/hw/aica/dsp_x64.cpp \
 					$(CORE_DIR)/core/hw/aica/dsp_x86.cpp \
 					$(CORE_DIR)/core/hw/aica/aica_if.cpp \
-					$(CORE_DIR)/core/hw/aica/sgc_if.cpp \
 					\
 					$(CORE_DIR)/core/hw/holly/holly_intc.cpp \
 					$(CORE_DIR)/core/hw/holly/sb.cpp \
@@ -174,6 +173,7 @@ SOURCES_C += $(CORE_DIR)/core/hw/gdrom/gdrom_response.c \
 					$(CORE_DIR)/core/hw/aica/aica_mem.c \
 					$(CORE_DIR)/core/hw/aica/dsp.c \
 					$(CORE_DIR)/core/hw/aica/dsp_interp.c \
+					$(CORE_DIR)/core/hw/aica/sgc_if.c \
 					$(CORE_DIR)/core/hw/arm7/vbaARM.c \
 					$(CORE_DIR)/core/imgread/ImgReader.c \
 					$(CORE_DIR)/core/imgread/cdi.c \
