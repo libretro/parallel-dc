@@ -67,6 +67,8 @@ struct sched_list
 #define SH4_SCHED_SLOTS 128
 extern sched_list sch_list[SH4_SCHED_SLOTS];
 extern u32 sch_count;
+/* The cycle the scheduler counts from (see sh4_sched.c) */
+extern u64 sh4_sched_ffb;
 
 #ifdef __cplusplus
 }

@@ -35,7 +35,7 @@ extern "C" void *__wrap_dlopen(const char *file, int mode)
 	return __real_dlopen(file != NULL && strcmp(file, "self") == 0 ? NULL : file, mode);
 }
 
-extern "C" bool __real__Z13ta_parse_vdrcP10TA_context(TA_context *ctx);
+extern "C" bool __real_ta_parse_vdrc(TA_context *ctx);
 
 typedef std::chrono::steady_clock clk;
 
@@ -452,7 +452,7 @@ static bool parse_again(TA_context *ctx, int l, int room)
 	rc.isRenderFramebuffer = pre.fb;
 	rc.clearFramebuffer = pre.clear;
 	const int cnt = ta_parse_cnt;
-	const bool rv = __real__Z13ta_parse_vdrcP10TA_context(ctx);
+	const bool rv = __real_ta_parse_vdrc(ctx);
 	ta_parse_cnt = cnt;
 	const bool overrun = rc.Overrun;
 	if (l >= 0)
@@ -1083,7 +1083,7 @@ static const char *compare_draw(TA_context *ctx, const tgt_out &o, u32 flags, ch
 	return d;
 }
 
-extern "C" bool __wrap__Z13ta_parse_vdrcP10TA_context(TA_context *ctx)
+extern "C" bool __wrap_ta_parse_vdrc(TA_context *ctx)
 {
 	if (!ready)
 		setup();
@@ -1104,7 +1104,7 @@ extern "C" bool __wrap__Z13ta_parse_vdrcP10TA_context(TA_context *ctx)
 	if (prepared)
 		memset(ctx->rend.verts.head() + 4, 0, (gf.verts - 4) * sizeof(Vertex));
 	clk::time_point t2 = clk::now();
-	const bool rv = __real__Z13ta_parse_vdrcP10TA_context(ctx);
+	const bool rv = __real_ta_parse_vdrc(ctx);
 	clk::time_point t3 = clk::now();
 
 	if (!prepared)

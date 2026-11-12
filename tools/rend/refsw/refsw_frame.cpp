@@ -42,6 +42,7 @@
 #include "refsw.h"
 #include "refsw_pixel.h"
 #include "rend/tile/pvr_scaler.h"
+#include "hw/mem/_vmem.h"
 
 RefRendInterface* refsw_create(u8* vram);
 

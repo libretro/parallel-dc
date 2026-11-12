@@ -10,7 +10,8 @@
 #endif
 
 extern u32 fskip;
-extern u32 FrameCount;
+#include "Renderer_if.h"
+#include "pvr_mem.h"
 
 int frameskip=0;
 bool FrameSkipping=false;		// global switch to enable/disable frameskip
@@ -662,10 +663,6 @@ void UnserializeTAContext(void **data, unsigned int *total_size, serialize_versi
 #define TA_STATE_CONTEXTS 16
 #define TA_STATE_PASSES   9
 
-extern u32 YUV_index;
-void spg_gun_serialize(void **data, unsigned int *total_size);
-void spg_gun_unserialize(void **data, unsigned int *total_size);
-void spg_gun_before_v21(void);
 
 void pvr_serialize_v21(void **data, unsigned int *total_size)
 {
@@ -894,9 +891,6 @@ void pvr_state_before_v21(void)
  *                        there is no frame
  * 17 bytes, always. Read after pvr_unserialize_v21(), which makes the
  * frames. */
-void spg_gun_serialize_v28(void **data, unsigned int *total_size);
-void spg_gun_unserialize_v28(void **data, unsigned int *total_size);
-void spg_gun_before_v28(void);
 
 void pvr_serialize_v28(void **data, unsigned int *total_size)
 {

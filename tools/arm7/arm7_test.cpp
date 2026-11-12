@@ -40,6 +40,7 @@
 #include "hw/arm7/arm7.h"
 #include "hw/aica/aica_if.h"
 #include "log/Log.h"
+#include "hw/mem/_vmem.h"
 
 settings_t settings;
 unsigned ARAM_SIZE = 2 * 1024 * 1024;

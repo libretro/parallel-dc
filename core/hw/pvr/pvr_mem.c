@@ -6,6 +6,8 @@
 */
 
 #include "pvr_mem.h"
+#include "pvr_regs.h"
+#include "ta.h"
 #include "spg.h"
 #include "Renderer_if.h"
 
@@ -13,9 +15,9 @@
 #include "hw/holly/holly_intc.h"
 
 
-//YUV converter code :)
-//inits the YUV converter
-u32 YUV_tempdata[512/4];//512 bytes
+/* YUV converter code :) */
+/* inits the YUV converter */
+u32 YUV_tempdata[512/4];/* 512 bytes */
 
 u32 YUV_dest=0;
 
@@ -54,7 +56,7 @@ void YUV_init(void)
    YUV_index = 0;
 }
 
-// Nothing set up and nothing half received: data is ignored until the game sets the converter up
+/* Nothing set up and nothing half received: data is ignored until the game sets the converter up */
 void YUV_reset(void)
 {
    memset(YUV_tempdata, 0, sizeof(YUV_tempdata));
@@ -77,10 +79,11 @@ static void YUV_Block8x8(const u8* inuv, const u8* iny, u8* out, u32 x_size)
 {
 	u8* line_out_0=out+0;
 	u8* line_out_1=out+x_size*2;
+	int x, y;
 
-	for (int y=0;y<8;y+=2)
+	for (y=0;y<8;y+=2)
 	{
-		for (int x=0;x<8;x+=2)
+		for (x=0;x<8;x+=2)
 		{
 			u8 u=inuv[0];
 			u8 v=inuv[64];
@@ -118,10 +121,10 @@ static INLINE void YUV_Block384(u8* in, u8* out, u32 x_size)
 	u8* iny=in+128;
 	u8* p_out=out;
 
-	YUV_Block8x8(inuv+ 0,iny+  0,p_out,x_size);                 //(0,0)
-	YUV_Block8x8(inuv+ 4,iny+64,p_out+8*2,x_size);              //(8,0)
-	YUV_Block8x8(inuv+32,iny+128,p_out+x_size*8*2,x_size);      //(0,8)
-	YUV_Block8x8(inuv+36,iny+192,p_out+x_size*8*2+8*2,x_size);  //(8,8)
+	YUV_Block8x8(inuv+ 0,iny+  0,p_out,x_size);                 /* (0,0) */
+	YUV_Block8x8(inuv+ 4,iny+64,p_out+8*2,x_size);              /* (8,0) */
+	YUV_Block8x8(inuv+32,iny+128,p_out+x_size*8*2,x_size);      /* (0,8) */
+	YUV_Block8x8(inuv+36,iny+192,p_out+x_size*8*2+8*2,x_size);  /* (8,8) */
 }
 
 /* A macroblock some of which would land past the end of video memory: it
@@ -131,25 +134,25 @@ static INLINE void YUV_Block384(u8* in, u8* out, u32 x_size)
 static NOINLINE void YUV_ConvertMacroBlockWrapped(u8* datap, u32 dest, u32 x_size)
 {
 	u8 block[16 * 32];
+	u32 x, y;
 
 	YUV_Block384(datap, block, 16);
-	for (u32 y = 0; y < 16; y++)
+	for (y = 0; y < 16; y++)
 	{
 		const u32 line = dest + y * x_size * 2;
-		for (u32 x = 0; x < 32; x++)
+		for (x = 0; x < 32; x++)
 			vram.data[(line + x) & VRAM_MASK] = block[y * 32 + x];
 	}
 }
 
 static INLINE void YUV_ConvertMacroBlock(u8* datap)
 {
-	//do shit
-	TA_YUV_TEX_CNT++;
-
 	/* A macroblock is 16 lines of 32 bytes, a picture's line apart: the last
 	 * byte of it is 15 lines and 31 bytes from the first. */
 	const u32 dest   = YUV_dest & VRAM_MASK;
 	const u32 x_size = YUV_x_size;
+
+	TA_YUV_TEX_CNT++;
 	if ((u64)x_size * (15 * 2) + 32 + dest <= VRAM_SIZE)
 		YUV_Block384((u8*)datap,vram.data + dest,x_size);
 	else
@@ -169,28 +172,30 @@ static INLINE void YUV_ConvertMacroBlock(u8* datap)
 		}
 	}
 
-	// TA_YUV_TEX_CNT stays at the count it reached: it starts again when more data comes
+	/* TA_YUV_TEX_CNT stays at the count it reached: it starts again when more data comes */
 	if (YUV_blockcount==TA_YUV_TEX_CNT)
 		asic_RaiseInterrupt(holly_YUV_DMA);
 }
 
 void YUV_data(u32* data , u32 count)
 {
+	u32 block_size;
+
 	if (YUV_blockcount==0)
 	{
-		// not set up: nothing to convert to, and not a reason to stop
+		/* not set up: nothing to convert to, and not a reason to stop */
 		WARN_LOG(PVR, "YUV_data: YUV decoder not inited");
 		return;
 	}
-	// the picture before this one is complete: this is the start of the next
+	/* the picture before this one is complete: this is the start of the next */
 	if (YUV_blockcount == TA_YUV_TEX_CNT)
 		YUV_init();
 
-   u32 block_size = TA_YUV_TEX_CTRL.yuv_form == 0 ? 384 : 512;
+	block_size = TA_YUV_TEX_CTRL.yuv_form == 0 ? 384 : 512;
 
 	if (block_size != 384)
 	{
-		// no support for 512
+		/* no support for 512 */
 		WARN_LOG(PVR, "YUV_data: block size 512 not supported");
 		return;
 	}
@@ -202,25 +207,25 @@ void YUV_data(u32* data , u32 count)
 	{
 		if (YUV_index + count >= block_size)
 		{
-			//more or exactly one block remaining
-			u32 dr = block_size - YUV_index;				//remaining bytes til block end
+			/* more or exactly one block remaining */
+			u32 dr = block_size - YUV_index;				/* remaining bytes til block end */
 			if (YUV_index == 0)
 			{
-				// Avoid copy
-				YUV_ConvertMacroBlock((u8 *)data);				//convert block
+				/* Avoid copy */
+				YUV_ConvertMacroBlock((u8 *)data);				/* convert block */
 			}
 			else
 			{
-				memcpy(&YUV_tempdata[YUV_index >> 2], data, dr);//copy em
-				YUV_ConvertMacroBlock((u8 *)&YUV_tempdata[0]);	//convert block
+				memcpy(&YUV_tempdata[YUV_index >> 2], data, dr);/* copy em */
+				YUV_ConvertMacroBlock((u8 *)&YUV_tempdata[0]);	/* convert block */
 				YUV_index = 0;
 			}
-			data += dr >> 2;									//count em
+			data += dr >> 2;									/* count em */
 			count -= dr;
 		}
 		else
-		{	//less that a whole block remaining
-			memcpy(&YUV_tempdata[YUV_index >> 2], data, count);	//append it
+		{	/* less that a whole block remaining */
+			memcpy(&YUV_tempdata[YUV_index >> 2], data, count);	/* append it */
 			YUV_index += count;
 			count = 0;
 		}
@@ -228,52 +233,54 @@ void YUV_data(u32* data , u32 count)
 	verify(count==0);
 }
 
-//vram 32-64b
+/* vram 32-64b */
 
-//read
-template<typename T>
-T DYNACALL pvr_read_area1(u32 addr)
-{
-	// aligned to its size: the last bytes of video memory are not a way out of it
-	return *(T *)&vram[pvr_map32(addr) & ~(sizeof(T) - 1)];
-}
-template u8 DYNACALL pvr_read_area1<u8>(u32 addr);
-template u16 DYNACALL pvr_read_area1<u16>(u32 addr);
-template u32 DYNACALL pvr_read_area1<u32>(u32 addr);
+/* An access of the 32-bit view, aligned to its size: the last bytes of
+ * video memory are not a way out of it */
+#define PVR_AREA1(addr, size) (&vram.data[pvr_map32(addr) & ~(u32)((size) - 1)])
 
-//write
-template<typename T>
-void DYNACALL pvr_write_area1(u32 addr, T data)
+u8 DYNACALL pvr_read_area1_8(u32 addr) { return *PVR_AREA1(addr, 1); }
+u16 DYNACALL pvr_read_area1_16(u32 addr) { return *(u16 *)PVR_AREA1(addr, 2); }
+u32 DYNACALL pvr_read_area1_32(u32 addr) { return *(u32 *)PVR_AREA1(addr, 4); }
+
+/* (whether the framebuffer the game drew itself has been written) */
+static TYPES_INLINE void pvr_area1_written(u32 addr)
 {
-	if (sizeof(T) == 1)
-	{
-		INFO_LOG(MEMORY, "%08x: 8-bit VRAM writes are not possible", addr);
-		return;
-	}
 	u32 vaddr = addr & VRAM_MASK;
 	if (vaddr >= fb_watch_addr_start && vaddr < fb_watch_addr_end)
 		fb_dirty = true;
-
-	*(T *)&vram[pvr_map32(addr) & ~(sizeof(T) - 1)] = data;
 }
-template void DYNACALL pvr_write_area1<u8>(u32 addr, u8 data);
-template void DYNACALL pvr_write_area1<u16>(u32 addr, u16 data);
-template void DYNACALL pvr_write_area1<u32>(u32 addr, u32 data);
+
+void DYNACALL pvr_write_area1_8(u32 addr, u8 data)
+{
+	(void)data;
+	INFO_LOG(MEMORY, "%08x: 8-bit VRAM writes are not possible", addr);
+}
+void DYNACALL pvr_write_area1_16(u32 addr, u16 data)
+{
+	pvr_area1_written(addr);
+	*(u16 *)PVR_AREA1(addr, 2) = data;
+}
+void DYNACALL pvr_write_area1_32(u32 addr, u32 data)
+{
+	pvr_area1_written(addr);
+	*(u32 *)PVR_AREA1(addr, 4) = data;
+}
 
 void TAWrite(u32 address, u32* data, u32 count)
 {
    if ((address & 0x800000) == 0)
-      // TA poly
+      /* TA poly */
       ta_vtx_data(data, count);
    else
-      // YUV Converter
+      /* YUV Converter */
       YUV_data(data, count);
 }
 
 /* A store queue written out to video memory: @sq is the queue, @address
  * where it goes. Used by WinCE. (On its own so that the 32-bit ARM build,
  * whose TAWriteSQ is in assembly, has it as well: ngen_arm.S.) */
-extern "C" void TAWriteSQ_to_vram(u32 address, u8* sq)
+void TAWriteSQ_to_vram(u32 address, u8* sq)
 {
    u32 address_w = address & 0x01FFFFE0;
    bool path64b = (address & 0x02000000 ? SB_LMMODE1 : SB_LMMODE0) == 0;
@@ -281,37 +288,38 @@ extern "C" void TAWriteSQ_to_vram(u32 address, u8* sq)
    DEBUG_LOG(MEMORY, "Vram TAWriteSQ 0x%X SB_LMMODE0 %d", address, SB_LMMODE0);
    if (path64b)
    {
-      // 64b path
-      memcpy(&vram[address_w & VRAM_MASK], sq, 32);
+      /* 64b path */
+      memcpy(&vram.data[address_w & VRAM_MASK], sq, 32);
    }
    else
    {
-      // 32b path
-      for (int i = 0; i < 8; i++, address_w += 4)
-         pvr_write_area1<u32>(address_w, ((u32 *)sq)[i]);
+      /* 32b path */
+      int i;
+      for (i = 0; i < 8; i++, address_w += 4)
+         pvr_write_area1_32(address_w, ((u32 *)sq)[i]);
    }
 }
 
 #if HOST_CPU!=CPU_ARM
-extern "C" void DYNACALL TAWriteSQ(u32 address,u8* sqb)
+void DYNACALL TAWriteSQ(u32 address,u8* sqb)
 {
    u32 address_w = address & 0x01FFFFE0;
    u8* sq = &sqb[address & 0x20];
 
-   if (likely(address_w < 0x800000))//TA poly
+   if (likely(address_w < 0x800000))/* TA poly */
    {
       ta_vtx_data32(sq);
    }
-   else if(likely(address_w < 0x1000000)) //Yuv Converter
+   else if(likely(address_w < 0x1000000)) /* Yuv Converter */
    {
       YUV_data((u32*)sq, 1);
    }
-   else //Vram Writef
+   else /* Vram Writef */
       TAWriteSQ_to_vram(address, sq);
 }
 #endif
 
-//Misc interface
+/* Misc interface */
 
 
 /* A word of the chip's 32-bit view, as the chip reads it: the two low bits
@@ -327,34 +335,26 @@ u32 vri(u32 addr)
 	return *(u32*)&vram.data[pvr_map32(addr) & ~3u];
 }
 
-template<typename T, bool upper>
-T DYNACALL pvr_read_area4(u32 addr)
-{
-	bool access32 = (upper ? SB_LMMODE1 : SB_LMMODE0) == 1;
-	if (access32)
-		return pvr_read_area1<T>(addr);
-	else
-		return *(T*)&vram[addr & VRAM_MASK];
-}
-template u8 DYNACALL pvr_read_area4<u8, false>(u32 addr);
-template u16 DYNACALL pvr_read_area4<u16, false>(u32 addr);
-template u32 DYNACALL pvr_read_area4<u32, false>(u32 addr);
-template u8 DYNACALL pvr_read_area4<u8, true>(u32 addr);
-template u16 DYNACALL pvr_read_area4<u16, true>(u32 addr);
-template u32 DYNACALL pvr_read_area4<u32, true>(u32 addr);
-
-template<typename T, bool upper>
-void DYNACALL pvr_write_area4(u32 addr, T data)
-{
-	bool access32 = (upper ? SB_LMMODE1 : SB_LMMODE0) == 1;
-	if (access32)
-		pvr_write_area1(addr, data);
-	else
-		*(T*)&vram[addr & VRAM_MASK] = data;
-}
-template void DYNACALL pvr_write_area4<u8, false>(u32 addr, u8 data);
-template void DYNACALL pvr_write_area4<u16, false>(u32 addr, u16 data);
-template void DYNACALL pvr_write_area4<u32, false>(u32 addr, u32 data);
-template void DYNACALL pvr_write_area4<u8, true>(u32 addr, u8 data);
-template void DYNACALL pvr_write_area4<u16, true>(u32 addr, u16 data);
-template void DYNACALL pvr_write_area4<u32, true>(u32 addr, u32 data);
+/* Area 4, the lower half or the upper (@upper): by the 32-bit view or the
+ * 64-bit, as SB_LMMODE0 or SB_LMMODE1 has it */
+#define PVR_AREA4_32(upper) (((upper) ? SB_LMMODE1 : SB_LMMODE0) == 1)
+#define PVR_AREA4(type, bits, half, upper) \
+	type DYNACALL pvr_read_area4_##half##_##bits(u32 addr) \
+	{ \
+		if (PVR_AREA4_32(upper)) \
+			return pvr_read_area1_##bits(addr); \
+		return *(type *)&vram.data[addr & VRAM_MASK]; \
+	} \
+	void DYNACALL pvr_write_area4_##half##_##bits(u32 addr, type data) \
+	{ \
+		if (PVR_AREA4_32(upper)) \
+			pvr_write_area1_##bits(addr, data); \
+		else \
+			*(type *)&vram.data[addr & VRAM_MASK] = data; \
+	}
+PVR_AREA4(u8, 8, lo, 0)
+PVR_AREA4(u16, 16, lo, 0)
+PVR_AREA4(u32, 32, lo, 0)
+PVR_AREA4(u8, 8, hi, 1)
+PVR_AREA4(u16, 16, hi, 1)
+PVR_AREA4(u32, 32, hi, 1)

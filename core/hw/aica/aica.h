@@ -363,6 +363,9 @@ void aica_serialize_v21(void **data, unsigned int *total_size);
 bool aica_unserialize_v21(void **data, unsigned int *total_size);
 void aica_state_before_v21(void);
 
+/* The timers' event (sh4_sched) */
+extern int aica_schid;
+
 #ifdef __cplusplus
 }
 #endif

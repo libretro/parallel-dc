@@ -18,13 +18,13 @@ mkdir -p "$WORK"
 [ -n "${KEEP:-}" ] || trap 'rm -rf "$WORK"' EXIT
 [ -f core/hw/pvr/spg.o ] || { echo "build the core first: core/hw/pvr/spg.o is not there" >&2; exit 1; }
 
-CORE_FLAGS=$(make -n platform=unix -W core/hw/pvr/spg.cpp core/hw/pvr/spg.o 2>/dev/null | grep -m1 'core/hw/pvr/spg.cpp' \
-   | sed -e 's/^g++ //' -e 's/ -c / /' -e 's/ -MMD -MP .*$//' -e 's/-DGIT_VERSION=[^ ]* [^ ]*//')
-OBJS=$(make -n platform=unix -W core/hw/pvr/spg.cpp 2>/dev/null | tail -1 | tr ' ' '\n' | grep '\.o$' | grep -v 'glslang.js.o')
+CORE_FLAGS=$(make -n platform=unix -W core/hw/pvr/spg.c core/hw/pvr/spg.o 2>/dev/null | grep -m1 'core/hw/pvr/spg.c' \
+   | sed -e 's/^[^ ]* //' -e 's/ -c / /' -e 's/ -MMD -MP .*$//' -e 's/-DGIT_VERSION=[^ ]* [^ ]*//')
+OBJS=$(make -n platform=unix -W core/hw/pvr/spg.c 2>/dev/null | tail -1 | tr ' ' '\n' | grep '\.o$' | grep -v 'glslang.js.o')
 ${CC:-cc} -O1 -c -o "$WORK/headless.o" tools/threads/headless.c
 ${CXX:-g++} $CORE_FLAGS -w -c -o "$WORK/test.o" tools/pvr/spg_beam_test.cpp
 ${CXX:-g++} -rdynamic -o "$WORK/spg_beam_test" "$WORK/headless.o" "$WORK/test.o" $OBJS \
-   -Wl,--wrap=dlopen -Wl,--wrap=_exit -Wl,--wrap=_Z8spg_syncv -lGL -lrt -lpthread -lm -ldl
+   -Wl,--wrap=dlopen -Wl,--wrap=_exit -Wl,--wrap=spg_sync -lGL -lrt -lpthread -lm -ldl
 # an OpenGL that does nothing, for the core's renderer (headless.sh's)
 nm -D --undefined-only "$WORK/spg_beam_test" | awk '{print $NF}' | sed 's/@.*//' | grep '^gl' \
    | python3 tools/threads/headless_gl.py > "$WORK/nogl.c" || true

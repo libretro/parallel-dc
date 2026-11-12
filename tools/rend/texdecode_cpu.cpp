@@ -18,6 +18,7 @@
 #include "rend/texdecode.h"
 #include "hw/pvr/pvr_regs.h"
 #include "texdecode_case.h"
+#include "hw/mem/_vmem.h"
 
 // what the texture cache takes from the rest of the core
 settings_t settings;

@@ -34,7 +34,6 @@ void libPvr_Reset(bool hard)
       /* The registers keep what the game set the YUV converter up with,
        * and so does the converter; a macroblock the last run left half
        * sent is not the start of this run's first. */
-      extern u32 YUV_index;
       YUV_index = 0;
    }
 }

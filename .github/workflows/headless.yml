@@ -91,6 +91,8 @@ jobs:
         run: python3 tools/unused_sources.py
       - name: The core's C as MSVC C89 takes it (AGENTS.md), and the headers it includes
         run: sh tools/c89/c89_check.sh
+      - name: No variable of the C files declared with C++ linkage, which MSVC does not link
+        run: python3 tools/c89/linkage_check.py
       - name: The disc with no display, its states and run-ahead among it
         run: sh tools/threads/headless.sh parallel_dc_libretro.so
       - name: The threads a texture scaled up is shared out to (TSan, ASan/UBSan, no threads), and no OpenMP in the core

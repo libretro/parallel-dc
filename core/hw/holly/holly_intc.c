@@ -15,7 +15,7 @@
  * used) and nothing but the PowerVR's own interrupts ever shows in it. */
 u32 SB_ISTNRM1;
 
-//asic_RLXXPending: Update the intc flags for pending interrupts
+/* asic_RLXXPending: Update the intc flags for pending interrupts */
 void asic_RL6Pending(void)
 {
 	bool t1=(SB_ISTNRM & SB_IML6NRM)!=0;
@@ -46,14 +46,13 @@ void asic_RL2Pending(void)
 	InterruptPend(sh4_IRL_13,t1|t2|t3|t4);
 }
 
-//Raise interrupt interface
+/* Raise interrupt interface */
 void RaiseAsicNormal(HollyInterruptID inter)
 {
 	if (inter==holly_SCANINT2)
 		maple_vblank();
 
-	u32 Interrupt = 1<<(u8)inter;
-	SB_ISTNRM |= Interrupt;
+	SB_ISTNRM |= 1<<(u8)inter;
 
 	asic_RL2Pending();
 	asic_RL4Pending();
@@ -135,7 +134,7 @@ void asic_WriteCLXB(u32 addr, u32 data)
 		asic_RL4Pending();
 		asic_RL6Pending();
 	}
-	// its interrupt levels are not looked at
+	/* its interrupt levels are not looked at */
 }
 
 u32 Read_SB_ISTNRM(u32 addr)
@@ -176,7 +175,7 @@ void asic_CancelInterrupt(HollyInterruptID inter)
 
 void Write_SB_ISTEXT(u32 addr, u32 data)
 {
-	//nothing happens -- asic_CancelInterrupt is used instead
+	/* nothing happens -- asic_CancelInterrupt is used instead */
 }
 
 void Write_SB_ISTERR(u32 addr, u32 data)
@@ -257,26 +256,26 @@ void asic_reg_Init(void)
 	sb_rio_register(SB_ISTEXT_addr,RIO_WF,0,&Write_SB_ISTEXT);
 	sb_rio_register(SB_ISTERR_addr,RIO_WF,0,&Write_SB_ISTERR);
 
-	//NRM
-	//6
+	/* NRM */
+	/* 6 */
 	sb_rio_register(SB_IML6NRM_addr,RIO_WF,0,&Write_SB_IML6NRM);
-	//4
+	/* 4 */
 	sb_rio_register(SB_IML4NRM_addr,RIO_WF,0,&Write_SB_IML4NRM);
-	//2
+	/* 2 */
 	sb_rio_register(SB_IML2NRM_addr,RIO_WF,0,&Write_SB_IML2NRM);
-	//EXT
-	//6
+	/* EXT */
+	/* 6 */
 	sb_rio_register(SB_IML6EXT_addr,RIO_WF,0,&Write_SB_IML6EXT);
-	//4
+	/* 4 */
 	sb_rio_register(SB_IML4EXT_addr,RIO_WF,0,&Write_SB_IML4EXT);
-	//2
+	/* 2 */
 	sb_rio_register(SB_IML2EXT_addr,RIO_WF,0,&Write_SB_IML2EXT);
-	//ERR
-	//6
+	/* ERR */
+	/* 6 */
 	sb_rio_register(SB_IML6ERR_addr,RIO_WF,0,&Write_SB_IML6ERR);
-	//4
+	/* 4 */
 	sb_rio_register(SB_IML4ERR_addr,RIO_WF,0,&Write_SB_IML4ERR);
-	//2
+	/* 2 */
 	sb_rio_register(SB_IML2ERR_addr,RIO_WF,0,&Write_SB_IML2ERR);
 }
 
@@ -285,7 +284,7 @@ void asic_reg_Term(void)
 
 }
 
-//Reset -> Reset - Initialise to default values
+/* Reset -> Reset - Initialise to default values */
 void asic_reg_Reset(bool hard)
 {
 	SB_ISTNRM1 = 0;

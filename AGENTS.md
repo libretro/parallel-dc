@@ -159,7 +159,9 @@ code it touches closer, and never adds C++ that was not there.
   again with no recompilers where a file has code for that; CI runs it
   natively and for Windows. A function the C side calls is
   declared in a header the file that defines it includes, so both have
-  C linkage. In C, `bool` is `unsigned char` on the older MSVC:
+  C linkage; so is a C file's variable, and no C++ file declares one
+  itself (GCC links that, MSVC does not:
+  `python3 tools/c89/linkage_check.py`, after a build, finds them). In C, `bool` is `unsigned char` on the older MSVC:
   what goes into one is 0 or 1 (`(x & 4) != 0`, not `x & 4`). A
   template becomes a function with the parameter as an argument, and a
   thin one per value where a function pointer needs it.

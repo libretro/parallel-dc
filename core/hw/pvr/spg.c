@@ -1,4 +1,3 @@
-#include <algorithm>
 #include "spg.h"
 #include "Renderer_if.h"
 #include "pvr_regs.h"
@@ -30,12 +29,11 @@ static u32 vblk_cnt;
 static u64 Line_Num;
 static u64 Line_Den = 1;
 
-// The cycle, counted from the start of the frame, at which a scanline begins
-static inline u64 line_start(u32 line)
+/* The cycle, counted from the start of the frame, at which a scanline begins */
+static TYPES_INLINE u64 line_start(u32 line)
 {
 	return (u64)line * Line_Num / Line_Den;
 }
-u32 sh4_sched_remaining(int id);
 
 int render_end_schid;
 int vblank_schid;
@@ -58,20 +56,19 @@ static u32 beam_span, beam_stay;
  * time slice, and a game waiting on the beam reads SPG_STATUS many times in
  * one: until the clock moves, or the event, the registers or the lines are
  * changed, each of those reads finds it where the last one put it. */
-extern u64 sh4_sched_ffb;
-static u64 synced_at = ~0ull;
+static u64 synced_at = ~(u64)0;
 
-void spg_beam_forget()
+void spg_beam_forget(void)
 {
 	beam_line = ~0u;
-	synced_at = ~0ull;
+	synced_at = ~(u64)0;
 }
 
 /* The pending event aimed again: whatever spg_beam() kept is from before. */
 static void spg_aim(int cycles)
 {
 	line_gen++;
-	synced_at = ~0ull;
+	synced_at = ~(u64)0;
 	sh4_sched_request(vblank_schid, cycles);
 }
 
@@ -86,7 +83,7 @@ static u8 lightgun_flip;
  * does; RevolveR, which starts its own, waits for one.) */
 static bool gun_dma_owed;
 
-static u32 spg_next_line();
+static u32 spg_next_line(void);
 
 /* Where a retro_run ends: where the frontend reads its pad and shows what
  * was drawn, once a frame.
@@ -136,38 +133,40 @@ static u32 spg_next_line();
  * reached. Each run has one vertical blank in interrupt in it: a game
  * that renders once a frame has one picture in each. */
 #define FRAME_WINDOW_LINES 32
-static bool frame_window;	// the window is open: a render to the screen or a maple transfer ends the run
-static u32 frame_window_end;	// the line it closes on
-static bool frame_window_line0;	// line 0 came while it was open
-static bool frame_at_window;	// this run started in a window: it ends in the next one
-static bool frame_render_late;	// a render to the screen in this run, outside the window
-static bool frame_ended;	// this run's end has come
+static bool frame_window;	/* the window is open: a render to the screen or a maple transfer ends the run */
+static u32 frame_window_end;	/* the line it closes on */
+static bool frame_window_line0;	/* line 0 came while it was open */
+static bool frame_at_window;	/* this run started in a window: it ends in the next one */
+static bool frame_render_late;	/* a render to the screen in this run, outside the window */
+static bool frame_ended;	/* this run's end has come */
 
-// How many lines after the vertical blank in interrupt the window has (0: none)
-static u32 frame_window_lines()
+/* How many lines after the vertical blank in interrupt the window has (0: none) */
+static u32 frame_window_lines(void)
 {
 	const u32 vin = SPG_VBLANK_INT.vblank_in_interrupt_line_number;
 	const u32 vout = SPG_VBLANK_INT.vblank_out_interrupt_line_number;
+	u32 lines = FRAME_WINDOW_LINES;
 	if (vin >= pvr_numscanlines)
 		return 0;
-	u32 lines = FRAME_WINDOW_LINES;
 	if (vout < pvr_numscanlines && vout != vin)
 	{
 		const u32 to_out = (vout + pvr_numscanlines - vin) % pvr_numscanlines;
-		lines = std::min(lines, to_out - 1);
+		if (to_out - 1 < lines)
+			lines = to_out - 1;
 	}
 	return lines;
 }
 
-static u64 spg_beam();
+static u64 spg_beam(void);
 
 /* The window closes before its end: the pending event was aimed with it
  * open, at its end perhaps, and is aimed again without it - as for a write
  * to a timing register - or the event, coming at its end, would be taken
  * for the line after it that there is something to do on, and the lines in
  * between lost. */
-static void frame_window_close()
+static void frame_window_close(void)
 {
+	u64 beam;
 	if (!frame_window)
 		return;
 	if (sh4_sched_remaining(vblank_schid) == (u32)-1)
@@ -175,12 +174,12 @@ static void frame_window_close()
 		frame_window = false;
 		return;
 	}
-	const u64 beam = spg_beam();
+	beam = spg_beam();
 	frame_window = false;
 	spg_aim((int)(line_start(spg_next_line()) - beam));
 }
 
-static void frame_end()
+static void frame_end(void)
 {
 	frame_ended = true;
 	os_DoEvents();
@@ -190,14 +189,14 @@ static void frame_end()
  * is. A window still open is closed, as at every other end: the next run
  * begins with none open, whether it follows this one or a state saved
  * here (which has the line event as closing it aims it). */
-void spg_frame_cut()
+void spg_frame_cut(void)
 {
 	frame_window_close();
 	frame_ended = true;
 }
 
 /* dc_run(): a run starts. Where the last one ended says which kind this is. */
-void spg_frame_begin()
+void spg_frame_begin(void)
 {
 	const u32 lines = frame_window_lines();
 	frame_at_window = false;
@@ -215,7 +214,7 @@ void spg_frame_begin()
 
 /* A render to the screen has been started (rend_start_render(): not one to a
  * texture, nor the framebuffer the game wrote itself, shown) */
-void spg_screen_render()
+void spg_screen_render(void)
 {
 	if (frame_ended)
 		return;
@@ -231,7 +230,7 @@ void spg_screen_render()
 /* The game starts a maple transfer: true if it is to be made at the start
  * of the next run instead - the run ends here, in the window, or has
  * already ended (the processor runs on to the end of its time slice) */
-bool spg_maple_defer()
+bool spg_maple_defer(void)
 {
 	if (frame_ended)
 		return true;
@@ -242,8 +241,8 @@ bool spg_maple_defer()
 	return true;
 }
 
-// a transfer that asked a light gun where it points is under way
-bool spg_gun_pending()
+/* a transfer that asked a light gun where it points is under way */
+bool spg_gun_pending(void)
 {
 	return maple_int_pending;
 }
@@ -251,36 +250,35 @@ bool spg_gun_pending()
 void CalculateSync(bool reschedule)
 {
 	const u32 pixel_clock = PIXEL_CLOCK / (FB_R_CTRL.vclk_div ? 1 : 2);
+	float scale_x = 1.f, scale_y = 1.f;
 
-	//We need to calculate the pixel clock
+	/* We need to calculate the pixel clock */
 	pvr_numscanlines = SPG_LOAD.vcount + 1;
 
 	Line_Num = (u64)SH4_MAIN_CLOCK * (u64)(SPG_LOAD.hcount + 1);
 	Line_Den = pixel_clock;
-	// (spg_beam()'s lines are another's now)
+	/* (spg_beam()'s lines are another's now) */
 	line_gen++;
-	synced_at = ~0ull;
-
-	float scale_x = 1.f, scale_y = 1.f;
+	synced_at = ~(u64)0;
 
 	if (SPG_CONTROL.interlace)
 	{
-		//this is a temp hack
+		/* this is a temp hack */
 		Line_Den *= 2;
 
-		//u32 interl_mode      = VO_CONTROL.field_mode;
+		/* u32 interl_mode      = VO_CONTROL.field_mode; */
 		
-		//if (interl_mode==2)//3 will be funny =P
-		//  scale_y=0.5f;//single interlace
-		//else
+		/* if (interl_mode==2)//3 will be funny =P */
+		/*  scale_y=0.5f;//single interlace */
+		/* else */
 			scale_y = 1.f;
 	}
 	else
 	{
 		if (FB_R_CTRL.vclk_div)
-			scale_y           = 1.0f;//non interlaced VGA mode has full resolution :)
+			scale_y           = 1.0f;/* non interlaced VGA mode has full resolution :) */
 		else
-			scale_y           = 0.5f;//non interlaced modes have half resolution
+			scale_y           = 0.5f;/* non interlaced modes have half resolution */
 	}
 
 	rend_set_fb_scale(scale_x, scale_y);
@@ -324,41 +322,42 @@ double spg_get_refresh_rate(void)
  * between one event and the next the answer only changes by the beam
  * moving on - and spg_beam() never moves it past a line with something to
  * do. */
-static u32 spg_next_line()
+#define SPG_EARLIER(line, at) do { const u32 at_ = (at); if (at_ < (line)) (line) = at_; } while (0)
+static u32 spg_next_line(void)
 {
 	const u32 next = pvr_cur_scanline + 1;
+	u32 line = pvr_numscanlines;
 
 	if (SPG_HBLANK_INT.hblank_int_mode == 2)
-		return next;		// an interrupt on every line
+		return next;		/* an interrupt on every line */
 
-	u32 line = pvr_numscanlines;
 	if (next <= SPG_VBLANK_INT.vblank_in_interrupt_line_number)
-		line = std::min(line, (u32)SPG_VBLANK_INT.vblank_in_interrupt_line_number);
+		SPG_EARLIER(line, SPG_VBLANK_INT.vblank_in_interrupt_line_number);
 	if (next <= SPG_VBLANK_INT.vblank_out_interrupt_line_number)
-		line = std::min(line, (u32)SPG_VBLANK_INT.vblank_out_interrupt_line_number);
+		SPG_EARLIER(line, SPG_VBLANK_INT.vblank_out_interrupt_line_number);
 	if (next <= SPG_VBLANK.vstart)
-		line = std::min(line, (u32)SPG_VBLANK.vstart);
+		SPG_EARLIER(line, SPG_VBLANK.vstart);
 	if (next <= SPG_VBLANK.vbend)
-		line = std::min(line, (u32)SPG_VBLANK.vbend);
+		SPG_EARLIER(line, SPG_VBLANK.vbend);
 	if (lightgun_line != 0xffff && next <= lightgun_line)
-		line = std::min(line, lightgun_line);
+		SPG_EARLIER(line, lightgun_line);
 	if (frame_window && next <= frame_window_end)
-		line = std::min(line, frame_window_end);
-	// the line the horizontal blank interrupt is asked for on
+		SPG_EARLIER(line, frame_window_end);
+	/* the line the horizontal blank interrupt is asked for on */
 	if (SPG_HBLANK_INT.hblank_int_mode == 0 && next <= SPG_HBLANK_INT.line_comp_val)
-		line = std::min(line, (u32)SPG_HBLANK_INT.line_comp_val);
-	return std::max(line, next);
+		SPG_EARLIER(line, SPG_HBLANK_INT.line_comp_val);
+	return line > next ? line : next;
 }
 
-// The beam goes down @lines scanlines, and what is due on each is done
+/* The beam goes down @lines scanlines, and what is due on each is done */
 static void spg_run_lines(u32 lines)
 {
-	for (; lines != 0; lines--)//60 ~hertz = 200 mhz / 60=3333333.333 cycles per screen refresh
+	for (; lines != 0; lines--)/* 60 ~hertz = 200 mhz / 60=3333333.333 cycles per screen refresh */
 	{
-		//ok .. here , after much effort , we did one line
-		//now , we must check for raster beam interrupts and vblank
+		/* ok .. here , after much effort , we did one line */
+		/* now , we must check for raster beam interrupts and vblank */
 		pvr_cur_scanline = (pvr_cur_scanline + 1) % pvr_numscanlines;
-		//Check for scanline interrupts -- really need to test the scanline values
+		/* Check for scanline interrupts -- really need to test the scanline values */
 
 		/* The window closes with nothing in it. A run that started in the
 		 * last one ends here, unless it rendered to the screen elsewhere:
@@ -433,11 +432,11 @@ static void spg_run_lines(u32 lines)
 			asic_RaiseInterrupt(holly_HBLank);
 			break;
 		default:
-			// mode 1 is not emulated, and 3 is not a mode; neither is a reason to stop
+			/* mode 1 is not emulated, and 3 is not a mode; neither is a reason to stop */
 			break;
 		}
 
-		//Vblank start -- really need to test the scanline values
+		/* Vblank start -- really need to test the scanline values */
 		if (pvr_cur_scanline==0)
 		{
 			if (SPG_CONTROL.interlace)
@@ -448,8 +447,8 @@ static void spg_run_lines(u32 lines)
 			/* Vblank counter */
 			vblk_cnt++;
 
-			rend_vblank(); // notify for vblank
-			// the end of a run that did not start in a window, unless one is open
+			rend_vblank(); /* notify for vblank */
+			/* the end of a run that did not start in a window, unless one is open */
 			if (frame_window)
 				frame_window_line0 = true;
 			else if (!frame_ended && !frame_at_window)
@@ -459,7 +458,7 @@ static void spg_run_lines(u32 lines)
 		{
          maple_int_pending = false;
 			SPG_TRIGGER_POS = ((lightgun_line & 0x3FF) << 16) | (lightgun_hpos & 0x3FF);
-			// the bus is free again; the answers and the interrupt come at vblank out
+			/* the bus is free again; the answers and the interrupt come at vblank out */
 			SB_MDST = 0;
 			lightgun_line = 0xffff;
 		}
@@ -471,10 +470,12 @@ static void spg_run_lines(u32 lines)
  * event still has; and pvr_cur_scanline and SPG_STATUS are brought up to
  * the line that is. The lines in between have nothing due on them, or the
  * event would have been aimed at one of them. */
-static u64 spg_beam()
+static u64 spg_beam(void)
 {
 	const u32 remaining = sh4_sched_remaining(vblank_schid);
-	// on the line it was on, by the same event: no division, no line looked for
+	u32 target, line;
+	u64 target_at, line_at, beam;
+	/* on the line it was on, by the same event: no division, no line looked for */
 	if (beam_line == pvr_cur_scanline && beam_gen == line_gen && remaining != (u32)-1
 			&& beam_end == sch_list[vblank_schid].end)
 	{
@@ -484,19 +485,19 @@ static u64 spg_beam()
 			return beam_target_at - remaining;
 	}
 
-	const u32 target = spg_next_line();
-	const u64 target_at = line_start(target);
-	const u64 line_at = line_start(pvr_cur_scanline);
+	target = spg_next_line();
+	target_at = line_start(target);
+	line_at = line_start(pvr_cur_scanline);
 
-	// nothing pending, or the event is due: the beam is where it was put last
+	/* nothing pending, or the event is due: the beam is where it was put last */
 	if (remaining == (u32)-1 || (u64)remaining >= target_at - line_at)
 	{
 		beam_line = ~0u;
 		return line_at;
 	}
 
-	const u64 beam = target_at - remaining;
-	u32 line = (u32)(beam * Line_Den / Line_Num);
+	beam = target_at - remaining;
+	line = (u32)(beam * Line_Den / Line_Num);
 	while (line_start(line + 1) <= beam)
 		line++;
 	while (line > pvr_cur_scanline && line_start(line) > beam)
@@ -505,7 +506,7 @@ static u64 spg_beam()
 		line = target - 1;
 	if (line > pvr_cur_scanline)
 		spg_run_lines(line - pvr_cur_scanline);
-	// (the line it is on now, and the next line's start, for the reads to come)
+	/* (the line it is on now, and the next line's start, for the reads to come) */
 	beam_line = pvr_cur_scanline;
 	beam_end = sch_list[vblank_schid].end;
 	beam_gen = line_gen;
@@ -516,10 +517,10 @@ static u64 spg_beam()
 	return beam;
 }
 
-// SPG_STATUS is about to be read: its scanline is the one the beam is on
-void spg_sync()
+/* SPG_STATUS is about to be read: its scanline is the one the beam is on */
+void spg_sync(void)
 {
-	const u64 now = sh4_sched_ffb - Sh4cntx.sh4_sched_next;
+	const u64 now = sh4_sched_now64();
 	if (now == synced_at)
 		return;
 	spg_beam();
@@ -532,23 +533,24 @@ void spg_sync()
  * when the beam gets to whatever was asked for before. */
 void spg_write_timing(u32 addr, u32 data)
 {
+	u64 beam;
 	if (sh4_sched_remaining(vblank_schid) == (u32)-1)
 	{
-		// the beam is not running yet
+		/* the beam is not running yet */
 		PvrReg(addr, u32) = data;
 		return;
 	}
-	const u64 beam = spg_beam();
+	beam = spg_beam();
 
 	PvrReg(addr, u32) = data;
 	spg_aim((int)(line_start(spg_next_line()) - beam));
 }
 
-//called from sh4 context , should update pvr/ta state and everything else
+/* called from sh4 context , should update pvr/ta state and everything else */
 int spg_line_sched(int tag, int cycl, int jit)
 {
-	// (the event has come: it is aimed anew, and the lines run)
-	synced_at = ~0ull;
+	/* (the event has come: it is aimed anew, and the lines run) */
+	synced_at = ~(u64)0;
 	/* The event was aimed at the start of a line, spg_next_line(), and the
 	 * scheduler takes how late it called (jit) off the next request: so
 	 * this is that line, however much of the way there a read of SPG_STATUS
@@ -561,7 +563,7 @@ int spg_line_sched(int tag, int cycl, int jit)
 	clc_pvr_scanline = 0;
 	spg_run_lines(spg_next_line() - pvr_cur_scanline);
 
-	// from the start of the line the beam is on to the start of the next one with something to do
+	/* from the start of the line the beam is on to the start of the next one with something to do */
 	return (int)(line_start(spg_next_line()) - line_start(pvr_cur_scanline));
 }
 
@@ -577,17 +579,17 @@ void read_lightgun_position(int x, int y)
    const u64 beam     = pending ? spg_beam() : 0;
 
    maple_int_pending = true;
-   // (a transfer the vertical blank started is never reported)
+   /* (a transfer the vertical blank started is never reported) */
    gun_dma_owed      = gun_dma_owed || !(SB_MDTSEL & 1);
 	if (y < 0 || y >= 480 || x < 0 || x >= 640)
    {
-		// Off screen
+		/* Off screen */
 		lightgun_line = 0xffff;
    }
 	else
 	{
 		lightgun_line = y / (SPG_CONTROL.interlace ? 2 : 1) + SPG_VBLANK_INT.vblank_out_interrupt_line_number;
-      // For some reason returning the same position twice makes it register off screen
+      /* For some reason returning the same position twice makes it register off screen */
 		lightgun_hpos = (x + 286) ^ lightgun_flip;
 		lightgun_flip ^= 1;
 	}
@@ -595,8 +597,8 @@ void read_lightgun_position(int x, int y)
       spg_aim((int)(line_start(spg_next_line()) - beam));
 }
 
-// The game cancelled the gun's occupation of the bus: its transfer ends in its own time
-void spg_gun_occupy_cancel()
+/* The game cancelled the gun's occupation of the bus: its transfer ends in its own time */
+void spg_gun_occupy_cancel(void)
 {
    gun_dma_owed = false;
 }
@@ -646,7 +648,6 @@ void spg_gun_unserialize(void **data, unsigned int *total_size)
  * scheduler's events have been read.) */
 void spg_gun_before_v21(void)
 {
-	extern int maple_sched;
 
 	spg_beam_forget();
 	lightgun_line     = 0xffff;
@@ -691,7 +692,7 @@ int rend_end_sch(int tag, int cycl, int jitt)
 	return 0;
 }
 
-bool spg_Init()
+bool spg_Init(void)
 {
    render_end_schid = sh4_sched_register(0,&rend_end_sch);
    vblank_schid     = sh4_sched_register(0,&spg_line_sched);
@@ -699,25 +700,25 @@ bool spg_Init()
    return true;
 }
 
-void spg_Term()
+void spg_Term(void)
 {
 }
 
 void spg_Reset(bool hard)
 {
-   // no light gun position is latched (before the first event is aimed, which looks at it)
+   /* no light gun position is latched (before the first event is aimed, which looks at it) */
    maple_int_pending = false;
    gun_dma_owed      = false;
    lightgun_line     = 0xffff;
    lightgun_hpos     = 0;
    lightgun_flip     = 0;
-   // a render the last run started: its end is not an interrupt for this one
+   /* a render the last run started: its end is not an interrupt for this one */
    if (sh4_sched_is_scheduled(render_end_schid))
       sh4_sched_request(render_end_schid, -1);
-   CalculateSync();
+   CalculateSync(true);
 }
 
-void SetREP(TA_context* cntx)
+void SetREP(int size)
 {
 	/* How long the chip takes to draw depends on how much there is to draw.
 	 * This was 1500000 cycles, 7.5 ms, whatever the scene. Upstream goes by
@@ -726,15 +727,14 @@ void SetREP(TA_context* cntx)
 	 * The Next Tetris, Nightmare Creatures 2) wants the interrupt sooner
 	 * than that for a scene with little in it, and Marvel vs. Capcom 2 wants
 	 * no less than these. */
-	if (cntx && settings.System == DC_PLATFORM_NAOMI2)
+	if (size >= 0 && settings.System == DC_PLATFORM_NAOMI2)
 	{
-		// a NAOMI 2 frame is always given the longest time, however little is in it
+		/* a NAOMI 2 frame is always given the longest time, however little is in it */
 		sh4_sched_request(render_end_schid, 1500000);
 	}
-	else if (cntx)
+	else if (size >= 0)
 	{
-		const int size = (int)(cntx->tad.thd_data - cntx->tad.thd_root);
-		// (megabytes of it on a NAOMI 2: no overflow)
+		/* (megabytes of it on a NAOMI 2: no overflow) */
 		sh4_sched_request(render_end_schid, size >= 10500 ? 1500000 : 450000 + size * 100);
 	}
 	else

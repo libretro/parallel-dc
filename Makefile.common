@@ -21,7 +21,6 @@ SOURCES_CXX := \
 					$(CORE_DIR)/core/hw/aica/dsp_x86.cpp \
 					$(CORE_DIR)/core/hw/aica/aica_if.cpp \
 					\
-					$(CORE_DIR)/core/hw/holly/holly_intc.cpp \
 					$(CORE_DIR)/core/hw/holly/sb.cpp \
 					$(CORE_DIR)/core/hw/holly/sb_mem.cpp \
 					\
@@ -37,10 +36,6 @@ SOURCES_CXX := \
 					$(CORE_DIR)/core/hw/pvr/drkPvr.cpp \
 					$(CORE_DIR)/core/hw/pvr/elan_host.cpp \
 					$(CORE_DIR)/core/hw/pvr/Renderer_if.cpp \
-					$(CORE_DIR)/core/hw/pvr/pvr_mem.cpp \
-					$(CORE_DIR)/core/hw/pvr/pvr_regs.cpp \
-					$(CORE_DIR)/core/hw/pvr/pvr_sb_regs.cpp \
-					$(CORE_DIR)/core/hw/pvr/spg.cpp \
 					$(CORE_DIR)/core/hw/pvr/ta.cpp \
 					$(CORE_DIR)/core/hw/pvr/ta_ctx.cpp \
 					$(CORE_DIR)/core/hw/pvr/ta_vtx.cpp \
@@ -60,7 +55,6 @@ SOURCES_CXX := \
 					$(CORE_DIR)/core/hw/sh4/interpr/sh4_opcodes.cpp \
 					$(CORE_DIR)/core/hw/sh4/modules/serial.cpp \
 					$(CORE_DIR)/core/hw/sh4/modules/ccn.cpp \
-					$(CORE_DIR)/core/hw/sh4/modules/dmac.cpp \
 					$(CORE_DIR)/core/hw/sh4/modules/mmu.cpp \
 					$(CORE_DIR)/core/hw/sh4/modules/fastmmu.cpp \
 					$(CORE_DIR)/core/log/LogManagerLibretro.cpp \
@@ -163,6 +157,7 @@ SOURCES_C += $(CORE_DIR)/core/hw/gdrom/gdrom_response.c \
 					$(CORE_DIR)/core/hw/sh4/modules/bsc.c \
 					$(CORE_DIR)/core/hw/sh4/modules/cpg.c \
 					$(CORE_DIR)/core/hw/sh4/modules/intc.c \
+					$(CORE_DIR)/core/hw/sh4/modules/dmac.c \
 					$(CORE_DIR)/core/hw/sh4/modules/rtc.c \
 					$(CORE_DIR)/core/hw/sh4/modules/tmu.c \
 					$(CORE_DIR)/core/hw/sh4/modules/ubc.c \
@@ -174,6 +169,11 @@ SOURCES_C += $(CORE_DIR)/core/hw/gdrom/gdrom_response.c \
 					$(CORE_DIR)/core/hw/aica/dsp.c \
 					$(CORE_DIR)/core/hw/aica/dsp_interp.c \
 					$(CORE_DIR)/core/hw/aica/sgc_if.c \
+					$(CORE_DIR)/core/hw/pvr/spg.c \
+					$(CORE_DIR)/core/hw/pvr/pvr_mem.c \
+					$(CORE_DIR)/core/hw/pvr/pvr_sb_regs.c \
+					$(CORE_DIR)/core/hw/pvr/pvr_regs.c \
+					$(CORE_DIR)/core/hw/holly/holly_intc.c \
 					$(CORE_DIR)/core/hw/arm7/vbaARM.c \
 					$(CORE_DIR)/core/imgread/ImgReader.c \
 					$(CORE_DIR)/core/imgread/cdi.c \

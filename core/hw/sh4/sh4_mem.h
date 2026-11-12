@@ -1,11 +1,13 @@
 #pragma once
 #include "types.h"
-
-//main system mem
-extern VArray2 mem_b;
-
 #include "hw/mem/_vmem.h"
+#ifdef __cplusplus
 #include "modules/mmu.h"
+extern "C" {
+#endif
+
+/* main system mem */
+extern VArray2 mem_b;
 
 #ifdef NO_MMU
 #define ReadMem8 _vmem_ReadMem8
@@ -59,24 +61,29 @@ extern WriteMem64Func WriteMem64;
 void WriteMemBlock_nommu_ptr(u32 dst,u32* src,u32 size);
 void WriteMemBlock_nommu_sq(u32 dst,u32* src);
 void WriteMemBlock_nommu_dma(u32 dst,u32 src,u32 size);
-//Init/Res/Term
-void mem_Init();
-void mem_Term();
+/* Init/Res/Term */
+void mem_Init(void);
+void mem_Term(void);
 void mem_Reset(bool hard);
-void mem_map_default();
+void mem_map_default(void);
 
-//Get pointer to ram area , 0 if error
-//For debugger(gdb) - dynarec
+/* Get pointer to ram area , 0 if error */
+/* For debugger(gdb) - dynarec */
 u8* GetMemPtr(u32 Addr,u32 size);
 
-static inline bool IsOnRam(u32 addr)
+static TYPES_INLINE bool IsOnRam(u32 addr)
 {
-	// in area 3 but not in P4
+	/* in area 3 but not in P4 */
 	return ((addr >> 26) & 7) == 3 && ((addr >> 29) & 7) != 7;
+}
+
+void FixUpFlash(void);
+void SetMemoryHandlers(void);
+
+#ifdef __cplusplus
 }
 
 bool LoadRomFiles(const std::string& root);
 void SaveRomFiles(const std::string& root);
 bool LoadHle(const std::string& root);
-void FixUpFlash();
-void SetMemoryHandlers();
+#endif

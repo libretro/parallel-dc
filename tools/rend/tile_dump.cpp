@@ -48,7 +48,7 @@ extern "C" void *__wrap_dlopen(const char *file, int mode)
 	return __real_dlopen(file != NULL && strcmp(file, "self") == 0 ? NULL : file, mode);
 }
 
-extern "C" bool __real__Z13ta_parse_vdrcP10TA_context(TA_context *ctx);
+extern "C" bool __real_ta_parse_vdrc(TA_context *ctx);
 
 /* Test mode draws a texture from its slot and coordinates: any slot will
  * do, so they go by the order the frame asks for them */
@@ -181,9 +181,9 @@ static void rtt_dump(TA_context *ctx, const char *dir, u32 n)
 	rttWritten++;
 }
 
-extern "C" bool __wrap__Z13ta_parse_vdrcP10TA_context(TA_context *ctx)
+extern "C" bool __wrap_ta_parse_vdrc(TA_context *ctx)
 {
-	const bool rv = __real__Z13ta_parse_vdrcP10TA_context(ctx);
+	const bool rv = __real_ta_parse_vdrc(ctx);
 	const char *dir = getenv("TILE_DUMP_DIR");
 	const char *refsw_dir = getenv("REFSW_DUMP_DIR");
 	const u32 every = getenv("TILE_DUMP_EVERY") ? atoi(getenv("TILE_DUMP_EVERY")) : 100;

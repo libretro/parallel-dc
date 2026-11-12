@@ -17,12 +17,12 @@ void pvr_WriteReg(u32 paddr,u32 data)
 	case ID_addr:
 	case REVISION_addr:
 	case TA_YUV_TEX_CNT_addr:
-		return;//read only
+		return;/* read only */
 
 	case STARTRENDER_addr:
-      //start render
+      /* start render */
       rend_start_render();
-      // the YUV converter starts over, as the chip's does
+      /* the YUV converter starts over, as the chip's does */
       YUV_init();
       return;
 
@@ -45,7 +45,7 @@ void pvr_WriteReg(u32 paddr,u32 data)
 		return;
 
 	case TA_LIST_CONT_addr:
-		//a write of anything works ?
+		/* a write of anything works ? */
 		ta_vtx_ListCont();
 		break;
 
@@ -54,24 +54,24 @@ void pvr_WriteReg(u32 paddr,u32 data)
       if (PvrReg(addr, u32) != data)
       {
          PvrReg(addr, u32) = data;
-         CalculateSync();
+         CalculateSync(true);
       }
 		return;
 
 	case SPG_HBLANK_INT_addr:
 	case SPG_VBLANK_INT_addr:
 	case SPG_VBLANK_addr:
-		// when the next thing happens depends on these
+		/* when the next thing happens depends on these */
 		if (PvrReg(addr, u32) != data)
 			spg_write_timing(addr, data);
 		return;
 
 	case FB_R_CTRL_addr:
 	{
-		bool vclk_div_changed = (PvrReg(addr, u32) ^ data) & (1 << 23);
+		bool vclk_div_changed = ((PvrReg(addr, u32) ^ data) & (1 << 23)) != 0;
 		PvrReg(addr, u32) = data;
 		if (vclk_div_changed)
-			CalculateSync();
+			CalculateSync(true);
 		}
 		return;
 
@@ -121,7 +121,7 @@ void Regs_Reset(bool hard)
 	REVISION            = 0x00000011;
 	SOFTRESET           = 0x00000007;
 	SPG_HBLANK_INT.full = 0x031D0000;
-	SPG_VBLANK_INT.full = 0x00150104;	// in at line 260, out at 21 (it had the out line as 336)
+	SPG_VBLANK_INT.full = 0x00150104;	/* in at line 260, out at 21 (it had the out line as 336) */
 	FPU_PARAM_CFG       = 0x0007DF77;
 	HALF_OFFSET         = 0x00000007;
 	ISP_FEED_CFG        = 0x00402000;

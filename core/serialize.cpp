@@ -22,6 +22,11 @@
 #include "hw/sh4/modules/mmu.h"
 #include "hw/sh4/modules/modules.h"
 #include "imgread/common.h"
+#include "hw/aica/aica_mem.h"
+#include "hw/pvr/pvr_regs.h"
+#include "hw/pvr/pvr_mem.h"
+#include "hw/sh4/sh4_if.h"
+#include "hw/sh4/modules/tmu.h"
 #include "reios/reios.h"
 #include "reios/gdrom_hle.h"
 #include <map>
@@ -55,10 +60,8 @@ extern int armMode;
 extern bool Arm7Enabled;
 
 //./core/hw/aica/dsp.o
-extern DECL_ALIGN(4096) dsp_t dsp;
 
 //./core/hw/aica/aica.o
-extern AicaTimer timers[3];
 
 //./core/hw/aica/aica_if.o
 extern VArray2 aica_ram;
@@ -69,7 +72,6 @@ extern u32 RealTimeClock;
 extern int dma_sched_id;
 
 //./core/hw/aica/aica_mem.o
-extern u8 aica_reg[0x8000];
 
 //./core/hw/holly/sb.o
 extern u32 SB_ISTNRM;
@@ -122,8 +124,6 @@ extern bool EEPROM_loaded;
 
 //./core/hw/maple/maple_if.o
 //needs special handler
-extern maple_device* MapleDevices[4][6];
-extern int maple_sched;
 #include "hw/maple/maple_if.h"
 extern bool maple_ddt_pending_reset;
 
@@ -138,23 +138,10 @@ extern bool pend_rend;
 extern u32 fb_w_cur;
 
 //./core/hw/pvr/pvr_mem.o
-extern u32 YUV_tempdata[512/4];//512 bytes
-extern u32 YUV_dest;
-extern u32 YUV_blockcount;
-extern u32 YUV_x_curr;
-extern u32 YUV_y_curr;
-extern u32 YUV_x_size;
-extern u32 YUV_y_size;
 
 //./core/hw/pvr/pvr_regs.o
-extern u8 pvr_regs[pvr_RegSize];
 
 //./core/hw/pvr/spg.o
-extern u32 in_vblank;
-extern u32 clc_pvr_scanline;
-extern u32 pvr_cur_scanline;
-extern int render_end_schid;
-extern int vblank_schid;
 
 //./core/hw/pvr/ta.o
 extern u8 ta_fsm[2049];	//[2048] stores the current state
@@ -172,21 +159,12 @@ extern Array<u8> OnChipRAM;
 extern VArray2 mem_b;
 
 //./core/hw/sh4/sh4_interrupts.o
-extern DECL_ALIGN(64) u16 InterruptEnvId[32];
-extern DECL_ALIGN(64) u32 InterruptBit[32];
-extern DECL_ALIGN(64) u32 InterruptLevelBit[16];
-extern u32 interrupt_vpend; // Vector of pending interrupts
-extern u32 interrupt_vmask; // Vector of masked interrupts             (-1 inhibits all interrupts)
-extern u32 decoded_srimask; // Vector of interrupts allowed by SR.IMSK (-1 inhibits all interrupts)
 
 //./core/hw/sh4/sh4_core_regs.o
-extern Sh4RCB* p_sh4rcb;
 
 //./core/hw/sh4/sh4_sched.o
-extern u64 sh4_sched_ffb;
 
 //./core/hw/sh4/interpr/sh4_interpreter.o
-extern int aica_schid;
 extern int rtc_schid;
 
 //./core/hw/sh4/modules/serial.o
@@ -194,16 +172,8 @@ extern SCIF_SCFSR2_type SCIF_SCFSR2;
 extern SCIF_SCSCR2_type SCIF_SCSCR2;
 
 //./core/hw/sh4/modules/bsc.o
-extern BSC_PDTRA_type BSC_PDTRA;
 
 //./core/hw/sh4/modules/tmu.o
-extern u32 tmu_shift[3];
-extern u32 tmu_mask[3];
-extern u64 tmu_mask64[3];
-extern u32 old_mode[3];
-extern int tmu_sched[3];
-extern u32 tmu_ch_base[3];
-extern u64 tmu_ch_base64[3];
 
 //./core/hw/sh4/modules/ccn.o
 extern u32 CCN_QACR_TR[2];
@@ -212,8 +182,6 @@ extern u32 CCN_QACR_TR[2];
 extern u32 ITLB_LRU_USE[64];
 
 //./core/imgread/common.o
-extern u32 NullDriveDiscType;
-extern u8 q_subchannel[96];
 
 //./core/nullDC.o
 extern unsigned FLASH_SIZE;

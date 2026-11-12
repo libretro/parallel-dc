@@ -29,8 +29,8 @@ void do_pvr_dma(void)
 	u32 dmaor  = DMAC_DMAOR.full;
 	u32 dmatcr = DMAC_DMATCR(0);
 
-	u32 src    = SB_PDSTAR; // System RAM address
-	u32 dst    = SB_PDSTAP; // VRAM address
+	u32 src    = SB_PDSTAR; /* System RAM address */
+	u32 dst    = SB_PDSTAP; /* VRAM address */
 	u32 len    = SB_PDLEN;
 
 	if((dmaor &DMAOR_MASK) != 0x8201)
@@ -47,12 +47,12 @@ void do_pvr_dma(void)
 
 	if (SB_PDDIR)
 	{
-		//PVR -> System
+		/* PVR -> System */
       WriteMemBlock_nommu_dma(src, dst, len);
 	}
 	else
 	{
-		//System -> PVR
+		/* System -> PVR */
       WriteMemBlock_nommu_dma(dst,src,len);
 	}
 
@@ -62,7 +62,7 @@ void do_pvr_dma(void)
 
 	SB_PDST            = 0x00000000;
 
-	//TODO : *CHECKME* is that ok here ? the docs don't say here it's used [PVR-DMA , bit 11]
+	/* TODO : *CHECKME* is that ok here ? the docs don't say here it's used [PVR-DMA , bit 11] */
 	asic_RaiseInterrupt(holly_PVR_DMA);
 }
 
@@ -88,16 +88,18 @@ u32 calculate_start_link_addr(void)
 	else /* 32b width */
 		rv=*(u32*)&mem_b.data[(base + SB_SDDIV * 4) & RAM_MASK];
 
-	SB_SDDIV++; //next index
+	SB_SDDIV++; /* next index */
 
 	return rv;
 }
 
 void pvr_do_sort_dma(void)
 {
-	SB_SDDIV           = 0; //index is 0 now :)
-	u32 link_addr      = calculate_start_link_addr();
-	u32 link_base_addr = SB_SDBAAW & ~31;
+	u32 link_addr, link_base_addr, budget;
+
+	SB_SDDIV           = 0; /* index is 0 now :) */
+	link_addr          = calculate_start_link_addr();
+	link_base_addr     = SB_SDBAAW & ~31;
 	/* What one transfer may take, in 32-byte blocks: one for each link
 	 * followed and one for each block it sends. Main RAM holds RAM_SIZE / 32
 	 * blocks, which a list that sends nothing twice cannot exceed; twice
@@ -105,20 +107,23 @@ void pvr_do_sort_dma(void)
 	 * takes before it is full and drops the rest. A list that goes round in
 	 * a circle, or a block count that is no count at all, used never to
 	 * come back from the register write that starts the transfer. */
-	u32 budget         = RAM_SIZE / 16;
+	budget             = RAM_SIZE / 16;
 
 	while (link_addr != 2)
 	{
+		u32 ea, count;
+		u32* ea_ptr;
+
 		if (SB_SDLAS==1)
 			link_addr   *= 32;
 
 		/* Parameters are 32 bytes and start on a multiple of that, whatever
 		 * the low bits of an unshifted link address say: the tile accelerator
 		 * copies them as whole aligned blocks. */
-		u32 ea          = (link_base_addr+link_addr) & (RAM_MASK - 31);
-		u32* ea_ptr     = (u32*)&mem_b.data[ea];
-		u32 count       = ea_ptr[0x18>>2];
-		link_addr       = ea_ptr[0x1C>>2];//Next link
+		ea              = (link_base_addr+link_addr) & (RAM_MASK - 31);
+		ea_ptr          = (u32*)&mem_b.data[ea];
+		count           = ea_ptr[0x18>>2];
+		link_addr       = ea_ptr[0x1C>>2];/* Next link */
 
 		if (count >= budget)
 		{
@@ -142,29 +147,29 @@ void pvr_do_sort_dma(void)
 			link_addr    = calculate_start_link_addr();
 	}
 
-	// End of DMA :)
+	/* End of DMA :) */
 	SB_SDST = 0;
 	SB_SDSTAW += 32;
 	asic_RaiseInterrupt(holly_PVR_SortDMA);
 }
 
-// Auto sort DMA :|
+/* Auto sort DMA :| */
 void RegWrite_SB_SDST(u32 addr, u32 data)
 {
 	if(data & 1)
 		pvr_do_sort_dma();
 }
 
-//Init/Term , global
+/* Init/Term , global */
 void pvr_sb_Init(void)
 {
-	//0x005F7C18    SB_PDST RW  PVR-DMA start
+	/* 0x005F7C18    SB_PDST RW  PVR-DMA start */
 	sb_rio_register(SB_PDST_addr,RIO_WF,0,&RegWrite_SB_PDST);
 
-	//0x005F6808    SB_C2DST RW  ch2-DMA start 
+	/* 0x005F6808    SB_C2DST RW  ch2-DMA start */
 	sb_rio_register(SB_C2DST_addr,RIO_WF,0,&RegWrite_SB_C2DST);
 
-	//0x005F6820    SB_SDST RW  Sort-DMA start
+	/* 0x005F6820    SB_SDST RW  Sort-DMA start */
 	sb_rio_register(SB_SDST_addr,RIO_WF,0,&RegWrite_SB_SDST);
 }
 
@@ -172,7 +177,7 @@ void pvr_sb_Term(void)
 {
 }
 
-//Reset -> Reset - Initialise
+/* Reset -> Reset - Initialise */
 void pvr_sb_Reset(bool hard)
 {
 }

@@ -135,6 +135,14 @@ void interrupts_init(void);
 void interrupts_reset(void);
 void interrupts_term(void);
 
+/* (the tables, by interrupt and by level, and the vectors, for a state) */
+extern DECL_ALIGN(64) u16 InterruptEnvId[32];
+extern DECL_ALIGN(64) u32 InterruptBit[32];
+extern DECL_ALIGN(64) u32 InterruptLevelBit[16];
+extern u32 interrupt_vpend; /* Vector of pending interrupts */
+extern u32 interrupt_vmask; /* Vector of masked interrupts             (-1 inhibits all interrupts) */
+extern u32 decoded_srimask; /* Vector of interrupts allowed by SR.IMSK (-1 inhibits all interrupts) */
+
 #ifdef __cplusplus
 }
 #endif

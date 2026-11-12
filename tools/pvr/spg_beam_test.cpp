@@ -12,9 +12,8 @@
 #include <stdio.h>
 #include <string.h>
 
-extern "C" void __real__Z8spg_syncv(void);
+extern "C" void __real_spg_sync(void);
 extern "C" void *__real_dlopen(const char *file, int mode);
-extern u32 pvr_cur_scanline;
 
 /* headless.c opens the core; "self" is the program, the core linked in */
 extern "C" void *__wrap_dlopen(const char *file, int mode)
@@ -25,11 +24,11 @@ extern "C" void *__wrap_dlopen(const char *file, int mode)
 static unsigned long long reads, lines, different;
 static u32 last_line = ~0u;
 
-extern "C" void __wrap__Z8spg_syncv(void)
+extern "C" void __wrap_spg_sync(void)
 {
 	u32 status, line;
 
-	__real__Z8spg_syncv();
+	__real_spg_sync();
 	status = SPG_STATUS.full;
 	line = pvr_cur_scanline;
 	reads++;
@@ -38,7 +37,7 @@ extern "C" void __wrap__Z8spg_syncv(void)
 	last_line = line;
 
 	spg_beam_forget();
-	__real__Z8spg_syncv();
+	__real_spg_sync();
 	if (SPG_STATUS.full != status || pvr_cur_scanline != line)
 	{
 		if (different++ < 8)

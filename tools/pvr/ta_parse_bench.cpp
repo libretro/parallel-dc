@@ -17,7 +17,7 @@
 #include <time.h>
 #include <vector>
 
-extern "C" bool __real__Z13ta_parse_vdrcP10TA_context(TA_context *ctx);
+extern "C" bool __real_ta_parse_vdrc(TA_context *ctx);
 extern "C" void *__real_dlopen(const char *file, int mode);
 
 /* headless.c opens the core; "self" is the program, the core linked in */
@@ -85,14 +85,14 @@ static u32 sum(const rend_context &rc)
 	return h;
 }
 
-extern "C" bool __wrap__Z13ta_parse_vdrcP10TA_context(TA_context *ctx)
+extern "C" bool __wrap_ta_parse_vdrc(TA_context *ctx)
 {
 	static const unsigned repeat = getenv("PARSE_BENCH_REPEAT") ? (unsigned)atoi(getenv("PARSE_BENCH_REPEAT")) : 32;
 	static const unsigned from = getenv("PARSE_BENCH_FROM") ? (unsigned)atoi(getenv("PARSE_BENCH_FROM")) : 100;
 	const rend_context &rc = ctx->rend;
 
 	if (skip++ < from)
-		return __real__Z13ta_parse_vdrcP10TA_context(ctx);
+		return __real_ta_parse_vdrc(ctx);
 	pre.bg = *rc.global_param_op.head();
 	memcpy(pre.bgv, rc.verts.head(), sizeof(pre.bgv));
 	pre.x_clip = rc.fb_X_CLIP;
@@ -106,20 +106,20 @@ extern "C" bool __wrap__Z13ta_parse_vdrcP10TA_context(TA_context *ctx)
 	{
 		again(ctx);
 		const double t0 = now_ns();
-		__real__Z13ta_parse_vdrcP10TA_context(ctx);
+		__real_ta_parse_vdrc(ctx);
 		best = std::min(best, now_ns() - t0);
 		ta_parse_cnt = cnt;
 	}
 	// once with no strip known good to the indices, for the check
 	again(ctx);
 	ta_strip_ok_ignored = 1;
-	__real__Z13ta_parse_vdrcP10TA_context(ctx);
+	__real_ta_parse_vdrc(ctx);
 	ta_strip_ok_ignored = 0;
 	ta_parse_cnt = cnt;
 	const u32 looked = sum(rc);
 	// and the one the frame is drawn from
 	again(ctx);
-	const bool rv = __real__Z13ta_parse_vdrcP10TA_context(ctx);
+	const bool rv = __real_ta_parse_vdrc(ctx);
 	const u32 h = sum(rc);
 	renders++;
 	if (h != looked)

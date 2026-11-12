@@ -1,6 +1,10 @@
 #pragma once
 #include "types.h"
+
+#ifdef __cplusplus
 #include "ta_structs.h"
+extern "C" {
+#endif
 
 enum
 {
@@ -22,19 +26,22 @@ enum
    TA_PAL_ARGB8888
 };
 
-struct TA_context;
+#ifndef TA_CONTEXT_DECLARED
+#define TA_CONTEXT_DECLARED
+typedef struct TA_context TA_context;
+#endif
 
-void ta_vtx_ListCont();
-void ta_vtx_ListInit();
-void ta_vtx_SoftReset();
-void ta_vtx_Reset();
+void ta_vtx_ListCont(void);
+void ta_vtx_ListInit(void);
+void ta_vtx_SoftReset(void);
+void ta_vtx_Reset(void);
 
 void DYNACALL ta_vtx_data32(void* data);
 void ta_vtx_data(u32* data, u32 size);
 u8 *ta_vtx_room(u32 blocks);
-// The list that is open (0-4), or -1
+/* The list that is open (0-4), or -1 */
 int ta_vtx_list(void);
-// The second half of a 64-byte parameter is what comes next
+/* The second half of a 64-byte parameter is what comes next */
 bool ta_vtx_half(void);
 
 bool ta_parse_vdrc(TA_context* ctx);
@@ -48,7 +55,7 @@ void ta_select_passes(TA_context* ctx);
  * vertex at the same depth) as drawn at a single rate, as sprites and the
  * background always are. Off, the decoder does no more than without it. */
 void ta_set_flat_strips(bool on);
-// ...and whether they are looked for now: a strip's single-rate bit means something only then
+/* ...and whether they are looked for now: a strip's single-rate bit means something only then */
 bool ta_flat_strips(void);
 /* Whether the frames parsed from here on keep the region array's table of
  * tiles (rend_context's region_tiles). Off, the array is walked as it was
@@ -83,6 +90,9 @@ void ta_walk_term(void);
  * (From the thread that renders, between frames.) */
 void ta_set_walk_check(bool on);
 
+#ifdef __cplusplus
+}
+
 class TaTypeLut
 {
 public:
@@ -99,3 +109,4 @@ private:
 #define STRIPS_AS_PPARAMS 1
 
 #include "ta_ctx.h"
+#endif

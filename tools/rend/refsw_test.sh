@@ -76,7 +76,7 @@ if [ ! -x "$WORK/tile_dump" ]; then
    ${CC:-cc} -O1 -c -o "$WORK/headless.o" tools/threads/headless.c
    ${CXX:-g++} $CORE_FLAGS -w -c -o "$WORK/dump.o" tools/rend/tile_dump.cpp
    ${CXX:-g++} -rdynamic -o "$WORK/tile_dump" "$WORK/headless.o" "$WORK/dump.o" $OBJS \
-      -Wl,--wrap=dlopen -Wl,--wrap=_Z13ta_parse_vdrcP10TA_context -l:libvulkan.so.1 -lGL -lrt -lpthread -lm -ldl
+      -Wl,--wrap=dlopen -Wl,--wrap=ta_parse_vdrc -l:libvulkan.so.1 -lGL -lrt -lpthread -lm -ldl
    nm -D --undefined-only "$WORK/tile_dump" | awk '{print $NF}' | sed 's/@.*//' | grep '^gl' \
       | python3 tools/threads/headless_gl.py > "$WORK/nogl.c" || true
    ${CC:-cc} -O1 -shared -fPIC -Wl,-soname,libGLESv2.so.2 -o "$WORK/libGLESv2.so.2" "$WORK/nogl.c"

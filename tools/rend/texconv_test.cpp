@@ -59,6 +59,7 @@ template<typename P, typename F> static void run(const char *name, F fn, u32 w, 
 #include "hw/pvr/pvr_regs.h"
 #include "rend/texdecode.h"
 #include "rend/rtt_watch.h"
+#include "hw/mem/_vmem.h"
 
 extern VArray2 vram;
 #include <encodings/xxh32.h>

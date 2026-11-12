@@ -44,13 +44,13 @@ BIC     R3, R0, #0xFE000000		@clear unused bits
 AND     R0, R0, #0x20			@SQ#, isolate
 CMP     R3, #0x800000			@TA write?
 ADD     R0, R1, R0				@SQ#, add to SQ ptr
-BCC     CSYM(_Z13ta_vtx_data32Pv)	@TA write?
+BCC     CSYM(ta_vtx_data32)	@TA write?
 
 CSYM(TAWriteSQ_yuv):
 CMP     R3, #0x1000000	@Yuv write ?
 BCS     CSYM(TAWriteSQ_vram)
 MOV     R1, #1
-B       CSYM(_Z8YUV_dataPjj)
+B       CSYM(YUV_data)
 
 @ To video memory, which is what Windows CE games do. There was a
 @ breakpoint here, and after it a copy that took the first queue whichever

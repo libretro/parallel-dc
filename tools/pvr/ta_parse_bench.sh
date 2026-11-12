@@ -28,7 +28,7 @@ OBJS=$(make -n platform=unix -W core/hw/pvr/ta_vtx.cpp 2>/dev/null | tail -1 | t
 ${CC:-cc} -O1 -c -o "$WORK/headless.o" tools/threads/headless.c
 ${CXX:-g++} $CORE_FLAGS -w -c -o "$WORK/bench.o" tools/pvr/ta_parse_bench.cpp
 ${CXX:-g++} -rdynamic -o "$WORK/ta_parse_bench" "$WORK/headless.o" "$WORK/bench.o" $OBJS \
-   -Wl,--wrap=dlopen -Wl,--wrap=_exit -Wl,--wrap=_Z13ta_parse_vdrcP10TA_context -lGL -lrt -lpthread -lm -ldl
+   -Wl,--wrap=dlopen -Wl,--wrap=_exit -Wl,--wrap=ta_parse_vdrc -lGL -lrt -lpthread -lm -ldl
 # an OpenGL that does nothing, for the core's renderer (headless.sh's)
 nm -D --undefined-only "$WORK/ta_parse_bench" | awk '{print $NF}' | sed 's/@.*//' | grep '^gl' \
    | python3 tools/threads/headless_gl.py > "$WORK/nogl.c" || true

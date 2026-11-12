@@ -359,7 +359,7 @@ void rend_start_render(void)
     * frame that is not there - as it was before frames were kept; a
     * state has it, and loading one changes nothing here.) */
 	if (!ctx || !ctx->rend.isRenderFramebuffer)
-		SetREP(ctx != NULL && ctx->drawn ? NULL : ctx);
+		SetREP(ctx != NULL && !ctx->drawn ? (int)(ctx->tad.thd_data - ctx->tad.thd_root) : -1);
 
    if (ctx)
    {

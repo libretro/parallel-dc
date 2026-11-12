@@ -41,7 +41,8 @@ static _vmem_handler area1_32b;
 
 static void map_area1_init()
 {
-   area1_32b = _vmem_register_handler_Template(pvr_read_area1, pvr_write_area1);
+   area1_32b = _vmem_register_handler(pvr_read_area1_8, pvr_read_area1_16, pvr_read_area1_32,
+			pvr_write_area1_8, pvr_write_area1_16, pvr_write_area1_32);
 }
 
 static void map_area1(u32 base)
@@ -89,10 +90,10 @@ static _vmem_handler area4_handler_upper;
 
 static void map_area4_init()
 {
-   area4_handler_lower = _vmem_register_handler(pvr_read_area4<u8, false>, pvr_read_area4<u16, false>, pvr_read_area4<u32, false>,
-									pvr_write_area4<u8, false>, pvr_write_area4<u16, false>, pvr_write_area4<u32, false>);
-	area4_handler_upper = _vmem_register_handler(pvr_read_area4<u8, true>, pvr_read_area4<u16, true>, pvr_read_area4<u32, true>,
-									pvr_write_area4<u8, true>, pvr_write_area4<u16, true>, pvr_write_area4<u32, true>);
+   area4_handler_lower = _vmem_register_handler(pvr_read_area4_lo_8, pvr_read_area4_lo_16, pvr_read_area4_lo_32,
+									pvr_write_area4_lo_8, pvr_write_area4_lo_16, pvr_write_area4_lo_32);
+	area4_handler_upper = _vmem_register_handler(pvr_read_area4_hi_8, pvr_read_area4_hi_16, pvr_read_area4_hi_32,
+									pvr_write_area4_hi_8, pvr_write_area4_hi_16, pvr_write_area4_hi_32);
 }
 
 static void map_area4(u32 base)
