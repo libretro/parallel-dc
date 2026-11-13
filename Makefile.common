@@ -23,7 +23,6 @@ SOURCES_CXX := \
 					\
 					\
 					$(CORE_DIR)/core/hw/maple/maple_devs.cpp \
-					$(CORE_DIR)/core/hw/maple/maple_if.cpp \
 					$(CORE_DIR)/core/hw/maple/maple_cfg.cpp \
 					\
 					$(CORE_DIR)/core/hw/mem/_vmem.cpp \
@@ -151,6 +150,7 @@ SOURCES_C += $(CORE_DIR)/core/hw/gdrom/gdrom_response.c \
 					$(CORE_DIR)/core/hw/sh4/interpr/sh4_fpu.c \
 					$(CORE_DIR)/core/hw/arm7/arm_mem.c \
 					$(CORE_DIR)/core/hw/maple/maple_helper.c \
+					$(CORE_DIR)/core/hw/maple/maple_if.c \
 					$(CORE_DIR)/core/hw/pvr/drkPvr.c \
 					$(CORE_DIR)/core/reios/reios_elf.c \
 					$(CORE_DIR)/core/hw/flashrom/x76f100.c \
@@ -202,10 +202,10 @@ else
 endif
 
 ifeq ($(ENABLE_MODEM), 1)
-	SOURCES_CXX += $(CORE_DIR)/core/hw/modem/dns.cpp \
-						$(CORE_DIR)/core/hw/modem/modem.cpp \
+	SOURCES_CXX += $(CORE_DIR)/core/hw/modem/modem.cpp \
 						$(CORE_DIR)/core/network/picoppp.cpp
-	SOURCES_C += $(CORE_DIR)/core/network/miniupnp.c
+	SOURCES_C += $(CORE_DIR)/core/network/miniupnp.c \
+					$(CORE_DIR)/core/hw/modem/dns.c
 	SOURCES_C += $(CORE_DIR)/core/hw/bba/bba.c \
 					$(CORE_DIR)/core/hw/bba/rtl8139c.c
 	SOURCES_CXX += $(CORE_DIR)/core/hw/modem/v42.cpp \

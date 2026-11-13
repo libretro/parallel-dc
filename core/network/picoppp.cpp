@@ -48,6 +48,7 @@ extern "C" {
 }
 
 #include "network/net_platform.h"
+#include "hw/modem/dns.h"
 
 #include "types.h"
 #include "picoppp.h"
@@ -378,9 +379,6 @@ extern "C"
 };
 
 static void read_native_sockets();
-void get_host_by_name(const char *name, pico_ip4 dnsaddr);
-int get_dns_answer(pico_ip4 *address, pico_ip4 dnsaddr);
-sock_t get_dns_socket(void);
 
 static int modem_read(pico_device *dev, void *data, int len)
 {
@@ -869,11 +867,11 @@ static void check_dns_entries()
 		if (!dns_query_start)
 		{
 			dns_query_start = PICO_TIME_MS();
-			get_host_by_name("auriga.segasoft.com", dnsaddr);	// Alien Front Online server
+			get_host_by_name("auriga.segasoft.com", dnsaddr.addr);	// Alien Front Online server
 		}
 		else
 		{
-			if (get_dns_answer(&afo_ip, dnsaddr) == 0)
+			if (get_dns_answer(&afo_ip.addr, dnsaddr.addr) == 0)
 			{
 				dns_query_attempts = 0;
 				dns_query_start = 0;

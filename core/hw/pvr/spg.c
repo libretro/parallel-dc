@@ -124,7 +124,7 @@ static u32 spg_next_line(void);
  * Which of the two a run is, is seen from where the beam is when it
  * starts: in a window, or not. Nothing else about it is kept from one run
  * to the next, and a transfer waiting for the next run is one that has
- * been started with nothing scheduled to end it (maple_if.cpp); whether
+ * been started with nothing scheduled to end it (maple_if.c); whether
  * the game has started a render since the last vertical blank, which a
  * run ending at line 0 never had, is in the state too (Renderer_if.cpp's
  * pvr_serialize_v22()), and no run ends with the window open (the

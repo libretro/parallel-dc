@@ -80,11 +80,13 @@ for san in thread address,undefined; do
          -Icore/deps/picotcp/include -Icore/deps/picotcp/modules \
          -c $src -o "$WORK/pico/$(basename $src .c).o"
    done
+   $CC -O1 -g -fsanitize=$san -fno-sanitize-recover=undefined $DEFS $INC \
+      -c core/hw/modem/dns.c -o "$WORK/dns.o"
    $CXX -std=c++11 -fpermissive -O1 -g -w $DEFS \
       -fsanitize=$san -fno-sanitize-recover=undefined $INC \
       -Icore/deps/picotcp/include -Icore/deps/picotcp/modules \
       -o "$WORK/pico_test" tools/threads/pico_test.cpp core/network/picoppp.cpp core/network/dcnet.cpp \
-      core/hw/modem/dns.cpp "$WORK"/pico/*.o "$WORK/rthreads.o" "$WORK/features_cpu.o" \
+      "$WORK/dns.o" "$WORK"/pico/*.o "$WORK/rthreads.o" "$WORK/features_cpu.o" \
       "$WORK/rtime.o" "$WORK/net_socket.o" "$WORK/net_compat.o" -lpthread
    # The save writer: the core's own savewriter.c over libretro-common's
    # file streams, with a file system of the test's that can be slow and

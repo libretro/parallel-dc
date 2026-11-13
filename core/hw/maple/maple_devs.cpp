@@ -4898,6 +4898,26 @@ maple_device* maple_CreateAt(MapleDeviceType type, void *at)
 	return rv;
 }
 
+u32 maple_dev_dma(maple_device *dev, u32 *in, u32 in_len, u32 *out)
+{
+	return dev->RawDma(in, in_len, out);
+}
+
+bool maple_dev_has_slots(maple_device *dev)
+{
+	return maple_HasSlots(dev->get_device_type());
+}
+
+bool maple_dev_lightgun_pos(maple_device *dev)
+{
+	return dev->get_lightgun_pos();
+}
+
+void maple_dev_flush_save(maple_device *dev)
+{
+	dev->FlushSave();
+}
+
 maple_device* maple_Create(MapleDeviceType type)
 {
 	return maple_CreateAt(type, NULL);

@@ -86,7 +86,6 @@ extern bool EEPROM_loaded;
 //./core/hw/maple/maple_if.o
 //needs special handler
 #include "hw/maple/maple_if.h"
-extern bool maple_ddt_pending_reset;
 
 #ifdef ENABLE_MODEM
 //./core/hw/modem/modem.cpp
@@ -221,9 +220,6 @@ void systemsp_state_before_v24(void);
 void systemsp_serialize_v25(void **data, unsigned int *total_size);
 bool systemsp_unserialize_v25(void **data, unsigned int *total_size);
 void systemsp_state_before_v25(void);
-void maple_jvs_serialize_v25(void **data, unsigned int *total_size);
-bool maple_jvs_unserialize_v25(void **data, unsigned int *total_size);
-void maple_jvs_state_before_v25(void);
 void naomi_gd_serialize_v25(void **data, unsigned int *total_size);
 bool naomi_gd_unserialize_v25(void **data, unsigned int *total_size);
 void naomi_gd_state_before_v25(void);
@@ -235,9 +231,6 @@ void naomi_serial_state_before_v26(void);
 /* and since V27: what the racing and other I/O boards keep (maple_devs.cpp),
  * the MIDI force feedback board of the driving games (midiffb.cpp: its
  * header), and F355's printer status (sb_mem.cpp) */
-void maple_jvs_serialize_v27(void **data, unsigned int *total_size);
-bool maple_jvs_unserialize_v27(void **data, unsigned int *total_size);
-void maple_jvs_state_before_v27(void);
 void naomi_printer_serialize_v27(void **data, unsigned int *total_size);
 bool naomi_printer_unserialize_v27(void **data, unsigned int *total_size);
 void naomi_printer_state_before_v27(void);

@@ -1,5 +1,4 @@
 #include "types.h"
-#include <algorithm>
 #include <string.h>
 
 #include "maple_if.h"
@@ -7,12 +6,11 @@
 #include "hw/sh4/sh4_interrupts.h"
 #include "hw/sh4/sh4_sched.h"
 #include "hw/sh4/sh4_mem.h"
-#include "types.h"
 #include "hw/holly/holly_intc.h"
 #include "hw/holly/sb.h"
 #include "hw/maple/maple_helper.h"
-#include "maple_cfg.h"
 #include "hw/pvr/spg.h"
+#include "hw/sh4/sh4_core.h"
 
 enum MaplePattern
 {
@@ -36,14 +34,14 @@ int maple_sched;
 	DMA continuation on suspect, etc ...
 */
 
-static void maple_DoDma();
-static void maple_handle_reconnect();
+static void maple_DoDma(void);
+static void maple_handle_reconnect(void);
 static bool IsOnSh4Ram(u32 addr);
 
-//really hackish
-//misses delay , and stop/start implementation
-//ddt/etc are just hacked for wince to work
-//now with proper maple delayed DMA maybe its time to look into it ?
+/* really hackish
+ * misses delay , and stop/start implementation
+ * ddt/etc are just hacked for wince to work
+ * now with proper maple delayed DMA maybe its time to look into it ? */
 bool maple_ddt_pending_reset;
 
 /* What the devices have answered in the transfer under way.
@@ -62,6 +60,8 @@ u32 maple_out_used;
 
 static void maple_out_write(u32 dest, const u32 *data, u32 bytes)
 {
+	u32 *p;
+
 	if (dest == 0)
 	{
 		asic_RaiseInterrupt(holly_MAPLE_OVERRUN);
@@ -72,7 +72,7 @@ static void maple_out_write(u32 dest, const u32 *data, u32 bytes)
 	 * end of RAM: what would be written outside it is left out. */
 	if (!IsOnSh4Ram(dest) || bytes > RAM_SIZE - (dest & RAM_MASK))
 		return;
-	u32 *p = (u32 *)GetMemPtr(dest, bytes);
+	p = (u32 *)GetMemPtr(dest, bytes);
 	if (p != NULL)
 		memcpy(p, data, bytes);
 }
@@ -83,7 +83,7 @@ static void maple_out_put(u32 dest, const u32 *data, u32 bytes)
 
 	if (maple_out_used + 2 + words > MAPLE_OUT_WORDS)
 	{
-		// more answers than there is room to keep: this one arrives at once
+		/* more answers than there is room to keep: this one arrives at once */
 		maple_out_write(dest, data, bytes);
 		return;
 	}
@@ -93,26 +93,43 @@ static void maple_out_put(u32 dest, const u32 *data, u32 bytes)
 	maple_out_used += words;
 }
 
-// The transfer is over: the answers go where the game asked, and it is told
-void maple_dma_done()
+/* Room in maple_out for the longest answer, lent to the device to write
+ * there: NULL if there is not that much left. maple_out_commit() keeps
+ * what it wrote. */
+static u32 *maple_out_lend(void)
+{
+	if (maple_out_used + 2 + MAPLE_FRAME_MAX_WORDS > MAPLE_OUT_WORDS)
+		return NULL;
+	return &maple_out[maple_out_used + 2];
+}
+
+static void maple_out_commit(u32 dest, u32 bytes)
+{
+	maple_out[maple_out_used++] = dest;
+	maple_out[maple_out_used++] = bytes;
+	maple_out_used += (bytes + 3) / 4;
+}
+
+/* The transfer is over: the answers go where the game asked, and it is told */
+void maple_dma_done(void)
 {
 	u32 at = 0;
 
 	while (at + 2 <= maple_out_used)
 	{
 		const u32 dest = maple_out[at], bytes = maple_out[at + 1];
-		// (a length from a save state can be anything: no more than is kept here)
+		/* (a length from a save state can be anything: no more than is kept here) */
 		if (bytes > (maple_out_used - at - 2) * 4)
 			break;
-		const u32 words = (bytes + 3) / 4;
 		maple_out_write(dest, &maple_out[at + 2], bytes);
-		at += 2 + words;
+		at += 2 + (bytes + 3) / 4;
 	}
 	maple_out_used = 0;
 	SB_MDST = 0;
 	asic_RaiseInterrupt(holly_MAPLE_DMA);
 }
-void maple_vblank()
+
+void maple_vblank(void)
 {
 	if (SB_MDEN & 1)
 	{
@@ -127,7 +144,7 @@ void maple_vblank()
 				DEBUG_LOG(MAPLE, "DDT vblank");
 				SB_MDST = 1;
 				maple_DoDma();
-				// if trigger reset is manual, mark it as pending
+				/* if trigger reset is manual, mark it as pending */
 				if ((SB_MSYS >> 12) & 1)
 					maple_ddt_pending_reset = true;
 			}
@@ -166,7 +183,7 @@ static void maple_SB_MDST_Write(u32 addr, u32 data)
 
 /* dc_run(): a run starts. A transfer the last one left for it is made now,
  * where the machine stands, before it runs on. */
-void maple_start_deferred()
+void maple_start_deferred(void)
 {
 	if ((SB_MDEN & 1) && (SB_MDST & 1) && !sh4_sched_is_scheduled(maple_sched) && !spg_gun_pending())
 		maple_DoDma();
@@ -213,11 +230,17 @@ static bool IsOnSh4Ram(u32 addr)
 
 static void maple_DoDma(void)
 {
+	u32 addr = SB_MDSTAR;
+	u32 ram_end;
+	const bool swap_msb = (SB_MMSEL == 0);
+	u32 xfer_in = 0, xfer_out = 0;		/* bytes from the console, and from the devices */
+	bool last   = false;
+	bool occupy = false;
+
 	verify(SB_MDEN &1)
 	verify(SB_MDST &1)
 
 	DEBUG_LOG(MAPLE, "Maple: DoMapleDma SB_MDSTAR=%x", SB_MDSTAR);
-	u32 addr = SB_MDSTAR;
 #ifdef STRICT_MODE
 	if (!check_mdapro(addr))
 	{
@@ -235,13 +258,11 @@ static void maple_DoDma(void)
 		SB_MDST = 0;
 		return;
 	}
-	const u32 ram_end = (addr | RAM_MASK) + 1;
-	const bool swap_msb = (SB_MMSEL == 0);
-	u32 xfer_in = 0, xfer_out = 0;		// bytes from the console, and from the devices
-	bool last   = false;
-   bool occupy = false;
+	ram_end = (addr | RAM_MASK) + 1;
 	while (last != true)
 	{
+		u32 header_1, header_2, plen, maple_op, bus;
+
 		if (addr + 4 > ram_end)
 		{
 			INFO_LOG(MAPLE, "MAPLE ERROR : the table at 0x%X has no end", SB_MDSTAR);
@@ -249,20 +270,24 @@ static void maple_DoDma(void)
 			maple_out_used = 0;
 			return;
 		}
-		u32 header_1 = ReadMem32_nommu(addr);
-		u32 header_2 = ReadMem32_nommu(addr + 4) &0x1FFFFFE0;
+		header_1 = ReadMem32_nommu(addr);
+		header_2 = ReadMem32_nommu(addr + 4) &0x1FFFFFE0;
 
-		last = (header_1 >> 31) == 1;//is last transfer ?
-		u32 plen = (header_1 & 0xFF )+1;//transfer length (32-bit unit)
-		u32 maple_op=(header_1>>8)&7;	// Pattern selection: 0 - START, 2 - SDCKB occupy permission, 3 - RESET, 4 - SDCKB occupy cancel, 7 - NOP
-		// The port the frame goes out on is the transfer's to say, not the frame's
-		const u32 bus = (header_1 >> 16) & 3;
-		//this is kinda wrong .. but meh
-		//really need to properly process the commands at some point
+		last = (header_1 >> 31) == 1;	/* is last transfer ? */
+		plen = (header_1 & 0xFF )+1;	/* transfer length (32-bit unit) */
+		/* Pattern selection: 0 - START, 2 - SDCKB occupy permission,
+		 * 3 - RESET, 4 - SDCKB occupy cancel, 7 - NOP */
+		maple_op=(header_1>>8)&7;
+		/* The port the frame goes out on is the transfer's to say, not the frame's */
+		bus = (header_1 >> 16) & 3;
+		/* this is kinda wrong .. but meh
+		 * really need to properly process the commands at some point */
 		switch (maple_op)
 		{
 		case MP_Start:
 		{
+			u32 *p_data;
+			u32 frame_header, command, reci, inlen, port;
 #ifdef STRICT_MODE
 			if (!check_mdapro(header_2) || !check_mdapro(addr + 8 + plen * sizeof(u32) - 1))
 			{
@@ -273,14 +298,14 @@ static void maple_DoDma(void)
 #else
 			if (!IsOnSh4Ram(header_2))
 			{
-				// nowhere for the answer to go: the overrun interrupt, when the transfer is over
+				/* nowhere for the answer to go: the overrun interrupt, when the transfer is over */
 				INFO_LOG(MAPLE, "MAPLE ERROR : DESTINATION NOT ON SH4 RAM 0x%X", header_2);
 				header_2 = 0;
 			}
 #endif
 
-			// (a frame that starts in RAM and ends past it is not one)
-			u32* p_data = addr + 8 + plen * sizeof(u32) > ram_end ? NULL
+			/* (a frame that starts in RAM and ends past it is not one) */
+			p_data = addr + 8 + plen * sizeof(u32) > ram_end ? NULL
 					: (u32*) GetMemPtr(addr + 8,(plen)*sizeof(u32));
 			if (p_data == NULL)
 			{
@@ -290,50 +315,54 @@ static void maple_DoDma(void)
 				return;
 			}
 
-			const u32 frame_header = swap_msb ? SWAP32(p_data[0]) : p_data[0];
+			frame_header = swap_msb ? SWAP32(p_data[0]) : p_data[0];
 
-			//Command code 
-			u32 command = frame_header & 0xFF;
-			//Recipient address 
-			u32 reci = (frame_header >> 8) & 0xFF;//0-5;
-			//Sender address 
-			//u32 send=(p_data[0] >> 16) & 0xFF;
-			//Number of additional words in frame 
-			u32 inlen = (frame_header >> 24) & 0xFF;
-			// (no more than the table says the frame has: the device reads no further)
+			command = frame_header & 0xFF;			/* Command code */
+			reci = (frame_header >> 8) & 0xFF;		/* Recipient address, 0-5 */
+			/* (the sender's address, (p_data[0] >> 16) & 0xFF, is not used) */
+			inlen = (frame_header >> 24) & 0xFF;	/* Number of additional words in frame */
+			/* (no more than the table says the frame has: the device reads no further) */
 			if (inlen >= plen)
 				inlen = plen - 1;
 
-			u32 port=maple_GetPort(reci);
+			port=maple_GetPort(reci);
 			/* A device with no slots for others hears every frame sent down
 			 * its bus, whatever the frame is addressed to. (Asked only when
 			 * nothing is in the slot addressed, which a device with slots
 			 * may have empty too.) */
 			if (port != 5 && MapleDevices[bus][port] == NULL && MapleDevices[bus][5] != NULL
-					&& !maple_HasSlots(MapleDevices[bus][5]->get_device_type()))
+					&& !maple_dev_has_slots(MapleDevices[bus][5]))
 				port = 5;
 
 			if (MapleDevices[bus][5] && MapleDevices[bus][port])
 			{
-				static u32 maple_out_buf[1024 / 4];
+				static u32 maple_out_buf[MAPLE_FRAME_MAX_WORDS];
+				/* The answer is written where it is kept until the transfer
+				 * is over, and copied only when there is no room left there. */
+				u32 *out = maple_out_lend();
+				u32 outlen, i;
+
+				if (out == NULL)
+					out = maple_out_buf;
 				if (swap_msb)
 				{
-					static u32 maple_in_buf[1024 / 4];
+					/* (frames in RAM are read as they are, and copied only to be swapped) */
+					static u32 maple_in_buf[MAPLE_FRAME_MAX_WORDS];
 					maple_in_buf[0] = frame_header;
-					// every word of the frame: plen of them, the header included
-					for (u32 i = 1; i < plen; i++)
+					/* every word of the frame: plen of them, the header included */
+					for (i = 1; i < plen; i++)
 						maple_in_buf[i] = SWAP32(p_data[i]);
 					p_data = maple_in_buf;
 				}
-				u32 outlen = MapleDevices[bus][port]->RawDma(&p_data[0], inlen * 4 + 4, maple_out_buf);
-				// each frame also has its start, parity and stop on the wire
+				outlen = maple_dev_dma(MapleDevices[bus][port], &p_data[0], inlen * 4 + 4, out);
+				/* each frame also has its start, parity and stop on the wire */
 				xfer_in += plen * 4 + 3;
 				xfer_out += outlen + 3;
 #ifdef STRICT_MODE
 				if (!check_mdapro(header_2 + outlen - 1))
 				{
-					// TODO: This isn't correct (with SB_MMSEL=1) since the interrupt
-					// should be raised before the memory is written to
+					/* TODO: This isn't correct (with SB_MMSEL=1) since the interrupt
+					 * should be raised before the memory is written to */
 					asic_RaiseInterrupt(holly_MAPLE_OVERRUN);
 					SB_MDST = 0;
 					maple_out_used = 0;
@@ -341,19 +370,22 @@ static void maple_DoDma(void)
 				}
 #endif
 				if (swap_msb)
-					for (u32 i = 0; i < outlen / 4; i++)
-						maple_out_buf[i] = SWAP32(maple_out_buf[i]);
-				maple_out_put(header_2, maple_out_buf, outlen);
+					for (i = 0; i < outlen / 4; i++)
+						out[i] = SWAP32(out[i]);
+				if (out == maple_out_buf)
+					maple_out_put(header_2, out, outlen);
+				else
+					maple_out_commit(header_2, outlen);
 			}
 			else
 			{
+				static const u32 nobody = 0xFFFFFFFF;
 				if (port != 5 && command != 1)
 					INFO_LOG(MAPLE, "MAPLE: Unknown device bus %d port %d cmd %d", bus, port, command);
-				static const u32 nobody = 0xFFFFFFFF;
 				maple_out_put(header_2, &nobody, 4);
 			}
 
-			//goto next command
+			/* goto next command */
 			addr += 2 * 4 + plen * 4;
 		}
 		break;
@@ -362,8 +394,8 @@ static void maple_DoDma(void)
 		{
 			if (MapleDevices[bus][5])
 			{
-				// (a later request, for a bus with no gun, does not undo one that has)
-				if (MapleDevices[bus][5]->get_lightgun_pos())
+				/* (a later request, for a bus with no gun, does not undo one that has) */
+				if (maple_dev_lightgun_pos(MapleDevices[bus][5]))
 					occupy = true;
 				xfer_in++;
 			}
@@ -373,7 +405,7 @@ static void maple_DoDma(void)
 		break;
 
 		case MP_SDCKBOccupyCancel:
-			// (the transfer ends in its own time, and not at vblank out)
+			/* (the transfer ends in its own time, and not at vblank out) */
 			occupy = false;
 			spg_gun_occupy_cancel();
 			addr += 1 * 4;
@@ -404,7 +436,9 @@ static void maple_DoDma(void)
 	{
 		u64 cycles = (u64)SH4_MAIN_CLOCK * xfer_in / (2000000 / 8)
 			+ (u64)SH4_MAIN_CLOCK * xfer_out / (740000 / 8);
-		sh4_sched_request(maple_sched, (int)std::min(cycles, (u64)SH4_MAIN_CLOCK));
+		if (cycles > (u64)SH4_MAIN_CLOCK)
+			cycles = SH4_MAIN_CLOCK;
+		sh4_sched_request(maple_sched, (int)cycles);
 	}
 }
 
@@ -415,7 +449,7 @@ static int maple_schd(int tag, int c, int j)
 	else
 	{
 		INFO_LOG(MAPLE, "WARNING: MAPLE DMA ABORT");
-		SB_MDST=0; //I really wonder what this means, can the DMA be continued ?
+		SB_MDST=0; /* I really wonder what this means, can the DMA be continued ? */
 		maple_out_used = 0;
 	}
 
@@ -428,16 +462,16 @@ void maple_SB_MDAPRO_Write(u32 addr, u32 data)
 		SB_MDAPRO = data & 0x00007f7f;
 }
 
-//Init registers :)
-void maple_Init()
+/* Init registers :) */
+void maple_Init(void)
 {
 	sb_rio_register(SB_MDST_addr,RIO_WF,0,&maple_SB_MDST_Write);
 	sb_rio_register(SB_MDEN_addr,RIO_WF,0,&maple_SB_MDEN_Write);
 	sb_rio_register(SB_MSHTCL_addr,RIO_WF,0,&maple_SB_MSHTCL_Write);
-	sb_rio_register(SB_MDAPRO_addr, RIO_WO_FUNC, nullptr, &maple_SB_MDAPRO_Write);
+	sb_rio_register(SB_MDAPRO_addr, RIO_WO_FUNC, NULL, &maple_SB_MDAPRO_Write);
 #ifdef STRICT_MODE
 	sb_rio_register(SB_MDSTAR_addr, RIO_WF, 0, &maple_SB_MDSTAR_Write);
-	sb_rio_register(SB_MDSTAR_addr, RIO_WF, nullptr, &maple_SB_MDSTAR_Write);
+	sb_rio_register(SB_MDSTAR_addr, RIO_WF, NULL, &maple_SB_MDSTAR_Write);
 #endif
 
 	maple_sched=sh4_sched_register(0,&maple_schd);
@@ -447,7 +481,7 @@ void maple_Reset(bool hard)
 {
 	maple_ddt_pending_reset=false;
 	maple_out_used = 0;
-	// (and the end of the transfer those answers were for is not to come)
+	/* (and the end of the transfer those answers were for is not to come) */
 	if (sh4_sched_is_scheduled(maple_sched))
 		sh4_sched_request(maple_sched, -1);
 	SB_MDTSEL = 0x00000000;
@@ -460,7 +494,7 @@ void maple_Reset(bool hard)
 	maple_jvs_firmware_reset();
 }
 
-void maple_Term()
+void maple_Term(void)
 {
 	
 }
@@ -471,7 +505,7 @@ void maple_FlushSaves()
 	for (bus = 0; bus < 4; bus++)
 		for (port = 0; port < 6; port++)
 			if (MapleDevices[bus][port])
-				MapleDevices[bus][port]->FlushSave();
+				maple_dev_flush_save(MapleDevices[bus][port]);
 }
 
 static u64 reconnect_time;
@@ -482,7 +516,7 @@ static u64 reconnect_time;
  * the devices that change: a game saving to a card on another port went on
  * writing to nothing for that tenth of a second, and a save cut off there
  * left the card's file system half written. */
-void maple_ReconnectDevices()
+void maple_ReconnectDevices(void)
 {
 	if (settings.System == DC_PLATFORM_DREAMCAST)
 		mcfg_ReconcileDevices(false);
@@ -491,12 +525,13 @@ void maple_ReconnectDevices()
 	reconnect_time = sh4_sched_now64() + SH4_MAIN_CLOCK / 10;
 }
 
-static void maple_handle_reconnect()
+static void maple_handle_reconnect(void)
 {
 	if (reconnect_time != 0 && reconnect_time <= sh4_sched_now64())
 	{
 		reconnect_time = 0;
-		// (a state loaded in the meantime has put its own devices there: what is not as the settings say goes first)
+		/* (a state loaded in the meantime has put its own devices there:
+		 * what is not as the settings say goes first) */
 		if (settings.System == DC_PLATFORM_DREAMCAST)
 			mcfg_ReconcileDevices(true);
 		else
@@ -540,11 +575,13 @@ void maple_serialize_v21(void **data, unsigned int *total_size)
 
 bool maple_unserialize_v21(void **data, unsigned int *total_size)
 {
+	u64 latest;
+
 	maple_jvs_unserialize_v21(data, total_size);
 	reconnect_time = 0;
 	LIBRETRO_US(reconnect_time);
-	// (it is never more than a tenth of a second away)
-	const u64 latest = sh4_sched_now64() + SH4_MAIN_CLOCK / 10;
+	/* (it is never more than a tenth of a second away) */
+	latest = sh4_sched_now64() + SH4_MAIN_CLOCK / 10;
 	if (reconnect_time > latest)
 		reconnect_time = latest;
 	maple_devices_after_load();

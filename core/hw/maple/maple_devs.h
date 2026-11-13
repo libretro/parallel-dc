@@ -107,19 +107,6 @@ struct maple_device
 
 maple_device* maple_Create(MapleDeviceType type);
 maple_device* maple_CreateAt(MapleDeviceType type, void *at);
-// What a NAOMI's I/O boards have had in a save state since V21: maple_devs.cpp
-void maple_jvs_serialize_v21(void **data, unsigned int *total_size);
-void maple_jvs_unserialize_v21(void **data, unsigned int *total_size);
-void maple_jvs_state_before_v21(void);
-// and since V25
-void maple_jvs_serialize_v25(void **data, unsigned int *total_size);
-bool maple_jvs_unserialize_v25(void **data, unsigned int *total_size);
-void maple_jvs_state_before_v25(void);
-// and since V27
-void maple_jvs_serialize_v27(void **data, unsigned int *total_size);
-bool maple_jvs_unserialize_v27(void **data, unsigned int *total_size);
-void maple_jvs_state_before_v27(void);
-void maple_jvs_firmware_reset(void);
 void maple_naomi_eeprom_load(void);
 #define SIZE_OF_MIC_DATA	480 //ALSO DEFINED IN SipEmulator.java
 int get_mic_data(u8* buffer); //implemented in Android.cpp
@@ -146,4 +133,6 @@ void limit_joystick_magnitude(s8& joyx, s8& joyy)
 	}
 }
 
-#define SWAP32(a) ((((a) & 0xff) << 24)  | (((a) & 0xff00) << 8) | (((a) >> 8) & 0xff00) | (((a) >> 24) & 0xff))
+
+/* What C sees of the devices */
+#include "maple_if.h"

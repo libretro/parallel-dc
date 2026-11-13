@@ -26,7 +26,8 @@ name: Headless
 # broadband adapter, a frame each way and its state (tools/bba/run.sh), and
 # NAOMI's 315-5881 decryption against what it gave before
 # (tools/naomi/decrypt_run.sh), the ELF reader (tools/libelf/elf_test.sh),
-# and the NAOMI's X76F100 serial flash (tools/flashrom/x76f100_run.sh).
+# the NAOMI's X76F100 serial flash (tools/flashrom/x76f100_run.sh), and the
+# modem's DNS queries and the answers it reads (tools/modem/dns_run.sh).
 # And the threads a texture scaled up is shared out to, and the core needing
 # no OpenMP runtime (tools/rend/band_pool_test.sh). And custom textures'
 # pictures, read as stb_image read them and dumped
@@ -172,6 +173,10 @@ jobs:
         run: |
           sh tools/flashrom/x76f100_run.sh
           sh tools/flashrom/x76f100_run.sh -fsanitize=address,undefined -fno-sanitize-recover=all
+      - name: The modem's DNS queries, and answers cut short or lying about their lengths (and with the sanitizers)
+        run: |
+          sh tools/modem/dns_run.sh
+          sh tools/modem/dns_run.sh -fsanitize=address,undefined -fno-sanitize-recover=all
 
   generic-cpu:
     runs-on: ubuntu-24.04
