@@ -17,7 +17,7 @@
  *
  * This file and elan.c are C89 and include nothing of the emulator: the
  * machine is reached through the elan_host_*() functions, which
- * elan_host.cpp provides (and tools/elan/elan_test.c, for the test).
+ * elan_host.c provides (and tools/elan/elan_test.c, for the test).
  */
 #ifndef ELAN_H_
 #define ELAN_H_

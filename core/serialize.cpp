@@ -192,7 +192,7 @@ void pvr_serialize_v22(void **data, unsigned int *total_size);
 void pvr_unserialize_v22(void **data, unsigned int *total_size);
 void pvr_state_before_v22(void);
 /* and since V23: the NAOMI 2 geometry processor's clipping planes
- * (elan_host.cpp), the NAOMI's communication board and the I/O board's
+ * (elan_host.c), the NAOMI's communication board and the I/O board's
  * program on its way (naomi.cpp), and the libretro layer's mouse motion
  * not yet read and sound not yet sent (libretro.cpp) */
 void pvr_serialize_v23(void **data, unsigned int *total_size);

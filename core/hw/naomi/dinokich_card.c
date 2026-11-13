@@ -31,9 +31,6 @@
 #include "dinokich_card.h"
 #include <string.h>
 
-namespace systemsp
-{
-
 static const u8 IP[64] = {
     58,50,42,34,26,18,10, 2, 60,52,44,36,28,20,12, 4,
     62,54,46,38,30,22,14, 6, 64,56,48,40,32,24,16, 8,
@@ -117,15 +114,18 @@ static const u8 SBOX[8][64] = {
 
 /* RevPowerOf2 mask: bit i (MSB-first within a 32-bit word), period 32 so the
  * same index works for both halves of a 64-bit/48-bit quantity. */
-static inline u32 RP(int i){ return 1u << (31 - (i & 31)); }
+#define RP(i) (1u << (31 - ((i) & 31)))
 /* Wrap-mask for the C/D rotate: top `shift` bits of a word. */
 static const u32 DES_WRAPMASK[3] = { 0u, 0x80000000u, 0xc0000000u };
 
 /* little-endian load/store of a 32-bit word (matches the SH-4 in-place ops) */
-static inline u32 des_ld(const u8 *b){
+static u32 des_ld(const u8 *b)
+{
     return (u32)b[0] | ((u32)b[1]<<8) | ((u32)b[2]<<16) | ((u32)b[3]<<24);
 }
-static inline void des_st(u8 *b, u32 w){
+
+static void des_st(u8 *b, u32 w)
+{
     b[0]=(u8)w; b[1]=(u8)(w>>8); b[2]=(u8)(w>>16); b[3]=(u8)(w>>24);
 }
 
@@ -133,15 +133,18 @@ static inline void des_st(u8 *b, u32 w){
 typedef struct { u32 rk[16][2]; } des_ks_t;
 
 /* FUN_8c1709a2: rotate C,D for this round and emit the round key. */
-static void des_ks_round(u32 *C, u32 *D, int round, des_ks_t *ks){
+static void des_ks_round(u32 *C, u32 *D, int round, des_ks_t *ks)
+{
     int s = LSHIFT[round];
     u32 tC = DES_WRAPMASK[s] & *C, tD = DES_WRAPMASK[s] & *D;
+    u32 w0 = 0, w1 = 0;
+    int i;
+
     if (s == 1) { tC >>= 27; tD >>= 27; } else { tC >>= 26; tD >>= 26; }
     tC &= 0xfffffff0u; tD &= 0xfffffff0u;
     *C = (*C << s) | tC;
     *D = (*D << s) | tD;
-    u32 w0 = 0, w1 = 0;
-    for (int i = 0; i < 48; ++i) {
+    for (i = 0; i < 48; ++i) {
         if (i < 24) { if (RP(PC2[i]-1)  & *C) w0 |= RP(i);      }
         else        { if (RP(PC2[i]-28) & *D) w1 |= RP(i-24);   } /* -28: in-game quirk */
     }
@@ -150,53 +153,63 @@ static void des_ks_round(u32 *C, u32 *D, int round, des_ks_t *ks){
 }
 
 /* FUN_8c170888: PC-1 then 16 round keys. PC1[0..27]=C half, PC1[28..55]=D half. */
-static void des_key_schedule(const u8 key[8], des_ks_t *ks){
+static void des_key_schedule(const u8 key[8], des_ks_t *ks)
+{
     u32 k0 = des_ld(key), k1 = des_ld(key+4), C = 0, D = 0;
-    for (int i = 0; i < 28; ++i) {
-        u8 v = PC1[i];      u32 s0 = (v < 0x21) ? k0 : k1; if (RP(v-1) & s0) C |= RP(i);
-        u8 w = PC1[28+i];   u32 s1 = (w < 0x21) ? k0 : k1; if (RP(w-1) & s1) D |= RP(i);
+    int i, r;
+
+    for (i = 0; i < 28; ++i) {
+        u8 v = PC1[i], w = PC1[28+i];
+        u32 s0 = (v < 0x21) ? k0 : k1, s1 = (w < 0x21) ? k0 : k1;
+        if (RP(v-1) & s0) C |= RP(i);
+        if (RP(w-1) & s1) D |= RP(i);
     }
-    for (int r = 0; r < 16; ++r) des_ks_round(&C, &D, r, ks);
+    for (r = 0; r < 16; ++r) des_ks_round(&C, &D, r, ks);
 }
 
 /* FUN_8c170696: Feistel round, updates (L=*p1, R=*p2). */
-static void des_feistel(u32 *p1, u32 *p2, int round, const des_ks_t *ks){
+static void des_feistel(u32 *p1, u32 *p2, int round, const des_ks_t *ks)
+{
     u32 R = *p2, e0 = 0, e1 = 0;
-    for (int i = 0; i < 48; ++i) {
+    u32 out = 0, per = 0;
+    u8 g[8];
+    int i, k;
+
+    for (i = 0; i < 48; ++i) {
         if (i < 24) { if (RP(E[i]-1) & R) e0 |= RP(i);    }
         else        { if (RP(E[i]-1) & R) e1 |= RP(i-24); }
     }
     e0 ^= ks->rk[round][0];
     e1 ^= ks->rk[round][1];
-    u8 g[8];
     g[0]=(e0>>26)&0x3f; g[1]=(e0>>20)&0x3f; g[2]=(e0>>14)&0x3f; g[3]=(e0>>8)&0x3f;
     g[4]=(e1>>26)&0x3f; g[5]=(e1>>20)&0x3f; g[6]=(e1>>14)&0x3f; g[7]=(e1>>8)&0x3f;
     /* SBOX is stored row-major (SBOX[s][row*16+col]); map the raw 6-bit value
      * g = b5b4b3b2b1b0 to (row = b5*2|b0, col = middle 4 bits). */
-    u32 out = 0;
-    for (int i = 0; i < 8; ++i) {
+    for (i = 0; i < 8; ++i) {
         int v = g[i], idx = (((v>>4)&2)|(v&1))*16 + ((v>>1)&0xF);
         out = (i < 7) ? ((out | SBOX[i][idx]) << 4) : (out | SBOX[7][idx]);
     }
-    u32 per = 0;
-    for (int k = 0; k < 32; ++k) if (RP(P[k]-1) & out) per |= RP(k);
+    for (k = 0; k < 32; ++k) if (RP(P[k]-1) & out) per |= RP(k);
     *p2 = per ^ *p1;
     *p1 = R;
 }
 
 /* FUN_8c17049c: encrypt one 8-byte block in place. */
-static void des_block(u8 *io, const des_ks_t *ks){
+static void des_block(u8 *io, const des_ks_t *ks)
+{
     u32 w0 = des_ld(io), w1 = des_ld(io+4), l0 = 0, l1 = 0;
-    for (int i = 0; i < 64; ++i) {
+    u32 L, R, t, f0 = 0, f1 = 0;
+    int i, r;
+
+    for (i = 0; i < 64; ++i) {
         u8 v = IP[i]; u32 src = (v < 0x21) ? w0 : w1;
         if (i < 32) { if (RP(v-1) & src) l0 |= RP(i); }
         else        { if (RP(v-1) & src) l1 |= RP(i); }
     }
-    u32 L = l0, R = l1;
-    for (int r = 0; r < 16; ++r) des_feistel(&L, &R, r, ks);
-    u32 t = L; L = R; R = t;                /* final L/R exchange */
-    u32 f0 = 0, f1 = 0;
-    for (int i = 0; i < 64; ++i) {
+    L = l0; R = l1;
+    for (r = 0; r < 16; ++r) des_feistel(&L, &R, r, ks);
+    t = L; L = R; R = t;                /* final L/R exchange */
+    for (i = 0; i < 64; ++i) {
         u8 v = FP[i]; u32 src = (v < 0x21) ? L : R;
         if (i < 32) { if (RP(v-1) & src) f0 |= RP(i); }
         else        { if (RP(v-1) & src) f1 |= RP(i); }
@@ -204,10 +217,14 @@ static void des_block(u8 *io, const des_ks_t *ks){
     des_st(io, f0); des_st(io+4, f1);
 }
 
-void dinokich_des_encrypt(const u8 *plain, size_t len, const u8 key[8], u8 *cipher){
-    des_ks_t ks; des_key_schedule(key, &ks);
+void dinokich_des_encrypt(const u8 *plain, size_t len, const u8 key[8], u8 *cipher)
+{
+    des_ks_t ks;
+    size_t i;
+
+    des_key_schedule(key, &ks);
     memcpy(cipher, plain, len);
-    for (size_t i = 0; i < len; i += 8) des_block(cipher + i, &ks);
+    for (i = 0; i < len; i += 8) des_block(cipher + i, &ks);
 }
 /* =================================================================== */
 /*  Odd-digit interleaver                                              */
@@ -220,12 +237,14 @@ static int digit_value(u8 c){ return c >= '0' && c <= '9' ? c - '0' : 0; }
 
 void dinokich_interleave(const u8 cipher_in[56], const u8 key_in[8], u8 out[64])
 {
-    memset(out, 0, 64);
     int outPos = 0, keyUsed = 0, keyLeft = 8;
-    for (int chunk = 0; chunk < 7; ++chunk) {
+    int chunk;
+
+    memset(out, 0, 64);
+    for (chunk = 0; chunk < 7; ++chunk) {
+        int odd = 0, j;
         memcpy(out + outPos, cipher_in + chunk * 8, 8);
-        int odd = 0;
-        for (int j = 0; j < 8; ++j)
+        for (j = 0; j < 8; ++j)
             if (digit_value(cipher_in[chunk * 8 + j]) & 1) odd++;
         if (odd > keyLeft) odd = keyLeft;
         outPos += 8;
@@ -253,7 +272,8 @@ void dinokich_encode_card(const dinokich_plain_t *in, const u8 key[8], u8 card[6
 int dinokich_sum_bytes(const u8 *data, size_t len)
 {
     int sum = 0;
-    for (size_t i = 0; i < len; ++i) sum += (int8_t)data[i];
+    size_t i;
+    for (i = 0; i < len; ++i) sum += (int8_t)data[i];
     return sum;
 }
 
@@ -275,12 +295,14 @@ int dinokich_sum_bytes(const u8 *data, size_t len)
 static void md5_transform(u32 state[4], const u8 block[64])
 {
     u32 a = state[0], b = state[1], c = state[2], d = state[3], x[16];
-    for (int i = 0; i < 16; ++i)
+    int i;
+
+    for (i = 0; i < 16; ++i)
         x[i] = (u32)block[i*4] | ((u32)block[i*4+1]<<8) |
                ((u32)block[i*4+2]<<16) | ((u32)block[i*4+3]<<24);
 
-    // This isn't a standard MD5 implementation and it is probably intentional.
-    // The shift values of the first round are normally 7, 12, 17, 22 (in this order)
+    /* This isn't a standard MD5 implementation and it is probably intentional.
+     * The shift values of the first round are normally 7, 12, 17, 22 (in this order) */
     MD5_STEP(MD5_F,a,b,c,d,x[ 0],0xd76aa478,12);
     MD5_STEP(MD5_F,d,a,b,c,x[ 1],0xe8c7b756, 7);
     MD5_STEP(MD5_F,c,d,a,b,x[ 2],0x242070db,17);
@@ -364,9 +386,10 @@ void dinokich_md5_init(dinokich_md5_ctx *ctx)
 void dinokich_md5_update(dinokich_md5_ctx *ctx, const u8 *data, size_t len)
 {
     size_t idx = (size_t)((ctx->bit_count >> 3) & 0x3F);
-    ctx->bit_count += (u64)len << 3;
     size_t part = 64 - idx;
     size_t i = 0;
+
+    ctx->bit_count += (u64)len << 3;
     if (len >= part) {
         memcpy(ctx->buffer + idx, data, part);
         md5_transform(ctx->state, ctx->buffer);
@@ -378,16 +401,17 @@ void dinokich_md5_update(dinokich_md5_ctx *ctx, const u8 *data, size_t len)
 
 void dinokich_md5_final(dinokich_md5_ctx *ctx, u8 digest[16])
 {
+    static const u8 pad[64] = { 0x80, 0 };
     u8 bits[8];
-    for (int i = 0; i < 8; ++i) bits[i] = (u8)(ctx->bit_count >> (i*8));
-
     size_t idx = (size_t)((ctx->bit_count >> 3) & 0x3F);
     size_t pad_len = idx < 56 ? 56 - idx : 120 - idx;
-    static const u8 pad[64] = { 0x80, 0 };
+    int i;
+
+    for (i = 0; i < 8; ++i) bits[i] = (u8)(ctx->bit_count >> (i*8));
     dinokich_md5_update(ctx, pad, pad_len);
     dinokich_md5_update(ctx, bits, 8);
 
-    for (int i = 0; i < 4; ++i) {
+    for (i = 0; i < 4; ++i) {
         digest[i*4+0] = (u8)(ctx->state[i]      );
         digest[i*4+1] = (u8)(ctx->state[i] >>  8);
         digest[i*4+2] = (u8)(ctx->state[i] >> 16);
@@ -406,9 +430,9 @@ void dinokich_md5(const u8 *data, size_t len, u8 digest[16])
 void dinokich_md5_scramble(const u8 salt[2], const u8 *in, size_t len, u8 *out)
 {
     u8 digest[16];
+    size_t i;
+
     dinokich_md5(salt, 2, digest);
-    for (size_t i = 0; i < len; ++i)
+    for (i = 0; i < len; ++i)
 		out[i] = in[i] ^ digest[i % 16];
 }
-
-}	// namespace systemsp

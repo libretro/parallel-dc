@@ -31,6 +31,10 @@ enum
 typedef struct TA_context TA_context;
 #endif
 
+/* Aligned memory, and its freeing (ta_ctx.cpp) */
+void* OS_aligned_malloc(size_t align, size_t size);
+void OS_aligned_free(void *ptr);
+
 void ta_vtx_ListCont(void);
 void ta_vtx_ListInit(void);
 void ta_vtx_SoftReset(void);

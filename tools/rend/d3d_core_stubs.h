@@ -20,7 +20,9 @@
 #include <cstdarg>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <string>
+#include "paths.h"
 #include <streams/file_stream.h>
 #include "log/Log.h"
 
@@ -40,9 +42,17 @@ void GenericLog(LogTypes::LOG_LEVELS level, LogTypes::LOG_TYPE type, const char 
 	va_end(ap);
 }
 
-std::string get_writable_data_path(const std::string& name)
+/* (stdclass.h's get_writable_data_path() is made from it) */
+size_t writable_data_path(char *out, size_t size, const char *name)
 {
-	return dataDir + name;
+	const std::string path = dataDir + name;
+	if (size)
+	{
+		size_t n = path.size() < size - 1 ? path.size() : size - 1;
+		memcpy(out, path.data(), n);
+		out[n] = '\0';
+	}
+	return path.size();
 }
 
 struct RFILE { FILE *f; };

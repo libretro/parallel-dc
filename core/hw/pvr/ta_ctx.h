@@ -5,11 +5,6 @@
 #include "ta_index.h"
 #include "../../rend/parse_arena.h"
 
-// helper for 32 byte aligned memory allocation
-void* OS_aligned_malloc(size_t align, size_t size);
-
-// helper for 32 byte aligned memory de-allocation
-void OS_aligned_free(void *ptr);
 
 //Vertex storage types
 struct Vertex

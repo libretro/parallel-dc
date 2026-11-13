@@ -567,7 +567,6 @@ static void dc_init_unwind(int stage)
 int dc_init()
 {
    extern void common_libretro_setup(void);
-   extern char game_dir_no_slash[1024];
    char new_system_dir[1024];
 
    setbuf(stdin,0);

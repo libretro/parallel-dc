@@ -55,7 +55,6 @@ static bool descrambl = false;
 // how many sectors of boot file were read to 8c010000 (not part of a save state)
 static u32 boot_sectors;
 
-extern char game_dir_no_slash[1024];
 extern DCFlashChip sys_nvmem_flash;
 
 /* The console's flash memory, for the calls that work on it - or NULL when

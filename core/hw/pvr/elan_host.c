@@ -14,7 +14,6 @@
 #include "elan.h"
 #include "elan_host.h"
 #include "ta.h"
-#include "ta_ctx.h"
 #include "pvr_regs.h"
 #include "pvr_mem.h"
 #include "spg.h"
@@ -29,7 +28,8 @@ u8 *elan_ram;
 /* It is a piece of the address space when there is one (_vmem.h), which
  * comes and goes with the machine; and memory of its own otherwise. */
 static bool elan_ram_own;
-static_assert(ELAN_RAM_SIZE == 32u * 1024 * 1024, "ERAM_SIZE in _vmem.h is the chip's memory");
+/* (ERAM_SIZE in _vmem.h is the chip's memory) */
+typedef char elan_ram_size_check[ELAN_RAM_SIZE == 32u * 1024 * 1024 ? 1 : -1];
 int elan_schid = -1;
 
 static _vmem_handler reg_handler;
@@ -46,7 +46,7 @@ static u32 DYNACALL read_elanreg(u32 paddr)
 			return sb_ReadMem(addr, 4);
 		if (addr >= 0x005f8000 && addr <= 0x005f9fff)
 		{
-			// the beam's line, as a read of the register at its own address has it
+			/* the beam's line, as a read of the register at its own address has it */
 			if ((addr & pvr_RegMask) == SPG_STATUS_addr)
 				spg_sync();
 			return PvrReg(addr, u32);
@@ -68,7 +68,7 @@ static void DYNACALL write_elanreg(u32 paddr, u32 data)
 		if (addr >= 0x005f6800 && addr <= 0x005f7cff)
 		{
 			sb_WriteMem(addr, data, 4);
-			// and the second PowerVR's interrupt registers
+			/* and the second PowerVR's interrupt registers */
 			asic_WriteCLXB(addr, data);
 		}
 		else if (addr >= 0x005f8000 && addr <= 0x005f9fff)
@@ -91,44 +91,45 @@ static int elan_sched(int tag, int cycles, int jitter)
 	return 0;
 }
 
-extern "C" void elan_host_ta(const uint32_t *blocks, unsigned count)
+void elan_host_ta(const uint32_t *blocks, unsigned count)
 {
 	if (((uintptr_t)blocks & 31) == 0)
 		ta_vtx_data((u32 *)blocks, count);
 	else
 	{
-		// the tile accelerator copies whole aligned blocks
+		/* the tile accelerator copies whole aligned blocks */
 		for (; count; count--, blocks += 8)
 		{
 			DECL_ALIGN(32) u32 block[8];
+
 			memcpy(block, blocks, sizeof(block));
 			ta_vtx_data32(block);
 		}
 	}
 }
 
-extern "C" uint32_t *elan_host_ta_room(unsigned blocks)
+uint32_t *elan_host_ta_room(unsigned blocks)
 {
 	return (uint32_t *)ta_vtx_room(blocks);
 }
 
-extern "C" int elan_host_ta_list(void)
+int elan_host_ta_list(void)
 {
 	return ta_vtx_list();
 }
 
-extern "C" int elan_host_ta_half(void)
+int elan_host_ta_half(void)
 {
 	return ta_vtx_half();
 }
 
-extern "C" void elan_host_list_end(unsigned bit)
+void elan_host_list_end(unsigned bit)
 {
 	asic_RaiseInterruptBothCLX((HollyInterruptID)bit);
 	TA_ITP_CURRENT += 32;
 }
 
-extern "C" bool elan_host_texture_dma(uint32_t dst, uint32_t src, uint32_t size, int from_eram)
+bool elan_host_texture_dma(uint32_t dst, uint32_t src, uint32_t size, int from_eram)
 {
 	const u8 *from;
 
@@ -148,25 +149,25 @@ extern "C" bool elan_host_texture_dma(uint32_t dst, uint32_t src, uint32_t size,
 			return false;
 		from = mem_b.data + src;
 	}
-	// (a write to video memory the texture cache is watching traps, and the
-	// cache hears of it that way)
+	/* (a write to video memory the texture cache is watching traps, and the */
+	/* cache hears of it that way) */
 	memcpy(vram.data + dst, from, size);
-	// The chip moves 64 bits at 100 MHz, in theory; Initial D 3 wants some
-	// 50 MB/s of it to start (flycast)
+	/* The chip moves 64 bits at 100 MHz, in theory; Initial D 3 wants some */
+	/* 50 MB/s of it to start (flycast) */
 	sh4_sched_request(elan_schid, 512);
 	return true;
 }
 
-void elan_host_init()
+void elan_host_init(void)
 {
 	elan_schid = sh4_sched_register(0, &elan_sched);
 	if (elan_ram && !elan_ram_own)
-		elan_ram = NULL;		// the last machine's, gone with its address space
+		elan_ram = NULL;		/* the last machine's, gone with its address space */
 	if (settings.System == DC_PLATFORM_NAOMI2 && _vmem_elan_ram)
 	{
 		if (elan_ram)
 			OS_aligned_free(elan_ram);
-		// (new with the address space, and nothing in it yet)
+		/* (new with the address space, and nothing in it yet) */
 		elan_ram     = _vmem_elan_ram;
 		elan_ram_own = false;
 	}
@@ -188,9 +189,9 @@ void elan_host_init()
 	elan_init(elan_ram);
 }
 
-void elan_host_term()
+void elan_host_term(void)
 {
-	// (a piece of the address space goes with it, after this)
+	/* (a piece of the address space goes with it, after this) */
 	if (elan_ram && elan_ram_own)
 		OS_aligned_free(elan_ram);
 	elan_ram     = NULL;
@@ -205,7 +206,7 @@ void elan_host_reset(bool hard)
 		if (elan_ram)
 			memset(elan_ram, 0, ELAN_RAM_SIZE);
 		elan_reset();
-		// (which leaves no transfer under way: there is no end of one to come)
+		/* (which leaves no transfer under way: there is no end of one to come) */
 		if (sh4_sched_is_scheduled(elan_schid))
 			sh4_sched_request(elan_schid, -1);
 	}
@@ -232,7 +233,7 @@ bool pvr_unserialize_v23(void **data, unsigned int *total_size)
 
 	if (settings.System != DC_PLATFORM_NAOMI2 || !elan_ram)
 		return true;
-	// (any value is one a game can give: they only go into float arithmetic and comparisons)
+	/* (any value is one a game can give: they only go into float arithmetic and comparisons) */
 	if (!LIBRETRO_USA(planes, 2))
 		return false;
 	elan_set_planes(planes);
@@ -245,7 +246,7 @@ void pvr_state_before_v23(void)
 {
 }
 
-void elan_host_map_init()
+void elan_host_map_init(void)
 {
 	reg_handler = _vmem_register_handler(0, 0, read_elanreg, 0, 0, write_elanreg);
 	cmd_handler = _vmem_register_handler(0, 0, 0, 0, 0, write_elancmd);

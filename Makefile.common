@@ -27,7 +27,6 @@ SOURCES_CXX := \
 					\
 					$(CORE_DIR)/core/hw/mem/_vmem.cpp \
 					\
-					$(CORE_DIR)/core/hw/pvr/elan_host.cpp \
 					$(CORE_DIR)/core/hw/pvr/Renderer_if.cpp \
 					$(CORE_DIR)/core/hw/pvr/ta.cpp \
 					$(CORE_DIR)/core/hw/pvr/ta_ctx.cpp \
@@ -46,7 +45,6 @@ SOURCES_CXX := \
 					$(CORE_DIR)/core/cheats.cpp \
 					$(CORE_DIR)/core/nullDC.cpp \
 					$(CORE_DIR)/core/serialize.cpp \
-					$(CORE_DIR)/core/stdclass.cpp \
 					\
 					\
 					$(CORE_DIR)/core/reios/reios.cpp \
@@ -116,7 +114,8 @@ SOURCES_C += $(LIBRETRO_COMM_DIR)/encodings/encoding_xxh32.c
 SOURCES_C += $(CORE_DIR)/core/rend/custom_image.c
 
 # The NAOMI 2's geometry processor
-SOURCES_C += $(CORE_DIR)/core/hw/pvr/elan.c
+SOURCES_C += $(CORE_DIR)/core/hw/pvr/elan.c \
+			$(CORE_DIR)/core/hw/pvr/elan_host.c
 
 # The ROMs of a NAOMI cartridge that share a range a word each in turn
 SOURCES_C += $(CORE_DIR)/core/hw/naomi/naomi_interleave.c
@@ -142,6 +141,7 @@ SOURCES_C += $(CORE_DIR)/core/hw/gdrom/gdrom_response.c \
 					$(CORE_DIR)/core/hw/sh4/sh4_mem.c \
 					$(CORE_DIR)/core/hw/sh4/sh4_rom.c \
 					$(CORE_DIR)/core/hw/naomi/decrypt.c \
+					$(CORE_DIR)/core/hw/naomi/dinokich_card.c \
 					$(CORE_DIR)/core/hw/sh4/modules/mmu.c \
 					$(CORE_DIR)/core/hw/sh4/modules/fastmmu.c \
 					$(CORE_DIR)/core/hw/sh4/interpr/sh4_interpreter.c \
@@ -376,7 +376,6 @@ SOURCES_CXX += $(CORE_DIR)/core/hw/naomi/naomi.cpp \
 					$(CORE_DIR)/core/hw/naomi/hopper.cpp \
 					$(CORE_DIR)/core/hw/naomi/systemsp.cpp \
 					$(CORE_DIR)/core/hw/naomi/dinokich.cpp \
-					$(CORE_DIR)/core/hw/naomi/dinokich_card.cpp \
 					$(CORE_DIR)/core/network/naomi_network.cpp
 
 # The sockets under net_platform.h, for the modem's network and NAOMI's
@@ -387,6 +386,9 @@ endif
 
 # The device in the Dreamcast's expansion port, in every build
 SOURCES_C += $(CORE_DIR)/core/network/netstate.c
+
+# Where the core writes its files
+SOURCES_C += $(CORE_DIR)/core/paths.c
 
 # The SH4's recompiler: none with NO_REC=1, the interpreter alone
 ifneq ($(NO_REC), 1)

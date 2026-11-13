@@ -1,5 +1,6 @@
 #pragma once
 #include "types.h"
+#include "paths.h"
 #include <stdlib.h>
 #include <vector>
 #include <string.h>
@@ -330,9 +331,20 @@ public :
 //Set the path !
 void set_user_config_dir(const std::string& dir);
 
-//subpath format: /data/fsca-table.bit
-std::string get_writable_data_path(const std::string& filename);
-std::string get_writable_vmu_path(const char *logical_port);
+/* subpath format: /data/fsca-table.bit (paths.h) */
+static inline std::string get_writable_data_path(const std::string& filename)
+{
+	std::string path(writable_data_path(NULL, 0, filename.c_str()), '\0');
+	writable_data_path(&path[0], path.size() + 1, filename.c_str());
+	return path;
+}
+
+static inline std::string get_writable_vmu_path(const char *logical_port)
+{
+	std::string path(writable_vmu_path(NULL, 0, logical_port), '\0');
+	writable_vmu_path(&path[0], path.size() + 1, logical_port);
+	return path;
+}
 
 bool mem_region_lock(void *start, std::size_t len);
 bool mem_region_unlock(void *start, std::size_t len);

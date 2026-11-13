@@ -28,7 +28,10 @@ name: Headless
 # NAOMI's 315-5881 decryption against what it gave before
 # (tools/naomi/decrypt_run.sh), the ELF reader (tools/libelf/elf_test.sh),
 # the NAOMI's X76F100 serial flash (tools/flashrom/x76f100_run.sh), and the
-# modem's DNS queries and the answers it reads (tools/modem/dns_run.sh).
+# modem's DNS queries and the answers it reads (tools/modem/dns_run.sh), and
+# Dinosaur King's card codec against what it made before
+# (tools/naomi/dinokich_card_run.sh), and the paths the core writes to, a
+# content's name of any length included (tools/paths/paths_run.sh).
 # And the threads a texture scaled up is shared out to, and the core needing
 # no OpenMP runtime (tools/rend/band_pool_test.sh). And custom textures'
 # pictures, read as stb_image read them and dumped
@@ -63,6 +66,7 @@ on:
       - 'tools/libelf/**'
       - 'tools/flashrom/**'
       - 'tools/modem/**'
+      - 'tools/paths/**'
       - 'tools/sh4/opcode_table_*'
       - 'Makefile*'
       - '.github/workflows/headless.yml'
@@ -92,6 +96,7 @@ on:
       - 'tools/libelf/**'
       - 'tools/flashrom/**'
       - 'tools/modem/**'
+      - 'tools/paths/**'
       - 'tools/sh4/opcode_table_*'
       - 'Makefile*'
       - '.github/workflows/headless.yml'
@@ -176,6 +181,14 @@ jobs:
         run: |
           sh tools/naomi/decrypt_run.sh
           sh tools/naomi/decrypt_run.sh -fsanitize=address,undefined -fno-sanitize-recover=all
+      - name: Dinosaur King's card codec, as it always was (and with the sanitizers)
+        run: |
+          sh tools/naomi/dinokich_card_run.sh
+          sh tools/naomi/dinokich_card_run.sh -fsanitize=address,undefined -fno-sanitize-recover=all
+      - name: The paths the core writes to, a content's name of any length (and with the sanitizers)
+        run: |
+          sh tools/paths/paths_run.sh
+          sh tools/paths/paths_run.sh -fsanitize=address,undefined -fno-sanitize-recover=all
       - name: The ELF reader, an SH-4 executable's headers every way they are read (C89, ASan/UBSan)
         run: sh tools/libelf/elf_test.sh
       - name: The NAOMI's X76F100 serial flash, its protocol and its state, and lines at random as before (and with the sanitizers)

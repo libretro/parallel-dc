@@ -72,7 +72,6 @@ char g_parent_name[128];
 extern RomChip sys_rom;
 extern DCFlashChip sys_nvmem_flash;		// AtomisWave BIOS is loaded there
 
-extern char game_dir_no_slash[1024];
 extern char g_roms_dir[PATH_MAX];
 
 InputDescriptors *naomi_game_inputs;

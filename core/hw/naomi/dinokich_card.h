@@ -24,10 +24,11 @@
 #include <stddef.h>
 #include "types.h"
 
-namespace systemsp
-{
+#ifdef __cplusplus
+extern "C" {
+#endif
 
-// The block at offset 0x40 of a card, decrypted: 56 bytes
+/* The block at offset 0x40 of a card, decrypted: 56 bytes */
 #pragma pack(push, 1)
 typedef struct {
     u8  serial_prefix[4];   /* 0x00 */
@@ -41,7 +42,7 @@ typedef struct {
 } dinokich_plain_t;
 #pragma pack(pop)
 
-// The game's own DES, which is not quite the standard one (dinokich_card.cpp)
+/* The game's own DES, which is not quite the standard one (dinokich_card.c) */
 void dinokich_des_encrypt(const u8 *plain, size_t len, const u8 key[8], u8 *cipher);
 
 /* The 56 bytes encrypted with the 8 of the key, as a 64-byte block: after
@@ -49,13 +50,13 @@ void dinokich_des_encrypt(const u8 *plain, size_t len, const u8 key[8], u8 *ciph
  * ('1', '3'...) among them, and what is left of the key at the end. */
 void dinokich_interleave(const u8 cipher_in[56], const u8 key_in[8], u8 out[64]);
 
-// A new card's block at offset 0x40, from its contents and key
+/* A new card's block at offset 0x40, from its contents and key */
 void dinokich_encode_card(const dinokich_plain_t *in, const u8 key[8], u8 card[64]);
 
-// The sum of the bytes, each signed
+/* The sum of the bytes, each signed */
 int dinokich_sum_bytes(const u8 *data, size_t len);
 
-// The game's own MD5, which is not quite the standard one
+/* The game's own MD5, which is not quite the standard one */
 typedef struct {
     u32 state[4];
     u64 bit_count;
@@ -71,4 +72,6 @@ void dinokich_md5(const u8 *data, size_t len, u8 digest[16]);
  * with it, over and over: @in to @out, @len bytes. */
 void dinokich_md5_scramble(const u8 salt[2], const u8 *in, size_t len, u8 *out);
 
-}	// namespace systemsp
+#ifdef __cplusplus
+}
+#endif
