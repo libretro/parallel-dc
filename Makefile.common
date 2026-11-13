@@ -39,7 +39,6 @@ SOURCES_CXX := \
 					$(CORE_DIR)/core/rend/rtt_watch.cpp \
 					$(CORE_DIR)/core/rend/tile/compute_frame.cpp \
 					\
-					$(CORE_DIR)/core/hw/sh4/sh4_opcode_list.cpp \
 					$(CORE_DIR)/core/hw/sh4/sh4_cache.cpp \
 					$(CORE_DIR)/core/hw/sh4/modules/serial.cpp \
 					$(CORE_DIR)/core/log/LogManagerLibretro.cpp \
@@ -146,6 +145,7 @@ SOURCES_C += $(CORE_DIR)/core/hw/gdrom/gdrom_response.c \
 					$(CORE_DIR)/core/hw/sh4/modules/mmu.c \
 					$(CORE_DIR)/core/hw/sh4/modules/fastmmu.c \
 					$(CORE_DIR)/core/hw/sh4/interpr/sh4_interpreter.c \
+					$(CORE_DIR)/core/hw/sh4/sh4_opcode_list.c \
 					$(CORE_DIR)/core/hw/sh4/interpr/sh4_opcodes.c \
 					$(CORE_DIR)/core/hw/sh4/interpr/sh4_fpu.c \
 					$(CORE_DIR)/core/hw/arm7/arm_mem.c \

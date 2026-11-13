@@ -61,7 +61,8 @@ struct sh4_opcodelistentry
 extern sh4_opcodelistentry* OpDesc[0x10000];
 extern sh4_opcodelistentry opcodes[];
 
-void DissasembleOpcode(u16 opcode,u32 pc,char* Dissasm);
+/* Fills OpPtr and OpDesc from opcodes[], once, before the CPU runs (dc_init()) */
+void BuildOpcodeTables(void);
 typedef enum DecParam
 {
 	/* Constants */

@@ -8,7 +8,7 @@
 
 */
 #if HOST_CPU == CPU_ARM && !defined(_ANDROID) && 0
-//FIXME: Fix extern function support on shil, or remove these
+/* FIXME: Fix extern function support on shil, or remove these */
 extern "C" void ftrv_asm(float* fd,float* fn, float* fm);
 extern "C" f32 fipr_asm(float* fn, float* fm);
 #define ftrv_impl ftrv_asm
@@ -26,9 +26,9 @@ extern "C" f32 fipr_asm(float* fn, float* fm);
 #define fsca_impl fsca_table
 
 #if SHIL_MODE==0
-//generate enums ..
+/* generate enums .. */
 	#define SHIL_START enum shilop {
-	#define SHIL_END shop_max, };
+	#define SHIL_END shop_max };
 
 	#define shil_opc(name) shop_##name,
 	#define shil_opc_end()
@@ -36,7 +36,7 @@ extern "C" f32 fipr_asm(float* fn, float* fm);
 	#define shil_canonical(rv,name,args,code)
 	#define shil_compile(code)
 #elif  SHIL_MODE==1
-	//generate structs ...
+	/* generate structs ... */
 	#define SHIL_START
 	#define SHIL_END
 
@@ -56,7 +56,7 @@ extern "C" f32 fipr_asm(float* fn, float* fm);
 
 	#define shil_compile(code) static void compile(shil_opcode* op) { ngen_CC_Start(op); code ngen_CC_Finish(op); }
 #elif  SHIL_MODE==2
-	//generate struct declarations ...
+	/* generate struct declarations ... */
 	#define SHIL_START
 	#define SHIL_END
 
@@ -66,7 +66,7 @@ extern "C" f32 fipr_asm(float* fn, float* fm);
 	#define shil_canonical(rv,name,args,code) struct name { static rv impl args; };
 	#define shil_compile(code) static void compile(shil_opcode* op);
 #elif  SHIL_MODE==3
-	//generate struct list ...
+	/* generate struct list ... */
 	
 
 	#define SHIL_START \
@@ -80,7 +80,7 @@ extern "C" f32 fipr_asm(float* fn, float* fm);
 	#define shil_canonical(rv,name,args,code)
 	#define shil_compile(code)
 #elif SHIL_MODE==4
-//generate name strings ..
+/* generate name strings .. */
 	#define SHIL_START const char* shilop_str[]={
 	#define SHIL_END };
 
@@ -96,7 +96,7 @@ extern "C" f32 fipr_asm(float* fn, float* fm);
 
 
 #if SHIL_MODE==1 || SHIL_MODE==2
-//only in structs we use the code :)
+/* only in structs we use the code :) */
 #include <math.h>
 #include <cmath>
 #include "types.h"
@@ -172,17 +172,17 @@ shil_compile( \
 SHIL_START
 
 
-//shop_mov32
+/* shop_mov32 */
 shil_opc(mov32)
 shil_recimp()
 shil_opc_end()
 
-//shop_mov64
+/* shop_mov64 */
 shil_opc(mov64)
 shil_recimp()
 shil_opc_end()
 
-//Special opcodes
+/* Special opcodes */
 shil_opc(jdyn)
 shil_recimp()
 shil_opc_end()
@@ -191,12 +191,12 @@ shil_opc(jcond)
 shil_recimp()
 shil_opc_end()
 
-//shop_ifb
+/* shop_ifb */
 shil_opc(ifb)
 shil_recimp()
 shil_opc_end()
 
-//mem io
+/* mem io */
 shil_opc(readm)	
 shil_recimp()
 shil_opc_end()
@@ -205,7 +205,7 @@ shil_opc(writem)
 shil_recimp()
 shil_opc_end()
 
-//Canonical impl. opcodes !
+/* Canonical impl. opcodes ! */
 shil_opc(sync_sr)
 shil_canonical
 (
@@ -230,57 +230,57 @@ shil_compile
 )
 shil_opc_end()
 
-//shop_and
+/* shop_and */
 shil_opc(and)
 BIN_OP_I(&)
 shil_opc_end()
 
-//shop_or
+/* shop_or */
 shil_opc(or)
 BIN_OP_I(|)
 shil_opc_end()
 
-//shop_xor
+/* shop_xor */
 shil_opc(xor)
 BIN_OP_I(^)
 shil_opc_end()
 
-//shop_not
+/* shop_not */
 shil_opc(not)
 UN_OP_I(~)
 shil_opc_end()
 
-//shop_add
+/* shop_add */
 shil_opc(add)
 BIN_OP_I(+)
 shil_opc_end()
 
-//shop_sub
+/* shop_sub */
 shil_opc(sub)
 BIN_OP_I(-)
 shil_opc_end()
 
-//shop_neg
+/* shop_neg */
 shil_opc(neg)
 UN_OP_I(-)
 shil_opc_end()
 
-//shop_shl,
+/* shop_shl, */
 shil_opc(shl)
 BIN_OP_I2(u32,<<)
 shil_opc_end()
 
-//shop_shr
+/* shop_shr */
 shil_opc(shr)
 BIN_OP_I2(u32,>>)
 shil_opc_end()
 
-//shop_sar
+/* shop_sar */
 shil_opc(sar)
 BIN_OP_I2(s32,>>)
 shil_opc_end()
 
-//shop_adc	//add with carry
+/* shop_adc: add with carry */
 shil_opc(adc)
 shil_canonical
 (
@@ -291,14 +291,6 @@ u64,f1,(u32 r1,u32 r2,u32 C),
 	((u32*)&rv)[0]=res;
 	((u32*)&rv)[1]=res>>32;
 
-	/*
-	//Damn macro magic//
-#if HOST_CPU==CPU_X86
-	verify(((u32*)&rv)[1]<=1);
-	verify(C<=1);
-#endif
-	*/
-
 	return rv;
 )
 
@@ -314,7 +306,7 @@ shil_compile
 shil_opc_end()
 
 
-//shop_sbc	// substract with carry
+/* shop_sbc:  substract with carry */
 shil_opc(sbc)
 shil_canonical
 (
@@ -323,15 +315,7 @@ u64,f1,(u32 r1,u32 r2,u32 C),
 
 	u64 rv;
 	((u32*)&rv)[0]=res;
-	((u32*)&rv)[1]=(res>>32)&1; //alternatively: res>>63
-
-	/*
-	//Damn macro magic//
-#if HOST_CPU==CPU_X86
-	verify(((u32*)&rv)[1]<=1);
-	verify(C<=1);
-#endif
-	*/
+	((u32*)&rv)[1]=(res>>32)&1; /* alternatively: res>>63 */
 
 	return rv;
 )
@@ -346,7 +330,7 @@ shil_compile
 )
 shil_opc_end()
 
-//shop_div1 -- one step of a division: rd = the new Rn, rd2 = the new T
+/* shop_div1 -- one step of a division: rd = the new Rn, rd2 = the new T */
 /* Q and M are in the status register, which this reads and writes where it
  * is kept: the register allocator and the optimizer write it back before
  * this and take it as changed after (ssa_regalloc.h, ssa.h). */
@@ -375,7 +359,7 @@ shil_compile
 )
 shil_opc_end()
 
-//shop_negc - Negate with carry
+/* shop_negc - Negate with carry */
 shil_opc(negc)
 shil_canonical
 (
@@ -398,7 +382,7 @@ shil_compile
 )
 shil_opc_end()
 
-//shop_ror
+/* shop_ror */
 shil_opc(ror)
 shil_canonical
 (
@@ -417,7 +401,7 @@ shil_compile
 shil_opc_end()
 
 
-//shop_rocl
+/* shop_rocl */
 shil_opc(rocl)
 shil_canonical
 (
@@ -438,7 +422,7 @@ shil_compile
 
 shil_opc_end()
 
-//shop_rocr
+/* shop_rocr */
 shil_opc(rocr)
 shil_canonical
 (
@@ -459,7 +443,7 @@ shil_compile
 
 shil_opc_end()
 
-//shop_swaplb -- swap low bytes
+/* shop_swaplb -- swap low bytes */
 shil_opc(swaplb)
 shil_canonical
 (
@@ -477,7 +461,7 @@ shil_compile
 shil_opc_end()
 
 
-//shop_swap -- swap all bytes in word
+/* shop_swap -- swap all bytes in word */
 shil_opc(swap)
 shil_canonical
 (
@@ -494,7 +478,7 @@ shil_compile
 
 shil_opc_end()
 
-//shop_shld
+/* shop_shld */
 shil_opc(shld)
 shil_canonical
 (
@@ -519,7 +503,7 @@ shil_compile
 )
 shil_opc_end()
 
-//shop_shad
+/* shop_shad */
 shil_opc(shad)
 shil_canonical
 (
@@ -545,7 +529,7 @@ shil_compile
 
 shil_opc_end()
 
-//shop_ext_s8
+/* shop_ext_s8 */
 shil_opc(ext_s8)
 shil_canonical
 (
@@ -563,7 +547,7 @@ shil_compile
 shil_opc_end()
 
 
-//shop_ext_s16
+/* shop_ext_s16 */
 shil_opc(ext_s16)
 shil_canonical
 (
@@ -580,34 +564,34 @@ shil_compile
 
 shil_opc_end()
 
-//shop_mul_u16
+/* shop_mul_u16 */
 shil_opc(mul_u16)
 BIN_OP_I4(u16,*,u32,u32)
 shil_opc_end()
 
-//shop_mul_s16
+/* shop_mul_s16 */
 shil_opc(mul_s16)
 BIN_OP_I4(s16,*,u32,u32)
 shil_opc_end()
 
-//no difference between signed and unsigned when only the lower
-//32 bis are used !
-//shop_mul_i32
+/* no difference between signed and unsigned when only the lower */
+/* 32 bis are used ! */
+/* shop_mul_i32 */
 shil_opc(mul_i32)
 BIN_OP_I4(s32,*,u32,u32)
 shil_opc_end()
 
-//shop_mul_u64
+/* shop_mul_u64 */
 shil_opc(mul_u64)
 BIN_OP_I4(u64,*,u64,u32)
 shil_opc_end()
 
-//shop_mul_s64
+/* shop_mul_s64 */
 shil_opc(mul_s64)
 BIN_OP_I4(s64,*,u64,s32)
 shil_opc_end()
 
-//shop_div32u	//divide 32 bits, unsigned
+/* shop_div32u: divide 32 bits, unsigned */
 shil_opc(div32u)
 shil_canonical
 (
@@ -644,20 +628,20 @@ shil_compile
 
 shil_opc_end()
 
-//shop_div32s	//divide 32 bits, signed
+/* shop_div32s: divide 32 bits, signed */
 shil_opc(div32s)
 shil_canonical
 (
 u64,f1,(u32 r1, s32 r2, s32 r3),
 	s64 dividend = ((s64)r3 << 32) | r1;
-	// 1's complement -> 2's complement
+	/* 1's complement -> 2's complement */
 	if (dividend < 0)
 		dividend++;
 
    s32 quo = (s32)(r2 ? dividend / r2 : 0);
 	s32 rem = dividend - quo * r2;
 	u32 negative = (r3 ^ r2) & 0x80000000;
-	// 2's complement -> 1's complement
+	/* 2's complement -> 1's complement */
 	if (negative)
 		quo--;
 	else if (r3 < 0)
@@ -680,12 +664,12 @@ shil_compile
 
 shil_opc_end()
 
-//shop_div32p2	//div32, fixup step (part 2)
+/* shop_div32p2: div32, fixup step (part 2) */
 shil_opc(div32p2)
 shil_canonical
 (
 u32,f1,(s32 a,s32 b,u32 T),
-	// the sign of the quotient is stored in bit 31 of T
+	/* the sign of the quotient is stored in bit 31 of T */
 	if (!(T & 0x80000000))
 	{
 		if (!(T & 1))
@@ -693,7 +677,7 @@ u32,f1,(s32 a,s32 b,u32 T),
 	}
 	else
 	{
-		// 2's complement -> 1's complement
+		/* 2's complement -> 1's complement */
 		if (b > 0)
 			a--;
 		if (T & 1)
@@ -714,7 +698,7 @@ shil_compile
 
 shil_opc_end()
 
-//debug_3
+/* debug_3 */
 shil_opc(debug_3)
 shil_canonical
 (
@@ -732,7 +716,7 @@ shil_compile
 
 shil_opc_end()
 
-//debug_1
+/* debug_1 */
 shil_opc(debug_1)
 shil_canonical
 (
@@ -748,23 +732,23 @@ shil_compile
 
 shil_opc_end()
 
-//shop_cvt_f2i_t	//float to integer : truncate
+/* shop_cvt_f2i_t: float to integer : truncate */
 shil_opc(cvt_f2i_t)
 
 #if HOST_CPU == CPU_X86 || HOST_CPU == CPU_X64
 shil_canonical
 (
 u32,f1,(f32 f1),
-   if (float_is_nan(f1))	// first, and from its bits: see float_is_nan()
+   if (float_is_nan(f1))	/* first, and from its bits: see float_is_nan() */
 		return 0x80000000;
-   else if (f1 > 2147483520.0f)	// IEEE 754: 0x4effffff
+   else if (f1 > 2147483520.0f)	/* IEEE 754: 0x4effffff */
 		return 0x7fffffff;
 	else
 	{
 		s32 res = (s32)f1;
 
-		// Fix result sign for Intel CPUs. Not for a NaN, which is not
-		// greater than zero whatever its sign bit and stays 0x80000000.
+		/* Fix result sign for Intel CPUs. Not for a NaN, which is not */
+		/* greater than zero whatever its sign bit and stays 0x80000000. */
 		if ((u32)res == 0x80000000 && f1 > 0)
 			res = 0x7fffffff;
 
@@ -775,9 +759,9 @@ u32,f1,(f32 f1),
 shil_canonical
 (
 u32,f1,(f32 f1),
-	if (float_is_nan(f1))	// these hosts would make it 0. From its bits: see float_is_nan()
+	if (float_is_nan(f1))	/* these hosts would make it 0. From its bits: see float_is_nan() */
 		return 0x80000000;
-	else if (f1 > 2147483520.0f) // IEEE 754: 0x4effffff
+	else if (f1 > 2147483520.0f) /* IEEE 754: 0x4effffff */
 		return 0x7fffffff;
 	else
 		return (s32)f1;
@@ -793,7 +777,7 @@ shil_compile
 
 shil_opc_end()
 
-//shop_cvt_i2f_n	//integer to float : nearest
+/* shop_cvt_i2f_n: integer to float : nearest */
 shil_opc(cvt_i2f_n)
 shil_canonical
 (
@@ -810,7 +794,7 @@ shil_compile
 
 shil_opc_end()
 
-//shop_cvt_i2f_z	//integer to float : round to zero
+/* shop_cvt_i2f_z: integer to float : round to zero */
 shil_opc(cvt_i2f_z)
 shil_canonical
 (
@@ -828,7 +812,7 @@ shil_compile
 shil_opc_end()
 
 
-//pref !
+/* pref ! */
 shil_opc(pref)
 shil_canonical
 (
@@ -857,37 +841,37 @@ shil_compile
 
 shil_opc_end()
 
-//shop_test
+/* shop_test */
 shil_opc(test)
 BIN_OP_I3(&,== 0)
 shil_opc_end()
 
-//shop_seteq	//equal
+/* shop_seteq: equal */
 shil_opc(seteq)
 BIN_OP_I2(s32,==)
 shil_opc_end()
 
-//shop_setge	//>=, signed (greater equal)
+/* shop_setge: >=, signed (greater equal) */
 shil_opc(setge)
 BIN_OP_I2(s32,>=)
 shil_opc_end()
 
-//shop_setgt //>, signed	 (greater than)
+/* shop_setgt: >, signed	 (greater than) */
 shil_opc(setgt)
 BIN_OP_I2(s32,>)
 shil_opc_end()
 
-//shop_setae	//>=, unsigned (above equal)
+/* shop_setae: >=, unsigned (above equal) */
 shil_opc(setae)
 BIN_OP_I2(u32,>=)
 shil_opc_end()
 
-//shop_setab	//>, unsigned (above)
+/* shop_setab: >, unsigned (above) */
 shil_opc(setab)
 BIN_OP_I2(u32,>)
 shil_opc_end()
 
-//shop_setpeq //set if any pair of bytes is equal
+/* shop_setpeq: set if any pair of bytes is equal */
 shil_opc(setpeq)
 shil_canonical
 (
@@ -910,45 +894,45 @@ shil_compile
 
 shil_opc_end()
 
-//here come the moving points
+/* here come the moving points */
 
-//shop_fadd
+/* shop_fadd */
 shil_opc(fadd)
 BIN_OP_F(+)
 shil_opc_end()
 
-//shop_fsub
+/* shop_fsub */
 shil_opc(fsub)
 BIN_OP_F(-)
 shil_opc_end()
 
-//shop_fmul
+/* shop_fmul */
 shil_opc(fmul)
 BIN_OP_F(*)
 shil_opc_end()
 
-//shop_fdiv
+/* shop_fdiv */
 shil_opc(fdiv)
 BIN_OP_F(/)
 shil_opc_end()
 
-//shop_fabs
+/* shop_fabs */
 shil_opc(fabs)
 UN_OP_F(fabsf)
 shil_opc_end()
 
-//shop_fneg
+/* shop_fneg */
 shil_opc(fneg)
 UN_OP_F(-)
 shil_opc_end()
 
-//shop_fsqrt
+/* shop_fsqrt */
 shil_opc(fsqrt)
 UN_OP_F(sqrtf)
 shil_opc_end()
 
 
-//shop_fipr
+/* shop_fipr */
 shil_opc(fipr)
 
 /* The four products and their sum in doubles, on every host, as upstream
@@ -978,10 +962,10 @@ shil_opc_end()
 
 
 
-//shop_ftrv
+/* shop_ftrv */
 shil_opc(ftrv)
 
-// As fipr above, for each of the four rows
+/* As fipr above, for each of the four rows */
 shil_canonical
 (
 void,f1,(float* fd, const float* fn, const float* fm),
@@ -1021,7 +1005,7 @@ shil_compile
 )
 shil_opc_end()
 
-//shop_fmac
+/* shop_fmac */
 shil_opc(fmac)
 shil_canonical
 (
@@ -1038,13 +1022,13 @@ shil_compile
 )
 shil_opc_end()
 
-//shop_fsrra
+/* shop_fsrra */
 shil_opc(fsrra)
 UN_OP_F(1/sqrtf)
 shil_opc_end()
 
 
-//shop_fsca
+/* shop_fsca */
 shil_opc(fsca)
 
 shil_canonical
@@ -1078,19 +1062,19 @@ shil_compile
 shil_opc_end()
 
 
-//shop_fseteq
+/* shop_fseteq */
 shil_opc(fseteq)
 BIN_OP_FU(==)
 shil_opc_end()
 
-//shop_fsetgt
+/* shop_fsetgt */
 shil_opc(fsetgt)
 BIN_OP_FU(>)
 shil_opc_end()
 
 
 
-//shop_frswap
+/* shop_frswap */
 shil_opc(frswap)
 shil_canonical
 (
@@ -1114,7 +1098,7 @@ shil_compile
 )
 shil_opc_end()
 
-//shop_xtrct
+/* shop_xtrct */
 shil_opc(xtrct)
 shil_canonical
 (
@@ -1133,7 +1117,7 @@ shil_opc_end()
 SHIL_END
 
 
-//undefine stuff
+/* undefine stuff */
 #undef SHIL_MODE
 
 #undef SHIL_START

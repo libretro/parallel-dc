@@ -32,8 +32,7 @@ enum shil_param_type
 */
 
 
-#define SHIL_MODE 0
-#include "shil_canonical.h"
+#include "shilop.h"
 
 struct shil_param
 {

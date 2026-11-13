@@ -2,14 +2,22 @@
 #define REIOS_H
 
 #include "types.h"
+#ifdef __cplusplus
 #include "hw/flashrom/flashrom.h"
+#endif
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+/* The HLE BIOS's opcode: what it does, at its address (sh4_opcode_list.c) */
+void DYNACALL reios_trap(u32 op);
+#define REIOS_OPCODE 0x085B
+#ifdef __cplusplus
+}
 
 bool reios_init();
 
 void reios_reset(u8* rom, MemChip *flash);
-
-
-void DYNACALL reios_trap(u32 op);
 
 void reios_disk_id();
 
@@ -39,7 +47,6 @@ struct ip_meta_t
 	bool isMILCD() const { return memcmp("MIL CD", disk_type, 6) == 0; }
 };
 extern ip_meta_t ip_meta;
+#endif
 
-#define REIOS_OPCODE 0x085B
-
-#endif //REIOS_H
+#endif /* REIOS_H */

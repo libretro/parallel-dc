@@ -23,6 +23,7 @@
 
 #include "reios/reios.h"
 #include "reios/gdrom_hle.h"
+#include "hw/sh4/sh4_opcode_list.h"
 
 extern bool bios_loaded;
 #include <libretro.h>
@@ -573,6 +574,7 @@ int dc_init()
    setbuf(stdout,0);
    setbuf(stderr,0);
    common_libretro_setup();
+   BuildOpcodeTables();
 
    if (!_vmem_reserve())
    {

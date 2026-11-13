@@ -1,4 +1,9 @@
 #pragma once
+/* The recompiler's decoders for the opcodes it takes by hand (decoder.cpp;
+ * empty with no recompiler): C and C++ */
+#ifdef __cplusplus
+extern "C" {
+#endif
 #if FEAT_SHREC != DYNAREC_NONE
 #define sh4dec(str) void dec_##str (u32 op)
 #else
@@ -33,3 +38,7 @@ sh4dec(i1111_0011_1111_1101);
 sh4dec(i1111_1011_1111_1101);
 sh4dec(i0100_nnnn_0010_0100);
 sh4dec(i0100_nnnn_0010_0101);
+
+#ifdef __cplusplus
+}
+#endif
