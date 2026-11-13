@@ -41,9 +41,7 @@ SOURCES_CXX := \
 					$(CORE_DIR)/core/rend/tile/compute_frame.cpp \
 					\
 					$(CORE_DIR)/core/hw/sh4/sh4_opcode_list.cpp \
-					$(CORE_DIR)/core/hw/sh4/interpr/sh4_interpreter.cpp \
-					$(CORE_DIR)/core/hw/sh4/interpr/sh4_fpu.cpp \
-					$(CORE_DIR)/core/hw/sh4/interpr/sh4_opcodes.cpp \
+					$(CORE_DIR)/core/hw/sh4/sh4_cache.cpp \
 					$(CORE_DIR)/core/hw/sh4/modules/serial.cpp \
 					$(CORE_DIR)/core/hw/sh4/modules/mmu.cpp \
 					$(CORE_DIR)/core/hw/sh4/modules/fastmmu.cpp \
@@ -148,6 +146,9 @@ SOURCES_C += $(CORE_DIR)/core/hw/gdrom/gdrom_response.c \
 					$(CORE_DIR)/core/hw/sh4/sh4_mem.c \
 					$(CORE_DIR)/core/hw/sh4/sh4_rom.c \
 					$(CORE_DIR)/core/hw/naomi/decrypt.c \
+					$(CORE_DIR)/core/hw/sh4/interpr/sh4_interpreter.c \
+					$(CORE_DIR)/core/hw/sh4/interpr/sh4_opcodes.c \
+					$(CORE_DIR)/core/hw/sh4/interpr/sh4_fpu.c \
 					$(CORE_DIR)/core/hw/arm7/arm_mem.c \
 					$(CORE_DIR)/core/hw/maple/maple_helper.c \
 					$(CORE_DIR)/core/hw/pvr/drkPvr.c \

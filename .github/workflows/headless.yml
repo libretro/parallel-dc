@@ -17,7 +17,8 @@ name: Headless
 # (tools/sh4/reglist_test.sh), and the recompilers' pool, pieces taken and
 # given back at random (tools/sh4/node_pool_test.sh). And the recompilers
 # against the interpreters, each built alone with the assembler they share
-# (tools/sh4/run.sh, tools/arm7/run.sh, tools/aica/run.sh), and the sound
+# (tools/sh4/run.sh, tools/arm7/run.sh, tools/aica/run.sh), the
+# interpreter's FMAC against fmaf() (tools/sh4/fmac_test.sh), and the sound
 # chip's channels against what they made before (tools/aica/sgc_run.sh), and
 # the G2 bus's expansion DMA channels (tools/aica/g2dma_run.sh), and the
 # broadband adapter, a frame each way and its state (tools/bba/run.sh), and
@@ -49,6 +50,7 @@ on:
       - 'tools/unused_sources.py'
       - 'tools/c89/**'
       - 'tools/sh4/run.sh'
+      - 'tools/sh4/fmac_test.*'
       - 'tools/sh4/vector_test.cpp'
       - 'tools/arm7/**'
       - 'tools/aica/**'
@@ -75,6 +77,7 @@ on:
       - 'tools/unused_sources.py'
       - 'tools/c89/**'
       - 'tools/sh4/run.sh'
+      - 'tools/sh4/fmac_test.*'
       - 'tools/sh4/vector_test.cpp'
       - 'tools/arm7/**'
       - 'tools/aica/**'
@@ -138,6 +141,8 @@ jobs:
         run: sh tools/sh4/reglist_test.sh
       - name: The recompilers' pool (blocks, their lists, the labels), pieces taken and given back
         run: sh tools/sh4/node_pool_test.sh
+      - name: The interpreter's FMAC, a * b + c rounded once without fmaf(), against fmaf() rounding both ways the SH4 does (and ARM64's own, under qemu)
+        run: sh tools/sh4/fmac_test.sh
       - name: The recompilers against the interpreters, built alone with Xbyak (the SH-4's vectors, the sound chip's ARM7 and DSP)
         run: |
           sh tools/sh4/run.sh

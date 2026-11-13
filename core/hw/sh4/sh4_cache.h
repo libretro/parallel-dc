@@ -36,6 +36,11 @@ u32 sh4_ocache_read_address_array(u32 addr);
 void sh4_ocache_write_address_array(u32 addr, u32 data);
 u32 sh4_ocache_read_data_array(u32 addr);
 void sh4_ocache_write_data_array(u32 addr, u32 data);
+/* OCBI, OCBP, OCBWB and PREF on the operand cache (STRICT_MODE) */
+void sh4_ocache_write_back(u32 addr, bool write_back, bool invalidate);
+void sh4_ocache_prefetch(u32 addr);
+/* Both made as they are at power on (@hard) or at a reset */
+void sh4_caches_reset(bool hard);
 
 #ifdef __cplusplus
 }

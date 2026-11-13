@@ -1,11 +1,12 @@
 #include "types.h"
 #include <math.h>
-#include <cmath>
+#include <string.h>
 #include <float.h>
 
 #include "sh4_opcodes.h"
 #include "../sh4_core.h"
 #include "../sh4_rom.h"
+#include "../sh4_fmac.h"
 
 #include "hw/sh4/sh4_mem.h"
 
@@ -21,7 +22,7 @@
 
 #define pi (3.14159265f)
 
-void iNimp(const char*str);
+static void iNimp(const char*str);
 
 #define IS_DENORMAL(f) (((*(f))&0x7f800000) == 0)
 
@@ -31,51 +32,37 @@ void iNimp(const char*str);
 #define ReadMemS16(to,addr) to=(u32)(s32)(s16)ReadMem16(addr)
 #define ReadMemS8(to,addr)  to=(u32)(s32)(s8)ReadMem8(addr)
 
-//Base,offset format
+/* Base,offset format */
 #define ReadMemBOU32(to,addr,offset)        ReadMemU32(to,addr+offset)
 #define ReadMemBOS16(to,addr,offset)        ReadMemS16(to,addr+offset)
 #define ReadMemBOS8(to,addr,offset)         ReadMemS8(to,addr+offset)
 
-//Write Mem Macros
+/* Write Mem Macros */
 #define WriteMemU64(addr,data)              WriteMem64(addr,(u64)data)
 #define WriteMemU32(addr,data)              WriteMem32(addr,(u32)data)
 #define WriteMemU16(addr,data)              WriteMem16(addr,(u16)data)
 #define WriteMemU8(addr,data)               WriteMem8(addr,(u8)data)
 
-//Base,offset format
+/* Base,offset format */
 #define WriteMemBOU32(addr,offset,data)     WriteMemU32(addr+offset,data)
 #define WriteMemBOU16(addr,offset,data)     WriteMemU16(addr+offset,data)
 #define WriteMemBOU8(addr,offset,data)      WriteMemU8(addr+offset,data)
 
-INLINE void Denorm32(float &value)
+/* The square root of a float, rounded once (sqrtf() where C89 has not got it) */
+static INLINE float sqrt_f32(float v)
 {
-	if (fpscr.DN)
-	{
-		u32* v=(u32*)&value;
-		if (IS_DENORMAL(v) && (*v&0x7fFFFFFF)!=0)
-		{
-			*v&=0x80000000;
-			//printf("Denormal ..\n");
-		}
-		if ((*v<=0x007FFFFF) && *v>0)
-		{
-			*v=0;
-			INFO_LOG(INTERPRETER, "Fixed +denorm");
-		}
-		else if ((*v<=0x807FFFFF) && *v>0x80000000)
-		{
-			*v=0x80000000;
-			INFO_LOG(INTERPRETER, "Fixed -denorm");
-		}
-	}
+#if (defined(__STDC_VERSION__) && __STDC_VERSION__ >= 199901L) || defined(_MSC_VER)
+	return sqrtf(v);
+#else
+	return (float)sqrt((double)v);
+#endif
 }
-
 
 #define CHECK_FPU_32(v) v = fixNaN(v)
 #define CHECK_FPU_64(v) v = fixNaN64(v)
 
 
-//fadd <FREG_M>,<FREG_N>
+/* fadd <FREG_M>,<FREG_N> */
 sh4op(i1111_nnnn_mmmm_0000)
 {
 	if (fpscr.PR == 0)
@@ -97,7 +84,7 @@ sh4op(i1111_nnnn_mmmm_0000)
 	}
 }
 
-//fsub <FREG_M>,<FREG_N>
+/* fsub <FREG_M>,<FREG_N> */
 sh4op(i1111_nnnn_mmmm_0001)
 {
 	if (fpscr.PR == 0)
@@ -116,11 +103,11 @@ sh4op(i1111_nnnn_mmmm_0001)
 		double drn=GetDR(n), drm=GetDR(m);
 		drn-=drm;
 		CHECK_FPU_64(drn);
-		//dr[n] -= dr[m];
+		/* dr[n] -= dr[m]; */
 		SetDR(n,drn);
 	}
 }
-//fmul <FREG_M>,<FREG_N>
+/* fmul <FREG_M>,<FREG_N> */
 sh4op(i1111_nnnn_mmmm_0010)
 {
 	if (fpscr.PR == 0)
@@ -138,11 +125,11 @@ sh4op(i1111_nnnn_mmmm_0010)
 		double drn=GetDR(n), drm=GetDR(m);
 		drn*=drm;
 		CHECK_FPU_64(drn);
-		//dr[n] *= dr[m];
+		/* dr[n] *= dr[m]; */
 		SetDR(n,drn);
 	}
 }
-//fdiv <FREG_M>,<FREG_N>
+/* fdiv <FREG_M>,<FREG_N> */
 sh4op(i1111_nnnn_mmmm_0011)
 {
 	if (fpscr.PR == 0)
@@ -165,7 +152,7 @@ sh4op(i1111_nnnn_mmmm_0011)
 		SetDR(n,drn);
 	}
 }
-//fcmp/eq <FREG_M>,<FREG_N>
+/* fcmp/eq <FREG_M>,<FREG_N> */
 sh4op(i1111_nnnn_mmmm_0100)
 {
 	if (fpscr.PR == 0)
@@ -183,7 +170,7 @@ sh4op(i1111_nnnn_mmmm_0100)
 		sr.T = !!(GetDR(m) == GetDR(n));
 	}
 }
-//fcmp/gt <FREG_M>,<FREG_N>
+/* fcmp/gt <FREG_M>,<FREG_N> */
 sh4op(i1111_nnnn_mmmm_0101)
 {
 	if (fpscr.PR == 0)
@@ -207,8 +194,8 @@ sh4op(i1111_nnnn_mmmm_0101)
 			sr.T = 0;
 	}
 }
-//All memory opcodes are here
-//fmov.s @(R0,<REG_M>),<FREG_N>
+/* All memory opcodes are here */
+/* fmov.s @(R0,<REG_M>),<FREG_N> */
 sh4op(i1111_nnnn_mmmm_0110)
 {
 	if (fpscr.SZ == 0)
@@ -234,7 +221,7 @@ sh4op(i1111_nnnn_mmmm_0110)
 }
 
 
-//fmov.s <FREG_M>,@(R0,<REG_N>)
+/* fmov.s <FREG_M>,@(R0,<REG_N>) */
 sh4op(i1111_nnnn_mmmm_0111)
 {
 	if (fpscr.SZ == 0)
@@ -260,7 +247,7 @@ sh4op(i1111_nnnn_mmmm_0111)
 }
 
 
-//fmov.s @<REG_M>,<FREG_N>
+/* fmov.s @<REG_M>,<FREG_N> */
 sh4op(i1111_nnnn_mmmm_1000)
 {
 	if (fpscr.SZ == 0)
@@ -285,7 +272,7 @@ sh4op(i1111_nnnn_mmmm_1000)
 }
 
 
-//fmov.s @<REG_M>+,<FREG_N>
+/* fmov.s @<REG_M>+,<FREG_N> */
 sh4op(i1111_nnnn_mmmm_1001)
 {
 	if (fpscr.SZ == 0)
@@ -313,7 +300,7 @@ sh4op(i1111_nnnn_mmmm_1001)
 }
 
 
-//fmov.s <FREG_M>,@<REG_N>
+/* fmov.s <FREG_M>,@<REG_N> */
 sh4op(i1111_nnnn_mmmm_1010)
 {
 	if (fpscr.SZ == 0)
@@ -339,12 +326,12 @@ sh4op(i1111_nnnn_mmmm_1010)
 	}
 }
 
-//fmov.s <FREG_M>,@-<REG_N>
+/* fmov.s <FREG_M>,@-<REG_N> */
 sh4op(i1111_nnnn_mmmm_1011)
 {
 	if (fpscr.SZ == 0)
 	{
-		//iNimp("fmov.s <FREG_M>,@-<REG_N>");
+		/* iNimp("fmov.s <FREG_M>,@-<REG_N>"); */
 		u32 n = GetN(op);
 		u32 m = GetM(op);
 
@@ -373,9 +360,9 @@ sh4op(i1111_nnnn_mmmm_1011)
 	}
 }
 
-//end of memory opcodes
+/* end of memory opcodes */
 
-//fmov <FREG_M>,<FREG_N>
+/* fmov <FREG_M>,<FREG_N> */
 sh4op(i1111_nnnn_mmmm_1100)
 {
 	if (fpscr.SZ == 0)
@@ -391,22 +378,22 @@ sh4op(i1111_nnnn_mmmm_1100)
 		switch ((op >> 4) & 0x11)
 		{
 			case 0x00:
-				//dr[n] = dr[m];
+				/* dr[n] = dr[m]; */
 				dr_hex[n] = dr_hex[m];
 				break;
 
 			case 0x01:
-				//dr[n] = xd[m];
+				/* dr[n] = xd[m]; */
 				dr_hex[n] = xd_hex[m];
 				break;
 
 			case 0x10:
-				//xd[n] = dr[m];
+				/* xd[n] = dr[m]; */
 				xd_hex[n] = dr_hex[m];
 				break;
 
 			case 0x11:
-				//xd[n] = xd[m];
+				/* xd[n] = xd[m]; */
 				xd_hex[n] = xd_hex[m];
 				break;
 		}
@@ -414,7 +401,7 @@ sh4op(i1111_nnnn_mmmm_1100)
 }
 
 
-//fabs <FREG_N>
+/* fabs <FREG_N> */
 sh4op(i1111_nnnn_0101_1101)
 {
 	int n=GetN(op);
@@ -427,50 +414,40 @@ sh4op(i1111_nnnn_0101_1101)
 	fr_hex[n]&=0x7FFFFFFF;
 }
 
-//FSCA FPUL, DRn//F0FD//1111_nnn0_1111_1101
+/* FSCA FPUL, DRn//F0FD//1111_nnn0_1111_1101 */
 sh4op(i1111_nnn0_1111_1101)
 {
 	int n=GetN(op) & 0xE;
 
 
-	//cosine(x) = sine(pi/2 + x).
+	/* cosine(x) = sine(pi/2 + x). */
 	if (fpscr.PR==0)
 	{
 		u32 pi_index=fpul&0xFFFF;
 
-	#ifdef NATIVE_FSCA
-			float rads=pi_index/(65536.0f/2)*pi;
-
-			fr[n + 0] = sinf(rads);
-			fr[n + 1] = cosf(rads);
-
-			CHECK_FPU_32(fr[n]);
-			CHECK_FPU_32(fr[n+1]);
-	#else
-			fr[n + 0] = sin_table[pi_index].u[0];
-			fr[n + 1] = sin_table[pi_index].u[1];
-	#endif
+		fr[n + 0] = sin_table[pi_index].u[0];
+		fr[n + 1] = sin_table[pi_index].u[1];
 
 	}
 	else
 		iNimp("FSCA : Double precision mode");
 }
 
-//FSRRA //1111_nnnn_0111_1101
+/* FSRRA //1111_nnnn_0111_1101 */
 sh4op(i1111_nnnn_0111_1101)
 {
-	// What about double precision?
+	/* What about double precision? */
 	u32 n = GetN(op);
 	if (fpscr.PR==0)
 	{
-		fr[n] = (float)(1/sqrtf(fr[n]));
+		fr[n] = (float)(1/sqrt_f32(fr[n]));
 		CHECK_FPU_32(fr[n]);
 	}
 	else
 		iNimp("FSRRA : Double precision mode");
 }
 
-//fcnvds <DR_N>,FPUL
+/* fcnvds <DR_N>,FPUL */
 sh4op(i1111_nnnn_1011_1101)
 {
 
@@ -487,7 +464,7 @@ sh4op(i1111_nnnn_1011_1101)
 }
 
 
-//fcnvsd FPUL,<DR_N>
+/* fcnvsd FPUL,<DR_N> */
 sh4op(i1111_nnnn_1010_1101)
 {
 	if (fpscr.PR == 1)
@@ -502,7 +479,7 @@ sh4op(i1111_nnnn_1010_1101)
 	}
 }
 
-//fipr <FV_M>,<FV_N>
+/* fipr <FV_M>,<FV_N> */
 sh4op(i1111_nnmm_1110_1101)
 {
 	int n=GetN(op)&0xC;
@@ -525,30 +502,30 @@ sh4op(i1111_nnmm_1110_1101)
 	fr[n + 3] = fixNaN((float)idp);
 }
 
-//fldi0 <FREG_N>
+/* fldi0 <FREG_N> */
 sh4op(i1111_nnnn_1000_1101)
 {
+	u32 n = GetN(op);
+
 	if (fpscr.PR!=0)
 		return;
-
-	u32 n = GetN(op);
 
 	fr[n] = 0.0f;
 
 }
 
-//fldi1 <FREG_N>
+/* fldi1 <FREG_N> */
 sh4op(i1111_nnnn_1001_1101)
 {
+	u32 n = GetN(op);
+
 	if (fpscr.PR!=0)
 		return;
-
-	u32 n = GetN(op);
 
 	fr[n] = 1.0f;
 }
 
-//flds <FREG_N>,FPUL
+/* flds <FREG_N>,FPUL */
 sh4op(i1111_nnnn_0001_1101)
 {
 	u32 n = GetN(op);
@@ -556,14 +533,14 @@ sh4op(i1111_nnnn_0001_1101)
 	fpul = fr_hex[n];
 }
 
-//fsts FPUL,<FREG_N>
+/* fsts FPUL,<FREG_N> */
 sh4op(i1111_nnnn_0000_1101)
 {
 	u32 n = GetN(op);
 	fr_hex[n] = fpul;
 }
 
-//float FPUL,<FREG_N>
+/* float FPUL,<FREG_N> */
 sh4op(i1111_nnnn_0010_1101)
 {
 	if (fpscr.PR == 0)
@@ -579,17 +556,17 @@ sh4op(i1111_nnnn_0010_1101)
 }
 
 
-//fneg <FREG_N>
+/* fneg <FREG_N> */
 sh4op(i1111_nnnn_0100_1101)
 {
 	u32 n = GetN(op);
 
-	// (as FABS: the register named, whichever the precision)
+	/* (as FABS: the register named, whichever the precision) */
 	fr_hex[n]^=0x80000000;
 }
 
 
-//frchg
+/* frchg */
 sh4op(i1111_1011_1111_1101)
 {
  	fpscr.FR = 1 - fpscr.FR;
@@ -597,26 +574,26 @@ sh4op(i1111_1011_1111_1101)
 	UpdateFPSCR();
 }
 
-//fschg
+/* fschg */
 sh4op(i1111_0011_1111_1101)
 {
-	//iNimp("fschg");
+	/* iNimp("fschg"); */
 	fpscr.SZ = 1 - fpscr.SZ;
 }
 
-//fsqrt <FREG_N>
+/* fsqrt <FREG_N> */
 sh4op(i1111_nnnn_0110_1101)
 {
 	if (fpscr.PR == 0)
 	{
 		u32 n = GetN(op);
 
-		fr[n] = sqrtf(fr[n]);
+		fr[n] = sqrt_f32(fr[n]);
 		CHECK_FPU_32(fr[n]);
 	}
 	else
 	{
-		//Operation _can_ be done on sh4
+		/* Operation _can_ be done on sh4 */
 		u32 n = GetN(op)>>1;
 
 		SetDR(n, fixNaN64(sqrt(GetDR(n))));
@@ -624,7 +601,7 @@ sh4op(i1111_nnnn_0110_1101)
 }
 
 
-//ftrc <FREG_N>, FPUL
+/* ftrc <FREG_N>, FPUL */
 sh4op(i1111_nnnn_0011_1101)
 {
 	/* A value too large for 32 bits comes out as the largest or smallest
@@ -646,7 +623,7 @@ sh4op(i1111_nnnn_0011_1101)
 			if ((s32)fpul > 0x7fffff80)
 				fpul = 0x7fffffff;
 #if HOST_CPU == CPU_X86 || HOST_CPU == CPU_X64
-			// Intel CPUs convert out of range float numbers to 0x80000000. Manually set the correct sign
+			/* Intel CPUs convert out of range float numbers to 0x80000000. Manually set the correct sign */
 			else if (fpul == 0x80000000 && fr[n] > 0)
 				fpul--;
 #endif
@@ -662,7 +639,7 @@ sh4op(i1111_nnnn_0011_1101)
 		{
 			fpul = (u32)(s32)f;
 #if HOST_CPU == CPU_X86 || HOST_CPU == CPU_X64
-			// Intel CPUs convert out of range float numbers to 0x80000000. Manually set the correct sign
+			/* Intel CPUs convert out of range float numbers to 0x80000000. Manually set the correct sign */
 			if (fpul == 0x80000000 && f > 0)
 				fpul--;
 #endif
@@ -671,18 +648,18 @@ sh4op(i1111_nnnn_0011_1101)
 }
 
 
-//fmac <FREG_0>,<FREG_M>,<FREG_N>
+/* fmac <FREG_0>,<FREG_M>,<FREG_N> */
 sh4op(i1111_nnnn_mmmm_1110)
 {
-	//iNimp("fmac <FREG_0>,<FREG_M>,<FREG_N>");
+	/* iNimp("fmac <FREG_0>,<FREG_M>,<FREG_N>"); */
 	if (fpscr.PR==0)
 	{
 		u32 n = GetN(op);
 		u32 m = GetM(op);
 
-		// The product is not rounded before the sum: one rounding, of the
-		// result. Done in doubles the sum was rounded and then the result.
-		fr[n] = std::fma(fr[0], fr[m], fr[n]);
+		/* The product is not rounded before the sum: one rounding, of the */
+		/* result. Done in doubles the sum was rounded and then the result. */
+		fr[n] = sh4_fmac(fr[0], fr[m], fr[n], fpscr.RM == 1);
 		CHECK_FPU_32(fr[n]);
 	}
 	else
@@ -692,10 +669,10 @@ sh4op(i1111_nnnn_mmmm_1110)
 }
 
 
-//ftrv xmtrx,<FV_N>
+/* ftrv xmtrx,<FV_N> */
 sh4op(i1111_nn01_1111_1101)
 {
-	//iNimp("ftrv xmtrx,<FV_N>");
+	/* iNimp("ftrv xmtrx,<FV_N>"); */
 
 	/*
 	XF[0] XF[4] XF[8] XF[12]    FR[n]      FR[n]
@@ -710,7 +687,7 @@ sh4op(i1111_nn01_1111_1101)
 
 	if (fpscr.PR==0)
 	{
-		// In doubles on every host, as the recompilers' reference does it
+		/* In doubles on every host, as the recompilers' reference does it */
 		double v1 = (double)xf[0]  * fr[n + 0] +
 					(double)xf[4]  * fr[n + 1] +
 					(double)xf[8]  * fr[n + 2] +
@@ -743,8 +720,8 @@ sh4op(i1111_nn01_1111_1101)
 }
 
 
-void iNimp(const char*str)
+static void iNimp(const char*str)
 {
 	WARN_LOG(INTERPRETER, "Unimplemented sh4 FPU instruction: %s", str);
-	//Sh4_int_Stop();
+	/* Sh4_int_Stop(); */
 }

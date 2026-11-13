@@ -1115,12 +1115,12 @@ static bool dec_IsIdleLoop(const RuntimeBlockInfo *block)
 }
 
 // The cycles of the block being decoded, for the accurate setting
-static Sh4Cycles block_timing;
+static Sh4Cycles block_timing = SH4_CYCLES_INIT;
 
 bool dec_DecodeBlock(RuntimeBlockInfo* rbi,u32 max_cycles)
 {
 	blk=rbi;
-	block_timing.reset();
+	sh4_cycles_reset(&block_timing);
 	state_Setup(blk->vaddr, blk->fpu_cfg);
 	ngen_GetFeatures(&state.ngen);
 	
@@ -1150,7 +1150,7 @@ bool dec_DecodeBlock(RuntimeBlockInfo* rbi,u32 max_cycles)
 					blk->guest_opcodes++;
 					if (settings.dynarec.AccurateTiming)
 					{
-						blk->guest_cycles += block_timing.count(op, mmu_enabled() ? 5 : 2);
+						blk->guest_cycles += sh4_cycles_count(&block_timing, op, mmu_enabled() ? 5 : 2);
 					}
 					else if (!mmu_enabled())
 					{
@@ -1163,7 +1163,7 @@ bool dec_DecodeBlock(RuntimeBlockInfo* rbi,u32 max_cycles)
 					{
 						blk->guest_cycles += std::max((int)OpDesc[op]->LatencyCycles, 1);
 					}
-					if (OpDesc[op]->IsFloatingPoint())
+					if ((OpDesc[op]->type & UsesFPU) != 0)
 					{
 						if (sr.FD == 1)
 						{

@@ -17,43 +17,21 @@
 
 #define CPU_RATIO      (8)
 
-sh4_icache icache;
-sh4_ocache ocache;
-
-void sh4_icache_invalidate(void)
-{
-	icache.Invalidate();
-}
-
-void sh4_ocache_invalidate(void)
-{
-	ocache.Invalidate();
-}
-
-u32 sh4_icache_read_address_array(u32 addr) { return icache.ReadAddressArray(addr); }
-void sh4_icache_write_address_array(u32 addr, u32 data) { icache.WriteAddressArray(addr, data); }
-u32 sh4_icache_read_data_array(u32 addr) { return icache.ReadDataArray(addr); }
-void sh4_icache_write_data_array(u32 addr, u32 data) { icache.WriteDataArray(addr, data); }
-u32 sh4_ocache_read_address_array(u32 addr) { return ocache.ReadAddressArray(addr); }
-void sh4_ocache_write_address_array(u32 addr, u32 data) { ocache.WriteAddressArray(addr, data); }
-u32 sh4_ocache_read_data_array(u32 addr) { return ocache.ReadDataArray(addr); }
-void sh4_ocache_write_data_array(u32 addr, u32 data) { ocache.WriteDataArray(addr, data); }
-
-// The cycles of what is being run, for the accurate setting
-static Sh4Cycles timing;
+/* The cycles of what is being run, for the accurate setting */
+static Sh4Cycles timing = SH4_CYCLES_INIT;
 
 static void ExecuteOpcode(u16 op)
 {
-	if (sr.FD == 1 && OpDesc[op]->IsFloatingPoint())
+	if (sr.FD == 1 && (OpDesc[op]->type & UsesFPU) != 0)
 		RaiseFPUDisableException();
 	OpPtr[op](op);
 	if (settings.dynarec.AccurateTiming)
-		Sh4cntx.cycle_counter -= timing.count(op, mmu_enabled() ? 5 : 2);
+		Sh4cntx.cycle_counter -= sh4_cycles_count(&timing, op, mmu_enabled() ? 5 : 2);
 	else
 		Sh4cntx.cycle_counter -= CPU_RATIO;
 }
 
-static u16 ReadNexOp()
+static u16 ReadNexOp(void)
 {
 	u32 addr = next_pc;
 	next_pc += 2;
@@ -61,14 +39,14 @@ static u16 ReadNexOp()
 	return IReadMem16(addr);
 }
 
-void Sh4_int_Run()
+void Sh4_int_Run(void)
 {
    sh4_int_bCpuRun = true;
 	HostFloatModeSave();
 	RestoreHostRoundingMode();
 
 	Sh4cntx.cycle_counter = SH4_TIMESLICE;
-	// (nothing left of a run that ended in the middle of one)
+	/* (nothing left of a run that ended in the middle of one) */
 	sh4_catch_top = NULL;
 	sh4_in_delay_slot = false;
 
@@ -86,7 +64,7 @@ void Sh4_int_Run()
             ExecuteOpcode(op);
          } while (Sh4cntx.cycle_counter > 0);
          Sh4cntx.cycle_counter += SH4_TIMESLICE;
-         timing.reset();
+         sh4_cycles_reset(&timing);
          UpdateSystem_INTC();
 #if !defined(NO_MMU)
          sh4_catch_pop(&c);
@@ -94,7 +72,7 @@ void Sh4_int_Run()
       else
       {
          Do_Exception(c.ex.epc, c.ex.expEvn, c.ex.callVect);
-         Sh4cntx.cycle_counter -= CPU_RATIO * 5;	// an exception requires the instruction pipeline to drain, so approx 5 cycles
+         Sh4cntx.cycle_counter -= CPU_RATIO * 5;	/* an exception requires the instruction pipeline to drain, so approx 5 cycles */
       }
 #endif
    } while(sh4_int_bCpuRun);
@@ -103,24 +81,24 @@ void Sh4_int_Run()
 	HostFloatModeBack();
 }
 
-void Sh4_int_Stop()
+void Sh4_int_Stop(void)
 {
 	if (sh4_int_bCpuRun)
 	{
 		sh4_int_bCpuRun=false;
-		// and the time slice ends with the instruction being executed
+		/* and the time slice ends with the instruction being executed */
 		Sh4cntx.cycle_counter = 0;
 	}
 }
 
-void Sh4_int_Start()
+void Sh4_int_Start(void)
 {
 	if (!sh4_int_bCpuRun)
 		sh4_int_bCpuRun=true;
 }
 
 
-void Sh4_int_Step()
+void Sh4_int_Step(void)
 {
 	if (sh4_int_bCpuRun)
 	{
@@ -133,7 +111,7 @@ void Sh4_int_Step()
 	}
 }
 
-void Sh4_int_Skip()
+void Sh4_int_Skip(void)
 {
 	if (!sh4_int_bCpuRun)
 		next_pc+=2;
@@ -155,7 +133,7 @@ void Sh4_int_Reset(bool hard)
 
 		memset(&p_sh4rcb->cntx, 0, sizeof(p_sh4rcb->cntx));
 		Sh4cntx.sh4_sched_next = sched_next;
-		// (none of the slice gone, for a recompiler that never writes it)
+		/* (none of the slice gone, for a recompiler that never writes it) */
 		Sh4cntx.cycle_counter = SH4_TIMESLICE;
 	}
 	next_pc = 0xA0000000;
@@ -176,26 +154,26 @@ void Sh4_int_Reset(bool hard)
 	 * rendering never runs the SH4 and kept the mode for good. Run() sets
 	 * it each time it is entered.) */
 	old_fpscr=fpscr;
-	icache.Reset(hard);
-	ocache.Reset(hard);
+	sh4_caches_reset(hard);
 
-	//Any more registers have default value ?
+	/* Any more registers have default value ? */
 	INFO_LOG(INTERPRETER, "Sh4 Reset");
 }
 
-bool Sh4_int_IsCpuRunning()
+bool Sh4_int_IsCpuRunning(void)
 {
 	return sh4_int_bCpuRun;
 }
 
-//TODO : Check for valid delayslot instruction
-void ExecuteDelayslot()
+/* TODO : Check for valid delayslot instruction */
+void ExecuteDelayslot(void)
 {
+   u32 op;
 #if !defined(NO_MMU)
-   // what it raises is the slot's exception (sh4_throw())
+   /* what it raises is the slot's exception (sh4_throw()) */
    sh4_in_delay_slot = true;
 #endif
-   u32 op = ReadNexOp();
+   op = ReadNexOp();
 
    ExecuteOpcode(op);
 #if !defined(NO_MMU)
@@ -203,13 +181,13 @@ void ExecuteDelayslot()
 #endif
 }
 
-void ExecuteDelayslot_RTE()
+void ExecuteDelayslot_RTE(void)
 {
-	// In an RTE delay slot, status register (SR) bits are referenced as follows.
-	// In instruction access, the MD bit is used before modification, and in data access,
-	// the MD bit is accessed after modification.
-	// The other bits - S, T, M, Q, FD, BL, and RB - after modification are used for delay slot
-	// instruction execution. The STC and STC.L SR instructions access all SR bits after modification.
+	/* In an RTE delay slot, status register (SR) bits are referenced as follows. */
+	/* In instruction access, the MD bit is used before modification, and in data access, */
+	/* the MD bit is accessed after modification. */
+	/* The other bits - S, T, M, Q, FD, BL, and RB - after modification are used for delay slot */
+	/* instruction execution. The STC and STC.L SR instructions access all SR bits after modification. */
 	volatile bool fetched = false;
 #if !defined(NO_MMU)
    sh4_catch c;
@@ -233,7 +211,7 @@ void ExecuteDelayslot_RTE()
    else
    {
       ERROR_LOG(INTERPRETER, "Exception in RTE delay slot");
-      // the return is made all the same: with SR as it was saved
+      /* the return is made all the same: with SR as it was saved */
       if (!fetched)
       {
          sh4_sr_SetFull(ssr);
@@ -243,8 +221,8 @@ void ExecuteDelayslot_RTE()
 #endif
 }
 
-// every SH4_TIMESLICE cycles
-int UpdateSystem()
+/* every SH4_TIMESLICE cycles */
+int UpdateSystem(void)
 {
 	Sh4cntx.sh4_sched_next -= SH4_TIMESLICE;
 	if (Sh4cntx.sh4_sched_next<0)
@@ -253,7 +231,7 @@ int UpdateSystem()
 	return Sh4cntx.interrupt_pend;
 }
 
-int UpdateSystem_INTC()
+int UpdateSystem_INTC(void)
 {
 	if (UpdateSystem())
 		return UpdateINTC();
@@ -261,11 +239,11 @@ int UpdateSystem_INTC()
 		return 0;
 }
 
-static void sh4_int_resetcache()
+static void sh4_int_resetcache(void)
 {
 }
 
-//Get an interface to sh4 interpreter
+/* Get an interface to sh4 interpreter */
 void Get_Sh4Interpreter(sh4_if *cpu)
 {
 	cpu->Run = Sh4_int_Run;
@@ -281,14 +259,15 @@ void Get_Sh4Interpreter(sh4_if *cpu)
 	cpu->ResetCache = sh4_int_resetcache;
 }
 
-void Sh4_int_Init()
+void Sh4_int_Init(void)
 {
-	static_assert(sizeof(Sh4cntx) == 448, "Invalid Sh4Cntx size");
+	/* (the recompilers' offsets into it) */
+	typedef char sh4cntx_is_448_bytes[sizeof(Sh4cntx) == 448 ? 1 : -1];
 
 	memset(&p_sh4rcb->cntx, 0, sizeof(p_sh4rcb->cntx));
 }
 
-void Sh4_int_Term()
+void Sh4_int_Term(void)
 {
 	Sh4_int_Stop();
 	INFO_LOG(INTERPRETER, "Sh4 Term");
