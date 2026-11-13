@@ -216,6 +216,6 @@ jobs:
       - name: Install the RISC-V cross compiler and qemu
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends g++-riscv64-linux-gnu gcc-riscv64-linux-gnu libc6-dev-riscv64-cross qemu-user-static python3
+          sudo apt-get install -y --no-install-recommends g++-riscv64-linux-gnu gcc-riscv64-linux-gnu libc6-dev-riscv64-cross qemu-user-static python3 libgl1-mesa-dev
       - name: A processor with no recompiler (RISC-V 64, under qemu) - built as make ARCH=riscv64 has it, every symbol there, and the disc run on it
         run: sh tools/threads/generic_cpu.sh

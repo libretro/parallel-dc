@@ -23,6 +23,10 @@ mkdir -p "$WORK/gl"
 cleanup() { git worktree remove --force "$WORK/src" 2>/dev/null || true; rm -rf "$WORK"; }
 trap cleanup EXIT
 
+# OpenGL's headers are the host's (the cross compiler looks in /usr/include
+# after its own: libgl1-mesa-dev), the same for every processor
+[ -f /usr/include/GL/gl.h ] && [ -f /usr/include/KHR/khrplatform.h ] \
+   || { echo "generic_cpu: OpenGL's headers are not installed (libgl1-mesa-dev)" >&2; exit 1; }
 # (built away from the tree's own build)
 git worktree add --detach "$WORK/src" >/dev/null
 MAKEARGS="-C $WORK/src -j$(nproc) platform=unix ARCH=riscv64 CC=$CROSS-gcc"
