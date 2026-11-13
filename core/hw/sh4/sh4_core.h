@@ -1,4 +1,5 @@
 #pragma once
+#include <setjmp.h>
 #include "types.h"
 #include "sh4_if.h"
 
@@ -89,38 +90,88 @@ static TYPES_INLINE void SetXD(u32 n, double val)
 extern bool mmu_strict;
 #endif
 
-#ifdef __cplusplus
-}
-/* The MMU's exceptions, thrown (C++ for now) */
-struct SH4ThrownException {
+/* The SH4's exceptions, raised in the middle of an instruction (an MMU
+ * fault, an instruction it may not run): sh4_throw() goes back to the
+ * innermost sh4_catch, by longjmp(), with what was raised in its ex.
+ *
+ *    sh4_catch c;
+ *    SH4_TRY(c)
+ *    {
+ *       ...what may raise one...
+ *       sh4_catch_pop(&c);		(on every way out but the exception)
+ *    }
+ *    else
+ *       ...c.ex...
+ *
+ * A local the try changes and the else reads has to be volatile. Only the
+ * SH4's thread raises and catches them. */
+typedef struct SH4ThrownException SH4ThrownException;
+struct SH4ThrownException
+{
 	u32 epc;
 	u32 expEvn;
 	u32 callVect;
 };
 
-static TYPES_INLINE void RaiseFPUDisableException()
+#if defined(__APPLE__) || defined(__MACH__)
+/* (not the signal mask, which setjmp() saves here, by a system call) */
+#define SH4_SETJMP(env) _setjmp(env)
+#define SH4_LONGJMP(env) _longjmp(env, 1)
+#else
+#define SH4_SETJMP(env) setjmp(env)
+#define SH4_LONGJMP(env) longjmp(env, 1)
+#endif
+
+typedef struct sh4_catch sh4_catch;
+struct sh4_catch
+{
+	jmp_buf env;
+	sh4_catch *prev;
+	bool in_delay_slot;		/* made by what the slot's instruction runs */
+	SH4ThrownException ex;
+};
+
+extern sh4_catch *sh4_catch_top;
+/* An instruction in a delay slot is being run (ExecuteDelayslot()): what it
+ * raises, and is caught outside the slot, is the slot's exception
+ * (AdjustDelaySlotException()) */
+extern bool sh4_in_delay_slot;
+
+static TYPES_INLINE void sh4_catch_push(sh4_catch *c)
+{
+	c->prev = sh4_catch_top;
+	c->in_delay_slot = sh4_in_delay_slot;
+	sh4_catch_top = c;
+}
+
+static TYPES_INLINE void sh4_catch_pop(sh4_catch *c)
+{
+	sh4_catch_top = c->prev;
+}
+
+#define SH4_TRY(c) sh4_catch_push(&(c)); if (SH4_SETJMP((c).env) == 0)
+
+/* Raises the exception: does not come back */
+void sh4_throw(u32 epc, u32 expEvn, u32 callVect);
+
+static TYPES_INLINE void AdjustDelaySlotException(SH4ThrownException *ex)
+{
+	ex->epc -= 2;
+	if (ex->expEvn == 0x800)	/* FPU disable exception */
+		ex->expEvn = 0x820;	/* Slot FPU disable exception */
+	else if (ex->expEvn == 0x180)	/* Illegal instruction exception */
+		ex->expEvn = 0x1A0;			/* Slot illegal instruction exception */
+}
+
+static TYPES_INLINE void RaiseFPUDisableException(void)
 {
 #if !defined(NO_MMU)
 	if (settings.dreamcast.FullMMU || mmu_strict)
-	{
-		SH4ThrownException ex = { next_pc - 2, 0x800, 0x100 };
-		throw ex;
-	}
+		sh4_throw(next_pc - 2, 0x800, 0x100);
 #else
 	msgboxf("Full MMU support needed", MBX_ICONERROR);
 #endif
 }
-
-static TYPES_INLINE void AdjustDelaySlotException(SH4ThrownException& ex)
-{
-	ex.epc -= 2;
-	if (ex.expEvn == 0x800)	/* FPU disable exception */
-		ex.expEvn = 0x820;	/* Slot FPU disable exception */
-	else if (ex.expEvn == 0x180)	/* Illegal instruction exception */
-		ex.expEvn = 0x1A0;			/* Slot illegal instruction exception */
-}
-extern "C" {
-#endif
 
 /* The SH4 sets the signaling bit to 0 for qNaN (unlike all recent CPUs). Some games relies on this. */
 /* Otherwise a NaN is the one NaN an ARM host gives, its default NaN, which

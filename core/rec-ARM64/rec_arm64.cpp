@@ -288,32 +288,42 @@ static void WriteMemNoEx(u32 addr, T data, u32 pc)
 
 static void interpreter_fallback(u16 op, OpCallFP *oph, u32 pc)
 {
-	try {
+	sh4_catch c;
+	SH4_TRY(c)
+	{
 		oph(op);
-	} catch (SH4ThrownException& ex) {
+		sh4_catch_pop(&c);
+	}
+	else
+	{
 		if (pc & 1)
 		{
 			// Delay slot
-			AdjustDelaySlotException(ex);
+			AdjustDelaySlotException(&c.ex);
 			pc--;
 		}
-		Do_Exception(pc, ex.expEvn, ex.callVect);
+		Do_Exception(pc, c.ex.expEvn, c.ex.callVect);
 		longjmp(jmp_env, 1);
 	}
 }
 
 static void do_sqw_mmu_no_ex(u32 addr, u32 pc)
 {
-	try {
+	sh4_catch c;
+	SH4_TRY(c)
+	{
 		do_sqw_mmu(addr);
-	} catch (SH4ThrownException& ex) {
+		sh4_catch_pop(&c);
+	}
+	else
+	{
 		if (pc & 1)
 		{
 			// Delay slot
-			AdjustDelaySlotException(ex);
+			AdjustDelaySlotException(&c.ex);
 			pc--;
 		}
-		Do_Exception(pc, ex.expEvn, ex.callVect);
+		Do_Exception(pc, c.ex.expEvn, c.ex.callVect);
 		longjmp(jmp_env, 1);
 	}
 }

@@ -748,7 +748,7 @@ static void handle_sh4_exception(SH4ThrownException& ex, u32 pc)
 	if (pc & 1)
 	{
 		// Delay slot
-		AdjustDelaySlotException(ex);
+		AdjustDelaySlotException(&ex);
 		pc--;
 	}
 	Do_Exception(pc, ex.expEvn, ex.callVect);
@@ -758,20 +758,26 @@ static void handle_sh4_exception(SH4ThrownException& ex, u32 pc)
 
 static void interpreter_fallback(u16 op, OpCallFP *oph, u32 pc)
 {
-	try {
+	sh4_catch c;
+	SH4_TRY(c)
+	{
 		oph(op);
-	} catch (SH4ThrownException& ex) {
-		handle_sh4_exception(ex, pc);
+		sh4_catch_pop(&c);
 	}
+	else
+		handle_sh4_exception(c.ex, pc);
 }
 
 static void do_sqw_mmu_no_ex(u32 addr, u32 pc)
 {
-	try {
+	sh4_catch c;
+	SH4_TRY(c)
+	{
 		do_sqw_mmu(addr);
-	} catch (SH4ThrownException& ex) {
-		handle_sh4_exception(ex, pc);
+		sh4_catch_pop(&c);
 	}
+	else
+		handle_sh4_exception(c.ex, pc);
 }
 
 static void do_sqw_nommu_local(u32 addr, u8* sqb)

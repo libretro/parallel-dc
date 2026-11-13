@@ -5,7 +5,8 @@ name: Headless
 # program's verdicts on itself, its sound sample for sample, both SH4
 # timings and the MMU, states saved and loaded and every frame run ahead
 # (each the same, byte for byte, as the frames run straight), code that
-# rewrites itself, a NAOMI cartridge and romsets: tools/threads/headless.sh.
+# rewrites itself, a NAOMI cartridge and romsets: tools/threads/headless.sh;
+# and again on a build with the interpreter alone, as iOS's is.
 # And a strip's indices, the parse's C89 kernel, against the loop it
 # replaced (tools/pvr/ta_index_test.sh); and the parse timed on the heavy
 # disc, the strips its vertex loop found drawable whole making the indices
@@ -91,7 +92,7 @@ permissions:
 jobs:
   headless:
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
       - name: Install the compiler and OpenGL headers
@@ -108,6 +109,13 @@ jobs:
         run: python3 tools/c89/linkage_check.py
       - name: The disc with no display, its states and run-ahead among it
         run: sh tools/threads/headless.sh parallel_dc_libretro.so
+      - name: The same with the interpreter alone, as a build with no recompiler has it (iOS); the SH4's exceptions caught by sh4_catch
+        run: |
+          D=${RUNNER_TEMP:-/tmp}/interp
+          git worktree add --detach "$D"
+          make -C "$D" -j"$(nproc)" WITH_DYNAREC= HAVE_GENERIC_JIT=0 NO_REC=1 'HOST_CPU_FLAGS=-DHOST_CPU=$(HOST_CPU_X64)'
+          WORK=${RUNNER_TEMP:-/tmp}/interp-work sh tools/threads/headless.sh "$D/parallel_dc_libretro.so"
+          git worktree remove --force "$D"
       - name: The threads a texture scaled up is shared out to (TSan, ASan/UBSan, no threads), and no OpenMP in the core
         run: sh tools/rend/band_pool_test.sh parallel_dc_libretro.so
       - name: Custom textures' pictures (PNG, JPEG) read as stb_image read them, cut and spoilt, dumped and read back (ASan/UBSan; AArch64)

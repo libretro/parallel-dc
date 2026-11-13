@@ -780,6 +780,19 @@ static void GD_HLE_Command(u32 cc)
 
 #define r Sh4cntx.r
 
+/* A word of the game's memory, 0 where it faults */
+static u32 read_param(u32 addr)
+{
+	sh4_catch c;
+	SH4_TRY(c)
+	{
+		const u32 v = ReadMem32(addr);
+		sh4_catch_pop(&c);
+		return v;
+	}
+	return 0;
+}
+
 void gdrom_hle_op()
 {
 	if( SYSCALL_GDROM == r[6] )		// GDROM SYSCALL
@@ -803,12 +816,8 @@ void gdrom_hle_op()
 			{
 				for (int i = 0; i < 4; i++)
 				{
-					try {
-						gd_hle_state.params[i] = r[5] == 0 ? 0 : ReadMem32(r[5] + i * 4);
-					} catch (SH4ThrownException& ex) {
-						// Ignore page faults. happens for commands not taking params
-						gd_hle_state.params[i] = 0;
-					}
+					// (a page fault reads 0: it happens for commands not taking params)
+					gd_hle_state.params[i] = r[5] == 0 ? 0 : read_param(r[5] + i * 4);
 				}
 				memset(gd_hle_state.result, 0, sizeof(gd_hle_state.result));
 				if (gd_hle_state.next_request_id == ~0u || gd_hle_state.next_request_id == 0)
@@ -838,12 +847,16 @@ void gdrom_hle_op()
 			//	2 - request has completed (if queried again, you will get a 0)
 			//	3 - multi request has data available
 			//	-1 - request has failed (examine extended status information for cause of failure)
-			try {
-				WriteMem32(r[5], gd_hle_state.result[0]);
-				WriteMem32(r[5] + 4, gd_hle_state.result[1]);
-				WriteMem32(r[5] + 8, gd_hle_state.result[2]);
-				WriteMem32(r[5] + 12, gd_hle_state.result[3]);
-			} catch (SH4ThrownException& ex) {
+			{
+				sh4_catch c;
+				SH4_TRY(c)
+				{
+					WriteMem32(r[5], gd_hle_state.result[0]);
+					WriteMem32(r[5] + 4, gd_hle_state.result[1]);
+					WriteMem32(r[5] + 8, gd_hle_state.result[2]);
+					WriteMem32(r[5] + 12, gd_hle_state.result[3]);
+					sh4_catch_pop(&c);
+				}
 			}
 			if (gd_hle_state.status == BIOS_INACTIVE || gd_hle_state.status == BIOS_ACTIVE)
 			{

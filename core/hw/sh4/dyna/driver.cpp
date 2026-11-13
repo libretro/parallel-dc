@@ -91,6 +91,9 @@ static void recSh4_Run(void)
 	HostFloatModeSave();
 	RestoreHostRoundingMode();
 
+	// (nothing left of a run that ended in the middle of one)
+	sh4_catch_top = NULL;
+	sh4_in_delay_slot = false;
 	sh4_dyna_rcb=(u8*)&Sh4cntx + sizeof(Sh4cntx);
 	INFO_LOG(DYNAREC, "cntx // fpcb offset: %td // pc offset: %td // pc %08X", (u8*)&sh4rcb.fpcb - sh4_dyna_rcb, (u8*)&sh4rcb.cntx.pc - sh4_dyna_rcb, sh4rcb.cntx.pc);
 	//verify(rcb_noffs(&next_pc)==-184);
@@ -209,16 +212,22 @@ bool RuntimeBlockInfo::Setup(u32 rpc,fpscr_t rfpu_cfg)
 	oplist.clear();
 
 #if !defined(NO_MMU)
-	try {
-#endif
-		if (!dec_DecodeBlock(this, SH4_TIMESLICE / 2))
+	sh4_catch c;
+	SH4_TRY(c)
+	{
+		const bool decoded = dec_DecodeBlock(this, SH4_TIMESLICE / 2);
+		sh4_catch_pop(&c);
+		if (!decoded)
 			return false;
-#if !defined(NO_MMU)
 	}
-	catch (SH4ThrownException& ex) {
-		Do_Exception(rpc, ex.expEvn, ex.callVect);
+	else
+	{
+		Do_Exception(rpc, c.ex.expEvn, c.ex.callVect);
 		return false;
 	}
+#else
+	if (!dec_DecodeBlock(this, SH4_TIMESLICE / 2))
+		return false;
 #endif
 	SetProtectedFlags();
 

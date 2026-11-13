@@ -841,8 +841,7 @@ static INLINE void JumpedTo(u32 newpc)
 	if (unlikely(newpc & 1) && !mmu_enabled() && !settings.dynarec.Enable)
 	{
 		CCN_TEA = newpc;
-		SH4ThrownException ex = { newpc, 0xE0, 0x100 };
-		throw ex;
+		sh4_throw(newpc, 0xE0, 0x100);
 	}
 #endif
 }
@@ -2154,8 +2153,7 @@ sh4op(iNotImplemented)
 		Do_Exception(next_pc - 2, 0x180, 0x100);
 		return;
 	}
-	SH4ThrownException ex = { next_pc - 2, 0x180, 0x100 };
-	throw ex;
+	sh4_throw(next_pc - 2, 0x180, 0x100);
 #else
 	cpu_iNimp(op, "Unknown opcode");
 #endif

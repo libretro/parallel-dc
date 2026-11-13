@@ -401,7 +401,7 @@ static void arm_mmu_exception(SH4ThrownException& ex, u32 pc)
 {
 	if (pc & 1)
 	{
-		AdjustDelaySlotException(ex);
+		AdjustDelaySlotException(&ex);
 		pc--;
 	}
 	Do_Exception(pc, ex.expEvn, ex.callVect);
@@ -410,20 +410,26 @@ static void arm_mmu_exception(SH4ThrownException& ex, u32 pc)
 
 static void arm_mmu_fallback(u32 op, OpCallFP *oph, u32 pc)
 {
-	try {
+	sh4_catch c;
+	SH4_TRY(c)
+	{
 		oph(op);
-	} catch (SH4ThrownException& ex) {
-		arm_mmu_exception(ex, pc);
+		sh4_catch_pop(&c);
 	}
+	else
+		arm_mmu_exception(c.ex, pc);
 }
 
 static void arm_mmu_sqw(u32 addr, u32 pc)
 {
-	try {
+	sh4_catch c;
+	SH4_TRY(c)
+	{
 		do_sqw_mmu(addr);
-	} catch (SH4ThrownException& ex) {
-		arm_mmu_exception(ex, pc);
+		sh4_catch_pop(&c);
 	}
+	else
+		arm_mmu_exception(c.ex, pc);
 }
 #endif
 

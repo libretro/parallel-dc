@@ -68,11 +68,16 @@ void Sh4_int_Run()
 	RestoreHostRoundingMode();
 
 	Sh4cntx.cycle_counter = SH4_TIMESLICE;
+	// (nothing left of a run that ended in the middle of one)
+	sh4_catch_top = NULL;
+	sh4_in_delay_slot = false;
 
    do
    {
 #if !defined(NO_MMU)
-      try {
+      sh4_catch c;
+      SH4_TRY(c)
+      {
 #endif
          do
          {
@@ -84,9 +89,11 @@ void Sh4_int_Run()
          timing.reset();
          UpdateSystem_INTC();
 #if !defined(NO_MMU)
+         sh4_catch_pop(&c);
       }
-      catch (SH4ThrownException& ex) {
-         Do_Exception(ex.epc, ex.expEvn, ex.callVect);
+      else
+      {
+         Do_Exception(c.ex.epc, c.ex.expEvn, c.ex.callVect);
          Sh4cntx.cycle_counter -= CPU_RATIO * 5;	// an exception requires the instruction pipeline to drain, so approx 5 cycles
       }
 #endif
@@ -185,18 +192,14 @@ bool Sh4_int_IsCpuRunning()
 void ExecuteDelayslot()
 {
 #if !defined(NO_MMU)
-   try {
+   // what it raises is the slot's exception (sh4_throw())
+   sh4_in_delay_slot = true;
 #endif
-      u32 op = ReadNexOp();
+   u32 op = ReadNexOp();
 
-      ExecuteOpcode(op);
+   ExecuteOpcode(op);
 #if !defined(NO_MMU)
-   }
-   catch (SH4ThrownException& ex) {
-		AdjustDelaySlotException(ex);
-      //printf("Delay slot exception\n");
-      throw ex;
-   }
+   sh4_in_delay_slot = false;
 #endif
 }
 
@@ -207,9 +210,11 @@ void ExecuteDelayslot_RTE()
 	// the MD bit is accessed after modification.
 	// The other bits - S, T, M, Q, FD, BL, and RB - after modification are used for delay slot
 	// instruction execution. The STC and STC.L SR instructions access all SR bits after modification.
-	bool fetched = false;
+	volatile bool fetched = false;
 #if !defined(NO_MMU)
-   try {
+   sh4_catch c;
+   SH4_TRY(c)
+   {
 #endif
       u32 op = ReadNexOp();
 
@@ -223,8 +228,10 @@ void ExecuteDelayslot_RTE()
       UpdateSR();
       ExecuteOpcode(op);
 #if !defined(NO_MMU)
+      sh4_catch_pop(&c);
    }
-   catch (SH4ThrownException& ex) {
+   else
+   {
       ERROR_LOG(INTERPRETER, "Exception in RTE delay slot");
       // the return is made all the same: with SR as it was saved
       if (!fetched)

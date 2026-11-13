@@ -6,6 +6,7 @@
 #include "sh4_core.h"
 #include "sh4_interrupts.h"
 #include <fenv.h>
+#include <stdlib.h>
 
 
 Sh4RCB* p_sh4rcb;
@@ -308,4 +309,31 @@ static u32* Sh4_int_GetRegisterPtr(Sh4RegType reg)
 u32* GetRegPtr(u32 reg)
 {
 	return Sh4_int_GetRegisterPtr((Sh4RegType)reg);
+}
+
+sh4_catch *sh4_catch_top;
+bool sh4_in_delay_slot;
+
+void sh4_throw(u32 epc, u32 expEvn, u32 callVect)
+{
+	sh4_catch *c = sh4_catch_top;
+	SH4ThrownException ex;
+
+	ex.epc = epc;
+	ex.expEvn = expEvn;
+	ex.callVect = callVect;
+	if (c == NULL)
+	{
+		ERROR_LOG(SH4, "SH4 exception %x at %08x with nothing to catch it", expEvn, epc);
+		abort();
+	}
+	if (sh4_in_delay_slot && !c->in_delay_slot)
+	{
+		/* (out of the slot: ExecuteDelayslot() does not end) */
+		sh4_in_delay_slot = false;
+		AdjustDelaySlotException(&ex);
+	}
+	sh4_catch_top = c->prev;
+	c->ex = ex;
+	SH4_LONGJMP(c->env);
 }

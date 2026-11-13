@@ -520,7 +520,7 @@ static void DYNACALL WriteMemNoEx64(u32 addr, const u32 *data)
 	if (pc & 1)
 	{
 		// Delay slot
-		AdjustDelaySlotException(ex);
+		AdjustDelaySlotException(&ex);
 		pc--;
 	}
 	Do_Exception(pc, ex.expEvn, ex.callVect);
@@ -535,26 +535,26 @@ static OpCallFP *fallback_oph;
 
 static void DYNACALL interpreter_fallback(u32 op, u32 pc)
 {
-	SH4ThrownException caught;
-	try {
+	sh4_catch c;
+	SH4_TRY(c)
+	{
 		fallback_oph(op);
+		sh4_catch_pop(&c);
 		return;
-	} catch (SH4ThrownException& ex) {
-		caught = ex;
 	}
-	handle_sh4_exception(caught, pc);
+	handle_sh4_exception(c.ex, pc);
 }
 
 static void DYNACALL do_sqw_mmu_no_ex(u32 addr, u32 pc)
 {
-	SH4ThrownException caught;
-	try {
+	sh4_catch c;
+	SH4_TRY(c)
+	{
 		do_sqw_mmu(addr);
+		sh4_catch_pop(&c);
 		return;
-	} catch (SH4ThrownException& ex) {
-		caught = ex;
 	}
-	handle_sh4_exception(caught, pc);
+	handle_sh4_exception(c.ex, pc);
 }
 
 static void DYNACALL do_sqw_nommu_local(u32 addr, u8* sqb)
