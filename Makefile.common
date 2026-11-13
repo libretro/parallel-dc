@@ -42,7 +42,6 @@ SOURCES_CXX := \
 					$(CORE_DIR)/core/hw/sh4/modules/serial.cpp \
 					$(CORE_DIR)/core/log/LogManagerLibretro.cpp \
 					\
-					$(CORE_DIR)/core/cheats.cpp \
 					$(CORE_DIR)/core/nullDC.cpp \
 					$(CORE_DIR)/core/serialize.cpp \
 					\
@@ -388,7 +387,8 @@ endif
 SOURCES_C += $(CORE_DIR)/core/network/netstate.c
 
 # Where the core writes its files
-SOURCES_C += $(CORE_DIR)/core/paths.c
+SOURCES_C += $(CORE_DIR)/core/paths.c \
+			$(CORE_DIR)/core/cheats.c
 
 # The SH4's recompiler: none with NO_REC=1, the interpreter alone
 ifneq ($(NO_REC), 1)

@@ -44,7 +44,6 @@ unsigned VRAM_MASK;
 settings_t settings;
 
 extern char game_dir[1024];
-extern char *game_data;
 extern bool boot_to_bios;
 extern retro_atomic_int_t reset_requested;
 

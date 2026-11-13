@@ -516,7 +516,7 @@ void rend_vblank()
 	}
 	render_called = false;
 	check_framebuffer_write();
-	cheatManager.Apply();
+	cheats_apply();
 }
 
 /* Whether this run made a picture to show: a render to the screen (or of

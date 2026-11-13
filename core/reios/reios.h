@@ -14,16 +14,9 @@ void DYNACALL reios_trap(u32 op);
 #define REIOS_OPCODE 0x085B
 /* The disc's IP.BIN says it is a GD-ROM */
 bool reios_disc_is_gdrom(void);
-#ifdef __cplusplus
-}
 
-bool reios_init();
-
-void reios_reset(u8* rom, MemChip *flash);
-
-void reios_disk_id();
-
-struct ip_meta_t
+/* The disc's IP.BIN */
+typedef struct ip_meta_t
 {
 	char hardware_id[16];
 	char maker_id[16];
@@ -44,11 +37,22 @@ struct ip_meta_t
 	char software_company[16];
 	char software_name[128];
 
+#ifdef __cplusplus
 	bool isWindowsCE() { return wince == '1' || memcmp("0WINCEOS.BIN", boot_filename, 12) == 0; }
 	bool supportsVGA() { return vga == '1'; }
 	bool isMILCD() const { return memcmp("MIL CD", disk_type, 6) == 0; }
-};
+#endif
+} ip_meta_t;
 extern ip_meta_t ip_meta;
+#ifdef __cplusplus
+}
+
+bool reios_init();
+
+void reios_reset(u8* rom, MemChip *flash);
+
+void reios_disk_id();
+
 #endif
 
 #endif /* REIOS_H */

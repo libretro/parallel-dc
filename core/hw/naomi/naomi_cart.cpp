@@ -1438,7 +1438,6 @@ static bool naomi_cart_LoadRom(const char* file)
 	return true;
 }
 
-extern char *game_data;
 extern char eeprom_file[PATH_MAX];
 
 bool naomi_cart_SelectFile()

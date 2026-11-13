@@ -847,7 +847,7 @@ static void update_variables(bool first_startup)
        * out again, and the frontend is told the picture's new shape. */
       if (!first_startup && settings.rend.WidescreenGameHacks != cheats_before)
       {
-         wide_by_cheat  = cheatManager.Change();
+         wide_by_cheat  = cheats_change();
          resize_pending = true;
       }
    }
@@ -3718,7 +3718,7 @@ static void apply_new_size(void)
 
 void retro_get_system_av_info(struct retro_system_av_info *info)
 {
-   wide_by_cheat = cheatManager.Reset();
+   wide_by_cheat = cheats_reset();
    if (wide_by_cheat)
    {
 		struct retro_message msg;

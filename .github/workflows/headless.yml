@@ -33,7 +33,8 @@ name: Headless
 # (tools/naomi/dinokich_card_run.sh), and the paths the core writes to, a
 # content's name of any length included (tools/paths/paths_run.sh), and the
 # HLE BIOS's GD-ROM transfers stopped at a fault and made again
-# (tools/reios/gdrom_hle_run.sh).
+# (tools/reios/gdrom_hle_run.sh), and the games' fixes and widescreen
+# cheats (tools/cheats/cheats_run.sh).
 # And the threads a texture scaled up is shared out to, and the core needing
 # no OpenMP runtime (tools/rend/band_pool_test.sh). And custom textures'
 # pictures, read as stb_image read them and dumped
@@ -70,6 +71,7 @@ on:
       - 'tools/modem/**'
       - 'tools/paths/**'
       - 'tools/reios/**'
+      - 'tools/cheats/**'
       - 'tools/sh4/opcode_table_*'
       - 'Makefile*'
       - '.github/workflows/headless.yml'
@@ -101,6 +103,7 @@ on:
       - 'tools/modem/**'
       - 'tools/paths/**'
       - 'tools/reios/**'
+      - 'tools/cheats/**'
       - 'tools/sh4/opcode_table_*'
       - 'Makefile*'
       - '.github/workflows/headless.yml'
@@ -197,6 +200,10 @@ jobs:
         run: |
           sh tools/reios/gdrom_hle_run.sh
           sh tools/reios/gdrom_hle_run.sh -fsanitize=address,undefined -fno-sanitize-recover=all
+      - name: The games' fixes and widescreen cheats, which game gets which and what goes back (and with the sanitizers)
+        run: |
+          sh tools/cheats/cheats_run.sh
+          sh tools/cheats/cheats_run.sh -fsanitize=address,undefined -fno-sanitize-recover=all
       - name: The ELF reader, an SH-4 executable's headers every way they are read (C89, ASan/UBSan)
         run: sh tools/libelf/elf_test.sh
       - name: The NAOMI's X76F100 serial flash, its protocol and its state, and lines at random as before (and with the sanitizers)

@@ -13,6 +13,8 @@ extern char game_dir_no_slash[1024];
 extern char vmu_dir_no_slash[];
 /* The content's name, for memory cards of its own */
 extern char content_name[];
+/* The content's path, as the frontend gave it */
+extern char *game_data;
 /* 1: port A1's memory card is the content's own; 2: all of them are */
 extern unsigned per_content_vmus;
 

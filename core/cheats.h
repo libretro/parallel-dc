@@ -21,7 +21,11 @@
 #pragma once
 #include "types.h"
 
-struct Cheat
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+typedef struct Cheat
 {
 	const char *game_id;
 	const char *area_or_version;
@@ -30,42 +34,31 @@ struct Cheat
 	/* Where not 0: the value is only written over this one. (The game puts
 	 * the same word there for other uses, which must not be changed.) */
 	u32 orig_values[16];
-};
+} Cheat;
 
 /* A change a game needs to work, made whatever the options say: @value is
  * written at @address in main memory whenever something else is there -
  * or, with @only_if set, only when @if_value is there (code that is
  * patched once it is loaded, and left alone if it is not the code). */
-struct GameFix
+typedef struct GameFix
 {
 	const char *game_id;
-	u32 bits;		// 8, 16 or 32
+	u32 bits;		/* 8, 16 or 32 */
 	u32 address;
 	u32 value;
 	bool only_if;
 	u32 if_value;
-};
+} GameFix;
 
-class CheatManager
-{
-public:
-	CheatManager() : _widescreen_cheat(nullptr), _have_original(0), _fixes(nullptr), _fix_count(0) {}
-	bool Reset();	// Returns true if using 16:9 anamorphic screen ratio
-	void Apply();
-	/* The option changed while the game runs (the machine standing still).
-	 * Returns what Reset() does. */
-	bool Change();
-private:
-	/* What the game had where the cheat writes, as last seen there: put
-	 * back when the cheat is turned off. */
-	u32 _original[16];
-	u32 _have_original;
-	static const Cheat _widescreen_cheats[];
-	static const Cheat _naomi_widescreen_cheats[];
-	const Cheat *_widescreen_cheat;
-	static const GameFix _game_fixes[];
-	const GameFix *_fixes;
-	u32 _fix_count;
-};
+/* The game's fixes and widescreen cheat found (cheats.c): true if it has
+ * one, the picture then 16:9 anamorphic */
+bool cheats_reset(void);
+/* What they write, written (each frame) */
+void cheats_apply(void);
+/* The option changed while the game runs (the machine standing still).
+ * Returns what cheats_reset() does. */
+bool cheats_change(void);
 
-extern CheatManager cheatManager;
+#ifdef __cplusplus
+}
+#endif
