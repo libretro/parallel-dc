@@ -135,9 +135,6 @@ extern SCIF_SCSCR2_type SCIF_SCSCR2;
 
 //./core/hw/sh4/modules/ccn.o
 
-//./core/hw/sh4/modules/mmu.o
-extern u32 ITLB_LRU_USE[64];
-
 //./core/imgread/common.o
 
 //./core/nullDC.o
@@ -191,9 +188,6 @@ V21_PART(nbios);
 V21_PART(pvr);
 #undef V21_PART
 // and since V22: which way the MMU is done, and the translations Windows CE's way of it keeps (fastmmu.cpp)
-void mmu_serialize_v22(void **data, unsigned int *total_size);
-bool mmu_unserialize_v22(void **data, unsigned int *total_size);
-void mmu_state_before_v22(void);
 // and whether the game has written to the framebuffer since it was last shown (Renderer_if.cpp)
 void pvr_serialize_v22(void **data, unsigned int *total_size);
 void pvr_unserialize_v22(void **data, unsigned int *total_size);

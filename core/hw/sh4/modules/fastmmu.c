@@ -16,7 +16,8 @@
     You should have received a copy of the GNU General Public License
     along with reicast.  If not, see <https://www.gnu.org/licenses/>.
  */
-#include <algorithm>
+#include <string.h>
+#include <retro_miscellaneous.h>
 #include "mmu.h"
 #include "hw/sh4/sh4_if.h"
 #include "hw/sh4/sh4_interrupts.h"
@@ -33,7 +34,7 @@
 #include "hw/sh4/sh4_mem.h"
 
 extern TLB_Entry UTLB[64];
-// Used when FullMMU is off
+/* Used when FullMMU is off */
 extern u32 sq_remap[64];
 
 #include "wince.h"
@@ -70,20 +71,21 @@ static u32 lru_address;
  * address is itself. */
 bool mmu_strict;
 
+typedef struct StrictKept StrictKept;
 struct StrictKept
 {
-	u32 tag;			// 1 << 31 | address space << 22 | address >> 10; 0: nothing
+	u32 tag;			/* 1 << 31 | address space << 22 | address >> 10; 0: nothing */
 	u32 mask;
 	u32 base;
-	u32 entry;		// which of the 64, or STRICT_NONE, and when (strict_time) above that
+	u32 entry;		/* which of the 64, or STRICT_NONE, and when (strict_time) above that */
 };
 #define STRICT_NONE 64
 #define STRICT_KEPT 4096
 static StrictKept strict_kept[STRICT_KEPT];
-// counted up to make all of strict_kept out of date at once
+/* counted up to make all of strict_kept out of date at once */
 static u32 strict_time;
 
-void mmu_strict_changed()
+void mmu_strict_changed(void)
 {
 	if (!mmu_strict)
 		return;
@@ -95,25 +97,26 @@ void mmu_strict_changed()
 	}
 }
 
-static u32 strict_lookup(u32 va, const TLB_Entry **tlb_entry_ret, u32& rv)
+static u32 strict_lookup(u32 va, const TLB_Entry **tlb_entry_ret, u32 *rv)
 {
 	const u32 asid = CCN_PTEH.ASID;
 	const u32 tag = 0x80000000u | (asid << 22) | (va >> 10);
-	StrictKept& kept = strict_kept[((va >> 10) ^ (asid << 5)) & (STRICT_KEPT - 1)];
+	StrictKept *kept = &strict_kept[((va >> 10) ^ (asid << 5)) & (STRICT_KEPT - 1)];
 	const TLB_Entry *match = NULL;
 	u32 mask = 0;
+	u32 i;
 
-	if (kept.tag == tag && (kept.entry >> 7) == strict_time)
+	if (kept->tag == tag && (kept->entry >> 7) == strict_time)
 	{
-		if ((kept.entry & 127) == STRICT_NONE)
+		if ((kept->entry & 127) == STRICT_NONE)
 			return MMU_ERROR_TLB_MISS;
-		rv = kept.base | (va & ~kept.mask);
-		*tlb_entry_ret = &UTLB[kept.entry & 127];
+		*rv = kept->base | (va & ~kept->mask);
+		*tlb_entry_ret = &UTLB[kept->entry & 127];
 		return MMU_ERROR_NONE;
 	}
 
-	// (the counter that says which entry LDTLB writes moves on when a page is not found: mmu_tlb_missed())
-	for (u32 i = 0; i < ARRAY_SIZE(UTLB); i++)
+	/* (the counter that says which entry LDTLB writes moves on when a page is not found: mmu_tlb_missed()) */
+	for (i = 0; i < ARRAY_SIZE(UTLB); i++)
 	{
 		if (!mmu_match(va, UTLB[i].Address, UTLB[i].Data))
 			continue;
@@ -121,16 +124,16 @@ static u32 strict_lookup(u32 va, const TLB_Entry **tlb_entry_ret, u32& rv)
 			return MMU_ERROR_TLB_MHIT;
 		match = &UTLB[i];
 		mask = mmu_mask[UTLB[i].Data.SZ1 * 2 + UTLB[i].Data.SZ0];
-		rv = ((UTLB[i].Data.PPN << 10) & mask) | (va & ~mask);
+		*rv = ((UTLB[i].Data.PPN << 10) & mask) | (va & ~mask);
 	}
 	/* (Kept only while the address space counts: with MMUCR.SV on it does
 	 * not in privileged mode, and the mode changes with every exception.) */
 	if (CCN_MMUCR.SV == 0)
 	{
-		kept.tag = tag;
-		kept.mask = mask;
-		kept.base = rv & mask;
-		kept.entry = (strict_time << 7) | (match != NULL ? (u32)(match - UTLB) : STRICT_NONE);
+		kept->tag = tag;
+		kept->mask = mask;
+		kept->base = *rv & mask;
+		kept->entry = (strict_time << 7) | (match != NULL ? (u32)(match - UTLB) : STRICT_NONE);
 	}
 	if (match == NULL)
 		return MMU_ERROR_TLB_MISS;
@@ -138,6 +141,7 @@ static u32 strict_lookup(u32 va, const TLB_Entry **tlb_entry_ret, u32& rv)
 	return MMU_ERROR_NONE;
 }
 
+typedef struct TLB_LinkedEntry TLB_LinkedEntry;
 struct TLB_LinkedEntry {
 	TLB_Entry entry;
 	TLB_LinkedEntry *next_entry;
@@ -157,7 +161,7 @@ struct TLB_LinkedEntry {
 static TLB_LinkedEntry full_table[65536];
 static u32 full_table_size;
 static TLB_LinkedEntry *entry_buckets[NBUCKETS];
-// those of full_table that have been given back
+/* those of full_table that have been given back */
 static TLB_LinkedEntry *free_entries;
 
 static u16 bucket_index(u32 address, int size)
@@ -165,13 +169,14 @@ static u16 bucket_index(u32 address, int size)
 	return ((address >> 16) ^ ((address & 0xFC00) | size)) & (NBUCKETS - 1);
 }
 
-static void flush_cache()
+static void flush_cache(void)
 {
+	u32 i;
 	/* (half a megabyte of buckets: when little is kept, only the ones it
 	 * is kept in. A slot that was given back still says which was its.) */
 	if (full_table_size < NBUCKETS / 64)
 	{
-		for (u32 i = 0; i < full_table_size; i++)
+		for (i = 0; i < full_table_size; i++)
 			entry_buckets[bucket_index(full_table[i].entry.Address.VPN << 10,
 					full_table[i].entry.Data.SZ1 * 2 + full_table[i].entry.Data.SZ0)] = NULL;
 	}
@@ -182,12 +187,12 @@ static void flush_cache()
 	bm_ForgetVaddrs();
 }
 
-static void forget_all();
+static void forget_all(void);
 
-static void cache_entry(const TLB_Entry &entry)
+static void cache_entry(const TLB_Entry *entry)
 {
-	const u32 size = entry.Data.SZ1 * 2 + entry.Data.SZ0;
-	u16 bucket = bucket_index(entry.Address.VPN << 10, size);
+	const u32 size = entry->Data.SZ1 * 2 + entry->Data.SZ0;
+	u16 bucket = bucket_index(entry->Address.VPN << 10, size);
 	TLB_LinkedEntry *slot;
 
 	/* The page it is given for again - with the bit for a page that has
@@ -196,12 +201,12 @@ static void cache_entry(const TLB_Entry &entry)
 	 * running over its end but a check that is not built in. */
 	for (slot = entry_buckets[bucket]; slot != NULL; slot = slot->next_entry)
 	{
-		if (slot->entry.Address.VPN == entry.Address.VPN
-				&& slot->entry.Address.ASID == entry.Address.ASID
-				&& slot->entry.Data.SZ1 == entry.Data.SZ1 && slot->entry.Data.SZ0 == entry.Data.SZ0)
+		if (slot->entry.Address.VPN == entry->Address.VPN
+				&& slot->entry.Address.ASID == entry->Address.ASID
+				&& slot->entry.Data.SZ1 == entry->Data.SZ1 && slot->entry.Data.SZ0 == entry->Data.SZ0)
 		{
-			slot->entry = entry;
-			// (where the page is may be what changed)
+			slot->entry = *entry;
+			/* (where the page is may be what changed) */
 			bm_ForgetVaddrs();
 			return;
 		}
@@ -215,19 +220,18 @@ static void cache_entry(const TLB_Entry &entry)
 	{
 		if (full_table_size == ARRAY_SIZE(full_table))
 		{
-			// more pages than there is room for: all of them are asked for again
+			/* more pages than there is room for: all of them are asked for again */
 			forget_all();
-			bucket = bucket_index(entry.Address.VPN << 10, size);
+			bucket = bucket_index(entry->Address.VPN << 10, size);
 		}
 		slot = &full_table[full_table_size++];
 	}
-	slot->entry = entry;
+	slot->entry = *entry;
 	slot->next_entry = entry_buckets[bucket];
 	entry_buckets[bucket] = slot;
 }
 
-template<u32 size>
-bool find_entry_by_page_size(u32 address, const TLB_Entry **ret_entry)
+static TYPES_INLINE bool find_entry_by_page_size(u32 address, const TLB_Entry **ret_entry, u32 size)
 {
 	u32 shift = size == 1 ? 2 :
 			size == 2 ? 6 :
@@ -235,7 +239,6 @@ bool find_entry_by_page_size(u32 address, const TLB_Entry **ret_entry)
 	u32 vpn = (address >> (10 + shift)) << shift;
 	u16 bucket = bucket_index(vpn << 10, size);
 	TLB_LinkedEntry *pEntry = entry_buckets[bucket];
-	u32 length = 0;
 	while (pEntry != NULL)
 	{
 		if (pEntry->entry.Address.VPN == vpn && (size >> 1) == pEntry->entry.Data.SZ1 && (size & 1) == pEntry->entry.Data.SZ0)
@@ -254,84 +257,20 @@ bool find_entry_by_page_size(u32 address, const TLB_Entry **ret_entry)
 
 static bool find_entry(u32 address, const TLB_Entry **ret_entry)
 {
-	// 4k
-	if (find_entry_by_page_size<1>(address, ret_entry))
+	/* 4k */
+	if (find_entry_by_page_size(address, ret_entry, 1))
 		return true;
-	// 64k
-	if (find_entry_by_page_size<2>(address, ret_entry))
+	/* 64k */
+	if (find_entry_by_page_size(address, ret_entry, 2))
 		return true;
-	// 1m
-	if (find_entry_by_page_size<3>(address, ret_entry))
+	/* 1m */
+	if (find_entry_by_page_size(address, ret_entry, 3))
 		return true;
-	// 1k
-	if (find_entry_by_page_size<0>(address, ret_entry))
+	/* 1k */
+	if (find_entry_by_page_size(address, ret_entry, 0))
 		return true;
 	return false;
 }
-
-#if 0
-static void dump_table()
-{
-	static int iter = 1;
-	char filename[128];
-	sprintf(filename, "mmutable%03d", iter++);
-	FILE *f = fopen(filename, "wb");
-	if (f == NULL)
-		return;
-	fwrite(full_table, sizeof(full_table[0]), full_table_size, f);
-	fclose(f);
-}
-
-int main(int argc, char *argv[])
-{
-	FILE *f = fopen(argv[1], "rb");
-	if (f == NULL)
-	{
-		perror(argv[1]);
-		return 1;
-	}
-	full_table_size = fread(full_table, sizeof(full_table[0]), ARRAY_SIZE(full_table), f);
-	fclose(f);
-	printf("Loaded %d entries\n", full_table_size);
-	std::vector<u32> addrs;
-	std::vector<u32> asids;
-	for (int i = 0; i < full_table_size; i++)
-	{
-		u32 sz = full_table[i].entry.Data.SZ1 * 2 + full_table[i].entry.Data.SZ0;
-		u32 mask = sz == 3 ? 1*1024*1024 : sz == 2 ? 64*1024 : sz == 1 ? 4*1024 : 1024;
-		mask--;
-		addrs.push_back(((full_table[i].entry.Address.VPN << 10) & mmu_mask[sz]) | (random() * mask / RAND_MAX));
-		asids.push_back(full_table[i].entry.Address.ASID);
-//		printf("%08x -> %08x sz %d ASID %d SH %d\n", full_table[i].entry.Address.VPN << 10, full_table[i].entry.Data.PPN << 10,
-//				full_table[i].entry.Data.SZ1 * 2 + full_table[i].entry.Data.SZ0,
-//				full_table[i].entry.Address.ASID, full_table[i].entry.Data.SH);
-		u16 bucket = bucket_index(full_table[i].entry.Address.VPN << 10, full_table[i].entry.Data.SZ1 * 2 + full_table[i].entry.Data.SZ0);
-		full_table[i].next_entry = entry_buckets[bucket];
-		entry_buckets[bucket] = &full_table[i];
-	}
-	for (int i = 0; i < full_table_size / 10; i++)
-	{
-		addrs.push_back(random());
-		asids.push_back(666);
-	}
-	double start = os_GetSeconds();
-	int success = 0;
-	const int loops = 100000;
-	for (int i = 0; i < loops; i++)
-	{
-		for (int j = 0; j < addrs.size(); j++)
-		{
-			u32 addr = addrs[j];
-			CCN_PTEH.ASID = asids[j];
-			const TLB_Entry *p;
-			if (find_entry(addr, &p))
-				success++;
-		}
-	}
-	double end = os_GetSeconds();
-	printf("Lookup time: %f ms. Success rate %f max_len %d\n", (end - start) * 1000.0 / addrs.size(), (double)success / addrs.size() / loops, 0/*max_length*/);
-}
-#endif
 
 /* What follows from a translation goes with it: the recompilers' table of
  * addresses, and where the code for an address is. */
@@ -341,14 +280,14 @@ static void forget_page(u32 va, u32 size)
 	mmu_lut_forget(va, size);
 }
 
-static void forget_all()
+static void forget_all(void)
 {
 	lru_entry = NULL;
 	flush_cache();
 	mmu_lut_flush();
 }
 
-static bool utlb_is_a_page(const TLB_Entry& tlb_entry);
+static bool utlb_is_a_page(const TLB_Entry *tlb_entry);
 
 /* An entry has been given what it is to hold: if that is a page of the
  * program's own and translation is already on, this is a program for the
@@ -356,7 +295,7 @@ static bool utlb_is_a_page(const TLB_Entry& tlb_entry);
  * after (upstream fd72eebbe: a port of Super Mario 64). It was only asked
  * when AT changed, and such a program went on with addresses meaning what
  * they mean without an MMU. */
-static void strict_if_a_page(const TLB_Entry& tlb_entry)
+static void strict_if_a_page(const TLB_Entry *tlb_entry)
 {
 	if (mmu_enabled() || CCN_MMUCR.AT == 0 || !utlb_is_a_page(tlb_entry))
 		return;
@@ -368,31 +307,31 @@ static void strict_if_a_page(const TLB_Entry& tlb_entry)
 	}
 }
 
-static void sq_remap_entry(const TLB_Entry& tlb_entry)
+static void sq_remap_entry(const TLB_Entry *tlb_entry)
 {
-	if (!mmu_enabled() && (tlb_entry.Address.VPN & (0xFC000000 >> 10)) == (0xE0000000 >> 10))
+	if (!mmu_enabled() && (tlb_entry->Address.VPN & (0xFC000000 >> 10)) == (0xE0000000 >> 10))
 	{
-		// Used when FullMMU is off
-		u32 vpn_sq = ((tlb_entry.Address.VPN & 0x7FFFF) >> 10) & 0x3F;//upper bits are always known [0xE0/E1/E2/E3]
-		sq_remap[vpn_sq] = tlb_entry.Data.PPN << 10;
+		/* Used when FullMMU is off */
+		u32 vpn_sq = ((tlb_entry->Address.VPN & 0x7FFFF) >> 10) & 0x3F;/* upper bits are always known [0xE0/E1/E2/E3] */
+		sq_remap[vpn_sq] = tlb_entry->Data.PPN << 10;
 	}
 }
 
-// An entry has been loaded (LDTLB), or one that was there is valid again.
+/* An entry has been loaded (LDTLB), or one that was there is valid again. */
 bool UTLB_Sync(u32 entry)
 {
-	TLB_Entry& tlb_entry = UTLB[entry];
-	u32 sz = tlb_entry.Data.SZ1 * 2 + tlb_entry.Data.SZ0;
+	TLB_Entry *tlb_entry = &UTLB[entry];
+	u32 sz = tlb_entry->Data.SZ1 * 2 + tlb_entry->Data.SZ0;
 
 	mmu_strict_changed();
 
-	lru_entry = &tlb_entry;
+	lru_entry = tlb_entry;
 	lru_mask = mmu_mask[sz];
-	lru_address = (tlb_entry.Address.VPN << 10) & lru_mask;
+	lru_address = (tlb_entry->Address.VPN << 10) & lru_mask;
 
-	tlb_entry.Address.VPN = lru_address >> 10;
+	tlb_entry->Address.VPN = lru_address >> 10;
 	cache_entry(tlb_entry);
-	// the page it is for means what this entry says from now on, or nothing
+	/* the page it is for means what this entry says from now on, or nothing */
 	forget_page(lru_address, ~lru_mask + 1);
 
 	sq_remap_entry(tlb_entry);
@@ -408,10 +347,11 @@ bool UTLB_Sync(u32 entry)
 void mmu_forget(u32 va)
 {
 	const bool any_asid = sr.MD == 1 && CCN_MMUCR.SV == 1;
+	u32 size;
 
 	mmu_strict_changed();
 
-	for (u32 size = 0; size < 4; size++)
+	for (size = 0; size < 4; size++)
 	{
 		const u32 mask = mmu_mask[size];
 		const u32 vpn = (va & mask) >> 10;
@@ -444,27 +384,31 @@ void mmu_forget(u32 va)
  * no others. So nothing is kept beyond what the 64 now say. */
 void mmu_utlb_written(u32 entry)
 {
+	u32 i;
 	mmu_strict_changed();
 	forget_all();
-	for (u32 i = 0; i < ARRAY_SIZE(UTLB); i++)
+	for (i = 0; i < ARRAY_SIZE(UTLB); i++)
 	{
 		if (UTLB[i].Data.V == 0)
 			continue;
 		UTLB[i].Address.VPN = ((UTLB[i].Address.VPN << 10) & mmu_mask[UTLB[i].Data.SZ1 * 2 + UTLB[i].Data.SZ0]) >> 10;
-		cache_entry(UTLB[i]);
+		cache_entry(&UTLB[i]);
 	}
-	sq_remap_entry(UTLB[entry]);
-	strict_if_a_page(UTLB[entry]);
+	sq_remap_entry(&UTLB[entry]);
+	strict_if_a_page(&UTLB[entry]);
 }
 
 void ITLB_Sync(u32 entry)
 {
 }
 
-//Do a full lookup on the UTLB entry's
-template<bool internal>
-u32 mmu_full_lookup(u32 va, const TLB_Entry** tlb_entry_ret, u32& rv)
+/* Do a full lookup on the UTLB entry's */
+u32 mmu_full_lookup_c(u32 va, const TLB_Entry** tlb_entry_ret, u32 *rv)
 {
+#ifdef USE_WINCE_HACK
+	TLB_Entry entry;
+#endif
+
 	if (mmu_strict)
 		return strict_lookup(va, tlb_entry_ret, rv);
 
@@ -474,11 +418,11 @@ u32 mmu_full_lookup(u32 va, const TLB_Entry** tlb_entry_ret, u32& rv)
 				lru_address == (va & lru_mask)
 				&& (lru_entry->Address.ASID == CCN_PTEH.ASID
 						|| lru_entry->Data.SH == 1
-						/*|| (sr.MD == 1 && CCN_MMUCR.SV == 1)*/))	// SV=1 not handled
+						/*|| (sr.MD == 1 && CCN_MMUCR.SV == 1)*/))	/* SV=1 not handled */
 		{
-			//VPN->PPN | low bits
-			// TODO mask off PPN when updating TLB to avoid doing it at look up time
-			rv = ((lru_entry->Data.PPN << 10) & lru_mask) | (va & (~lru_mask));
+			/* VPN->PPN | low bits */
+			/* TODO mask off PPN when updating TLB to avoid doing it at look up time */
+			*rv = ((lru_entry->Data.PPN << 10) & lru_mask) | (va & (~lru_mask));
 			*tlb_entry_ret = lru_entry;
 
 			return MMU_ERROR_NONE;
@@ -488,7 +432,7 @@ u32 mmu_full_lookup(u32 va, const TLB_Entry** tlb_entry_ret, u32& rv)
 	if (find_entry(va, tlb_entry_ret))
 	{
 		u32 mask = mmu_mask[(*tlb_entry_ret)->Data.SZ1 * 2 + (*tlb_entry_ret)->Data.SZ0];
-		rv = (((*tlb_entry_ret)->Data.PPN << 10) & mask) | (va & (~mask));
+		*rv = (((*tlb_entry_ret)->Data.PPN << 10) & mask) | (va & (~mask));
 		lru_entry = *tlb_entry_ret;
 		lru_mask = mask;
 		lru_address = ((*tlb_entry_ret)->Address.VPN << 10);
@@ -496,10 +440,10 @@ u32 mmu_full_lookup(u32 va, const TLB_Entry** tlb_entry_ret, u32& rv)
 	}
 
 #ifdef USE_WINCE_HACK
-	// WinCE hack
-	TLB_Entry entry;
-	if (wince_resolve_address(va, entry))
+	/* WinCE hack */
+	if (wince_resolve_address(va, &entry))
 	{
+		u32 sz;
 		CCN_PTEL.reg_data = entry.Data.reg_data;
 		CCN_PTEA.reg_data = entry.Assistance.reg_data;
 		CCN_PTEH.reg_data = entry.Address.reg_data;
@@ -508,13 +452,13 @@ u32 mmu_full_lookup(u32 va, const TLB_Entry** tlb_entry_ret, u32& rv)
 		*tlb_entry_ret = &UTLB[CCN_MMUCR.URC];
 		lru_entry = *tlb_entry_ret;
 
-		u32 sz = lru_entry->Data.SZ1 * 2 + lru_entry->Data.SZ0;
+		sz = lru_entry->Data.SZ1 * 2 + lru_entry->Data.SZ0;
 		lru_mask = mmu_mask[sz];
 		lru_address = va & lru_mask;
 
-		rv = ((lru_entry->Data.PPN << 10) & lru_mask) | (va & (~lru_mask));
+		*rv = ((lru_entry->Data.PPN << 10) & lru_mask) | (va & (~lru_mask));
 
-		cache_entry(*lru_entry);
+		cache_entry(lru_entry);
 
 		return MMU_ERROR_NONE;
 	}
@@ -522,34 +466,32 @@ u32 mmu_full_lookup(u32 va, const TLB_Entry** tlb_entry_ret, u32& rv)
 
 	return MMU_ERROR_TLB_MISS;
 }
-template u32 mmu_full_lookup<false>(u32 va, const TLB_Entry** tlb_entry_ret, u32& rv);
-
-template<u32 translation_type>
-u32 mmu_full_SQ(u32 va, u32& rv)
+u32 mmu_full_SQ_c(u32 va, u32 *rv, u32 translation_type)
 {
-	//Address=Dest&0xFFFFFFE0;
+	/* Address=Dest&0xFFFFFFE0; */
 
 	const TLB_Entry *entry;
-	u32 lookup = mmu_full_lookup(va, &entry, rv);
+	u32 lookup = mmu_full_lookup_c(va, &entry, rv);
 
+	(void)translation_type;
 	if (lookup != MMU_ERROR_NONE)
 		return lookup;
 
-	rv &= ~31;//lower 5 bits are forced to 0
+	*rv &= ~31;/* lower 5 bits are forced to 0 */
 
 	return MMU_ERROR_NONE;
 }
-template u32 mmu_full_SQ<MMU_TT_DREAD>(u32 va, u32& rv);
-template u32 mmu_full_SQ<MMU_TT_DWRITE>(u32 va, u32& rv);
 
-template<u32 translation_type, typename T>
-u32 mmu_data_translation(u32 va, u32& rv)
+static TYPES_INLINE u32 data_translation(u32 va, u32 *rv, u32 translation_type, u32 size)
 {
+	const TLB_Entry *entry;
+	u32 lookup;
+
 	/* A 64-bit access is two of 32 bits to the SH4: a 4-byte boundary will
 	 * do. ("mmu: a 64-bit access has to sit on a 4-byte boundary" changed
 	 * this test in the copy of this function in mmu.cpp, which is not the
 	 * one that is built; this is.) */
-	if (va & (std::min((u32)sizeof(T), 4u) - 1))
+	if (va & ((size < 4 ? size : 4) - 1))
 	{
 		return MMU_ERROR_BADADDR;
 	}
@@ -558,30 +500,29 @@ u32 mmu_data_translation(u32 va, u32& rv)
 	{
 		if ((va & 0xFC000000) == 0xE0000000)
 		{
-			rv = va;	//SQ writes are not translated, only write backs are.
+			*rv = va;	/* SQ writes are not translated, only write backs are. */
 			return MMU_ERROR_NONE;
 		}
 	}
 
    if ((va & 0xFC000000) == 0x7C000000)
 	{
-      // On-chip RAM area isn't translated
-		rv = va;
+      /* On-chip RAM area isn't translated */
+		*rv = va;
 		return MMU_ERROR_NONE;
 	}
 
-	// (a strict program keeps all this while it has AT off: nothing is translated then)
+	/* (a strict program keeps all this while it has AT off: nothing is translated then) */
 	if (fast_reg_lut[va >> 29] != 0 || CCN_MMUCR.AT == 0)
 	{
-		rv = va;
+		*rv = va;
 		return MMU_ERROR_NONE;
 	}
 
-	const TLB_Entry *entry;
-	u32 lookup = mmu_full_lookup(va, &entry, rv);
+	lookup = mmu_full_lookup_c(va, &entry, rv);
 	if (lookup == MMU_ERROR_NONE && mmu_strict)
 	{
-		// a page for privileged mode only; the first write to a page
+		/* a page for privileged mode only; the first write to a page */
 		if ((entry->Data.PR >> 1) == 0 && sr.MD == 0)
 			return MMU_ERROR_PROTECTED;
 		if (translation_type == MMU_TT_DWRITE && (entry->Data.PR & 1) != 0 && entry->Data.D == 0)
@@ -594,9 +535,9 @@ u32 mmu_data_translation(u32 va, u32& rv)
 	 * upstream. */
 	if (lookup == MMU_ERROR_NONE && translation_type == MMU_TT_DWRITE && (entry->Data.PR & 1) == 0)
 		return MMU_ERROR_PROTECTED;
-   if (lookup == MMU_ERROR_NONE && (rv & 0x1C000000) == 0x1C000000)
-		// map 1C000000-1FFFFFFF to P4 memory-mapped registers
-		rv |= 0xF0000000;
+   if (lookup == MMU_ERROR_NONE && (*rv & 0x1C000000) == 0x1C000000)
+		/* map 1C000000-1FFFFFFF to P4 memory-mapped registers */
+		*rv |= 0xF0000000;
 #ifdef TRACE_WINCE_SYSCALLS
 	if (unresolved_unicode_string != 0 && lookup == MMU_ERROR_NONE)
 	{
@@ -610,31 +551,26 @@ u32 mmu_data_translation(u32 va, u32& rv)
 
 	return lookup;
 }
-template u32 mmu_data_translation<MMU_TT_DREAD, u8>(u32 va, u32& rv);
-template u32 mmu_data_translation<MMU_TT_DREAD, u16>(u32 va, u32& rv);
-template u32 mmu_data_translation<MMU_TT_DREAD, u32>(u32 va, u32& rv);
-template u32 mmu_data_translation<MMU_TT_DREAD, u64>(u32 va, u32& rv);
+MMU_DATA_TRANSLATIONS
 
-template u32 mmu_data_translation<MMU_TT_DWRITE, u8>(u32 va, u32& rv);
-template u32 mmu_data_translation<MMU_TT_DWRITE, u16>(u32 va, u32& rv);
-template u32 mmu_data_translation<MMU_TT_DWRITE, u32>(u32 va, u32& rv);
-template u32 mmu_data_translation<MMU_TT_DWRITE, u64>(u32 va, u32& rv);
-
+#ifndef NO_MMU
 /* The TLB is emptied (MMUCR.TI): its entries are not valid any more, and
  * nothing is kept. The entries used to be left as they were, which nobody
  * saw while nothing looked at them; the strict way looks at nothing else,
  * and mmu_utlb_written() took what they said for good. */
-void mmu_flush_table()
+void mmu_flush_table(void)
 {
-	for (u32 i = 0; i < ARRAY_SIZE(UTLB); i++)
+	u32 i;
+	for (i = 0; i < ARRAY_SIZE(UTLB); i++)
 		UTLB[i].Data.V = 0;
-	for (u32 i = 0; i < ARRAY_SIZE(ITLB); i++)
+	for (i = 0; i < ARRAY_SIZE(ITLB); i++)
 		ITLB[i].Data.V = 0;
 	lru_entry = NULL;
 	flush_cache();
 	mmu_lut_flush();
 	mmu_strict_changed();
 }
+#endif
 
 /* Is this a program for the strict way? One that turns translation on with
  * the TLB already holding a page of its own - not the store queues' entries
@@ -647,21 +583,22 @@ void mmu_flush_table()
  * state of before V22 does not say which way it was saved in: one saved
  * with AT off, or with the TLB just emptied, is not known for what it is
  * until AT next comes on.) */
-static bool utlb_is_a_page(const TLB_Entry& tlb_entry)
+static bool utlb_is_a_page(const TLB_Entry *tlb_entry)
 {
-	if (tlb_entry.Data.V == 0)
+	if (tlb_entry->Data.V == 0)
 		return false;
-	if ((tlb_entry.Address.VPN & (0xFC000000 >> 10)) == (0xE0000000 >> 10))
-		return false;	// the store queues
-	if (tlb_entry.Address.VPN == 0x30040 || tlb_entry.Address.VPN == 0x30000)
-		return false;	// entries that mean nothing, in many arcade and Visual Concepts games (upstream's list)
+	if ((tlb_entry->Address.VPN & (0xFC000000 >> 10)) == (0xE0000000 >> 10))
+		return false;	/* the store queues */
+	if (tlb_entry->Address.VPN == 0x30040 || tlb_entry->Address.VPN == 0x30000)
+		return false;	/* entries that mean nothing, in many arcade and Visual Concepts games (upstream's list) */
 	return true;
 }
 
-static bool utlb_has_a_page()
+static bool utlb_has_a_page(void)
 {
-	for (u32 i = 0; i < ARRAY_SIZE(UTLB); i++)
-		if (utlb_is_a_page(UTLB[i]))
+	u32 i;
+	for (i = 0; i < ARRAY_SIZE(UTLB); i++)
+		if (utlb_is_a_page(&UTLB[i]))
 			return true;
 	return false;
 }
@@ -693,35 +630,44 @@ static bool utlb_has_a_page()
  * A state saved in such a moment did not say, and the machine loaded from
  * it was one without an MMU until translation came on again: other code
  * compiled, with other timing, than in the same machine left alone. */
-static int strict_in_state = -1;	// what the state just read said: 0 or 1, until mmu_detect_strict() has taken it
+static int strict_in_state = -1;	/* what the state just read said: 0 or 1, until mmu_detect_strict() has taken it */
 
 void mmu_serialize_v22(void **data, unsigned int *total_size)
 {
 	u8 strict = mmu_strict;
+	u32 *count_at;
+	u32 count = 0;
+	u32 bucket;
 
 	LIBRETRO_S(strict);
 	if (!settings.dreamcast.FullMMU)
 		return;
 	if (*data == NULL)
 	{
-		// how much room a state needs: as much as one ever does
+		/* how much room a state needs: as much as one ever does */
 		*total_size += 4 + ARRAY_SIZE(full_table) * 12;
 		return;
 	}
 
-	u32 * const count_at = (u32 *)*data;
-	u32 count = 0;
+	count_at = (u32 *)*data;
 
 	LIBRETRO_S(count);
-	for (u32 bucket = 0; bucket < NBUCKETS; bucket++)
-		for (const TLB_LinkedEntry *slot = entry_buckets[bucket]; slot != NULL
+	for (bucket = 0; bucket < NBUCKETS; bucket++)
+	{
+		const TLB_LinkedEntry *slot;
+		for (slot = entry_buckets[bucket]; slot != NULL
 				&& count < ARRAY_SIZE(full_table); slot = slot->next_entry)
 		{
-			u32 words[3] = { slot->entry.Address.reg_data, slot->entry.Data.reg_data, slot->entry.Assistance.reg_data };
+			u32 words[3];
+
+			words[0] = slot->entry.Address.reg_data;
+			words[1] = slot->entry.Data.reg_data;
+			words[2] = slot->entry.Assistance.reg_data;
 
 			LIBRETRO_SA(words, 3);
 			count++;
 		}
+	}
 	memcpy(count_at, &count, sizeof(count));
 }
 
@@ -730,26 +676,27 @@ void mmu_serialize_v22(void **data, unsigned int *total_size)
 bool mmu_unserialize_v22(void **data, unsigned int *total_size)
 {
 	u8 strict = 0;
+	u32 count = 0;
+	TLB_LinkedEntry *last = NULL;
+	u32 last_bucket = 0;
+	u32 i;
 
 	LIBRETRO_US(strict);
 	strict_in_state = strict != 0;
 	if (!settings.dreamcast.FullMMU)
 		return true;
 
-	u32 count = 0;
 	LIBRETRO_US(count);
-	// (more than a state ever has: no telling where the rest of the state is)
+	/* (more than a state ever has: no telling where the rest of the state is) */
 	if (count > ARRAY_SIZE(full_table))
 		return false;
 	flush_cache();
 
-	TLB_LinkedEntry *last = NULL;
-	u32 last_bucket = 0;
-
-	for (u32 i = 0; i < count; i++)
+	for (i = 0; i < count; i++)
 	{
 		u32 words[3] = { 0, 0, 0 };
 		TLB_LinkedEntry * const slot = &full_table[full_table_size++];
+		u32 bucket;
 
 		LIBRETRO_USA(words, 3);
 		slot->entry.Address.reg_data = words[0];
@@ -757,7 +704,7 @@ bool mmu_unserialize_v22(void **data, unsigned int *total_size)
 		slot->entry.Assistance.reg_data = words[2];
 		slot->next_entry = NULL;
 
-		const u32 bucket = bucket_index(slot->entry.Address.VPN << 10, slot->entry.Data.SZ1 * 2 + slot->entry.Data.SZ0);
+		bucket = bucket_index(slot->entry.Address.VPN << 10, slot->entry.Data.SZ1 * 2 + slot->entry.Data.SZ0);
 
 		if (last != NULL && bucket == last_bucket)
 			last->next_entry = slot;
@@ -765,7 +712,7 @@ bool mmu_unserialize_v22(void **data, unsigned int *total_size)
 			entry_buckets[bucket] = slot;
 		else
 		{
-			// (not as this writes them: after what the bucket has, all the same)
+			/* (not as this writes them: after what the bucket has, all the same) */
 			TLB_LinkedEntry *end = entry_buckets[bucket];
 
 			while (end->next_entry != NULL)
@@ -788,11 +735,11 @@ void mmu_state_before_v22(void)
 	strict_in_state = -1;
 }
 
-void mmu_detect_strict()
+void mmu_detect_strict(void)
 {
 	bool strict = CCN_MMUCR.AT == 1 && !settings.dreamcast.FullMMU && utlb_has_a_page();
 
-	// (called when a state has been loaded: one from V22 on says which it is)
+	/* (called when a state has been loaded: one from V22 on says which it is) */
 	if (strict_in_state >= 0)
 	{
 		strict = strict_in_state == 1 && !settings.dreamcast.FullMMU;
@@ -808,4 +755,4 @@ void mmu_detect_strict()
 	mmu_strict = strict;
 	bm_ForgetVaddrs();
 }
-#endif 	// FAST_MMU
+#endif 	/* FAST_MMU */

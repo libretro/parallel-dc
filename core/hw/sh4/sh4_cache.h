@@ -41,6 +41,13 @@ void sh4_ocache_write_back(u32 addr, bool write_back, bool invalidate);
 void sh4_ocache_prefetch(u32 addr);
 /* Both made as they are at power on (@hard) or at a reset */
 void sh4_caches_reset(bool hard);
+#ifdef STRICT_MODE
+/* The SH4's memory functions the caches', for the interpreter
+ * (SetMemoryHandlers()); and what they hold written back and dropped,
+ * for the recompiler */
+void sh4_caches_set_handlers(void);
+void sh4_caches_write_back(void);
+#endif
 
 #ifdef __cplusplus
 }

@@ -43,6 +43,10 @@ typedef struct TLB_Entry TLB_Entry;
 extern TLB_Entry UTLB[64];
 extern TLB_Entry ITLB[4];
 extern u32 sq_remap[64];
+/* The instruction TLB's least recently used, by MMUCR.LRUI */
+extern u32 ITLB_LRU_USE[64];
+/* An address's page, by the page size (SZ1 * 2 + SZ0) */
+extern const u32 mmu_mask[4];
 extern const u32 fast_reg_lut[8];
 
 /* These are working only for SQ remaps on ndce */
@@ -70,6 +74,10 @@ extern bool mmu_strict;
 void mmu_detect_strict(void);
 /* what the strict way keeps of its lookups is to go */
 void mmu_strict_changed(void);
+/* The translations kept, in a state since V22 (fastmmu.c) */
+void mmu_serialize_v22(void **data, unsigned int *total_size);
+bool mmu_unserialize_v22(void **data, unsigned int *total_size);
+void mmu_state_before_v22(void);
 
 static TYPES_INLINE bool mmu_enabled(void)
 {
@@ -159,119 +167,141 @@ u16 DYNACALL mmu_IReadMem16(u32 addr);
 bool mmu_TranslateSQW(u32 adr, u32 *out);
 #endif
 
-#ifdef __cplusplus
+/* The translations, MMU_ERROR_NONE and the address in @rv, or the error.
+ * Looked up in the TLB, the entry that says so in @entry: */
+u32 mmu_full_lookup_c(u32 va, const TLB_Entry **entry, u32 *rv);
+/* in the instruction TLB, which takes it from the other if it has to: */
+u32 mmu_instruction_lookup_c(u32 va, const TLB_Entry **entry, u32 *rv);
+/* a store queue's, for a read or a write (@translation_type): */
+u32 mmu_full_SQ_c(u32 va, u32 *rv, u32 translation_type);
+/* an access of @size bytes, for a read or a write (one each, below) */
+u32 mmu_data_translation_r8(u32 va, u32 *rv);
+u32 mmu_data_translation_r16(u32 va, u32 *rv);
+u32 mmu_data_translation_r32(u32 va, u32 *rv);
+u32 mmu_data_translation_r64(u32 va, u32 *rv);
+u32 mmu_data_translation_w8(u32 va, u32 *rv);
+u32 mmu_data_translation_w16(u32 va, u32 *rv);
+u32 mmu_data_translation_w32(u32 va, u32 *rv);
+u32 mmu_data_translation_w64(u32 va, u32 *rv);
+
+static TYPES_INLINE u32 mmu_data_translation_c(u32 va, u32 *rv, u32 translation_type, u32 size)
+{
+	if (translation_type == MMU_TT_DWRITE)
+		return size == 1 ? mmu_data_translation_w8(va, rv) : size == 2 ? mmu_data_translation_w16(va, rv)
+				: size == 4 ? mmu_data_translation_w32(va, rv) : mmu_data_translation_w64(va, rv);
+	return size == 1 ? mmu_data_translation_r8(va, rv) : size == 2 ? mmu_data_translation_r16(va, rv)
+			: size == 4 ? mmu_data_translation_r32(va, rv) : mmu_data_translation_r64(va, rv);
 }
 
-template<bool internal = false>
-u32 mmu_full_lookup(u32 va, const TLB_Entry **entry, u32& rv);
-
-u32 mmu_instruction_lookup(u32 va, const TLB_Entry **entry, u32& rv);
-
-template<u32 translation_type>
-u32 mmu_full_SQ(u32 va, u32& rv);
-
 #ifdef FAST_MMU
-static INLINE u32 mmu_instruction_translation(u32 va, u32& rv)
+static TYPES_INLINE u32 mmu_instruction_translation_c(u32 va, u32 *rv)
 {
+	const TLB_Entry *tlb_entry;
 	if (va & 1)
 		return MMU_ERROR_BADADDR;
 	/* (a strict program keeps all this while it has AT off: nothing is translated then) */
 	if (fast_reg_lut[va >> 29] != 0 || CCN_MMUCR.AT == 0)
 	{
-		rv = va;
+		*rv = va;
 		return MMU_ERROR_NONE;
 	}
 
-	const TLB_Entry *tlb_entry;
-	return mmu_full_lookup(va, &tlb_entry, rv);
+	return mmu_full_lookup_c(va, &tlb_entry, rv);
 }
 #else
-u32 mmu_instruction_translation(u32 va, u32& rv);
+u32 mmu_instruction_translation_c(u32 va, u32 *rv);
 #endif
 
-template<u32 translation_type, typename T>
-extern u32 mmu_data_translation(u32 va, u32& rv);
-
-template<u32 translation_type>
-bool mmu_is_translated(u32 va, u32 size)
+/* Whether an access of @size bytes at @va is translated, for a read or a
+ * write (@translation_type) */
+static TYPES_INLINE bool mmu_is_translated_c(u32 va, u32 size, u32 translation_type)
 {
-   if (va & (size - 1))
-      return true;
+	if (va & (size - 1))
+		return true;
 
-   if (translation_type == MMU_TT_DWRITE)
-   {
-      if ((va & 0xFC000000) == 0xE0000000)
-         /* SQ writes are not translated, only write backs are. */
-         return false;
-   }
-   if ((va & 0xFC000000) == 0x7C000000)
+	if (translation_type == MMU_TT_DWRITE)
+	{
+		if ((va & 0xFC000000) == 0xE0000000)
+			/* SQ writes are not translated, only write backs are. */
+			return false;
+	}
+	if ((va & 0xFC000000) == 0x7C000000)
 		/* On-chip RAM area isn't translated */
-      return false;
+		return false;
 
-   if (fast_reg_lut[va >> 29] != 0)
-      return false;
+	if (fast_reg_lut[va >> 29] != 0)
+		return false;
 
-   return true;
+	return true;
 }
 
-#if defined(NO_MMU)
-#else
-	template<typename T> T DYNACALL mmu_ReadMem(u32 adr);
+#if !defined(NO_MMU)
+/* The SH4's accesses with the MMU on: an exception (sh4_throw()) where the
+ * translation fails */
+u8 DYNACALL mmu_ReadMem8(u32 adr);
+u16 DYNACALL mmu_ReadMem16(u32 adr);
+u32 DYNACALL mmu_ReadMem32(u32 adr);
+u64 DYNACALL mmu_ReadMem64(u32 adr);
+void DYNACALL mmu_WriteMem8(u32 adr, u8 data);
+void DYNACALL mmu_WriteMem16(u32 adr, u16 data);
+void DYNACALL mmu_WriteMem32(u32 adr, u32 data);
+void DYNACALL mmu_WriteMem64(u32 adr, u64 data);
 
-	template<typename T> void DYNACALL mmu_WriteMem(u32 adr, T data);
-	
+/* ...and with the exception taken (DoMMUException()) and @exception_occurred
+ * set instead, for the recompilers: @size bytes */
+u64 DYNACALL mmu_ReadMemNoEx_c(u32 adr, u32 size, u32 *exception_occurred);
+u32 DYNACALL mmu_WriteMemNoEx_c(u32 adr, u64 data, u32 size);
+#endif
 
-	template<typename T>
-	T DYNACALL mmu_ReadMemNoEx(u32 adr, u32 *exception_occurred)
-	{
-		if (sizeof(T) == 8 && mmu_in_two_pages(adr))
-		{
-			const u32 low = mmu_ReadMemNoEx<u32>(adr, exception_occurred);
-			if (*exception_occurred)
-				return 0;
-			const u32 high = mmu_ReadMemNoEx<u32>(adr + 4, exception_occurred);
-			if (*exception_occurred)
-				return 0;
-			return (T)(((u64)high << 32) | low);
-		}
+#ifdef __cplusplus
+}
 
-		u32 addr;
-		u32 rv = mmu_data_translation<MMU_TT_DREAD, T>(adr, addr);
-		if (rv != MMU_ERROR_NONE)
-		{
-			DoMMUException(adr, rv, MMU_TT_DREAD);
-			*exception_occurred = 1;
-			return 0;
-		}
-		else
-		{
-			*exception_occurred = 0;
-			/* the next read of the page need not come here */
-			mmu_lut_fill(adr, addr, false);
-			return _vmem_readt<T, T>(addr);
-		}
-	}
+/* (the same for C++, as it had them) */
+template<bool internal = false>
+static inline u32 mmu_full_lookup(u32 va, const TLB_Entry **entry, u32& rv)
+{
+	return mmu_full_lookup_c(va, entry, &rv);
+}
 
-	template<typename T>
-	u32 DYNACALL mmu_WriteMemNoEx(u32 adr, T data)
-	{
-		if (sizeof(T) == 8 && mmu_in_two_pages(adr))
-		{
-			if (mmu_WriteMemNoEx<u32>(adr, (u32)data))
-				return 1;
-			return mmu_WriteMemNoEx<u32>(adr + 4, (u32)((u64)data >> 32));
-		}
+static inline u32 mmu_instruction_lookup(u32 va, const TLB_Entry **entry, u32& rv)
+{
+	return mmu_instruction_lookup_c(va, entry, &rv);
+}
 
-		u32 addr;
-		u32 rv = mmu_data_translation<MMU_TT_DWRITE, T>(adr, addr);
-		if (rv != MMU_ERROR_NONE)
-		{
-			DoMMUException(adr, rv, MMU_TT_DWRITE);
-			return 1;
-		}
-		mmu_lut_fill(adr, addr, true);
-		_vmem_writet<T>(addr, data);
-		return 0;
-	}
+template<u32 translation_type>
+static inline u32 mmu_full_SQ(u32 va, u32& rv)
+{
+	return mmu_full_SQ_c(va, &rv, translation_type);
+}
+
+static inline u32 mmu_instruction_translation(u32 va, u32& rv)
+{
+	return mmu_instruction_translation_c(va, &rv);
+}
+
+template<u32 translation_type, typename T>
+static inline u32 mmu_data_translation(u32 va, u32& rv)
+{
+	return mmu_data_translation_c(va, &rv, translation_type, sizeof(T));
+}
+
+template<u32 translation_type>
+static inline bool mmu_is_translated(u32 va, u32 size)
+{
+	return mmu_is_translated_c(va, size, translation_type);
+}
+
+#if !defined(NO_MMU)
+template<typename T>
+static inline T DYNACALL mmu_ReadMemNoEx(u32 adr, u32 *exception_occurred)
+{
+	return (T)mmu_ReadMemNoEx_c(adr, sizeof(T), exception_occurred);
+}
+
+template<typename T>
+static inline u32 DYNACALL mmu_WriteMemNoEx(u32 adr, T data)
+{
+	return mmu_WriteMemNoEx_c(adr, (u64)data, sizeof(T));
+}
 #endif
 #endif

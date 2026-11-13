@@ -16,11 +16,11 @@
     You should have received a copy of the GNU General Public License
     along with reicast.  If not, see <https://www.gnu.org/licenses/>.
  */
-extern const u32 mmu_mask[4];
 
-static bool wince_resolve_address(u32 va, TLB_Entry &entry)
+static bool wince_resolve_address(u32 va, TLB_Entry *entry)
 {
-	// WinCE hack
+	u32 sz;
+	/* WinCE hack */
 	if ((va & 0x80000000) == 0)
 	{
 		u32 page_group = ReadMem32_nommu(CCN_TTB + ((va >> 25) << 2));
@@ -31,21 +31,22 @@ static bool wince_resolve_address(u32 va, TLB_Entry &entry)
 			u32 whatever = ReadMem32_nommu(r_bank[4] + 0x14);
 			if (whatever != ReadMem32_nommu(paddr))
 			{
+				u32 ptel;
 				paddr += 12;
-				u32 ptel = ReadMem32_nommu(paddr + ((va >> 10) & 0x3c));
-				//FIXME CCN_PTEA = paddr >> 29;
+				ptel = ReadMem32_nommu(paddr + ((va >> 10) & 0x3c));
+				/* FIXME CCN_PTEA = paddr >> 29; */
 				if (ptel != 0)
 				{
-					entry.Data.reg_data = ptel - 1;
+					entry->Data.reg_data = ptel - 1;
 					/* (All of it: the caller's entry is whatever was on
 					 * the stack, and this goes into PTEH and the TLB.
 					 * The two bits between the ASID and the page number
 					 * were never set.) */
-					entry.Address.reg_data = 0;
-					entry.Address.ASID = CCN_PTEH.ASID;
-					entry.Assistance.reg_data = 0;
-					u32 sz = entry.Data.SZ1 * 2 + entry.Data.SZ0;
-					entry.Address.VPN = (va & mmu_mask[sz]) >> 10;
+					entry->Address.reg_data = 0;
+					entry->Address.ASID = CCN_PTEH.ASID;
+					entry->Assistance.reg_data = 0;
+					sz = entry->Data.SZ1 * 2 + entry->Data.SZ0;
+					entry->Address.VPN = (va & mmu_mask[sz]) >> 10;
 
 					return true;
 				}
@@ -54,22 +55,22 @@ static bool wince_resolve_address(u32 va, TLB_Entry &entry)
 	}
 	else
 	{
-		// SQ
+		/* SQ */
 		if (((va >> 26) & 0x3F) == 0x38)
 		{
 			u32 r1 = (va - 0xe0000000) & 0xfff00000;
-			//r1 &= 0xfff00000;
-			//u32 r0 = ReadMem32_nommu(0x8C01258C);	// FIXME
-			//u32 r0 = 0x8c138b14;
-			//r0 = ReadMem32_nommu(r0);	// 0xE0001F5
+			/* r1 &= 0xfff00000; */
+			/* u32 r0 = ReadMem32_nommu(0x8C01258C);	// FIXME */
+			/* u32 r0 = 0x8c138b14; */
+			/* r0 = ReadMem32_nommu(r0);	// 0xE0001F5 */
 			u32 r0 = 0xe0001f5;
 			r0 += r1;
-			entry.Data.reg_data = r0 - 1;
-			entry.Assistance.reg_data = r0 >> 29;
-			entry.Address.reg_data = 0;
-			entry.Address.ASID = CCN_PTEH.ASID;
-			u32 sz = entry.Data.SZ1 * 2 + entry.Data.SZ0;
-			entry.Address.VPN = (va & mmu_mask[sz]) >> 10;
+			entry->Data.reg_data = r0 - 1;
+			entry->Assistance.reg_data = r0 >> 29;
+			entry->Address.reg_data = 0;
+			entry->Address.ASID = CCN_PTEH.ASID;
+			sz = entry->Data.SZ1 * 2 + entry->Data.SZ0;
+			entry->Address.VPN = (va & mmu_mask[sz]) >> 10;
 
 			return true;
 		}

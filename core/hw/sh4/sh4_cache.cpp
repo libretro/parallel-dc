@@ -26,6 +26,28 @@ void sh4_ocache_write_data_array(u32 addr, u32 data) { ocache.WriteDataArray(add
 void sh4_ocache_write_back(u32 addr, bool write_back, bool invalidate) { ocache.WriteBack(addr, write_back, invalidate); }
 void sh4_ocache_prefetch(u32 addr) { ocache.Prefetch(addr); }
 
+#ifdef STRICT_MODE
+void sh4_caches_set_handlers(void)
+{
+	IReadMem16 = &IReadCachedMem;
+	ReadMem8 = &ReadCachedMem<u8>;
+	ReadMem16 = &ReadCachedMem<u16>;
+	ReadMem32 = &ReadCachedMem<u32>;
+	ReadMem64 = &ReadCachedMem<u64>;
+
+	WriteMem8 = &WriteCachedMem<u8>;
+	WriteMem16 = &WriteCachedMem<u16>;
+	WriteMem32 = &WriteCachedMem<u32>;
+	WriteMem64 = &WriteCachedMem<u64>;
+}
+
+void sh4_caches_write_back(void)
+{
+	ocache.WriteBackAll();
+	icache.Invalidate();
+}
+#endif
+
 void sh4_caches_reset(bool hard)
 {
 	icache.Reset(hard);
