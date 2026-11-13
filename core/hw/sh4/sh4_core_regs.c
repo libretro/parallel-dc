@@ -149,7 +149,11 @@ static void setHostRoundingMode(void)
                 : "x10"
             );
 #else
-	#error "SetFloatStatusReg: Unsupported platform"
+        /* Any other host: its rounding, as C sets it. Very small numbers
+         * are as the host has them, which C has no way to set. */
+#ifdef FE_TOWARDZERO
+        fesetround(fpscr.RM == 1 ? FE_TOWARDZERO : FE_TONEAREST);
+#endif
 #endif
 #endif
 	}

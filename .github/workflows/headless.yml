@@ -6,7 +6,9 @@ name: Headless
 # timings and the MMU, states saved and loaded and every frame run ahead
 # (each the same, byte for byte, as the frames run straight), code that
 # rewrites itself, a NAOMI cartridge and romsets: tools/threads/headless.sh;
-# and again on a build with the interpreter alone, as iOS's is.
+# and again on a build with the interpreter alone, as iOS's is, and on one
+# for a processor with no recompiler, RISC-V 64 under qemu
+# (tools/threads/generic_cpu.sh).
 # And a strip's indices, the parse's C89 kernel, against the loop it
 # replaced (tools/pvr/ta_index_test.sh); and the parse timed on the heavy
 # disc, the strips its vertex loop found drawable whole making the indices
@@ -170,3 +172,15 @@ jobs:
         run: |
           sh tools/flashrom/x76f100_run.sh
           sh tools/flashrom/x76f100_run.sh -fsanitize=address,undefined -fno-sanitize-recover=all
+
+  generic-cpu:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install the RISC-V cross compiler and qemu
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends g++-riscv64-linux-gnu gcc-riscv64-linux-gnu libc6-dev-riscv64-cross qemu-user-static python3
+      - name: A processor with no recompiler (RISC-V 64, under qemu) - built as make ARCH=riscv64 has it, every symbol there, and the disc run on it
+        run: sh tools/threads/generic_cpu.sh

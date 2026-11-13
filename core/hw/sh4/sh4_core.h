@@ -178,8 +178,9 @@ static TYPES_INLINE void RaiseFPUDisableException(void)
  * the SH4's thread asks for there (sh4_core_regs.cpp): the same on every
  * host, as what a game works out has to be. An x86 one gives a NaN made
  * from an operand's, or one with the sign set, and comes here to be given
- * that one; an ARM one has nothing to do. (The x86-64 recompiler does the
- * same in its code.) */
+ * that one, as does any other but ARM (a generic one: RISC-V's is that
+ * NaN already, POWER's is made from an operand's); an ARM one has nothing
+ * to do. (The x86-64 recompiler does the same in its code.) */
 static TYPES_INLINE float fixNaN(f32 f)
 {
 #ifdef STRICT_MODE
@@ -190,7 +191,7 @@ static TYPES_INLINE float fixNaN(f32 f)
 /* 	// fast-math */
 /* 	if ((hex & 0x7fffffff) > 0x7f800000) */
 /* 		hex = 0x7fbfffff; */
-#elif HOST_CPU == CPU_X86 || HOST_CPU == CPU_X64
+#elif HOST_CPU != CPU_ARM && HOST_CPU != CPU_ARM64
 	if (f != f)
 	{
 		const u32 nan = 0x7fc00000;
@@ -209,7 +210,7 @@ static TYPES_INLINE f64 fixNaN64(f64 f)
 		*hex = 0x7ff7ffffffffffffll;
 	/* fast-math */
 /* 	return (*(u64 *)&f & 0x7fffffffffffffffll) <= 0x7f80000000000000ll ? f : 0x7ff7ffffffffffffll; */
-#elif HOST_CPU == CPU_X86 || HOST_CPU == CPU_X64
+#elif HOST_CPU != CPU_ARM && HOST_CPU != CPU_ARM64
 	if (f != f)
 	{
 		const u64 nan = 0x7ff8000000000000ull;

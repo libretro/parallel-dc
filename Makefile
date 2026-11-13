@@ -10,7 +10,11 @@ NO_EXCEPTIONS := 0
 NO_NVMEM      := 0
 NO_VERIFY     := 1
 HAVE_LTCG     ?= 0
-HAVE_GENERIC_JIT := 1
+# The portable recompiler (rec-cpp) is opt-in, and not built for a
+# processor with no recompiler of its own: it has not been brought up to
+# date with the rest (no main loop, operations it has no class for). The
+# interpreter is.
+HAVE_GENERIC_JIT := 0
 HAVE_GL3      := 0
 FORCE_GLES    := 0
 STATIC_LINKING:= 0
@@ -1165,6 +1169,11 @@ else
 	NEED_PTHREAD=1
 endif
 
+# No recompiler built (none for this processor, and not the generic one):
+# the interpreter, as NO_REC=1 asks for
+ifneq ($(DYNAREC_USED),1)
+	NO_REC = 1
+endif
 ifeq ($(NO_REC),1)
 	CORE_DEFINES += -DTARGET_NO_REC
 endif

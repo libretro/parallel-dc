@@ -2,9 +2,7 @@
 #include "types.h"
 
 struct host_context_t {
-#if HOST_CPU != CPU_GENERIC
-	size_t pc;
-#endif
+	size_t pc;		/* 0 where the host's is not had (CPU_GENERIC) */
 
 #if HOST_CPU == CPU_X86
 	u32 eax;

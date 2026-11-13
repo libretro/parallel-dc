@@ -263,7 +263,9 @@ static void context_segfault(host_context_t* reictx, void* segfault_ctx, bool to
 #elif HOST_CPU == CPU_MIPS
    bicopy(reictx->pc, MCTX(.pc), to_segfault);
 #elif HOST_CPU == CPU_GENERIC
-   //nothing!
+   // (no registers of the host's are known: no recompiler rewrites code)
+   if (!to_segfault)
+      reictx->pc = 0;
 #else
 #error Unsupported HOST_CPU
 #endif
@@ -370,7 +372,10 @@ static void signal_handler(int sn, siginfo_t * si, void *segfault_ctx)
 		context_to_segfault(&ctx, segfault_ctx);
 	}
 #else
-#error JIT: Not supported arch
+	// (the generic recompiler's code makes no accesses that fault)
+	if (false)
+	{
+	}
 #endif
 #endif
    else
