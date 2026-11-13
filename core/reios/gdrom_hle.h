@@ -1,4 +1,9 @@
 #pragma once
+#include "types.h"
+
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 #define SYSCALL_GDROM			0x00
 
@@ -7,15 +12,15 @@
 #define GDROM_MAIN				0x02
 #define GDROM_INIT				0x03
 #define GDROM_CHECK_DRIVE		0x04
-#define GDROM_G1_DMA_END		0x05	// r4: callback, r5: callback arg
-#define GDROM_REQ_DMA_TRANS		0x06	// r4: request id
-#define GDROM_CHECK_DMA_TRANS	0x07	// r4: request id, r5: u32 *size
+#define GDROM_G1_DMA_END		0x05	/* r4: callback, r5: callback arg */
+#define GDROM_REQ_DMA_TRANS		0x06	/* r4: request id */
+#define GDROM_CHECK_DMA_TRANS	0x07	/* r4: request id, r5: u32 *size */
 #define GDROM_ABORT_COMMAND		0x08
 #define GDROM_RESET				0x09
 #define GDROM_SECTOR_MODE		0x0A
-#define GDROM_SET_PIO_CALLBACK	0x0B	// r4: callback, r5: callback arg
-#define GDROM_REQ_PIO_TRANS		0x0C	// r4: request id
-#define GDROM_CHECK_PIO_TRANS	0x0D	// r4: request id, r5: u32 *size
+#define GDROM_SET_PIO_CALLBACK	0x0B	/* r4: callback, r5: callback arg */
+#define GDROM_REQ_PIO_TRANS		0x0C	/* r4: request id */
+#define GDROM_CHECK_PIO_TRANS	0x0D	/* r4: request id, r5: u32 *size */
 
 #define GDCC_PIOREAD			0x10
 #define GDCC_DMAREAD			0x11
@@ -37,17 +42,17 @@
 #define GDCC_MULTI_DMAREAD		0x26
 #define GDCC_MULTI_PIOREAD		0x27
 #define GDCC_GET_VER			0x28
-// pseudo-commands for multi dma/pio xfers
+/* pseudo-commands for multi dma/pio xfers */
 #define GDCC_REQ_DMA_TRANS	   0x106
 #define GDCC_REQ_PIO_TRANS	   0x10C
 
 #define MISC_INIT				0x00
 #define MISC_SETVECTOR			0x01
 
-void gdrom_hle_op();
+void gdrom_hle_op(void);
 
 typedef enum { BIOS_ERROR = -1, BIOS_INACTIVE, BIOS_ACTIVE, BIOS_COMPLETED, BIOS_DATA_AVAIL } gd_bios_status;
-struct gdrom_hle_state_t
+typedef struct gdrom_hle_state_t
 {
 	u32 last_request_id;
 	u32 next_request_id;
@@ -67,65 +72,17 @@ struct gdrom_hle_state_t
 	u32 dma_read_sector;
 	u32 dma_read_count;
 	u32 dma_read_addr;
-
-	bool Serialize(void **data, unsigned int *total_size)
-	{
-		LIBRETRO_S(last_request_id);
-		LIBRETRO_S(next_request_id);
-		LIBRETRO_S(status);
-		LIBRETRO_S(command);
-		LIBRETRO_S(params);
-		LIBRETRO_S(result);
-		LIBRETRO_S(cur_sector);
-		LIBRETRO_S(multi_read_sector);
-		LIBRETRO_S(multi_read_offset);
-		LIBRETRO_S(multi_read_count);
-		LIBRETRO_S(multi_read_total);
-		LIBRETRO_S(multi_callback);
-		LIBRETRO_S(multi_callback_arg);
-		LIBRETRO_S(dma_trans_ended);
-		LIBRETRO_S(xfer_end_time);
-		LIBRETRO_S(dma_read_sector);
-		LIBRETRO_S(dma_read_count);
-		LIBRETRO_S(dma_read_addr);
-
-		return true;
-	}
-	bool Unserialize(void **data, unsigned int *total_size)
-	{
-		LIBRETRO_US(last_request_id);
-		LIBRETRO_US(next_request_id);
-		LIBRETRO_US(status);
-		// (one of the five there are: nothing ends a command in a state that is none of them, and none can be sent until it has ended)
-		s32 status_read;
-		memcpy(&status_read, &status, sizeof(status_read));
-		if (status_read < BIOS_ERROR || status_read > BIOS_DATA_AVAIL)
-			status = BIOS_INACTIVE;
-		LIBRETRO_US(command);
-		LIBRETRO_US(params);
-		LIBRETRO_US(result);
-		LIBRETRO_US(cur_sector);
-		LIBRETRO_US(multi_read_sector);
-		LIBRETRO_US(multi_read_offset);
-		// (a place in a 2048-byte sector: the sector is read from there)
-		if (multi_read_offset >= 2048)
-			multi_read_offset = 0;
-		LIBRETRO_US(multi_read_count);
-		LIBRETRO_US(multi_read_total);
-		LIBRETRO_US(multi_callback);
-		LIBRETRO_US(multi_callback_arg);
-		LIBRETRO_US(dma_trans_ended);
-		dma_trans_ended = *(const u8 *)&dma_trans_ended != 0;	// (a flag: 0 or 1)
-		LIBRETRO_US(xfer_end_time);
-		LIBRETRO_US(dma_read_sector);
-		LIBRETRO_US(dma_read_count);
-		// (a read is of no more sectors than main memory holds: none is begun of more)
-		if (dma_read_count > RAM_SIZE_MAX / 2048)
-			dma_read_count = 0;
-		LIBRETRO_US(dma_read_addr);
-
-		return true;
-	}
-};
+} gdrom_hle_state_t;
 extern gdrom_hle_state_t gd_hle_state;
-void gdrom_hle_reset();
+void gdrom_hle_reset(void);
+/* gd_hle_state in a save state (gdrom_hle.c) */
+bool gd_hle_serialize(void **data, unsigned int *total_size);
+bool gd_hle_unserialize(void **data, unsigned int *total_size);
+/* The sector mode a game set, since V21 */
+void gdhle_serialize_v21(void **data, unsigned int *total_size);
+bool gdhle_unserialize_v21(void **data, unsigned int *total_size);
+void gdhle_state_before_v21(void);
+
+#ifdef __cplusplus
+}
+#endif

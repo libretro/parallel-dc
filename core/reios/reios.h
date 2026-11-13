@@ -12,6 +12,8 @@ extern "C" {
 /* The HLE BIOS's opcode: what it does, at its address (sh4_opcode_list.c) */
 void DYNACALL reios_trap(u32 op);
 #define REIOS_OPCODE 0x085B
+/* The disc's IP.BIN says it is a GD-ROM */
+bool reios_disc_is_gdrom(void);
 #ifdef __cplusplus
 }
 

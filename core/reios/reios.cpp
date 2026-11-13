@@ -1979,6 +1979,11 @@ static void register_hook(u32 pc, hook_fp* fn) {
 	hooks_rev[fn] = pc;
 }
 
+bool reios_disc_is_gdrom(void)
+{
+	return memcmp(ip_meta.disk_type, "GD-ROM", sizeof(ip_meta.disk_type)) == 0;
+}
+
 void DYNACALL reios_trap(u32 op) {
 	verify(op == REIOS_OPCODE);
 	u32 pc = next_pc - 2;

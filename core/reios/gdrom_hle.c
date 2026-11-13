@@ -16,6 +16,8 @@
 #include "hw/holly/holly_intc.h"
 #include "reios.h"
 #include "imgread/common.h"
+#include "hw/sh4/modules/mmu.h"
+#include <retro_miscellaneous.h>
 
 #define SWAP32(a) ((((a) & 0xff) << 24)  | (((a) & 0xff00) << 8) | (((a) >> 8) & 0xff00) | (((a) >> 24) & 0xff))
 
@@ -34,7 +36,7 @@ u32 SecMode[4] = SECMODE_DEFAULTS;
  * being read. (It was left as the game before the reset had it - a read by
  * DMA that was under way went on into the memory of whatever was started
  * next.) Upstream has the same. */
-void gdrom_hle_reset()
+void gdrom_hle_reset(void)
 {
 	static const gdrom_hle_state_t fresh = { 0xffffffff, 2, BIOS_INACTIVE };
 	static const u32 fresh_mode[4] = SECMODE_DEFAULTS;
@@ -56,7 +58,7 @@ bool gdhle_unserialize_v21(void **data, unsigned int *total_size)
 	return true;
 }
 
-// An older state does not say: as after a reset.
+/* An older state does not say: as after a reset. */
 void gdhle_state_before_v21(void)
 {
 	static const u32 fresh_mode[4] = SECMODE_DEFAULTS;
@@ -78,7 +80,7 @@ static u8 *hle_ram_ptr(u32 addr, u64 size)
 
 /* A command with a parameter nothing can be made of fails as the drive's
  * own would: illegal request, invalid field in the command. */
-static void GDROM_HLE_BadParam()
+static void GDROM_HLE_BadParam(void)
 {
 	gd_hle_state.status = BIOS_ERROR;
 	gd_hle_state.result[0] = 5;
@@ -90,7 +92,7 @@ static void GDROM_HLE_BadParam()
 /* A command for a disc when there is none in the drive, or its lid is open:
  * not ready, no medium - what GETSCD says of it below. (PLAY failed with
  * both words 0, which is "no error".) */
-static void GDROM_HLE_NoDisc()
+static void GDROM_HLE_NoDisc(void)
 {
 	gd_hle_state.status = BIOS_ERROR;
 	gd_hle_state.result[0] = 2;
@@ -103,7 +105,7 @@ static void GDROM_HLE_NoDisc()
  * buffer there is. It fails. (It was carried out: past the end of memory
  * when it began in memory, and a word at a time for as long as that takes -
  * hours, for a count that is junk - when it did not.) */
-static bool GDROM_HLE_BadRead()
+static bool GDROM_HLE_BadRead(void)
 {
 	if (gd_hle_state.params[1] <= RAM_SIZE / 2048)
 		return false;
@@ -112,7 +114,7 @@ static bool GDROM_HLE_BadRead()
 	return true;
 }
 
-static void GDROM_HLE_ReadSES()
+static void GDROM_HLE_ReadSES(void)
 {
 	u32 s = gd_hle_state.params[0];
 	u32 b = gd_hle_state.params[1];
@@ -122,24 +124,25 @@ static void GDROM_HLE_ReadSES()
 	INFO_LOG(REIOS, "GDROM_HLE_ReadSES: doing nothing w/ %d, %d, %d, %d", s, b, ba, bb);
 }
 
-static void GDROM_HLE_ReadTOC()
+static void GDROM_HLE_ReadTOC(void)
 {
 	u32 area = gd_hle_state.params[0];
 	u32 dest = gd_hle_state.params[1];
+	u32 toc[102];
+	int i;
 
 	debugf("GDROM READ TOC : %X %X", area, dest);
 	if (area == DoubleDensity && libGDR_GetDiscType() != GdRom)
 	{
-		// Only GD-ROM has a high-density area but no error is reported
+		/* Only GD-ROM has a high-density area but no error is reported */
 		gd_hle_state.status = BIOS_INACTIVE;
 		return;
 	}
 
-	u32 toc[102];
 	libGDR_GetToc(toc, area);
 
-	// Swap results to LE
-	for (int i = 0; i < 102; i++) {
+	/* Swap results to LE */
+	for (i = 0; i < 102; i++) {
 		toc[i] = SWAP32(toc[i]);
 	}
 	if (!mmu_enabled())
@@ -151,22 +154,24 @@ static void GDROM_HLE_ReadTOC()
 			return;
 		}
 	}
-	for (int i = 0; i < 102; i++, dest += 4)
+	for (i = 0; i < 102; i++, dest += 4)
 		WriteMem32(dest, toc[i]);
 }
 
-template<bool virtual_addr>
-static void read_sectors_to(u32 addr, u32 sector, u32 count)
+static void read_sectors_to(bool virtual_addr, u32 addr, u32 sector, u32 count)
 {
+	u32 temp[2048 / 4];
+	unsigned i;
+
 	gd_hle_state.cur_sector = sector + count - 1;
 	libGDR_Prefetch(sector, count);
 	if (virtual_addr)
 		gd_hle_state.xfer_end_time = 0;
 	else if (count > 5 && GDROM_TICK == 1500000)
-		// Large Transfers: GD-ROM rate (approx. 1.8 MB/s)
+		/* Large Transfers: GD-ROM rate (approx. 1.8 MB/s) */
 		gd_hle_state.xfer_end_time = sh4_sched_now64() + (u64)count * 2048 * 1000000L / 10240;
 	else
-		// Small transfers: Max G1 bus rate: 50 MHz x 16 bits
+		/* Small transfers: Max G1 bus rate: 50 MHz x 16 bits */
 		gd_hle_state.xfer_end_time = sh4_sched_now64() + 5 * 2048 * 2;
 	if (!virtual_addr || !mmu_enabled())
 	{
@@ -178,15 +183,14 @@ static void read_sectors_to(u32 addr, u32 sector, u32 count)
 			return;
 		}
 	}
-	u32 temp[2048 / 4];
 
 	while (count > 0)
 	{
-		// (blank first: with no disc nothing is read, and what was on the stack went to the game)
+		/* (blank first: with no disc nothing is read, and what was on the stack went to the game) */
 		memset(temp, 0, sizeof(temp));
 		libGDR_ReadSector((u8 *)temp, sector, 1, sizeof(temp));
 
-		for (int i = 0; i < ARRAY_SIZE(temp); i++)
+		for (i = 0; i < ARRAY_SIZE(temp); i++)
 		{
 			if (virtual_addr)
 				WriteMem32(addr, temp[i]);
@@ -207,7 +211,7 @@ static void read_sectors_to(u32 addr, u32 sector, u32 count)
  * -- and therefore emulation determinism -- is unchanged. */
 /* A sector's address is 24 bits. The BIOS does not look at the rest, and
  * neither does this: Guilty Gear X asks for audio with junk up there. */
-static void GDROM_HLE_ReadDMA()
+static void GDROM_HLE_ReadDMA(void)
 {
 	u32 s = gd_hle_state.params[0] & 0xffffff;
 	u32 n = gd_hle_state.params[1];
@@ -233,16 +237,19 @@ static void GDROM_HLE_ReadDMA()
 /* Read up to 32 sectors (matching the real GDROM hardware path's per-read cap)
  * of the pending DMA into guest memory. Bounded, so a single call is ~one
  * hardware-sized read instead of the whole transfer. */
-static void GDROM_HLE_ReadDMA_step()
+static void GDROM_HLE_ReadDMA_step(void)
 {
+	u32 chunk;
+	u8 *pDst;
+
 	if (gd_hle_state.dma_read_count == 0)
 		return;
 
-	u32 chunk = gd_hle_state.dma_read_count;
+	chunk = gd_hle_state.dma_read_count;
 	if (chunk > 32)
 		chunk = 32;
 
-	u8 *pDst = hle_ram_ptr(gd_hle_state.dma_read_addr, chunk * 2048);
+	pDst = hle_ram_ptr(gd_hle_state.dma_read_addr, chunk * 2048);
 	if (pDst != NULL)
 	{
 		libGDR_ReadSector(pDst, gd_hle_state.dma_read_sector, chunk, 2048);
@@ -256,11 +263,12 @@ static void GDROM_HLE_ReadDMA_step()
 		 * (rare): fall back to the original sector-by-sector path for the
 		 * remainder. */
 		u32 temp[2048 / 4];
+		int i;
 		while (gd_hle_state.dma_read_count > 0)
 		{
-			memset(temp, 0, sizeof(temp));	// (as above)
+			memset(temp, 0, sizeof(temp));	/* (as above) */
 			libGDR_ReadSector((u8 *)temp, gd_hle_state.dma_read_sector, 1, sizeof(temp));
-			for (int i = 0; i < (int)ARRAY_SIZE(temp); i++)
+			for (i = 0; i < (int)ARRAY_SIZE(temp); i++)
 			{
 				WriteMem32_nommu(gd_hle_state.dma_read_addr, temp[i]);
 				gd_hle_state.dma_read_addr += 4;
@@ -271,7 +279,7 @@ static void GDROM_HLE_ReadDMA_step()
 	}
 }
 
-static void GDROM_HLE_ReadPIO()
+static void GDROM_HLE_ReadPIO(void)
 {
 	u32 s = gd_hle_state.params[0] & 0xffffff;
 	u32 n = gd_hle_state.params[1];
@@ -280,15 +288,18 @@ static void GDROM_HLE_ReadPIO()
 
 	debugf("GDROM: PIO READ Sector=%d, Num=%d, Buffer=0x%08X, Unk01=0x%08X", s, n, b, u);
 
-	read_sectors_to<true>(b, s, n);
+	read_sectors_to(true, b, s, n);
 	gd_hle_state.result[2] = n * 2048;
 	gd_hle_state.result[3] = 0;
 }
 
-static void GDCC_HLE_GETSCD() {
+static void GDCC_HLE_GETSCD(void)
+{
 	u32 format = gd_hle_state.params[0];
 	u32 size = gd_hle_state.params[1];
 	u32 dest = gd_hle_state.params[2];
+	u8 scd[100];
+	u8 *pDst;
 
 	DEBUG_LOG(REIOS, "GDROM: GETSCD format %x size %x dest %08x", format, size, dest);
 
@@ -298,11 +309,11 @@ static void GDCC_HLE_GETSCD() {
 	 * "the medium may have changed". */
 	if (sns_asc != 0)
 	{
-		// Helps D2 detect the disk change
+		/* Helps D2 detect the disk change */
 		gd_hle_state.status = BIOS_ERROR;
 		gd_hle_state.result[0] = sns_key;
 		gd_hle_state.result[1] = sns_asc | (sns_ascq << 8);
-		gd_hle_state.result[2] = 0x18;		// ?
+		gd_hle_state.result[2] = 0x18;		/* ? */
 		gd_hle_state.result[3] = 0;
 		sns_key = 0;
 		sns_asc = 0;
@@ -313,14 +324,13 @@ static void GDCC_HLE_GETSCD() {
 	{
 		gd_hle_state.status = BIOS_ERROR;
 		gd_hle_state.result[0] = 2;
-		gd_hle_state.result[1] = 0x3a;	// a command for a disc, and there is no disc
+		gd_hle_state.result[1] = 0x3a;	/* a command for a disc, and there is no disc */
 		gd_hle_state.result[2] = 0;
 		gd_hle_state.result[3] = 0;
 		return;
 	}
 	if (cdda.status == CDDA_PLAYING)
 		gd_hle_state.cur_sector = cdda.CurrAddr.FAD;
-	u8 scd[100];
 	gd_get_subcode(format, gd_hle_state.cur_sector, scd);
 	/* No more than the drive has to say, which is its fourth byte (100 at
 	 * the most): the game's count is the room it has, and the drive's own
@@ -329,53 +339,33 @@ static void GDCC_HLE_GETSCD() {
 	if (size > scd[3])
 		size = scd[3];
 
-	u8 *pDst = mmu_enabled() ? NULL : hle_ram_ptr(dest, size);
+	pDst = mmu_enabled() ? NULL : hle_ram_ptr(dest, size);
 	if (pDst != NULL)
 		memcpy(pDst, scd, size);
 	else
 	{
-		for (int i = 0; i < size; i++)
+		u32 i;
+		for (i = 0; i < size; i++)
 			WriteMem8(dest++, scd[i]);
 	}
 
-	// record size of pio transfer to gdrom
+	/* record size of pio transfer to gdrom */
 	gd_hle_state.result[2] = size;
 }
-/* A transfer to the game's addresses can stop at a page that is not mapped
- * yet: the game maps it and the call is made again, to the same place from
- * its start. What had been taken off the read by then is put back, or the
- * second go wrote what follows it there. */
-struct multi_xfer_rewind
-{
-	u32 sector, offset, count;
-	bool done;
-
-	multi_xfer_rewind() : sector(gd_hle_state.multi_read_sector), offset(gd_hle_state.multi_read_offset),
-		count(gd_hle_state.multi_read_count), done(false) {}
-	~multi_xfer_rewind()
-	{
-		if (done)
-			return;
-		gd_hle_state.multi_read_sector = sector;
-		gd_hle_state.multi_read_offset = offset;
-		gd_hle_state.multi_read_count = count;
-	}
-};
-
-template<bool dma>
-static void multi_xfer()
+static void multi_xfer_run(bool dma)
 {
 	u32 dest = gd_hle_state.params[0];
 	u32 size = gd_hle_state.params[1];
-	multi_xfer_rewind rewind;
 
-	size = std::min(size, gd_hle_state.multi_read_count);
-	// (asking for more than this is refused; a save state can still say so)
-	size = std::min(size, (u32)RAM_SIZE);
+	if (size > gd_hle_state.multi_read_count)
+		size = gd_hle_state.multi_read_count;
+	/* (asking for more than this is refused; a save state can still say so) */
+	if (size > (u32)RAM_SIZE)
+		size = (u32)RAM_SIZE;
 	while (size > 0)
 	{
 		u8 buf[2048];
-		// (blank first: with no disc nothing is read, and what was on the stack went to the game)
+		/* (blank first: with no disc nothing is read, and what was on the stack went to the game) */
 		memset(buf, 0, sizeof(buf));
 		libGDR_ReadSector(buf, gd_hle_state.multi_read_sector, 1, 2048);
 		while (size > 0)
@@ -383,7 +373,7 @@ static void multi_xfer()
 			int remaining = 2048 - gd_hle_state.multi_read_offset;
 			if (size >= 4 && remaining >= 4 && (dest & 3) == 0)
 			{
-				// (the place in the sector is odd after a transfer of an odd length)
+				/* (the place in the sector is odd after a transfer of an odd length) */
 				u32 word;
 				memcpy(&word, &buf[gd_hle_state.multi_read_offset], sizeof(word));
 				if (dma)
@@ -428,7 +418,6 @@ static void multi_xfer()
 			}
 		}
 	}
-	rewind.done = true;
 	if (!dma)
 	{
 		gd_hle_state.result[2] = gd_hle_state.multi_read_total - gd_hle_state.multi_read_count;
@@ -448,6 +437,29 @@ static void multi_xfer()
 			gd_hle_state.status = BIOS_COMPLETED;
 		asic_RaiseInterrupt(holly_GDROM_DMA);
 	}
+}
+
+/* A transfer to the game's addresses can stop at a page that is not mapped
+ * yet: the game maps it and the call is made again, to the same place from
+ * its start. What had been taken off the read by then is put back, or the
+ * second go wrote what follows it there. */
+static void multi_xfer(bool dma)
+{
+	const u32 sector = gd_hle_state.multi_read_sector;
+	const u32 offset = gd_hle_state.multi_read_offset;
+	const u32 count  = gd_hle_state.multi_read_count;
+	sh4_catch c;
+
+	SH4_TRY(c)
+	{
+		multi_xfer_run(dma);
+		sh4_catch_pop(&c);
+		return;
+	}
+	gd_hle_state.multi_read_sector = sector;
+	gd_hle_state.multi_read_offset = offset;
+	gd_hle_state.multi_read_count  = count;
+	sh4_throw(c.ex.epc, c.ex.expEvn, c.ex.callVect);
 }
 
 static void GD_HLE_Command(u32 cc)
@@ -509,7 +521,7 @@ static void GD_HLE_Command(u32 cc)
 			DEBUG_LOG(REIOS, "GDROM: CMD PLAYSEC from %d to %d repeats %d", start_fad, end_fad, gd_hle_state.params[2]);
 			if (libGDR_GetDiscType() == Open || libGDR_GetDiscType() == NoDisk)
 			{
-				// nothing to play
+				/* nothing to play */
 				GDROM_HLE_NoDisc();
 				cdda.status = CDDA_NOINFO;
 				SecNumber.Status = GD_STANDBY;
@@ -518,7 +530,7 @@ static void GD_HLE_Command(u32 cc)
 			cdda.status = CDDA_PLAYING;
 			cdda.StartAddr.FAD = start_fad;
 			cdda.EndAddr.FAD = end_fad;
-			// the drive keeps four bits of repeat count (15: for ever)
+			/* the drive keeps four bits of repeat count (15: for ever) */
 			cdda.repeats = gd_hle_state.params[2] & 0xF;
 			cdda.CurrAddr.FAD = start_fad;
 			SecNumber.Status = GD_PLAY;
@@ -540,7 +552,7 @@ static void GD_HLE_Command(u32 cc)
 
 	case GDCC_SEEK:
 		debugf("GDROM: CMD SEEK");
-		// the drive goes where it is sent, and is paused there
+		/* the drive goes where it is sent, and is paused there */
 		cdda.CurrAddr.FAD = cdda.StartAddr.FAD = gd_hle_state.params[0] & 0xffffff;
 		cdda.status = CDDA_PAUSED;
 		SecNumber.Status = GD_PAUSE;
@@ -550,12 +562,12 @@ static void GD_HLE_Command(u32 cc)
 		{
 			u32 first_track = gd_hle_state.params[0];
 			u32 last_track = gd_hle_state.params[1];
-			// the drive keeps four bits of repeat count (15: for ever)
+			/* the drive keeps four bits of repeat count (15: for ever) */
 			u32 repeats = gd_hle_state.params[2] & 0xF;
 			u32 start_fad, end_fad, dummy;
 			if (libGDR_GetDiscType() == Open || libGDR_GetDiscType() == NoDisk)
 			{
-				// no disc, no tracks: asking for one was a crash
+				/* no disc, no tracks: asking for one was a crash */
 				GDROM_HLE_NoDisc();
 				cdda.status = CDDA_NOINFO;
 				SecNumber.Status = GD_STANDBY;
@@ -625,7 +637,7 @@ static void GD_HLE_Command(u32 cc)
 			WriteMem32(dest + 8, GD_HardwareInfo.read_flags);
 			WriteMem32(dest + 12, GD_HardwareInfo.read_retry);
 
-			// record size of pio transfer to gdrom
+			/* record size of pio transfer to gdrom */
 			gd_hle_state.result[2] = 0xa;
 		}
 		break;
@@ -645,7 +657,7 @@ static void GD_HLE_Command(u32 cc)
 			GD_HardwareInfo.read_flags = read_flags;
 			GD_HardwareInfo.read_retry = read_retry;
 
-			// record size of pio transfer to gdrom
+			/* record size of pio transfer to gdrom */
 			gd_hle_state.result[2] = 0xa;
 		}
 		break;
@@ -653,81 +665,81 @@ static void GD_HLE_Command(u32 cc)
 	case GDCC_GET_VER:
 		{
 			u32 dest = gd_hle_state.params[0];
+			char ver[] = "GDC Version 1.10 1999-03-31 ";
+			u32 len = (u32)strlen(ver);
+			u32 i;
 
 			debugf("GDROM: GDCC_GET_VER dest %x", dest);
 
-			char ver[] = "GDC Version 1.10 1999-03-31 ";
-			u32 len = (u32)strlen(ver);
-
-			// 0x8c0013b8 (offset 0xd0 in the gdrom state struct) is then loaded and
-			// overwrites the last byte. no idea what this is, but seems to be hard
-			// coded to 0x02 on boot
+			/* 0x8c0013b8 (offset 0xd0 in the gdrom state struct) is then loaded and */
+			/* overwrites the last byte. no idea what this is, but seems to be hard */
+			/* coded to 0x02 on boot */
 			ver[len - 1] = 0x02;
 
-			for (int i = 0; i < len; i++)
+			for (i = 0; i < len; i++)
 				WriteMem8(dest++, ver[i]);
 		}
 		break;
 
 	case GDCC_REQ_STAT:
 		{
-			// odd, but this function seems to get passed 4 unique pointers
+			/* odd, but this function seems to get passed 4 unique pointers */
 			u32 dst0 = gd_hle_state.params[0];
 			u32 dst1 = gd_hle_state.params[1];
 			u32 dst2 = gd_hle_state.params[2];
 			u32 dst3 = gd_hle_state.params[3];
+			u32 fad, elapsed, tracknum, out;
+			u8 adr, ctrl;
 
 			debugf("GDROM: GDCC_REQ_STAT dst0=%08x dst1=%08x dst2=%08x dst3=%08x", dst0, dst1, dst2, dst3);
 
-			// bit   |  7  |  6  |  5  |  4  |  3  |  2  |  1  |  0
-			// byte  |     |     |     |     |     |     |     |
-			// ------------------------------------------------------
-			// 0     |  0  |  0  |  0  |  0  | status
-			// ------------------------------------------------------
-			// 1     |  0  |  0  |  0  |  0  | repeat count
-			// ------------------------------------------------------
-			// 2-3   |  0  |  0  |  0  |  0  |  0  |  0  |  0  |  0
-//			WriteMem32(dst0, (cdda.repeats << 8) | SecNumber.Status);
+			/* bit   |  7  |  6  |  5  |  4  |  3  |  2  |  1  |  0 */
+			/* byte  |     |     |     |     |     |     |     | */
+			/* ------------------------------------------------------ */
+			/* 0     |  0  |  0  |  0  |  0  | status */
+			/* ------------------------------------------------------ */
+			/* 1     |  0  |  0  |  0  |  0  | repeat count */
+			/* ------------------------------------------------------ */
+			/* 2-3   |  0  |  0  |  0  |  0  |  0  |  0  |  0  |  0 */
+/* WriteMem32(dst0, (cdda.repeats << 8) | SecNumber.Status); */
 			WriteMem32(dst0, (cdda.repeats << 8) | (SecNumber.Status == GD_STANDBY ? GD_PAUSE : SecNumber.Status));
 
-			// bit   |  7  |  6  |  5  |  4  |  3  |  2  |  1  |  0
-			// byte  |     |     |     |     |     |     |     |
-			// ------------------------------------------------------
-			// 0     | subcode q track number
-			// ------------------------------------------------------
-			// 1-3   |  0  |  0  |  0  |  0  |  0  |  0  |  0  |  0
+			/* bit   |  7  |  6  |  5  |  4  |  3  |  2  |  1  |  0 */
+			/* byte  |     |     |     |     |     |     |     | */
+			/* ------------------------------------------------------ */
+			/* 0     | subcode q track number */
+			/* ------------------------------------------------------ */
+			/* 1-3   |  0  |  0  |  0  |  0  |  0  |  0  |  0  |  0 */
 			/* Where the drive is: in the music while it plays or is paused
 			 * in it, and otherwise where it last read - what the drive's
 			 * own status command gives. (It was always the last read, so
 			 * a game watching its music saw it stand still.) */
-			const u32 fad = cdda.status == CDDA_PLAYING || cdda.status == CDDA_PAUSED
+			fad = cdda.status == CDDA_PLAYING || cdda.status == CDDA_PAUSED
 					? cdda.CurrAddr.FAD : gd_hle_state.cur_sector;
-			u32 elapsed;
-			u32 tracknum = libGDR_GetTrackNumber(fad, &elapsed);
+			tracknum = libGDR_GetTrackNumber(fad, &elapsed);
 			WriteMem32(dst1, tracknum);
 
-			// bit   |  7  |  6  |  5  |  4  |  3  |  2  |  1  |  0
-			// byte  |     |     |     |     |     |     |     |
-			// ------------------------------------------------------
-			// 0-2  | fad (little-endian)
-			// ------------------------------------------------------
-			// 3    | address                | control
-			// (of the track the drive is on: an audio track on a disc with data is still audio)
-			u8 adr, ctrl;
+			/* bit   |  7  |  6  |  5  |  4  |  3  |  2  |  1  |  0 */
+			/* byte  |     |     |     |     |     |     |     | */
+			/* ------------------------------------------------------ */
+			/* 0-2  | fad (little-endian) */
+			/* ------------------------------------------------------ */
+			/* 3    | address                | control */
+			/* (of the track the drive is on: an audio track on a disc with data is still audio) */
 			libGDR_GetTrackAdrAndControl(tracknum, &adr, &ctrl);
-			u32 out = ((u32)(u8)((ctrl << 4) | adr) << 24)
+			out = ((u32)(u8)((ctrl << 4) | adr) << 24)
 					| (fad & 0x00ffffff);
 			WriteMem32(dst2, out);
 
-			// bit   |  7  |  6  |  5  |  4  |  3  |  2  |  1  |  0
-			// byte  |     |     |     |     |     |     |     |
-			// ------------------------------------------------------
-			// 0     | subcode q index number
-			// ------------------------------------------------------
-			// 1-3   |  0  |  0  |  0  |  0  |  0  |  0  |  0  |  0
+			/* bit   |  7  |  6  |  5  |  4  |  3  |  2  |  1  |  0 */
+			/* byte  |     |     |     |     |     |     |     | */
+			/* ------------------------------------------------------ */
+			/* 0     | subcode q index number */
+			/* ------------------------------------------------------ */
+			/* 1-3   |  0  |  0  |  0  |  0  |  0  |  0  |  0  |  0 */
 			WriteMem32(dst3, 1);
 
-			// record pio transfer size
+			/* record pio transfer size */
 			gd_hle_state.result[2] = 0xa;
 		}
 		break;
@@ -748,7 +760,7 @@ static void GD_HLE_Command(u32 cc)
 			gd_hle_state.multi_read_offset = 0;
 			libGDR_Prefetch(sector, num);
 
-			// wild guesses here
+			/* wild guesses here */
 			gd_hle_state.result[2] = 0;
 			gd_hle_state.result[3] = 0;
 		}
@@ -763,9 +775,9 @@ static void GD_HLE_Command(u32 cc)
 			debugf("GDROM: REQ_%s_TRANS dest %x size %x", dma ? "DMA" : "PIO",
 					dest, size);
 			if (dma)
-				multi_xfer<true>();
+				multi_xfer(true);
 			else
-				multi_xfer<false>();
+				multi_xfer(false);
 		}
 		break;
 
@@ -793,20 +805,22 @@ static u32 read_param(u32 addr)
 	return 0;
 }
 
-void gdrom_hle_op()
+void gdrom_hle_op(void)
 {
-	if( SYSCALL_GDROM == r[6] )		// GDROM SYSCALL
+	int i;
+
+	if( SYSCALL_GDROM == r[6] )		/* GDROM SYSCALL */
 	{
-		switch(r[7])				// COMMAND CODE
+		switch(r[7])				/* COMMAND CODE */
 		{
 		case GDROM_SEND_COMMAND:
-			// Enqueue a command for the GDROM subsystem to execute.
-			//
-			// Args:
-			//	r4 = command code
-			//	r5 = pointer to parameter block for the command, can be NULL if the command does not take parameters
-			//
-			// Returns: a request id (>=0) if successful, negative error code if failed
+			/* Enqueue a command for the GDROM subsystem to execute. */
+
+			/* Args: */
+			/* r4 = command code */
+			/* r5 = pointer to parameter block for the command, can be NULL if the command does not take parameters */
+
+			/* Returns: a request id (>=0) if successful, negative error code if failed */
 			debugf("GDROM: HLE SEND COMMAND CC:%X  param ptr: %X bios status %d", r[4], r[5], gd_hle_state.status);
 			if (gd_hle_state.status != BIOS_INACTIVE)
 			{
@@ -814,9 +828,9 @@ void gdrom_hle_op()
 			}
 			else
 			{
-				for (int i = 0; i < 4; i++)
+				for (i = 0; i < 4; i++)
 				{
-					// (a page fault reads 0: it happens for commands not taking params)
+					/* (a page fault reads 0: it happens for commands not taking params) */
 					gd_hle_state.params[i] = r[5] == 0 ? 0 : read_param(r[5] + i * 4);
 				}
 				memset(gd_hle_state.result, 0, sizeof(gd_hle_state.result));
@@ -835,18 +849,18 @@ void gdrom_hle_op()
 			break;
 
 		case GDROM_CHECK_COMMAND:
-			// Check if an enqueued command has completed.
-			//
-			// Args:
-			//	r4 = request id
-			//	r5 = pointer to four 32 bit integers to receive extended status information. The first is a generic error code.
-			//
-			// Returns:
-			//	0 - no such request active
-			//	1 - request is still being processed
-			//	2 - request has completed (if queried again, you will get a 0)
-			//	3 - multi request has data available
-			//	-1 - request has failed (examine extended status information for cause of failure)
+			/* Check if an enqueued command has completed. */
+
+			/* Args: */
+			/* r4 = request id */
+			/* r5 = pointer to four 32 bit integers to receive extended status information. The first is a generic error code. */
+
+			/* Returns: */
+			/* 0 - no such request active */
+			/* 1 - request is still being processed */
+			/* 2 - request has completed (if queried again, you will get a 0) */
+			/* 3 - multi request has data available */
+			/* -1 - request has failed (examine extended status information for cause of failure) */
 			{
 				sh4_catch c;
 				SH4_TRY(c)
@@ -860,19 +874,19 @@ void gdrom_hle_op()
 			}
 			if (gd_hle_state.status == BIOS_INACTIVE || gd_hle_state.status == BIOS_ACTIVE)
 			{
-				r[0] = gd_hle_state.status;	// no such request active or still being processed
+				r[0] = gd_hle_state.status;	/* no such request active or still being processed */
 			}
 			else if (r[4] != gd_hle_state.last_request_id)
 			{
-				r[0] = 0; // no such request active
+				r[0] = 0; /* no such request active */
 			}
 			else
 			{
 				if (gd_hle_state.status == BIOS_DATA_AVAIL && gd_hle_state.command == GDCC_REQ_PIO_TRANS)
-					r[0] = BIOS_ACTIVE;	// Bust-a-move 4 likes this
+					r[0] = BIOS_ACTIVE;	/* Bust-a-move 4 likes this */
 				else
-					r[0] = gd_hle_state.status;	// completed or error
-				// Fixes NBA 2K
+					r[0] = gd_hle_state.status;	/* completed or error */
+				/* Fixes NBA 2K */
 				if (gd_hle_state.status == BIOS_DATA_AVAIL && gd_hle_state.multi_read_count == 0)
 				{
 					gd_hle_state.status = BIOS_COMPLETED;
@@ -889,7 +903,7 @@ void gdrom_hle_op()
 			break;
 
 		case GDROM_MAIN:
-			// In order for enqueued commands to get processed, this function must be called a few times.
+			/* In order for enqueued commands to get processed, this function must be called a few times. */
 			debugf("GDROM: HLE GDROM_MAIN");
 			if (gd_hle_state.status == BIOS_ACTIVE || (gd_hle_state.status == BIOS_DATA_AVAIL && gd_hle_state.command == GDCC_REQ_PIO_TRANS))
 			{
@@ -898,7 +912,7 @@ void gdrom_hle_op()
 			break;
 
 		case GDROM_INIT:
-			// Initialize the GDROM subsystem. Should be called before any requests are enqueued.
+			/* Initialize the GDROM subsystem. Should be called before any requests are enqueued. */
 			debugf("GDROM: HLE GDROM_INIT");
 			gd_hle_state.last_request_id = 0xFFFFFFFF;
 			gd_hle_state.next_request_id = 2;
@@ -906,7 +920,7 @@ void gdrom_hle_op()
 			break;
 
 		case GDROM_RESET:
-			// Resets the drive.
+			/* Resets the drive. */
 			debugf("GDROM: HLE GDROM_RESET");
 			gd_hle_state.last_request_id = 0xFFFFFFFF;
 			gd_hle_state.status = BIOS_INACTIVE;
@@ -914,24 +928,24 @@ void gdrom_hle_op()
 
 		case GDROM_CHECK_DRIVE:
 			{
-				// Checks the general condition of the drive.
-				//
-				// Args:
-				//	r4 = pointer to two 32 bit integers, to receive the drive status. The first is the current drive status, the second is the type of disc inserted (if any).
-				//	0 	Drive is busy
-				//	1 	Drive is paused
-				//	2 	Drive is in standby
-				//	3 	Drive is playing
-				//	4 	Drive is seeking
-				//	5 	Drive is scanning
-				//	6 	Drive lid is open
-				//	7 	Lid is closed, but there is no disc
-				//
-				// Returns: zero if successful, nonzero if failure
+				/* Checks the general condition of the drive. */
+
+				/* Args: */
+				/* r4 = pointer to two 32 bit integers, to receive the drive status. The first is the current drive status, the second is the type of disc inserted (if any). */
+				/* 0 	Drive is busy */
+				/* 1 	Drive is paused */
+				/* 2 	Drive is in standby */
+				/* 3 	Drive is playing */
+				/* 4 	Drive is seeking */
+				/* 5 	Drive is scanning */
+				/* 6 	Drive lid is open */
+				/* 7 	Lid is closed, but there is no disc */
+
+				/* Returns: zero if successful, nonzero if failure */
 				u32 discType = libGDR_GetDiscType();
 				if (SecNumber.Status == GD_BUSY)
 				{
-					// a disc has just been put in and the drive is looking at it
+					/* a disc has just been put in and the drive is looking at it */
 					WriteMem32(r[4], 0);
 					WriteMem32(r[4] + 4, 0);
 				}
@@ -947,7 +961,7 @@ void gdrom_hle_op()
 					break;
 				default:
 					WriteMem32(r[4], (gd_hle_state.status == BIOS_DATA_AVAIL || SecNumber.Status == GD_PLAY) ? 3 : 1);
-					if (memcmp(ip_meta.disk_type, "GD-ROM", sizeof(ip_meta.disk_type)) == 0)
+					if (reios_disc_is_gdrom())
 						WriteMem32(r[4] + 4, GdRom);
 					else
 						WriteMem32(r[4] + 4, discType);
@@ -959,12 +973,12 @@ void gdrom_hle_op()
 			break;
 
 		case GDROM_ABORT_COMMAND:
-			// Tries to abort a previously enqueued command.
-			//
-			// Args:
-			//	r4 = request id
-			//
-			// Returns: zero if successful, nonzero if failure
+			/* Tries to abort a previously enqueued command. */
+
+			/* Args: */
+			/* r4 = request id */
+
+			/* Returns: zero if successful, nonzero if failure */
 			debugf("GDROM: HLE GDROM_ABORT_COMMAND r4:%X",r[4]);
 			if (r[4] == gd_hle_state.last_request_id
 					&& (gd_hle_state.status == BIOS_DATA_AVAIL || gd_hle_state.status == BIOS_ACTIVE))
@@ -981,21 +995,21 @@ void gdrom_hle_op()
 
 
 		case GDROM_SECTOR_MODE:
-			// Sets/gets the sector format for read commands.
-			//
-			// Args:
-			//	r4 = pointer to a struct of four 32 bit integers containing new values, or to receive the old values
-			//	Field	Function
-			//	0 	Get/Set, if 0 the mode will be set, if 1 it will be queried.
-			//	1 	? (always 8192)
-			//	2 	1024 = mode 1, 2048 = mode 2, 0 = auto detect
-			//	3 	Sector size in bytes (normally 2048)
-			//
-			// Returns: zero if successful, -1 if failure
+			/* Sets/gets the sector format for read commands. */
+
+			/* Args: */
+			/* r4 = pointer to a struct of four 32 bit integers containing new values, or to receive the old values */
+			/* Field	Function */
+			/* 0 	Get/Set, if 0 the mode will be set, if 1 it will be queried. */
+			/* 1 	? (always 8192) */
+			/* 2 	1024 = mode 1, 2048 = mode 2, 0 = auto detect */
+			/* 3 	Sector size in bytes (normally 2048) */
+
+			/* Returns: zero if successful, -1 if failure */
 			debugf("GDROM: HLE GDROM_SECTOR_MODE PTR_r4:%X",r[4]);
-			// (asked for, it was taken as set: the game's own block came back as the answer)
+			/* (asked for, it was taken as set: the game's own block came back as the answer) */
 			SecMode[0] = ReadMem32(r[4]);
-			for(int i=1; i<4; i++) {
+			for(i=1; i<4; i++) {
 				if (SecMode[0] == 0)
 					SecMode[i] = ReadMem32(r[4]+(i<<2));
 				else
@@ -1010,7 +1024,7 @@ void gdrom_hle_op()
 			gd_hle_state.multi_callback = r[4];
 			gd_hle_state.multi_callback_arg = r[5];
 			r[0] = 0;
-			if (gd_hle_state.multi_callback != 0 && gd_hle_state.dma_trans_ended)	// FIXME hack for 2K sports games
+			if (gd_hle_state.multi_callback != 0 && gd_hle_state.dma_trans_ended)	/* FIXME hack for 2K sports games */
 			{
 				r[4] = gd_hle_state.multi_callback_arg;
 				Sh4cntx.pc = gd_hle_state.multi_callback;
@@ -1020,7 +1034,7 @@ void gdrom_hle_op()
 			 * has been seen to, and a game that leaves that to it had
 			 * the interrupt stay up: Metropolis Street Racer, Psychic
 			 * Force 2012, Pro Pinball and Sega Swirl do. */
-			WriteMem32_nommu(0xa05f6900, 1 << (u8)holly_GDROM_DMA);	// SB_ISTNRM: a 1 clears
+			WriteMem32_nommu(0xa05f6900, 1 << (u8)holly_GDROM_DMA);	/* SB_ISTNRM: a 1 clears */
 			break;
 
 		case GDROM_REQ_DMA_TRANS:
@@ -1029,7 +1043,7 @@ void gdrom_hle_op()
 			debugf("GDROM: REQ_DMA_TRANS req_id %x dest %x size %x",
 					r[4], gd_hle_state.params[0], gd_hle_state.params[1]);
 
-			// (more than main memory holds is not a transfer into any buffer there is)
+			/* (more than main memory holds is not a transfer into any buffer there is) */
 			if (gd_hle_state.status != BIOS_DATA_AVAIL || gd_hle_state.params[1] > gd_hle_state.multi_read_count
 					|| gd_hle_state.params[1] > RAM_SIZE)
 			{
@@ -1037,7 +1051,7 @@ void gdrom_hle_op()
 			}
 			else
 			{
-				multi_xfer<true>();
+				multi_xfer(true);
 				r[0] = 0;
 			}
 			break;
@@ -1103,25 +1117,25 @@ void gdrom_hle_op()
 			break;
 		}
 	}
-	else							// MISC 
+	else							/* MISC */
 	{
 		switch(r[7])
 		{
 		case MISC_INIT:
-			// Initializes all the syscall vectors to their default values.
-			// Returns: zero
+			/* Initializes all the syscall vectors to their default values. */
+			/* Returns: zero */
 			debugf("GDROM: MISC_INIT not implemented");
 			r[0] = 0;
 			break;
 
 		case MISC_SETVECTOR:
-			// Sets/clears the handler for one of the eight superfunctions for this vector. Setting a handler is only allowed if it not currently set.
-			//
-			// Args:
-			//	r4 = superfunction number (0-7)
-			//	r5 = pointer to handler function, or NULL to clear
-			//
-			// Returns: zero if successful, -1 if setting/clearing the handler fails
+			/* Sets/clears the handler for one of the eight superfunctions for this vector. Setting a handler is only allowed if it not currently set. */
+
+			/* Args: */
+			/* r4 = superfunction number (0-7) */
+			/* r5 = pointer to handler function, or NULL to clear */
+
+			/* Returns: zero if successful, -1 if setting/clearing the handler fails */
 			debugf("GDROM: MISC_SETVECTOR not implemented");
 			break;
 
@@ -1130,4 +1144,67 @@ void gdrom_hle_op()
 			break;
 		}
 	}
+}
+
+bool gd_hle_serialize(void **data, unsigned int *total_size)
+{
+	LIBRETRO_S(gd_hle_state.last_request_id);
+	LIBRETRO_S(gd_hle_state.next_request_id);
+	LIBRETRO_S(gd_hle_state.status);
+	LIBRETRO_S(gd_hle_state.command);
+	LIBRETRO_S(gd_hle_state.params);
+	LIBRETRO_S(gd_hle_state.result);
+	LIBRETRO_S(gd_hle_state.cur_sector);
+	LIBRETRO_S(gd_hle_state.multi_read_sector);
+	LIBRETRO_S(gd_hle_state.multi_read_offset);
+	LIBRETRO_S(gd_hle_state.multi_read_count);
+	LIBRETRO_S(gd_hle_state.multi_read_total);
+	LIBRETRO_S(gd_hle_state.multi_callback);
+	LIBRETRO_S(gd_hle_state.multi_callback_arg);
+	LIBRETRO_S(gd_hle_state.dma_trans_ended);
+	LIBRETRO_S(gd_hle_state.xfer_end_time);
+	LIBRETRO_S(gd_hle_state.dma_read_sector);
+	LIBRETRO_S(gd_hle_state.dma_read_count);
+	LIBRETRO_S(gd_hle_state.dma_read_addr);
+
+	return true;
+}
+
+bool gd_hle_unserialize(void **data, unsigned int *total_size)
+{
+	s32 status_read;
+
+	LIBRETRO_US(gd_hle_state.last_request_id);
+	LIBRETRO_US(gd_hle_state.next_request_id);
+	LIBRETRO_US(gd_hle_state.status);
+	/* (one of the five there are: nothing ends a command in a state that is
+	 * none of them, and none can be sent until it has ended) */
+	memcpy(&status_read, &gd_hle_state.status, sizeof(status_read));
+	if (status_read < BIOS_ERROR || status_read > BIOS_DATA_AVAIL)
+		gd_hle_state.status = BIOS_INACTIVE;
+	LIBRETRO_US(gd_hle_state.command);
+	LIBRETRO_US(gd_hle_state.params);
+	LIBRETRO_US(gd_hle_state.result);
+	LIBRETRO_US(gd_hle_state.cur_sector);
+	LIBRETRO_US(gd_hle_state.multi_read_sector);
+	LIBRETRO_US(gd_hle_state.multi_read_offset);
+	/* (a place in a 2048-byte sector: the sector is read from there) */
+	if (gd_hle_state.multi_read_offset >= 2048)
+		gd_hle_state.multi_read_offset = 0;
+	LIBRETRO_US(gd_hle_state.multi_read_count);
+	LIBRETRO_US(gd_hle_state.multi_read_total);
+	LIBRETRO_US(gd_hle_state.multi_callback);
+	LIBRETRO_US(gd_hle_state.multi_callback_arg);
+	LIBRETRO_US(gd_hle_state.dma_trans_ended);
+	/* (a flag: 0 or 1) */
+	gd_hle_state.dma_trans_ended = *(const u8 *)&gd_hle_state.dma_trans_ended != 0;
+	LIBRETRO_US(gd_hle_state.xfer_end_time);
+	LIBRETRO_US(gd_hle_state.dma_read_sector);
+	LIBRETRO_US(gd_hle_state.dma_read_count);
+	/* (a read is of no more sectors than main memory holds: none is begun of more) */
+	if (gd_hle_state.dma_read_count > RAM_SIZE_MAX / 2048)
+		gd_hle_state.dma_read_count = 0;
+	LIBRETRO_US(gd_hle_state.dma_read_addr);
+
+	return true;
 }

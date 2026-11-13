@@ -774,7 +774,7 @@ bool dc_serialize(void **data, unsigned int *total_size)
 
 	if (CurrentCartridge != NULL)
 	   STATE_PART("CurrentCartridge->Serialize"), CurrentCartridge->Serialize(data, total_size);
-	STATE_PART("gd_hle_state.Serialize"), gd_hle_state.Serialize(data, total_size);
+	STATE_PART("gd_hle_state.Serialize"), gd_hle_serialize(data, total_size);
    settings.network.EmulateBBA = false;
 
 	/* V14: the AICA RTC. Its per-second increment is already deterministic
@@ -1545,7 +1545,7 @@ bool dc_unserialize(void **data, unsigned int *total_size, size_t actual_data_si
 	   CurrentCartridge->Unserialize(data, total_size);
 	}
 	if (version >= V7)
-		gd_hle_state.Unserialize(data, total_size);
+		gd_hle_unserialize(data, total_size);
 
 	if (version >= V14)
 		LIBRETRO_US(RealTimeClock);
