@@ -27,7 +27,6 @@
 
 //#define NAOMI_COMM
 
-static NaomiM3Comm m3comm;
 
 /* The serial EEPROMs of the main board (read through the SH4's port A) and
  * of the ROM board (5f7078/5f707c), both X76F100. */
@@ -204,7 +203,7 @@ u32 ReadMem_naomi(u32 address, u32 size)
 	}
 	// (a NAOMI's: an Atomiswave has no such board, and its cartridge answers there - as for a write)
 	if (address >= NAOMI_COMM2_CTRL_addr && address <= NAOMI_COMM2_STATUS1_addr && SYSTEM_IS_NAOMI())
-		return m3comm.ReadMem(address, size);
+		return m3comm_read(address, size);
 	else
 		return CurrentCartridge->ReadMem(address, size);
 }
@@ -217,7 +216,7 @@ void WriteMem_naomi(u32 address, u32 data, u32 size)
 		return;
 	}
 	if (address >= NAOMI_COMM2_CTRL_addr && address <= NAOMI_COMM2_STATUS1_addr && SYSTEM_IS_NAOMI())
-		m3comm.WriteMem(address, data, size);
+		m3comm_write(address, data, size);
 	else
 		CurrentCartridge->WriteMem(address, data, size);
 }
@@ -283,7 +282,7 @@ void Naomi_DmaStart(u32 addr, u32 data)
 		return;
 	}
 
-	if (!m3comm.DmaStart(addr, data) && CurrentCartridge != NULL)
+	if (!m3comm_dma_start(addr, data) && CurrentCartridge != NULL)
 	{
 		DEBUG_LOG(NAOMI, "NAOMI-DMA start addr %08X len %d\n", SB_GDSTAR, SB_GDLEN);
 		// (a cartridge is only read: the other direction is taken as this one)
@@ -386,7 +385,7 @@ void naomi_reg_Term()
 #endif
 	// (the machine set up next may be a Dreamcast, which does not register this again)
 	naomi_dma_cancel();
-	m3comm.closeNetwork();
+	m3comm_term();
 	naomi_periph_term();
 }
 
@@ -415,7 +414,7 @@ void naomi_reg_Reset(bool hard)
 	opcd = 0;
 	memset(coin_chute, 0, sizeof(coin_chute));
 	cryptoReset();
-	m3comm.reset();
+	m3comm_reset();
 	if (hard && CurrentCartridge != NULL)
 		CurrentCartridge->Reset();
 	// (the chips keep what they hold: only a power cycle stops what they were doing)
@@ -536,7 +535,7 @@ void naomi_serialize_v23(void **data, unsigned int *total_size)
 {
 	if (!SYSTEM_IS_NAOMI())
 		return;
-	m3comm.serialize(data, total_size);
+	m3comm_serialize(data, total_size);
 	naomi_jvs_serialize_v23(data, total_size);
 }
 
@@ -544,7 +543,7 @@ bool naomi_unserialize_v23(void **data, unsigned int *total_size)
 {
 	if (!SYSTEM_IS_NAOMI())
 		return true;
-	return m3comm.unserialize(data, total_size)
+	return m3comm_unserialize(data, total_size)
 		&& naomi_jvs_unserialize_v23(data, total_size);
 }
 

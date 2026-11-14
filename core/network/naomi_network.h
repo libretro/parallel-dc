@@ -15,81 +15,70 @@
  */
 #pragma once
 #include "types.h"
-#include <cstdint>
-#include <vector>
 #include <retro_atomic.h>
 #include "net_platform.h"
 #include "miniupnp.h"
 
-class NaomiNetwork
-{
-public:
-	NaomiNetwork() {
-#ifdef _WIN32
-		server_ip.S_un.S_addr = INADDR_NONE;
-#else
-		server_ip.s_addr = INADDR_NONE;
+#ifdef __cplusplus
+extern "C" {
 #endif
-	}
-	~NaomiNetwork() { terminate(); }
-	bool init();
-	bool startNetwork();
-	void pipeSlaves();
-	bool receive(u8 *data, u32 size);
-	void send(u8 *data, u32 size);
-	/* The sockets belong to the thread that runs startNetwork(), receive()
-	 * and send(). Another thread stops it with shutdown(), which only
-	 * raises a flag that thread looks at wherever it waits, and closes the
-	 * sockets with closeSockets() or terminate() once that thread is gone. */
-	void shutdown();
-	void closeSockets();
-	void terminate();
 
-	/* The thread that owns the sockets never sleeps for a fixed time and
-	 * never spins. Wherever it has to wait it waits in select() for the
-	 * sockets it is waiting on, together with a socket shutdown() writes
-	 * to, so a wait ends the moment there is something to do or the
-	 * network is told to stop.
-	 *
-	 * armWake() makes that socket; call it before the thread is started. */
-	bool armWake();
-	/* Until one of the ring's sockets has something to read. */
-	void waitForData();
-	/* For @usec, or until shutdown(). */
-	void waitStop(int64_t usec);
-	int slotCount() const { return slot_count; }
-	int slotId() const { return slot_id; }
-	u16 packetNumber() const { return packet_number; }
-	bool hasToken() const { return got_token; }
+/* The link between NAOMI boards: a ring of TCP connections, the master
+ * (slot 0) the server the others connect to. The packets go round it with
+ * a token: the board that has it sends, the next receives. */
 
-private:
-	bool createServerSocket();
-	bool createBeaconSocket();
-	void processBeacon();
-	bool findServer();
-	sock_t createAndBind(int protocol);
-	bool isMaster() const { return slot_id == 0; }
+#define NAOMI_NET_SERVER_PORT 37391
+/* (the master and up to three slaves) */
+#define NAOMI_NET_SLAVES_MAX 3
 
+typedef struct naomi_network
+{
 	struct in_addr server_ip;
-	std::string server_name;
-	// server stuff
-	sock_t server_sock = INVALID_SOCKET;
-	sock_t beacon_sock = INVALID_SOCKET;
-	std::vector<sock_t> slaves;
-	// client stuff
-	sock_t client_sock = INVALID_SOCKET;
-	// common stuff
-	int slot_count = 0;
-	int slot_id = 0;
-	bool got_token = false;
-	u16 packet_number = 0;
-	bool stopping() { return retro_atomic_load_acquire_int(&network_stopping) != 0; }
-	// >0: one of socks is readable; 0: timed out (usec < 0: no timeout) or told to stop
-	int waitReadable(const sock_t *socks, int count, int64_t usec);
-
+	char server_name[INET_ADDRSTRLEN];
+	/* server */
+	sock_t server_sock;
+	sock_t beacon_sock;
+	sock_t slaves[NAOMI_NET_SLAVES_MAX];
+	int slave_count;
+	/* client */
+	sock_t client_sock;
+	/* both */
+	int slot_count;
+	int slot_id;
+	bool got_token;
+	u16 packet_number;
 	retro_atomic_int_t network_stopping;
-	sock_t wake_sock = INVALID_SOCKET;
-   miniupnp_t miniupnp = {};
+	sock_t wake_sock;
+	miniupnp_t miniupnp;
+} naomi_network;
 
-	static const uint16_t SERVER_PORT = 37391;
-};
+/* As one is made: no sockets, no server known */
+void naomi_network_create(naomi_network *net);
+bool naomi_network_init(naomi_network *net);
+bool naomi_network_start(naomi_network *net);
+void naomi_network_pipe_slaves(naomi_network *net);
+bool naomi_network_receive(naomi_network *net, u8 *data, u32 size);
+void naomi_network_send(naomi_network *net, const u8 *data, u32 size);
+/* The sockets belong to the thread that runs naomi_network_start(),
+ * _receive() and _send(). Another thread stops it with _shutdown(), which
+ * only raises a flag that thread looks at wherever it waits, and closes the
+ * sockets with _close_sockets() or _terminate() once that thread is gone. */
+void naomi_network_shutdown(naomi_network *net);
+void naomi_network_close_sockets(naomi_network *net);
+void naomi_network_terminate(naomi_network *net);
+
+/* The thread that owns the sockets never sleeps for a fixed time and never
+ * spins. Wherever it has to wait it waits in select() for the sockets it
+ * is waiting on, together with a socket _shutdown() writes to, so a wait
+ * ends the moment there is something to do or the network is told to stop.
+ *
+ * _arm_wake() makes that socket; call it before the thread is started. */
+bool naomi_network_arm_wake(naomi_network *net);
+/* Until one of the ring's sockets has something to read. */
+void naomi_network_wait_for_data(naomi_network *net);
+/* For @usec, or until _shutdown(). */
+void naomi_network_wait_stop(naomi_network *net, int64_t usec);
+
+#ifdef __cplusplus
+}
+#endif

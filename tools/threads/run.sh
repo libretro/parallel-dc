@@ -39,7 +39,7 @@ for san in thread address,undefined; do
       -fsanitize=$san -fno-sanitize-recover=undefined $INC \
       -o "$WORK/threads_test" tools/threads/threads_test.cpp \
       "$WORK/rthreads.o" "$WORK/retro_eventcount.o" -lpthread
-   # The NAOMI link board: the core's own naomi_m3comm.cpp against a
+   # The NAOMI link board: the core's own naomi_m3comm.c against a
    # stand-in for the network.
    $CC -O1 -g -fsanitize=$san -fno-sanitize-recover=undefined $INC \
       -c $L/time/rtime.c -o "$WORK/rtime.o"
@@ -50,18 +50,18 @@ for san in thread address,undefined; do
       -c $L/net/net_socket.c -o "$WORK/net_socket.o"
    $CC -O1 -g -fsanitize=$san -fno-sanitize-recover=undefined $INC \
       -c $L/net/net_compat.c -o "$WORK/net_compat.o"
-   $CXX -std=c++11 -fpermissive -O1 -g $DEFS \
+   $CC -O1 -g $DEFS \
       -fsanitize=$san -fno-sanitize-recover=undefined $INC \
-      -o "$WORK/m3comm_test" tools/threads/m3comm_test.cpp \
-      core/hw/naomi/naomi_m3comm.cpp "$WORK/rthreads.o" "$WORK/features_cpu.o" \
+      -o "$WORK/m3comm_test" tools/threads/m3comm_test.c \
+      core/hw/naomi/naomi_m3comm.c "$WORK/rthreads.o" "$WORK/features_cpu.o" \
       "$WORK/rtime.o" -lpthread
-   # The NAOMI network itself: the core's own naomi_network.cpp, a server
+   # The NAOMI network itself: the core's own naomi_network.c, a server
    # and a client of it over the loopback interface. Built without the
    # modem, so that it does not go looking for a UPnP router.
-   $CXX -std=c++11 -fpermissive -O1 -g $(echo "$DEFS" | sed 's/-DENABLE_MODEM//') \
+   $CC -O1 -g $(echo "$DEFS" | sed 's/-DENABLE_MODEM//') \
       -fsanitize=$san -fno-sanitize-recover=undefined $INC \
-      -o "$WORK/naomi_net_test" tools/threads/naomi_net_test.cpp \
-      core/network/naomi_network.cpp "$WORK/rthreads.o" "$WORK/features_cpu.o" \
+      -o "$WORK/naomi_net_test" tools/threads/naomi_net_test.c \
+      core/network/naomi_network.c "$WORK/rthreads.o" "$WORK/features_cpu.o" \
       "$WORK/rtime.o" "$WORK/net_socket.o" "$WORK/net_compat.o" -lpthread
    # The network thread: the core's own picoppp.cpp and dcnet.cpp with picoTCP,
    # and the test playing the Dreamcast's end of the line. picoTCP itself

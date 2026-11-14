@@ -15,79 +15,29 @@
  */
 #pragma once
 #include "types.h"
-#include <rthreads/rthreads.h>
-#include "lockfree.h"
-#include "network/naomi_network.h"
 
-class NaomiM3Comm
-{
-public:
-	~NaomiM3Comm();
-	u32 ReadMem(u32 address, u32 size);
-	void WriteMem(u32 address, u32 data, u32 size);
-	bool DmaStart(u32 addr, u32 data);
+#ifdef __cplusplus
+extern "C" {
+#endif
 
-	void closeNetwork();
-	void reset();
-	// The board's registers and its two memories, in a save state from V23
-	void serialize(void **data, unsigned int *total_size);
-	bool unserialize(void **data, unsigned int *total_size);
+/* The M3 link board some NAOMI games link machines with (naomi_m3comm.c).
+ * Its network thread runs once the game has reset the board's CPU, with a
+ * server or the address of one set. */
+u32 m3comm_read(u32 address, u32 size);
+void m3comm_write(u32 address, u32 data, u32 size);
+/* A G1 DMA to or from the board: false if the board does not take it */
+bool m3comm_dma_start(u32 addr, u32 data);
 
-private:
-	void initNetwork();
-	void connectNetwork();
-	void receiveNetwork();
-	void sendNetwork();
-	void connectedState(bool success);
-	void startThread();
-	void syncNetwork();
-	void publishSlot();
+/* The network thread stopped and its links closed */
+void m3comm_close_network(void);
+/* ...and the network's server sockets too, for the machine's end */
+void m3comm_term(void);
+/* The board as it is when the machine is switched on */
+void m3comm_reset(void);
+/* The board's registers and its two memories, in a save state from V23 */
+void m3comm_serialize(void **data, unsigned int *total_size);
+bool m3comm_unserialize(void **data, unsigned int *total_size);
 
-	u16 comm_ctrl = 0xC000;
-	u16 comm_offset = 0;
-	u16 comm_status0 = 0;
-	u16 comm_status1 = 0;
-	u8 m68k_ram[128 * 1024];
-	u8 comm_ram[128 * 1024];
-
-	int slot_count = 0;
-	int slot_id = 0;
-	static void threadEntry(void *self);
-	void networkThread();
-
-	retro_atomic_int_t network_stopping;
-	sthread_t *thread = nullptr;
-	NaomiNetwork network;
-
-	/* What the emulation thread and the network thread tell each other.
-	 *
-	 * comm_ram and m68k_ram belong to the emulation thread; the network
-	 * thread never touches them. It keeps its own picture of the ring
-	 * (net_ring: this board's slot, then the packet last received) and the
-	 * two exchange whole pieces of it through triple buffers, so neither
-	 * waits for the other and nothing is ever seen half written:
-	 *
-	 *   rx  the packet the network thread received last, copied into
-	 *       comm_ram by the emulation thread when the game next looks;
-	 *   tx  this board's slot as the game last wrote it, picked up by the
-	 *       network thread when it next has the token.
-	 *
-	 * The rest is single words. */
-	enum { PACKET_MAX = sizeof(comm_ram) - 0x100, SLOT_MAX = 0x10000 };
-	enum { NET_DOWN = 0, NET_UP, NET_SEEN };
-
-	cTripleBuffer rx;
-	u8 rx_buf[3][PACKET_MAX];
-	cTripleBuffer tx;
-	u8 tx_buf[3][SLOT_MAX];
-	u8 net_ring[sizeof(comm_ram)];		// network thread only
-	int net_thread_slot_count = 0;		// network thread only
-	int net_thread_slot_id = 0;		// network thread only
-	u16 seen_packet_number = 0;		// emulation thread only
-
-	retro_atomic_int_t net_slot_size;	// set by the game (m68k ram 0x204)
-	retro_atomic_int_t net_state;		// NET_UP once connected, NET_SEEN once the game side knows
-	retro_atomic_int_t net_slot_count;
-	retro_atomic_int_t net_slot_id;
-	retro_atomic_int_t net_packet_number;
-};
+#ifdef __cplusplus
+}
+#endif

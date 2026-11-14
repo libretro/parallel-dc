@@ -5,8 +5,59 @@
  * stdclass.h). tools/threads/run.sh exercises all of them under
  * ThreadSanitizer. */
 #include <stddef.h>
+#include <boolean.h>
+#include <retro_inline.h>
 #include <retro_atomic.h>
 
+/* Which of three buffers each side of a one-writer, one-reader pair owns.
+ * The writer fills tribuf_back() and calls tribuf_publish(); the reader
+ * calls tribuf_take() and reads tribuf_front(). Each side always holds one
+ * buffer to itself and the third waits in between, so neither ever waits
+ * for the other, and a publish the reader has not taken yet is simply
+ * replaced by the next one. */
+#define TRIBUF_FRESH 4
+typedef struct tribuf
+{
+	retro_atomic_int_t mid;	/* the buffer neither side holds, | TRIBUF_FRESH */
+	int back;
+	int front;
+} tribuf;
+
+/* Only while neither side is running. */
+static INLINE void tribuf_reset(tribuf *t)
+{
+	t->back  = 0;
+	t->front = 1;
+	retro_atomic_int_init(&t->mid, 2);
+}
+
+/* Writer only. */
+static INLINE int tribuf_back(const tribuf *t)
+{
+	return t->back;
+}
+
+static INLINE void tribuf_publish(tribuf *t)
+{
+	t->back = retro_atomic_exchange_int(&t->mid, t->back | TRIBUF_FRESH) & 3;
+}
+
+/* Reader only. True when tribuf_front() now names a buffer published since
+ * the last take. */
+static INLINE int tribuf_front(const tribuf *t)
+{
+	return t->front;
+}
+
+static INLINE bool tribuf_take(tribuf *t)
+{
+	if (!(retro_atomic_load_acquire_int(&t->mid) & TRIBUF_FRESH))
+		return false;
+	t->front = retro_atomic_exchange_int(&t->mid, t->front) & 3;
+	return true;
+}
+
+#ifdef __cplusplus
 /* A few spare objects kept for reuse. Any thread may Put and any thread
  * may Take; each object is in at most one slot and a Take hands it to
  * exactly one caller. */
@@ -47,46 +98,25 @@ public:
 	}
 };
 
-/* Which of three buffers each side of a one-writer, one-reader pair owns.
- * The writer fills Back() and calls Publish(); the reader calls Take() and
- * reads Front(). Each side always holds one buffer to itself and the third
- * waits in between, so neither ever waits for the other, and a Publish the
- * reader has not taken yet is simply replaced by the next one. */
+/* The same, for C++ */
 class cTripleBuffer
 {
-	enum { FRESH = 4 };
-	retro_atomic_int_t mid;	/* the buffer neither side holds, | FRESH */
-	int back;
-	int front;
+	tribuf t;
 
 public:
 	cTripleBuffer() { Reset(); }
 
 	/* Only while neither side is running. */
-	void Reset()
-	{
-		back  = 0;
-		front = 1;
-		retro_atomic_int_init(&mid, 2);
-	}
+	void Reset() { tribuf_reset(&t); }
 
 	/* Writer only. */
-	int Back() const { return back; }
-	void Publish()
-	{
-		back = retro_atomic_exchange_int(&mid, back | FRESH) & 3;
-	}
+	int Back() const { return tribuf_back(&t); }
+	void Publish() { tribuf_publish(&t); }
 
 	/* Reader only. Take() is true when Front() now names a buffer
 	 * published since the last Take(). */
-	int Front() const { return front; }
-	bool Take()
-	{
-		if (!(retro_atomic_load_acquire_int(&mid) & FRESH))
-			return false;
-		front = retro_atomic_exchange_int(&mid, front) & 3;
-		return true;
-	}
+	int Front() const { return tribuf_front(&t); }
+	bool Take() { return tribuf_take(&t); }
 };
 
 /* A list any thread may Push onto and one thread empties. The link lives
@@ -183,3 +213,4 @@ public:
 		}
 	}
 };
+#endif
