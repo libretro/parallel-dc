@@ -2,9 +2,7 @@
 #define REIOS_H
 
 #include "types.h"
-#ifdef __cplusplus
 #include "hw/flashrom/flashrom.h"
-#endif
 
 #ifdef __cplusplus
 extern "C" {
@@ -12,6 +10,8 @@ extern "C" {
 /* The HLE BIOS's opcode: what it does, at its address (sh4_opcode_list.c) */
 void DYNACALL reios_trap(u32 op);
 #define REIOS_OPCODE 0x085B
+/* The HLE BIOS set up in @rom, with @flash the console's flash memory */
+void reios_reset(u8* rom, MemChip *flash);
 /* The disc's IP.BIN says it is a GD-ROM */
 bool reios_disc_is_gdrom(void);
 
@@ -48,8 +48,6 @@ extern ip_meta_t ip_meta;
 }
 
 bool reios_init();
-
-void reios_reset(u8* rom, MemChip *flash);
 
 void reios_disk_id();
 

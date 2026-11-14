@@ -2944,7 +2944,6 @@ static void merged_set_option(const char *content_path)
  * the one loaded is in its contents, read once as the game is loaded. */
 static void naomi_bios_detect_multiregion(void)
 {
-   extern bool bios_loaded;
 
    naomi_bios_multiregion = false;
    if (!SYSTEM_IS_NAOMI() || !bios_loaded || sys_rom.data == NULL || sys_rom.size < 0x200000)

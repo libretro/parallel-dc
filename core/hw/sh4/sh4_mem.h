@@ -79,11 +79,11 @@ static TYPES_INLINE bool IsOnRam(u32 addr)
 
 void FixUpFlash(void);
 void SetMemoryHandlers(void);
+/* The BIOS and the nvmem from @root, the system directory (sb_mem.c) */
+bool LoadRomFiles(const char *root);
+void SaveRomFiles(const char *root);
+bool LoadHle(const char *root);
 
 #ifdef __cplusplus
 }
-
-bool LoadRomFiles(const std::string& root);
-void SaveRomFiles(const std::string& root);
-bool LoadHle(const std::string& root);
 #endif

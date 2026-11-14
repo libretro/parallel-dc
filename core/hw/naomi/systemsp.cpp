@@ -35,7 +35,6 @@
 #include "savewriter.h"
 
 extern char eeprom_file[PATH_MAX];
-extern char nvmem_file[PATH_MAX];
 extern char g_roms_dir[PATH_MAX];
 extern char g_base_name[128];
 #include "libretro/pad_state.h"
@@ -3221,4 +3220,19 @@ void systemsp_state_before_v25(void)
 	systemsp::DinokichCardReader *reader = stateDinokich();
 	if (reader != nullptr)
 		reader->stateBeforeV25();
+}
+
+u32 systemsp_read_area0(u32 addr, u32 sz)
+{
+	return sz == 1 ? systemsp::readMemArea0<u8>(addr) : sz == 2 ? systemsp::readMemArea0<u16>(addr) : systemsp::readMemArea0<u32>(addr);
+}
+
+void systemsp_write_area0(u32 addr, u32 data, u32 sz)
+{
+	if (sz == 1)
+		systemsp::writeMemArea0<u8>(addr, (u8)data);
+	else if (sz == 2)
+		systemsp::writeMemArea0<u16>(addr, (u16)data);
+	else
+		systemsp::writeMemArea0<u32>(addr, data);
 }

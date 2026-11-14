@@ -48,6 +48,11 @@ struct InputDescriptors
 extern InputDescriptors *naomi_game_inputs;
 /* The game's name, as its ROM header has it */
 extern char naomi_game_id[];
+/* A BIOS file was loaded (a NAOMI runs no game without one) */
+extern bool bios_loaded;
+/* The System SP's ROM board's part of the G2 area: @sz bytes (systemsp.cpp) */
+u32 systemsp_read_area0(u32 addr, u32 sz);
+void systemsp_write_area0(u32 addr, u32 data, u32 sz);
 
 #ifdef __cplusplus
 }

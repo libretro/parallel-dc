@@ -9,7 +9,8 @@
 #include "hw/gdrom/gdrom_if.h"
 #include "hw/aica/aica_if.h"
 #include "hw/naomi/naomi.h"
-#include "hw/naomi/systemsp.h"
+#include "hw/naomi/naomi_cart.h"
+#include "paths.h"
 #include "hw/holly/holly_intc.h"
 #include "hw/modem/modem.h"
 
@@ -29,9 +30,6 @@ MemChip sys_rom = { NULL, 0, 0, 0, MEMCHIP_ROM };
 MemChip sys_nvmem_sram = { NULL, 0, 0, 0, MEMCHIP_SRAM };
 MemChip sys_nvmem_flash = { NULL, 0, 0, 0, MEMCHIP_FLASH };
 
-extern bool bios_loaded;
-extern char nvmem_file[PATH_MAX];
-extern char nvmem_file2[PATH_MAX];	// AtomisWave
 
 /* The thermal printer of F355 Challenge, on the G2 extension bus: what is
  * written to its data register is printed (dropped here), and its status
@@ -53,7 +51,7 @@ bool naomi_printer_unserialize_v27(void **data, unsigned int *total_size)
 	{
 		u8 status = 0x0f;
 		LIBRETRO_US(status);
-		// (only bit 0 ever changes)
+		/* (only bit 0 ever changes) */
 		naomi_printer_status = 0x0e | (status & 1);
 	}
 	return true;
@@ -79,7 +77,7 @@ static const char *get_rom_prefix(void)
       case DC_PLATFORM_NAOMI2:
          return "naomi2_";
       case DC_PLATFORM_ATOMISWAVE:
-    	 // Not used
+    	 /* Not used */
          return "";
    }
    return "";
@@ -97,7 +95,7 @@ static const char *get_rom_names(void)
       case DC_PLATFORM_NAOMI2:
          return "%boot.bin;%boot.bin.bin;%bios.bin;%bios.bin.bin";
       case DC_PLATFORM_ATOMISWAVE:
-    	 // Not used
+    	 /* Not used */
          return "";
    }
 
@@ -107,6 +105,10 @@ static const char *get_rom_names(void)
 static void add_isp_to_nvmem(MemChip *flash)
 {
 	u8 block[64];
+	flash_isp1_block isp1;
+	flash_isp2_block isp2;
+	u32 i;
+
 	if (!flash_read_block(flash, FLASH_PT_USER, FLASH_USER_INET, block))
 	{
 		memset(block, 0, sizeof(block));
@@ -128,10 +130,9 @@ static void add_isp_to_nvmem(MemChip *flash)
 		block[26] = 5;
 		flash_write_block(flash, FLASH_PT_USER, FLASH_USER_INET + 4, block);
 		memset(block, 0xFF, sizeof(block));
-		for (u32 i = FLASH_USER_INET + 5; i <= 0xbf; i++)
+		for (i = FLASH_USER_INET + 5; i <= 0xbf; i++)
 			flash_write_block(flash, FLASH_PT_USER, i, block);
 
-		flash_isp1_block isp1;
 		memset(&isp1, 0, sizeof(isp1));
 		isp1._unknown[3] = 1;
 		memcpy(isp1.sega, "SEGA", 4);
@@ -149,7 +150,6 @@ static void add_isp_to_nvmem(MemChip *flash)
 		block[60] = 1;
 		flash_write_block(flash, FLASH_PT_USER, FLASH_USER_ISP1 + 5, block);
 
-		flash_isp2_block isp2;
 		memset(&isp2, 0, sizeof(isp2));
 		memcpy(isp2.sega, "SEGA", 4);
 		strcpy(isp2.username, "flycast2");
@@ -157,9 +157,8 @@ static void add_isp_to_nvmem(MemChip *flash)
 		strcpy(isp2.phone, "1234567");
 		if (flash_write_block(flash, FLASH_PT_USER, FLASH_USER_ISP2, &isp2) != 1)
 			WARN_LOG(FLASHROM, "Failed to save ISP information to flash RAM\n");
-		u8 block[64];
 		memset(block, 0, sizeof(block));
-		for (u32 i = FLASH_USER_ISP2 + 1; i <= 0xEA; i++)
+		for (i = FLASH_USER_ISP2 + 1; i <= 0xEA; i++)
 		{
 			if (i == 0xcb)
 				block[56] = 1;
@@ -170,78 +169,78 @@ static void add_isp_to_nvmem(MemChip *flash)
 	}
 }
 
-void FixUpFlash()
+void FixUpFlash(void)
 {
-	if (settings.System == DC_PLATFORM_DREAMCAST || settings.System == DC_PLATFORM_DEV_UNIT)
+	flash_syscfg_block syscfg;
+	u8 *console_id;
+	u32 now;
+
+	if (settings.System != DC_PLATFORM_DREAMCAST && settings.System != DC_PLATFORM_DEV_UNIT)
+		return;
+	flash_validate(&sys_nvmem_flash);
+	/* overwrite factory flash settings */
+	if (settings.dreamcast.region <= 2)
 	{
-     	flash_validate(&sys_nvmem_flash);
-     	// overwrite factory flash settings
-     	if (settings.dreamcast.region <= 2)
-     	{
-     		sys_nvmem_flash.data[0x1a002] = '0' + settings.dreamcast.region;
-     		sys_nvmem_flash.data[0x1a0a2] = '0' + settings.dreamcast.region;
-     	}
-     	if (settings.dreamcast.language <= 5)
-     	{
-     		sys_nvmem_flash.data[0x1a003] = '0' + settings.dreamcast.language;
-     		sys_nvmem_flash.data[0x1a0a3] = '0' + settings.dreamcast.language;
-     	}
-     	if (settings.dreamcast.broadcast <= 3)
-     	{
-     		sys_nvmem_flash.data[0x1a004] = '0' + settings.dreamcast.broadcast;
-     		sys_nvmem_flash.data[0x1a0a4] = '0' + settings.dreamcast.broadcast;
-     	}
-     	// overwrite user settings
-     	struct flash_syscfg_block syscfg;
-     	int res = flash_read_block(&sys_nvmem_flash, FLASH_PT_USER, FLASH_USER_SYSCFG, &syscfg);
+		sys_nvmem_flash.data[0x1a002] = '0' + settings.dreamcast.region;
+		sys_nvmem_flash.data[0x1a0a2] = '0' + settings.dreamcast.region;
+	}
+	if (settings.dreamcast.language <= 5)
+	{
+		sys_nvmem_flash.data[0x1a003] = '0' + settings.dreamcast.language;
+		sys_nvmem_flash.data[0x1a0a3] = '0' + settings.dreamcast.language;
+	}
+	if (settings.dreamcast.broadcast <= 3)
+	{
+		sys_nvmem_flash.data[0x1a004] = '0' + settings.dreamcast.broadcast;
+		sys_nvmem_flash.data[0x1a0a4] = '0' + settings.dreamcast.broadcast;
+	}
+	/* overwrite user settings */
+	if (!flash_read_block(&sys_nvmem_flash, FLASH_PT_USER, FLASH_USER_SYSCFG, &syscfg))
+	{
+		/* write out default settings */
+		memset(&syscfg, 0xff, sizeof(syscfg));
+		syscfg.time_lo = 0;
+		syscfg.time_hi = 0;
+		syscfg.lang = 0;
+		syscfg.mono = 0;
+		syscfg.autostart = 1;
+	}
+	now = GetRTC_now();
+	syscfg.time_lo = now & 0xffff;
+	syscfg.time_hi = now >> 16;
+	if (settings.dreamcast.language <= 5)
+		syscfg.lang = settings.dreamcast.language;
 
-     	if (!res)
-     	{
-     		// write out default settings
-     		memset(&syscfg, 0xff, sizeof(syscfg));
-     		syscfg.time_lo = 0;
-     		syscfg.time_hi = 0;
-     		syscfg.lang = 0;
-     		syscfg.mono = 0;
-     		syscfg.autostart = 1;
-     	}
-     	u32 now = GetRTC_now();
-     	syscfg.time_lo = now & 0xffff;
-     	syscfg.time_hi = now >> 16;
-     	if (settings.dreamcast.language <= 5)
-     		syscfg.lang = settings.dreamcast.language;
+	if (flash_write_block(&sys_nvmem_flash, FLASH_PT_USER, FLASH_USER_SYSCFG, &syscfg) != 1)
+		WARN_LOG(FLASHROM, "Failed to save time and language to flash RAM\n");
 
-     	if (flash_write_block(&sys_nvmem_flash, FLASH_PT_USER, FLASH_USER_SYSCFG, &syscfg) != 1)
-     		WARN_LOG(FLASHROM, "Failed to save time and language to flash RAM\n");
+	add_isp_to_nvmem(&sys_nvmem_flash);
 
-     	add_isp_to_nvmem(&sys_nvmem_flash);
-
-     	// Check the console ID used by some network games (chuchu rocket)
-     	u8 *console_id = &sys_nvmem_flash.data[0x1A058];
-     	if (!memcmp(console_id, "\377\377\377\377\377\377", 6))
-     	{
-     		// made from the clock the flash was just given, with a generator
-     		// of its own: the C library's rand() is shared with everything
-     		u32 seed = now;
-     		for (int i = 0; i < 6; i++)
-     		{
-     			seed = seed * 1103515245u + 12345u;
-     			console_id[i] = seed >> 16;
-     			console_id[i + 0xA0] = console_id[i];	// copy at 1A0F8
-     		}
-     	}
+	/* Check the console ID used by some network games (chuchu rocket) */
+	console_id = &sys_nvmem_flash.data[0x1A058];
+	if (!memcmp(console_id, "\377\377\377\377\377\377", 6))
+	{
+		/* made from the clock the flash was just given, with a generator
+		 * of its own: the C library's rand() is shared with everything */
+		u32 seed = now;
+		int i;
+		for (i = 0; i < 6; i++)
+		{
+			seed = seed * 1103515245u + 12345u;
+			console_id[i] = seed >> 16;
+			console_id[i + 0xA0] = console_id[i];	/* copy at 1A0F8 */
+		}
 	}
 }
 
-static bool nvmem_load(const std::string& root,
-      const std::string& s1, const char *s2)
+static bool nvmem_load(const char *root, const char *s1, const char *s2)
 {
    switch (settings.System)
    {
       case DC_PLATFORM_DREAMCAST:
       case DC_PLATFORM_DEV_UNIT:
-         memchip_load_named(&sys_nvmem_flash, root.c_str(), get_rom_prefix(), s1.c_str(), s2);
-        	return true;
+         memchip_load_named(&sys_nvmem_flash, root, get_rom_prefix(), s1, s2);
+         return true;
       case DC_PLATFORM_ATOMISWAVE:
          return memchip_load(&sys_nvmem_sram, nvmem_file) && memchip_load(&sys_nvmem_flash, nvmem_file2);
       case DC_PLATFORM_NAOMI:
@@ -252,38 +251,38 @@ static bool nvmem_load(const std::string& root,
    return false;
 }
 
-bool LoadRomFiles(const std::string& root)
+bool LoadRomFiles(const char *root)
 {
    if (settings.System != DC_PLATFORM_ATOMISWAVE)
    {
-	  if (!memchip_load_named(&sys_rom, root.c_str(), get_rom_prefix(), get_rom_names(), "bootrom"))
-	  {
-		 if (settings.System == DC_PLATFORM_DREAMCAST || settings.System == DC_PLATFORM_DEV_UNIT)
-		 {
-			// Dreamcast absolutely needs a BIOS
-			msgboxf("Unable to find bios in %s. Exiting...", MBX_ICONERROR, root.c_str());
-			return false;
-		 }
-	  }
-	  else
-		 bios_loaded = true;
+      if (!memchip_load_named(&sys_rom, root, get_rom_prefix(), get_rom_names(), "bootrom"))
+      {
+         if (settings.System == DC_PLATFORM_DREAMCAST || settings.System == DC_PLATFORM_DEV_UNIT)
+         {
+            /* Dreamcast absolutely needs a BIOS */
+            msgboxf("Unable to find bios in %s. Exiting...", MBX_ICONERROR, root);
+            return false;
+         }
+      }
+      else
+         bios_loaded = true;
    }
    nvmem_load(root, "%nvmem.bin;%flash_wb.bin;%flash.bin;%flash.bin.bin", "nvram");
 
    return true;
 }
 
-void SaveRomFiles(const std::string& root)
+void SaveRomFiles(const char *root)
 {
    switch (settings.System)
    {
       case DC_PLATFORM_DREAMCAST:
       case DC_PLATFORM_DEV_UNIT:
-         memchip_save_named(&sys_nvmem_flash, root.c_str(), get_rom_prefix(), "nvmem.bin", "nvmem");
+         memchip_save_named(&sys_nvmem_flash, root, get_rom_prefix(), "nvmem.bin", "nvmem");
          break;
       case DC_PLATFORM_ATOMISWAVE:
-    	 memchip_save(&sys_nvmem_sram, nvmem_file);
-    	 memchip_save(&sys_nvmem_flash, nvmem_file2);
+         memchip_save(&sys_nvmem_sram, nvmem_file);
+         memchip_save(&sys_nvmem_flash, nvmem_file2);
          break;
       case DC_PLATFORM_NAOMI:
       case DC_PLATFORM_NAOMI2:
@@ -292,17 +291,17 @@ void SaveRomFiles(const std::string& root)
    }
 }
 
-bool LoadHle(const std::string& root) {
-	if (!nvmem_load(root, "%nvmem.bin;%flash_wb.bin;%flash.bin;%flash.bin.bin", "nvram")) {
-		WARN_LOG(FLASHROM, "No nvmem loaded\n");
-	}
+bool LoadHle(const char *root)
+{
+   if (!nvmem_load(root, "%nvmem.bin;%flash_wb.bin;%flash.bin;%flash.bin.bin", "nvram"))
+      WARN_LOG(FLASHROM, "No nvmem loaded\n");
 
    reios_reset(sys_rom.data, &sys_nvmem_flash);
 
    return true;
 }
 
-u32 ReadFlash(u32 addr,u32 sz)
+static u32 ReadFlash(u32 addr,u32 sz)
 {
    switch (settings.System)
    {
@@ -318,7 +317,7 @@ u32 ReadFlash(u32 addr,u32 sz)
    return 0;
 }
 
-void WriteFlash(u32 addr,u32 data,u32 sz)
+static void WriteFlash(u32 addr,u32 data,u32 sz)
 {
    switch (settings.System)
    {
@@ -334,7 +333,7 @@ void WriteFlash(u32 addr,u32 data,u32 sz)
    }
 }
 
-u32 ReadBios(u32 addr,u32 sz)
+static u32 ReadBios(u32 addr,u32 sz)
 {
    switch (settings.System)
    {
@@ -349,7 +348,7 @@ u32 ReadBios(u32 addr,u32 sz)
    return 0;
 }
 
-void WriteBios(u32 addr,u32 data,u32 sz)
+static void WriteBios(u32 addr,u32 data,u32 sz)
 {
    switch (settings.System)
    {
@@ -370,158 +369,162 @@ void WriteBios(u32 addr,u32 data,u32 sz)
    }
 }
 
-//Area 0 mem map
-//0x00000000- 0x001FFFFF	:MPX	System/Boot ROM
-//0x00200000- 0x0021FFFF	:Flash Memory
-//0x00400000- 0x005F67FF	:Unassigned
-//0x005F6800- 0x005F69FF	:System Control Reg.
-//0x005F6C00- 0x005F6CFF	:Maple i/f Control Reg.
-//0x005F7000- 0x005F70FF	:GD-ROM / NAOMI BD Reg.
-//0x005F7400- 0x005F74FF	:G1 i/f Control Reg.
-//0x005F7800- 0x005F78FF	:G2 i/f Control Reg.
-//0x005F7C00- 0x005F7CFF	:PVR i/f Control Reg.
-//0x005F8000- 0x005F9FFF	:TA / PVR Core Reg.
-//0x00600000- 0x006007FF	:MODEM
-//0x00600800- 0x006FFFFF	:G2 (Reserved)
-//0x00700000- 0x00707FFF	:AICA- Sound Cntr. Reg.
-//0x00710000- 0x0071000B	:AICA- RTC Cntr. Reg.
-//0x00800000- 0x00FFFFFF	:AICA- Wave Memory
-//0x01000000- 0x01FFFFFF	:Ext. Device
-//0x02000000- 0x03FFFFFF*	:Image Area*	2MB
+/* Area 0 mem map */
+/* 0x00000000- 0x001FFFFF	:MPX	System/Boot ROM */
+/* 0x00200000- 0x0021FFFF	:Flash Memory */
+/* 0x00400000- 0x005F67FF	:Unassigned */
+/* 0x005F6800- 0x005F69FF	:System Control Reg. */
+/* 0x005F6C00- 0x005F6CFF	:Maple i/f Control Reg. */
+/* 0x005F7000- 0x005F70FF	:GD-ROM / NAOMI BD Reg. */
+/* 0x005F7400- 0x005F74FF	:G1 i/f Control Reg. */
+/* 0x005F7800- 0x005F78FF	:G2 i/f Control Reg. */
+/* 0x005F7C00- 0x005F7CFF	:PVR i/f Control Reg. */
+/* 0x005F8000- 0x005F9FFF	:TA / PVR Core Reg. */
+/* 0x00600000- 0x006007FF	:MODEM */
+/* 0x00600800- 0x006FFFFF	:G2 (Reserved) */
+/* 0x00700000- 0x00707FFF	:AICA- Sound Cntr. Reg. */
+/* 0x00710000- 0x0071000B	:AICA- RTC Cntr. Reg. */
+/* 0x00800000- 0x00FFFFFF	:AICA- Wave Memory */
+/* 0x01000000- 0x01FFFFFF	:Ext. Device */
+/* 0x02000000- 0x03FFFFFF*	:Image Area*	2MB */
 
-//use unified size handler for registers
-//it really makes no sense to use different size handlers on em -> especially when we can use templates :p
-template<class T>
-T DYNACALL ReadMem_area0(u32 addr)
+/* One handler for every size of the registers' reads and writes, @sz bytes
+ * (1, 2 or 4): the value in the low bits */
+static u32 area0_read(u32 addr, u32 sz)
 {
-	constexpr u32 sz = (u32)sizeof(T);
-	// NAOMI 2: the second PowerVR's interrupts are in the upper half
+	u32 mirror, base;
+
+	/* NAOMI 2: the second PowerVR's interrupts are in the upper half */
 	if (unlikely(addr & 0x02000000) && settings.System == DC_PLATFORM_NAOMI2 && asic_IsCLXB(addr))
-		return (T)asic_ReadCLXB(addr);
-	const u32 mirror = addr & 0x02000000;
-	addr &= 0x01FFFFFF;//to get rid of non needed bits
-	// a game waiting on the beam reads this one over and over: first
+		return asic_ReadCLXB(addr);
+	mirror = addr & 0x02000000;
+	addr &= 0x01FFFFFF;/* to get rid of non needed bits */
+	/* a game waiting on the beam reads this one over and over: first */
 	if (sz == 4 && addr == 0x005F8000 + SPG_STATUS_addr)
 	{
 		spg_sync();
-		return (T)SPG_STATUS.full;
+		return SPG_STATUS.full;
 	}
-	const u32 base=(addr>>16);
-	//map 0x0000 to 0x01FF to Default handler
-	//mirror 0x0200 to 0x03FF , from 0x0000 to 0x03FFF
-	//map 0x0000 to 0x001F
+	base=(addr>>16);
+	/* map 0x0000 to 0x01FF to Default handler */
+	/* mirror 0x0200 to 0x03FF , from 0x0000 to 0x03FFF */
+	/* map 0x0000 to 0x001F */
 	if ((settings.System != DC_PLATFORM_ATOMISWAVE && base<=0x001F)
-		  || (settings.System == DC_PLATFORM_ATOMISWAVE && base <= 0x0001))//	:MPX	System/Boot ROM
+		  || (settings.System == DC_PLATFORM_ATOMISWAVE && base <= 0x0001))/* :MPX	System/Boot ROM */
 	{
-		// the boot ROM and the flash are not in the mirror at 0x02000000: nothing answers there
+		/* the boot ROM and the flash are not in the mirror at 0x02000000: nothing answers there */
 		if (mirror)
 			return 0;
 		return ReadBios(addr,sz);
 	}
-	//map 0x0020 to 0x0021
-	else if ((base>= 0x0020) && (base<= 0x0021)) // :Flash Memory
+	/* map 0x0020 to 0x0021 */
+	else if ((base>= 0x0020) && (base<= 0x0021)) /* :Flash Memory */
 	{
-		// (a System SP has no SRAM here: its ROM board's is in the G2 area)
+		/* (a System SP has no SRAM here: its ROM board's is in the G2 area) */
 		if (mirror || (naomi_cart_systemsp && SYSTEM_IS_NAOMI()))
 			return 0;
 		return ReadFlash(addr&0x1FFFF,sz);
 	}
-	//map 0x005F to 0x005F
+	/* map 0x005F to 0x005F */
 	else if (likely(base==0x005F))
 	{
-      if (addr <= 0x005F67FF) // :Unassigned
+      if (addr <= 0x005F67FF) /* :Unassigned */
 		{
 			INFO_LOG(MEMORY, "Read from area0_32 not implemented [Unassigned], addr=%x\n", addr);
 		}
-      else if (addr >= 0x005F7000 && addr <= 0x005F70FF) // GD-ROM
+      else if (addr >= 0x005F7000 && addr <= 0x005F70FF) /* GD-ROM */
 		{
 			if (SYSTEM_IS_NAOMI() || settings.System == DC_PLATFORM_ATOMISWAVE)
-				return (T)ReadMem_naomi(addr,sz);
-			return (T)ReadMem_gdrom(addr,sz);
+				return ReadMem_naomi(addr,sz);
+			return ReadMem_gdrom(addr,sz);
 		}
-      else if (likely(addr >= 0x005F6800 && addr <= 0x005F7CFF)) // /*:PVR i/f Control Reg.*/ -> ALL SB registers now
+      else if (likely(addr >= 0x005F6800 && addr <= 0x005F7CFF)) /* / *:PVR i/f Control Reg.* / -> ALL SB registers now */
 		{
-			// (one that is only storage is read here, as sb_ReadMem() would: games poll some)
-			const RegisterStruct& reg = sb_regs[(addr - SB_BASE) >> 2];
-			if (!(reg.flags & (REG_RF | REG_WO)))
-				return (T)(sz == 4 ? reg.data32 : sz == 2 ? reg.data16 : reg.data8);
-			return (T)sb_ReadMem(addr,sz);
+			/* (one that is only storage is read here, as sb_ReadMem() would: games poll some) */
+			const RegisterStruct *reg = &sb_regs[(addr - SB_BASE) >> 2];
+			if (!(reg->flags & (REG_RF | REG_WO)))
+				return sz == 4 ? reg->data32 : sz == 2 ? reg->data16 : reg->data8;
+			return sb_ReadMem(addr,sz);
 		}
-      else if (likely(addr >= 0x005F8000 && addr <= 0x005F9FFF)) // :TA / PVR Core Reg.
+      else if (likely(addr >= 0x005F8000 && addr <= 0x005F9FFF)) /* :TA / PVR Core Reg. */
 		{
-			if (sz != 4) return 0;		// House of the Dead 2
+			if (sz != 4) return 0;		/* House of the Dead 2 */
 			if ((addr & pvr_RegMask) == SPG_STATUS_addr)
-				spg_sync();		// the scanline counts every line, not only those with an interrupt
-			return (T)PvrReg(addr, u32);
+				spg_sync();		/* the scanline counts every line, not only those with an interrupt */
+			return PvrReg(addr, u32);
 		}
 	}
-	//map 0x0060 to 0x0060
-	else if ((base ==0x0060) /*&& (addr>= 0x00600000)*/ && (addr<= 0x006007FF)) //	:MODEM
+	/* map 0x0060 to 0x0060 */
+	else if ((base ==0x0060) /*&& (addr>= 0x00600000)*/ && (addr<= 0x006007FF)) /* :MODEM */
 	{
 		if (settings.System == DC_PLATFORM_DREAMCAST)
 #ifdef ENABLE_MODEM
          if (net_device == NET_DEVICE_MODEM)
-            return (T)ModemReadMem_A0_006(addr, sz);
+            return ModemReadMem_A0_006(addr, sz);
          else
-            return (T)0;
+            return 0;
 #else
-			return (T)0;
+			return 0;
 #endif
 		else
-			return (T)libExtDevice_ReadMem_A0_006(addr,sz);
+			return libExtDevice_ReadMem_A0_006(addr,sz);
 	}
-	//map 0x0060 to 0x006F
-	else if ((base >=0x0060) && (base <=0x006F) && (addr>= 0x00600800) && (addr<= 0x006FFFFF)) //	:G2 (Reserved)
+	/* map 0x0060 to 0x006F */
+	else if ((base >=0x0060) && (base <=0x006F) && (addr>= 0x00600800) && (addr<= 0x006FFFFF)) /* :G2 (Reserved) */
 	{
 		EMUERROR2("Read from area0_32 not implemented [G2 (Reserved)], addr=%x",addr);
       return 0;
 	}
-	//map 0x0070 to 0x0070
-	else if ((base ==0x0070) /*&& (addr>= 0x00700000)*/ && (addr<=0x00707FFF)) //	:AICA- Sound Cntr. Reg.
+	/* map 0x0070 to 0x0070 */
+	else if ((base ==0x0070) /*&& (addr>= 0x00700000)*/ && (addr<=0x00707FFF)) /* :AICA- Sound Cntr. Reg. */
 	{
-		return (T)ReadMem_aica_reg(addr, sz);
+		return ReadMem_aica_reg(addr, sz);
 	}
-	//map 0x0071 to 0x0071
-	else if ((base ==0x0071) /*&& (addr>= 0x00710000)*/ && (addr<= 0x0071000B)) //	:AICA- RTC Cntr. Reg.
+	/* map 0x0071 to 0x0071 */
+	else if ((base ==0x0071) /*&& (addr>= 0x00710000)*/ && (addr<= 0x0071000B)) /* :AICA- RTC Cntr. Reg. */
 	{
-		return (T)ReadMem_aica_rtc(addr,sz);
+		return ReadMem_aica_rtc(addr,sz);
 	}
-	//map 0x0080 to 0x00FF
-	else if ((base >=0x0080) && (base <=0x00FF) /*&& (addr>= 0x00800000) && (addr<=0x00FFFFFF)*/) //	:AICA- Wave Memory
+	/* map 0x0080 to 0x00FF */
+	else if ((base >=0x0080) && (base <=0x00FF) /*&& (addr>= 0x00800000) && (addr<=0x00FFFFFF)*/) /* :AICA- Wave Memory */
 	{
-      // (at a multiple of its size: one at the last byte would run past the end of the memory)
-      return (T)ReadMemArr<sz>(aica_ram.data, addr & ARAM_MASK & ~(sz - 1));
+      /* (at a multiple of its size: one at the last byte would run past the end of the memory) */
+      return mem_arr_read(aica_ram.data, addr & ARAM_MASK & ~(sz - 1), sz);
 	}
-	//map 0x0100 to 0x01FF
-	else if (base >= 0x0100 && base <= 0x01FF) // G2 Ext. Device #1
+	/* map 0x0100 to 0x01FF */
+	else if (base >= 0x0100 && base <= 0x01FF) /* G2 Ext. Device #1 */
 	{
 		if (SYSTEM_IS_NAOMI())
 		{
-			// a System SP's ROM board
+			/* a System SP's ROM board */
 			if (naomi_cart_systemsp)
-				return systemsp::readMemArea0<T>(addr);
+				return systemsp_read_area0(addr, sz);
 			if (addr == NAOMI_PRINTER_STATUS)
 			{
 				const u8 status = naomi_printer_status;
 				naomi_printer_status |= 1;
-				return (T)status;
+				return status;
 			}
 			if (addr == NAOMI_PRINTER_DATA)
 				return 0;
-			return (T)libExtDevice_ReadMem_A0_010(addr, sz);
+			return libExtDevice_ReadMem_A0_010(addr, sz);
 		}
 		else
 #if defined(ENABLE_MODEM)
          if (net_device == NET_DEVICE_BBA)
-            return (T)bba_ReadMem(addr, sz);
+            return bba_ReadMem(addr, sz);
          else
-            return (T)0;
+            return 0;
 #else
-      return (T)0;
+      return 0;
 #endif
 	}
 	return 0;
 }
+
+static u8 DYNACALL area0_read8(u32 addr) { return (u8)area0_read(addr, 1); }
+static u16 DYNACALL area0_read16(u32 addr) { return (u16)area0_read(addr, 2); }
+static u32 DYNACALL area0_read32(u32 addr) { return area0_read(addr, 4); }
 
 /* For a recompiler, a read of @sz bytes at the constant address @addr that
  * goes to @handler: where in memory the value is, when the read is a system
@@ -531,72 +534,88 @@ T DYNACALL ReadMem_area0(u32 addr)
  * is. */
 const void *area0_read_const(void *handler, u32 addr, u32 sz)
 {
-	if (!((sz == 4 && handler == (void *)&ReadMem_area0<u32>)
-			|| (sz == 2 && handler == (void *)&ReadMem_area0<u16>)
-			|| (sz == 1 && handler == (void *)&ReadMem_area0<u8>)))
-		return nullptr;
+	/* (the handler's address as the recompiler has it: not a conversion
+	 * from a function's pointer, which C does not have) */
+	union
+	{
+		u8 (DYNACALL *read8)(u32);
+		u16 (DYNACALL *read16)(u32);
+		u32 (DYNACALL *read32)(u32);
+		void *any;
+	} ours;
+	const RegisterStruct *reg;
+
+	memset(&ours, 0, sizeof(ours));
+	if (sz == 4)
+		ours.read32 = area0_read32;
+	else if (sz == 2)
+		ours.read16 = area0_read16;
+	else if (sz == 1)
+		ours.read8 = area0_read8;
+	if (ours.any == NULL || ours.any != handler)
+		return NULL;
 	if (addr & 0x02000000)
-		return nullptr;
+		return NULL;
 	addr &= 0x01FFFFFF;
 	if (addr < 0x005F6800 || addr > 0x005F7CFF
 			|| (addr >= 0x005F7000 && addr <= 0x005F70FF))
-		return nullptr;
-	const RegisterStruct& reg = sb_regs[(addr - SB_BASE) >> 2];
-	if (reg.flags & (REG_RF | REG_WO))
-		return nullptr;
-	// (data32, data16 and data8 all start at the register's first byte)
-	return &reg.data32;
+		return NULL;
+	reg = &sb_regs[(addr - SB_BASE) >> 2];
+	if (reg->flags & (REG_RF | REG_WO))
+		return NULL;
+	/* (data32, data16 and data8 all start at the register's first byte) */
+	return &reg->data32;
 }
 
-template<class T>
-void  DYNACALL WriteMem_area0(u32 addr,T data)
+static void area0_write(u32 addr, u32 data, u32 sz)
 {
-	constexpr u32 sz = (u32)sizeof(T);
+	u32 mirror, base;
+
 	if (unlikely(addr & 0x02000000) && settings.System == DC_PLATFORM_NAOMI2 && asic_IsCLXB(addr))
 	{
 		asic_WriteCLXB(addr, data);
 		return;
 	}
-	const u32 mirror = addr & 0x02000000;
-	addr &= 0x01FFFFFF;//to get rid of non needed bits
+	mirror = addr & 0x02000000;
+	addr &= 0x01FFFFFF;/* to get rid of non needed bits */
 
-	const u32 base=(addr>>16);
+	base=(addr>>16);
 
-	//map 0x0000 to 0x001F
-	if ((settings.System != DC_PLATFORM_ATOMISWAVE && base<=0x001F) || (settings.System == DC_PLATFORM_ATOMISWAVE && base<=0x0001))// :MPX System/Boot ROM
+	/* map 0x0000 to 0x001F */
+	if ((settings.System != DC_PLATFORM_ATOMISWAVE && base<=0x001F) || (settings.System == DC_PLATFORM_ATOMISWAVE && base<=0x0001))/* :MPX System/Boot ROM */
 	{
-		// not in the mirror at 0x02000000
+		/* not in the mirror at 0x02000000 */
 		if (!mirror)
 			WriteBios(addr,data,sz);
 	}
-	//map 0x0020 to 0x0021
-	else if ((base >=0x0020) && (base <=0x0021) /*&& (addr>= 0x00200000) && (addr<= 0x0021FFFF)*/) // Flash Memory
+	/* map 0x0020 to 0x0021 */
+	else if ((base >=0x0020) && (base <=0x0021) /*&& (addr>= 0x00200000) && (addr<= 0x0021FFFF)*/) /* Flash Memory */
 	{
 		if (!mirror && !(naomi_cart_systemsp && SYSTEM_IS_NAOMI()))
 			WriteFlash(addr,data,sz);
 	}
-	//map 0x0040 to 0x005F -> actually, I'll only map 0x005F to 0x005F, b/c the rest of it is unspammed (left to default handler)
-	//map 0x005F to 0x005F
+	/* map 0x0040 to 0x005F -> actually, I'll only map 0x005F to 0x005F, b/c the rest of it is unspammed (left to default handler) */
+	/* map 0x005F to 0x005F */
 	else if ( likely(base==0x005F) )
 	{
-      if (addr <= 0x005F67FF) // Unassigned
+      if (addr <= 0x005F67FF) /* Unassigned */
 		{
 			EMUERROR4("Write to area0_32 not implemented [Unassigned], addr=%x,data=%x,size=%d",addr,data,sz);
 		}
-      else if (addr >= 0x005F7000 && addr <= 0x005F70FF) // GD-ROM
+      else if (addr >= 0x005F7000 && addr <= 0x005F70FF) /* GD-ROM */
 		{
 			if (SYSTEM_IS_NAOMI() || settings.System == DC_PLATFORM_ATOMISWAVE)
 				WriteMem_naomi(addr,data,sz);
 			else
 				WriteMem_gdrom(addr,data,sz);
 		}
-		else if ( likely((addr>= 0x005F6800) && (addr<=0x005F7CFF)) ) // /*:PVR i/f Control Reg.*/ -> ALL SB registers
+		else if ( likely((addr>= 0x005F6800) && (addr<=0x005F7CFF)) ) /* / *:PVR i/f Control Reg.* / -> ALL SB registers */
 		{
 			sb_WriteMem(addr,data,sz);
 		}
-		else if ( likely((addr>= 0x005F8000) && (addr<=0x005F9FFF)) ) // TA / PVR Core Reg.
+		else if ( likely((addr>= 0x005F8000) && (addr<=0x005F9FFF)) ) /* TA / PVR Core Reg. */
 		{
-			// these registers are 32 bits wide: a shorter write is ignored
+			/* these registers are 32 bits wide: a shorter write is ignored */
 			if (sz == 4)
 				pvr_WriteReg(addr,data);
 		}
@@ -604,8 +623,8 @@ void  DYNACALL WriteMem_area0(u32 addr,T data)
          EMUERROR4("Write to area0_32 not implemented [Unassigned], addr=%x,data=%x,size=%d",addr,data,sz);
 
 	}
-	//map 0x0060 to 0x0060
-	else if ((base ==0x0060) /*&& (addr>= 0x00600000)*/ && (addr<= 0x006007FF)) // MODEM
+	/* map 0x0060 to 0x0060 */
+	else if ((base ==0x0060) /*&& (addr>= 0x00600000)*/ && (addr<= 0x006007FF)) /* MODEM */
 	{
 		if (settings.System != DC_PLATFORM_DREAMCAST)
          libExtDevice_WriteMem_A0_006(addr,data,sz);
@@ -614,33 +633,33 @@ void  DYNACALL WriteMem_area0(u32 addr,T data)
 			ModemWriteMem_A0_006(addr, data, sz);
 #endif
 	}
-	//map 0x0060 to 0x006F
-	else if ((base >=0x0060) && (base <=0x006F) && (addr>= 0x00600800) && (addr<= 0x006FFFFF)) // G2 (Reserved)
+	/* map 0x0060 to 0x006F */
+	else if ((base >=0x0060) && (base <=0x006F) && (addr>= 0x00600800) && (addr<= 0x006FFFFF)) /* G2 (Reserved) */
 	{
 		EMUERROR4("Write to area0_32 not implemented [G2 (Reserved)], addr=%x,data=%x,size=%d",addr,data,sz);
 	}
-	//map 0x0070 to 0x0070
-	else if ((base >=0x0070) && (base <=0x0070) /*&& (addr>= 0x00700000)*/ && (addr<=0x00707FFF)) // AICA- Sound Cntr. Reg.
+	/* map 0x0070 to 0x0070 */
+	else if ((base >=0x0070) && (base <=0x0070) /*&& (addr>= 0x00700000)*/ && (addr<=0x00707FFF)) /* AICA- Sound Cntr. Reg. */
 	{
 		WriteMem_aica_reg(addr,data,sz);
 	}
-	//map 0x0071 to 0x0071
-	else if ((base >=0x0071) && (base <=0x0071) /*&& (addr>= 0x00710000)*/ && (addr<= 0x0071000B)) // AICA- RTC Cntr. Reg.
+	/* map 0x0071 to 0x0071 */
+	else if ((base >=0x0071) && (base <=0x0071) /*&& (addr>= 0x00710000)*/ && (addr<= 0x0071000B)) /* AICA- RTC Cntr. Reg. */
 	{
 		WriteMem_aica_rtc(addr,data,sz);
 	}
-	//map 0x0080 to 0x00FF
-	else if ((base >=0x0080) && (base <=0x00FF) /*&& (addr>= 0x00800000) && (addr<=0x00FFFFFF)*/) // AICA- Wave Memory
+	/* map 0x0080 to 0x00FF */
+	else if ((base >=0x0080) && (base <=0x00FF) /*&& (addr>= 0x00800000) && (addr<=0x00FFFFFF)*/) /* AICA- Wave Memory */
 	{
-      WriteMemArr<sz>(aica_ram.data, addr & ARAM_MASK & ~(sz - 1), data);
+      mem_arr_write(aica_ram.data, addr & ARAM_MASK & ~(sz - 1), data, sz);
 	}
-	//map 0x0100 to 0x01FF
-	else if (base >= 0x0100 && base <= 0x01FF) // G2 Ext. Device #1
+	/* map 0x0100 to 0x01FF */
+	else if (base >= 0x0100 && base <= 0x01FF) /* G2 Ext. Device #1 */
 	{
 		if (SYSTEM_IS_NAOMI())
 		{
 			if (naomi_cart_systemsp)
-				systemsp::writeMemArea0<T>(addr, data);
+				systemsp_write_area0(addr, data, sz);
 			else if (addr == NAOMI_PRINTER_STATUS)
 				naomi_printer_status &= ~1;
 			else if (addr != NAOMI_PRINTER_DATA)
@@ -655,7 +674,11 @@ void  DYNACALL WriteMem_area0(u32 addr,T data)
       EMUERROR4("Write to area0_32 not implemented [Unassigned], addr=%x,data=%x,size=%d",addr,data,sz);
 }
 
-//Init/Res/Term
+static void DYNACALL area0_write8(u32 addr, u8 data) { area0_write(addr, data, 1); }
+static void DYNACALL area0_write16(u32 addr, u16 data) { area0_write(addr, data, 2); }
+static void DYNACALL area0_write32(u32 addr, u32 data) { area0_write(addr, data, 4); }
+
+/* Init/Res/Term */
 void sh4_area0_Init(void)
 {
 	sb_Init();
@@ -677,22 +700,22 @@ void sh4_area0_Term(void)
 }
 
 
-//AREA 0
+/* AREA 0 */
 _vmem_handler area0_handler;
 
 
-void map_area0_init()
+void map_area0_init(void)
 {
-
-	area0_handler = _vmem_register_handler_Template(ReadMem_area0,WriteMem_area0);
+	area0_handler = _vmem_register_handler(area0_read8, area0_read16, area0_read32,
+			area0_write8, area0_write16, area0_write32);
 }
+
 void map_area0(u32 base)
 {
 
-
 	_vmem_map_handler(area0_handler,0x00|base,0x01|base);
 
-	//0x0240 to 0x03FF mirrors 0x0040 to 0x01FF (no flashrom or bios)
-	//0x0200 to 0x023F are unused
+	/* 0x0240 to 0x03FF mirrors 0x0040 to 0x01FF (no flashrom or bios) */
+	/* 0x0200 to 0x023F are unused */
 	_vmem_mirror_mapping(0x02|base,0x00|base,0x02);
 }

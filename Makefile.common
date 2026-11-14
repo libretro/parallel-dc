@@ -19,7 +19,6 @@ SOURCES_CXX := \
 					$(CORE_DIR)/core/hw/aica/dsp_x64.cpp \
 					$(CORE_DIR)/core/hw/aica/dsp_x86.cpp \
 					\
-					$(CORE_DIR)/core/hw/holly/sb_mem.cpp \
 					\
 					\
 					$(CORE_DIR)/core/hw/maple/maple_devs.cpp \
@@ -178,6 +177,7 @@ SOURCES_C += $(CORE_DIR)/core/hw/gdrom/gdrom_response.c \
 					$(CORE_DIR)/core/hw/naomi/midiffb.c \
 					$(CORE_DIR)/core/hw/gdrom/gdromv3.c \
 					$(CORE_DIR)/core/hw/holly/sb.c \
+					$(CORE_DIR)/core/hw/holly/sb_mem.c \
 					$(CORE_DIR)/core/hw/arm7/vbaARM.c \
 					$(CORE_DIR)/core/imgread/ImgReader.c \
 					$(CORE_DIR)/core/imgread/cdi.c \

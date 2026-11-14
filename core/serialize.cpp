@@ -228,10 +228,7 @@ bool naomi_serial_unserialize_v26(void **data, unsigned int *total_size);
 void naomi_serial_state_before_v26(void);
 /* and since V27: what the racing and other I/O boards keep (maple_devs.cpp),
  * the MIDI force feedback board of the driving games (midiffb.cpp: its
- * header), and F355's printer status (sb_mem.cpp) */
-void naomi_printer_serialize_v27(void **data, unsigned int *total_size);
-bool naomi_printer_unserialize_v27(void **data, unsigned int *total_size);
-void naomi_printer_state_before_v27(void);
+ * header), and F355's printer status (sb_mem.c) */
 /* and since V28: a light gun's transfer owed its end at vblank-out
  * (spg.cpp) and how many renders ago each TA context was last used
  * (ta_ctx.cpp) */

@@ -1870,7 +1870,6 @@ static void reios_boot_naomi()
  * found none of it. serialize.cpp calls these. */
 #include <retro_atomic.h>
 extern retro_atomic_int_t reset_requested;
-extern bool bios_loaded;
 
 static void nbios_rom_after_load(void)
 {

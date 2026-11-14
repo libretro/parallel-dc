@@ -25,7 +25,6 @@
 #include "reios/gdrom_hle.h"
 #include "hw/sh4/sh4_opcode_list.h"
 
-extern bool bios_loaded;
 #include <libretro.h>
 
 unsigned FLASH_SIZE;
@@ -733,7 +732,7 @@ void dc_term()
 		}
 	}
 	forget_game_settings();
-	SaveRomFiles(get_writable_data_path(""));
+	SaveRomFiles(get_writable_data_path("").c_str());
 	sh4_cpu.Term();
 	naomi_cart_Close();
 	plugins_Term();

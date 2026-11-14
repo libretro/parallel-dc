@@ -46,7 +46,7 @@ typedef struct MemChip
 	char load_filename[PATH_MAX_LENGTH];
 } MemChip;
 
-/* The BIOS, a NAOMI's SRAM and the Dreamcast's flash (sb_mem.cpp) */
+/* The BIOS, a NAOMI's SRAM and the Dreamcast's flash (sb_mem.c) */
 extern MemChip sys_rom;
 extern MemChip sys_nvmem_sram;
 extern MemChip sys_nvmem_flash;
