@@ -134,17 +134,6 @@ extern SCIF_SCSCR2_type SCIF_SCSCR2;
 
 //./core/imgread/common.o
 
-//./core/nullDC.o
-extern unsigned FLASH_SIZE;
-extern unsigned BBSRAM_SIZE;
-extern unsigned BIOS_SIZE;
-extern unsigned RAM_SIZE;
-extern unsigned ARAM_SIZE;
-extern unsigned VRAM_SIZE;
-extern unsigned RAM_MASK;
-extern unsigned ARAM_MASK;
-extern unsigned VRAM_MASK;
-
 //./core/hw/naomi/naomi.o
 extern u32 GSerialBuffer;
 extern u32 BSerialBuffer;

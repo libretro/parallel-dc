@@ -34,7 +34,9 @@ name: Headless
 # (tools/naomi/dinokich_card_run.sh), and the paths the core writes to, a
 # content's name of any length included (tools/paths/paths_run.sh), and the
 # HLE BIOS's GD-ROM transfers stopped at a fault and made again
-# (tools/reios/gdrom_hle_run.sh), and the games' fixes and widescreen
+# (tools/reios/gdrom_hle_run.sh), and what the core reads of a disc's
+# IP.BIN, its product number and areas (tools/reios/ip_meta_run.sh), and the
+# games' fixes and widescreen
 # cheats (tools/cheats/cheats_run.sh).
 # And the threads a texture scaled up is shared out to, and the core needing
 # no OpenMP runtime (tools/rend/band_pool_test.sh). And custom textures'
@@ -205,6 +207,10 @@ jobs:
         run: |
           sh tools/reios/gdrom_hle_run.sh
           sh tools/reios/gdrom_hle_run.sh -fsanitize=address,undefined -fno-sanitize-recover=all
+      - name: A disc's IP.BIN, its product number and areas, read in C and C++ (and with the sanitizers)
+        run: |
+          sh tools/reios/ip_meta_run.sh
+          sh tools/reios/ip_meta_run.sh -fsanitize=address,undefined -fno-sanitize-recover=all
       - name: The games' fixes and widescreen cheats, which game gets which and what goes back (and with the sanitizers)
         run: |
           sh tools/cheats/cheats_run.sh

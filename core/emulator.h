@@ -20,6 +20,7 @@
  */
 #pragma once
 #include "types.h"
+#include <retro_atomic.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -32,6 +33,21 @@ void dc_term(void);
 void dc_stop(void);
 void dc_request_reset(void);
 bool dc_is_running(void);
+/* The memory sizes of the platform in settings.System */
+void dc_prepare_system(void);
+/* The game's own settings put back over the options' (after these are read) */
+void dc_apply_game_settings(void);
+
+/* The frontend's side (libretro.cpp): the BIOS is started with no content */
+extern bool boot_to_bios;
+/* A reset asked for, done on the emulator's thread */
+extern retro_atomic_int_t reset_requested;
+/* The exception handlers, and the code cache's unwind table (common.cpp) */
+void common_libretro_setup(void);
+void common_libretro_cleanup(void);
+#ifdef _WIN64
+void setup_seh(void);
+#endif
 
 #ifdef __cplusplus
 }

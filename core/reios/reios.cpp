@@ -188,7 +188,7 @@ static bool reios_locate_bootfile(const char* bootfile)
 			 * first byte to its last, whatever it is called, and the BIOS
 			 * unscrambles all of it to 8c010000: with a sector left out,
 			 * what came of the rest was not the program.) */
-			if (!descrambl && ip_meta.isWindowsCE())
+			if (!descrambl && ip_meta_is_wince(&ip_meta))
 			{
 				/* (its first sector is not part of the program: the BIOS
 				 * puts it at 8ce01000, where Windows CE looks for it) */
@@ -1868,8 +1868,6 @@ static void reios_boot_naomi()
  * never asked for it. The other is what a game finds in the boot ROM,
  * which is written when the machine starts: a state loaded before that
  * found none of it. serialize.cpp calls these. */
-#include <retro_atomic.h>
-extern retro_atomic_int_t reset_requested;
 
 static void nbios_rom_after_load(void)
 {

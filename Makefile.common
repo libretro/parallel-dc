@@ -40,7 +40,6 @@ SOURCES_CXX := \
 					$(CORE_DIR)/core/hw/sh4/sh4_cache.cpp \
 					$(CORE_DIR)/core/hw/sh4/modules/serial.cpp \
 					\
-					$(CORE_DIR)/core/nullDC.cpp \
 					$(CORE_DIR)/core/serialize.cpp \
 					\
 					\
@@ -388,6 +387,7 @@ SOURCES_C += $(CORE_DIR)/core/network/netstate.c
 
 # Where the core writes its files
 SOURCES_C += $(CORE_DIR)/core/paths.c \
+			$(CORE_DIR)/core/nullDC.c \
 			$(CORE_DIR)/core/cheats.c
 
 # The SH4's recompiler: none with NO_REC=1, the interpreter alone

@@ -1,17 +1,18 @@
-// nullDC.cpp : Makes magic cookies
-//
+/* nullDC.c : Makes magic cookies */
 
-//initialse Emu
+
+/* initialse Emu */
 #include <retro_atomic.h>
 #include "types.h"
 #include "emulator.h"
 #include <compat/strl.h>
 #include "hw/mem/_vmem.h"
-#include "stdclass.h"
+#include "paths.h"
+#include <string.h>
+#include <stdio.h>
 
 #include "types.h"
 #include "hw/flashrom/flashrom.h"
-#include "hw/maple/maple_cfg.h"
 #include "hw/sh4/sh4_mem.h"
 #include "hw/sh4/sh4_sched.h"
 #include "imgread/common.h"	/* (GetFile) */
@@ -39,9 +40,6 @@ unsigned VRAM_MASK;
 
 settings_t settings;
 
-extern char game_dir[1024];
-extern bool boot_to_bios;
-extern retro_atomic_int_t reset_requested;
 
 /*
 	libndc
@@ -76,7 +74,7 @@ int GetFile(char *szFileName, char *szParse, u32 flags)
 /* On failure nothing stays initialised: each plugin brought up before the
  * failing one is terminated again, so the caller sees the same state it
  * started from. */
-s32 plugins_Init()
+s32 plugins_Init(void)
 {
    s32 rv;
 
@@ -115,10 +113,10 @@ fail_pvr:
 
 void plugins_Term(void)
 {
-   //term all plugins
-   //libExtDevice_Term();
+   /* term all plugins */
+   /* libExtDevice_Term(); */
    
-	//arm7_Term ?
+	/* arm7_Term ? */
    libAICA_Term();
 
    libGDR_Term();
@@ -132,7 +130,7 @@ void plugins_Reset(bool hard)
 	libAICA_Reset(hard);
    libARM_Reset(hard);
 
-	//libExtDevice_Reset(Manual);
+	/* libExtDevice_Reset(Manual); */
 }
 
 #include "rom_luts.h"
@@ -176,7 +174,7 @@ static void LoadSpecialSettingsCPU(void)
 {
 #if FEAT_SHREC != DYNAREC_NONE
 #if defined(HOST_APPLE_JIT) && FEAT_SHREC == DYNAREC_JIT
-	// (no memory for code: a frontend without the JIT entitlement)
+	/* (no memory for code: a frontend without the JIT entitlement) */
 	if (settings.dynarec.Enable && !recSh4_HaveCodeCache())
 		settings.dynarec.Enable = 0;
 #endif
@@ -197,18 +195,17 @@ static void LoadSpecialSettingsCPU(void)
 static void LoadSpecialSettings(void)
 {
    unsigned i;
-
-   char prod_id[sizeof(ip_meta.product_number) + 1] = {0};
-   memcpy(prod_id, ip_meta.product_number, sizeof(ip_meta.product_number));
-   /* the product number without the spaces it is padded with */
-   std::string id(prod_id);
-   id.erase(id.find_last_not_of(' ') + 1);
+   char prod_id[sizeof(ip_meta.product_number) + 1];
+   char id[sizeof(ip_meta.product_number) + 1];
    const u32 cable_option      = settings.dreamcast.cable;
    const u32 alpha_sort_option = settings.pvr.Emulation.AlphaSortMode;
+   bool region_usa, region_eu, region_japan;
+
+   ip_meta_product_id(&ip_meta, id, prod_id);
 
    NOTICE_LOG(BOOT, "[LUT]: Product number: %s.\n", prod_id);
-	if (ip_meta.isWindowsCE() || settings.dreamcast.ForceWinCE
-			|| !strncmp("T26702N", prod_id, 7)) // PBA Tour Bowling 2001
+	if (ip_meta_is_wince(&ip_meta) || settings.dreamcast.ForceWinCE
+			|| !strncmp("T26702N", prod_id, 7)) /* PBA Tour Bowling 2001 */
 	{
 		NOTICE_LOG(BOOT, "Enabling Full MMU and Extra depth scaling for Windows CE game\n");
 		settings.rend.ExtraDepthScale = 0.1;
@@ -244,86 +241,85 @@ static void LoadSpecialSettings(void)
          	NOTICE_LOG(BOOT, "[Hack]: Applying auto extra depth scale.\n");
          	settings.rend.ExtraDepthScale = lut_games[i].extra_depth_scale;
          }
-         // (with the RGB cable only: what VGA or TV gives such a game is its own)
+         /* (with the RGB cable only: what VGA or TV gives such a game is its own) */
          if (lut_games[i].no_rgb_component == 1 && settings.dreamcast.cable == 2)
          {
          	NOTICE_LOG(BOOT, "Disabling RGB component output\n");
-            settings.dreamcast.cable = 3;		// TV composite
+            settings.dreamcast.cable = 3;		/* TV composite */
          }
 
          break;
       }
    }
-	std::string areas(ip_meta.area_symbols, sizeof(ip_meta.area_symbols));
-	bool region_usa = areas.find('U') != std::string::npos;
-	bool region_eu = areas.find('E') != std::string::npos;
-	bool region_japan = areas.find('J') != std::string::npos;
+	region_usa = ip_meta_has_area(&ip_meta, 'U');
+	region_eu = ip_meta_has_area(&ip_meta, 'E');
+	region_japan = ip_meta_has_area(&ip_meta, 'J');
 	if (region_usa || region_eu || region_japan)
 	{
 		switch (settings.dreamcast.region)
 		{
-		case 0: // Japan
+		case 0: /* Japan */
 			if (!region_japan)
 			{
 				NOTICE_LOG(BOOT, "Japan region not supported. Using %s instead\n", region_usa ? "USA" : "Europe");
 				settings.dreamcast.region = region_usa ? 1 : 2;
 			}
 			break;
-		case 1: // USA
+		case 1: /* USA */
 			if (!region_usa)
 			{
 				NOTICE_LOG(BOOT, "USA region not supported. Using %s instead\n", region_eu ? "Europe" : "Japan");
 				settings.dreamcast.region = region_eu ? 2 : 0;
 			}
 			break;
-		case 2: // Europe
+		case 2: /* Europe */
 			if (!region_eu)
 			{
 				NOTICE_LOG(BOOT, "Europe region not supported. Using %s instead\n", region_usa ? "USA" : "Japan");
 				settings.dreamcast.region = region_usa ? 1 : 0;
 			}
 			break;
-		case 3: // Default
+		case 3: /* Default */
 			if (region_usa)
 				settings.dreamcast.region = 1;
 			else if (region_eu)
 				settings.dreamcast.region = 2;
 			else
 				settings.dreamcast.region = 0;
-				break;
+			break;
 		}
 	}
 	else
 		WARN_LOG(BOOT, "No region specified in IP.BIN\n");
-	if (settings.dreamcast.cable <= 1 && (!ip_meta.supportsVGA()
-			|| id == "T-12504N"		// Caesar's Palace 2000 (US)
-			|| id == "12502D-50"))		// Caesar's Palace 2000 (EU)
+	if (settings.dreamcast.cable <= 1 && (!ip_meta_supports_vga(&ip_meta)
+			|| !strcmp(id, "T-12504N")		/* Caesar's Palace 2000 (US) */
+			|| !strcmp(id, "12502D-50")))		/* Caesar's Palace 2000 (EU) */
 	{
 		NOTICE_LOG(BOOT, "Game doesn't support VGA. Using TV Composite instead\n");
 		settings.dreamcast.cable = 3;
 	}
 	if (settings.dreamcast.cable == 2
-			&& (id == "T22901N"		// Roadsters (US)
-			|| id == "T28202M"		// Shin Nihon Pro Wrestling 4: stops with RGB
-			|| id == "T9512N"))		// The Grinch (US)
+			&& (!strcmp(id, "T22901N")		/* Roadsters (US) */
+			|| !strcmp(id, "T28202M")		/* Shin Nihon Pro Wrestling 4: stops with RGB */
+			|| !strcmp(id, "T9512N")))		/* The Grinch (US) */
 	{
 		NOTICE_LOG(BOOT, "Game doesn't support RGB. Using TV Composite instead\n");
 		settings.dreamcast.cable = 3;
 	}
-	if (id == "T-9707N"			// San Francisco Rush 2049 (US)
-			|| id == "MK-51146"		// Sega Smash Pack - Volume 1
-			|| id == "T-9702D-50"		// Hydro Thunder (PAL)
-			|| id == "T41601N"		// Elemental Gimmick Gear (US)
-			|| id == "T-8116N"		// South Park Rally (US)
-			|| id == "T1206N")		// JoJo's Bizarre Adventure (US)
+	if (!strcmp(id, "T-9707N")			/* San Francisco Rush 2049 (US) */
+			|| !strcmp(id, "MK-51146")		/* Sega Smash Pack - Volume 1 */
+			|| !strcmp(id, "T-9702D-50")		/* Hydro Thunder (PAL) */
+			|| !strcmp(id, "T41601N")		/* Elemental Gimmick Gear (US) */
+			|| !strcmp(id, "T-8116N")		/* South Park Rally (US) */
+			|| !strcmp(id, "T1206N"))		/* JoJo's Bizarre Adventure (US) */
 		game_broadcast = 0;
-	else if (id == "T-9709D-50"		// San Francisco Rush 2049 (EU)
-			|| id == "T-8112D-50"		// South Park Rally (EU)
-			|| id == "T7014D  50"		// Super Runabout (EU)
-			|| id == "T10001D 50"		// MTV Sports - Skateboarding (PAL)
-			|| id == "MK-5101050"		// Snow Surfers
-			|| id == "12502D-50"		// Caesar's Palace 2000 (EU)
-			|| id == "T46605D 80")		// Evil Twin - Cyprien's Chronicles
+	else if (!strcmp(id, "T-9709D-50")		/* San Francisco Rush 2049 (EU) */
+			|| !strcmp(id, "T-8112D-50")		/* South Park Rally (EU) */
+			|| !strcmp(id, "T7014D  50")		/* Super Runabout (EU) */
+			|| !strcmp(id, "T10001D 50")		/* MTV Sports - Skateboarding (PAL) */
+			|| !strcmp(id, "MK-5101050")		/* Snow Surfers */
+			|| !strcmp(id, "12502D-50")		/* Caesar's Palace 2000 (EU) */
+			|| !strcmp(id, "T46605D 80"))		/* Evil Twin - Cyprien's Chronicles */
 		game_broadcast = 1;
 	if (game_broadcast >= 0)
 	{
@@ -332,14 +328,14 @@ static void LoadSpecialSettings(void)
 		flash_broadcast[0] = sys_nvmem_flash.data[0x1a004];
 		flash_broadcast[1] = sys_nvmem_flash.data[0x1a0a4];
 	}
-	if (id == "T-8102N")			// TrickStyle (US)
+	if (!strcmp(id, "T-8102N"))			/* TrickStyle (US) */
 	{
+		flash_syscfg_block syscfg;
 		NOTICE_LOG(BOOT, "Forcing English language\n");
 		game_language = 1;
 		settings.dreamcast.language = game_language;
 		flash_language[0] = sys_nvmem_flash.data[0x1a003];
 		flash_language[1] = sys_nvmem_flash.data[0x1a0a3];
-		flash_syscfg_block syscfg;
 		if (flash_read_block(&sys_nvmem_flash, FLASH_PT_USER, FLASH_USER_SYSCFG, &syscfg))
 			flash_user_language = syscfg.lang;
 	}
@@ -354,21 +350,19 @@ static void LoadSpecialSettings(void)
  * of the other after the reset, before anything has run. */
 static void ChooseGameBios(const char *system_dir, bool hle_bios)
 {
-   char prod_id[sizeof(ip_meta.product_number) + 1] = {0};
-   memcpy(prod_id, ip_meta.product_number, sizeof(ip_meta.product_number));
-   std::string id(prod_id);
-   id.erase(id.find_last_not_of(' ') + 1);
+   char id[sizeof(ip_meta.product_number) + 1];
+   ip_meta_product_id(&ip_meta, id, NULL);
 
    if (hle_bios
-         && (id == "T7001D  50"     // Jimmy White's 2: Cueball
-         || id == "T40505D 50"      // Railroad Tycoon II (EU)
-         || id == "T18702M"         // Miss Moonlight
-         || id == "T0019M"          // KenJu (Atomiswave conversion)
-         || id == "T0020M"          // Force Five (Atomiswave conversion)
-         || id == "HDR-0187"        // Fushigi no Dungeon: Fuurai no Shiren Gaiden
-         || id == "T15104D 50"      // Slave Zero (PAL)
-         || id == "MK-51152"        // World Series Baseball 2K2
-         || ip_meta.isMILCD()))     // a MIL-CD: the HLE BIOS cannot start one
+         && (!strcmp(id, "T7001D  50")     /* Jimmy White's 2: Cueball */
+         || !strcmp(id, "T40505D 50")      /* Railroad Tycoon II (EU) */
+         || !strcmp(id, "T18702M")         /* Miss Moonlight */
+         || !strcmp(id, "T0019M")          /* KenJu (Atomiswave conversion) */
+         || !strcmp(id, "T0020M")          /* Force Five (Atomiswave conversion) */
+         || !strcmp(id, "HDR-0187")        /* Fushigi no Dungeon: Fuurai no Shiren Gaiden */
+         || !strcmp(id, "T15104D 50")      /* Slave Zero (PAL) */
+         || !strcmp(id, "MK-51152")        /* World Series Baseball 2K2 */
+         || ip_meta_is_milcd(&ip_meta)))     /* a MIL-CD: the HLE BIOS cannot start one */
    {
       if (LoadRomFiles(system_dir))
       {
@@ -384,10 +378,10 @@ static void ChooseGameBios(const char *system_dir, bool hle_bios)
       }
    }
    else if (!hle_bios
-         && (id == "T17708N"        // Stupid Invaders (US)
-         || id == "T17711D"         // Stupid Invaders (EU)
-         || id == "T46509M"         // Suika (JP)
-         || id == "T36901M"))       // Cool Boarders Burrrn (JP)
+         && (!strcmp(id, "T17708N")        /* Stupid Invaders (US) */
+         || !strcmp(id, "T17711D")         /* Stupid Invaders (EU) */
+         || !strcmp(id, "T46509M")         /* Suika (JP) */
+         || !strcmp(id, "T36901M")))       /* Cool Boarders Burrrn (JP) */
    {
       NOTICE_LOG(BOOT, "Forcing HLE BIOS\n");
       LoadHle(system_dir);
@@ -448,21 +442,21 @@ static void LoadSpecialSettingsNaomi(const char *name)
          break;
       }
    }
-   if (!strcmp(name, "MONKEY BALL JAPAN VERSION"))	// the map's depth
+   if (!strcmp(name, "MONKEY BALL JAPAN VERSION"))	/* the map's depth */
    {
       NOTICE_LOG(BOOT, "[Hack]: Applying translucent polygon depth mask hack.\n");
       settings.rend.TranslucentPolygonDepthMask = true;
    }
 }
 
-void dc_prepare_system()
+void dc_prepare_system(void)
 {
    BBSRAM_SIZE             = (32*1024);
 
    switch (settings.System)
    {
       case DC_PLATFORM_DREAMCAST:
-         //DC : 16 mb ram, 8 mb vram, 2 mb aram, 2 mb bios, 128k flash
+         /* DC : 16 mb ram, 8 mb vram, 2 mb aram, 2 mb bios, 128k flash */
          FLASH_SIZE        = (128*1024);
          BIOS_SIZE         = (2*1024*1024);
          RAM_SIZE          = (16*1024*1024);
@@ -472,7 +466,7 @@ void dc_prepare_system()
          memchip_allocate(&sys_rom, BIOS_SIZE);
          break;
       case DC_PLATFORM_DEV_UNIT:
-         //Devkit : 32 mb ram, 8? mb vram, 2? mb aram, 2? mb bios, ? flash
+         /* Devkit : 32 mb ram, 8? mb vram, 2? mb aram, 2? mb bios, ? flash */
          FLASH_SIZE        = (128*1024);
          BIOS_SIZE         = (2*1024*1024);
          RAM_SIZE          = (32*1024*1024);
@@ -482,7 +476,7 @@ void dc_prepare_system()
          memchip_allocate(&sys_rom, BIOS_SIZE);
          break;
       case DC_PLATFORM_NAOMI:
-         //Naomi : 32 mb ram, 16 mb vram, 8 mb aram, 2 mb bios, ? flash
+         /* Naomi : 32 mb ram, 16 mb vram, 8 mb aram, 2 mb bios, ? flash */
          BIOS_SIZE         = (2*1024*1024);
          RAM_SIZE          = (32*1024*1024);
          ARAM_SIZE         = (8*1024*1024);
@@ -491,7 +485,7 @@ void dc_prepare_system()
          memchip_allocate(&sys_rom, BIOS_SIZE);
          break;
       case DC_PLATFORM_NAOMI2:
-         //Naomi2 : 32 mb ram, 16 mb vram, 8 mb aram, 2 mb bios, ? flash
+         /* Naomi2 : 32 mb ram, 16 mb vram, 8 mb aram, 2 mb bios, ? flash */
          BIOS_SIZE         = (2*1024*1024);
          RAM_SIZE          = (32*1024*1024);
          ARAM_SIZE         = (8*1024*1024);
@@ -500,7 +494,7 @@ void dc_prepare_system()
          memchip_allocate(&sys_rom, BIOS_SIZE);
          break;
       case DC_PLATFORM_ATOMISWAVE:
-         //Atomiswave : 16 mb ram, 8 mb vram, 8 mb aram, 128kb bios+flash, 128k BBSRAM
+         /* Atomiswave : 16 mb ram, 8 mb vram, 8 mb aram, 128kb bios+flash, 128k BBSRAM */
          FLASH_SIZE        = 0;
          BIOS_SIZE         = (128*1024);
          RAM_SIZE          = (16*1024*1024);
@@ -538,8 +532,6 @@ enum
 
 static void dc_init_unwind(int stage)
 {
-   extern void common_libretro_cleanup(void);
-
    switch (stage)
    {
       case DC_INIT_PLUGINS:
@@ -559,10 +551,11 @@ static void dc_init_unwind(int stage)
    }
 }
 
-int dc_init()
+int dc_init(void)
 {
-   extern void common_libretro_setup(void);
    char new_system_dir[1024];
+   /* the HLE BIOS is the one in the ROM */
+   bool hle_bios = false;
 
    setbuf(stdin,0);
    setbuf(stdout,0);
@@ -586,8 +579,6 @@ int dc_init()
    sprintf(new_system_dir, "%s/", game_dir_no_slash);
 #endif
 
-   // the HLE BIOS is the one in the ROM
-   bool hle_bios = false;
    if (settings.System == DC_PLATFORM_DREAMCAST)
    {
       if (settings.bios.UseReios || !LoadRomFiles(new_system_dir))
@@ -612,10 +603,7 @@ int dc_init()
    mem_Init();
 
 #ifdef _WIN64
-   {
-      extern void setup_seh();
-      setup_seh();
-   }
+   setup_seh();
 #endif
 
    if (plugins_Init())
@@ -694,24 +682,23 @@ static int frame_deadline_sched(int tag, int c, int j)
 	return 0;	/* one-shot; re-armed by dc_run() */
 }
 
-void dc_run()
+void dc_run(void)
 {
 	if (frame_deadline_schid == -1)
 		frame_deadline_schid = sh4_sched_register(0, &frame_deadline_sched);
 	sh4_sched_request(frame_deadline_schid, FRAME_DEADLINE_CYCLES);
-	// (where it ends: hw/pvr/spg.cpp)
+	/* (where it ends: hw/pvr/spg.cpp) */
 	spg_frame_begin();
 	maple_start_deferred();
 
 	sh4_cpu.Run();
 }
 
-void dc_term()
+void dc_term(void)
 {
 	/* Remove the exception handler and dynarec unwind table before freeing the
 	 * code cache and vmem they reference, so a stale handler can't fire during
 	 * or after teardown. */
-	extern void common_libretro_cleanup(void);
 	common_libretro_cleanup();
 
 	if (game_broadcast >= 0 && settings.System == DC_PLATFORM_DREAMCAST)
@@ -721,9 +708,9 @@ void dc_term()
 	}
 	if (game_language >= 0 && settings.System == DC_PLATFORM_DREAMCAST)
 	{
+		flash_syscfg_block syscfg;
 		sys_nvmem_flash.data[0x1a003] = flash_language[0];
 		sys_nvmem_flash.data[0x1a0a3] = flash_language[1];
-		flash_syscfg_block syscfg;
 		if (flash_user_language >= 0
 				&& flash_read_block(&sys_nvmem_flash, FLASH_PT_USER, FLASH_USER_SYSCFG, &syscfg))
 		{
@@ -732,7 +719,11 @@ void dc_term()
 		}
 	}
 	forget_game_settings();
-	SaveRomFiles(get_writable_data_path("").c_str());
+	{
+		char data_dir[1024];
+		writable_data_path(data_dir, sizeof(data_dir), "");
+		SaveRomFiles(data_dir);
+	}
 	sh4_cpu.Term();
 	naomi_cart_Close();
 	plugins_Term();
@@ -743,19 +734,19 @@ void dc_term()
 	memchip_free(&sys_nvmem_flash);
 }
 
-void dc_stop()
+void dc_stop(void)
 {
 	sh4_cpu.Stop();
 }
 
 
-bool dc_is_running()
+bool dc_is_running(void)
 {
 	return sh4_cpu.IsCpuRunning();
 }
 
-// Called on the emulator thread for soft reset
-void dc_request_reset()
+/* Called on the emulator thread for soft reset */
+void dc_request_reset(void)
 {
 	retro_atomic_store_release_int(&reset_requested, 1);
 	dc_stop();
@@ -768,17 +759,17 @@ void LoadSettings(void)
 	forget_game_settings();
 	settings.mapping.JammaSetup = JVS_Default;
 	naomi_game_inputs = NULL;
-	//settings.dynarec.DisableDivMatching       = 0;
-	//disable_nvmem can't be loaded, because nvmem init is before cfg load
+	/* settings.dynarec.DisableDivMatching       = 0; */
+	/* disable_nvmem can't be loaded, because nvmem init is before cfg load */
 	settings.dreamcast.FullMMU		= false;
-	//settings.pvr.Emulation.AlphaSortMode= 0;
+	/* settings.pvr.Emulation.AlphaSortMode= 0; */
 	settings.rend.ExtraDepthScale        = 1.f;
 
 
 	settings.rend.TranslucentPolygonDepthMask = false;
 
 	settings.network.ActAsServer = false;
-	strlcpy(settings.network.dns, "46.101.91.123", sizeof(settings.network.dns));		// Dreamcast Live DNS
+	strlcpy(settings.network.dns, "46.101.91.123", sizeof(settings.network.dns));		/* Dreamcast Live DNS */
 	settings.network.server[0] = 0;
 	settings.network.EmulateBBA = false;
 }

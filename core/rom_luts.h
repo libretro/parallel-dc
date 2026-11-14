@@ -24,7 +24,7 @@ struct game_type_naomi
    int alpha_sort_mode;     /* -1, make no decision */
    int translucentPolygonDepthMask; /* -1, make no decision */
    int disable_div;                 /* -1, make no decision */
-   JVS jamma_setup;
+   enum JVS jamma_setup;
    float extra_depth_scale;         /* 1, default */
    InputDescriptors *game_inputs;
 };
@@ -53,7 +53,7 @@ static struct game_type lut_games[] =
    { "T-8112D-50", -1, -1, -1, -1, 1000.f, 0 },      /* South Park Rally (EU) */
    { "T1247M    ", -1, -1, -1, -1, 10000.f, 0 },     /* Capcom vs. SNK: Millennium Fight 2000 Pro */
 
-	// Disable RGB Component
+	/* Disable RGB Component */
 	{ "T40602N   ", -1, -1, -1, -1, 1, 1 },           /* Centipede */
 	{ "T9710N    ", -1, -1, -1, -1, 1, 1 },           /* Gauntlet Legends (US) */
 	{ "MK-51152  ", -1, -1, -1, -1, 1, 1 },           /* World Series Baseball 2K2 */
@@ -67,13 +67,6 @@ static struct game_type lut_games[] =
 	{ "T1235M    ", -1, -1, -1, -1, 1, 1 },           /* Vampire Chronicle for Matching Service */
 
 };
-
-extern InputDescriptors gunsur2_inputs;
-extern InputDescriptors ftspeed_inputs;
-extern InputDescriptors maxspeed_inputs;
-extern InputDescriptors monkeyba_inputs;
-extern InputDescriptors cvs2_inputs;
-extern InputDescriptors deathcox_inputs;
 
 static struct game_type_naomi lut_games_naomi[] = 
 {

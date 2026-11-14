@@ -46,6 +46,13 @@ struct InputDescriptors
 };
 
 extern InputDescriptors *naomi_game_inputs;
+/* The games' own, that the table of special settings gives (naomi_roms_input.h) */
+extern InputDescriptors gunsur2_inputs;
+extern InputDescriptors ftspeed_inputs;
+extern InputDescriptors maxspeed_inputs;
+extern InputDescriptors monkeyba_inputs;
+extern InputDescriptors cvs2_inputs;
+extern InputDescriptors deathcox_inputs;
 /* The game's name, as its ROM header has it */
 extern char naomi_game_id[];
 /* A BIOS file was loaded (a NAOMI runs no game without one) */
@@ -53,6 +60,9 @@ extern bool bios_loaded;
 /* The System SP's ROM board's part of the G2 area: @sz bytes (systemsp.cpp) */
 u32 systemsp_read_area0(u32 addr, u32 sz);
 void systemsp_write_area0(u32 addr, u32 data, u32 sz);
+/* The romset of the content, loaded (false: none that runs) */
+bool naomi_cart_SelectFile(void);
+void naomi_cart_Close(void);
 
 #ifdef __cplusplus
 }
@@ -173,7 +183,6 @@ private:
 	u8 naomi_cart_ram[64 * 1024];
 };
 
-bool naomi_cart_SelectFile();
 /* The platform of the romset at @file, or -1 for an archive that is not
  * a known Naomi or AtomisWave romset. */
 int naomi_cart_GetSystemType(const char* file);
@@ -187,7 +196,6 @@ struct NaomiSet
 int naomi_cart_MergedSets(const char *path, NaomiSet *sets, int max);
 void naomi_cart_WantSet(const char *name);
 int naomi_cart_GetRotation();
-void naomi_cart_Close();
 
 extern u8 *naomi_default_eeprom;
 

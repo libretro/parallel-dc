@@ -1,4 +1,5 @@
 #include "types.h"
+#include "emulator.h"
 #include "rend/rtt_watch.h"
 
 #include <errno.h>

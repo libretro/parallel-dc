@@ -800,7 +800,7 @@ extern sh4_if				  sh4_cpu;
 #endif
 
 /* sh4 thread */
-s32 plugins_Init();
+s32 plugins_Init(void);
 void plugins_Term(void);
 void plugins_Reset(bool Manual);
 

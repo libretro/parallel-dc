@@ -596,7 +596,6 @@ void retro_deinit(void)
    libretro_supports_bitmasks = false;
 }
 
-void dc_apply_game_settings(void);
 
 static bool is_dupe = false;
 /* The Internal Resolution option: how many times 640x480. */
@@ -1953,7 +1952,6 @@ static void extract_directory(char *buf, const char *path, size_t size)
       strncpy(buf, ".", size - 1);
 }
 
-extern void dc_prepare_system(void);
 
 static uint32_t map_gamepad_button(unsigned device, unsigned id)
 {
