@@ -612,7 +612,7 @@ static void recSh4_Init(void)
 	// Call the platform-specific magic to make the pages RWX
 	CodeCache = NULL;
 	#ifdef FEAT_NO_RWX_PAGES
-	verify(vmem_platform_prepare_jit_block(candidate_ptr, CODE_SIZE + TEMP_CODE_SIZE, (void**)&CodeCache, &cc_rx_offset));
+	verify(vmem_platform_prepare_jit_block_rw(candidate_ptr, CODE_SIZE + TEMP_CODE_SIZE, (void**)&CodeCache, &cc_rx_offset));
 	#else
 	verify(vmem_platform_prepare_jit_block(candidate_ptr, CODE_SIZE + TEMP_CODE_SIZE, (void**)&CodeCache));
 	#endif

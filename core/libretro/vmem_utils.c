@@ -1,7 +1,12 @@
 #ifndef _WIN32
-// Implementation of the vmem related function for POSIX-like platforms.
-// There's some minimal amount of platform specific hacks to support
-// Android and OSX since they are slightly different in some areas.
+/* mmap()'s and madvise()'s flags, shm_open(), ftruncate(): what a C89
+ * compile of the C library's headers leaves out */
+#ifndef _DEFAULT_SOURCE
+#define _DEFAULT_SOURCE
+#endif
+/* Implementation of the vmem related function for POSIX-like platforms. */
+/* There's some minimal amount of platform specific hacks to support */
+/* Android and OSX since they are slightly different in some areas. */
 
 #include <sys/mman.h>
 #include <sys/types.h>
@@ -13,11 +18,14 @@
 #include <libkern/OSCacheControl.h>
 #endif
 
+#include <retro_miscellaneous.h>
+#include "types.h"
+#include "paths.h"
 #include "hw/mem/_vmem.h"
-#include "stdclass.h"
+#include "hw/sh4/sh4_if.h"
 
 #ifndef MAP_NOSYNC
-#define MAP_NOSYNC       0 //missing from linux :/ -- could be the cause of android slowness ?
+#define MAP_NOSYNC       0 /* missing from linux :/ -- could be the cause of android slowness ? */
 #endif
 
 #if defined(HAVE_LIBNX)
@@ -31,8 +39,8 @@ FILE *	fmemopen (void *__restrict, size_t, const char *__restrict);
 		#define ASHMEM_DEVICE "/dev/ashmem"
 	#endif
 
-// Android specific ashmem-device stuff for creating shared memory regions
-int ashmem_create_region(const char *name, size_t size) {
+/* Android specific ashmem-device stuff for creating shared memory regions */
+static int ashmem_create_region(const char *name, size_t size) {
 	int fd = open(ASHMEM_DEVICE, O_RDWR);
 	if (fd < 0)
 		return -1;
@@ -44,20 +52,20 @@ int ashmem_create_region(const char *name, size_t size) {
 
 	return fd;
 }
-#endif  // #ifdef _ANDROID
+#endif  /* #ifdef _ANDROID */
 
 #ifdef HAVE_LIBNX
-using mem_handle_t = uintptr_t;
-mem_handle_t vmem_fd = -1;
-mem_handle_t vmem_fd_page = -1;
-mem_handle_t vmem_fd_codememory = -1;
+typedef uintptr_t mem_handle_t;
+static mem_handle_t vmem_fd = -1;
+static mem_handle_t vmem_fd_page = -1;
+static mem_handle_t vmem_fd_codememory = -1;
 
 static mem_handle_t shmem_fd2 = -1;
 #else
-using mem_handle_t = int;
-mem_handle_t vmem_fd = -1;
+typedef int mem_handle_t;
+static mem_handle_t vmem_fd = -1;
 static mem_handle_t shmem_fd2 = -1;
-#endif // HAVE_LIBNX
+#endif /* HAVE_LIBNX */
 
 static void *reserved_base;
 static size_t reserved_size;
@@ -67,16 +75,18 @@ bool mem_region_lock(void *start, size_t len)
 	size_t inpage = (uintptr_t)start & PAGE_MASK;
 
 #ifdef HAVE_LIBNX
+    size_t inlen;
     len += inpage;
 
-    size_t inlen = len & PAGE_MASK;
+    inlen = len & PAGE_MASK;
 
     if(inlen)
         len = (len + PAGE_SIZE) & (~(PAGE_SIZE-1));
 
 	Result rc;
 	uintptr_t start_addr = ((uintptr_t)start - inpage);
-	for(uintptr_t addr = start_addr; addr < (start_addr + len); addr += PAGE_SIZE)
+	uintptr_t addr;
+	for(addr = start_addr; addr < (start_addr + len); addr += PAGE_SIZE)
 	{
 		rc = svcSetMemoryPermission((void*)addr, PAGE_SIZE, Perm_R);
 		if(R_FAILED(rc))
@@ -87,7 +97,7 @@ bool mem_region_lock(void *start, size_t len)
 #else
 	if (mprotect((u8*)start - inpage, len + inpage, PROT_READ))
 		die("mprotect failed...");
-#endif // HAVE_LIBNX
+#endif /* HAVE_LIBNX */
 
 	return true;
 }
@@ -97,16 +107,18 @@ bool mem_region_unlock(void *start, size_t len)
 	size_t inpage = (uintptr_t)start & PAGE_MASK;
 
 #ifdef HAVE_LIBNX
+    size_t inlen;
     len += inpage;
 
-    size_t inlen = len & PAGE_MASK;
+    inlen = len & PAGE_MASK;
 
     if(inlen)
         len = (len + PAGE_SIZE) & (~(PAGE_SIZE-1));
         
 	Result rc;
 	uintptr_t start_addr = ((uintptr_t)start - inpage);
-	for(uintptr_t addr = start_addr; addr < (start_addr + len); addr += PAGE_SIZE)
+	uintptr_t addr;
+	for(addr = start_addr; addr < (start_addr + len); addr += PAGE_SIZE)
 	{
 		rc = svcSetMemoryPermission((void*)addr, PAGE_SIZE, Perm_Rw);
 		if(R_FAILED(rc))
@@ -117,9 +129,9 @@ bool mem_region_unlock(void *start, size_t len)
 
 #else
 	if (mprotect((u8*)start - inpage, len + inpage, PROT_READ | PROT_WRITE))
-		// Add some way to see why it failed? gdb> info proc mappings
+		/* Add some way to see why it failed? gdb> info proc mappings */
 		die("mprotect  failed...");
-#endif // HAVE_LIBNX
+#endif /* HAVE_LIBNX */
 
 	return true;
 }
@@ -131,11 +143,12 @@ bool mem_region_noaccess(void *start, size_t len)
 
 #ifdef HAVE_LIBNX
 	uintptr_t start_addr = ((uintptr_t)start - inpage);
+	uintptr_t addr;
 
 	len += inpage;
 	if (len & PAGE_MASK)
 		len = (len + PAGE_SIZE) & (~(PAGE_SIZE-1));
-	for (uintptr_t addr = start_addr; addr < (start_addr + len); addr += PAGE_SIZE)
+	for (addr = start_addr; addr < (start_addr + len); addr += PAGE_SIZE)
 		svcSetMemoryPermission((void*)addr, PAGE_SIZE, Perm_None);
 #else
 	if (mprotect((u8*)start - inpage, len + inpage, PROT_NONE))
@@ -150,11 +163,11 @@ bool mem_region_set_exec(void *start, size_t len)
 	size_t inpage = (uintptr_t)start & PAGE_MASK;
 	
 #ifdef HAVE_LIBNX
-	svcSetMemoryPermission((void*)((uintptr_t)start - inpage), len + inpage, Perm_R); // *shrugs*
+	svcSetMemoryPermission((void*)((uintptr_t)start - inpage), len + inpage, Perm_R); /* *shrugs* */
 #else
 	if (mprotect((u8*)start - inpage, len + inpage, PROT_READ | PROT_WRITE | PROT_EXEC))
 		die("mprotect  failed...");
-#endif // HAVE_LIBNX
+#endif /* HAVE_LIBNX */
 	return true;
 }
 
@@ -171,7 +184,7 @@ void *mem_region_reserve(void *start, size_t len)
 	}
 	else
 		return p;
-#endif // HAVE_LIBNX
+#endif /* HAVE_LIBNX */
 }
 
 bool mem_region_release(void *start, size_t len)
@@ -180,7 +193,7 @@ bool mem_region_release(void *start, size_t len)
 	return true;
 #else
 	return munmap(start, len) == 0;
-#endif // HAVE_LIBNX
+#endif /* HAVE_LIBNX */
 }
 
 void *mem_region_map_file(void *file_handle, void *dest, size_t len, size_t offset, bool readwrite)
@@ -205,7 +218,7 @@ void *mem_region_map_file(void *file_handle, void *dest, size_t len, size_t offs
 	}
 	else
 		return p;
-#endif // HAVE_LIBNX
+#endif /* HAVE_LIBNX */
 }
 
 bool mem_region_unmap_file(void *start, size_t len)
@@ -213,11 +226,11 @@ bool mem_region_unmap_file(void *start, size_t len)
 	return mem_region_release(start, len);
 }
 
-// Allocates memory via a fd on shmem/ahmem or even a file on disk
+/* Allocates memory via a fd on shmem/ahmem or even a file on disk */
 static mem_handle_t allocate_shared_filemem(unsigned size) {
 	int fd = -1;
 	#if defined(_ANDROID)
-	// Use Android's specific shmem stuff.
+	/* Use Android's specific shmem stuff. */
 	fd = ashmem_create_region(0, size);
 	#elif defined(HAVE_LIBNX)
 	void* mem = memalign(0x1000, size);
@@ -228,19 +241,20 @@ static mem_handle_t allocate_shared_filemem(unsigned size) {
 		shm_unlink("/dcnzorz_mem");
 		#endif
 
-		// if shmem does not work (or using OSX) fallback to a regular file on disk
+		/* if shmem does not work (or using OSX) fallback to a regular file on disk */
 		if (fd < 0) {
-         std::string path = get_writable_data_path("/dcnzorz_mem");
-			fd = open(path.c_str(), O_CREAT|O_RDWR|O_TRUNC, S_IRWXU|S_IRWXG|S_IRWXO);
-			unlink(path.c_str());
+			char path[PATH_MAX_LENGTH];
+			writable_data_path(path, sizeof(path), "/dcnzorz_mem");
+			fd = open(path, O_CREAT|O_RDWR|O_TRUNC, S_IRWXU|S_IRWXG|S_IRWXO);
+			unlink(path);
 		}
-		// If we can't open the file, fallback to slow mem.
+		/* If we can't open the file, fallback to slow mem. */
 		if (fd < 0)
 			return -1;
 
-		// Finally make the file as big as we need!
+		/* Finally make the file as big as we need! */
 		if (ftruncate(fd, size)) {
-			// Can't get as much memory as needed, fallback.
+			/* Can't get as much memory as needed, fallback. */
 			close(fd);
 			return -1;
 		}
@@ -249,13 +263,17 @@ static mem_handle_t allocate_shared_filemem(unsigned size) {
 	return fd;
 }
 
-// Implement vmem initialization for RAM, ARAM, VRAM and SH4 context, fpcb etc.
-// The function supports allocating 512MB or 4GB addr spaces.
-// vmem_base_addr points to an address space of 512MB (or 4GB) that can be used for fast memory ops.
-// In negative offsets of the pointer (up to FPCB size, usually 65/129MB) the context and jump table
-// can be found. If the platform init returns error, the user is responsible for initializing the
-// memory using a fallback (that is, regular mallocs and falling back to slow memory JIT).
+/* Implement vmem initialization for RAM, ARAM, VRAM and SH4 context, fpcb etc. */
+/* The function supports allocating 512MB or 4GB addr spaces. */
+/* vmem_base_addr points to an address space of 512MB (or 4GB) that can be used for fast memory ops. */
+/* In negative offsets of the pointer (up to FPCB size, usually 65/129MB) the context and jump table */
+/* can be found. If the platform init returns error, the user is responsible for initializing the */
+/* memory using a fallback (that is, regular mallocs and falling back to slow memory JIT). */
 VMemType vmem_platform_init(void **vmem_base_addr, void **sh4rcb_addr) {
+	VMemType rv = MemType512MB;
+	uintptr_t ptrint;
+	const size_t fpcb_size = sizeof(((Sh4RCB *)NULL)->fpcb);
+	void *sh4rcb_base_ptr;
 #ifdef HAVE_LIBNX
 	const unsigned size_aligned = ((RAM_SIZE_MAX + VRAM_SIZE_MAX + ARAM_SIZE_MAX + PAGE_SIZE) & (~(PAGE_SIZE-1)));
 	vmem_fd_page = allocate_shared_filemem(size_aligned);
@@ -270,18 +288,17 @@ VMemType vmem_platform_init(void **vmem_base_addr, void **sh4rcb_addr) {
 	if(R_FAILED(svcSetProcessMemoryPermission(envGetOwnProcessHandle(), vmem_fd_codememory, size_aligned, Perm_Rx)))
 		printf("Failed to set perms (platform_int)...\n");
 #else
-	// Firt let's try to allocate the shm-backed memory
+	/* Firt let's try to allocate the shm-backed memory */
 	vmem_fd = allocate_shared_filemem(RAM_SIZE_MAX + VRAM_SIZE_MAX + ARAM_SIZE_MAX + ERAM_SIZE);
 	if (vmem_fd < 0)
 		return MemTypeError;
-#endif // HAVE_LIBNX
-	// Now try to allocate a contiguous piece of memory.
-	VMemType rv;
+#endif /* HAVE_LIBNX */
+	/* Now try to allocate a contiguous piece of memory. */
 #if defined(HOST_64BIT_CPU) && !defined(HAVE_LIBNX)
-	reserved_size = 0x100000000L + sizeof(Sh4RCB) + 0x10000;	// 4GB + context size + 64K padding
+	reserved_size = 0x100000000L + sizeof(Sh4RCB) + 0x10000;	/* 4GB + context size + 64K padding */
 	reserved_base = mem_region_reserve(NULL, reserved_size);
 	rv = MemType4GB;
-#endif // defined(HOST_64BIT_CPU) && !defined(HAVE_LIBNX)
+#endif /* defined(HOST_64BIT_CPU) && !defined(HAVE_LIBNX) */
 	if (reserved_base == NULL)
 	{
 		reserved_size = 512*1024*1024 + sizeof(Sh4RCB) + ARAM_SIZE_MAX + 0x10000;
@@ -289,21 +306,20 @@ VMemType vmem_platform_init(void **vmem_base_addr, void **sh4rcb_addr) {
 		if (!reserved_base) {
 #ifndef HAVE_LIBNX
 			close(vmem_fd);
-#endif // HAVE_LIBNX
+#endif /* HAVE_LIBNX */
 			return MemTypeError;
 		}
 		rv = MemType512MB;
 	}
 
-	// Align pointer to 64KB too, some Linaro bug (no idea but let's just be safe I guess).
-	uintptr_t ptrint = (uintptr_t)reserved_base;
-	ptrint = (ptrint + 0x10000 - 1) & (~0xffff);
+	/* Align pointer to 64KB too, some Linaro bug (no idea but let's just be safe I guess). */
+	ptrint = (uintptr_t)reserved_base;
+	ptrint = (ptrint + 0x10000 - 1) & (~(uintptr_t)0xffff);
 	*sh4rcb_addr = (void*)ptrint;
 	*vmem_base_addr = (void*)(ptrint + sizeof(Sh4RCB));
-	const size_t fpcb_size = sizeof(((Sh4RCB *)NULL)->fpcb);
-	void *sh4rcb_base_ptr  = (void*)(ptrint + fpcb_size);
+	sh4rcb_base_ptr  = (void*)(ptrint + fpcb_size);
 
-	// Now map the memory for the SH4 context, do not include FPCB on purpose (paged on demand).
+	/* Now map the memory for the SH4 context, do not include FPCB on purpose (paged on demand). */
 	mem_region_unlock(sh4rcb_base_ptr, sizeof(Sh4RCB) - fpcb_size);
 
 	return rv;
@@ -314,7 +330,7 @@ VMemType vmem_platform_init(void **vmem_base_addr, void **sh4rcb_addr) {
  * frontend left its own behind, some 30 to 60 MB of it with the pages a
  * game had touched. And the base was left as it was, which a host with
  * 32-bit addresses took the next time for a reservation it still had.) */
-void vmem_platform_destroy() {
+void vmem_platform_destroy(void) {
 	if (reserved_base != NULL)
 		mem_region_release(reserved_base, reserved_size);
 	reserved_base = NULL;
@@ -326,14 +342,14 @@ void vmem_platform_destroy() {
 #endif
 }
 
-// Resets a chunk of memory by deleting its data and setting its protection back.
+/* Resets a chunk of memory by deleting its data and setting its protection back. */
 void vmem_platform_reset_mem(void *ptr, unsigned size_bytes) {
 #ifndef HAVE_LIBNX
-	// Mark them as non accessible.
+	/* Mark them as non accessible. */
 	mprotect(ptr, size_bytes, PROT_NONE);
-	// Tell the kernel to flush'em all (FIXME: perhaps unmap+mmap 'd be better?)
+	/* Tell the kernel to flush'em all (FIXME: perhaps unmap+mmap 'd be better?) */
 	#if defined(__HAIKU__)
-	// Posix function for Haiku
+	/* Posix function for Haiku */
 	posix_madvise(ptr, size_bytes, POSIX_MADV_DONTNEED);
 	#else
 	madvise(ptr, size_bytes, MADV_DONTNEED);
@@ -345,27 +361,30 @@ void vmem_platform_reset_mem(void *ptr, unsigned size_bytes) {
 	#endif
 #else
 	svcSetMemoryPermission(ptr, size_bytes, Perm_None);
-#endif // HAVE_LIBNX
+#endif /* HAVE_LIBNX */
 }
 
-// Allocates a bunch of memory (page aligned and page-sized)
+/* Allocates a bunch of memory (page aligned and page-sized) */
 void vmem_platform_ondemand_page(void *address, unsigned size_bytes) {
 	verify(mem_region_unlock(address, size_bytes));
 }
 
-// Creates mappings to the underlying file including mirroring sections
+/* Creates mappings to the underlying file including mirroring sections */
 void vmem_platform_create_mappings(const vmem_mapping *vmem_maps, unsigned nummaps) {
-	for (unsigned i = 0; i < nummaps; i++) {
-		// Ignore unmapped stuff, it is already reserved as PROT_NONE
+	unsigned i, j;
+	for (i = 0; i < nummaps; i++) {
+		u64 address_range_size;
+		unsigned num_mirrors;
+		/* Ignore unmapped stuff, it is already reserved as PROT_NONE */
 		if (!vmem_maps[i].memsize)
 			continue;
 
-		// Calculate the number of mirrors
-		u64 address_range_size = vmem_maps[i].end_address - vmem_maps[i].start_address;
-		unsigned num_mirrors = (address_range_size) / vmem_maps[i].memsize;
+		/* Calculate the number of mirrors */
+		address_range_size = vmem_maps[i].end_address - vmem_maps[i].start_address;
+		num_mirrors = (unsigned)(address_range_size / vmem_maps[i].memsize);
 		verify((address_range_size % vmem_maps[i].memsize) == 0 && num_mirrors >= 1);
 
-		for (unsigned j = 0; j < num_mirrors; j++) {
+		for (j = 0; j < num_mirrors; j++) {
 			u64 offset = vmem_maps[i].start_address + j * vmem_maps[i].memsize;
 #ifdef HAVE_LIBNX
 			verify(mem_region_unmap_file(&virt_ram_base[offset], vmem_maps[i].memsize));
@@ -380,42 +399,44 @@ void vmem_platform_create_mappings(const vmem_mapping *vmem_maps, unsigned numma
 	}
 }
 
-// Prepares the code region for JIT operations, thus marking it as RWX
+/* Prepares the code region for JIT operations, thus marking it as RWX */
 bool vmem_platform_prepare_jit_block(void *code_area, unsigned size, void **code_area_rwx) {
-	// Try to map is as RWX, this fails apparently on OSX (and perhaps other systems?)
+	/* Try to map is as RWX, this fails apparently on OSX (and perhaps other systems?) */
 	if (!mem_region_set_exec(code_area, size))
 	{
-		// Well it failed, use another approach, unmap the memory area and remap it back.
-		// Seems it works well on Darwin according to reicast code :P
+		void *ret_ptr;
+		/* Well it failed, use another approach, unmap the memory area and remap it back. */
+		/* Seems it works well on Darwin according to reicast code :P */
 		munmap(code_area, size);
-		void *ret_ptr = mmap(code_area, size, PROT_READ | PROT_WRITE | PROT_EXEC, MAP_FIXED | MAP_PRIVATE | MAP_ANON, 0, 0);
-		// Ensure it's the area we requested
+		ret_ptr = mmap(code_area, size, PROT_READ | PROT_WRITE | PROT_EXEC, MAP_FIXED | MAP_PRIVATE | MAP_ANON, 0, 0);
+		/* Ensure it's the area we requested */
 		if (ret_ptr != code_area)
-			return false;   // Couldn't remap it? Perhaps RWX is disabled? This should never happen in any supported Unix platform.
+			return false;   /* Couldn't remap it? Perhaps RWX is disabled? This should never happen in any supported Unix platform. */
 	}
 
-	// Pointer location should be same:
+	/* Pointer location should be same: */
 	*code_area_rwx = code_area;
 	return true;
 }
 
-// Use two addr spaces: need to remap something twice, therefore use allocate_shared_filemem()
-bool vmem_platform_prepare_jit_block(void *code_area, unsigned size, void **code_area_rw, uintptr_t *rx_offset) {
+/* Use two addr spaces: need to remap something twice, therefore use allocate_shared_filemem() */
+bool vmem_platform_prepare_jit_block_rw(void *code_area, unsigned size, void **code_area_rw, uintptr_t *rx_offset) {
+	void *ptr_rx, *ptr_rw;
 #ifndef HAVE_LIBNX
 	shmem_fd2 = allocate_shared_filemem(size);
 	if (shmem_fd2 < 0)
 		return false;
 
-	// Need to unmap the section we are about to use (it might be already unmapped but nevertheless...)
+	/* Need to unmap the section we are about to use (it might be already unmapped but nevertheless...) */
 	munmap(code_area, size);
 
-	// Map the RX bits on the code_area, for proximity, as usual.
-	void *ptr_rx = mmap(code_area, size, PROT_READ | PROT_EXEC,
+	/* Map the RX bits on the code_area, for proximity, as usual. */
+	ptr_rx = mmap(code_area, size, PROT_READ | PROT_EXEC,
 	                    MAP_SHARED | MAP_NOSYNC | MAP_FIXED, shmem_fd2, 0);
 #else
 	const unsigned size_aligned = ((size + PAGE_SIZE) & (~(PAGE_SIZE-1)));
-	void *ptr_rx = code_area;
-#endif // HAVE_LIBNX
+	ptr_rx = code_area;
+#endif /* HAVE_LIBNX */
 	if (ptr_rx != code_area)
 	{
 #ifndef HAVE_LIBNX
@@ -426,16 +447,16 @@ bool vmem_platform_prepare_jit_block(void *code_area, unsigned size, void **code
 	}
 
 #ifndef HAVE_LIBNX
-	// Now remap the same memory as RW in some location we don't really care at all.
-	void *ptr_rw = mmap(NULL, size, PROT_READ | PROT_WRITE,
+	/* Now remap the same memory as RW in some location we don't really care at all. */
+	ptr_rw = mmap(NULL, size, PROT_READ | PROT_WRITE,
 	                    MAP_SHARED | MAP_NOSYNC, shmem_fd2, 0);
 #else
-	void* ptr_rw = virtmemReserve(size_aligned);
+	ptr_rw = virtmemReserve(size_aligned);
 	if(R_FAILED(svcMapProcessMemory(ptr_rw, envGetOwnProcessHandle(), (u64)code_area, size_aligned)))
 		printf("Failed to map jit rw block...\n");
-#endif // HAVE_LIBNX
+#endif /* HAVE_LIBNX */
 #ifndef HAVE_LIBNX
-	// (the two mappings keep the memory: the descriptor has done its work)
+	/* (the two mappings keep the memory: the descriptor has done its work) */
 	close(shmem_fd2);
 	shmem_fd2 = -1;
 #endif
@@ -464,78 +485,83 @@ void *vmem_platform_alloc_jit(size_t size)
 	Dl_info info;
 	unsigned long text_size = 0;
 	uintptr_t text = 0;
+	void *p;
+	union { void *(*f)(size_t); void *p; } self;
 
 	size = (size + PAGE_MASK) & ~(size_t)PAGE_MASK;
-	if (dladdr((void *)&vmem_platform_alloc_jit, &info) && info.dli_fbase != NULL)
+	self.f = vmem_platform_alloc_jit;
+	if (dladdr(self.p, &info) && info.dli_fbase != NULL)
 		text = (uintptr_t)getsegmentdata((const struct mach_header_64 *)info.dli_fbase, "__TEXT", &text_size);
 	if (text != 0 && text_size < reach)
 	{
-		const uintptr_t hints[] = {
-			text + text_size,
-			text > size + PAGE_SIZE ? (text - size - PAGE_SIZE) & ~(uintptr_t)PAGE_MASK : 0,
-			text > size + 32 * 1024 * 1024 ? (text - size - 32 * 1024 * 1024) & ~(uintptr_t)PAGE_MASK : 0,
-		};
+		uintptr_t hints[3];
+		unsigned i;
 
-		for (unsigned i = 0; i < sizeof(hints) / sizeof(hints[0]); i++)
+		hints[0] = text + text_size;
+		hints[1] = text > size + PAGE_SIZE ? (text - size - PAGE_SIZE) & ~(uintptr_t)PAGE_MASK : 0;
+		hints[2] = text > size + 32 * 1024 * 1024 ? (text - size - 32 * 1024 * 1024) & ~(uintptr_t)PAGE_MASK : 0;
+		for (i = 0; i < sizeof(hints) / sizeof(hints[0]); i++)
 		{
+			uintptr_t lo, hi;
 			if (hints[i] == 0)
 				continue;
-			void *p = mmap((void *)hints[i], size, PROT_READ | PROT_WRITE | PROT_EXEC,
+			p = mmap((void *)hints[i], size, PROT_READ | PROT_WRITE | PROT_EXEC,
 					MAP_PRIVATE | MAP_ANON | MAP_JIT, -1, 0);
 			if (p == MAP_FAILED)
 				break;
-			const uintptr_t lo = (uintptr_t)p < text ? (uintptr_t)p : text;
-			const uintptr_t hi = (uintptr_t)p + size > text + text_size ? (uintptr_t)p + size : text + text_size;
+			lo = (uintptr_t)p < text ? (uintptr_t)p : text;
+			hi = (uintptr_t)p + size > text + text_size ? (uintptr_t)p + size : text + text_size;
 			if (hi - lo <= reach)
 			{
-				INFO_LOG(DYNAREC, "JIT memory at %p, %zu bytes, within reach of the core's code\n", p, size);
+				INFO_LOG(DYNAREC, "JIT memory at %p, %lu bytes, within reach of the core's code\n", p, (unsigned long)size);
 				return p;
 			}
 			munmap(p, size);
 		}
 	}
-	void *p = mmap(NULL, size, PROT_READ | PROT_WRITE | PROT_EXEC, MAP_PRIVATE | MAP_ANON | MAP_JIT, -1, 0);
+	p = mmap(NULL, size, PROT_READ | PROT_WRITE | PROT_EXEC, MAP_PRIVATE | MAP_ANON | MAP_JIT, -1, 0);
 	if (p == MAP_FAILED)
 	{
 		WARN_LOG(DYNAREC, "No JIT memory (MAP_JIT refused, errno %d): the interpreters\n", errno);
 		return NULL;
 	}
-	INFO_LOG(DYNAREC, "JIT memory at %p, %zu bytes, out of reach of the core's code\n", p, size);
+	INFO_LOG(DYNAREC, "JIT memory at %p, %lu bytes, out of reach of the core's code\n", p, (unsigned long)size);
 	return p;
 }
 #endif
 
-// Some OSes restrict cache flushing, cause why not right? :D
+/* Some OSes restrict cache flushing, cause why not right? :D */
 
 #if HOST_CPU == CPU_ARM64
 
-// Code borrowed from Dolphin https://github.com/dolphin-emu/dolphin
+/* Code borrowed from Dolphin https://github.com/dolphin-emu/dolphin */
 static void Arm64_CacheFlush(void* start, void* end) {
+#if defined(__APPLE__)
 	if (start == end)
 		return;
-
-#if defined(__APPLE__)
 	sys_icache_invalidate(start, (char*)end - (char*)start);
 #else
-	// Don't rely on GCC's __clear_cache implementation, as it caches
-	// icache/dcache cache line sizes, that can vary between cores on
-	// big.LITTLE architectures.
+	/* Don't rely on GCC's __clear_cache implementation, as it caches */
+	/* icache/dcache cache line sizes, that can vary between cores on */
+	/* big.LITTLE architectures. */
 	u64 addr, ctr_el0;
 	static size_t icache_line_size = 0xffff, dcache_line_size = 0xffff;
 	size_t isize, dsize;
 
+	if (start == end)
+		return;
 	__asm__ volatile("mrs %0, ctr_el0" : "=r"(ctr_el0));
 	isize = 4 << ((ctr_el0 >> 0) & 0xf);
 	dsize = 4 << ((ctr_el0 >> 16) & 0xf);
 
-	// use the global minimum cache line size
+	/* use the global minimum cache line size */
 	icache_line_size = isize = icache_line_size < isize ? icache_line_size : isize;
 	dcache_line_size = dsize = dcache_line_size < dsize ? dcache_line_size : dsize;
 
 	addr = (u64)start & ~(u64)(dsize - 1);
 	for (; addr < (u64)end; addr += dsize)
-		// use "civac" instead of "cvau", as this is the suggested workaround for
-		// Cortex-A53 errata 819472, 826319, 827319 and 824069.
+		/* use "civac" instead of "cvau", as this is the suggested workaround for */
+		/* Cortex-A53 errata 819472, 826319, 827319 and 824069. */
 		__asm__ volatile("dc civac, %0" : : "r"(addr) : "memory");
 	__asm__ volatile("dsb ish" : : : "memory");
 
@@ -552,24 +578,26 @@ static void Arm64_CacheFlush(void* start, void* end) {
 void vmem_platform_flush_cache(void *icache_start, void *icache_end, void *dcache_start, void *dcache_end) {
 	Arm64_CacheFlush(dcache_start, dcache_end);
 
-	// Dont risk it and flush and invalidate icache&dcache for both ranges just in case.
+	/* Dont risk it and flush and invalidate icache&dcache for both ranges just in case. */
 	if (icache_start != dcache_start)
 		Arm64_CacheFlush(icache_start, icache_end);
 }
 
-#endif // #if HOST_CPU == CPU_ARM64
+#endif /* #if HOST_CPU == CPU_ARM64 */
 
-#else	// _WIN32
+#else	/* _WIN32 */
 
 
 #define _WIN32_WINNT 0x0500
 #include <windows.h>
 #include <windowsx.h>
 
+#include "types.h"
 #include "hw/mem/_vmem.h"
+#include "hw/sh4/sh4_if.h"
 
-// Implementation of the vmem related function for Windows platforms.
-// For now this probably does some assumptions on the CPU/platform.
+/* Implementation of the vmem related function for Windows platforms. */
+/* For now this probably does some assumptions on the CPU/platform. */
 
 bool mem_region_lock(void *start, size_t len)
 {
@@ -616,7 +644,7 @@ bool mem_region_release(void *start, size_t len)
 
 void *mem_region_map_file(void *file_handle, void *dest, size_t len, size_t offset, bool readwrite)
 {
-	return MapViewOfFileEx((HANDLE)file_handle, readwrite ? FILE_MAP_WRITE : FILE_MAP_READ, (DWORD)(offset >> 32), (DWORD)offset, len, dest);
+	return MapViewOfFileEx((HANDLE)file_handle, readwrite ? FILE_MAP_WRITE : FILE_MAP_READ, (DWORD)((u64)offset >> 32), (DWORD)offset, len, dest);
 }
 
 bool mem_region_unmap_file(void *start, size_t len)
@@ -624,7 +652,7 @@ bool mem_region_unmap_file(void *start, size_t len)
 	return UnmapViewOfFile(start);
 }
 
-HANDLE mem_handle = INVALID_HANDLE_VALUE;
+static HANDLE mem_handle = INVALID_HANDLE_VALUE;
 static HANDLE mem_handle2 = INVALID_HANDLE_VALUE;
 static char * base_alloc = NULL;
 
@@ -634,11 +662,11 @@ static char * base_alloc = NULL;
  * (the reservation itself is gone once they are made) - and nothing asked:
  * each time a game was closed the views stayed, and the memory behind
  * them with them. */
-struct vmem_piece
+typedef struct vmem_piece
 {
 	void *at;
 	bool view;
-};
+} vmem_piece;
 #define VMEM_PIECES_MAX 256
 static vmem_piece vmem_pieces[VMEM_PIECES_MAX];
 static unsigned vmem_piece_count;
@@ -655,7 +683,8 @@ static void vmem_piece_add(void *at, bool view)
 
 static void vmem_pieces_release(void)
 {
-	for (unsigned i = 0; i < vmem_piece_count; i++)
+	unsigned i;
+	for (i = 0; i < vmem_piece_count; i++)
 	{
 		if (vmem_pieces[i].view)
 			UnmapViewOfFile(vmem_pieces[i].at);
@@ -665,18 +694,18 @@ static void vmem_pieces_release(void)
 	vmem_piece_count = 0;
 }
 
-// Implement vmem initialization for RAM, ARAM, VRAM and SH4 context, fpcb etc.
-// The function supports allocating 512MB or 4GB addr spaces.
+/* Implement vmem initialization for RAM, ARAM, VRAM and SH4 context, fpcb etc. */
+/* The function supports allocating 512MB or 4GB addr spaces. */
 
-// Plase read the POSIX implementation for more information. On Windows this is
-// rather straightforward.
+/* Plase read the POSIX implementation for more information. On Windows this is */
+/* rather straightforward. */
 VMemType vmem_platform_init(void **vmem_base_addr, void **sh4rcb_addr) {
 	VMemType rv = MemType512MB;
 
-	// Firt let's try to allocate the in-memory file
+	/* First the in-memory file */
 	mem_handle = CreateFileMapping(INVALID_HANDLE_VALUE, 0, PAGE_READWRITE, 0, RAM_SIZE_MAX + VRAM_SIZE_MAX + ARAM_SIZE_MAX + ERAM_SIZE, 0);
 
-	// Now allocate the actual address space (it will be 64KB aligned on windows).
+	/* Now allocate the actual address space (it will be 64KB aligned on windows). */
 	base_alloc = NULL;
 #ifdef _WIN64
 	/* All 4 GB of the SH4's addresses, where there is room for that: a
@@ -700,15 +729,15 @@ VMemType vmem_platform_init(void **vmem_base_addr, void **sh4rcb_addr) {
 		return MemTypeError;
 	}
 
-	// Calculate pointers now
+	/* Calculate pointers now */
 	*sh4rcb_addr = &base_alloc[0];
 	*vmem_base_addr = &base_alloc[sizeof(Sh4RCB)];
 
 	return rv;
 }
 
-// Gives back the whole of it: what was reserved, or the pieces it has become
-void vmem_platform_destroy() {
+/* Gives back the whole of it: what was reserved, or the pieces it has become */
+void vmem_platform_destroy(void) {
 	if (vmem_piece_count != 0)
 		vmem_pieces_release();
 	else
@@ -718,52 +747,55 @@ void vmem_platform_destroy() {
 	mem_handle = INVALID_HANDLE_VALUE;
 }
 
-// Resets a chunk of memory by deleting its data and setting its protection back.
+/* Resets a chunk of memory by deleting its data and setting its protection back. */
 void vmem_platform_reset_mem(void *ptr, unsigned size_bytes) {
 	VirtualFree(ptr, size_bytes, MEM_DECOMMIT);
 }
 
-// Allocates a bunch of memory (page aligned and page-sized)
+/* Allocates a bunch of memory (page aligned and page-sized) */
 void vmem_platform_ondemand_page(void *address, unsigned size_bytes) {
 	verify(VirtualAlloc(address, size_bytes, MEM_COMMIT, PAGE_READWRITE));
 }
 
-/// Creates mappings to the underlying file including mirroring sections
+/* / Creates mappings to the underlying file including mirroring sections */
 void vmem_platform_create_mappings(const vmem_mapping *vmem_maps, unsigned nummaps) {
-	// Since this is tricky to get right in Windows (in posix one can just unmap sections and remap later)
-	// we unmap the whole thing only to remap it later.
+	void *base_ptr, *cntx_ptr;
+	unsigned i, j;
+	/* Since this is tricky to get right in Windows (in posix one can just unmap sections and remap later) */
+	/* we unmap the whole thing only to remap it later. */
 
-	// Unmap the whole section
+	/* Unmap the whole section */
 	if (vmem_piece_count != 0)
 		vmem_pieces_release();
 	else
 		VirtualFree(base_alloc, 0, MEM_RELEASE);
 
-	// Map the SH4CB block too
-	void *base_ptr = VirtualAlloc(base_alloc, sizeof(Sh4RCB), MEM_RESERVE, PAGE_NOACCESS);
+	/* Map the SH4CB block too */
+	base_ptr = VirtualAlloc(base_alloc, sizeof(Sh4RCB), MEM_RESERVE, PAGE_NOACCESS);
 	verify(base_ptr == base_alloc);
 	vmem_piece_add(base_ptr, false);
-	void *cntx_ptr = VirtualAlloc((u8*)p_sh4rcb + sizeof(p_sh4rcb->fpcb), sizeof(Sh4RCB) - sizeof(p_sh4rcb->fpcb), MEM_COMMIT, PAGE_READWRITE);
+	cntx_ptr = VirtualAlloc((u8*)p_sh4rcb + sizeof(p_sh4rcb->fpcb), sizeof(Sh4RCB) - sizeof(p_sh4rcb->fpcb), MEM_COMMIT, PAGE_READWRITE);
 	verify(cntx_ptr == (u8*)p_sh4rcb + sizeof(p_sh4rcb->fpcb));
+	(void)cntx_ptr;
 
-	for (unsigned i = 0; i < nummaps; i++) {
+	for (i = 0; i < nummaps; i++) {
 		size_t address_range_size = (size_t)(vmem_maps[i].end_address - vmem_maps[i].start_address);
 		DWORD protection = vmem_maps[i].allow_writes ? (FILE_MAP_READ | FILE_MAP_WRITE) : FILE_MAP_READ;
 
 		if (!vmem_maps[i].memsize) {
-			// Unmapped stuff goes with a protected area or memory. Prevent anything from allocating here
+			/* Unmapped stuff goes with a protected area or memory. Prevent anything from allocating here */
 			void *ptr = VirtualAlloc(&virt_ram_base[vmem_maps[i].start_address], address_range_size, MEM_RESERVE, PAGE_NOACCESS);
 			verify(ptr == &virt_ram_base[vmem_maps[i].start_address]);
 			if (ptr != NULL)
 				vmem_piece_add(ptr, false);
 		}
 		else {
-			// Calculate the number of mirrors
+			/* Calculate the number of mirrors */
 			unsigned num_mirrors = (unsigned)(address_range_size / vmem_maps[i].memsize);
 			verify((address_range_size % vmem_maps[i].memsize) == 0 && num_mirrors >= 1);
 
-			// Remap the views one by one
-			for (unsigned j = 0; j < num_mirrors; j++) {
+			/* Remap the views one by one */
+			for (j = 0; j < num_mirrors; j++) {
 				size_t offset = (size_t)vmem_maps[i].start_address + (size_t)j * vmem_maps[i].memsize;
 
 				void *ptr = MapViewOfFileEx(mem_handle, protection, 0, vmem_maps[i].memoffset,
@@ -778,26 +810,33 @@ void vmem_platform_create_mappings(const vmem_mapping *vmem_maps, unsigned numma
 
 typedef void* (*mapper_fn) (void *addr, unsigned size);
 
-// This is a tempalted function since it's used twice
+/* Where the core's code is, to the megabyte */
+static uintptr_t code_base(void)
+{
+	return (uintptr_t)&vmem_platform_init & ~(uintptr_t)0xFFFFF;
+}
+
+/* This is a tempalted function since it's used twice */
 static void* vmem_platform_prepare_jit_block_template(void *code_area, unsigned size, mapper_fn mapper) {
-	// Several issues on Windows: can't protect arbitrary pages due to (I guess) the way
-	// kernel tracks mappings, so only stuff that has been allocated with VirtualAlloc can be
-	// protected (the entire allocation IIUC).
+	/* Several issues on Windows: can't protect arbitrary pages due to (I guess) the way */
+	/* kernel tracks mappings, so only stuff that has been allocated with VirtualAlloc can be */
+	/* protected (the entire allocation IIUC). */
 
-	// Strategy: ignore code_area and allocate a new one. Protect it properly.
-	// More issues: the area should be "close" to the .text stuff so that code gen works.
-	// Remember that on x64 we have 4 byte jump/load offset immediates, no issues on x86 :D
+	/* Strategy: ignore code_area and allocate a new one. Protect it properly. */
+	/* More issues: the area should be "close" to the .text stuff so that code gen works. */
+	/* Remember that on x64 we have 4 byte jump/load offset immediates, no issues on x86 :D */
 
-	// Take this function addr as reference.
-	uintptr_t base_addr = reinterpret_cast<uintptr_t>(&vmem_platform_init) & ~0xFFFFF;
+	/* Take this function addr as reference. */
+	const uintptr_t base_addr = code_base();
+	unsigned i;
 
-	// Probably safe to assume reicast code is <200MB (today seems to be <16MB on every platform I've seen).
-	for (unsigned i = 0; i < 1800*1024*1024; i += 8*1024*1024) {  // Some arbitrary step size.
+	/* Probably safe to assume reicast code is <200MB (today seems to be <16MB on every platform I've seen). */
+	for (i = 0; i < 1800*1024*1024; i += 8*1024*1024) {  /* Some arbitrary step size. */
 		uintptr_t try_addr_above = base_addr + i;
 		uintptr_t try_addr_below = base_addr - i;
 
-		// We need to make sure there's no address wrap around the end of the addrspace (meaning: int overflow).
-		// (Nor address 0, which asks for memory anywhere.)
+		/* We need to make sure there's no address wrap around the end of the addrspace (meaning: int overflow). */
+		/* (Nor address 0, which asks for memory anywhere.) */
 		if (try_addr_above != 0 && try_addr_above > base_addr) {
 			void *ptr = mapper((void*)try_addr_above, size);
 			if (ptr)
@@ -816,24 +855,24 @@ static void* mem_alloc(void *addr, unsigned size) {
 	return VirtualAlloc(addr, size, MEM_RESERVE | MEM_COMMIT, PAGE_EXECUTE_READWRITE);
 }
 
-// Prepares the code region for JIT operations, thus marking it as RWX
+/* Prepares the code region for JIT operations, thus marking it as RWX */
 bool vmem_platform_prepare_jit_block(void *code_area, unsigned size, void **code_area_rwx) {
-	// Get the RWX page close to the code_area
+	/* Get the RWX page close to the code_area */
 	void *ptr = vmem_platform_prepare_jit_block_template(code_area, size, &mem_alloc);
 	if (!ptr)
 		return false;
 
 	*code_area_rwx = ptr;
-	INFO_LOG(DYNAREC, "Found code area at %p, not too far away from %p\n", *code_area_rwx, &vmem_platform_init);
+	INFO_LOG(DYNAREC, "Found code area at %p, not too far away from %p\n", *code_area_rwx, (void *)code_base());
 
-	// We should have found some area in the addrspace, after all size is ~tens of megabytes.
-	// Pages are already RWX, all done
+	/* We should have found some area in the addrspace, after all size is ~tens of megabytes. */
+	/* Pages are already RWX, all done */
 	return true;
 }
 
 
 static void* mem_file_map(void *addr, unsigned size) {
-	// Maps the entire file at the specified addr.
+	/* Maps the entire file at the specified addr. */
 	void *ptr = VirtualAlloc(addr, size, MEM_RESERVE, PAGE_NOACCESS);
 	if (!ptr)
 		return NULL;
@@ -844,17 +883,18 @@ static void* mem_file_map(void *addr, unsigned size) {
 	return MapViewOfFileEx(mem_handle2, FILE_MAP_READ | FILE_MAP_EXECUTE, 0, 0, size, addr);
 }
 
-// Use two addr spaces: need to remap something twice, therefore use CreateFileMapping()
-bool vmem_platform_prepare_jit_block(void *code_area, unsigned size, void **code_area_rw, uintptr_t *rx_offset) {
+/* Use two addr spaces: need to remap something twice, therefore use CreateFileMapping() */
+bool vmem_platform_prepare_jit_block_rw(void *code_area, unsigned size, void **code_area_rw, uintptr_t *rx_offset) {
+	void *ptr_rx, *ptr_rw;
 	mem_handle2 = CreateFileMapping(INVALID_HANDLE_VALUE, 0, PAGE_EXECUTE_READWRITE, 0, size, 0);
 
-	// Get the RX page close to the code_area
-	void *ptr_rx = vmem_platform_prepare_jit_block_template(code_area, size, &mem_file_map);
+	/* Get the RX page close to the code_area */
+	ptr_rx = vmem_platform_prepare_jit_block_template(code_area, size, &mem_file_map);
 	if (!ptr_rx)
 		return false;
 
-	// Ok now we just remap the RW segment at any position (dont' care).
-	void *ptr_rw = MapViewOfFileEx(mem_handle2, FILE_MAP_READ | FILE_MAP_WRITE, 0, 0, size, NULL);
+	/* Ok now we just remap the RW segment at any position (dont' care). */
+	ptr_rw = MapViewOfFileEx(mem_handle2, FILE_MAP_READ | FILE_MAP_WRITE, 0, 0, size, NULL);
 
 	*code_area_rw = ptr_rw;
 	*rx_offset = (char*)ptr_rx - (char*)ptr_rw;
@@ -863,4 +903,4 @@ bool vmem_platform_prepare_jit_block(void *code_area, unsigned size, void **code
 	return (ptr_rw != NULL);
 }
 
-#endif // _WIN32
+#endif /* _WIN32 */

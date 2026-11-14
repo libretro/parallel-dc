@@ -33,16 +33,12 @@ void vmem_platform_destroy(void);
 /* This might not need an implementation (ie x86/64 cpus). */
 void vmem_platform_flush_cache(void *icache_start, void *icache_end, void *dcache_start, void *dcache_end);
 
-#ifdef __cplusplus
-}
 /* Given a block of data in the .text section, prepares it for JIT action.
  * both code_area and size are page aligned. Returns success. */
 bool vmem_platform_prepare_jit_block(void *code_area, unsigned size, void **code_area_rwx);
 /* Same as above but uses two address spaces one with RX and RW protections.
  * Note: this function doesnt have to be implemented, it's a fallback for the above one. */
-bool vmem_platform_prepare_jit_block(void *code_area, unsigned size, void **code_area_rw, uintptr_t *rx_offset);
-extern "C" {
-#endif
+bool vmem_platform_prepare_jit_block_rw(void *code_area, unsigned size, void **code_area_rw, uintptr_t *rx_offset);
 
 /* Around anything that writes code a recompiler runs. On macOS on Apple's
  * processors that code is in MAP_JIT memory (vmem_platform_alloc_jit()),
@@ -78,7 +74,7 @@ static TYPES_INLINE void vmem_jit_write_end(void) {}
 #endif
 
 /* The protection of the host's memory, a page (PAGE_SIZE) at a time
- * (libretro/vmem_utils.cpp) */
+ * (libretro/vmem_utils.c) */
 bool mem_region_lock(void *start, size_t len);
 bool mem_region_unlock(void *start, size_t len);
 bool mem_region_noaccess(void *start, size_t len);

@@ -450,9 +450,9 @@ SOURCES_CXX += $(CORE_DIR)/core/hw/sh4/dyna/decoder.cpp \
 endif
 
 SOURCES_CXX += $(CORE_DIR)/core/libretro/libretro.cpp \
-					$(CORE_DIR)/core/libretro/common.cpp \
-					$(CORE_DIR)/core/libretro/vmem_utils.cpp
+					$(CORE_DIR)/core/libretro/common.cpp
 
+SOURCES_C += $(CORE_DIR)/core/libretro/vmem_utils.c
 SOURCES_C += $(DEPS_DIR)/coreio/coreio.c
 SOURCES_C += $(CORE_DIR)/core/savewriter.c
 
