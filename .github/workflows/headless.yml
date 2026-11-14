@@ -21,7 +21,8 @@ name: Headless
 # against the interpreters, each built alone with the assembler they share
 # (tools/sh4/run.sh, tools/arm7/run.sh, tools/aica/run.sh), the
 # interpreter's FMAC against fmaf() (tools/sh4/fmac_test.sh), the opcode
-# table as it always was (tools/sh4/opcode_table_run.sh), and the sound
+# table as it always was (tools/sh4/opcode_table_run.sh), the instruction
+# and operand caches as they always were (tools/sh4/sh4_cache_run.sh), and the sound
 # chip's channels against what they made before (tools/aica/sgc_run.sh), and
 # the G2 bus's expansion DMA channels (tools/aica/g2dma_run.sh), and the
 # broadband adapter, a frame each way and its state (tools/bba/run.sh), and
@@ -77,6 +78,7 @@ on:
       - 'tools/cheats/**'
       - 'tools/log/**'
       - 'tools/sh4/opcode_table_*'
+      - 'tools/sh4/sh4_cache_*'
       - 'Makefile*'
       - '.github/workflows/headless.yml'
   pull_request:
@@ -110,6 +112,7 @@ on:
       - 'tools/cheats/**'
       - 'tools/log/**'
       - 'tools/sh4/opcode_table_*'
+      - 'tools/sh4/sh4_cache_*'
       - 'Makefile*'
       - '.github/workflows/headless.yml'
   workflow_dispatch:
@@ -174,6 +177,10 @@ jobs:
         run: |
           sh tools/sh4/opcode_table_run.sh
           sh tools/sh4/opcode_table_run.sh -fsanitize=address,undefined -fno-sanitize-recover=all
+      - name: The SH4's instruction and operand caches, accesses, write-backs, arrays and state, as they always were (and with the sanitizers)
+        run: |
+          sh tools/sh4/sh4_cache_run.sh
+          sh tools/sh4/sh4_cache_run.sh -fsanitize=address,undefined -fno-sanitize-recover=all
       - name: The recompilers against the interpreters, built alone with Xbyak (the SH-4's vectors, the sound chip's ARM7 and DSP)
         run: |
           sh tools/sh4/run.sh

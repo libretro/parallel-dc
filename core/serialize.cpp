@@ -606,8 +606,8 @@ bool dc_serialize(void **data, unsigned int *total_size)
 	STATE_PART("TMU"), register_serialize(TMU, ARRAY_SIZE(TMU), data, total_size) ;
 	STATE_PART("SCI"), register_serialize(SCI, ARRAY_SIZE(SCI), data, total_size) ;
 	STATE_PART("SCIF"), register_serialize(SCIF, ARRAY_SIZE(SCIF), data, total_size) ;
-	STATE_PART("icache.Serialize"), icache.Serialize(data, total_size);
-	STATE_PART("ocache.Serialize"), ocache.Serialize(data, total_size);
+	STATE_PART("icache.Serialize"), sh4_icache_serialize(data, total_size);
+	STATE_PART("ocache.Serialize"), sh4_ocache_serialize(data, total_size);
 
 	LIBRETRO_SA(mem_b.data, mem_b.size);
 
@@ -1218,13 +1218,13 @@ bool dc_unserialize(void **data, unsigned int *total_size, size_t actual_data_si
 	register_unserialize(SCI, ARRAY_SIZE(SCI), data, total_size, 0) ;
 	register_unserialize(SCIF, ARRAY_SIZE(SCIF), data, total_size, 0) ;
 	if (version >= V9)
-		icache.Unserialize(data, total_size);
+		sh4_icache_unserialize(data, total_size);
 	else
-		icache.Reset(true);
+		sh4_icache_reset(true);
 	if (version >= V10)
-		ocache.Unserialize(data, total_size);
+		sh4_ocache_unserialize(data, total_size);
 	else
-		ocache.Reset(true);
+		sh4_ocache_reset(true);
 
 	unserialize_ram(data, total_size);
 

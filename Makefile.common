@@ -37,7 +37,6 @@ SOURCES_CXX := \
 					$(CORE_DIR)/core/rend/rtt_watch.cpp \
 					$(CORE_DIR)/core/rend/tile/compute_frame.cpp \
 					\
-					$(CORE_DIR)/core/hw/sh4/sh4_cache.cpp \
 					$(CORE_DIR)/core/hw/sh4/modules/serial.cpp \
 					\
 					$(CORE_DIR)/core/serialize.cpp \
@@ -134,6 +133,7 @@ SOURCES_C += $(CORE_DIR)/core/hw/gdrom/gdrom_response.c \
 					$(CORE_DIR)/core/hw/sh4/modules/dmac.c \
 					$(CORE_DIR)/core/hw/sh4/sh4_mmr.c \
 					$(CORE_DIR)/core/hw/sh4/sh4_mem.c \
+					$(CORE_DIR)/core/hw/sh4/sh4_cache.c \
 					$(CORE_DIR)/core/hw/sh4/sh4_rom.c \
 					$(CORE_DIR)/core/hw/naomi/decrypt.c \
 					$(CORE_DIR)/core/hw/naomi/dinokich_card.c \
