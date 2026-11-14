@@ -122,7 +122,8 @@ switch() {
    frames=180; opts_at="20:$at"; frame_ms=16
    run $sw cull - sdr 1 "$from"
    opts_at=; frame_ms=
-   held=$(sed -n 's/.*: \([0-9]*\) frames showed the kept picture.*/\1/p' "$WORK/$sw.log")
+   # (the core's line, whatever is in front of it in the log)
+   held=$(grep -o '[0-9][0-9]* frames showed the kept picture' "$WORK/$sw.log" | cut -d' ' -f1)
    echo "  ${held:-0} frames showed the kept picture"
    if [ "${held:-0}" -ge 150 ]; then
       echo "  FAIL: the new renderer's pipelines were never made"; fails=$((fails + 1))
