@@ -52,12 +52,6 @@
  */
 
 
-//./core/hw/arm7/arm7.cpp
-extern DECL_ALIGN(8) reg_pair arm_Reg[RN_ARM_REG_SLOTS];
-extern bool armIrqEnable;
-extern bool armFiqEnable;
-extern int armMode;
-extern bool Arm7Enabled;
 
 //./core/hw/aica/dsp.o
 
@@ -353,11 +347,6 @@ static void unserialize_ram(void **data, unsigned int *total_size)
 	LIBRETRO_USA(mem_b.data, mem_b.size);
 }
 
-#if FEAT_AREC == DYNAREC_JIT
-void FlushCache();
-bool arm7_rec_same_code(const u8 *aram);
-#endif
-
 /* Sound memory from a state. What the sound processor's recompiler has made
  * is kept when the state has the same program wherever something was
  * compiled from it: with run-ahead, every time. */
@@ -365,7 +354,7 @@ static void unserialize_aram(void **data, unsigned int *total_size)
 {
 #if FEAT_AREC == DYNAREC_JIT
 	if (!ra_unserialize_has(*data, aica_ram.size) || !arm7_rec_same_code((const u8 *)*data))
-		FlushCache();
+		arm7_rec_flush();
 #endif
 	LIBRETRO_USA(aica_ram.data, aica_ram.size);
 }

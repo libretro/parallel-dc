@@ -554,9 +554,9 @@ class Arm7Compiler : public MacroAssembler
 			Mov(w0, regalloc->map(op.arg[0].getReg().armreg));
 		Mov(w1, op.psrMask);
 		if (op.spsr)
-			call((void *)recompiler::MSR_do<1>);
+			call((void *)arm7_msr_spsr);
 		else
-			call((void *)recompiler::MSR_do<0>);
+			call((void *)arm7_msr_cpsr);
 	}
 
 	void emitMRS(const ArmOp& op)
@@ -573,7 +573,7 @@ class Arm7Compiler : public MacroAssembler
 	{
 		set_flags = false;
 		Mov(w0, op.arg[0].getImmediate());
-		call((void *)recompiler::interpret);
+		call((void *)arm7_interpret);
 	}
 
 	/* On to the next block, as the x86-64 backend does it: the block's

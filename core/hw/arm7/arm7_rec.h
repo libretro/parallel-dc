@@ -405,7 +405,7 @@ public:
 		else
 		{
 			/* Writing the status register can change the mode, and with it
-			 * which of the banked registers r8 to r14 are: MSR_do() swaps
+			 * which of the banked registers r8 to r14 are: arm7_msr_cpsr() swaps
 			 * them in the register file. Every register is written back
 			 * before and read again after (block_ssa_pass() gives them all
 			 * a new version), as around the interpreter. Which values were
@@ -475,8 +475,6 @@ void term();
 void flush();
 void compile();
 void *getMemOp(bool load, bool byte);
-template<u32 Pd> void DYNACALL MSR_do(u32 v, u32 mask);
-void DYNACALL interpret(u32 opcode);
 
 // Where the code for each address of the ARM's memory is; the compiler's
 // own entry where there is none yet

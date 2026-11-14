@@ -7,7 +7,7 @@
 # arm7/arm7_rec.cpp, with arm7_rec_x64.cpp, arm7_rec_x86.cpp or
 # arm7_rec_arm64.cpp); everywhere the
 # recompilers do not reach, and for the instructions this one hands back, by
-# an interpreter (arm7.cpp with arm-new.h). arm7_test.cpp is built around each, with nothing else of the
+# an interpreter (arm7.c with arm-new.h). arm7_test.cpp is built around each, with nothing else of the
 # core, and both are given the same made-up programs, 10000 unless a number
 # is given. The registers, the flags and all of memory have to be the same
 # from both at the end of every program. arm7_test.cpp says what the
@@ -52,12 +52,12 @@ mkdir -p "$WORK"
 trap 'rm -rf "$WORK"' EXIT
 
 # the compiler and flags the core compiles this code with
-CMD=$(make -n -B $MAKEARGS core/hw/arm7/arm7.o 2>/dev/null | grep 'arm7\.cpp' | tail -n 1)
+CMD=$(make -n -B $MAKEARGS core/hw/arm7/arm7_rec.o 2>/dev/null | grep 'arm7_rec\.cpp' | tail -n 1)
 [ -n "$CMD" ] || { echo "cannot get the core's compile flags from make" >&2; exit 1; }
 CMD=${CMD% -o *}
-FLAGS=$(echo "$CMD" | sed 's| [^ ]*arm7\.cpp||; s/ -MMD -MP//')
+FLAGS=$(echo "$CMD" | sed 's| [^ ]*arm7_rec\.cpp||; s/ -MMD -MP//')
 CXX=${FLAGS%% *}
-# and its C (arm_mem.c)
+# and its C (arm7.c, arm_mem.c)
 CCMD=$(make -n -B $MAKEARGS core/hw/arm7/arm_mem.o 2>/dev/null | grep 'arm_mem\.c' | tail -n 1)
 [ -n "$CCMD" ] || { echo "cannot get the core's C compile flags from make" >&2; exit 1; }
 CCMD=${CCMD% -o *}
@@ -65,12 +65,12 @@ CFLAGS_C=$(echo "$CCMD" | sed 's| [^ ]*arm_mem\.c||; s/ -MMD -MP//')
 
 build() {
    # $1: name, $2: extra define, $3: more sources
-   for SRC in core/hw/arm7/arm7.cpp core/hw/arm7/arm7_rec.cpp \
-              tools/arm7/arm7_test.cpp $3; do
+   for SRC in core/hw/arm7/arm7_rec.cpp tools/arm7/arm7_test.cpp $3; do
       # the flags come out of make quoted for a shell
       eval "$FLAGS $2 \"$SRC\" -o \"$WORK/$1-$(basename "$SRC" | sed 's/\.[a-z]*$//').o\""
    done
    eval "$CFLAGS_C $2 core/hw/arm7/arm_mem.c -o \"$WORK/$1-arm_mem.o\""
+   eval "$CFLAGS_C $2 core/hw/arm7/arm7.c -o \"$WORK/$1-arm7.o\""
    "$CXX" -o "$WORK/arm7_test_$1" "$WORK/$1"-*.o
 }
 

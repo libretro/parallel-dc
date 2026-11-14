@@ -910,4 +910,20 @@ void aicaarm_run(u32 samples)
 {
 	aicaarm::run(samples);
 }
+/* For the rest of the core (arm7.h) */
+void arm7_rec_init(void)
+{
+	aicaarm::recompiler::init();
+}
+
+void arm7_rec_flush(void)
+{
+	aicaarm::recompiler::flush();
+}
+
+bool arm7_rec_same_code(const u8 *aram)
+{
+	return aicaarm::recompiler::sameCode(aram);
+}
+
 #endif // FEAT_AREC != DYNAREC_NONE

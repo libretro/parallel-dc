@@ -1,7 +1,7 @@
 /* Runs the sound chip's ARM7 on made-up programs and prints what each
  * leaves behind. tools/arm7/run.sh builds this twice, once with the
  * recompiler (core/hw/arm7/arm7_rec.cpp, arm7_rec_x64.cpp) and once with
- * the interpreter (arm7.cpp, arm-new.h), runs both and compares what they
+ * the interpreter (arm7.c, arm-new.h), runs both and compares what they
  * print: registers, flags and memory have to be the same from both after
  * every program.
  *

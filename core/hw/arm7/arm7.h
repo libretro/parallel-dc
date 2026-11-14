@@ -108,6 +108,10 @@ typedef union
 
 extern DECL_ALIGN(8) reg_pair arm_Reg[RN_ARM_REG_SLOTS];
 extern bool Arm7Enabled;
+/* The interrupts it takes, and the mode it is in */
+extern bool armIrqEnable;
+extern bool armFiqEnable;
+extern int armMode;
 extern u8 cpuBitsSet[256];
 void CPUFiq(void);
 void CPUUpdateCPSR(void);
@@ -115,6 +119,18 @@ void libAICA_TimeStep(void);
 /* The interpreter, for that many of the ARM's cycles: all there is where
  * there is no recompiler, and there to be chosen where FEAT_AREC_SELECTABLE */
 void arm_Run_(u32 CycleCount);
+
+/* The recompiler (arm7_rec.cpp, or arm7_rec_arm32.cpp on a 32-bit ARM host):
+ * made ready, its code thrown away, and whether the code it has is still
+ * what @aram holds (a state's sound memory: false and it is thrown away) */
+void arm7_rec_init(void);
+void arm7_rec_flush(void);
+bool arm7_rec_same_code(const u8 *aram);
+/* For its code: an instruction interpreted, and MSR to the CPSR and the
+ * SPSR (arm7.c) */
+void DYNACALL arm7_interpret(u32 opcode);
+void DYNACALL arm7_msr_cpsr(u32 v, u32 mask);
+void DYNACALL arm7_msr_spsr(u32 v, u32 mask);
 
 #ifdef __cplusplus
 }

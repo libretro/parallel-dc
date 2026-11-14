@@ -712,9 +712,9 @@ class Arm7Compiler : public Xbyak::CodeGenerator
 			mov(call_regs[0], regalloc->map(op.arg[0].getReg().armreg));
 		mov(call_regs[1], op.psrMask);
 		if (op.spsr)
-			call((const void *)&recompiler::MSR_do<1>);
+			call((const void *)&arm7_msr_spsr);
 		else
-			call((const void *)&recompiler::MSR_do<0>);
+			call((const void *)&arm7_msr_cpsr);
 	}
 
 	void emitMRS(const ArmOp& op)
@@ -763,7 +763,7 @@ class Arm7Compiler : public Xbyak::CodeGenerator
 	{
 		set_flags = false;
 		mov(call_regs[0], op.arg[0].getImmediate());
-		call((const void *)&recompiler::interpret);
+		call((const void *)&arm7_interpret);
 	}
 
 public:
