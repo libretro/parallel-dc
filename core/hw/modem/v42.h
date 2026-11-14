@@ -159,6 +159,8 @@ public:
 	V42Protocol(InStream& in, OutStream& out)
 	: inputStream(in), outputStream(out)
 	{
+		v42b_compressor_init(&compressor);
+		v42b_decompressor_init(&decompressor);
 		reset();
 	}
 
@@ -206,8 +208,8 @@ private:
 	u8 resendSeq;
 	bool resending;
 	// V42 bis
-	v42b::Compressor compressor;
-	v42b::Decompressor decompressor;
+	v42b_compressor compressor;
+	v42b_decompressor decompressor;
 	bool compressionEnabled;
 	u64 detectionStart;		// Detection phase timer (T400)
 	u64 inactivityStart;	// Inactivity timer (T403)

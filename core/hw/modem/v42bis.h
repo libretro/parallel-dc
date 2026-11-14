@@ -18,169 +18,111 @@
 */
 #pragma once
 #include "types.h"
-#include "internal.h"
+
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 /* V.42 bis data compression. The dictionary is a tree kept in arrays,
  * so that it has a fixed size and can be in a save state. */
-namespace modem
-{
-namespace v42b
-{
-// N3 Character size (bits)
-static const u32 CHAR_SIZE = 8;
-// N4 Number of characters in the alphabet
-static const u32 ALPHABET_SIZE = 1 << CHAR_SIZE;
-// N6 Number of control codewords
-static const u32 CW_RESERVED = 3;
-// N5 Index number of first dictionary entry used to store a string
-static const u32 CW_FIRST = ALPHABET_SIZE + CW_RESERVED;
-// 5.1 Minimum and default value for P1 (Total number of codewords)
-static const u32 MIN_TOTAL_CODEWORDS = 512;
+
+/* N3 Character size (bits) */
+#define V42B_CHAR_SIZE 8
+/* N4 Number of characters in the alphabet */
+#define V42B_ALPHABET_SIZE (1 << V42B_CHAR_SIZE)
+/* N6 Number of control codewords */
+#define V42B_CW_RESERVED 3
+/* N5 Index number of first dictionary entry used to store a string */
+#define V42B_CW_FIRST (V42B_ALPHABET_SIZE + V42B_CW_RESERVED)
+/* 5.1 Minimum and default value for P1 (Total number of codewords) */
+#define V42B_MIN_TOTAL_CODEWORDS 512
 /* The most this modem accepts for P1. The other end may ask for more (the
  * standard allows 65535); it is then answered with this, which the
  * negotiation lets it do. */
-static const u32 MAX_TOTAL_CODEWORDS = 2048;
-// 5.1 Valid range for P2 (Maximum string length)
-static const int DEF_STRING_SIZE = 6;
-static const int MAX_STRING_SIZE = 250;
+#define V42B_MAX_TOTAL_CODEWORDS 2048
+/* 5.1 Valid range for P2 (Maximum string length) */
+#define V42B_DEF_STRING_SIZE 6
+#define V42B_MAX_STRING_SIZE 250
 
-class Dictionary
+/* The strings: each a node, its parent the string one character shorter */
+typedef struct v42b_dict
 {
-public:
-	static const u16 NONE = 0xffff;		// no node; a parent: the node is free
-	static const u16 ROOT = 0xfffe;		// a parent: the node is a single character
+	u16 parent[V42B_MAX_TOTAL_CODEWORDS];
+	u16 first_child[V42B_MAX_TOTAL_CODEWORDS];
+	u16 next_sibling[V42B_MAX_TOTAL_CODEWORDS];
+	u8 character[V42B_MAX_TOTAL_CODEWORDS];
+} v42b_dict;
 
-	void reset();
-
-	bool isFree(u16 code) const {
-		return parent[code] == NONE;
-	}
-	bool isRoot(u16 code) const {
-		return parent[code] == ROOT;
-	}
-	bool isLeaf(u16 code) const {
-		return firstChild[code] == NONE;
-	}
-	u16 getParent(u16 code) const {
-		return parent[code];
-	}
-	u8 getChar(u16 code) const {
-		return character[code];
-	}
-	// The child of @code for @c, NONE if it has none
-	u16 getChild(u16 code, u8 c) const;
-	void addChild(u16 childCode, u16 parentCode, u8 c);
-	// Takes a leaf off its parent: the node is free again
-	void detach(u16 code);
-
-	void serialize(void **data, unsigned int *total_size) const;
-	// @limit: P1, the number of codewords in use
-	void unserialize(void **data, unsigned int *total_size, u32 limit);
-
-private:
-	u16 parent[MAX_TOTAL_CODEWORDS];
-	u16 firstChild[MAX_TOTAL_CODEWORDS];
-	u16 nextSibling[MAX_TOTAL_CODEWORDS];
-	u8 character[MAX_TOTAL_CODEWORDS];
-};
-
-class V42Base
+/* What both directions keep */
+typedef struct v42b_base
 {
-public:
-	// @maxCodeWords and @maxStringLength are the negotiated P1 and P2
-	void setParams(u32 maxCodeWords, int maxStringLength);
-
-protected:
-	V42Base() {
-		setParams(MIN_TOTAL_CODEWORDS, DEF_STRING_SIZE);
-	}
-
-	void resetBase();
-	void recoverNode();
-	int acceptChar(u8 octet);
-	virtual void checkDictSize() {}
-
-	void serializeBase(void **data, unsigned int *total_size) const;
-	void unserializeBase(void **data, unsigned int *total_size);
-
-	u32 maxCodeWords;			// V.42 bis param N2
-	int maxStringLength;		// V.42 bis param N7
-	u32 nextCodeWord;			// V.42 bis param C1
-	u32 codeWordSize;			// V.42 bis param C2
-	u32 codeWordThreshold;		// V.42 bis param C3
-	Dictionary dict;
-	int lastAddedCode;
-	int matchLen;
-	int curCode;
+	u32 max_code_words;			/* V.42 bis param N2 */
+	int max_string_length;		/* V.42 bis param N7 */
+	u32 next_code_word;			/* V.42 bis param C1 */
+	u32 code_word_size;			/* V.42 bis param C2 */
+	u32 code_word_threshold;	/* V.42 bis param C3 */
+	v42b_dict dict;
+	int last_added_code;
+	int match_len;
+	int cur_code;
 	bool transparent;
-	// This flag indicates that the current codeword has already been transfered
-	// and that string matching should restart (but dictionary update should proceed as normal)
-	// Used for mode transitions, and flush in compressed mode
-	bool modeTransition;
-	u8 escapeCode;
-};
+	/* The current codeword has already been transferred and string matching
+	 * should restart (but the dictionary is updated as normal): for mode
+	 * transitions, and a flush in compressed mode */
+	bool mode_transition;
+	u8 escape_code;
+} v42b_base;
 
-class Compressor : public V42Base
+#define V42B_OUT_SIZE 512
+
+typedef struct v42b_compressor
 {
-public:
-	Compressor() {
-		reset();
-	}
+	v42b_base base;
+	int compress_test;
+	int compress_test_count;
+	u32 out_bit_buf;
+	int out_bit_pos;
+	/* what it made, to be read: a queue */
+	u8 out[V42B_OUT_SIZE];
+	unsigned out_head;
+	unsigned out_count;
+} v42b_compressor;
 
-	void write(u8 v);
-	void changeMode();
-	void reset();
-
-	void flush() {
-		flush(false);
-	}
-	int read() {
-		return out.pop();
-	}
-	int available() const {
-		return out.size();
-	}
-
-	void serialize(void **data, unsigned int *total_size) const;
-	void unserialize(void **data, unsigned int *total_size);
-
-private:
-	void checkDictSize() override;
-	void flush(bool enterTransparent);
-	void pushCode(u16 code);
-	void push(u8 b) {
-		out.push(b);
-	}
-
-	int compressTest;
-	int compressTestCount;
-	u32 outBitBuf;
-	int outBitPos;
-	ByteFifo<512> out;
-};
-
-class Decompressor : public V42Base
+typedef struct v42b_decompressor
 {
-public:
-	Decompressor() {
-		reset();
-	}
-
-	/* What is decoded goes to @out as it comes. False if the data is in
-	 * error (V.42 bis 5.8): the connection is to be released. */
-	bool write(u8 v, OutStream& out);
-	void reset();
-
-	void serialize(void **data, unsigned int *total_size) const;
-	void unserialize(void **data, unsigned int *total_size);
-
-private:
-	void flush();
-
+	v42b_base base;
 	bool escaped;
-	u32 inputBitBuffer;
-	int inputBitCount;
-};
+	u32 input_bit_buffer;
+	int input_bit_count;
+} v42b_decompressor;
 
-}	// namespace v42b
-}	// namespace modem
+/* Where the decompressor puts what it decodes, as it comes */
+typedef void (*v42b_out_fn)(void *ctx, u8 v);
+
+/* As they are made: the default parameters, nothing in them */
+void v42b_compressor_init(v42b_compressor *c);
+/* @max_code_words and @max_string_length are the negotiated P1 and P2 */
+void v42b_compressor_set_params(v42b_compressor *c, u32 max_code_words, int max_string_length);
+void v42b_compressor_reset(v42b_compressor *c);
+void v42b_compressor_write(v42b_compressor *c, u8 b);
+void v42b_compressor_change_mode(v42b_compressor *c);
+/* What is waiting sent out, to an octet */
+void v42b_compressor_flush(v42b_compressor *c);
+/* A byte it made, -1 if none is waiting */
+int v42b_compressor_read(v42b_compressor *c);
+int v42b_compressor_available(const v42b_compressor *c);
+void v42b_compressor_serialize(const v42b_compressor *c, void **data, unsigned int *total_size);
+void v42b_compressor_unserialize(v42b_compressor *c, void **data, unsigned int *total_size);
+
+void v42b_decompressor_init(v42b_decompressor *d);
+void v42b_decompressor_set_params(v42b_decompressor *d, u32 max_code_words, int max_string_length);
+void v42b_decompressor_reset(v42b_decompressor *d);
+/* What is decoded goes to @out as it comes. False if the data is in
+ * error (V.42 bis 5.8): the connection is to be released. */
+bool v42b_decompressor_write(v42b_decompressor *d, u8 b, v42b_out_fn out, void *ctx);
+void v42b_decompressor_serialize(const v42b_decompressor *d, void **data, unsigned int *total_size);
+void v42b_decompressor_unserialize(v42b_decompressor *d, void **data, unsigned int *total_size);
+
+#ifdef __cplusplus
+}
+#endif

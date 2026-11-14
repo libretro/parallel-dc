@@ -1,0 +1,12 @@
+p1  512 p2   6: 301651 bytes, 124966 sent 8442fdad, 20 saves a874f2a1
+p1  512 p2 250: 301169 bytes, 115923 sent 42a058ee, 20 saves e8800b05
+p1 1024 p2  32: 300852 bytes, 101229 sent d20a6c14, 15 saves 4a15282d
+p1 2048 p2   6: 300090 bytes, 125951 sent e5f32d41, 24 saves a41fd38a
+p1 2048 p2 250: 301250 bytes, 98929 sent f08e4b75, 18 saves 90d110f0
+p1  100 p2   1: 300797 bytes, 133703 sent fe63bf51, 25 saves b134bc64
+p1 65535 p2 255: 300376 bytes, 110671 sent 96f21f9e, 30 saves b1a75d5c
+damaged 00000008: 125564 bytes, 32 changed, 1123 refused, 139042 made 5cc11af0
+damaged 00000009: 123856 bytes, 16 changed, 1154 refused, 132912 made bd32234a
+damaged state 0000000a: state fe9678fc, 268 refused, 192562 made 30c57c10
+damaged state 0000000b: state fb627ad8, 363 refused, 197957 made 94414d14
+damaged state 0000000c: state b3c90ff4, 452 refused, 205220 made d9e10ce8

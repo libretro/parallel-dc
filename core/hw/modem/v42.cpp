@@ -445,6 +445,12 @@ static inline u8 incMod128(unsigned v) {
 
 /* The time in SH4 cycles. The protocol of the modem's static object is
  * reset before the machine is made, when there is no time yet. */
+/* What the decompressor decodes, to the stream it goes to */
+static void write_out(void *ctx, u8 v)
+{
+	static_cast<OutStream *>(ctx)->write(v);
+}
+
 static inline u64 now() {
 	return p_sh4rcb != NULL ? sh4_sched_now64() : 0;
 }
@@ -581,7 +587,7 @@ void V42Protocol::handleIFrame(const u8 *rxFrame, unsigned size)
 	{
 		for (unsigned i = 3; i < size; i++)
 		{
-			if (!decompressor.write(rxFrame[i], outputStream))
+			if (!v42b_decompressor_write(&decompressor, rxFrame[i], write_out, &outputStream))
 			{
 				// send DISC
 				const u8 disc[] { 1, 0x43 };
@@ -631,8 +637,8 @@ static void xidSetValue(u8 *p, unsigned len, u32 v)
 void V42Protocol::handleXid(const u8 *rxFrame, unsigned size)
 {
 	u8 echo[sizeof(sentFrames[0]) + 64];
-	u32 maxCodeWords = v42b::MIN_TOTAL_CODEWORDS;
-	u32 maxStringLength = v42b::DEF_STRING_SIZE;
+	u32 maxCodeWords = V42B_MIN_TOTAL_CODEWORDS;
+	u32 maxStringLength = V42B_DEF_STRING_SIZE;
 	compressionEnabled = false;
 
 	// format identifier
@@ -700,9 +706,9 @@ void V42Protocol::handleXid(const u8 *rxFrame, unsigned size)
 				{
 					DEBUG_LOG(MODEM, "xid: Number of codewords %d\n", v);
 					maxCodeWords = v;
-					if (v > v42b::MAX_TOTAL_CODEWORDS)
+					if (v > V42B_MAX_TOTAL_CODEWORDS)
 					{
-						maxCodeWords = v42b::MAX_TOTAL_CODEWORDS;
+						maxCodeWords = V42B_MAX_TOTAL_CODEWORDS;
 						xidSetValue(pv, paramSize, maxCodeWords);
 					}
 				}
@@ -718,9 +724,9 @@ void V42Protocol::handleXid(const u8 *rxFrame, unsigned size)
 					// (private) Maximum string length
 					DEBUG_LOG(MODEM, "xid: Maximum string length %d\n", v);
 					maxStringLength = v;
-					if (v > (u32)v42b::MAX_STRING_SIZE)
+					if (v > (u32)V42B_MAX_STRING_SIZE)
 					{
-						maxStringLength = v42b::MAX_STRING_SIZE;
+						maxStringLength = V42B_MAX_STRING_SIZE;
 						xidSetValue(pv, paramSize, maxStringLength);
 					}
 				}
@@ -768,10 +774,10 @@ void V42Protocol::handleXid(const u8 *rxFrame, unsigned size)
 	if (compressionEnabled)
 	{
 		NOTICE_LOG(MODEM, "V.42bis compression enabled: max dictionary size %d\n", maxCodeWords);
-		compressor.setParams(maxCodeWords, maxStringLength);
-		compressor.reset();
-		decompressor.setParams(maxCodeWords, maxStringLength);
-		decompressor.reset();
+		v42b_compressor_set_params(&compressor, maxCodeWords, maxStringLength);
+		v42b_compressor_reset(&compressor);
+		v42b_decompressor_set_params(&decompressor, maxCodeWords, maxStringLength);
+		v42b_decompressor_reset(&decompressor);
 	}
 }
 
@@ -802,17 +808,17 @@ void V42Protocol::sendIFrame()
 	frame[2] = rxSeqNum << 1;
 	if (compressionEnabled)
 	{
-		while (compressor.available() < (int)txMaxSize)
+		while (v42b_compressor_available(&compressor) < (int)txMaxSize)
 		{
 			int c = inputStream.read();
 			if (c == -1)
 				break;
-			compressor.write(c);
+			v42b_compressor_write(&compressor, (u8)c);
 		}
-		compressor.flush();
+		v42b_compressor_flush(&compressor);
 		while (len - 3 < txMaxSize)
 		{
-			int cc = compressor.read();
+			int cc = v42b_compressor_read(&compressor);
 			if (cc == -1)
 				break;
 			frame[len++] = cc & 0xff;
@@ -994,10 +1000,10 @@ void V42Protocol::reset()
 	detectionStart = now();
 	inactivityStart = detectionStart;
 	compressionEnabled = false;
-	compressor.setParams(v42b::MIN_TOTAL_CODEWORDS, v42b::DEF_STRING_SIZE);
-	compressor.reset();
-	decompressor.setParams(v42b::MIN_TOTAL_CODEWORDS, v42b::DEF_STRING_SIZE);
-	decompressor.reset();
+	v42b_compressor_set_params(&compressor, V42B_MIN_TOTAL_CODEWORDS, V42B_DEF_STRING_SIZE);
+	v42b_compressor_reset(&compressor);
+	v42b_decompressor_set_params(&decompressor, V42B_MIN_TOTAL_CODEWORDS, V42B_DEF_STRING_SIZE);
+	v42b_decompressor_reset(&decompressor);
 }
 
 void V42Protocol::ackIFrame(int seqNum)
@@ -1032,8 +1038,8 @@ void V42Protocol::serialize(void **data, unsigned int *total_size) const
 	v14Decoder.serialize(data, total_size);
 	hdlcEncoder.serialize(data, total_size);
 	hdlcDecoder.serialize(data, total_size);
-	compressor.serialize(data, total_size);
-	decompressor.serialize(data, total_size);
+	v42b_compressor_serialize(&compressor, data, total_size);
+	v42b_decompressor_serialize(&decompressor, data, total_size);
 }
 
 void V42Protocol::unserialize(void **data, unsigned int *total_size)
@@ -1051,8 +1057,8 @@ void V42Protocol::unserialize(void **data, unsigned int *total_size)
 	v14Decoder.unserialize(data, total_size);
 	hdlcEncoder.unserialize(data, total_size);
 	hdlcDecoder.unserialize(data, total_size);
-	compressor.unserialize(data, total_size);
-	decompressor.unserialize(data, total_size);
+	v42b_compressor_unserialize(&compressor, data, total_size);
+	v42b_decompressor_unserialize(&decompressor, data, total_size);
 
 	phase = b[0] <= V14 ? (Phase)b[0] : None;
 	lastRx = b[1];

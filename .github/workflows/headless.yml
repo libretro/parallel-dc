@@ -30,7 +30,8 @@ name: Headless
 # (tools/naomi/decrypt_run.sh), the ELF reader (tools/libelf/elf_test.sh),
 # the NAOMI's X76F100 serial flash (tools/flashrom/x76f100_run.sh), the BIOS
 # ROM, the SRAM and the flash memory (tools/flashrom/flashrom_run.sh), and the
-# modem's DNS queries and the answers it reads (tools/modem/dns_run.sh), and
+# modem's DNS queries and the answers it reads (tools/modem/dns_run.sh), its
+# V.42 bis compression both ways (tools/modem/v42bis_run.sh), and
 # Dinosaur King's card codec against what it made before
 # (tools/naomi/dinokich_card_run.sh), and the paths the core writes to, a
 # content's name of any length included (tools/paths/paths_run.sh), and the
@@ -236,6 +237,10 @@ jobs:
         run: |
           sh tools/modem/dns_run.sh
           sh tools/modem/dns_run.sh -fsanitize=address,undefined -fno-sanitize-recover=all
+      - name: The modem's V.42 bis compression, there and back, saved and loaded, damaged streams and states (and with the sanitizers)
+        run: |
+          sh tools/modem/v42bis_run.sh
+          sh tools/modem/v42bis_run.sh -fsanitize=address,undefined -fno-sanitize-recover=all
 
   generic-cpu:
     runs-on: ubuntu-24.04
