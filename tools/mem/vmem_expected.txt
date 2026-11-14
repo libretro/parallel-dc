@@ -1,0 +1,11 @@
+table: 04b86b74 a 54ea5656 b a2f3b0c2
+reserve 2: 73c8355a
+vram heap: bb3875d6
+reserve 1: cb289a92
+vram 512mb: af19a11c
+reserve 1 naomi2: ffbb61b5
+vram 512mb: 68a5b5e1
+reserve 0: 553cf0ac
+vram 4gb: 58db4e0c
+reserve 0 naomi2: 26ec4c87
+vram 4gb: 236262c8

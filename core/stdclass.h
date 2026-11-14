@@ -1,6 +1,7 @@
 #pragma once
 #include "types.h"
 #include "paths.h"
+#include "hw/mem/_vmem.h"
 #include <stdlib.h>
 #include <vector>
 #include <string.h>
@@ -11,31 +12,7 @@
 #include <rthreads/retro_eventcount.h>
 #endif
 
-#ifdef _ANDROID
-#include <sys/mman.h>
-#endif
-/* The core's page: what it protects memory by and divides it into. A
- * multiple of the system's, so it may be larger than the system's own.
- * Android's NDK r28 on no longer defines PAGE_SIZE on 64-bit processors,
- * whose devices may have 16 KB pages: 16 KB there, on 4 KB devices too.
- * Apple's ARM systems have 16 KB pages, and mprotect() refuses an address
- * that is not at the start of one; their headers may define PAGE_SIZE as
- * a variable, which is not what is wanted here. */
-#if defined(__APPLE__) && defined(__aarch64__)
-#undef PAGE_SIZE
-#endif
-#ifndef PAGE_SIZE
-#if defined(_ANDROID) && (defined(__aarch64__) || defined(__x86_64__))
-#define PAGE_SIZE 16384
-#elif defined(__APPLE__) && defined(__aarch64__)
-#define PAGE_SIZE 16384
-#else
-#define PAGE_SIZE 4096
-#endif
-#endif
-
-#undef PAGE_MASK
-#define PAGE_MASK (PAGE_SIZE-1)
+/* (PAGE_SIZE, the core's page, is in types.h, for C too) */
 
 //Commonly used classes across the project
 //Simple Array class for helping me out ;P
@@ -346,14 +323,7 @@ static inline std::string get_writable_vmu_path(const char *logical_port)
 	return path;
 }
 
-bool mem_region_lock(void *start, std::size_t len);
-bool mem_region_unlock(void *start, std::size_t len);
-bool mem_region_noaccess(void *start, std::size_t len);
-bool mem_region_set_exec(void *start, std::size_t len);
-void *mem_region_reserve(void *start, std::size_t len);
-bool mem_region_release(void *start, std::size_t len);
-void *mem_region_map_file(void *file_handle, void *dest, std::size_t len, std::size_t offset, bool readwrite);
-bool mem_region_unmap_file(void *start, std::size_t len);
+/* (mem_region_*() are in hw/mem/_vmem.h, for C too) */
 
 /* (VArray2 is in types.h, for C too) */
 

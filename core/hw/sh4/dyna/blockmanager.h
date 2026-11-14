@@ -27,6 +27,9 @@ static TYPES_INLINE void bm_ForgetVaddrs(void) {}
  * being rewritten */
 void bm_Periodical_1s(void);
 
+/* The table of blocks' entries, each to the "not compiled yet" stub */
+void bm_vmem_pagefill(void **ptr, u32 size_bytes);
+
 #ifdef __cplusplus
 }
 
@@ -174,7 +177,6 @@ void bm_ResetTempCache(bool full);
 void bm_Init();
 void bm_Term();
 
-void bm_vmem_pagefill(void** ptr,u32 size_bytes);
 bool bm_RamWriteAccess(void *p);
 void bm_RamWriteAccess(u32 addr);
 #endif

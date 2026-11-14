@@ -43,7 +43,6 @@
 
 bool VramLockedWrite(u8* address);
 bool ngen_Rewrite(size_t &addr, size_t retadr, size_t acc);
-bool BM_LockedWrite(u8* address);
 
 static LONG ExceptionHandler(EXCEPTION_POINTERS *ExceptionInfo)
 {
@@ -287,7 +286,6 @@ static void context_to_segfault(host_context_t* reictx, void* segfault_ctx)
 bool ngen_Rewrite(size_t& addr,size_t retadr,size_t acc);
 u32* ngen_readm_fail_v2(u32* ptr,u32* regs,u32 saddr);
 bool VramLockedWrite(u8* address);
-bool BM_LockedWrite(u8* address);
 
 #ifdef __MACH__
 static void sigill_handler(int sn, siginfo_t * si, void *segfault_ctx)
