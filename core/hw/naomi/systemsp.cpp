@@ -34,7 +34,6 @@
 #include "imgread/chd_image.h"
 #include "savewriter.h"
 
-extern SRamChip sys_nvmem_sram;
 extern char eeprom_file[PATH_MAX];
 extern char nvmem_file[PATH_MAX];
 extern char g_roms_dir[PATH_MAX];
@@ -1688,12 +1687,12 @@ T SystemSpCart::readMemArea0(u32 addr)
 				if (offset & 1)
 					return 0xff;
 				else
-					return sys_nvmem_sram.Read(offset / 2, 1);
+					return memchip_read(&sys_nvmem_sram, offset / 2, 1);
 			}
 			else if (sizeof(T) == 2)
-				return (T)(0xff00 | sys_nvmem_sram.Read(offset / 2, 1));
+				return (T)(0xff00 | memchip_read(&sys_nvmem_sram, offset / 2, 1));
 			else
-				return (T)(0xff00ff00 | sys_nvmem_sram.Read(offset / 2, 1) | (sys_nvmem_sram.Read(offset / 2 + 1, 1) << 16));
+				return (T)(0xff00ff00 | memchip_read(&sys_nvmem_sram, offset / 2, 1) | (memchip_read(&sys_nvmem_sram, offset / 2 + 1, 1) << 16));
 		}
 		else if ((bank & 0x3f00) == 0x3a00)
 		{
@@ -1919,8 +1918,8 @@ void SystemSpCart::writeMemArea0(u32 addr, T v)
 			if (sizeof(T) == 1 && (offset & 1))
 				return;
 			if (sizeof(T) == 4)
-				sys_nvmem_sram.Write(offset / 2 + 1, (u8)(v >> 16), 1);
-			sys_nvmem_sram.Write(offset / 2, (u8)v, 1);
+				memchip_write(&sys_nvmem_sram, offset / 2 + 1, (u8)(v >> 16), 1);
+			memchip_write(&sys_nvmem_sram, offset / 2, (u8)v, 1);
 			return;
 		}
 		else if ((bank & 0x3f00) == 0x3a00)
@@ -2422,10 +2421,8 @@ bool SystemSpCart::Init()
 	const u32 sramSize = 128 * 1024;
 	if (sys_nvmem_sram.size != sramSize)
 	{
-		delete[] sys_nvmem_sram.data;
-		sys_nvmem_sram.Allocate(sramSize);
-		memset(sys_nvmem_sram.data, 0, sramSize);
-		sys_nvmem_sram.Load(nvmem_file);
+		memchip_allocate(&sys_nvmem_sram, sramSize);
+		memchip_load(&sys_nvmem_sram, nvmem_file);
 		BBSRAM_SIZE = sramSize;
 	}
 

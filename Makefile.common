@@ -152,6 +152,7 @@ SOURCES_C += $(CORE_DIR)/core/hw/gdrom/gdrom_response.c \
 					$(CORE_DIR)/core/reios/reios_elf.c \
 					$(CORE_DIR)/core/reios/gdrom_hle.c \
 					$(CORE_DIR)/core/hw/flashrom/x76f100.c \
+					$(CORE_DIR)/core/hw/flashrom/flashrom.c \
 					$(CORE_DIR)/core/libretro/audiostream.c \
 					$(DEPS_DIR)/libelf/elf.c \
 					$(DEPS_DIR)/libelf/elf32.c \

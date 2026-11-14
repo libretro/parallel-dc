@@ -55,7 +55,6 @@ static bool descrambl = false;
 // how many sectors of boot file were read to 8c010000 (not part of a save state)
 static u32 boot_sectors;
 
-extern DCFlashChip sys_nvmem_flash;
 
 /* The console's flash memory, for the calls that work on it - or NULL when
  * there is none. The calls can be made in a session that did not set this
@@ -63,11 +62,11 @@ extern DCFlashChip sys_nvmem_flash;
  * its entry points in memory), and then the flash was never handed over;
  * and a NAOMI has no such flash at all, though a program on one can get
  * here. */
-static DCFlashChip *reios_flash()
+static MemChip *reios_flash()
 {
 	if (settings.System != DC_PLATFORM_DREAMCAST)
 		return NULL;
-	DCFlashChip *flash = flashrom != NULL ? static_cast<DCFlashChip*>(flashrom) : &sys_nvmem_flash;
+	MemChip *flash = flashrom != NULL ? flashrom : &sys_nvmem_flash;
 	return (flash->data != NULL && flash->size >= 0x20000) ? flash : NULL;
 }
 
@@ -238,8 +237,8 @@ static bool reios_locate_bootfile(const char* bootfile)
 			// system settings
 			// if the flash has them: a damaged one is not a reason to put junk there
 			flash_syscfg_block syscfg = {};
-			DCFlashChip *flash = reios_flash();
-			if (flash != NULL && flash->ReadBlock(FLASH_PT_USER, FLASH_USER_SYSCFG, &syscfg))
+			MemChip *flash = reios_flash();
+			if (flash != NULL && flash_read_block(flash, FLASH_PT_USER, FLASH_USER_SYSCFG, &syscfg))
 				memcpy(&data[16], &syscfg.time_lo, 8);
 			else
 				WARN_LOG(REIOS, "Can't read system settings from flash\n");
@@ -280,7 +279,7 @@ void reios_disk_id()
 
 static void reios_sys_system() {
 	u32 cmd = r[7];
-	DCFlashChip *flash = reios_flash();
+	MemChip *flash = reios_flash();
 
 	// (the BIOS has four of these, and answers -1 to any other number)
 	if (cmd >= 4 || (flash == NULL && cmd != 3))
@@ -303,11 +302,11 @@ static void reios_sys_system() {
 
 			// read system_id from 0x0001a056
 			for (int i  = 0; i < 8; i++)
-				data[i] = flash->Read8(0x1a056 + i);
+				data[i] = memchip_read8(flash, 0x1a056 + i);
 
 			// read system_props from 0x0001a000
 			for (int i  = 0; i < 5; i++)
-				data[8 + i] = flash->Read8(0x1a000 + i);
+				data[8 + i] = memchip_read8(flash, 0x1a000 + i);
 
 			// 0x0d-0x17: padding (zeroed out)
 
@@ -377,7 +376,7 @@ static void reios_sys_font() {
 
 static void reios_sys_flashrom() {
 	u32 cmd = r[7];
-	DCFlashChip *flash = reios_flash();
+	MemChip *flash = reios_flash();
 
 	if (flash == NULL)
 	{
@@ -406,7 +405,7 @@ static void reios_sys_flashrom() {
 				if (part < FLASH_PT_NUM)
 				{
 					int offset, size;
-					flash->GetPartitionInfo(part, &offset, &size);
+					flash_partition_info(part, &offset, &size);
 					WriteMem32(dest, offset);
 					WriteMem32(dest + 4, size);
 
@@ -439,7 +438,7 @@ static void reios_sys_flashrom() {
 					break;
 				}
 				for (int i = 0; i < size; i++)
-					WriteMem8(dest++, flash->Read8(offset + i));
+					WriteMem8(dest++, memchip_read8(flash, offset + i));
 
 				// 0 for success, not the number of bytes: Slave Zero (PAL) goes by it
 				r[0] = 0;
@@ -500,7 +499,7 @@ static void reios_sys_flashrom() {
 				{
 					int part_offset;
 					int size;
-					flash->GetPartitionInfo(part, &part_offset, &size);
+					flash_partition_info(part, &part_offset, &size);
 					if (offset == (u32)part_offset)
 					{
 						found = true;

@@ -27,7 +27,8 @@ name: Headless
 # broadband adapter, a frame each way and its state (tools/bba/run.sh), and
 # NAOMI's 315-5881 decryption against what it gave before
 # (tools/naomi/decrypt_run.sh), the ELF reader (tools/libelf/elf_test.sh),
-# the NAOMI's X76F100 serial flash (tools/flashrom/x76f100_run.sh), and the
+# the NAOMI's X76F100 serial flash (tools/flashrom/x76f100_run.sh), the BIOS
+# ROM, the SRAM and the flash memory (tools/flashrom/flashrom_run.sh), and the
 # modem's DNS queries and the answers it reads (tools/modem/dns_run.sh), and
 # Dinosaur King's card codec against what it made before
 # (tools/naomi/dinokich_card_run.sh), and the paths the core writes to, a
@@ -214,6 +215,10 @@ jobs:
         run: |
           sh tools/flashrom/x76f100_run.sh
           sh tools/flashrom/x76f100_run.sh -fsanitize=address,undefined -fno-sanitize-recover=all
+      - name: The BIOS ROM, the SRAM and the Dreamcast's flash, its commands and blocks, as they always were (and with the sanitizers)
+        run: |
+          sh tools/flashrom/flashrom_run.sh
+          sh tools/flashrom/flashrom_run.sh -fsanitize=address,undefined -fno-sanitize-recover=all
       - name: The modem's DNS queries, and answers cut short or lying about their lengths (and with the sanitizers)
         run: |
           sh tools/modem/dns_run.sh

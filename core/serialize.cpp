@@ -69,8 +69,6 @@ extern bool Arm7Enabled;
 //./core/hw/holly/sb.o
 
 //./core/hw/holly/sb_mem.o
-extern SRamChip sys_nvmem_sram;
-extern DCFlashChip sys_nvmem_flash;
 
 //./core/hw/pvr/elan_host.o
 #include "hw/pvr/elan.h"

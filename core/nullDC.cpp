@@ -28,9 +28,6 @@
 extern bool bios_loaded;
 #include <libretro.h>
 
-extern RomChip sys_rom;
-extern SRamChip sys_nvmem_sram;
-extern DCFlashChip sys_nvmem_flash;
 unsigned FLASH_SIZE;
 unsigned BBSRAM_SIZE;
 unsigned BIOS_SIZE;
@@ -344,7 +341,7 @@ static void LoadSpecialSettings(void)
 		flash_language[0] = sys_nvmem_flash.data[0x1a003];
 		flash_language[1] = sys_nvmem_flash.data[0x1a0a3];
 		flash_syscfg_block syscfg;
-		if (sys_nvmem_flash.ReadBlock(FLASH_PT_USER, FLASH_USER_SYSCFG, &syscfg))
+		if (flash_read_block(&sys_nvmem_flash, FLASH_PT_USER, FLASH_USER_SYSCFG, &syscfg))
 			flash_user_language = syscfg.lang;
 	}
 	if (settings.dreamcast.cable != cable_option)
@@ -472,8 +469,8 @@ void dc_prepare_system()
          RAM_SIZE          = (16*1024*1024);
          ARAM_SIZE         = (2*1024*1024);
          VRAM_SIZE         = (8*1024*1024);
-         sys_nvmem_flash.Allocate(FLASH_SIZE);
-         sys_rom.Allocate(BIOS_SIZE);
+         memchip_allocate(&sys_nvmem_flash, FLASH_SIZE);
+         memchip_allocate(&sys_rom, BIOS_SIZE);
          break;
       case DC_PLATFORM_DEV_UNIT:
          //Devkit : 32 mb ram, 8? mb vram, 2? mb aram, 2? mb bios, ? flash
@@ -482,8 +479,8 @@ void dc_prepare_system()
          RAM_SIZE          = (32*1024*1024);
          ARAM_SIZE         = (2*1024*1024);
          VRAM_SIZE         = (8*1024*1024);
-         sys_nvmem_flash.Allocate(FLASH_SIZE);
-         sys_rom.Allocate(BIOS_SIZE);
+         memchip_allocate(&sys_nvmem_flash, FLASH_SIZE);
+         memchip_allocate(&sys_rom, BIOS_SIZE);
          break;
       case DC_PLATFORM_NAOMI:
          //Naomi : 32 mb ram, 16 mb vram, 8 mb aram, 2 mb bios, ? flash
@@ -491,8 +488,8 @@ void dc_prepare_system()
          RAM_SIZE          = (32*1024*1024);
          ARAM_SIZE         = (8*1024*1024);
          VRAM_SIZE         = (16*1024*1024);
-         sys_nvmem_sram.Allocate(BBSRAM_SIZE);
-         sys_rom.Allocate(BIOS_SIZE);
+         memchip_allocate(&sys_nvmem_sram, BBSRAM_SIZE);
+         memchip_allocate(&sys_rom, BIOS_SIZE);
          break;
       case DC_PLATFORM_NAOMI2:
          //Naomi2 : 32 mb ram, 16 mb vram, 8 mb aram, 2 mb bios, ? flash
@@ -500,8 +497,8 @@ void dc_prepare_system()
          RAM_SIZE          = (32*1024*1024);
          ARAM_SIZE         = (8*1024*1024);
          VRAM_SIZE         = (16*1024*1024);
-         sys_nvmem_sram.Allocate(BBSRAM_SIZE);
-         sys_rom.Allocate(BIOS_SIZE);
+         memchip_allocate(&sys_nvmem_sram, BBSRAM_SIZE);
+         memchip_allocate(&sys_rom, BIOS_SIZE);
          break;
       case DC_PLATFORM_ATOMISWAVE:
          //Atomiswave : 16 mb ram, 8 mb vram, 8 mb aram, 128kb bios+flash, 128k BBSRAM
@@ -511,9 +508,9 @@ void dc_prepare_system()
          ARAM_SIZE         = (8*1024*1024);
          VRAM_SIZE         = (8*1024*1024);
          BBSRAM_SIZE       = (128*1024);
-         sys_nvmem_flash.Allocate(BIOS_SIZE);
+         memchip_allocate(&sys_nvmem_flash, BIOS_SIZE);
          sys_nvmem_flash.write_protect_size = BIOS_SIZE / 2;
-         sys_nvmem_sram.Allocate(BBSRAM_SIZE);
+         memchip_allocate(&sys_nvmem_sram, BBSRAM_SIZE);
          break;
    }
 
@@ -729,10 +726,10 @@ void dc_term()
 		sys_nvmem_flash.data[0x1a0a3] = flash_language[1];
 		flash_syscfg_block syscfg;
 		if (flash_user_language >= 0
-				&& sys_nvmem_flash.ReadBlock(FLASH_PT_USER, FLASH_USER_SYSCFG, &syscfg))
+				&& flash_read_block(&sys_nvmem_flash, FLASH_PT_USER, FLASH_USER_SYSCFG, &syscfg))
 		{
 			syscfg.lang = (u8)flash_user_language;
-			sys_nvmem_flash.WriteBlock(FLASH_PT_USER, FLASH_USER_SYSCFG, &syscfg);
+			flash_write_block(&sys_nvmem_flash, FLASH_PT_USER, FLASH_USER_SYSCFG, &syscfg);
 		}
 	}
 	forget_game_settings();
@@ -742,6 +739,9 @@ void dc_term()
 	plugins_Term();
 	mem_Term();
 	_vmem_release();
+	memchip_free(&sys_rom);
+	memchip_free(&sys_nvmem_sram);
+	memchip_free(&sys_nvmem_flash);
 }
 
 void dc_stop()

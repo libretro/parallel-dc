@@ -25,9 +25,9 @@
 	Routing is mostly handled here, as well as flash/SRAM emulation
 */
 
-RomChip sys_rom;
-SRamChip sys_nvmem_sram;
-DCFlashChip sys_nvmem_flash;
+MemChip sys_rom = { NULL, 0, 0, 0, MEMCHIP_ROM };
+MemChip sys_nvmem_sram = { NULL, 0, 0, 0, MEMCHIP_SRAM };
+MemChip sys_nvmem_flash = { NULL, 0, 0, 0, MEMCHIP_FLASH };
 
 extern bool bios_loaded;
 extern char nvmem_file[PATH_MAX];
@@ -104,32 +104,32 @@ static const char *get_rom_names(void)
    return NULL; 
 }
 
-static void add_isp_to_nvmem(DCFlashChip *flash)
+static void add_isp_to_nvmem(MemChip *flash)
 {
 	u8 block[64];
-	if (!flash->ReadBlock(FLASH_PT_USER, FLASH_USER_INET, block))
+	if (!flash_read_block(flash, FLASH_PT_USER, FLASH_USER_INET, block))
 	{
 		memset(block, 0, sizeof(block));
 		strcpy((char *)block + 2, "PWBrowser");
 		block[12] = 0x1c;
-		flash->WriteBlock(FLASH_PT_USER, FLASH_USER_INET, block);
+		flash_write_block(flash, FLASH_PT_USER, FLASH_USER_INET, block);
 
 		memset(block, 0, sizeof(block));
-		flash->WriteBlock(FLASH_PT_USER, FLASH_USER_INET + 1, block);
+		flash_write_block(flash, FLASH_PT_USER, FLASH_USER_INET + 1, block);
 		strcpy((char *)block + 32, "AT&F");
-		flash->WriteBlock(FLASH_PT_USER, FLASH_USER_INET + 2, block);
+		flash_write_block(flash, FLASH_PT_USER, FLASH_USER_INET + 2, block);
 		memset(block, 0, sizeof(block));
-		flash->WriteBlock(FLASH_PT_USER, FLASH_USER_INET + 3, block);
+		flash_write_block(flash, FLASH_PT_USER, FLASH_USER_INET + 3, block);
 		memset(block + 27, 0xFF, sizeof(block) - 27);
 		block[10] = 1;
 		block[14] = 1;
 		block[16] = 1;
 		block[19] = 6;
 		block[26] = 5;
-		flash->WriteBlock(FLASH_PT_USER, FLASH_USER_INET + 4, block);
+		flash_write_block(flash, FLASH_PT_USER, FLASH_USER_INET + 4, block);
 		memset(block, 0xFF, sizeof(block));
 		for (u32 i = FLASH_USER_INET + 5; i <= 0xbf; i++)
-			flash->WriteBlock(FLASH_PT_USER, i, block);
+			flash_write_block(flash, FLASH_PT_USER, i, block);
 
 		flash_isp1_block isp1;
 		memset(&isp1, 0, sizeof(isp1));
@@ -138,16 +138,16 @@ static void add_isp_to_nvmem(DCFlashChip *flash)
 		strcpy(isp1.username, "flycast1");
 		strcpy(isp1.password, "password");
 		strcpy(isp1.phone, "1234567");
-		if (flash->WriteBlock(FLASH_PT_USER, FLASH_USER_ISP1, &isp1) != 1)
+		if (flash_write_block(flash, FLASH_PT_USER, FLASH_USER_ISP1, &isp1) != 1)
 			WARN_LOG(FLASHROM, "Failed to save ISP information to flash RAM\n");
 
 		memset(block, 0, sizeof(block));
-		flash->WriteBlock(FLASH_PT_USER, FLASH_USER_ISP1 + 1, block);
-		flash->WriteBlock(FLASH_PT_USER, FLASH_USER_ISP1 + 2, block);
-		flash->WriteBlock(FLASH_PT_USER, FLASH_USER_ISP1 + 3, block);
-		flash->WriteBlock(FLASH_PT_USER, FLASH_USER_ISP1 + 4, block);
+		flash_write_block(flash, FLASH_PT_USER, FLASH_USER_ISP1 + 1, block);
+		flash_write_block(flash, FLASH_PT_USER, FLASH_USER_ISP1 + 2, block);
+		flash_write_block(flash, FLASH_PT_USER, FLASH_USER_ISP1 + 3, block);
+		flash_write_block(flash, FLASH_PT_USER, FLASH_USER_ISP1 + 4, block);
 		block[60] = 1;
-		flash->WriteBlock(FLASH_PT_USER, FLASH_USER_ISP1 + 5, block);
+		flash_write_block(flash, FLASH_PT_USER, FLASH_USER_ISP1 + 5, block);
 
 		flash_isp2_block isp2;
 		memset(&isp2, 0, sizeof(isp2));
@@ -155,7 +155,7 @@ static void add_isp_to_nvmem(DCFlashChip *flash)
 		strcpy(isp2.username, "flycast2");
 		strcpy(isp2.password, "password");
 		strcpy(isp2.phone, "1234567");
-		if (flash->WriteBlock(FLASH_PT_USER, FLASH_USER_ISP2, &isp2) != 1)
+		if (flash_write_block(flash, FLASH_PT_USER, FLASH_USER_ISP2, &isp2) != 1)
 			WARN_LOG(FLASHROM, "Failed to save ISP information to flash RAM\n");
 		u8 block[64];
 		memset(block, 0, sizeof(block));
@@ -165,7 +165,7 @@ static void add_isp_to_nvmem(DCFlashChip *flash)
 				block[56] = 1;
 			else
 				block[56] = 0;
-			flash->WriteBlock(FLASH_PT_USER, i, block);
+			flash_write_block(flash, FLASH_PT_USER, i, block);
 		}
 	}
 }
@@ -174,7 +174,7 @@ void FixUpFlash()
 {
 	if (settings.System == DC_PLATFORM_DREAMCAST || settings.System == DC_PLATFORM_DEV_UNIT)
 	{
-     	sys_nvmem_flash.Validate();
+     	flash_validate(&sys_nvmem_flash);
      	// overwrite factory flash settings
      	if (settings.dreamcast.region <= 2)
      	{
@@ -193,7 +193,7 @@ void FixUpFlash()
      	}
      	// overwrite user settings
      	struct flash_syscfg_block syscfg;
-     	int res = sys_nvmem_flash.ReadBlock(FLASH_PT_USER, FLASH_USER_SYSCFG, &syscfg);
+     	int res = flash_read_block(&sys_nvmem_flash, FLASH_PT_USER, FLASH_USER_SYSCFG, &syscfg);
 
      	if (!res)
      	{
@@ -211,7 +211,7 @@ void FixUpFlash()
      	if (settings.dreamcast.language <= 5)
      		syscfg.lang = settings.dreamcast.language;
 
-     	if (sys_nvmem_flash.WriteBlock(FLASH_PT_USER, FLASH_USER_SYSCFG, &syscfg) != 1)
+     	if (flash_write_block(&sys_nvmem_flash, FLASH_PT_USER, FLASH_USER_SYSCFG, &syscfg) != 1)
      		WARN_LOG(FLASHROM, "Failed to save time and language to flash RAM\n");
 
      	add_isp_to_nvmem(&sys_nvmem_flash);
@@ -240,13 +240,13 @@ static bool nvmem_load(const std::string& root,
    {
       case DC_PLATFORM_DREAMCAST:
       case DC_PLATFORM_DEV_UNIT:
-         sys_nvmem_flash.Load(root, get_rom_prefix(), s1.c_str(), s2);
+         memchip_load_named(&sys_nvmem_flash, root.c_str(), get_rom_prefix(), s1.c_str(), s2);
         	return true;
       case DC_PLATFORM_ATOMISWAVE:
-         return sys_nvmem_sram.Load(nvmem_file) && sys_nvmem_flash.Load(nvmem_file2);
+         return memchip_load(&sys_nvmem_sram, nvmem_file) && memchip_load(&sys_nvmem_flash, nvmem_file2);
       case DC_PLATFORM_NAOMI:
       case DC_PLATFORM_NAOMI2:
-         return sys_nvmem_sram.Load(nvmem_file);
+         return memchip_load(&sys_nvmem_sram, nvmem_file);
    }
 
    return false;
@@ -256,7 +256,7 @@ bool LoadRomFiles(const std::string& root)
 {
    if (settings.System != DC_PLATFORM_ATOMISWAVE)
    {
-	  if (!sys_rom.Load(root, get_rom_prefix(), get_rom_names(), "bootrom"))
+	  if (!memchip_load_named(&sys_rom, root.c_str(), get_rom_prefix(), get_rom_names(), "bootrom"))
 	  {
 		 if (settings.System == DC_PLATFORM_DREAMCAST || settings.System == DC_PLATFORM_DEV_UNIT)
 		 {
@@ -279,15 +279,15 @@ void SaveRomFiles(const std::string& root)
    {
       case DC_PLATFORM_DREAMCAST:
       case DC_PLATFORM_DEV_UNIT:
-         sys_nvmem_flash.Save(root, get_rom_prefix(), "nvmem.bin", "nvmem");
+         memchip_save_named(&sys_nvmem_flash, root.c_str(), get_rom_prefix(), "nvmem.bin", "nvmem");
          break;
       case DC_PLATFORM_ATOMISWAVE:
-    	 sys_nvmem_sram.Save(nvmem_file);
-    	 sys_nvmem_flash.Save(nvmem_file2);
+    	 memchip_save(&sys_nvmem_sram, nvmem_file);
+    	 memchip_save(&sys_nvmem_flash, nvmem_file2);
          break;
       case DC_PLATFORM_NAOMI:
       case DC_PLATFORM_NAOMI2:
-         sys_nvmem_sram.Save(nvmem_file);
+         memchip_save(&sys_nvmem_sram, nvmem_file);
          break;
    }
 }
@@ -308,11 +308,11 @@ u32 ReadFlash(u32 addr,u32 sz)
    {
       case DC_PLATFORM_DREAMCAST:
       case DC_PLATFORM_DEV_UNIT:
-         return sys_nvmem_flash.Read(addr,sz);
+         return memchip_read(&sys_nvmem_flash, addr,sz);
       case DC_PLATFORM_NAOMI:
       case DC_PLATFORM_NAOMI2:
       case DC_PLATFORM_ATOMISWAVE:
-         return sys_nvmem_sram.Read(addr,sz);
+         return memchip_read(&sys_nvmem_sram, addr,sz);
    }
 
    return 0;
@@ -324,12 +324,12 @@ void WriteFlash(u32 addr,u32 data,u32 sz)
    {
       case DC_PLATFORM_DREAMCAST:
       case DC_PLATFORM_DEV_UNIT:
-         sys_nvmem_flash.Write(addr,data,sz);
+         memchip_write(&sys_nvmem_flash, addr,data,sz);
          break;
       case DC_PLATFORM_NAOMI:
       case DC_PLATFORM_NAOMI2:
       case DC_PLATFORM_ATOMISWAVE:
-         sys_nvmem_sram.Write(addr,data,sz);
+         memchip_write(&sys_nvmem_sram, addr,data,sz);
          break;
    }
 }
@@ -342,9 +342,9 @@ u32 ReadBios(u32 addr,u32 sz)
       case DC_PLATFORM_DEV_UNIT:
       case DC_PLATFORM_NAOMI:
       case DC_PLATFORM_NAOMI2:
-         return sys_rom.Read(addr,sz);
+         return memchip_read(&sys_rom, addr,sz);
       case DC_PLATFORM_ATOMISWAVE:
-         return sys_nvmem_flash.Read(addr,sz);
+         return memchip_read(&sys_nvmem_flash, addr,sz);
    }
    return 0;
 }
@@ -365,7 +365,7 @@ void WriteBios(u32 addr,u32 data,u32 sz)
  			INFO_LOG(MEMORY, "Invalid access size @%08x data %x sz %d\n", addr, data, sz);
  			return;
     	 }
-    	 sys_nvmem_flash.Write(addr, data, sz);
+    	 memchip_write(&sys_nvmem_flash, addr, data, sz);
          break;
    }
 }
@@ -666,9 +666,9 @@ void sh4_area0_Reset(bool hard)
 	sb_Reset(hard);
 	if (hard)
 		naomi_printer_status = 0x0f;
-	sys_rom.Reset();
-	sys_nvmem_sram.Reset();
-	sys_nvmem_flash.Reset();
+	memchip_reset(&sys_rom);
+	memchip_reset(&sys_nvmem_sram);
+	memchip_reset(&sys_nvmem_flash);
 }
 
 void sh4_area0_Term(void)

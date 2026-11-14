@@ -69,8 +69,7 @@ u32 RomCacheMapCount;
 char naomi_game_id[33];
 char g_parent_name[128];
 
-extern RomChip sys_rom;
-extern DCFlashChip sys_nvmem_flash;		// AtomisWave BIOS is loaded there
+/* (an AtomisWave's BIOS is loaded into sys_nvmem_flash) */
 
 extern char g_roms_dir[PATH_MAX];
 
@@ -574,7 +573,7 @@ static bool naomi_LoadBios(const char *filename, archive_t *child_archive, archi
 
 	if (settings.System == DC_PLATFORM_ATOMISWAVE)
 	   // Reload the writeable portion of the FlashROM
-	   sys_nvmem_flash.Reload();
+	   memchip_reload(&sys_nvmem_flash);
 
 	return found_region;
 

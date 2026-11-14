@@ -2945,7 +2945,6 @@ static void merged_set_option(const char *content_path)
 static void naomi_bios_detect_multiregion(void)
 {
    extern bool bios_loaded;
-   extern RomChip sys_rom;
 
    naomi_bios_multiregion = false;
    if (!SYSTEM_IS_NAOMI() || !bios_loaded || sys_rom.data == NULL || sys_rom.size < 0x200000)
