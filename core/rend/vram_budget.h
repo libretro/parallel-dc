@@ -35,7 +35,7 @@ static inline u32 vram_kib(u64 bytes)
 
 static inline void vram_budget_log(const char *api, const VramBudget& budget)
 {
-	NOTICE_LOG(RENDERER, "%s: video memory budget %u MB, %u MB in use (%s)", api,
+	NOTICE_LOG(RENDERER, "%s: video memory budget %u MB, %u MB in use (%s)\n", api,
 			budget.budget_kib >> 10, budget.usage_kib >> 10, budget.exact ? "reported" : "estimated");
 }
 

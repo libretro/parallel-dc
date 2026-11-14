@@ -441,7 +441,7 @@ static bool compileOne(pD3DCompile compile, const DX9ShaderDesc& d, std::vector<
 			D3DCOMPILE_OPTIMIZATION_LEVEL3, 0, blob.put(), errors.put());
 	if (FAILED(hr) || !blob)
 	{
-		ERROR_LOG(RENDERER, "DX9: shader compilation failed (%x): %s", (unsigned)hr,
+		ERROR_LOG(RENDERER, "DX9: shader compilation failed (%x): %s\n", (unsigned)hr,
 				errors ? (const char *)errors->GetBufferPointer() : "");
 		return false;
 	}
@@ -477,7 +477,7 @@ bool DX9Shaders::Compile(pD3DCompile compile)
 			return false;
 		}
 	}
-	NOTICE_LOG(RENDERER, "DX9: %u shaders the core's, %u compiled", builtIns, (u32)(DX9VS_Count + DX9PS_Count) - builtIns);
+	NOTICE_LOG(RENDERER, "DX9: %u shaders the core's, %u compiled\n", builtIns, (u32)(DX9VS_Count + DX9PS_Count) - builtIns);
 	compiled = true;
 	return true;
 }
@@ -491,14 +491,14 @@ bool DX9Shaders::Init(IDirect3DDevice9 *device, pD3DCompile compile)
 	for (int i = 0; i < DX9VS_Count; i++)
 		if (FAILED(device->CreateVertexShader(vsCode[i].data(), vs[i].put())))
 		{
-			ERROR_LOG(RENDERER, "DX9: vertex shader creation failed");
+			ERROR_LOG(RENDERER, "DX9: vertex shader creation failed\n");
 			Term();
 			return false;
 		}
 	for (int i = 0; i < DX9PS_Count; i++)
 		if (FAILED(device->CreatePixelShader(psCode[i].data(), ps[i].put())))
 		{
-			ERROR_LOG(RENDERER, "DX9: pixel shader creation failed");
+			ERROR_LOG(RENDERER, "DX9: pixel shader creation failed\n");
 			Term();
 			return false;
 		}

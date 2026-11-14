@@ -151,7 +151,7 @@ public:
 	{
 		AddVersionPass();
 #if DEBUG
-		INFO_LOG(DYNAREC, "BEFORE");
+		INFO_LOG(DYNAREC, "BEFORE\n");
 		PrintBlock();
 #endif
 
@@ -169,9 +169,9 @@ public:
 		if (stats.prop_constants > 0 || stats.dead_code_ops > 0 || stats.constant_ops_replaced > 0
 				|| stats.dead_registers > 0 || stats.dyn_to_stat_blocks > 0 || stats.waw_blocks > 0 || stats.combined_shifts > 0)
 		{
-			//INFO_LOG(DYNAREC, "AFTER %08x", block->vaddr);
+			//INFO_LOG(DYNAREC, "AFTER %08x\n", block->vaddr);
 			//PrintBlock();
-			INFO_LOG(DYNAREC, "STATS: %08x ops %zd constants %d constops replaced %d dead code %d dead regs %d dyn2stat blks %d waw %d shifts %d", block->vaddr, block->oplist.size(),
+			INFO_LOG(DYNAREC, "STATS: %08x ops %zd constants %d constops replaced %d dead code %d dead regs %d dyn2stat blks %d waw %d shifts %d\n", block->vaddr, block->oplist.size(),
 					stats.prop_constants, stats.constant_ops_replaced,
 					stats.dead_code_ops, stats.dead_registers, stats.dyn_to_stat_blocks, stats.waw_blocks, stats.combined_shifts);
 		}
@@ -217,7 +217,7 @@ private:
 	{
 		for (const shil_opcode& op : block->oplist)
 		{
-			INFO_LOG(DYNAREC, "%08x  %s", block->vaddr + op.guest_offs, op.dissasm().c_str());
+			INFO_LOG(DYNAREC, "%08x  %s\n", block->vaddr + op.guest_offs, op.dissasm().c_str());
 		}
 	}
 	void AddVersionToOperand(shil_param& param, bool define)

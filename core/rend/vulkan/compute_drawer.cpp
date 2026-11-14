@@ -243,7 +243,7 @@ bool ComputeDrawer::Init(vk::Extent2D extent, u32 samples, CommandPool *pool, Sa
 	this->depth = depth;
 
 	auto fail = [&](const char *why) {
-		INFO_LOG(RENDERER, "Vulkan compute renderer: not on this device (%s); the raster renderer draws", why);
+		INFO_LOG(RENDERER, "Vulkan compute renderer: not on this device (%s); the raster renderer draws\n", why);
 		failed = true;
 		res.reset();
 		return false;
@@ -406,7 +406,7 @@ bool ComputeDrawer::Init(vk::Extent2D extent, u32 samples, CommandPool *pool, Sa
 	timer.Init(slots, "compute renderer");
 	res = std::move(r);
 	ready = true;
-	NOTICE_LOG(RENDERER, "Vulkan compute renderer: %u x %u, %u sample%s a pixel, tiles of %u, %u translucent fragments a sample at a time; %u KiB of video memory, %u KiB of host memory",
+	NOTICE_LOG(RENDERER, "Vulkan compute renderer: %u x %u, %u sample%s a pixel, tiles of %u, %u translucent fragments a sample at a time; %u KiB of video memory, %u KiB of host memory\n",
 			extent.width, extent.height, this->samples, this->samples > 1 ? "s" : "", 1u << res->tileLog2, res->keep,
 			(u32)(deviceBytes >> 10), (u32)(((u64)res->ringWords * 4 * slots) >> 10));
 	return true;
@@ -480,7 +480,7 @@ bool ComputeDrawer::Resize(vk::Extent2D extent)
 	}
 	device.updateDescriptorSets(writes, nullptr);
 	this->extent = extent;
-	NOTICE_LOG(RENDERER, "Vulkan compute renderer: %u x %u, tiles of %u, its kernels kept", extent.width, extent.height, 1u << r.tileLog2);
+	NOTICE_LOG(RENDERER, "Vulkan compute renderer: %u x %u, tiles of %u, its kernels kept\n", extent.width, extent.height, 1u << r.tileLog2);
 	return true;
 }
 
@@ -490,10 +490,10 @@ void ComputeDrawer::Term()
 	{
 		if (statFrames + statFallback != 0)
 		{
-			NOTICE_LOG(RENDERER, "Vulkan compute renderer: %llu frames drawn (%llu of them the GPU's TA decode's, %llu renders to a texture), %llu left to the raster renderer; %llu runs walked over their chunk, %llu triangles at no depth left out, %llu with a vertex behind the eye clipped, at most %u rounds of translucent fragments, %llu primitives passed over by the tiles' depths",
+			NOTICE_LOG(RENDERER, "Vulkan compute renderer: %llu frames drawn (%llu of them the GPU's TA decode's, %llu renders to a texture), %llu left to the raster renderer; %llu runs walked over their chunk, %llu triangles at no depth left out, %llu with a vertex behind the eye clipped, at most %u rounds of translucent fragments, %llu primitives passed over by the tiles' depths\n",
 					(unsigned long long)statFrames, (unsigned long long)statGpuFrames, (unsigned long long)statRttFrames, (unsigned long long)statFallback, (unsigned long long)res->skipped,
 					(unsigned long long)res->dropped, (unsigned long long)res->clipped, res->peels, (unsigned long long)res->hiz);
-			NOTICE_LOG(RENDERER, "Vulkan compute renderer: fallbacks: %llu renders to a texture it cannot write, %llu with the VMUs or crosshairs drawn over, %llu starting from a picture it cannot take, %llu with more render passes than it takes, %llu with more textures than its slots, %llu too large, %llu the decode's without its buffers",
+			NOTICE_LOG(RENDERER, "Vulkan compute renderer: fallbacks: %llu renders to a texture it cannot write, %llu with the VMUs or crosshairs drawn over, %llu starting from a picture it cannot take, %llu with more render passes than it takes, %llu with more textures than its slots, %llu too large, %llu the decode's without its buffers\n",
 					(unsigned long long)statWhy[ComputeFrame::Why_Rtt], (unsigned long long)statWhy[ComputeFrame::Why_Osd],
 					(unsigned long long)statWhy[ComputeFrame::Why_Picture], (unsigned long long)statWhy[ComputeFrame::Why_Passes],
 					(unsigned long long)statWhy[ComputeFrame::Why_Textures], (unsigned long long)statWhy[ComputeFrame::Why_Room],

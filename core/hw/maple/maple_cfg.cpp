@@ -390,7 +390,7 @@ void mcfg_CreateDevices()
 	  for (bus = 0; bus < MAPLE_PORTS; ++bus)
 	  {
 		 if (maple_devices[bus] != MDT_None && mcfg_DreamcastDevice(bus, 5) == MDT_None)
-			WARN_LOG(MAPLE, "Invalid device type %d for port %d", maple_devices[bus], bus);
+			WARN_LOG(MAPLE, "Invalid device type %d for port %d\n", maple_devices[bus], bus);
 		 if (mcfg_DreamcastDevice(bus, 5) == MDT_None)
 			continue;
 		 // the device, then what is in its slots
@@ -621,7 +621,7 @@ void mcfg_UnserializeDevices(void **data, unsigned int *total_size)
 				type = MDT_None;
 			if (type >= MDT_Count)
 			{
-				WARN_LOG(MAPLE, "Invalid device type %d at %d.%d in the state", type, i, j);
+				WARN_LOG(MAPLE, "Invalid device type %d at %d.%d in the state\n", type, i, j);
 				type = MDT_None;
 				// (what such a device has in the state comes next, and is read as something else: the load has failed)
 				ra_unserialize_fail();

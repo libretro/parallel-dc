@@ -244,7 +244,7 @@ class FifoSplitter
 
 	static Ta_Dma* DYNACALL NullVertexData(Ta_Dma* data,Ta_Dma* data_end)
 	{
-		INFO_LOG(PVR, "TA: Invalid state, ignoring VTX data");
+		INFO_LOG(PVR, "TA: Invalid state, ignoring VTX data\n");
 		return data+SZ32;
 	}
 
@@ -633,7 +633,7 @@ strip_end:
 				//32B
 			case ParamType_Object_List_Set:
 				{
-					INFO_LOG(PVR, "Unsupported list type: ParamType_Object_List_Set");	// NAOMI Virtual on Oratorio Tangram
+					INFO_LOG(PVR, "Unsupported list type: ParamType_Object_List_Set\n");	// NAOMI Virtual on Oratorio Tangram
 
 					// *cough* ignore it :p
 					data+=SZ32;
@@ -655,7 +655,7 @@ strip_end:
 						 * of them used to be put there all the same -
 						 * through a null pointer. Passed over, as upstream
 						 * does (a0b50cd41, from a crash report). */
-						WARN_LOG(PVR, "Invalid TA list type %d", data->pcw.ListType);
+						WARN_LOG(PVR, "Invalid TA list type %d\n", data->pcw.ListType);
 						data += SZ32;
 						break;
 					}
@@ -682,7 +682,7 @@ strip_end:
 							/* A polygon of a type there is no such thing as.
 							 * Its numbers would index past the ends of the
 							 * tables below: it is passed over. */
-							WARN_LOG(PVR, "Invalid TA type %08x", data->pcw.full);
+							WARN_LOG(PVR, "Invalid TA type %08x\n", data->pcw.full);
 							data+=SZ32;
 							continue;
 						}
@@ -717,7 +717,7 @@ strip_end:
 					if (CurrentList == ListType_None && data->pcw.ListType > ListType_Punch_Through)
 					{
 						// (as for a polygon)
-						WARN_LOG(PVR, "Invalid TA list type %d", data->pcw.ListType);
+						WARN_LOG(PVR, "Invalid TA list type %d\n", data->pcw.ListType);
 						data += SZ32;
 						break;
 					}
@@ -742,7 +742,7 @@ strip_end:
 				{
 					/* Passed over, which is what was meant: die() ended
 					 * the emulator before the line after it was reached. */
-					WARN_LOG(PVR, "Unhandled TA parameter %08x", data->pcw.full);
+					WARN_LOG(PVR, "Unhandled TA parameter %08x\n", data->pcw.full);
 					data+=SZ32;
 				}
 				break;
@@ -2127,7 +2127,7 @@ static bool ta_parse_vdrc_full(TA_context* ctx)
 	}
 	bool overrun = ctx->rend.Overrun;
 	if (overrun)
-		WARN_LOG(PVR, "ERROR: TA context overrun");
+		WARN_LOG(PVR, "ERROR: TA context overrun\n");
 	else if (screen_height > 480)
 	{
 		fix_texture_bleeding(&vd_rc.global_param_op);
@@ -3505,7 +3505,7 @@ bool ta_walk_init(void)
 	if (!ok)
 	{
 		ta_walk_term();
-		WARN_LOG(PVR, "TA header pass: no memory for it");
+		WARN_LOG(PVR, "TA header pass: no memory for it\n");
 		return false;
 	}
 	/* (touched now, so that no frame takes the page faults of their first
@@ -3747,7 +3747,7 @@ bool ta_gpu_sort_reserve(bool on)
 			|| g.strip == NULL || g.tpos == NULL || g.check == NULL)
 	{
 		ta_gpu_sort_reserve(false);
-		WARN_LOG(PVR, "TA processing: no memory for sorting translucent triangles");
+		WARN_LOG(PVR, "TA processing: no memory for sorting translucent triangles\n");
 		return false;
 	}
 	// (touched now, so that no frame takes the page faults of their first use)
@@ -5063,9 +5063,9 @@ static void ta_walk_log(void)
 	const TaWalkStats &st = *walk_stats;
 	const double nf = st.full.n ? (double)st.full.n : 1.0;
 	const double np = st.pass.n ? (double)st.pass.n : 1.0;
-	NOTICE_LOG(PVR, "TA header pass check: %u frames compared, %u the same, %u different; not compared: %u without a table, %u overrun, %u out of room, %u skipped",
+	NOTICE_LOG(PVR, "TA header pass check: %u frames compared, %u the same, %u different; not compared: %u without a table, %u overrun, %u out of room, %u skipped\n",
 			st.checked, st.same, st.differ, st.no_table, st.full_overrun, st.no_room, st.skipped);
-	NOTICE_LOG(PVR, "TA header pass check: full parse mean %.1f us, p99 %.1f us, max %.1f us; header pass mean %.1f us, p99 %.1f us, max %.1f us; per frame %.0f headers, %.0f entries, %.0f vertices",
+	NOTICE_LOG(PVR, "TA header pass check: full parse mean %.1f us, p99 %.1f us, max %.1f us; header pass mean %.1f us, p99 %.1f us, max %.1f us; per frame %.0f headers, %.0f entries, %.0f vertices\n",
 			st.full.sum / nf / 1000.0, st.full.p99_us(), st.full.max / 1000.0,
 			st.pass.sum / np / 1000.0, st.pass.p99_us(), st.pass.max / 1000.0,
 			st.headers / np, st.entries / np, st.verts / np);
@@ -5146,7 +5146,7 @@ static bool ta_walk_check_frame(TA_context *ctx)
 	if (differ == NULL)
 		st.same++;
 	else if (st.differ++ < 20)
-		WARN_LOG(PVR, "TA header pass check: frame %u differs from the full parse: %s", st.checked, differ);
+		WARN_LOG(PVR, "TA header pass check: frame %u differs from the full parse: %s\n", st.checked, differ);
 	ta_walk_tick();
 	return rv;
 }

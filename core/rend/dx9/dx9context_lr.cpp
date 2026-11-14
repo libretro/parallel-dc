@@ -98,7 +98,7 @@ bool DX9Context::InitLocked(const struct retro_hw_render_interface_d3d9 *iface)
 	D3DCAPS9 caps;
 	if (FAILED(device->GetDeviceCaps(&caps)))
 	{
-		ERROR_LOG(RENDERER, "DX9: no device capabilities");
+		ERROR_LOG(RENDERER, "DX9: no device capabilities\n");
 		return false;
 	}
 	extraTargets = caps.NumSimultaneousRTs > 1 ? std::min<DWORD>(caps.NumSimultaneousRTs, 4) - 1 : 0;
@@ -110,7 +110,7 @@ bool DX9Context::InitLocked(const struct retro_hw_render_interface_d3d9 *iface)
 			|| ((caps.TextureCaps & D3DPTEXTURECAPS_POW2) && !(caps.TextureCaps & D3DPTEXTURECAPS_NONPOW2CONDITIONAL))
 			|| (ex && !dynamicTextures))
 	{
-		ERROR_LOG(RENDERER, "DX9: shader model 3, 32-bit indexes and textures of any size needed (shaders %x/%x, max index %x)",
+		ERROR_LOG(RENDERER, "DX9: shader model 3, 32-bit indexes and textures of any size needed (shaders %x/%x, max index %x)\n",
 				(unsigned)caps.VertexShaderVersion, (unsigned)caps.PixelShaderVersion, (unsigned)caps.MaxVertexIndex);
 		return false;
 	}
@@ -152,14 +152,14 @@ bool DX9Context::InitLocked(const struct retro_hw_render_interface_d3d9 *iface)
 		if (!ok || depthFormat == D3DFMT_UNKNOWN || !formatSupported[(int)TextureType::_8888]
 				|| !formatSupported[(int)TextureType::_8])
 		{
-			ERROR_LOG(RENDERER, "DX9: the formats needed are not there");
+			ERROR_LOG(RENDERER, "DX9: the formats needed are not there\n");
 			return false;
 		}
 	}
 
 	vramBudget = VramBudget();
 	vramBudget.budget_kib = vram_kib(device->GetAvailableTextureMem());
-	NOTICE_LOG(RENDERER, "DX9: %s device, interface version %u, %s textures, depth %s, 16-bit formats %d%d%d",
+	NOTICE_LOG(RENDERER, "DX9: %s device, interface version %u, %s textures, depth %s, 16-bit formats %d%d%d\n",
 			ex ? "Direct3D9Ex" : "Direct3D 9", iface->interface_version, dynamicTextures ? "dynamic" : "managed",
 			depthFormat == D3DFMT_D24FS8 ? "D24FS8" : "D24S8",
 			formatSupported[0], formatSupported[1], formatSupported[2]);
@@ -167,7 +167,7 @@ bool DX9Context::InitLocked(const struct retro_hw_render_interface_d3d9 *iface)
 
 	if (!shaders.Init(device, compile))
 	{
-		ERROR_LOG(RENDERER, "DX9: no shaders (no compiler, or it failed)");
+		ERROR_LOG(RENDERER, "DX9: no shaders (no compiler, or it failed)\n");
 		return false;
 	}
 
@@ -180,7 +180,7 @@ bool DX9Context::InitLocked(const struct retro_hw_render_interface_d3d9 *iface)
 			|| FAILED(device->CreateVertexBuffer(QuadCount * 4 * 4 * sizeof(float), D3DUSAGE_DYNAMIC | D3DUSAGE_WRITEONLY,
 					0, D3DPOOL_DEFAULT, quadBuffer.put(), nullptr)))
 	{
-		ERROR_LOG(RENDERER, "DX9: initialization failed");
+		ERROR_LOG(RENDERER, "DX9: initialization failed\n");
 		return false;
 	}
 	quadNext = QuadCount;
@@ -636,7 +636,7 @@ ComPtr<IDirect3DTexture9> DX9Context::MakeTexture(u32 width, u32 height, u32 lev
 	HRESULT hr = device->CreateTexture(width, height, levels, usage, format, pool, texture.put(), nullptr);
 	if (FAILED(hr))
 	{
-		WARN_LOG(RENDERER, "DX9: texture creation failed (%x): %d x %d, %d levels, format %d", (unsigned)hr,
+		WARN_LOG(RENDERER, "DX9: texture creation failed (%x): %d x %d, %d levels, format %d\n", (unsigned)hr,
 				width, height, levels, (int)format);
 		texture.reset();
 	}

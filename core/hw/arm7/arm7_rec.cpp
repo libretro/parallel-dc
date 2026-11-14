@@ -476,7 +476,7 @@ static ArmOp decodeArmOp(u32 opcode, u32 arm_pc)
 						newbits.full &= ~0xfffu;
 					}
 
-					arm_printf("ARM: MEM TFX R %08X -> %08X", opcode, newbits.full);
+					arm_printf("ARM: MEM TFX R %08X -> %08X\n", opcode, newbits.full);
 
 					op = decodeArmOp(newbits.full, arm_pc);
 					/* All but one thing: a block load reads from a whole
@@ -523,7 +523,7 @@ static ArmOp decodeArmOp(u32 opcode, u32 arm_pc)
 						newbits.full &= ~0xfffu;
 					}
 
-					arm_printf("ARM: MEM TFX W %08X -> %08X", opcode, newbits.full);
+					arm_printf("ARM: MEM TFX W %08X -> %08X\n", opcode, newbits.full);
 
 					op = decodeArmOp(newbits.full, arm_pc);
 					op.cycles += 4;
@@ -660,7 +660,7 @@ void compile()
 
 	u32 cycles = 0;
 
-	arm_printf("ARM7 Block %x", pc);
+	arm_printf("ARM7 Block %x\n", pc);
 	//the ops counter is used to terminate the block (max op count for a single block is 32 currently)
 	//We don't want too long blocks for timing accuracy
 	for (u32 ops = 0; ops < 32; ops++)
@@ -673,7 +673,7 @@ void compile()
 		std::ostringstream ostr;
 		vixl::aarch32::Disassembler disassembler(ostr, pc);
 		disassembler.DecodeA32(opcd);
-		arm_printf("%s", ostr.str().c_str());
+		arm_printf("%s\n", ostr.str().c_str());
 #endif
 
 		ArmOp last_op = decodeArmOp(opcd, pc);
@@ -713,7 +713,7 @@ void compile()
 					block_ops.push_back(armop);
 				}
 				block_ops.push_back(last_op);
-				arm_printf("ARM: %06X: Block End %d", pc, ops);
+				arm_printf("ARM: %06X: Block End %d\n", pc, ops);
 				break;
 			}
 			block_ops.push_back(last_op);
@@ -727,7 +727,7 @@ void compile()
 			armop.rd = ArmOp::Operand(R15_ARM_NEXT);
 			armop.arg[0] = ArmOp::Operand(pc);
 			block_ops.push_back(armop);
-			arm_printf("ARM: %06X: Block split", pc);
+			arm_printf("ARM: %06X: Block split\n", pc);
 		}
 	}
 
@@ -741,7 +741,7 @@ void compile()
 
 	arm7backend_compile(block_ops, cycles);
 
-	arm_printf("arm7rec_compile done: %p,%p", rv, icPtr);
+	arm_printf("arm7rec_compile done: %p,%p\n", rv, icPtr);
 }
 
 void flush()
@@ -876,7 +876,7 @@ void run(u32 samples)
 #endif
 	{
 		if (!interpreting)
-			NOTICE_LOG(AICA_ARM, "ARM7: interpreter");
+			NOTICE_LOG(AICA_ARM, "ARM7: interpreter\n");
 		interpreting = true;
 		for (u32 i = 0; i < samples; i++)
 		{
@@ -887,7 +887,7 @@ void run(u32 samples)
 	}
 	if (interpreting)
 	{
-		NOTICE_LOG(AICA_ARM, "ARM7: recompiler");
+		NOTICE_LOG(AICA_ARM, "ARM7: recompiler\n");
 		interpreting = false;
 		recompiler::flush();
 	}

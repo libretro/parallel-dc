@@ -55,7 +55,7 @@
 /* 0xxx */
 static void cpu_iNimp(u32 op, const char* info)
 {
-	ERROR_LOG(INTERPRETER, "Unimplemented opcode: %08X next_pc: %08X pr: %08X msg: %s", op, next_pc, pr, info);
+	ERROR_LOG(INTERPRETER, "Unimplemented opcode: %08X next_pc: %08X pr: %08X msg: %s\n", op, next_pc, pr, info);
 	/* next_pc = pr; //debug hackfix: try to recover by returning from call */
 	die("iNimp reached\n");
 	/* sh4_cpu.Stop(); */
@@ -980,7 +980,7 @@ sh4op(i1011_iiii_iiii_iiii)
 /* trapa #<imm> */
 sh4op(i1100_0011_iiii_iiii)
 {
-	/* ERROR_LOG(GDROM, "TRAPA %d", (GetImm8(op) << 2)); */
+	/* ERROR_LOG(GDROM, "TRAPA %d\n", (GetImm8(op) << 2)); */
 	CCN_TRA = (GetImm8(op) << 2);
 	Do_Exception(next_pc,0x160,0x100);
 }
@@ -2144,7 +2144,7 @@ sh4op(i0100_nnnn_0000_1110)
 sh4op(iNotImplemented)
 {
 #ifndef NO_MMU
-	INFO_LOG(INTERPRETER, "iNimp %04X @ pc %08x", op, next_pc - 2);
+	INFO_LOG(INTERPRETER, "iNimp %04X @ pc %08x\n", op, next_pc - 2);
 	if (settings.dynarec.Enable && !mmu_enabled())
 	{
 		/* Called from recompiled code, which without the MMU has nothing

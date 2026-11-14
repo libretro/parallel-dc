@@ -130,7 +130,7 @@ static bool reios_locate_bootfile(const char* bootfile)
 
 	if (pvd->type == 1 && !memcmp(pvd->id, ISO_STANDARD_ID, strlen(ISO_STANDARD_ID)) && pvd->version == 1)
 	{
-		INFO_LOG(REIOS, "iso9660 PVD found");
+		INFO_LOG(REIOS, "iso9660 PVD found\n");
 		u32 lba = decode_iso733(pvd->root_directory_record.extent);
 		u32 len = decode_iso733(pvd->root_directory_record.size);
 
@@ -140,12 +140,12 @@ static bool reios_locate_bootfile(const char* bootfile)
 		 * the rounding below as nothing. */
 		if (len > dir_room)
 		{
-			WARN_LOG(REIOS, "iso9660 root directory of %u bytes: the first %u are looked at", len, dir_room);
+			WARN_LOG(REIOS, "iso9660 root directory of %u bytes: the first %u are looked at\n", len, dir_room);
 			len = dir_room;
 		}
 		data_len = ((len + 2047) / 2048) * 2048;
 
-		INFO_LOG(REIOS, "iso9660 root_directory, FAD: %d, len: %d", 150 + lba, data_len);
+		INFO_LOG(REIOS, "iso9660 root_directory, FAD: %d, len: %d\n", 150 + lba, data_len);
 		libGDR_ReadSector(temp, 150 + lba, data_len / 2048, 2048);
 	}
 	else {
@@ -180,7 +180,7 @@ static bool reios_locate_bootfile(const char* bootfile)
 				&& (u32)bootfile_len <= (u8)dir->filename.str[0]
 				&& memcmp(dir->filename.str + 1, bootfile, bootfile_len) == 0)
 		{
-			INFO_LOG(REIOS, "Found %.*s at offset %X", bootfile_len, bootfile, i);
+			INFO_LOG(REIOS, "Found %.*s at offset %X\n", bootfile_len, bootfile, i);
 
 			u32 lba = decode_iso733(dir->extent);
 			u32 len = decode_iso733(dir->size);
@@ -195,7 +195,7 @@ static bool reios_locate_bootfile(const char* bootfile)
 				 * puts it at 8ce01000, where Windows CE looks for it) */
 				if (len < 2048)
 				{
-					ERROR_LOG(REIOS, "Boot file too small: %u", len);
+					ERROR_LOG(REIOS, "Boot file too small: %u\n", len);
 					delete[] temp;
 					return false;
 				}
@@ -204,8 +204,8 @@ static bool reios_locate_bootfile(const char* bootfile)
 				len -= 2048;
 			}
 
-			INFO_LOG(REIOS, "file LBA: %d", lba);
-			INFO_LOG(REIOS, "file LEN: %d", len);
+			INFO_LOG(REIOS, "file LBA: %d\n", lba);
+			INFO_LOG(REIOS, "file LEN: %d\n", len);
 
 			/* The program goes to 8c010000, and has to fit between there
 			 * and the end of main memory: a length off a bad disc is not
@@ -214,7 +214,7 @@ static bool reios_locate_bootfile(const char* bootfile)
 			 * one near 4 GB came out as nothing and passed) */
 			if (len == 0 || len > RAM_SIZE - 0x10000)
 			{
-				ERROR_LOG(REIOS, "Boot file too large: %u", len);
+				ERROR_LOG(REIOS, "Boot file too large: %u\n", len);
 				delete[] temp;
 				return false;
 			}
@@ -242,7 +242,7 @@ static bool reios_locate_bootfile(const char* bootfile)
 			if (flash != NULL && flash->ReadBlock(FLASH_PT_USER, FLASH_USER_SYSCFG, &syscfg))
 				memcpy(&data[16], &syscfg.time_lo, 8);
 			else
-				WARN_LOG(REIOS, "Can't read system settings from flash");
+				WARN_LOG(REIOS, "Can't read system settings from flash\n");
 
 			memcpy(GetMemPtr(0x8c000068, sizeof(data)), data, sizeof(data));
 
@@ -271,7 +271,7 @@ void reios_disk_id()
 	libGDR_ReadSector(buf, base_fad, 1, sizeof(buf));
 	memcpy(&ip_meta, buf, sizeof(ip_meta));
 	INFO_LOG(REIOS, "hardware %.16s maker %.16s ks %.5s type %.6s num %.5s area %.8s ctrl %.4s dev %c vga %c wince %c "
-			"product %.10s version %.6s date %.8s boot %.16s softco %.16s name %.128s",
+			"product %.10s version %.6s date %.8s boot %.16s softco %.16s name %.128s\n",
 			ip_meta.hardware_id, ip_meta.maker_id, ip_meta.ks, ip_meta.disk_type, ip_meta.disk_num, ip_meta.area_symbols,
 			ip_meta.ctrl, ip_meta.dev, ip_meta.vga, ip_meta.wince,
 			ip_meta.product_number, ip_meta.product_version,
@@ -285,7 +285,7 @@ static void reios_sys_system() {
 	// (the BIOS has four of these, and answers -1 to any other number)
 	if (cmd >= 4 || (flash == NULL && cmd != 3))
 	{
-		WARN_LOG(REIOS, "reios_sys_system: unhandled cmd %d", cmd);
+		WARN_LOG(REIOS, "reios_sys_system: unhandled cmd %d\n", cmd);
 		r[0] = -1;
 		return;
 	}
@@ -294,7 +294,7 @@ static void reios_sys_system() {
 	{
 	case 0:	//SYSINFO_INIT
 		{
-			debugf("reios_sys_system: SYSINFO_INIT");
+			debugf("reios_sys_system: SYSINFO_INIT\n");
 			// 0x00-0x07: system_id
 			// 0x08-0x0c: system_props
 			// 0x0d-0x0f: padding (zeroed out)
@@ -318,7 +318,7 @@ static void reios_sys_system() {
 		break;
 
 	case 2: //SYSINFO_ICON
-		debugf("reios_sys_system: SYSINFO_ICON");
+		debugf("reios_sys_system: SYSINFO_ICON\n");
 		// r4 = icon number (0-9, but only 5-9 seems to really be icons)
 		// r5 = destination buffer (704 bytes in size)
 		if (r[4] >= 10)
@@ -339,12 +339,12 @@ static void reios_sys_system() {
 		break;
 
 	case 3: //SYSINFO_ID
-		debugf("reios_sys_system: SYSINFO_ID");
+		debugf("reios_sys_system: SYSINFO_ID\n");
 		r[0] = 0x8c000068;
 		break;
 
 	default:
-		WARN_LOG(REIOS, "reios_sys_system: unhandled cmd %d", cmd);
+		WARN_LOG(REIOS, "reios_sys_system: unhandled cmd %d\n", cmd);
 		break;
 	}
 }
@@ -355,22 +355,22 @@ static void reios_sys_font() {
 	switch (cmd)
 	{
 	case 0:		// FONTROM_ADDRESS
-		debugf("FONTROM_ADDRESS");
+		debugf("FONTROM_ADDRESS\n");
 		r[0] = FONT_TABLE_ADDR;	// in ROM
 		break;
 
 	case 1:		// FONTROM_LOCK
-		debugf("FONTROM_LOCK");
+		debugf("FONTROM_LOCK\n");
 		r[0] = 0;
 		break;
 
 	case 2:		// FONTROM_UNLOCK
-		debugf("FONTROM_UNLOCK");
+		debugf("FONTROM_UNLOCK\n");
 		r[0] = 0;
 		break;
 
 	default:
-		WARN_LOG(REIOS, "reios_sys_font cmd %x", cmd);
+		WARN_LOG(REIOS, "reios_sys_font cmd %x\n", cmd);
 		break;
 	}
 }
@@ -381,7 +381,7 @@ static void reios_sys_flashrom() {
 
 	if (flash == NULL)
 	{
-		WARN_LOG(REIOS, "reios_sys_flashrom: cmd %d and no flash", cmd);
+		WARN_LOG(REIOS, "reios_sys_flashrom: cmd %d and no flash\n", cmd);
 		r[0] = -1;
 		return;
 	}
@@ -401,7 +401,7 @@ static void reios_sys_flashrom() {
 
 				u32 part = r[4];
 				u32 dest = r[5];
-				debugf("reios_sys_flashrom: FLASHROM_INFO part %d dest %08x", part, dest);
+				debugf("reios_sys_flashrom: FLASHROM_INFO part %d dest %08x\n", part, dest);
 
 				if (part < FLASH_PT_NUM)
 				{
@@ -431,7 +431,7 @@ static void reios_sys_flashrom() {
 				u32 dest = r[5];
 				u32 size = r[6];
 
-				debugf("reios_sys_flashrom: FLASHROM_READ offs %x dest %08x size %x", offset, dest, size);
+				debugf("reios_sys_flashrom: FLASHROM_READ offs %x dest %08x size %x\n", offset, dest, size);
 				// (more than the flash holds is not a read of it, and went round it for as long as that took)
 				if (size > flash->size)
 				{
@@ -461,14 +461,14 @@ static void reios_sys_flashrom() {
 				u32 src = r[5];
 				u32 size = r[6];
 
-				debugf("reios_sys_flashrom: FLASHROM_WRITE offs %x src %08x size %x", offs, src, size);
+				debugf("reios_sys_flashrom: FLASHROM_WRITE offs %x src %08x size %x\n", offs, src, size);
 
 				/* Into the flash and nowhere else: the place and the length
 				 * are the game's, and were written to wherever they came to
 				 * past the end of it. */
 				if (offs >= flash->size || size > flash->size - offs)
 				{
-					WARN_LOG(REIOS, "reios_sys_flashrom: FLASHROM_WRITE outside the flash: offs %x size %x", offs, size);
+					WARN_LOG(REIOS, "reios_sys_flashrom: FLASHROM_WRITE outside the flash: offs %x size %x\n", offs, size);
 					r[0] = -1;
 					break;
 				}
@@ -492,7 +492,7 @@ static void reios_sys_flashrom() {
 				*/
 				u32 offset = r[4];
 
-				debugf("reios_sys_flashrom: FLASHROM_DELETE offs %x", offset);
+				debugf("reios_sys_flashrom: FLASHROM_DELETE offs %x\n", offset);
 
 				bool found = false;
 
@@ -514,7 +514,7 @@ static void reios_sys_flashrom() {
 			break;
 
 		default:
-			WARN_LOG(REIOS, "reios_sys_flashrom: not handled, %d", cmd);
+			WARN_LOG(REIOS, "reios_sys_flashrom: not handled, %d\n", cmd);
 			break;
 	}
 }
@@ -538,7 +538,7 @@ static void reios_sys_gd2()
 
 static void reios_sys_misc()
 {
-	INFO_LOG(REIOS, "reios_sys_misc - r7: 0x%08X, r4 0x%08X, r5 0x%08X, r6 0x%08X", r[7], r[4], r[5], r[6]);
+	INFO_LOG(REIOS, "reios_sys_misc - r7: 0x%08X, r4 0x%08X, r5 0x%08X, r6 0x%08X\n", r[7], r[4], r[5], r[6]);
 	switch (r[4])
 	{
 	case 0:	// normal init
@@ -558,7 +558,7 @@ static void reios_sys_misc()
 		 * way in, here (Sega Rally 2 does), and starting the machine
 		 * again for it - which is what upstream does - is starting it
 		 * again for ever. */
-		INFO_LOG(REIOS, "SYS_MISC 1: exit to BIOS, ignored");
+		INFO_LOG(REIOS, "SYS_MISC 1: exit to BIOS, ignored\n");
 		break;
 
 	case 2:	// check disk
@@ -588,8 +588,8 @@ static void setup_syscall(u32 hook_addr, u32 syscall_addr) {
 	WriteMem32(syscall_addr, hook_addr);
 	WriteMem16(hook_addr, REIOS_OPCODE);
 
-	debugf("Patching syscall vector %08X, points to %08X", syscall_addr, hook_addr);
-	debugf(" - address %08X: data %04X [%04X]", hook_addr, ReadMem16(hook_addr), REIOS_OPCODE);
+	debugf("Patching syscall vector %08X, points to %08X\n", syscall_addr, hook_addr);
+	debugf(" - address %08X: data %04X [%04X]\n", hook_addr, ReadMem16(hook_addr), REIOS_OPCODE);
 }
 
 static void reios_setup_state(u32 boot_addr)
@@ -1375,7 +1375,7 @@ static void nb_sys_menu()
 	{
 		const bool to_test = program != NB_PROGRAM_TEST;
 
-		NOTICE_LOG(REIOS, "NAOMI: the system menu is asked for (from %08x): restarting with %s", pr,
+		NOTICE_LOG(REIOS, "NAOMI: the system menu is asked for (from %08x): restarting with %s\n", pr,
 				to_test ? "the game's test program" : "the game");
 		nb_wr(NB_PROGRAM, to_test ? NB_WANT_TEST : NB_WANT_GAME);
 	}
@@ -1396,7 +1396,7 @@ static void nb_start(u32 want)
 {
 	if (nb_rd(NB_PROGRAM) != want)
 	{
-		NOTICE_LOG(REIOS, "NAOMI: a start of %s is asked for (from %08x)",
+		NOTICE_LOG(REIOS, "NAOMI: a start of %s is asked for (from %08x)\n",
 				want == NB_WANT_TEST ? "the game's test program" : "the game", pr);
 		nb_wr(NB_PROGRAM, want);
 	}
@@ -1411,7 +1411,7 @@ static void nb_sys_none()
 {
 	static bool said;
 	if (!said)
-		WARN_LOG(REIOS, "NAOMI: a BIOS routine for the DIMM or network board was called (from %08x): answering 0", pr);
+		WARN_LOG(REIOS, "NAOMI: a BIOS routine for the DIMM or network board was called (from %08x): answering 0\n", pr);
 	said = true;
 	r[0] = 0;
 }
@@ -1745,7 +1745,7 @@ static void reios_boot_naomi()
 		nb_rom_address(0, 0);
 	if (CurrentCartridge == NULL || !CurrentCartridge->Read(0, sizeof(header), header))
 	{
-		WARN_LOG(REIOS, "No cartridge loaded");
+		WARN_LOG(REIOS, "No cartridge loaded\n");
 		return;
 	}
 
@@ -1758,7 +1758,7 @@ static void reios_boot_naomi()
 
 		if (first == 0xffffffff || test_entry == 0 || test_entry == 0xffffffff)
 		{
-			NOTICE_LOG(REIOS, "NAOMI boot: the cartridge has no test program");
+			NOTICE_LOG(REIOS, "NAOMI boot: the cartridge has no test program\n");
 			test = false;
 		}
 		else
@@ -1799,10 +1799,10 @@ static void reios_boot_naomi()
 		if (ram >= RAM_SIZE || size > RAM_SIZE - ram || RAM_SIZE - ram < 4
 				|| !CurrentCartridge->Read(offset, size, GetMemPtr(0x8c000000 + ram, size)))
 		{
-			WARN_LOG(REIOS, "NAOMI boot: cannot load %x bytes at %08x from %x", size, addr, offset);
+			WARN_LOG(REIOS, "NAOMI boot: cannot load %x bytes at %08x from %x\n", size, addr, offset);
 			continue;
 		}
-		NOTICE_LOG(REIOS, "NAOMI boot: %x bytes at %08x, from %x", size, addr, offset);
+		NOTICE_LOG(REIOS, "NAOMI boot: %x bytes at %08x, from %x\n", size, addr, offset);
 	}
 	if (left != 8)
 		nb_rom_address(rom_end, 0x8000 | mode);
@@ -1855,7 +1855,7 @@ static void reios_boot_naomi()
 	if (asked == NB_WANT_TEST || asked == NB_WANT_GAME)
 		libAICA_Reset(true);
 
-	NOTICE_LOG(REIOS, "NAOMI boot: starting %s at %08x", test ? "the test program" : "the game", entry);
+	NOTICE_LOG(REIOS, "NAOMI boot: starting %s at %08x\n", test ? "the test program" : "the game", entry);
 	reios_setup_naomi(entry, load_end, now, test, left, mode);
 }
 
@@ -1906,9 +1906,9 @@ void nbios_state_before_v21(void)
 
 static void reios_boot()
 {
-	NOTICE_LOG(REIOS, "-----------------");
-	NOTICE_LOG(REIOS, "REIOS: Booting up");
-	NOTICE_LOG(REIOS, "-----------------");
+	NOTICE_LOG(REIOS, "-----------------\n");
+	NOTICE_LOG(REIOS, "REIOS: Booting up\n");
+	NOTICE_LOG(REIOS, "-----------------\n");
 	//setup syscalls
 	//find boot file
 	//boot it
@@ -1990,13 +1990,13 @@ void DYNACALL reios_trap(u32 op) {
 
 	u32 mapd = SYSCALL_ADDR_MAP(pc);
 
-	//debugf("dispatch %08X -> %08X", pc, mapd);
+	//debugf("dispatch %08X -> %08X\n", pc, mapd);
 
 	// (looking one up with [] would make an empty one, and then call it)
 	auto hook = hooks.find(mapd);
 	if (hook == hooks.end() || !hook->second)
 	{
-		ERROR_LOG(REIOS, "Unknown trap vector %08x pc %08x", mapd, pc);
+		ERROR_LOG(REIOS, "Unknown trap vector %08x pc %08x\n", mapd, pc);
 		return;
 	}
 	hook->second();
@@ -2010,7 +2010,7 @@ static u32 hook_addr(hook_fp* fn) {
 	if (hooks_rev.count(fn))
 		return hooks_rev[fn];
 	else {
-		ERROR_LOG(REIOS, "hook_addr: Failed to reverse lookup %p", fn);
+		ERROR_LOG(REIOS, "hook_addr: Failed to reverse lookup %p\n", fn);
 		verify(false);
 		return 0;
 	}
@@ -2018,7 +2018,7 @@ static u32 hook_addr(hook_fp* fn) {
 
 bool reios_init()
 {
-	INFO_LOG(REIOS, "reios: Init");
+	INFO_LOG(REIOS, "reios: Init\n");
 
 	register_hook(0xA0000000, reios_boot);
 	for (u32 i = 0; i < 26; i++)
@@ -2076,7 +2076,7 @@ void reios_reset(u8* rom, MemChip* flash)
 	RFILE *font = filestream_open(font_file.c_str(), RETRO_VFS_FILE_ACCESS_READ, RETRO_VFS_FILE_ACCESS_HINT_NONE);
 	if (font == NULL)
 	{
-		INFO_LOG(REIOS, "font.bin not found. Using built-in font");
+		INFO_LOG(REIOS, "font.bin not found. Using built-in font\n");
 		memcpy(pFont, builtin_font, std::min(sizeof(builtin_font), font_size));
 	}
 	else
@@ -2086,9 +2086,9 @@ void reios_reset(u8* rom, MemChip* flash)
 		size_t nread = size == 0 ? 0 : (size_t)filestream_read(font, pFont, size);
 		filestream_close(font);
 		if (nread != size)
-			WARN_LOG(REIOS, "font.bin: read truncated");
+			WARN_LOG(REIOS, "font.bin: read truncated\n");
 		else
-			INFO_LOG(REIOS, "font.bin: loaded %zd bytes", size);
+			INFO_LOG(REIOS, "font.bin: loaded %zd bytes\n", size);
 	}
 }
 

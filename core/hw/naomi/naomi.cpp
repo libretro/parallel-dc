@@ -175,22 +175,22 @@ u32 reg_dimm_status = 0x11;
 
 void naomi_process(u32 command, u32 offsetl, u32 parameterl, u32 parameterh)
 {
-	DEBUG_LOG(NAOMI, "Naomi process 0x%04X 0x%04X 0x%04X 0x%04X", command, offsetl, parameterl, parameterh);
-	DEBUG_LOG(NAOMI, "Possible format 0 %d 0x%02X 0x%04X",command >> 15,(command & 0x7e00) >> 9, command & 0x1FF);
-	DEBUG_LOG(NAOMI, "Possible format 1 0x%02X 0x%02X", (command & 0xFF00) >> 8,command & 0xFF);
+	DEBUG_LOG(NAOMI, "Naomi process 0x%04X 0x%04X 0x%04X 0x%04X\n", command, offsetl, parameterl, parameterh);
+	DEBUG_LOG(NAOMI, "Possible format 0 %d 0x%02X 0x%04X\n",command >> 15,(command & 0x7e00) >> 9, command & 0x1FF);
+	DEBUG_LOG(NAOMI, "Possible format 1 0x%02X 0x%02X\n", (command & 0xFF00) >> 8,command & 0xFF);
 
 	u32 param=(command&0xFF);
 	if (param==0xFF)
 	{
-		DEBUG_LOG(NAOMI, "invalid opcode or smth ?");
+		DEBUG_LOG(NAOMI, "invalid opcode or smth ?\n");
 	}
 	//else if (param!=3)
 	if (opcd<255)
 	{
 		reg_dimm_command=0x8000 | (opcd%12<<9) | (0x0);
-		DEBUG_LOG(NAOMI, "new reg is 0x%X", reg_dimm_command);
+		DEBUG_LOG(NAOMI, "new reg is 0x%X\n", reg_dimm_command);
 		asic_RaiseInterrupt(holly_EXP_PCI);
-		DEBUG_LOG(NAOMI, "Interrupt raised");
+		DEBUG_LOG(NAOMI, "Interrupt raised\n");
 		opcd++;
 	}
 }
@@ -199,7 +199,7 @@ u32 ReadMem_naomi(u32 address, u32 size)
 {
 	if (unlikely(CurrentCartridge == NULL))
 	{
-		INFO_LOG(NAOMI, "called without cartridge");
+		INFO_LOG(NAOMI, "called without cartridge\n");
 		return 0xFFFF;
 	}
 	// (a NAOMI's: an Atomiswave has no such board, and its cartridge answers there - as for a write)
@@ -213,7 +213,7 @@ void WriteMem_naomi(u32 address, u32 data, u32 size)
 {
 	if (unlikely(CurrentCartridge == NULL))
 	{
-		INFO_LOG(NAOMI, "called without cartridge");
+		INFO_LOG(NAOMI, "called without cartridge\n");
 		return;
 	}
 	if (address >= NAOMI_COMM2_CTRL_addr && address <= NAOMI_COMM2_STATUS1_addr && SYSTEM_IS_NAOMI())
@@ -245,7 +245,7 @@ static int naomi_dma_sched(int tag, int sch_cycl, int jitter)
 		{
 			// Nothing there to read: the rest of the piece is zeroes, and
 			// the transfer goes on to where it was asked to end.
-			INFO_LOG(NAOMI, "DMA transfer past the end of the cartridge");
+			INFO_LOG(NAOMI, "DMA transfer past the end of the cartridge\n");
 			WriteMemBlock_nommu_ptr(start, zeroes, len);
 			start += len;
 			break;
@@ -279,16 +279,16 @@ void Naomi_DmaStart(u32 addr, u32 data)
 
 	if (SB_GDEN==0)
 	{
-		INFO_LOG(NAOMI, "Invalid (NAOMI)GD-DMA start, SB_GDEN=0. Ignoring it.");
+		INFO_LOG(NAOMI, "Invalid (NAOMI)GD-DMA start, SB_GDEN=0. Ignoring it.\n");
 		return;
 	}
 
 	if (!m3comm.DmaStart(addr, data) && CurrentCartridge != NULL)
 	{
-		DEBUG_LOG(NAOMI, "NAOMI-DMA start addr %08X len %d", SB_GDSTAR, SB_GDLEN);
+		DEBUG_LOG(NAOMI, "NAOMI-DMA start addr %08X len %d\n", SB_GDSTAR, SB_GDLEN);
 		// (a cartridge is only read: the other direction is taken as this one)
 		if (SB_GDDIR != 1)
-			DEBUG_LOG(NAOMI, "NAOMI-DMA to the cartridge (SB_GDDIR=0): done as a read");
+			DEBUG_LOG(NAOMI, "NAOMI-DMA to the cartridge (SB_GDDIR=0): done as a read\n");
 		SB_GDST = 1;
 		SB_GDSTARD = SB_GDSTAR & 0x1FFFFFE0;
 		SB_GDLEND = 0;
@@ -312,7 +312,7 @@ void Naomi_DmaEnable(u32 addr, u32 data)
 	SB_GDEN=data&1;
 	if (SB_GDEN==0 && SB_GDST==1)
 	{
-		INFO_LOG(NAOMI, "(NAOMI)GD-DMA aborted");
+		INFO_LOG(NAOMI, "(NAOMI)GD-DMA aborted\n");
 		SB_GDST=0;
 		naomi_dma_cancel();
 	}
@@ -661,7 +661,7 @@ u32 libExtDevice_ReadMem_A0_006(u32 addr,u32 size) {
 		//printf("NAOMI 600284 read %x\n", aw_maple_devs);
 		return aw_maple_devs;
 	}
-	INFO_LOG(NAOMI, "Unhandled read @ %x sz %d", addr, size);
+	INFO_LOG(NAOMI, "Unhandled read @ %x sz %d\n", addr, size);
 	return 0xFF;
 }
 
@@ -671,14 +671,14 @@ void libExtDevice_WriteMem_A0_006(u32 addr,u32 data,u32 size) {
 	switch (addr)
 	{
 	case 0x284:		// Atomiswave maple devices
-		DEBUG_LOG(NAOMI, "NAOMI 600284 write %x", data);
+		DEBUG_LOG(NAOMI, "NAOMI 600284 write %x\n", data);
 		aw_maple_devs = data & 0xF0;
 		return;
 	//case 0x28C:		// Wheel force feedback?
 	default:
 		break;
 	}
-	INFO_LOG(NAOMI, "Unhandled write @ %x (%d): %x", addr, size, data);
+	INFO_LOG(NAOMI, "Unhandled write @ %x (%d): %x\n", addr, size, data);
 }
 
 /*
@@ -719,7 +719,7 @@ size_t periph_load_file(const char *suffix, void *buf, size_t size)
 		return 0;
 	const int64_t n = filestream_read(f, buf, size);
 	filestream_close(f);
-	INFO_LOG(NAOMI, "Loaded %s", path);
+	INFO_LOG(NAOMI, "Loaded %s\n", path);
 	return n > 0 ? (size_t)n : 0;
 }
 
@@ -729,10 +729,10 @@ void periph_save_file(const char *suffix, const void *buf, size_t size, retro_at
 	if (eeprom_file[0] == '\0')
 		return;
 	if (retro_atomic_load_acquire_int(failed) && retro_atomic_exchange_int(failed, 0))
-		WARN_LOG(NAOMI, "A file of the game's devices could not be saved");
+		WARN_LOG(NAOMI, "A file of the game's devices could not be saved\n");
 	periph_path(path, sizeof(path), suffix);
 	if (!save_writer_put_file(path, buf, size, failed))
-		WARN_LOG(NAOMI, "Cannot save %s", path);
+		WARN_LOG(NAOMI, "Cannot save %s\n", path);
 }
 
 void periph_sched_restore(int id, s32 start, s32 end)

@@ -53,11 +53,8 @@ void asic_RaiseInterrupt(HollyInterruptID inter) { (void)inter; irq_raised = 1; 
 void asic_CancelInterrupt(HollyInterruptID inter) { (void)inter; irq_raised = 0; }
 retro_time_t cpu_features_get_time_usec(void) { return 12345; }
 uint64_t cpu_features_get(void) { return 0; }
-void GenericLog(enum LOG_TYPE_NAME(LOG_LEVELS) level, enum LOG_TYPE_NAME(LOG_TYPE) type,
-		const char *file, int line, const char *fmt, ...)
-{
-	(void)level; (void)type; (void)file; (void)line; (void)fmt;
-}
+/* (no log) */
+retro_log_printf_t log_cb;
 
 bool ra_serialize(const void *src, unsigned int src_size, void **dest, unsigned int *total_size)
 {

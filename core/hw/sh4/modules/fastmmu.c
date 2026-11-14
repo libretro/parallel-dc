@@ -750,7 +750,7 @@ void mmu_detect_strict(void)
 	{
 		memset(strict_kept, 0, sizeof(strict_kept));
 		strict_time = 0;
-		NOTICE_LOG(SH4, "Enabling Full MMU support, the strict way: the program has a TLB of its own");
+		NOTICE_LOG(SH4, "Enabling Full MMU support, the strict way: the program has a TLB of its own\n");
 	}
 	mmu_strict = strict;
 	bm_ForgetVaddrs();

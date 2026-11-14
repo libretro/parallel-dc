@@ -332,7 +332,7 @@ struct maple_sega_controller: maple_base
 			return MDRS_DeviceReply;
 
 		default:
-			INFO_LOG(MAPLE, "maple_sega_controller: Unknown maple command %d", cmd);
+			INFO_LOG(MAPLE, "maple_sega_controller: Unknown maple command %d\n", cmd);
 			return MDRE_UnknownCmd;
 		}
 	}
@@ -741,30 +741,30 @@ struct maple_sega_vmu: maple_base
 		// What the renderer shows until the game draws: the screen as it is now
 		vmu_lcd_publish(bus_id, lcd_data_decoded);
 
-		INFO_LOG(MAPLE, "Initializing VMU data...");
+		INFO_LOG(MAPLE, "Initializing VMU data...\n");
 		verify(vmu_inflate_default(flash_data, sizeof(flash_data)));
 
 		file=filestream_open(apath.c_str(), RETRO_VFS_FILE_ACCESS_READ_WRITE | RETRO_VFS_FILE_ACCESS_UPDATE_EXISTING, RETRO_VFS_FILE_ACCESS_HINT_NONE);
 		if (!file)
 		{
-			INFO_LOG(MAPLE, "Unable to open VMU save file \"%s\", creating new file",apath.c_str());
+			INFO_LOG(MAPLE, "Unable to open VMU save file \"%s\", creating new file\n",apath.c_str());
 			file=filestream_open(apath.c_str(), RETRO_VFS_FILE_ACCESS_READ_WRITE, RETRO_VFS_FILE_ACCESS_HINT_NONE);
 			if (file) {
 				filestream_write(file, flash_data, sizeof(flash_data));
 				filestream_seek(file,0,RETRO_VFS_SEEK_POSITION_START);
 			} else {
-				INFO_LOG(MAPLE, "Unable to create VMU!");
+				INFO_LOG(MAPLE, "Unable to create VMU!\n");
 			}
 		}
 
 		if (!file)
 		{
-			WARN_LOG(MAPLE, "Failed to create VMU save file \"%s\"", apath.c_str());
+			WARN_LOG(MAPLE, "Failed to create VMU save file \"%s\"\n", apath.c_str());
 		}
 		else
 		{
 			filestream_read(file,flash_data,sizeof(flash_data));
-			NOTICE_LOG(MAPLE, "Loaded VMU from file \"%s\"", apath.c_str());
+			NOTICE_LOG(MAPLE, "Loaded VMU from file \"%s\"\n", apath.c_str());
 		}
 	}
 	/* What the game wrote to the card since the last time goes to the
@@ -782,7 +782,7 @@ struct maple_sega_vmu: maple_base
 		if (const int failed = save_state.Failed())
 		{
 			if (failed == 1)
-				WARN_LOG(MAPLE, "VMU %s: a write to its file failed. The card will be written again", logical_port);
+				WARN_LOG(MAPLE, "VMU %s: a write to its file failed. The card will be written again\n", logical_port);
 			dirty_lo = 0;
 			dirty_hi = sizeof(flash_data);
 		}
@@ -795,7 +795,7 @@ struct maple_sega_vmu: maple_base
 				return;
 		}
 		else
-			INFO_LOG(MAPLE, "Failed to save VMU %s data", logical_port);
+			INFO_LOG(MAPLE, "Failed to save VMU %s data\n", logical_port);
 		dirty_lo = 0;
 		dirty_hi = 0;
 	}
@@ -812,7 +812,7 @@ struct maple_sega_vmu: maple_base
 		// the writer has the file, and the flag that is this card's
 		save_writer_drain();
 		if (file && save_state.Failed())
-			WARN_LOG(MAPLE, "VMU %s: the last write to its file failed", logical_port);
+			WARN_LOG(MAPLE, "VMU %s: the last write to its file failed\n", logical_port);
 		if (file) filestream_close(file);
 	}
 	virtual u32 dma(u32 cmd)
@@ -864,7 +864,7 @@ struct maple_sega_vmu: maple_base
 				switch(function)
 				{
 				case MFID_1_Storage:
-					DEBUG_LOG(MAPLE, "VMU %s GetMediaInfo storage", logical_port);
+					DEBUG_LOG(MAPLE, "VMU %s GetMediaInfo storage\n", logical_port);
 					w32(MFID_1_Storage);
 
 					if (*(u16*)&flash_data[0xFF * 512 + 0x40] != 0xFF)
@@ -907,7 +907,7 @@ struct maple_sega_vmu: maple_base
 						u32 pt=r32();
 						if (pt!=0)
 						{
-							INFO_LOG(MAPLE, "VMU: MDCF_GetMediaInfo -> bad input |%08X|, returning MDRE_UnknownCmd", pt);
+							INFO_LOG(MAPLE, "VMU: MDCF_GetMediaInfo -> bad input |%08X|, returning MDRE_UnknownCmd\n", pt);
 							return MDRE_UnknownCmd;
 						}
 						else
@@ -924,7 +924,7 @@ struct maple_sega_vmu: maple_base
 					}
 
 				default:
-					INFO_LOG(MAPLE, "VMU: MDCF_GetMediaInfo -> Bad function used |%08X|, returning -2", function);
+					INFO_LOG(MAPLE, "VMU: MDCF_GetMediaInfo -> Bad function used |%08X|, returning -2\n", function);
 					return MDRE_UnknownFunction;//bad function
 				}
 			}
@@ -944,18 +944,18 @@ struct maple_sega_vmu: maple_base
 
 						if (Block>255)
 						{
-							DEBUG_LOG(MAPLE, "Block read : %d", Block);
-							DEBUG_LOG(MAPLE, "BLOCK READ ERROR");
+							DEBUG_LOG(MAPLE, "Block read : %d\n", Block);
+							DEBUG_LOG(MAPLE, "BLOCK READ ERROR\n");
 							Block&=255;
 						}
 						else
-							DEBUG_LOG(MAPLE, "VMU %s block read: Block %d addr %x len %d", logical_port, Block, Block*512, 512);
+							DEBUG_LOG(MAPLE, "VMU %s block read: Block %d addr %x len %d\n", logical_port, Block, Block*512, 512);
 						wptr(flash_data+Block*512,512);
 					}
 					return MDRS_DataTransfer;//data transfer
 
 				case MFID_2_LCD:
-					DEBUG_LOG(MAPLE, "VMU %s read LCD", logical_port);
+					DEBUG_LOG(MAPLE, "VMU %s read LCD\n", logical_port);
 					w32(MFID_2_LCD);
 					w32(r32()); // mnn ?
 					// (the screen's own bytes: it was the first 192 of the card's memory)
@@ -966,7 +966,7 @@ struct maple_sega_vmu: maple_base
 				case MFID_3_Clock:
 					if (r32()!=0)
 					{
-						INFO_LOG(MAPLE, "VMU: Block read: MFID_3_Clock : invalid params");
+						INFO_LOG(MAPLE, "VMU: Block read: MFID_3_Clock : invalid params\n");
 						return MDRE_TransmitAgain; //invalid params
 					}
 					else
@@ -982,7 +982,7 @@ struct maple_sega_vmu: maple_base
 						vmu_clock_date(RealTimeClock, date);
 						wptr(date, sizeof(date));
 
-						DEBUG_LOG(MAPLE, "VMU: CLOCK Read-> datetime is %04d/%02d/%02d ~ %02d:%02d:%02d!",
+						DEBUG_LOG(MAPLE, "VMU: CLOCK Read-> datetime is %04d/%02d/%02d ~ %02d:%02d:%02d!\n",
 								timebuf[0] + timebuf[1] * 256,
 								timebuf[2],
 								timebuf[3],
@@ -994,7 +994,7 @@ struct maple_sega_vmu: maple_base
 					}
 
 				default:
-					INFO_LOG(MAPLE, "VMU: cmd MDCF_BlockRead -> Bad function |%08X| used, returning -2", function);
+					INFO_LOG(MAPLE, "VMU: cmd MDCF_BlockRead -> Bad function |%08X| used, returning -2\n", function);
 					return MDRE_UnknownFunction;//bad function
 				}
 			}
@@ -1011,10 +1011,10 @@ struct maple_sega_vmu: maple_base
 						u32 Phase = ((SWAP32(bph))>>16)&0xff;
 						u32 write_adr=Block*512+Phase*(512/4);
 						u32 write_len=r_count();
-						DEBUG_LOG(MAPLE, "VMU %s block write: Block %d Phase %d addr %x len %d", logical_port, Block, Phase, write_adr, write_len);
+						DEBUG_LOG(MAPLE, "VMU %s block write: Block %d Phase %d addr %x len %d\n", logical_port, Block, Phase, write_adr, write_len);
 						if (write_adr + write_len > sizeof(flash_data))
 						{
-							INFO_LOG(MAPLE, "Failed to write VMU %s: overflow", logical_port);
+							INFO_LOG(MAPLE, "Failed to write VMU %s: overflow\n", logical_port);
 							return MDRE_TransmitAgain; //invalid params
 						}
 						rptr(&flash_data[write_adr],write_len);
@@ -1045,11 +1045,11 @@ struct maple_sega_vmu: maple_base
 
 					case MFID_2_LCD:
 					{
-						DEBUG_LOG(MAPLE, "VMU %s LCD write", logical_port);
+						DEBUG_LOG(MAPLE, "VMU %s LCD write\n", logical_port);
 						r32();
 						if (r_count() < 192)
 						{
-							INFO_LOG(MAPLE, "VMU %s LCD write invalid params: rcount %d", logical_port, r_count());
+							INFO_LOG(MAPLE, "VMU %s LCD write invalid params: rcount %d\n", logical_port, r_count());
 							return MDRE_TransmitAgain;	//invalid params
 						}
 						rptr(lcd_data,192);
@@ -1078,20 +1078,20 @@ struct maple_sega_vmu: maple_base
 					case MFID_3_Clock:
 						if (r32()!=0 || r_count()!=8)
 						{
-							INFO_LOG(MAPLE, "VMU %s clock write invalid params: rcount %d", logical_port, r_count());
+							INFO_LOG(MAPLE, "VMU %s clock write invalid params: rcount %d\n", logical_port, r_count());
 							return MDRE_TransmitAgain;	//invalid params ...
 						}
 						else
 						{
 							u8 timebuf[8];
 							rptr(timebuf,8);
-							DEBUG_LOG(MAPLE, "VMU: CLOCK Write-> datetime is %04d/%02d/%02d ~ %02d:%02d:%02d! Nothing set tho ...",
+							DEBUG_LOG(MAPLE, "VMU: CLOCK Write-> datetime is %04d/%02d/%02d ~ %02d:%02d:%02d! Nothing set tho ...\n",
 									timebuf[0]+timebuf[1]*256,timebuf[2],timebuf[3],timebuf[4],timebuf[5],timebuf[6]);
 							return  MDRS_DeviceReply;//ok !
 						}
 
 					default:
-						INFO_LOG(MAPLE, "VMU: command MDCF_BlockWrite -> Bad function used, returning MDRE_UnknownFunction");
+						INFO_LOG(MAPLE, "VMU: command MDCF_BlockWrite -> Bad function used, returning MDRE_UnknownFunction\n");
 						return  MDRE_UnknownFunction;//bad function
 				}
 			}
@@ -1112,7 +1112,7 @@ struct maple_sega_vmu: maple_base
 						u32 bp=r32();
 						if (bp)
 						{
-							INFO_LOG(MAPLE, "BEEP : %08X", bp);
+							INFO_LOG(MAPLE, "BEEP : %08X\n", bp);
 						}
 						vmu_beep_set(bp & 0xFF, (bp >> 8) & 0xFF);
 						return  MDRS_DeviceReply;//just ko
@@ -1121,7 +1121,7 @@ struct maple_sega_vmu: maple_base
 
 				default:
 					{
-						INFO_LOG(MAPLE, "VMU: command MDCF_SetCondition -> Bad function used, returning MDRE_UnknownFunction");
+						INFO_LOG(MAPLE, "VMU: command MDCF_SetCondition -> Bad function used, returning MDRE_UnknownFunction\n");
 						return MDRE_UnknownFunction;//bad function
 					}
 					break;
@@ -1137,7 +1137,7 @@ struct maple_sega_vmu: maple_base
 			return MDRS_DeviceReply;
 
 		default:
-			DEBUG_LOG(MAPLE, "Unknown MAPLE COMMAND %d", cmd);
+			DEBUG_LOG(MAPLE, "Unknown MAPLE COMMAND %d\n", cmd);
 			return MDRE_UnknownCmd;
 		}
 	}	
@@ -1187,7 +1187,7 @@ struct maple_microphone: maple_base
 		{
 		case MDC_DeviceRequest:
 		case MDC_AllStatusReq:
-			DEBUG_LOG(MAPLE, "maple_microphone::dma MDC_DeviceRequest");
+			DEBUG_LOG(MAPLE, "maple_microphone::dma MDC_DeviceRequest\n");
 			//this was copied from the controller case with just the id and name replaced!
 
 			//caps
@@ -1226,7 +1226,7 @@ struct maple_microphone: maple_base
 
 		case MDC_DeviceReset:
 			//uhhh do nothing?
-			DEBUG_LOG(MAPLE, "maple_microphone::dma MDC_DeviceReset");
+			DEBUG_LOG(MAPLE, "maple_microphone::dma MDC_DeviceReset\n");
 			return MDRS_DeviceReply;
 
 		case MDCF_MICControl:
@@ -1287,23 +1287,23 @@ struct maple_microphone: maple_base
 					return MDRS_DataTransfer;
 				}
 				case 0x02:
-					DEBUG_LOG(MAPLE, "maple_microphone::dma MDCF_MICControl toggle recording %#010x", secondword);
+					DEBUG_LOG(MAPLE, "maple_microphone::dma MDCF_MICControl toggle recording %#010x\n", secondword);
 					return MDRS_DeviceReply;
 				case 0x03:
-					DEBUG_LOG(MAPLE, "maple_microphone::dma MDCF_MICControl set gain %#010x", secondword);
+					DEBUG_LOG(MAPLE, "maple_microphone::dma MDCF_MICControl set gain %#010x\n", secondword);
 					return MDRS_DeviceReply;
 				case MDRE_TransmitAgain:
-					WARN_LOG(MAPLE, "maple_microphone::dma MDCF_MICControl MDRE_TransmitAgain");
+					WARN_LOG(MAPLE, "maple_microphone::dma MDCF_MICControl MDRE_TransmitAgain\n");
 					//apparently this doesnt matter
 					//wptr(micdata, SIZE_OF_MIC_DATA);
 					return MDRS_DeviceReply;//MDRS_DataTransfer;
 				default:
-					INFO_LOG(MAPLE, "maple_microphone::dma UNHANDLED secondword %#010x", secondword);
+					INFO_LOG(MAPLE, "maple_microphone::dma UNHANDLED secondword %#010x\n", secondword);
                return MDRE_UnknownFunction;
 				}
 			}
 			default:
-				INFO_LOG(MAPLE, "maple_microphone::dma UNHANDLED function %#010x", function);
+				INFO_LOG(MAPLE, "maple_microphone::dma UNHANDLED function %#010x\n", function);
             return MDRE_UnknownFunction;
 			}
 		}
@@ -1312,7 +1312,7 @@ struct maple_microphone: maple_base
 			return MDRS_DeviceReply;
 
 		default:
-			INFO_LOG(MAPLE, "maple_microphone::dma UNHANDLED MAPLE COMMAND %d", cmd);
+			INFO_LOG(MAPLE, "maple_microphone::dma UNHANDLED MAPLE COMMAND %d\n", cmd);
          return MDRE_UnknownCmd;
 		}
 	}	
@@ -1437,7 +1437,7 @@ struct maple_sega_purupuru : maple_base
 			return MDRS_DeviceReply;
 
          default:
-			INFO_LOG(MAPLE, "UNKOWN MAPLE COMMAND %d", cmd);
+			INFO_LOG(MAPLE, "UNKOWN MAPLE COMMAND %d\n", cmd);
             return MDRE_UnknownCmd;
       }
    }
@@ -1539,12 +1539,12 @@ static void naomi_eeprom_dual_cabinet(void)
 			for (int i = 0; i < 4; i++)
 				naomi_eeprom_bios_set(14 + i, 0x11);
 		}
-		NOTICE_LOG(MAPLE, "EEPROM: set up for game %s, %d-player cabinet", naomi_game_id, (eeprom[8] >> 4) + 1);
+		NOTICE_LOG(MAPLE, "EEPROM: set up for game %s, %d-player cabinet\n", naomi_game_id, (eeprom[8] >> 4) + 1);
 	}
 	if (cabinet != 0 && cabinet < 0x10 && !(cabinet & (1 << (eeprom[8] >> 4))))
 	{
 		const u8 players = (cabinet & 8) ? 0x30 : (cabinet & 4) ? 0x20 : (cabinet & 2) ? 0x10 : 0;
-		NOTICE_LOG(MAPLE, "EEPROM: %d-player cabinet", (players >> 4) + 1);
+		NOTICE_LOG(MAPLE, "EEPROM: %d-player cabinet\n", (players >> 4) + 1);
 		naomi_eeprom_bios_set(8, players | (eeprom[8] & 1));
 	}
 }
@@ -1612,7 +1612,7 @@ struct maple_keyboard : maple_base
 			return MDRS_DeviceReply;
 
 		default:
-			INFO_LOG(MAPLE, "Keyboard: unknown MAPLE COMMAND %d", cmd);
+			INFO_LOG(MAPLE, "Keyboard: unknown MAPLE COMMAND %d\n", cmd);
 		 return MDRE_UnknownCmd;
 		}
 	}
@@ -1727,7 +1727,7 @@ struct maple_mouse : maple_base
 			return MDRS_DeviceReply;
 
  		default:
-			INFO_LOG(MAPLE, "Mouse: unknown MAPLE COMMAND %d", cmd);
+			INFO_LOG(MAPLE, "Mouse: unknown MAPLE COMMAND %d\n", cmd);
 			return MDRE_UnknownCmd;
 		}
 	}
@@ -1809,7 +1809,7 @@ struct maple_lightgun : maple_base
 			return MDRS_DeviceReply;
 
 	  default:
-			INFO_LOG(MAPLE, "Light gun: unknown MAPLE COMMAND %d", cmd);
+			INFO_LOG(MAPLE, "Light gun: unknown MAPLE COMMAND %d\n", cmd);
 		 return MDRE_UnknownCmd;
 	  }
    }
@@ -2786,7 +2786,7 @@ struct maple_naomi_jamma : maple_sega_controller
 		// (the flag is this device's: the writer is done with it first)
 		save_writer_drain();
 		if (save_state.Failed())
-			WARN_LOG(MAPLE, "Cannot save EEPROM to file %s", eeprom_file);
+			WARN_LOG(MAPLE, "Cannot save EEPROM to file %s\n", eeprom_file);
 		EEPROM_loaded = false;
 	}
 
@@ -2808,7 +2808,7 @@ struct maple_naomi_jamma : maple_sega_controller
 		{
 			filestream_read(f, EEPROM, 0x80);
 			filestream_close(f);
-			DEBUG_LOG(MAPLE, "Loaded EEPROM from %s", eeprom_file);
+			DEBUG_LOG(MAPLE, "Loaded EEPROM from %s\n", eeprom_file);
 		}
 		else if (naomi_default_eeprom != NULL)
 			memcpy(EEPROM, naomi_default_eeprom, 0x80);
@@ -2823,7 +2823,7 @@ struct maple_naomi_jamma : maple_sega_controller
 		if (const int failed = save_state.Failed())
 		{
 			if (failed == 1)
-				WARN_LOG(MAPLE, "Cannot save EEPROM to file %s. It will be tried again", eeprom_file);
+				WARN_LOG(MAPLE, "Cannot save EEPROM to file %s. It will be tried again\n", eeprom_file);
 			eeprom_dirty = true;
 		}
 		if (!eeprom_dirty || save_state.Waiting())
@@ -3126,7 +3126,7 @@ struct maple_naomi_jamma : maple_sega_controller
 			case 0x13:	// Store repeated request
 				if (len > 0 && node_id > 0 && node_id <= 0x1f)
 				{
-					INFO_LOG(MAPLE, "JVS node %d: Storing %d cmd bytes", node_id, len);
+					INFO_LOG(MAPLE, "JVS node %d: Storing %d cmd bytes\n", node_id, len);
 					jvs_repeat_request[node_id - 1][0] = len;
 					memcpy(&jvs_repeat_request[node_id - 1][1], cmd, len);
 				}
@@ -3342,7 +3342,7 @@ struct maple_naomi_jamma : maple_sega_controller
 			case 0x41: // reset?
 				if (mie_pipe == NULL)
 					goto unknown;
-				DEBUG_LOG(MAPLE, "JVS: RS422 reset");
+				DEBUG_LOG(MAPLE, "JVS: RS422 reset\n");
 				while (mie_pipe->available() > 0)
 					mie_pipe->read();
 				break;
@@ -3350,7 +3350,7 @@ struct maple_naomi_jamma : maple_sega_controller
 			case 0x47: // send data
 				if (mie_pipe == NULL)
 					goto unknown;
-				DEBUG_LOG(MAPLE, "JVS: RS422 send %02x", dma_buffer_in[4]);
+				DEBUG_LOG(MAPLE, "JVS: RS422 send %02x\n", dma_buffer_in[4]);
 				if (dma_count_in >= 5)
 					mie_pipe->write(dma_buffer_in[4]);
 				break;
@@ -3360,7 +3360,7 @@ struct maple_naomi_jamma : maple_sega_controller
 					if (mie_pipe == NULL)
 						goto unknown;
 					const int avail = std::min(mie_pipe->available(), 0xfe);
-					DEBUG_LOG(MAPLE, "JVS: RS422 receive %d bytes", avail);
+					DEBUG_LOG(MAPLE, "JVS: RS422 receive %d bytes\n", avail);
 					w8(MDRS_JVSReply);
 					w8(0x00);
 					w8(0x20);
@@ -3384,7 +3384,7 @@ struct maple_naomi_jamma : maple_sega_controller
 
 			default:
 			unknown:
-				INFO_LOG(MAPLE, "JVS: Unknown 0x86 sub-command %x", subcode);
+				INFO_LOG(MAPLE, "JVS: Unknown 0x86 sub-command %x\n", subcode);
 				w8(MDRE_UnknownCmd);
 				w8(0x00);
 				w8(0x20);
@@ -3462,7 +3462,7 @@ struct maple_naomi_jamma : maple_sega_controller
 						if (fw_dump == NULL)
 						{
 							fw_dump = filestream_open(filename, RETRO_VFS_FILE_ACCESS_WRITE, RETRO_VFS_FILE_ACCESS_HINT_NONE);
-							INFO_LOG(MAPLE, "Saving JVS firmware to %s", filename);
+							INFO_LOG(MAPLE, "Saving JVS firmware to %s\n", filename);
 							break;
 						}
 					}
@@ -3567,7 +3567,7 @@ struct maple_naomi_jamma : maple_sega_controller
 			break;
 
 		default:
-			INFO_LOG(MAPLE, "Unknown Maple command %x", cmd);
+			INFO_LOG(MAPLE, "Unknown Maple command %x\n", cmd);
 			w8(MDRE_UnknownCmd);
 			w8(0x00);
 			w8(0x00);
@@ -3827,7 +3827,7 @@ u32 jvs_io_board::handle_jvs_message(u8 *buffer_in, u32 length_in, u8 *buffer_ou
 		break;
 
 	case 0x70:
-		LOGJVS("JVS 0x70: %02x %02x %02x %02x", buffer_in[1], buffer_in[2], buffer_in[3], buffer_in[4]);
+		LOGJVS("JVS 0x70: %02x %02x %02x %02x\n", buffer_in[1], buffer_in[2], buffer_in[3], buffer_in[4]);
 		init_in_progress = true;
 		JVS_STATUS1();
 		JVS_STATUS1();
@@ -3850,7 +3850,7 @@ u32 jvs_io_board::handle_jvs_message(u8 *buffer_in, u32 length_in, u8 *buffer_ou
 	default:
 		if ((jvs_cmd >= 0x20 && jvs_cmd <= 0x38) || (jvs_cmd == 0x74 && printer_present())) // Read inputs and more
 		{
-			LOGJVS("JVS Node %d: ", node_id);
+			LOGJVS("JVS Node %d: \n", node_id);
 			PlainJoystickState pjs;
 			parent->config->GetInput(&pjs);
 
@@ -3865,12 +3865,12 @@ u32 jvs_io_board::handle_jvs_message(u8 *buffer_in, u32 length_in, u8 *buffer_ou
 				case 0x20:	// Read digital input
 					{
 						JVS_STATUS1();	// report byte
-						LOGJVS("btns ");
+						LOGJVS("btns \n");
 
 						u8 global_btns = 0;
 						if (read_test_switch())		// Global test button
 						   global_btns |= 0x80;
-						LOGJVS("glob %02x ", global_btns);
+						LOGJVS("glob %02x \n", global_btns);
 						JVS_OUT(global_btns);		// test, tilt1, tilt2, tilt3, unused, unused, unused, unused
 
 						u32 next_keycode = 0;
@@ -3912,11 +3912,11 @@ u32 jvs_io_board::handle_jvs_message(u8 *buffer_in, u32 length_in, u8 *buffer_ou
 							  next_keycode = new_keycode;
 						   }
 						   keycode = wired_inputs(first_player + player, keycode);
-						   LOGJVS("P%d %02x ", first_player + player + 1, (keycode >> 8) & 0xFF);
+						   LOGJVS("P%d %02x \n", first_player + player + 1, (keycode >> 8) & 0xFF);
 						   JVS_OUT(keycode >> 8);
 						   if (buffer_in[cmdi + 2] > 1)
 						   {
-							  LOGJVS("%02x ", keycode & 0xFF);
+							  LOGJVS("%02x \n", keycode & 0xFF);
 							  JVS_OUT(keycode);
 						   }
 						}
@@ -3927,7 +3927,7 @@ u32 jvs_io_board::handle_jvs_message(u8 *buffer_in, u32 length_in, u8 *buffer_ou
 				case 0x21:	// Read coins
 					{
 						JVS_STATUS1();	// report byte
-						LOGJVS("coins ");
+						LOGJVS("coins \n");
 						const int slots = JVS_FIT(buffer_in[cmdi + 1]);
 						for (int slot = 0; slot < slots; slot++)
 						{
@@ -3945,13 +3945,13 @@ u32 jvs_io_board::handle_jvs_message(u8 *buffer_in, u32 length_in, u8 *buffer_ou
 							  else
 								 coin_chute[slot] = false;
 
-							  LOGJVS("0:%d ", coin_count[slot]);
+							  LOGJVS("0:%d \n", coin_count[slot]);
 							  JVS_OUT((coin_count[slot] >> 8) & 0x3F);		// status (2 highest bits, 0: normal), coin count MSB
 							  JVS_OUT(coin_count[slot]);					// coin count LSB
 						   }
 						   else
 						   {
-							  LOGJVS("%d:0 ", slot);
+							  LOGJVS("%d:0 \n", slot);
 							  JVS_OUT(0);
 							  JVS_OUT(0);
 						   }
@@ -3966,7 +3966,7 @@ u32 jvs_io_board::handle_jvs_message(u8 *buffer_in, u32 length_in, u8 *buffer_ou
 						int axis = 0;
 						const int axes = JVS_FIT(buffer_in[cmdi + 1]);
 
-						LOGJVS("ana ");
+						LOGJVS("ana \n");
 						if (lightgun_as_analog)
 						{
 							// Death Crimson / Confidential Mission
@@ -3981,7 +3981,7 @@ u32 jvs_io_board::handle_jvs_message(u8 *buffer_in, u32 length_in, u8 *buffer_ou
 								   x = 0;
 								   y = 0;
 							   }
-							   LOGJVS("P%d x,y:%4x,%4x ", player_num + 1, x, y);
+							   LOGJVS("P%d x,y:%4x,%4x \n", player_num + 1, x, y);
 							   JVS_OUT(x >> 8);		// X, MSB
 							   JVS_OUT(x);			// X, LSB
 							   axis++;
@@ -4033,7 +4033,7 @@ u32 jvs_io_board::handle_jvs_message(u8 *buffer_in, u32 length_in, u8 *buffer_ou
 							if (half && axis_value == 0x8000)
 								axis_value = 0x8100;
 						   }
-						   LOGJVS("P%d.%d:%4x ", player_num + 1, player_axis + 1, axis_value);
+						   LOGJVS("P%d.%d:%4x \n", player_num + 1, player_axis + 1, axis_value);
 						   JVS_OUT(axis_value >> 8);
 						   JVS_OUT(axis_value);
 						}
@@ -4044,7 +4044,7 @@ u32 jvs_io_board::handle_jvs_message(u8 *buffer_in, u32 length_in, u8 *buffer_ou
 				case 0x23:	// Read rotary encoders
 					{
 					   JVS_STATUS1();	// report byte
-					   LOGJVS("rotenc ");
+					   LOGJVS("rotenc \n");
 					   // (there are four mice, an encoder for each of the two ways one moves)
 					   int chans = JVS_FIT(buffer_in[cmdi + 1]);
 					   if (chans > 8)
@@ -4063,7 +4063,7 @@ u32 jvs_io_board::handle_jvs_message(u8 *buffer_in, u32 length_in, u8 *buffer_ou
 							 v = read_rotary_encoder(rotx[chan / 2], mo_x_delta[chan / 2] / 3.f);
 							 mo_x_delta[chan / 2] = 0;
 						  }
-						  LOGJVS("%d:%4x ", chan, v);
+						  LOGJVS("%d:%4x \n", chan, v);
 						  JVS_OUT(v >> 8);		// MSB
 						  JVS_OUT(v);			// LSB
 					   }
@@ -4079,7 +4079,7 @@ u32 jvs_io_board::handle_jvs_message(u8 *buffer_in, u32 length_in, u8 *buffer_ou
 						// (guns are numbered from 1: number 0 is no player either)
 						if ((u32)player_num >= 4)
 						{
-							LOGJVS("P%d lightgun inv ", player_num + 1);
+							LOGJVS("P%d lightgun inv \n", player_num + 1);
 							JVS_OUT(0xFF);
 							JVS_OUT(0xFF);
 							JVS_OUT(0xFF);
@@ -4091,7 +4091,7 @@ u32 jvs_io_board::handle_jvs_message(u8 *buffer_in, u32 length_in, u8 *buffer_ou
 						   //u16 y = (479 - mo_y_abs[player_num]) * 0xFFFF / 479 + 0.5f;
 						   s16 x, y;
 						   read_screen_position(player_num, x, y);
-						   LOGJVS("P%d lightgun %4x,%4x ", player_num + 1, x, y);
+						   LOGJVS("P%d lightgun %4x,%4x \n", player_num + 1, x, y);
 						   JVS_OUT(x >> 8);		// X, MSB
 						   JVS_OUT(x);			// X, LSB
 						   JVS_OUT(y >> 8);		// Y, MSB
@@ -4102,7 +4102,7 @@ u32 jvs_io_board::handle_jvs_message(u8 *buffer_in, u32 length_in, u8 *buffer_ou
 					break;
 
 				case 0x32:	// switched outputs
-					LOGJVS("output(%d) %x", buffer_in[cmdi + 1], buffer_in[cmdi + 2]);
+					LOGJVS("output(%d) %x\n", buffer_in[cmdi + 1], buffer_in[cmdi + 2]);
 					if (buffer_in[cmdi + 1] > 0)
 						output0 = buffer_in[cmdi + 2];
 					write_digital_out(buffer_in[cmdi + 1], &buffer_in[cmdi + 2]);
@@ -4111,7 +4111,7 @@ u32 jvs_io_board::handle_jvs_message(u8 *buffer_in, u32 length_in, u8 *buffer_ou
 					break;
 
 				case 0x33:	// analog outputs: not switches, and nothing here has any
-					LOGJVS("analog output(%d) %x", buffer_in[cmdi + 1], buffer_in[cmdi + 2]);
+					LOGJVS("analog output(%d) %x\n", buffer_in[cmdi + 1], buffer_in[cmdi + 2]);
 					JVS_STATUS1();	// report byte
 					cmdi += buffer_in[cmdi + 1] + 2;
 					break;
@@ -4142,7 +4142,7 @@ u32 jvs_io_board::handle_jvs_message(u8 *buffer_in, u32 length_in, u8 *buffer_ou
 
 				default:
 				unknown_input:
-					DEBUG_LOG(MAPLE, "JVS: Unknown input type %x", buffer_in[cmdi]);
+					DEBUG_LOG(MAPLE, "JVS: Unknown input type %x\n", buffer_in[cmdi]);
 					JVS_OUT(2);			// report byte: command error
 					cmdi = length_in;	// Ignore subsequent commands
 					break;
@@ -4157,7 +4157,7 @@ u32 jvs_io_board::handle_jvs_message(u8 *buffer_in, u32 length_in, u8 *buffer_ou
 		}
 		else
 		{
-			INFO_LOG(MAPLE, "JVS: Unknown JVS command %x", jvs_cmd);
+			INFO_LOG(MAPLE, "JVS: Unknown JVS command %x\n", jvs_cmd);
 			JVS_OUT(2);	// Unknown command
 		}
 		break;
@@ -4168,7 +4168,7 @@ u32 jvs_io_board::handle_jvs_message(u8 *buffer_in, u32 length_in, u8 *buffer_ou
 		calc_crc = ((calc_crc + buffer_out[i]) & 0xFF);
 
 	JVS_OUT(calc_crc);
-	LOGJVS("CRC %x", calc_crc);
+	LOGJVS("CRC %x\n", calc_crc);
 
 	return length;
 }
@@ -4492,7 +4492,7 @@ static void rfid_load_card(int player, u32& seed)
 		card[6] = rfid_random(seed);
 		card[7] = rfid_random(seed);
 	}
-	INFO_LOG(NAOMI, "Card P%d initialized", player + 1);
+	INFO_LOG(NAOMI, "Card P%d initialized\n", player + 1);
 }
 
 static void rfid_save_card(int player)
@@ -4687,7 +4687,7 @@ struct maple_rfid_reader : maple_base
 			return 0xfe;
 
 		case 0xA1:	// read card data
-			DEBUG_LOG(MAPLE, "RFID card read (data? %d)", c.d4Seen);
+			DEBUG_LOG(MAPLE, "RFID card read (data? %d)\n", c.d4Seen);
 			w32(status());
 			// serial0 and serial1 only, unless after D4
 			wptr(c.data, c.d4Seen ? sizeof(c.data) : 8);
@@ -4696,14 +4696,14 @@ struct maple_rfid_reader : maple_base
 		case 0xD9:	// lock card
 			c.locked = 1;
 			w32(status());
-			INFO_LOG(MAPLE, "RFID card %d locked", bus_id);
+			INFO_LOG(MAPLE, "RFID card %d locked\n", bus_id);
 			return 0xfe;
 
 		case 0xDA:	// unlock card
 			c.locked = 0;
 			c.inserted = 0;
 			w32(status());
-			NOTICE_LOG(MAPLE, "RFID card %d unlocked", bus_id);
+			NOTICE_LOG(MAPLE, "RFID card %d unlocked\n", bus_id);
 			return 0xfe;
 
 		case 0xB1:	// write to card
@@ -4719,7 +4719,7 @@ struct maple_rfid_reader : maple_base
 				if (offset < sizeof(c.data))
 				{
 					size = std::min<u32>(size, sizeof(c.data) - offset);
-					DEBUG_LOG(MAPLE, "RFID card write: offset 0x%x len %d", offset, size);
+					DEBUG_LOG(MAPLE, "RFID card write: offset 0x%x len %d\n", offset, size);
 					rptr(c.data + offset, size);
 					rfid_save_card(bus_id == 2 ? 1 : 0);
 				}
@@ -4743,11 +4743,11 @@ struct maple_rfid_reader : maple_base
 					counter = 3;
 					break;
 				default:
-					WARN_LOG(MAPLE, "Unknown counter selector %x", counter);
+					WARN_LOG(MAPLE, "Unknown counter selector %x\n", counter);
 					counter = 0;
 					break;
 				}
-				DEBUG_LOG(MAPLE, "RFID decrement %d", counter);
+				DEBUG_LOG(MAPLE, "RFID decrement %d\n", counter);
 				c.data[19 - counter]--;
 				rfid_save_card(bus_id == 2 ? 1 : 0);
 				w32(status());
@@ -4755,7 +4755,7 @@ struct maple_rfid_reader : maple_base
 			}
 
 		default:
-			INFO_LOG(MAPLE, "RFID: Unknown Maple command %x", cmd);
+			INFO_LOG(MAPLE, "RFID: Unknown Maple command %x\n", cmd);
 			return MDRE_UnknownCmd;
 		}
 	}
@@ -4890,7 +4890,7 @@ maple_device* maple_CreateAt(MapleDeviceType type, void *at)
 		break;
 
 	default:
-		ERROR_LOG(MAPLE, "Invalid device type %d", type);
+		ERROR_LOG(MAPLE, "Invalid device type %d\n", type);
 		die("Invalid maple device type");
 		break;
 	}

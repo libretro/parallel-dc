@@ -230,7 +230,7 @@ void CPUSwitchMode(int mode, bool saveState, bool breakLoop)
 		/* A mode there is none of: the processor is in no state to go
 		 * on from, and is left standing (upstream). It was the emulator
 		 * that stopped, die(), for a value the program writes. */
-		ERROR_LOG(AICA_ARM, "Unsupported ARM mode %02x", mode);
+		ERROR_LOG(AICA_ARM, "Unsupported ARM mode %02x\n", mode);
 		Arm7Enabled = false;
 		break;
 	}
@@ -281,7 +281,7 @@ void CPUSoftwareInterrupt(int comment)
 
 void CPUUndefinedException()
 {
-	WARN_LOG(AICA_ARM, "arm7: CPUUndefinedException(). SOMETHING WENT WRONG");
+	WARN_LOG(AICA_ARM, "arm7: CPUUndefinedException(). SOMETHING WENT WRONG\n");
 	u32 PC = reg[R15_ARM_NEXT].I+4;
 	CPUSwitchMode(0x1b, true, false);
 	reg[14].I = PC;
@@ -293,7 +293,7 @@ void FlushCache();
 
 void aicaarm_reset()
 {
-   DEBUG_LOG(AICA_ARM, "AICA ARM Reset");
+   DEBUG_LOG(AICA_ARM, "AICA ARM Reset\n");
 #if FEAT_AREC != DYNAREC_NONE
 	FlushCache();
 #endif

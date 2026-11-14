@@ -109,7 +109,8 @@ void _vmem_unprotect_vram(u32 addr, u32 size)
 		cache_protected[page] = 0;
 }
 bool _vmem_vram_page_protected(u32 page) { return cache_protected[page] != 0; }
-void GenericLog(LogTypes::LOG_LEVELS level, LogTypes::LOG_TYPE type, const char *file, int line, const char *fmt, ...) { }
+/* (no log) */
+retro_log_printf_t log_cb;
 /* (no render to a texture is watched here: rend/rtt_watch.h) */
 bool rtt_watch_pending(u32 offset, u32 size, RttWatch *watch) { return false; }
 void rtt_watch_overwrite(u32 offset, u32 size) { }

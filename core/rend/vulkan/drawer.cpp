@@ -514,7 +514,7 @@ bool Drawer::Draw(const Texture *fogTexture, const Texture *paletteTexture)
 	{
 		const RenderPass& current_pass = pvrrc.render_passes.head()[render_pass];
 
-		DEBUG_LOG(RENDERER, "Render pass %d OP %d PT %d TR %d MV %d autosort %d", render_pass + 1,
+		DEBUG_LOG(RENDERER, "Render pass %d OP %d PT %d TR %d MV %d autosort %d\n", render_pass + 1,
 				current_pass.op_count - previous_pass.op_count,
 				current_pass.pt_count - previous_pass.pt_count,
 				current_pass.tr_count - previous_pass.tr_count,
@@ -648,7 +648,7 @@ void TextureDrawer::MakeSsaaAttachments(u32 side)
 
 vk::CommandBuffer TextureDrawer::BeginRenderPass()
 {
-	DEBUG_LOG(RENDERER, "RenderToTexture packmode=%d stride=%d - %d,%d -> %d,%d @ %08x", FB_W_CTRL.fb_packmode, FB_W_LINESTRIDE.stride * 8,
+	DEBUG_LOG(RENDERER, "RenderToTexture packmode=%d stride=%d - %d,%d -> %d,%d @ %08x\n", FB_W_CTRL.fb_packmode, FB_W_LINESTRIDE.stride * 8,
 			FB_X_CLIP.min, FB_Y_CLIP.min, FB_X_CLIP.max, FB_Y_CLIP.max, FB_W_SOF1 & VRAM_MASK);
 	matrices.CalcMatrices(&pvrrc);
 
@@ -691,7 +691,7 @@ vk::CommandBuffer TextureDrawer::BeginRenderPass()
 		const u32 side = std::max(widthPow2, heightPow2);
 		if (side > samplesAttachment->getExtent().width)
 		{
-			WARN_LOG(RENDERER, "Render to a texture of %u x %u: SSAA's attachments made larger", widthPow2, heightPow2);
+			WARN_LOG(RENDERER, "Render to a texture of %u x %u: SSAA's attachments made larger\n", widthPow2, heightPow2);
 			MakeSsaaAttachments(side);
 		}
 	}
@@ -723,7 +723,7 @@ vk::CommandBuffer TextureDrawer::BeginRenderPass()
 				if (!saidLarger)
 				{
 					saidLarger = true;
-					WARN_LOG(RENDERER, "Render to a texture of %u x %u: a depth made for it", areaWidth, areaHeight);
+					WARN_LOG(RENDERER, "Render to a texture of %u x %u: a depth made for it\n", areaWidth, areaHeight);
 				}
 				const u32 w = depthAttachment ? std::max(areaWidth, depthAttachment->getExtent().width) : areaWidth;
 				const u32 h = depthAttachment ? std::max(areaHeight, depthAttachment->getExtent().height) : areaHeight;

@@ -76,7 +76,7 @@ DinokichCardReader::DinokichCardReader(SerialPort *port, const std::string& game
 		if (f != nullptr)
 		{
 			if (filestream_read(f, slots[i].eeprom, EEPROM_SIZE) != (int64_t)EEPROM_SIZE)
-				WARN_LOG(NAOMI, "IC card %d: truncated read", i + 1);
+				WARN_LOG(NAOMI, "IC card %d: truncated read\n", i + 1);
 			filestream_close(f);
 		}
 		else
@@ -103,7 +103,7 @@ DinokichCardReader::~DinokichCardReader()
  * card's number. */
 void DinokichCardReader::makeCard(int slot, bool loveBerry, u32& random)
 {
-	INFO_LOG(NAOMI, "Creating new IC card %d", slot + 1);
+	INFO_LOG(NAOMI, "Creating new IC card %d\n", slot + 1);
 	dinokich_plain_t plain;
 	memset(&plain, 0, sizeof(plain));
 	memcpy(plain.serial_prefix, "DINO", sizeof(plain.serial_prefix));
@@ -133,9 +133,9 @@ void DinokichCardReader::makeCard(int slot, bool loveBerry, u32& random)
 void DinokichCardReader::saveCard(int slot)
 {
 	if (retro_atomic_load_acquire_int(&failed[slot]) && retro_atomic_exchange_int(&failed[slot], 0))
-		WARN_LOG(NAOMI, "Can't save IC card to %s", paths[slot].c_str());
+		WARN_LOG(NAOMI, "Can't save IC card to %s\n", paths[slot].c_str());
 	if (!save_writer_put_file(paths[slot].c_str(), slots[slot].eeprom, EEPROM_SIZE, &failed[slot]))
-		WARN_LOG(NAOMI, "Can't save IC card to %s", paths[slot].c_str());
+		WARN_LOG(NAOMI, "Can't save IC card to %s\n", paths[slot].c_str());
 }
 
 void DinokichCardReader::write(u8 v)
@@ -180,7 +180,7 @@ void DinokichCardReader::handleFrame()
 {
 	if (xorSum(rx, rxLen) != 0)
 	{
-		WARN_LOG(NAOMI, "IC card reader: bad checksum, frame dropped");
+		WARN_LOG(NAOMI, "IC card reader: bad checksum, frame dropped\n");
 		return;
 	}
 	u8 payload[255];
@@ -304,7 +304,7 @@ u8 DinokichCardReader::command(const u8 *f, u32 len, u8 *payload, u32& payloadLe
 		}
 
 	default:
-		WARN_LOG(NAOMI, "IC card reader: command %02x unknown", cmd);
+		WARN_LOG(NAOMI, "IC card reader: command %02x unknown\n", cmd);
 		return ST_BAD_COMMAND;
 	}
 }
@@ -313,7 +313,7 @@ void DinokichCardReader::sendResponse(u8 status, const u8 *payload, u32 len)
 {
 	if (txCount + len + 5 > TX_SIZE)
 	{
-		WARN_LOG(NAOMI, "IC card reader: nothing reads what the reader sends; dropped");
+		WARN_LOG(NAOMI, "IC card reader: nothing reads what the reader sends; dropped\n");
 		return;
 	}
 	u8 x = 0;

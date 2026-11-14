@@ -59,7 +59,7 @@ void TexDecoder::Init()
 	if (!v11)
 #endif
 	{
-		INFO_LOG(RENDERER, "Vulkan: textures are converted on the CPU");
+		INFO_LOG(RENDERER, "Vulkan: textures are converted on the CPU\n");
 		return;
 	}
 	takes32 = Storable(physicalDevice, vk::Format::eR8G8B8A8Unorm, vk::Format::eR32Uint, false);
@@ -132,7 +132,7 @@ void TexDecoder::Init()
 		const vk::DescriptorSetAllocateInfo allocInfo(*pools[i], MAX_DISPATCHES, setLayouts.data());
 		if (device.allocateDescriptorSets(&allocInfo, &sets[(size_t)i * MAX_DISPATCHES]) != vk::Result::eSuccess)
 		{
-			ERROR_LOG(RENDERER, "Vulkan: no descriptor sets for the texture decoder");
+			ERROR_LOG(RENDERER, "Vulkan: no descriptor sets for the texture decoder\n");
 			Term();
 			return;
 		}
@@ -146,7 +146,7 @@ void TexDecoder::Init()
 	jobCount = dispatchCount = copyCount = 0;
 	ringUsed = 0;
 	ready = true;
-	INFO_LOG(RENDERER, "Vulkan: textures are made on the GPU (%u KB of ring a frame; 32-bit %d, 16-bit %d%d%d, 8-bit %d; copied as they are %d%d%d)",
+	INFO_LOG(RENDERER, "Vulkan: textures are made on the GPU (%u KB of ring a frame; 32-bit %d, 16-bit %d%d%d, 8-bit %d; copied as they are %d%d%d)\n",
 			ringFrame / 1024, takes32, takes16[0], takes16[1], takes16[2], takes8,
 			native[0] != vk::Format::eUndefined, native[1] != vk::Format::eUndefined, native[2] != vk::Format::eUndefined);
 }

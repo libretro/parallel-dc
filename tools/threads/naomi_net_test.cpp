@@ -30,7 +30,8 @@ static int failures;
 	} } while (0)
 
 settings_t settings;
-void GenericLog(LogTypes::LOG_LEVELS, LogTypes::LOG_TYPE, const char *, int, const char *, ...) {}
+/* (no log) */
+retro_log_printf_t log_cb;
 
 #define PACKET 600
 

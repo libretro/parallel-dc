@@ -81,7 +81,7 @@ static void chd_hunk_read_sync(chd_disc_t *d, u32 hunk)
 		d->old_hunk = hunk;
 	else
 	{
-		WARN_LOG(GDROM, "chd: hunk %u failed to decode", hunk);
+		WARN_LOG(GDROM, "chd: hunk %u failed to decode\n", hunk);
 		memset(d->hunk_mem, 0, d->hunkbytes);
 		d->old_hunk = NO_HUNK;
 	}
@@ -243,11 +243,11 @@ static bool chd_try_open(Disc *disc, chd_disc_t *d, const char* file)
 	d->chd = chd_image_open(file, err, sizeof(err));
 	if (d->chd == NULL)
 	{
-		INFO_LOG(GDROM, "chd: %s", err[0] ? err : "out of memory");
+		INFO_LOG(GDROM, "chd: %s\n", err[0] ? err : "out of memory");
 		return false;
 	}
 
-	INFO_LOG(GDROM, "chd: parsing file %s", file);
+	INFO_LOG(GDROM, "chd: parsing file %s\n", file);
 
 	d->hunkbytes = chd_image_hunk_bytes(d->chd);
 	d->total_hunks = chd_image_hunk_count(d->chd);
@@ -299,18 +299,18 @@ static bool chd_try_open(Disc *disc, chd_disc_t *d, const char* file)
 		pregap_kept = pregap > 0 && meta.pgtype[0] == 'V' ? (u32)pregap : 0;
 		if ((u32)tkid!=(disc->track_count+1) || sector_size == 0 || frames < 0 || pregap < 0 || postgap < 0 || (int)pregap_kept > frames)
 		{
-			INFO_LOG(GDROM, "chd: track %d of type %s, %d frames, pregap %d is not supported", tkid, type, frames, pregap);
+			INFO_LOG(GDROM, "chd: track %d of type %s, %d frames, pregap %d is not supported\n", tkid, type, frames, pregap);
 			return false;
 		}
 		if (strcmp(subtype, "NONE") != 0)
-			WARN_LOG(GDROM, "chd: track %d has subcode (%s): not used", tkid, subtype);
+			WARN_LOG(GDROM, "chd: track %d has subcode (%s): not used\n", tkid, subtype);
 		/* (a disc has 99 tracks at most, and so has its table of contents) */
 		if (disc->track_count >= 99)
 		{
-			INFO_LOG(GDROM, "chd: more than 99 tracks");
+			INFO_LOG(GDROM, "chd: more than 99 tracks\n");
 			return false;
 		}
-		DEBUG_LOG(GDROM, "chd: track %d %s %d frames", tkid, type, frames);
+		DEBUG_LOG(GDROM, "chd: track %d %s %d frames\n", tkid, type, frames);
 		memset(&t, 0, sizeof(t));
 		/* (where INDEX 01 is: after the pregap) */
 		t.StartFAD = total_frames + pregap;
@@ -345,14 +345,14 @@ static bool chd_try_open(Disc *disc, chd_disc_t *d, const char* file)
 	/* (a hard disk's image, or anything else with no track in it, is no disc) */
 	if (disc->track_count == 0)
 	{
-		INFO_LOG(GDROM, "chd: no track found");
+		INFO_LOG(GDROM, "chd: no track found\n");
 		return false;
 	}
 
 	if (gdrom)
 	{
 		if (total_frames!=549300 || disc->track_count<3)
-			WARN_LOG(GDROM, "WARNING: chd: Total frames is wrong: %u frames in %u tracks", total_frames, disc->track_count);
+			WARN_LOG(GDROM, "WARNING: chd: Total frames is wrong: %u frames in %u tracks\n", total_frames, disc->track_count);
 
 		disc_fill_gd_session(disc);
 	}

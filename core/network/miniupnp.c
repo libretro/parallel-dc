@@ -30,14 +30,14 @@ bool miniupnp_init(miniupnp_t *u)
 	u->count = 0;
 	if (!network_init() || !net_upnp_discover(&u->gateway, UPNP_TIMEOUT_MS))
 	{
-		INFO_LOG(MODEM, "UPnP: no Internet gateway found");
+		INFO_LOG(MODEM, "UPnP: no Internet gateway found\n");
 		return false;
 	}
 	u->found = true;
 	if (net_upnp_external_address(&u->gateway, wan, sizeof(wan), UPNP_TIMEOUT_MS))
-		INFO_LOG(MODEM, "UPnP: this host %s, external address %s", u->gateway.lan_addr, wan);
+		INFO_LOG(MODEM, "UPnP: this host %s, external address %s\n", u->gateway.lan_addr, wan);
 	else
-		INFO_LOG(MODEM, "Cannot determine external IP address");
+		INFO_LOG(MODEM, "Cannot determine external IP address\n");
 	return true;
 }
 
@@ -57,7 +57,7 @@ bool miniupnp_add_port_mapping(miniupnp_t *u, int port, bool tcp)
 		return false;
 	if (!net_upnp_add_port_mapping(&u->gateway, (unsigned)port, !tcp, "Flycast", UPNP_TIMEOUT_MS))
 	{
-		INFO_LOG(MODEM, "Port %d redirection failed", port);
+		INFO_LOG(MODEM, "Port %d redirection failed\n", port);
 		return false;
 	}
 	u->mapped[u->count].port = (unsigned)port;

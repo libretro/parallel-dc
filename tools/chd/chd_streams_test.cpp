@@ -26,11 +26,8 @@
 #include "imgread/common.h"
 #include "imgread/chd_image.h"
 
-void GenericLog(LogTypes::LOG_LEVELS, LogTypes::LOG_TYPE, const char*, int,
-		const char* fmt, ...)
-{
-	(void)fmt;
-}
+/* (no log) */
+retro_log_printf_t log_cb;
 
 static uintptr_t reader_thread;
 static long      reader_decodes;

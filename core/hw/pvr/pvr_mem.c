@@ -184,7 +184,7 @@ void YUV_data(u32* data , u32 count)
 	if (YUV_blockcount==0)
 	{
 		/* not set up: nothing to convert to, and not a reason to stop */
-		WARN_LOG(PVR, "YUV_data: YUV decoder not inited");
+		WARN_LOG(PVR, "YUV_data: YUV decoder not inited\n");
 		return;
 	}
 	/* the picture before this one is complete: this is the start of the next */
@@ -196,7 +196,7 @@ void YUV_data(u32* data , u32 count)
 	if (block_size != 384)
 	{
 		/* no support for 512 */
-		WARN_LOG(PVR, "YUV_data: block size 512 not supported");
+		WARN_LOG(PVR, "YUV_data: block size 512 not supported\n");
 		return;
 	}
 
@@ -254,7 +254,7 @@ static TYPES_INLINE void pvr_area1_written(u32 addr)
 void DYNACALL pvr_write_area1_8(u32 addr, u8 data)
 {
 	(void)data;
-	INFO_LOG(MEMORY, "%08x: 8-bit VRAM writes are not possible", addr);
+	INFO_LOG(MEMORY, "%08x: 8-bit VRAM writes are not possible\n", addr);
 }
 void DYNACALL pvr_write_area1_16(u32 addr, u16 data)
 {
@@ -285,7 +285,7 @@ void TAWriteSQ_to_vram(u32 address, u8* sq)
    u32 address_w = address & 0x01FFFFE0;
    bool path64b = (address & 0x02000000 ? SB_LMMODE1 : SB_LMMODE0) == 0;
 
-   DEBUG_LOG(MEMORY, "Vram TAWriteSQ 0x%X SB_LMMODE0 %d", address, SB_LMMODE0);
+   DEBUG_LOG(MEMORY, "Vram TAWriteSQ 0x%X SB_LMMODE0 %d\n", address, SB_LMMODE0);
    if (path64b)
    {
       /* 64b path */

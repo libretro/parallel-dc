@@ -63,7 +63,7 @@ public:
 		/* (the derived renderers waited for the card's frames: WaitAll()) */
 		if (parseArenaOk)
 		{
-			NOTICE_LOG(RENDERER, "Vulkan: %u renders parsed where the card reads them, %u copied there",
+			NOTICE_LOG(RENDERER, "Vulkan: %u renders parsed where the card reads them, %u copied there\n",
 					parsedHere, parsedCopied);
 			parse_arena_vk_term(&parseArena);
 			parseArenaOk = false;
@@ -240,10 +240,10 @@ protected:
 			parsed.modVols = parse_arena_offset(&a, (unsigned)parsedSlot,
 					pvrrc.mv_clip.used() != 0 ? PARSE_ARENA_MV_CLIP : PARSE_ARENA_MODTRIG);
 			if (parsedHere++ == 0)
-				NOTICE_LOG(RENDERER, "Vulkan: renders parsed where the card reads them, not copied there");
+				NOTICE_LOG(RENDERER, "Vulkan: renders parsed where the card reads them, not copied there\n");
 		}
 		else if (!pvrrc.gpu && parsedCopied++ == 0 && parseArenaOk)
-			WARN_LOG(RENDERER, "Vulkan: a render copied to the card though its memory has the parse's room");
+			WARN_LOG(RENDERER, "Vulkan: a render copied to the card though its memory has the parse's room\n");
 		drawer.SetParsed(parsed);
 	}
 	void DetachParse()

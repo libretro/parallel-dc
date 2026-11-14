@@ -494,7 +494,7 @@ bool OITDrawer::Draw(const Texture *fogTexture, const Texture *paletteTexture)
     {
         const RenderPass& current_pass = pvrrc.render_passes.head()[render_pass];
 
-        DEBUG_LOG(RENDERER, "Render pass %d OP %d PT %d TR %d MV %d TrMV %d autosort %d", render_pass + 1,
+        DEBUG_LOG(RENDERER, "Render pass %d OP %d PT %d TR %d MV %d TrMV %d autosort %d\n", render_pass + 1,
         		current_pass.op_count - previous_pass.op_count,
 				current_pass.pt_count - previous_pass.pt_count,
 				current_pass.tr_count - previous_pass.tr_count,
@@ -968,7 +968,7 @@ vk::ImageLayout OITTextureDrawer::TakeTexture(const Size& size, const vk::ImageU
 
 vk::CommandBuffer OITTextureDrawer::NewFrame()
 {
-	DEBUG_LOG(RENDERER, "RenderToTexture packmode=%d stride=%d - %d,%d -> %d,%d", FB_W_CTRL.fb_packmode, FB_W_LINESTRIDE.stride * 8,
+	DEBUG_LOG(RENDERER, "RenderToTexture packmode=%d stride=%d - %d,%d -> %d,%d\n", FB_W_CTRL.fb_packmode, FB_W_LINESTRIDE.stride * 8,
 			FB_X_CLIP.min, FB_Y_CLIP.min, FB_X_CLIP.max, FB_Y_CLIP.max);
 	NewImage();
 
@@ -1008,7 +1008,7 @@ vk::CommandBuffer OITTextureDrawer::NewFrame()
 			if (!saidLarger)
 			{
 				saidLarger = true;
-				WARN_LOG(RENDERER, "Render to a texture of %u x %u: attachments made for it", upscaledWidth, upscaledHeight);
+				WARN_LOG(RENDERER, "Render to a texture of %u x %u: attachments made for it\n", upscaledWidth, upscaledHeight);
 			}
 		}
 		MakeAttachments(upscaledWidth, upscaledHeight);

@@ -119,7 +119,7 @@ void GLTexturePool::Init()
 				break;
 			book.Give(t);
 		}
-	NOTICE_LOG(RENDERER, "OpenGL: texture pool of %u textures, %u MB (planned %u MB)", book.made, (u32)(book.bytesMade >> 20), (u32)(bytes >> 20));
+	NOTICE_LOG(RENDERER, "OpenGL: texture pool of %u textures, %u MB (planned %u MB)\n", book.made, (u32)(book.bytesMade >> 20), (u32)(bytes >> 20));
 }
 
 void GLTexturePool::Term()
@@ -158,7 +158,7 @@ GLPooledTexture *GLTexturePool::Make(int cls, bool late)
 	}
 	if (glGetError() != GL_NO_ERROR)
 	{
-		WARN_LOG(RENDERER, "OpenGL: texture pool: a %ux%u %s texture could not be made", width, height, poolNames[f]);
+		WARN_LOG(RENDERER, "OpenGL: texture pool: a %ux%u %s texture could not be made\n", width, height, poolNames[f]);
 		glcache.DeleteTextures(1, &t->name);
 		delete t;
 		return nullptr;
@@ -335,7 +335,7 @@ static void upload_ring_init(void)
 		return;
 	}
 	upload.size = (size_t)bytes;
-	NOTICE_LOG(RENDERER, "OpenGL: textures converted on the CPU go through a ring of %u KB", (u32)(bytes >> 10));
+	NOTICE_LOG(RENDERER, "OpenGL: textures converted on the CPU go through a ring of %u KB\n", (u32)(bytes >> 10));
 }
 
 /* The ring made when the GPU's decoding is turned off while the game runs
@@ -422,7 +422,7 @@ static u8 *upload_ring_take(size_t len)
 	if (at == upload.size)
 	{
 		if (!upload.saidFull)
-			INFO_LOG(RENDERER, "OpenGL: the ring textures go through is full: one converted in memory of the cache's");
+			INFO_LOG(RENDERER, "OpenGL: the ring textures go through is full: one converted in memory of the cache's\n");
 		upload.saidFull = true;
 		return nullptr;
 	}
@@ -863,7 +863,7 @@ static void rtt_gl_small(u32 w, u32 h)
 	if (rtt_small_rb != 0 && !rtt_said_larger)
 	{
 		rtt_said_larger = true;
-		WARN_LOG(RENDERER, "Render to a texture of %u x %u read back: its room made larger", w, h);
+		WARN_LOG(RENDERER, "Render to a texture of %u x %u read back: its room made larger\n", w, h);
 	}
 	rtt_small_w = std::max(w, rtt_small_w);
 	rtt_small_h = std::max(h, rtt_small_h);
@@ -1061,7 +1061,7 @@ static void rtt_gl_ring(size_t bytes)
 	if (rtt_ring_size != 0 && !rtt_said_larger)
 	{
 		rtt_said_larger = true;
-		WARN_LOG(RENDERER, "Render to a texture read back: its room made larger, %u KB", (u32)(bytes >> 10));
+		WARN_LOG(RENDERER, "Render to a texture read back: its room made larger, %u KB\n", (u32)(bytes >> 10));
 	}
 	for (GlRttCopy& c : rtt_copies)
 	{
@@ -1498,7 +1498,7 @@ void BindRTT(u32 addy, u32 fbw, u32 fbh, u32 channels, u32 fmt)
 	{
 		/* (a render larger than the kept depth buffer: one of that size,
 		 * and kept from then on) */
-		WARN_LOG(RENDERER, "Render to a texture of %u x %u: its depth buffer made larger", fbw2, fbh2);
+		WARN_LOG(RENDERER, "Render to a texture of %u x %u: its depth buffer made larger\n", fbw2, fbh2);
 		glDeleteRenderbuffers(1, &gl.rtt.depthb);
 		gl.rtt.depthb = 0;
 	}

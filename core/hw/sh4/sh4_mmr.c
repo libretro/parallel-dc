@@ -72,19 +72,19 @@ static const struct sh4_module *sh4_module_of(const RegisterStruct *arr)
 
 u32 sh4io_read_noacc(u32 addr) 
 { 
-	INFO_LOG(SH4, "sh4io: Invalid read access @@ %08X", addr);
+	INFO_LOG(SH4, "sh4io: Invalid read access @@ %08X\n", addr);
 	return 0; 
 } 
 
 void sh4io_write_noacc(u32 addr, u32 data) 
 { 
-	INFO_LOG(SH4, "sh4io: Invalid write access @@ %08X %08X", addr, data);
+	INFO_LOG(SH4, "sh4io: Invalid write access @@ %08X %08X\n", addr, data);
 	/* verify(false); */
 }
 
 void sh4io_write_const(u32 addr, u32 data) 
 { 
-	INFO_LOG(SH4, "sh4io: Const write ignored @@ %08X <- %08X", addr, data);
+	INFO_LOG(SH4, "sh4io: Const write ignored @@ %08X <- %08X\n", addr, data);
 }
 
 void sh4_rio_reg(RegisterStruct *arr, u32 addr, RegIO flags, u32 sz, RegReadAddrFP* rf, RegWriteAddrFP* wf)
@@ -133,7 +133,7 @@ static INLINE u32 sh4_rio_read(u32 sz, const RegisterStruct *sb_regs, u32 addr)
 #ifdef TRACE
 	if (offset & 3/*(size-1)*/) /* 4 is min align size */
 	{
-		INFO_LOG(SH4, "Unaligned System Bus register read");
+		INFO_LOG(SH4, "Unaligned System Bus register read\n");
 	}
 #endif
 
@@ -160,7 +160,7 @@ static INLINE u32 sh4_rio_read(u32 sz, const RegisterStruct *sb_regs, u32 addr)
 	}
 	else
 	{
-		INFO_LOG(SH4, "ERROR [wrong size read on register]");
+		INFO_LOG(SH4, "ERROR [wrong size read on register]\n");
 	}
 #endif
 	return 0;
@@ -172,7 +172,7 @@ static INLINE void sh4_rio_write(u32 sz, RegisterStruct *sb_regs, const u32* wma
 #ifdef TRACE
 	if (offset & 3/*(size-1)*/) /* 4 is min align size */
 	{
-		INFO_LOG(SH4, "Unaligned System bus register write");
+		INFO_LOG(SH4, "Unaligned System bus register write\n");
 	}
 #endif
 offset>>=2;
@@ -201,7 +201,7 @@ offset>>=2;
 	}
 	else
 	{
-		INFO_LOG(SH4, "ERROR: Wrong size write on register - offset=%x, data=%x, size=%d",offset,data,sz);
+		INFO_LOG(SH4, "ERROR: Wrong size write on register - offset=%x, data=%x, size=%d\n",offset,data,sz);
 	}
 #endif
 }
@@ -217,16 +217,16 @@ static INLINE u32 read_p4(u32 addr, u32 sz)
 	case 0xE1:
 	case 0xE2:
 	case 0xE3:
-		INFO_LOG(SH4, "Unhandled p4 read [Store queue] 0x%x", addr);
+		INFO_LOG(SH4, "Unhandled p4 read [Store queue] 0x%x\n", addr);
 		return 0;
 	case 0xF0:
-		DEBUG_LOG(SH4, "IC Address read %08x", addr);
+		DEBUG_LOG(SH4, "IC Address read %08x\n", addr);
 		if (sz == 4)
 			return sh4_icache_read_address_array(addr);
 		else
 			return 0;
 	case 0xF1:
-		DEBUG_LOG(SH4, "IC Data read %08x", addr);
+		DEBUG_LOG(SH4, "IC Data read %08x\n", addr);
 		if (sz == 4)
 			return sh4_icache_read_data_array(addr);
 		else
@@ -244,13 +244,13 @@ static INLINE u32 read_p4(u32 addr, u32 sz)
 		}
 
 	case 0xF4:
-		DEBUG_LOG(SH4, "OC Address read %08x", addr);
+		DEBUG_LOG(SH4, "OC Address read %08x\n", addr);
 		if (sz == 4)
 			return sh4_ocache_read_address_array(addr);
 		else
 			return 0;
 	case 0xF5:
-		DEBUG_LOG(SH4, "OC Data read %08x", addr);
+		DEBUG_LOG(SH4, "OC Data read %08x\n", addr);
 		if (sz == 4)
 			return sh4_ocache_read_data_array(addr);
 		else
@@ -271,11 +271,11 @@ static INLINE u32 read_p4(u32 addr, u32 sz)
 		}
 
 	case 0xFF:
-		INFO_LOG(SH4, "Unhandled p4 read [area7] 0x%x", addr);
+		INFO_LOG(SH4, "Unhandled p4 read [area7] 0x%x\n", addr);
 		break;
 
 	default:
-		INFO_LOG(SH4, "Unhandled p4 read [Reserved] 0x%x", addr);
+		INFO_LOG(SH4, "Unhandled p4 read [Reserved] 0x%x\n", addr);
 		break;
 	}
 
@@ -292,16 +292,16 @@ static INLINE void write_p4(u32 addr, u32 data, u32 sz)
 	case 0xE1:
 	case 0xE2:
 	case 0xE3:
-		INFO_LOG(SH4, "Unhandled p4 Write [Store queue] 0x%x", addr);
+		INFO_LOG(SH4, "Unhandled p4 Write [Store queue] 0x%x\n", addr);
 		break;
 
 	case 0xF0:
-		DEBUG_LOG(SH4, "IC Address write %08x = %x", addr, data);
+		DEBUG_LOG(SH4, "IC Address write %08x = %x\n", addr, data);
 		if (sz == 4)
 			sh4_icache_write_address_array(addr, data);
 		return;
 	case 0xF1:
-		DEBUG_LOG(SH4, "IC Data write %08x = %x", addr, data);
+		DEBUG_LOG(SH4, "IC Data write %08x = %x\n", addr, data);
 		if (sz == 4)
 			sh4_icache_write_data_array(addr, data);
 		return;
@@ -329,12 +329,12 @@ static INLINE void write_p4(u32 addr, u32 data, u32 sz)
 		}
 
 	case 0xF4:
-		DEBUG_LOG(SH4, "OC Address write %08x = %x", addr, data);
+		DEBUG_LOG(SH4, "OC Address write %08x = %x\n", addr, data);
 		if (sz == 4)
 			sh4_ocache_write_address_array(addr, data);
 		return;
 	case 0xF5:
-		DEBUG_LOG(SH4, "OC Data write %08x = %x", addr, data);
+		DEBUG_LOG(SH4, "OC Data write %08x = %x\n", addr, data);
 		if (sz == 4)
 			sh4_ocache_write_data_array(addr, data);
 		return;
@@ -348,7 +348,7 @@ static INLINE void write_p4(u32 addr, u32 data, u32 sz)
 				const u32 valid = ((u32)data >> 8) & 1;
 				int i;
 #else
-				INFO_LOG(SH4, "Unhandled p4 Write [Unified TLB address array, Associative Write] 0x%x = %x", addr, data);
+				INFO_LOG(SH4, "Unhandled p4 Write [Unified TLB address array, Associative Write] 0x%x = %x\n", addr, data);
 #endif
 				t.reg_data=data;
 
@@ -413,11 +413,11 @@ static INLINE void write_p4(u32 addr, u32 data, u32 sz)
 		}
 
 	case 0xFF:
-		INFO_LOG(SH4, "Unhandled p4 Write [area7] 0x%x = %x", addr, data);
+		INFO_LOG(SH4, "Unhandled p4 Write [area7] 0x%x = %x\n", addr, data);
 		break;
 
 	default:
-		INFO_LOG(SH4, "Unhandled p4 Write [Reserved] 0x%x", addr);
+		INFO_LOG(SH4, "Unhandled p4 Write [Reserved] 0x%x\n", addr);
 		break;
 	}
 }
@@ -427,7 +427,7 @@ static INLINE void write_p4(u32 addr, u32 data, u32 sz)
 /* **Area  7** */
 /* *********** */
 
-#define OUT_OF_RANGE(reg) INFO_LOG(SH4, "Out of range on register %s index %x", reg, addr)
+#define OUT_OF_RANGE(reg) INFO_LOG(SH4, "Out of range on register %s index %x\n", reg, addr)
 #define A7_REG_HASH(addr) (((addr) >> 16) & 0x1FFF)
 
 /* Read P4 memory-mapped registers */
@@ -493,11 +493,11 @@ static INLINE u32 read_p4mmr(u32 addr, u32 sz)
 		break;
 	case A7_REG_HASH(BSC_SDMR2_addr):
 		/* dram settings 2 / write only */
-		INFO_LOG(SH4, "Read from write-only registers [dram settings 2]");
+		INFO_LOG(SH4, "Read from write-only registers [dram settings 2]\n");
 		return 0;
 	case A7_REG_HASH(BSC_SDMR3_addr):
 		/* dram settings 3 / write only */
-		INFO_LOG(SH4, "Read from write-only registers [dram settings 3]");
+		INFO_LOG(SH4, "Read from write-only registers [dram settings 3]\n");
 		return 0;
 
 
@@ -602,7 +602,7 @@ static INLINE u32 read_p4mmr(u32 addr, u32 sz)
 		break;
 	}
 
-   INFO_LOG(SH4, "Unknown Read from P4 mmr - addr=%x", addr);
+   INFO_LOG(SH4, "Unknown Read from P4 mmr - addr=%x\n", addr);
 	return 0;
 }
 
@@ -760,7 +760,7 @@ static INLINE void write_p4mmr(u32 addr, u32 data, u32 sz)
 		break;
 	}
 
-   INFO_LOG(SH4, "Write to P4 mmr not implemented, addr=%x, data=%x", addr, data);
+   INFO_LOG(SH4, "Write to P4 mmr not implemented, addr=%x, data=%x\n", addr, data);
 }
 
 
@@ -796,7 +796,7 @@ SH4_MMR_HANDLERS(p4mmr)
 	{ \
 		if (CCN_CCR.ORA == 1) \
 			return *(type *)&OnChipRAM[ocr_offset(addr)]; \
-		INFO_LOG(SH4, "On Chip Ram Read, but OCR is disabled. addr %x", addr); \
+		INFO_LOG(SH4, "On Chip Ram Read, but OCR is disabled. addr %x\n", addr); \
 		return 0; \
 	} \
 	static void DYNACALL WriteMem_area7_OCR_##bytes(u32 addr, type data) \
@@ -804,7 +804,7 @@ SH4_MMR_HANDLERS(p4mmr)
 		if (CCN_CCR.ORA == 1) \
 			*(type *)&OnChipRAM[ocr_offset(addr)] = data; \
 		else \
-			INFO_LOG(SH4, "On Chip Ram Write, but OCR is disabled. addr %x", addr); \
+			INFO_LOG(SH4, "On Chip Ram Write, but OCR is disabled. addr %x\n", addr); \
 	}
 SH4_OCR(u8, 1)
 SH4_OCR(u16, 2)

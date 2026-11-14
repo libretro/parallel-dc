@@ -383,7 +383,7 @@ void DYNACALL ta_data32_slow(void* data)
 {
    if (ta_ctx == NULL)
    {
-   	INFO_LOG(PVR, "Warning: data sent to TA prior to ListInit. Ignored");
+   	INFO_LOG(PVR, "Warning: data sent to TA prior to ListInit. Ignored\n");
 		return;
    }
 	/* Where the next block goes. (Not End(): after the lists are started
@@ -392,7 +392,7 @@ void DYNACALL ta_data32_slow(void* data)
 	 * the base.) */
 	if ((u32)(ta_tad.thd_data - ta_tad.thd_root) >= ta_ctx->data_size)
 	{
-		INFO_LOG(PVR, "Warning: TA data buffer overflow");
+		INFO_LOG(PVR, "Warning: TA data buffer overflow\n");
 		asic_RaiseInterrupt(holly_MATR_NOMEM);
 		return;
 	}

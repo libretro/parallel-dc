@@ -722,6 +722,6 @@ sh4op(i1111_nn01_1111_1101)
 
 static void iNimp(const char*str)
 {
-	WARN_LOG(INTERPRETER, "Unimplemented sh4 FPU instruction: %s", str);
+	WARN_LOG(INTERPRETER, "Unimplemented sh4 FPU instruction: %s\n", str);
 	/* Sh4_int_Stop(); */
 }

@@ -405,7 +405,7 @@ void GDCartridge::find_file(const char *name, const u8 *dir_sector, u32 &file_st
 {
 	file_start = 0;
 	file_size = 0;
-	DEBUG_LOG(NAOMI, "Looking for file [%s]", name);
+	DEBUG_LOG(NAOMI, "Looking for file [%s]\n", name);
 	for(u32 pos = 0; pos < 2048; pos += dir_sector[pos]) {
 		int fnlen = 0;
 		// A record starts with its length, and is whole inside the sector:
@@ -446,7 +446,7 @@ void GDCartridge::find_file(const char *name, const u8 *dir_sector, u32 &file_st
 							(dir_sector[pos+12] << 16) |
 							(dir_sector[pos+13] << 24));
 
-			DEBUG_LOG(NAOMI, "start %08x size %08x", file_start, file_size);
+			DEBUG_LOG(NAOMI, "start %08x size %08x\n", file_start, file_size);
 			break;
 		}
 	}
@@ -477,7 +477,7 @@ bool GDCartridge::device_start()
 	if (RomSize > 0 && gdrom_name != NULL)
 	{
 		if (RomSize >= 0x4000) {
-			DEBUG_LOG(NAOMI, "Real PIC binary found");
+			DEBUG_LOG(NAOMI, "Real PIC binary found\n");
 			for(int i=0;i<7;i++)
 				name[i] = picdata[0x7c0+i*2];
 			for(int i=0;i<7;i++)
@@ -506,7 +506,7 @@ bool GDCartridge::device_start()
 					(u64(picdata[0x29]) << 0));
 		}
 
-		DEBUG_LOG(NAOMI, "key is %08x%08x", (u32)((key & 0xffffffff00000000ULL)>>32), (u32)(key & 0x00000000ffffffffULL));
+		DEBUG_LOG(NAOMI, "key is %08x%08x\n", (u32)((key & 0xffffffff00000000ULL)>>32), (u32)(key & 0x00000000ffffffffULL));
 
 		// (as dir_sector below: nothing in it if a sector cannot be read)
 		u8 buffer[2048];
@@ -528,7 +528,7 @@ bool GDCartridge::device_start()
 		   // The game is on the disc and nowhere else: with nothing in the
 		   // board's memory neither the BIOS nor the built-in boot has
 		   // anything to start.
-		   ERROR_LOG(NAOMI, "Naomi GD-ROM: cannot open the disc image %s.chd (or .gdi): the game cannot start without it", gdrom_path.c_str());
+		   ERROR_LOG(NAOMI, "Naomi GD-ROM: cannot open the disc image %s.chd (or .gdi): the game cannot start without it\n", gdrom_path.c_str());
 		   return false;
 		}
 		// primary volume descriptor
@@ -598,7 +598,7 @@ bool GDCartridge::device_start()
 			}
 			if (dimm_data == NULL)
 			{
-				ERROR_LOG(NAOMI, "Naomi GDROM: no memory for a file of %u bytes", file_size);
+				ERROR_LOG(NAOMI, "Naomi GDROM: no memory for a file of %u bytes\n", file_size);
 				dimm_data_size = 0;
 				disc_free(gdrom);
 				return false;
@@ -622,7 +622,7 @@ bool GDCartridge::device_start()
 
 		if (!dimm_data)
 		{
-			ERROR_LOG(NAOMI, "Naomi GDROM: Could not find the file to decrypt on the disc image %s", gdrom_path.c_str());
+			ERROR_LOG(NAOMI, "Naomi GDROM: Could not find the file to decrypt on the disc image %s\n", gdrom_path.c_str());
 			return false;
 		}
 	}
@@ -786,14 +786,14 @@ void GDCartridge::dimm_process()
 	const u32 group = (reg_dimm_command >> 13) & 3;
 	const u32 cmd = (reg_dimm_command >> 9) & 0xf;
 
-	DEBUG_LOG(NAOMI, "DIMM command %04x offset %04x param %04x%04x", reg_dimm_command,
+	DEBUG_LOG(NAOMI, "DIMM command %04x offset %04x param %04x%04x\n", reg_dimm_command,
 			reg_dimm_offsetl, reg_dimm_parameterh, reg_dimm_parameterl);
 	if (group == 0)
 		dimm_system_command(cmd);
 	else
 	{
 		// (network commands: this board has none)
-		WARN_LOG(NAOMI, "DIMM command group %d command %x not handled", group, cmd);
+		WARN_LOG(NAOMI, "DIMM command group %d command %x not handled\n", group, cmd);
 		dimm_return(true, 0, 0xffffffff);
 	}
 }
@@ -835,11 +835,11 @@ void GDCartridge::dimm_system_command(u32 cmd)
 	case 9:		// poke16
 	case 10:	// poke32
 		// the NAOMI's answer to a command of the board's
-		DEBUG_LOG(NAOMI, "DIMM: answer to command %x", cmd);
+		DEBUG_LOG(NAOMI, "DIMM: answer to command %x\n", cmd);
 		break;
 
 	default:
-		WARN_LOG(NAOMI, "DIMM: system command %x not handled", cmd);
+		WARN_LOG(NAOMI, "DIMM: system command %x not handled\n", cmd);
 		break;
 	}
 }

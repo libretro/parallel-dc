@@ -186,7 +186,7 @@ void read_file()
 	memcpy(&sum, &data[data.size() - 8], 8);
 	if (fnv1a(FnvBasis, data.data(), data.size() - 8) != sum)
 	{
-		WARN_LOG(RENDERER, "OpenGL: %s is not whole, and is made again", path.c_str());
+		WARN_LOG(RENDERER, "OpenGL: %s is not whole, and is made again\n", path.c_str());
 		return;
 	}
 	Reader r(data.data(), data.size() - 8);
@@ -305,12 +305,12 @@ void log_failure(GLuint program, GLuint vs, GLuint fs)
 		{
 			log[0] = 0;
 			glGetShaderInfoLog(s, sizeof(log), nullptr, log);
-			WARN_LOG(RENDERER, "OpenGL: a shader did not compile: %s", log);
+			WARN_LOG(RENDERER, "OpenGL: a shader did not compile: %s\n", log);
 		}
 	}
 	log[0] = 0;
 	glGetProgramInfoLog(program, sizeof(log), nullptr, log);
-	WARN_LOG(RENDERER, "OpenGL: a program did not link: %s", log);
+	WARN_LOG(RENDERER, "OpenGL: a program did not link: %s\n", log);
 }
 
 } // namespace
@@ -363,7 +363,7 @@ void glprog_open()
 	for (int l = 0; l < GLPROG_LISTS; l++)
 		cache.noted[l].reserve(1024);
 	cache.fresh.reserve(1024);
-	INFO_LOG(RENDERER, "OpenGL: programs %s, %u kept; the driver makes them %s",
+	INFO_LOG(RENDERER, "OpenGL: programs %s, %u kept; the driver makes them %s\n",
 			cache.binaries ? "kept on disk" : "not kept (no binaries)", (unsigned)cache.entries.size(),
 			cache.parallel ? "in the background, if it can" : "as it is asked");
 }
@@ -613,7 +613,7 @@ void glprog_save(bool contextGoing)
 	{
 		const bool ok = filestream_write(f, out.data(), (int64_t)out.size()) == (int64_t)out.size();
 		filestream_close(f);
-		INFO_LOG(RENDERER, "OpenGL: %u programs kept in %s (%u bytes)%s", count, path.c_str(), (unsigned)out.size(),
+		INFO_LOG(RENDERER, "OpenGL: %u programs kept in %s (%u bytes)%s\n", count, path.c_str(), (unsigned)out.size(),
 				ok ? "" : ": could not be written");
 	}
 
@@ -648,7 +648,7 @@ void glprog_log(const char *who)
 	if (!cache.open)
 		return;
 	NOTICE_LOG(RENDERER, "OpenGL programs (%s): %u from disk, %u compiled (%u of them in frames), %u turned down by the driver; "
-			"%u polygons drawn with the general program while theirs was not there%s",
+			"%u polygons drawn with the general program while theirs was not there%s\n",
 			who, cache.fromDisk, cache.compiled, cache.inFrames, cache.refused, cache.generalDraws,
 			cache.parallel ? (cache.background ? "; the driver compiles in the background" : "; the driver compiles as it is asked") : "");
 }

@@ -185,7 +185,7 @@ static void vramlock_ran_out(const char *what)
 	if (vramlock_said)
 		return;
 	vramlock_said = true;
-	WARN_LOG(RENDERER, "Video memory locks: no %s left, more made (the room for the texture cache is too small for this game)", what);
+	WARN_LOG(RENDERER, "Video memory locks: no %s left, more made (the room for the texture cache is too small for this game)\n", what);
 }
 
 /* @count more locks, onto the free list */
@@ -373,7 +373,7 @@ static void vramlock_collect()
 
 			if (VramLocks[page] == first)
 			{
-				ERROR_LOG(PVR, "Error : pvr is supposed to remove lock");
+				ERROR_LOG(PVR, "Error : pvr is supposed to remove lock\n");
 				die("Invalid state");
 			}
 		}
@@ -384,13 +384,13 @@ void libCore_vramlock_Lock(u32 start_offset64, u32 end_offset64, BaseTextureCach
 {
 	if (end_offset64>(VRAM_SIZE-1))
 	{
-		WARN_LOG(PVR, "vramlock_Lock_64: end_offset64>(VRAM_SIZE-1) \n Tried to lock area out of vram , possibly bug on the pvr plugin");
+		WARN_LOG(PVR, "vramlock_Lock_64: end_offset64>(VRAM_SIZE-1) \n Tried to lock area out of vram , possibly bug on the pvr plugin\n");
 		end_offset64=(VRAM_SIZE-1);
 	}
 
 	if (start_offset64>end_offset64)
 	{
-		WARN_LOG(PVR, "vramlock_Lock_64: start_offset64>end_offset64 \n Tried to lock negative block , possibly bug on the pvr plugin");
+		WARN_LOG(PVR, "vramlock_Lock_64: start_offset64>end_offset64 \n Tried to lock negative block , possibly bug on the pvr plugin\n");
 		start_offset64=0;
 	}
 
@@ -674,7 +674,7 @@ void BaseTextureCacheData::PrintTextureName()
 		GetId(id, sizeof(id));
 		sprintf(str + strlen(str), " id=%s", id);
 	}
-	DEBUG_LOG(RENDERER, "%s", str);
+	DEBUG_LOG(RENDERER, "%s\n", str);
 }
 
 /* The vram content backing this texture, over the same range the
@@ -743,7 +743,7 @@ static u32 *pieces_alloc(u32 words)
 		if (!piece_said)
 		{
 			piece_said = true;
-			WARN_LOG(RENDERER, "Texture cache: no room for the hashes of %u pieces left, more made (too small for this game)", words);
+			WARN_LOG(RENDERER, "Texture cache: no room for the hashes of %u pieces left, more made (too small for this game)\n", words);
 		}
 		if (!piece_blocks_more(c, piece_blocks[c] > 8 ? piece_blocks[c] / 2 : 8))
 			return NULL;
@@ -977,7 +977,7 @@ void BaseTextureCacheData::Create()
 		//Texture is stored 'planar' in memory, no deswizzle is needed
 		if (tcw.MipMapped != 0)
 		{
-			WARN_LOG(RENDERER, "Warning: planar texture with mipmaps (invalid)");
+			WARN_LOG(RENDERER, "Warning: planar texture with mipmaps (invalid)\n");
 			tcw.MipMapped = 0;
 		}
 
@@ -1779,7 +1779,7 @@ void BaseTextureCacheData::Update()
 		}
 		else
 		{
-			WARN_LOG(RENDERER, "Warning: invalid texture. Address %08X %08X size %d", sa_tex, sa, size);
+			WARN_LOG(RENDERER, "Warning: invalid texture. Address %08X %08X size %d\n", sa_tex, sa, size);
 			return;
 		}
 	}
@@ -2024,7 +2024,7 @@ void BaseTextureCacheData::Update()
 	else
 	{
 		//fill it in with a temp color
-		WARN_LOG(RENDERER, "UNHANDLED TEXTURE");
+		WARN_LOG(RENDERER, "UNHANDLED TEXTURE\n");
 		converted = false;
 		pb16.init(w, h, false, texcache_scratch(PixelBuffer<u16>::bytes(w, h, false)));
 		memset(pb16.data(), 0x80, w * h * 2);
@@ -2054,7 +2054,7 @@ void BaseTextureCacheData::Update()
 	{
 		ComputeHash();
 		custom_texture.DumpTexture(texture_hash, upscaled_w, upscaled_h, tex_type, temp_tex_buffer);
-		NOTICE_LOG(RENDERER, "Dumped texture %x.png. Old hash %x", texture_hash, old_texture_hash);
+		NOTICE_LOG(RENDERER, "Dumped texture %x.png. Old hash %x\n", texture_hash, old_texture_hash);
 	}
 	PrintTextureName();
 }

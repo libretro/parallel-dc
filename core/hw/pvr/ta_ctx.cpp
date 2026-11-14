@@ -136,7 +136,7 @@ void FinishRender(TA_context* ctx)
 /* A list of a frame's found full, said in the core's log (ta_list.h) */
 static void ta_list_log(const char *name)
 {
-	WARN_LOG(PVR, "List overrun for list %s", name);
+	WARN_LOG(PVR, "List overrun for list %s\n", name);
 }
 static struct TaListLog { TaListLog() { ta_list_warn = ta_list_log; } } ta_list_log_set;
 
@@ -298,7 +298,7 @@ void tactx_gpu_pool_detach(void)
 				continue;
 			}
 			// no memory: what it had is lost, and it is empty
-			WARN_LOG(PVR, "Out of memory for a tile accelerator frame: its lists are dropped");
+			WARN_LOG(PVR, "Out of memory for a tile accelerator frame: its lists are dropped\n");
 			ctx->pool = -1;
 			ctx->tad.Reset((u8 *)OS_aligned_malloc(32, ctx->data_size));
 			if (ctx == ta_ctx)
@@ -333,11 +333,11 @@ TA_context* tactx_Alloc(void)
        * made with it, which only a game writing to many addresses at once
        * comes to; counted, and said once) */
       if (pooled && retro_atomic_fetch_add_int(&gpu_pool_allocated, 1) == 0)
-         WARN_LOG(PVR, "TA processing: every frame of the GPU pool and the spare are in use: one is allocated");
+         WARN_LOG(PVR, "TA processing: every frame of the GPU pool and the spare are in use: one is allocated\n");
       rv = new TA_context();
       if (!rv->Alloc())
       {
-         WARN_LOG(PVR, "Out of memory for a tile accelerator frame: its lists are dropped");
+         WARN_LOG(PVR, "Out of memory for a tile accelerator frame: its lists are dropped\n");
          delete rv;
          rv = NULL;
       }

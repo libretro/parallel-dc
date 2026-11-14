@@ -972,7 +972,7 @@ static void ch_update_feg(ChannelEx *ch)
 					|| ch->ccd->FLV4 < 0x1ff7);
 	if (!ch->FEG.active)
 		return;
-	feg_printf("FEG active channel %d Q %d FLV: %05x %05x %05x %05x %05x AR %02x FD1R %02x FD2R %02x FRR %02x",
+	feg_printf("FEG active channel %d Q %d FLV: %05x %05x %05x %05x %05x AR %02x FD1R %02x FD2R %02x FRR %02x\n",
 			ch->ChannelNumber, ch->ccd->Q,
 			ch->ccd->FLV0, ch->ccd->FLV1, ch->ccd->FLV2, ch->ccd->FLV3, ch->ccd->FLV4,
 			ch->ccd->FAR, ch->ccd->FD1R, ch->ccd->FD2R, ch->ccd->FRR);
@@ -1252,7 +1252,7 @@ static INLINE void stream_step_any(ChannelEx* ch, s32 PCMS, bool wrap, u32 LPCTL
 		{
 			if ((ch->AEG.state==EG_Attack) && (CA>=ch->loop.LSA))
 			{
-				step_printf("[%d]LPSLNK : Switching to EG_Decay1 %X", ch->ChannelNumber, aeg_get(ch));
+				step_printf("[%d]LPSLNK : Switching to EG_Decay1 %X\n", ch->ChannelNumber, aeg_get(ch));
 				ch_set_aeg_state(ch, EG_Decay1);
 			}
 		}
@@ -1351,7 +1351,7 @@ static INLINE void aeg_step(ChannelEx* ch, u32 state)
 			{
 				if (!ch->ccd->LPSLNK)
 				{
-					aeg_printf("[%d]AEG_step : Switching to EG_Decay1", ch->ChannelNumber);
+					aeg_printf("[%d]AEG_step : Switching to EG_Decay1\n", ch->ChannelNumber);
 					ch_set_aeg_state(ch, EG_Decay1);
 				}
 				aeg_set(ch, 0);
@@ -1362,7 +1362,7 @@ static INLINE void aeg_step(ChannelEx* ch, u32 state)
 		ch->AEG.val+=ch->AEG.Decay1Rate;
 		if (((u32)aeg_get(ch))>=ch->AEG.Decay2Value)
 		{
-			aeg_printf("[%d]AEG_step : Switching to EG_Decay2", ch->ChannelNumber);
+			aeg_printf("[%d]AEG_step : Switching to EG_Decay2\n", ch->ChannelNumber);
 			ch_set_aeg_state(ch, EG_Decay2);
 		}
 		break;
@@ -1370,7 +1370,7 @@ static INLINE void aeg_step(ChannelEx* ch, u32 state)
 		ch->AEG.val+=ch->AEG.Decay2Rate;
 		if (aeg_get(ch)>=0x3FF)
 		{
-			aeg_printf("[%d]AEG_step : Switching to EG_Release", ch->ChannelNumber);
+			aeg_printf("[%d]AEG_step : Switching to EG_Release\n", ch->ChannelNumber);
 			aeg_set(ch, 0x3FF);
 			ch_set_aeg_state(ch, EG_Release);
 		}
@@ -1380,7 +1380,7 @@ static INLINE void aeg_step(ChannelEx* ch, u32 state)
 
 		if (aeg_get(ch)>=0x3FF)
 		{
-			aeg_printf("[%d]AEG_step : EG_Release End @ %x", ch->ChannelNumber, aeg_get(ch));
+			aeg_printf("[%d]AEG_step : EG_Release End @ %x\n", ch->ChannelNumber, aeg_get(ch));
 			aeg_set(ch, 0x3FF); /* TODO: mnn, should we do anything about it running wild ? */
 			ch_disable(ch); /* TODO: Is this ok here? It's a speed optimisation (since the channel is muted) */
 		}

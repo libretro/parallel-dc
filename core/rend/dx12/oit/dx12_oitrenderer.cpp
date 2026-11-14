@@ -87,7 +87,7 @@ public:
 			return false;
 		if (!MakeBuffers(PlannedSize(screen_width, screen_height)))
 		{
-			WARN_LOG(RENDERER, "DX12 per-pixel renderer initialization failed");
+			WARN_LOG(RENDERER, "DX12 per-pixel renderer initialization failed\n");
 			Term();
 			return false;
 		}
@@ -98,7 +98,7 @@ public:
 		if (!MakeBuffer(noInstance, 256, D3D12_HEAP_TYPE_UPLOAD, D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_GENERIC_READ)
 				|| FAILED(noInstance.resource->Map(0, nullptr, (void **)&zero)))
 		{
-			WARN_LOG(RENDERER, "DX12 per-pixel renderer initialization failed");
+			WARN_LOG(RENDERER, "DX12 per-pixel renderer initialization failed\n");
 			Term();
 			return false;
 		}
@@ -371,13 +371,13 @@ bool DX12OITRenderer::MakeBuffers(u64 wanted)
 	}
 	if (!ok)
 	{
-		WARN_LOG(RENDERER, "DX12: pixel buffer creation failed");
+		WARN_LOG(RENDERER, "DX12: pixel buffer creation failed\n");
 		return false;
 	}
 	bufferSize = wanted;
 	room = pixelBufferRoom = (u32)(bytes / OIT_FRAGMENT_BYTES);
 	if (bytes < wanted)
-		NOTICE_LOG(RENDERER, "DX12: pixel buffer of %u MB", (u32)(bytes / 1024 / 1024));
+		NOTICE_LOG(RENDERER, "DX12: pixel buffer of %u MB\n", (u32)(bytes / 1024 / 1024));
 	D3D12_UNORDERED_ACCESS_VIEW_DESC uav{};
 	uav.Format = DXGI_FORMAT_UNKNOWN;
 	uav.ViewDimension = D3D12_UAV_DIMENSION_BUFFER;
@@ -389,7 +389,7 @@ bool DX12OITRenderer::MakeBuffers(u64 wanted)
 	// the counter: a word, counted up by the shaders
 	if (!MakeBuffer(counter, 256, D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_UNORDERED_ACCESS))
 	{
-		WARN_LOG(RENDERER, "DX12: pixel counter creation failed");
+		WARN_LOG(RENDERER, "DX12: pixel counter creation failed\n");
 		return false;
 	}
 	D3D12_UNORDERED_ACCESS_VIEW_DESC counterUav{};
@@ -405,7 +405,7 @@ bool DX12OITRenderer::MakeBuffers(u64 wanted)
 	{
 		if (!MakeBuffer(counts, COUNT_SLOTS * COUNT_WORDS * sizeof(u32), D3D12_HEAP_TYPE_READBACK, D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_COPY_DEST))
 		{
-			WARN_LOG(RENDERER, "DX12: pixel count readback buffer creation failed");
+			WARN_LOG(RENDERER, "DX12: pixel count readback buffer creation failed\n");
 			return false;
 		}
 		const D3D12_RANGE whole = { 0, COUNT_SLOTS * COUNT_WORDS * sizeof(u32) };
@@ -456,7 +456,7 @@ bool DX12OITRenderer::MakePictures(u32 width, u32 height)
 				__uuidof(ID3D12Resource), (void **)pointers.resource.put()))
 				|| (clearHeap.Heap() == nullptr && !clearHeap.Init(device, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV, 1, false)))
 		{
-			WARN_LOG(RENDERER, "DX12: per-pixel list heads creation failed (%d x %d)", width, height);
+			WARN_LOG(RENDERER, "DX12: per-pixel list heads creation failed (%d x %d)\n", width, height);
 			pointers.resource.reset();
 			return false;
 		}
@@ -491,7 +491,7 @@ bool DX12OITRenderer::MakePictures(u32 width, u32 height)
 			picture.height = height;
 			if (!dx12_make_texture(device, width, height, 1, DX12FrameFormat, D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET, picture.state, picture.resource))
 			{
-				WARN_LOG(RENDERER, "DX12: per-pixel renderer picture creation failed (%d x %d)", width, height);
+				WARN_LOG(RENDERER, "DX12: per-pixel renderer picture creation failed (%d x %d)\n", width, height);
 				return false;
 			}
 			picture.srv = context->Srv().Alloc();
@@ -645,7 +645,7 @@ u32 DX12OITRenderer::ChooseBands(bool rtt)
 		else
 			roomy = 0;
 		if (bands != was)
-			NOTICE_LOG(RENDERER, "DX12 per-pixel renderer: %u translucent pixels in a band of %u%s, room for %u: %u band%s",
+			NOTICE_LOG(RENDERER, "DX12 per-pixel renderer: %u translucent pixels in a band of %u%s, room for %u: %u band%s\n",
 					fragments, drawnIn, countRtt[slot] ? " (a render to a texture)" : "", (u32)roomNow, bands, bands > 1 ? "s" : "");
 		break;
 	}
@@ -1078,7 +1078,7 @@ bool DX12OITRenderer::MakeSums(u32 width, u32 height)
 	if (FAILED(device->CreateCommittedResource(&heap, D3D12_HEAP_FLAG_NONE, &desc, sums.state, nullptr,
 			__uuidof(ID3D12Resource), (void **)sums.resource.put())))
 	{
-		WARN_LOG(RENDERER, "DX12: HDR channel sums creation failed (%d x %d)", width, height);
+		WARN_LOG(RENDERER, "DX12: HDR channel sums creation failed (%d x %d)\n", width, height);
 		sums.resource.reset();
 		sums = DX12Image();
 		return false;
@@ -1205,7 +1205,7 @@ void DX12OITRenderer::DrawFrame()
 	{
 		const RenderPass& current_pass = pvrrc.render_passes.head()[render_pass];
 
-		DEBUG_LOG(RENDERER, "Render pass %d OP %d PT %d TR %d MV %d TrMV %d autosort %d", render_pass + 1,
+		DEBUG_LOG(RENDERER, "Render pass %d OP %d PT %d TR %d MV %d TrMV %d autosort %d\n", render_pass + 1,
 				current_pass.op_count - previous_pass.op_count,
 				current_pass.pt_count - previous_pass.pt_count,
 				current_pass.tr_count - previous_pass.tr_count,

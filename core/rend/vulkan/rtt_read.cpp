@@ -108,7 +108,7 @@ static void copies_reserve(u32 w, u32 h, u32 scale)
 	if (ring_size != 0 && !said_larger)
 	{
 		said_larger = true;
-		WARN_LOG(RENDERER, "Render to a texture of %u x %u read back: its room made larger", w, h);
+		WARN_LOG(RENDERER, "Render to a texture of %u x %u read back: its room made larger\n", w, h);
 	}
 	/* (what a batch on the card is still writing keeps its room until it
 	 * is done) */

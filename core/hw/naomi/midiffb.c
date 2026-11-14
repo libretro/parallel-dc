@@ -220,7 +220,7 @@ void midiffb_init(void)
 	position = 8192.f;
 	midiffb_reset();
 	if (midiffb_enabled)
-		NOTICE_LOG(NAOMI, "The game has a force feedback board on the MIDI port");
+		NOTICE_LOG(NAOMI, "The game has a force feedback board on the MIDI port\n");
 }
 
 void midiffb_term(void)

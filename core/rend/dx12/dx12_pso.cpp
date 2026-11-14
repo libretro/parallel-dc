@@ -352,7 +352,7 @@ bool DX12Pipelines::Build(u64 packed, ID3D12PipelineState **out)
 	const bool ok = BuildDesc(packed, postZCoverage, !d3d_warm_busy(warm), out, &flags);
 	if (flags & DX12_BUILT_NOPOSTZ)
 	{
-		WARN_LOG(RENDERER, "DX12: NVAPI made no pipeline with post-depth coverage: SSAA's lists test their samples themselves");
+		WARN_LOG(RENDERER, "DX12: NVAPI made no pipeline with post-depth coverage: SSAA's lists test their samples themselves\n");
 		postZCoverage = false;
 	}
 	Count(flags);
@@ -371,7 +371,7 @@ ID3D12PipelineState *DX12Pipelines::Make(u64 key, u32 slot, bool inFrame)
 	ID3D12PipelineState *pso = nullptr;
 	if (used >= SLOTS * 3 / 4 || !Build(key, &pso))
 	{
-		WARN_LOG(RENDERER, "DX12: pipeline %016llx could not be made", (unsigned long long)key);
+		WARN_LOG(RENDERER, "DX12: pipeline %016llx could not be made\n", (unsigned long long)key);
 		return nullptr;
 	}
 	slots[slot].key = key;
@@ -381,7 +381,7 @@ ID3D12PipelineState *DX12Pipelines::Make(u64 key, u32 slot, bool inFrame)
 	if (inFrame && started)
 	{
 		statMadeInFrame++;
-		NOTICE_LOG(RENDERER, "DX12: pipeline %016llx made in a frame", (unsigned long long)key);
+		NOTICE_LOG(RENDERER, "DX12: pipeline %016llx made in a frame\n", (unsigned long long)key);
 	}
 	if (keys.size() < MaxKeys)
 		keys.push_back(key);
@@ -584,7 +584,7 @@ bool DX12Pipelines::Init(ID3D12Device *device, ID3D12RootSignature *root, UINT v
 	if (FAILED(device->QueryInterface(__uuidof(ID3D12Device1), (void **)&device1)))
 		device1 = nullptr;
 	// (before the file: the library kept is of the shaders chosen)
-	NOTICE_LOG(RENDERER, "DX12: the shaders as %s", dx12_shaders_choose(device) ? "DXIL (shader model 6.0)" : "DXBC (shader model 5.1)");
+	NOTICE_LOG(RENDERER, "DX12: the shaders as %s\n", dx12_shaders_choose(device) ? "DXIL (shader model 6.0)" : "DXBC (shader model 5.1)");
 	LoadFile();
 	// (after the library: the thread uses it)
 	warm = d3d_warm_new(dx12WarmBuild, dx12WarmRelease, this, MaxKeys * 2);
@@ -659,7 +659,7 @@ void DX12Pipelines::MakeAtStart()
 	const u32 queued = (u32)batch.size();
 	SubmitBatch();
 	started = true;
-	NOTICE_LOG(RENDERER, "DX12: %u pipelines made at the start, %u to be made ahead (%u from the library, %u keys from earlier runs)",
+	NOTICE_LOG(RENDERER, "DX12: %u pipelines made at the start, %u to be made ahead (%u from the library, %u keys from earlier runs)\n",
 			statMade, queued, statFromLibrary, (u32)fromFile);
 }
 
@@ -738,9 +738,9 @@ void DX12Pipelines::MakeForSamples(u32 log2n, bool hdr)
 	const u32 queued = (u32)batch.size();
 	SubmitBatch();
 	started = true;
-	NOTICE_LOG(RENDERER, "DX12: %u pipelines made for SSAA %u, %u to be made ahead (%u from library)", statMade - before, 1u << log2n, queued, statFromLibrary);
+	NOTICE_LOG(RENDERER, "DX12: %u pipelines made for SSAA %u, %u to be made ahead (%u from library)\n", statMade - before, 1u << log2n, queued, statFromLibrary);
 	if (statPostZ + statOwnTest != listsBefore)
-		NOTICE_LOG(RENDERER, "DX12 per-pixel renderer: with SSAA, a translucent fragment takes the samples %s",
+		NOTICE_LOG(RENDERER, "DX12 per-pixel renderer: with SSAA, a translucent fragment takes the samples %s\n",
 				statPostZ != 0 && postZCoverage ? "the depth test passed (NVAPI post-depth coverage)" : "its own depth test passes, at each sample");
 }
 
@@ -776,7 +776,7 @@ void DX12Pipelines::LoadFile()
 				libraryData.assign(lib, lib + header.libraryBytes);
 			}
 			else if (header.libraryBytes != 0)
-				INFO_LOG(RENDERER, "DX12: the pipeline library kept is of other shaders: started again");
+				INFO_LOG(RENDERER, "DX12: the pipeline library kept is of other shaders: started again\n");
 		}
 	}
 	free(file);
@@ -789,14 +789,14 @@ void DX12Pipelines::LoadFile()
 		{
 			// (a new driver, or none kept: an empty one)
 			if (!libraryData.empty())
-				INFO_LOG(RENDERER, "DX12: the pipeline library kept is not this driver's (%x): started again", (unsigned)hr);
+				INFO_LOG(RENDERER, "DX12: the pipeline library kept is not this driver's (%x): started again\n", (unsigned)hr);
 			library = nullptr;
 			libraryData.clear();
 			if (FAILED(device1->CreatePipelineLibrary(nullptr, 0, __uuidof(ID3D12PipelineLibrary), (void **)&library)))
 				library = nullptr;
 		}
 	}
-	NOTICE_LOG(RENDERER, "DX12: pipeline file %s: %u keys, library of %u KB%s", path.c_str(), (u32)keys.size(),
+	NOTICE_LOG(RENDERER, "DX12: pipeline file %s: %u keys, library of %u KB%s\n", path.c_str(), (u32)keys.size(),
 			(u32)(libraryData.size() / 1024), library == nullptr ? " (no pipeline library on this device)" : "");
 }
 
@@ -839,7 +839,7 @@ void DX12Pipelines::SaveFile()
 	if (!written)
 		filestream_delete(tmpPath.c_str());
 	else
-		NOTICE_LOG(RENDERER, "DX12: pipeline file saved: %u keys, library of %u KB", header.keyCount, (u32)(libBytes / 1024));
+		NOTICE_LOG(RENDERER, "DX12: pipeline file saved: %u keys, library of %u KB\n", header.keyCount, (u32)(libBytes / 1024));
 }
 
 void DX12Pipelines::Term()
@@ -856,7 +856,7 @@ void DX12Pipelines::Term()
 	batch.clear();
 	if (slots != nullptr)
 	{
-		NOTICE_LOG(RENDERER, "DX12: %u pipelines made, %u of them in a frame, %u ahead, %u from the library", statMade, statMadeInFrame, statAhead, statFromLibrary);
+		NOTICE_LOG(RENDERER, "DX12: %u pipelines made, %u of them in a frame, %u ahead, %u from the library\n", statMade, statMadeInFrame, statAhead, statFromLibrary);
 		SaveFile();
 		for (u32 i = 0; i < SLOTS; i++)
 			if (slots[i].pso != nullptr)

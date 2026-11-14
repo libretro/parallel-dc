@@ -14,7 +14,8 @@
 #include "network/miniupnp.h"
 
 settings_t settings;
-void GenericLog(LogTypes::LOG_LEVELS, LogTypes::LOG_TYPE, const char *, int, const char *, ...) {}
+/* (no log) */
+retro_log_printf_t log_cb;
 
 static int failures;
 

@@ -52,7 +52,7 @@ static void switch_device(u8 dev, bool loading)
 	if (dev == net_device)
 		return;
 #ifdef ENABLE_MODEM
-	INFO_LOG(MODEM, "Expansion port device %d -> %d", net_device, dev);
+	INFO_LOG(MODEM, "Expansion port device %d -> %d\n", net_device, dev);
 	if (net_device == NET_DEVICE_BBA)
 		bba_Term();
 	else if (net_device == NET_DEVICE_MODEM && !loading)
@@ -142,7 +142,7 @@ void net_serialize_v24(void **data, unsigned int *total_size)
 #endif
 	used = *total_size - start;
 	if (used > NET_V24_PAYLOAD)
-		ERROR_LOG(MODEM, "The network device's part of the state is %d bytes: no more than %d fit", used, NET_V24_PAYLOAD);
+		ERROR_LOG(MODEM, "The network device's part of the state is %d bytes: no more than %d fit\n", used, NET_V24_PAYLOAD);
 	else
 		write_zeroes(data, total_size, NET_V24_PAYLOAD - used);
 }

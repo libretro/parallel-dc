@@ -443,7 +443,7 @@ static bool setModemSpeedFromCONF()
 		cyclesPerByte = SH4_MAIN_CLOCK * 8 / rxSpeed;
 		txRxRatio = (float)speed / rxSpeed;
 	}
-	NOTICE_LOG(MODEM, "MODEM Connected %s %d/%d bps", modem_regs.reg08.ASYN ? "ASYNC" : "SYNC", rxSpeed, speed);
+	NOTICE_LOG(MODEM, "MODEM Connected %s %d/%d bps\n", modem_regs.reg08.ASYN ? "ASYNC" : "SYNC", rxSpeed, speed);
 	return speed != 0;
 }
 
@@ -492,7 +492,7 @@ static int modem_sched_func(int tag, int cycles, int jitter)
 		case DIALING:
 			if (last_dial_time != 0 && sh4_sched_now64() - last_dial_time >= (u64)(SH4_MAIN_CLOCK + jitter))
 			{
-				LOG("Switching to RINGING state");
+				LOG("Switching to RINGING state\n");
 				connect_state = RINGING;
 				schedule_callback(100);
 			}
@@ -507,7 +507,7 @@ static int modem_sched_func(int tag, int cycles, int jitter)
 		case RINGING:
 		case NEGO_COMPLETE:
 			last_dial_time = 0;
-			LOG("\t\t *** %s STATE ***", connect_state == RINGING ? "RINGING" : "NEGO COMPLETE");
+			LOG("\t\t *** %s STATE ***\n", connect_state == RINGING ? "RINGING" : "NEGO COMPLETE");
 			modem_regs.reg1f.NEWS = 1;
 			if (!modem_regs.reg09.DATA && connect_state == RINGING)
 			{
@@ -516,7 +516,7 @@ static int modem_sched_func(int tag, int cycles, int jitter)
 			}
 			break;
 		case HANDSHAKING:
-			LOG("\t\t *** HANDSHAKING STATE ***");
+			LOG("\t\t *** HANDSHAKING STATE ***\n");
 			if (modem_regs.reg12 == 0xAA)
 			{
 				// V8 AUTO mode
@@ -594,7 +594,7 @@ static int modem_sched_func(int tag, int cycles, int jitter)
 				}
 				else
 				{
-					INFO_LOG(MODEM, "MODEM Connected");
+					INFO_LOG(MODEM, "MODEM Connected\n");
 					modem_regs.reg14 = 0x00;			// ABCODE: no error
 					SET_STATUS_BIT(0x0f, modem_regs.reg0f.DSR, 1);
 					if (modem_regs.reg02.v0.RTSDE)
@@ -658,7 +658,7 @@ static int modem_sched_func(int tag, int cycles, int jitter)
 			{
 				mem_dumped = true;
 				for (int i = 0 ; i < sizeof(modem_regs); i++)
-					LOG("modem_regs %02x == %02x", i, modem_regs.ptr[i]);
+					LOG("modem_regs %02x == %02x\n", i, modem_regs.ptr[i]);
 			}
 #endif
 			callback_cycles = cyclesPerByte;
@@ -812,14 +812,14 @@ static void DSPTestEnd()
 	verify(state==MS_END_DSP);
 	state=MS_NORMAL;
 
-	LOG("DSPTestEnd");
+	LOG("DSPTestEnd\n");
 	NormalDefaultRegs();
 }
 static void DSPTestStart()
 {
 	verify(state==MS_ST_DSP);
 	state=MS_END_DSP;
-	LOG("DSPTestStart");
+	LOG("DSPTestStart\n");
 
 	modem_regs.reg1e.TDBE = 1;
 	SetReg16(0x1B,0x1A,0xF083);	// EC checksum
@@ -876,7 +876,7 @@ static void modem_reset(u32 v)
 	{
 		memset(&modem_regs, 0, sizeof(modem_regs));
 		state = MS_RESET;
-		LOG("Modem reset start ...");
+		LOG("Modem reset start ...\n");
 		// The line drops as soon as reset is asserted: some games never
 		// release it again
 		line_close();
@@ -891,7 +891,7 @@ static void modem_reset(u32 v)
 			memset(&modem_regs, 0, sizeof(modem_regs));
 			state = MS_RESETING;
 			ControllerTestStart();
-			INFO_LOG(MODEM, "MODEM Reset");
+			INFO_LOG(MODEM, "MODEM Reset\n");
 		}
 		modem_regs.ptr[0x20] = v;
 	}
@@ -903,7 +903,7 @@ static void check_start_handshake()
 			&& (modem_regs.reg09.DATA || modem_regs.reg15.AUTO)
 			&& (connect_state == RINGING || connect_state == NEGO_COMPLETE))
 	{
-		LOG("DTR asserted. starting handshaking");
+		LOG("DTR asserted. starting handshaking\n");
 		connect_state = HANDSHAKING;
 		schedule_callback(1);
 	}
@@ -924,7 +924,7 @@ static void ModemNormalWrite(u32 reg, u32 data)
 	}
 #endif
 	//if (!module_download && reg != 0x10)
-	//	LOG("ModemNormalWrite : %03X=%X", reg,data);
+	//	LOG("ModemNormalWrite : %03X=%X\n", reg,data);
 	u32 old = modem_regs.ptr[reg];
 	modem_regs.ptr[reg] = (old & ~regs_write_mask[reg]) | (data & regs_write_mask[reg]);
 
@@ -935,15 +935,15 @@ static void ModemNormalWrite(u32 reg, u32 data)
 		break;
 
 	case 0x06:
-		LOG("PEN = %d", modem_regs.reg06.PEN);
+		LOG("PEN = %d\n", modem_regs.reg06.PEN);
 		if (modem_regs.reg06.PEN)
-			WARN_LOG(MODEM, "Parity not supported");
+			WARN_LOG(MODEM, "Parity not supported\n");
 		if (modem_regs.reg06.HDLC)
-			WARN_LOG(MODEM, "HDLC mode not supported");
+			WARN_LOG(MODEM, "HDLC mode not supported\n");
 		break;
 
 	case 0x08:
-		LOG("TPDM = %d ASYN = %d", modem_regs.reg08.TPDM, modem_regs.reg08.ASYN);
+		LOG("TPDM = %d ASYN = %d\n", modem_regs.reg08.TPDM, modem_regs.reg08.ASYN);
 		if ((old ^ modem_regs.ptr[reg]) & 0x80)
 			// ASYN changed
 			configureStreams();
@@ -954,12 +954,12 @@ static void ModemNormalWrite(u32 reg, u32 data)
 		if (connect_state == CONNECTED)
 		{
 			if (modem_regs.reg09.DTR) {
-				LOG("DTR asserted");
+				LOG("DTR asserted\n");
 				SET_STATUS_BIT(0x0f, modem_regs.reg0f.DSR, 1);
 			}
 			else
 			{
-				LOG("DTR reset");
+				LOG("DTR reset\n");
 				SET_STATUS_BIT(0x0f, modem_regs.reg0f.DSR, 0);
 				SET_STATUS_BIT(0x0f, modem_regs.reg0f.RLSD, 0);
 			}
@@ -977,10 +977,10 @@ static void ModemNormalWrite(u32 reg, u32 data)
 		}
 		else if (connect_state == DISCONNECTED || connect_state == DIALING)
 		{
-			//LOG("ModemNormalWrite : TBUFFER = %X", data);
+			//LOG("ModemNormalWrite : TBUFFER = %X\n", data);
 			if (connect_state == DISCONNECTED)
 			{
-				INFO_LOG(MODEM, "MODEM Dialing");
+				INFO_LOG(MODEM, "MODEM Dialing\n");
 				connect_state = DIALING;
 				modem_regs.reg16 = 0;		// SECRXB
 			}
@@ -988,7 +988,7 @@ static void ModemNormalWrite(u32 reg, u32 data)
 		}
 		else if (connect_state == CONNECTED && modem_regs.reg08.RTS)
 		{
-			//LOG("ModemNormalWrite : TBUFFER = %X", data);
+			//LOG("ModemNormalWrite : TBUFFER = %X\n", data);
 #ifndef NDEBUG
 			sent_bytes++;
 			if (sent_fp)
@@ -1010,7 +1010,7 @@ static void ModemNormalWrite(u32 reg, u32 data)
 		break;
 
 	case 0x11:
-		LOG("PARSL = %d", modem_regs.reg11.PARSL);
+		LOG("PARSL = %d\n", modem_regs.reg11.PARSL);
 		break;
 
 	case 0x14:	// ABCODE
@@ -1018,7 +1018,7 @@ static void ModemNormalWrite(u32 reg, u32 data)
 		{
 			reg1b_save = modem_regs.ptr[0x1b];
 			modem_regs.ptr[0x1b] = data;
-			//LOG("SPX/CTL download initiated");
+			//LOG("SPX/CTL download initiated\n");
 			module_download = true;
 			download_crc = 0;
 		}
@@ -1030,7 +1030,7 @@ static void ModemNormalWrite(u32 reg, u32 data)
 			// Restore reg 1b
 			modem_regs.ptr[0x1b] = reg1b_save;
 			module_download = false;
-			//LOG("SPX/CTL download finished CRC %02x", download_crc);
+			//LOG("SPX/CTL download finished CRC %02x\n", download_crc);
 		}
 		break;
 
@@ -1048,7 +1048,7 @@ static void ModemNormalWrite(u32 reg, u32 data)
 
 	case 0x1a:
 		if (connect_state == CONNECTED && modem_regs.reg1a.SCIBE)
-			WARN_LOG(MODEM, "Unexpected state: connected and SCIBE==1");
+			WARN_LOG(MODEM, "Unexpected state: connected and SCIBE==1\n");
 		break;
 
 		//Address low
@@ -1067,7 +1067,7 @@ static void ModemNormalWrite(u32 reg, u32 data)
 			u32 dspram_addr = modem_regs.reg1c_1d.MEMADD_l | (modem_regs.reg1c_1d.MEMADD_h << 8);
 			if (modem_regs.reg1c_1d.MEMW)
 			{
-				LOG("DSP mem Write%s address %08x = %x", word_dspram_write ? " (w)" : "", dspram_addr, modem_regs.reg18_19);
+				LOG("DSP mem Write%s address %08x = %x\n", word_dspram_write ? " (w)" : "", dspram_addr, modem_regs.reg18_19);
 				if (word_dspram_write)
 				{
 					if (dspram_addr & 1)
@@ -1091,7 +1091,7 @@ static void ModemNormalWrite(u32 reg, u32 data)
 					modem_regs.reg18_19 = dspram[dspram_addr] | (dspram[(dspram_addr + 1) & (sizeof(dspram) - 1)] << 8);
 				else
 					modem_regs.reg18_19 = *(u16*)&dspram[dspram_addr];
-				LOG("DSP mem Read address %08x == %x", dspram_addr, modem_regs.reg18_19 );
+				LOG("DSP mem Read address %08x == %x\n", dspram_addr, modem_regs.reg18_19 );
 			}
 		}
 		break;
@@ -1104,7 +1104,7 @@ static void ModemNormalWrite(u32 reg, u32 data)
 			if(modem_regs.reg1a.SFRES)
 			{
 				modem_regs.reg1a.SFRES = 0;
-				LOG("Soft Reset SET && NEWC, executing reset and init");
+				LOG("Soft Reset SET && NEWC, executing reset and init\n");
 				// As the reset line pulled and let go, but with NEWC left
 				// set until the self tests are over
 				modem_reset(0);
@@ -1117,7 +1117,7 @@ static void ModemNormalWrite(u32 reg, u32 data)
 				modem_regs.reg1f.NEWC = 0;	// accept the settings
 				if (modem_regs.reg1f.NCIE)
 					modem_regs.reg1f.NCIA = 1;
-				LOG("NEWC CONF=%x", modem_regs.reg12);
+				LOG("NEWC CONF=%x\n", modem_regs.reg12);
 			}
 			if (modem_regs.reg12 == 0x81 && !v8bis)
 			{
@@ -1139,7 +1139,7 @@ static void ModemNormalWrite(u32 reg, u32 data)
 		break;
 
 	default:
-		//LOG("ModemNormalWrite : undef %03X = %X", reg, data);
+		//LOG("ModemNormalWrite : undef %03X = %X\n", reg, data);
 		break;
 	}
 	update_interrupt();
@@ -1179,7 +1179,7 @@ u32 ModemReadMem_A0_006(u32 addr, u32 size)
 				u8 data = modem_regs.ptr[reg];
 				if (reg == 0x00)	// RBUFFER
 				{
-					//LOG("Read RBUFFER = %X", data);
+					//LOG("Read RBUFFER = %X\n", data);
 #ifndef NDEBUG
 					if (connect_state == CONNECTED && recv_fp)
 						fputc(data, recv_fp);
@@ -1203,7 +1203,7 @@ u32 ModemReadMem_A0_006(u32 addr, u32 size)
 					}
 				}
 				//else
-				//	LOG("Read Reg %03x = %x", reg, data);
+				//	LOG("Read Reg %03x = %x\n", reg, data);
 
 				return data;
 			}
@@ -1229,12 +1229,12 @@ u32 ModemReadMem_A0_006(u32 addr, u32 size)
 			return 0; //still reset
 
 		default:
-			//LOG("Read (reset) reg %03x == %x", reg, modem_regs.ptr[reg]);
+			//LOG("Read (reset) reg %03x == %x\n", reg, modem_regs.ptr[reg]);
 			return 0;
 		}
 	}
 
-	LOG("modem reg %03X read -- wtf is it ?",reg);
+	LOG("modem reg %03X read -- wtf is it ?\n",reg);
 	return 0;
 }
 
@@ -1243,7 +1243,7 @@ void ModemWriteMem_A0_006(u32 addr, u32 data, u32 size)
 	u32 reg = (addr & 0x7FF) >> 2;
 	if (reg < 0x100)
 	{
-		LOG("modem reg %03X write -- MODEM ID?!",reg);
+		LOG("modem reg %03X write -- MODEM ID?!\n",reg);
 		return;
 	}
 
@@ -1253,7 +1253,7 @@ void ModemWriteMem_A0_006(u32 addr, u32 data, u32 size)
 		if (state == MS_NORMAL)
 			ModemNormalWrite(reg,data);
 		else
-			LOG("modem reg %03X write %X -- undef state?", reg, data);
+			LOG("modem reg %03X write %X -- undef state?\n", reg, data);
 		return;
 	}
 	if (reg == 0x20)
@@ -1263,7 +1263,7 @@ void ModemWriteMem_A0_006(u32 addr, u32 data, u32 size)
 		return;
 	}
 
-	LOG("modem reg %03X write %X -- wtf is it?",reg,data);
+	LOG("modem reg %03X write %X -- wtf is it?\n",reg,data);
 }
 
 /* The modem in a save state, since version 21 of the format: everything a

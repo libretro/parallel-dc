@@ -129,7 +129,7 @@ struct ByteQueue
 	{
 		if (count == SIZE)
 		{
-			WARN_LOG(NAOMI, "System SP serial port: nothing reads what the device sends; dropped");
+			WARN_LOG(NAOMI, "System SP serial port: nothing reads what the device sends; dropped\n");
 			return;
 		}
 		buf[(head + count) % SIZE] = v;
@@ -246,7 +246,7 @@ public:
 		if (f != nullptr)
 		{
 			if (filestream_read(f, cardData, sizeof(cardData)) != (int64_t)sizeof(cardData))
-				WARN_LOG(NAOMI, "Rfid card %d: truncated read", index);
+				WARN_LOG(NAOMI, "Rfid card %d: truncated read\n", index);
 			filestream_close(f);
 			loaded = true;
 		}
@@ -395,7 +395,7 @@ public:
 				expect(v, 4);
 				break;
 			default:
-				INFO_LOG(NAOMI, "UART%d write data out: unknown cmd %x", index, v);
+				INFO_LOG(NAOMI, "UART%d write data out: unknown cmd %x\n", index, v);
 				toSend.push(NG);
 				break;
 			}
@@ -478,7 +478,7 @@ private:
 
 	void makeNewCard()
 	{
-		INFO_LOG(NAOMI, "Creating new RFID card");
+		INFO_LOG(NAOMI, "Creating new RFID card\n");
 		if (gameName.substr(0, 6) == "dinoki")
 		{
 			memcpy(&cardData[0], &DINOKING_CHIP_DATA[0], sizeof(DINOKING_CHIP_DATA));
@@ -526,9 +526,9 @@ private:
 	void saveData()
 	{
 		if (retro_atomic_load_acquire_int(&failed) && retro_atomic_exchange_int(&failed, 0))
-			WARN_LOG(NAOMI, "Can't save RFID card to %s", path.c_str());
+			WARN_LOG(NAOMI, "Can't save RFID card to %s\n", path.c_str());
 		if (!save_writer_put_file(path.c_str(), cardData, sizeof(cardData), &failed))
-			WARN_LOG(NAOMI, "Can't save RFID card to %s", path.c_str());
+			WARN_LOG(NAOMI, "Can't save RFID card to %s\n", path.c_str());
 	}
 
 	static u32 dinoShuffle(u32 v) {
@@ -637,7 +637,7 @@ public:
 			}
 			else
 			{
-				WARN_LOG(NAOMI, "\\r ignored. buf size %d", (int)recvLen);
+				WARN_LOG(NAOMI, "\\r ignored. buf size %d\n", (int)recvLen);
 			}
 			recvLen = 0;
 		}
@@ -648,7 +648,7 @@ public:
 				if (!memcmp(&recvBuffer[0], "Ua0000000", 9))
 					sendPosition(1);
 				else
-					WARN_LOG(NAOMI, "Unknown command %.9s", (const char *)&recvBuffer[0]);
+					WARN_LOG(NAOMI, "Unknown command %.9s\n", (const char *)&recvBuffer[0]);
 				recvLen = 0;
 			}
 			else
@@ -808,7 +808,7 @@ u8 SerialPort::readReg(u32 addr)
 	case 11: // baudrate (msb)
 		return 0;
 	default:
-		INFO_LOG(NAOMI, "Unknown UART%d port %x", index, addr);
+		INFO_LOG(NAOMI, "Unknown UART%d port %x\n", index, addr);
 		return 0;
 	}
 }
@@ -821,7 +821,7 @@ void SerialPort::writeReg(u32 addr, u8 v)
 		if (pipe != nullptr)
 			pipe->write(v);
 		else
-			INFO_LOG(NAOMI, "UART%d out: %02x %c", index, v, v);
+			INFO_LOG(NAOMI, "UART%d out: %02x %c\n", index, v, v);
 		break;
 
 	case 1: // out buffer len
@@ -841,7 +841,7 @@ void SerialPort::writeReg(u32 addr, u8 v)
 		break;
 
 	default:
-		INFO_LOG(NAOMI, "Unknown UART%d port %x", index, addr);
+		INFO_LOG(NAOMI, "Unknown UART%d port %x\n", index, addr);
 		break;
 	}
 }
@@ -1764,7 +1764,7 @@ T SystemSpCart::readMemArea0(u32 addr)
 					return status;
 				}
 			default:
-				INFO_LOG(NAOMI, "systemsp::read(%x) CF IDE unknown reg", addr);
+				INFO_LOG(NAOMI, "systemsp::read(%x) CF IDE unknown reg\n", addr);
 				return (T)~0;
 			}
 		}
@@ -1773,13 +1773,13 @@ T SystemSpCart::readMemArea0(u32 addr)
 			// CF IDE AltStatus/Device Ctrl register
 			if ((addr & 0xffff) == 0x18)
 				return ata.status;
-			INFO_LOG(NAOMI, "systemsp::read(%x) CF IDE AltStatus unknown addr", addr);
+			INFO_LOG(NAOMI, "systemsp::read(%x) CF IDE AltStatus unknown addr\n", addr);
 			return 0;
 		}
 		else if ((bank & 0x3f00) == 0x3d00)
 		{
 			// Network aka Media board shared buffer/RAM
-			DEBUG_LOG(NAOMI, "systemsp::read(%x) Network shared RAM. offset %x", addr, offset);
+			DEBUG_LOG(NAOMI, "systemsp::read(%x) Network shared RAM. offset %x\n", addr, offset);
 			return (T)~0;
 		}
 		else if ((bank & 0x3f00) == 0x3f00)
@@ -1891,7 +1891,7 @@ T SystemSpCart::readMemArea0(u32 addr)
 		// custom UART 2
 		return uart2.readReg(addr);
 	}
-	INFO_LOG(NAOMI, "systemsp::readMemArea0<%d>: Unknown addr %x", (int)sizeof(T), addr);
+	INFO_LOG(NAOMI, "systemsp::readMemArea0<%d>: Unknown addr %x\n", (int)sizeof(T), addr);
 	return (T)~0;
 }
 
@@ -1967,12 +1967,12 @@ void SystemSpCart::writeMemArea0(u32 addr, T v)
 					sh4_sched_request(ataSchedId, 2000); // 10 us
 					break;
 				default:
-					INFO_LOG(NAOMI, "systemsp::write(%x) CF ATA command unknown: %x", addr, (u32)v);
+					INFO_LOG(NAOMI, "systemsp::write(%x) CF ATA command unknown: %x\n", addr, (u32)v);
 					break;
 				}
 				break;
 			default:
-				INFO_LOG(NAOMI, "systemsp::write(%x) CF ATA unknown reg = %x", addr, (u32)v);
+				INFO_LOG(NAOMI, "systemsp::write(%x) CF ATA unknown reg = %x\n", addr, (u32)v);
 				break;
 			}
 			return;
@@ -1992,7 +1992,7 @@ void SystemSpCart::writeMemArea0(u32 addr, T v)
 				ata.devCtrl = v & 0x86;
 			}
 			else
-				INFO_LOG(NAOMI, "systemsp::write(%x) CF IDE unknown reg %x data %x", addr, offset, (u32)v);
+				INFO_LOG(NAOMI, "systemsp::write(%x) CF IDE unknown reg %x data %x\n", addr, offset, (u32)v);
 			return;
 		}
 		else if ((bank & 0x3f00) == 0x3d00) {
@@ -2096,7 +2096,7 @@ void SystemSpCart::writeMemArea0(u32 addr, T v)
 		uart2.writeReg(addr, v);
 		return;
 	}
-	INFO_LOG(NAOMI, "systemsp::writeMemArea0<%d>: Unknown addr %x = %x", (int)sizeof(T), addr, (int)v);
+	INFO_LOG(NAOMI, "systemsp::writeMemArea0<%d>: Unknown addr %x = %x\n", (int)sizeof(T), addr, (int)v);
 }
 
 void SystemSpCart::updateInterrupt(u32 mask)
@@ -2219,13 +2219,13 @@ bool SystemSpCart::openChd()
 		chd = chd_image_open((std::string(g_roms_dir) + parentName + "/" + mediaName + ".chd").c_str(), nullptr, 0);
 	if (chd == nullptr)
 	{
-		ERROR_LOG(NAOMI, "System SP: cannot open the CompactFlash image %s: the game cannot start without it", path.c_str());
+		ERROR_LOG(NAOMI, "System SP: cannot open the CompactFlash image %s: the game cannot start without it\n", path.c_str());
 		return false;
 	}
 	hunkbytes = chd_image_hunk_bytes(chd);
 	if (hunkbytes == 0 || hunkbytes % SECTOR_SIZE != 0)
 	{
-		ERROR_LOG(NAOMI, "System SP: %s is not a CompactFlash image", path.c_str());
+		ERROR_LOG(NAOMI, "System SP: %s is not a CompactFlash image\n", path.c_str());
 		chd_image_close(chd);
 		chd = nullptr;
 		return false;
@@ -2233,7 +2233,7 @@ bool SystemSpCart::openChd()
 	chdSize = (u64)hunkbytes * chd_image_hunk_count(chd);
 	hunkmem.reset(new u8[hunkbytes]);
 	hunknum = ~0u;
-	INFO_LOG(NAOMI, "System SP: CompactFlash image %s", path.c_str());
+	INFO_LOG(NAOMI, "System SP: CompactFlash image %s\n", path.c_str());
 	return true;
 }
 
@@ -2258,7 +2258,7 @@ bool SystemSpCart::readCf(u64 offset, u32 len, u8 *dst)
 				hunknum = hunk;
 			else
 			{
-				WARN_LOG(NAOMI, "System SP: CompactFlash hunk %u cannot be read", hunk);
+				WARN_LOG(NAOMI, "System SP: CompactFlash hunk %u cannot be read\n", hunk);
 				hunknum = ~0u;
 				memset(dst, 0, n);
 				ok = false;
@@ -2438,7 +2438,7 @@ bool SystemSpCart::Init()
 		BootIdLoader loader(*this);
 		haveBootId = loader.load(bootId.get());
 		if (!haveBootId)
-			WARN_LOG(NAOMI, "System SP: the game's header is not on the CompactFlash card");
+			WARN_LOG(NAOMI, "System SP: the game's header is not on the CompactFlash card\n");
 
 		// What the BIOS put in the flash from the card the last time: it
 		// does not do it again if it is there.
@@ -2447,7 +2447,7 @@ bool SystemSpCart::Init()
 		{
 			if (filestream_get_size(f) == (int64_t)RomSize
 					&& filestream_read(f, RomPtr, RomSize) == (int64_t)RomSize)
-				INFO_LOG(NAOMI, "System SP: flash loaded from %s", savePath(".flash").c_str());
+				INFO_LOG(NAOMI, "System SP: flash loaded from %s\n", savePath(".flash").c_str());
 			else
 				memset(RomPtr, 0xff, RomSize);
 			filestream_close(f);
@@ -2485,7 +2485,7 @@ bool SystemSpCart::Init()
 				region = 2;
 			else if (country & 2)
 				region = 0;
-			NOTICE_LOG(NAOMI, "System SP: the game does not run in that region: region %d", region);
+			NOTICE_LOG(NAOMI, "System SP: the game does not run in that region: region %d\n", region);
 		}
 	}
 
@@ -2542,7 +2542,7 @@ void SystemSpCart::LoadEeprom()
 		{
 			memcpy(eeprom.data, data, sizeof(data));
 			loaded = true;
-			INFO_LOG(NAOMI, "System SP: EEPROM loaded from %s", path.c_str());
+			INFO_LOG(NAOMI, "System SP: EEPROM loaded from %s\n", path.c_str());
 		}
 		filestream_close(f);
 	}
@@ -2554,7 +2554,7 @@ void SystemSpCart::LoadEeprom()
 void SystemSpCart::saveEeprom()
 {
 	if (retro_atomic_load_acquire_int(&eepromFailed) && retro_atomic_exchange_int(&eepromFailed, 0))
-		WARN_LOG(NAOMI, "System SP: cannot save the EEPROM");
+		WARN_LOG(NAOMI, "System SP: cannot save the EEPROM\n");
 	const std::string path = savePath(regionSuffix(region)) + ".eeprom";
 	if (save_writer_put_file(path.c_str(), eeprom.data, sizeof(eeprom.data), &eepromFailed))
 		eeprom.dirty = false;
@@ -2565,9 +2565,9 @@ void SystemSpCart::saveFlash()
 	const std::string path = savePath(".flash");
 	RFILE *f = filestream_open(path.c_str(), RETRO_VFS_FILE_ACCESS_WRITE, RETRO_VFS_FILE_ACCESS_HINT_NONE);
 	if (f == nullptr || filestream_write(f, RomPtr, RomSize) != (int64_t)RomSize)
-		WARN_LOG(NAOMI, "System SP: cannot save the flash to %s", path.c_str());
+		WARN_LOG(NAOMI, "System SP: cannot save the flash to %s\n", path.c_str());
 	else
-		INFO_LOG(NAOMI, "System SP: flash saved to %s", path.c_str());
+		INFO_LOG(NAOMI, "System SP: flash saved to %s\n", path.c_str());
 	if (f != nullptr)
 		filestream_close(f);
 	flashDirty = false;
@@ -2777,7 +2777,7 @@ bool SystemSpCart::Write(u32 offset, u32 size, u32 data)
 			flash.cmdState = AAA_AA_2;
 			return true;
 		}
-		INFO_LOG(NAOMI, "Unexpected command %x %x in state aaa_80", offset, data);
+		INFO_LOG(NAOMI, "Unexpected command %x %x in state aaa_80\n", offset, data);
 		flash.cmdState = INIT;
 		break;
 	case AAA_AA_2:
@@ -2785,7 +2785,7 @@ bool SystemSpCart::Write(u32 offset, u32 size, u32 data)
 			flash.cmdState = _555_55_2;
 			return true;
 		}
-		INFO_LOG(NAOMI, "Unexpected command %x %x in state aaa_aa_2", offset, data);
+		INFO_LOG(NAOMI, "Unexpected command %x %x in state aaa_aa_2\n", offset, data);
 		flash.cmdState = INIT;
 		break;
 	case _555_55_2:
@@ -2816,7 +2816,7 @@ bool SystemSpCart::Write(u32 offset, u32 size, u32 data)
 			flash.cmdState = INIT;
 			return true;
 		}
-		INFO_LOG(NAOMI, "Unexpected command %x %x in state 555_55_2", offset, data);
+		INFO_LOG(NAOMI, "Unexpected command %x %x in state 555_55_2\n", offset, data);
 		flash.cmdState = INIT;
 		break;
 	default:
@@ -2905,7 +2905,7 @@ void SystemSpCart::process()
 		// 4: type (0 none, 3,4 ether)
 		inetaddr = readNetMem<u32>(0x24);
 		netmask = readNetMem<u32>(0x28);
-		INFO_LOG(NAOMI, "process: set net type %d ip %08x mask %08x", netmem4, inetaddr, netmask);
+		INFO_LOG(NAOMI, "process: set net type %d ip %08x mask %08x\n", netmem4, inetaddr, netmask);
 		writeNetMem(2, NET_OK);
 		break;
 
@@ -3000,7 +3000,7 @@ void SystemSpCart::process()
 		break;
 
 	default:
-		WARN_LOG(NAOMI, "Unknown netdimm command: %x", cmd);
+		WARN_LOG(NAOMI, "Unknown netdimm command: %x\n", cmd);
 		writeNetMem(2, NET_ERROR);
 		break;
 	}
@@ -3089,7 +3089,7 @@ void SystemSpCart::serializeV24(void **data, unsigned int *total_size)
 					pages[count++] = i * 64 + b;
 				else if (!netPagesWarned)
 				{
-					WARN_LOG(NAOMI, "System SP: more of the network board's memory is used than a state holds");
+					WARN_LOG(NAOMI, "System SP: more of the network board's memory is used than a state holds\n");
 					netPagesWarned = true;
 				}
 			}
@@ -3135,7 +3135,7 @@ bool SystemSpCart::unserializeV24(void **data, unsigned int *total_size)
 		flash.cmdState = INIT;
 	if (flash.changes != changes || flash.changesHash != changesHash)
 		WARN_LOG(NAOMI, "System SP: the flash has been written to since this state was saved, or before it was: "
-				"the game may not go on as it did");
+				"the game may not go on as it did\n");
 	LIBRETRO_US(encIv);
 	LIBRETRO_US(encCounter);
 	if (encCounter >= 16)

@@ -238,7 +238,7 @@ void TexturePool::Init(const TexDecoder *decoder)
 				break;
 			book.Give(image);
 		}
-	NOTICE_LOG(RENDERER, "Vulkan: texture pool of %u images, %u MB (planned %u MB)", book.made, (u32)(book.bytesMade >> 20), (u32)(bytes >> 20));
+	NOTICE_LOG(RENDERER, "Vulkan: texture pool of %u images, %u MB (planned %u MB)\n", book.made, (u32)(book.bytesMade >> 20), (u32)(bytes >> 20));
 }
 
 void TexturePool::Term()
@@ -453,13 +453,13 @@ void UploadRing::Init(size_t bytes, CommandPool *pool)
 	current = 0;
 	for (u32 i = 0; i < MAX_FRAMES; i++)
 		frameLive[i] = false;
-	INFO_LOG(RENDERER, "Vulkan: upload ring of %u KB", (u32)(bytes >> 10));
+	INFO_LOG(RENDERER, "Vulkan: upload ring of %u KB\n", (u32)(bytes >> 10));
 }
 
 void UploadRing::Term()
 {
 	if (mapped != nullptr)
-		NOTICE_LOG(RENDERER, "Vulkan: upload ring: %u MB handed out, %u frames found done before their turn, %u textures put off for want of room",
+		NOTICE_LOG(RENDERER, "Vulkan: upload ring: %u MB handed out, %u frames found done before their turn, %u textures put off for want of room\n",
 				(u32)(head >> 20), (u32)statPolled, (u32)statFull);
 	mapped = nullptr;
 	buffer.reset();
@@ -1241,7 +1241,7 @@ void TextureCache::DebugLog(Texture *const *textures, u32 count)
 	const vk::Device device = context->GetDevice();
 	vk::PhysicalDeviceProperties props;
 	context->GetPhysicalDevice().getProperties(&props);
-	NOTICE_LOG(RENDERER, "TexDebug: frame %u, %u textures; %s (driver %08x); sub-pixel bits %u, sub-texel bits %u, mipmap bits %u, LOD bias max %.1f; force LOD0 %d, anisotropy %d, GPU decode %d, upscale %d",
+	NOTICE_LOG(RENDERER, "TexDebug: frame %u, %u textures; %s (driver %08x); sub-pixel bits %u, sub-texel bits %u, mipmap bits %u, LOD bias max %.1f; force LOD0 %d, anisotropy %d, GPU decode %d, upscale %d\n",
 			FrameCount, count, (const char *)&props.deviceName[0], props.driverVersion, props.limits.subPixelPrecisionBits,
 			props.limits.subTexelPrecisionBits, props.limits.mipmapPrecisionBits, props.limits.maxSamplerLodBias,
 			settings.rend.ForceTextureLOD0, settings.rend.AnisotropicFiltering, settings.rend.GpuTextureDecode, settings.rend.TextureUpscale);
@@ -1342,6 +1342,6 @@ void TextureCache::DebugLog(Texture *const *textures, u32 count)
 		}
 		if (!any)
 			snprintf(line + n, sizeof(line) - n, " not read back");
-		NOTICE_LOG(RENDERER, "%s", line);
+		NOTICE_LOG(RENDERER, "%s\n", line);
 	}
 }

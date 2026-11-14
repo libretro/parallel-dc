@@ -76,7 +76,7 @@ void clear_temp_cache(bool full)
 
 static void recSh4_ClearCache(void)
 {
-	INFO_LOG(DYNAREC, "recSh4:Dynarec Cache clear at %08X free space %d", next_pc, emit_FreeSpace());
+	INFO_LOG(DYNAREC, "recSh4:Dynarec Cache clear at %08X free space %d\n", next_pc, emit_FreeSpace());
 	// (see bm_ResetCache())
 	const bool nothing_since = LastAddr == LastAddr_min && TempLastAddr == 0;
 	LastAddr=LastAddr_min;
@@ -95,7 +95,7 @@ static void recSh4_Run(void)
 	sh4_catch_top = NULL;
 	sh4_in_delay_slot = false;
 	sh4_dyna_rcb=(u8*)&Sh4cntx + sizeof(Sh4cntx);
-	INFO_LOG(DYNAREC, "cntx // fpcb offset: %td // pc offset: %td // pc %08X", (u8*)&sh4rcb.fpcb - sh4_dyna_rcb, (u8*)&sh4rcb.cntx.pc - sh4_dyna_rcb, sh4rcb.cntx.pc);
+	INFO_LOG(DYNAREC, "cntx // fpcb offset: %td // pc offset: %td // pc %08X\n", (u8*)&sh4rcb.fpcb - sh4_dyna_rcb, (u8*)&sh4rcb.cntx.pc - sh4_dyna_rcb, sh4rcb.cntx.pc);
 	//verify(rcb_noffs(&next_pc)==-184);
 	ngen_mainloop(sh4_dyna_rcb);
 
@@ -262,7 +262,7 @@ DynarecCodeEntryPtr rdv_CompilePC(u32 blockcheck_failures)
 		emit_ptr_limit = (u32 *)(TempCodeCache + TEMP_CODE_SIZE);
 		rbi->temp_block = true;
 		if (rbi->read_only)
-			INFO_LOG(DYNAREC, "WARNING: temp block %x (%x) is protected!", rbi->vaddr, rbi->addr);
+			INFO_LOG(DYNAREC, "WARNING: temp block %x (%x) is protected!\n", rbi->vaddr, rbi->addr);
 	}
 		bool do_opts = !rbi->temp_block;
 		rbi->staging_runs=do_opts?100:-100;
@@ -338,7 +338,7 @@ DynarecCodeEntryPtr DYNACALL rdv_BlockCheckFail(u32 addr)
 			{
 				bool inserted = smc_hotspots.insert(addr).second;
 				if (inserted)
-					DEBUG_LOG(DYNAREC, "rdv_BlockCheckFail SMC hotspot @ %08x fails %d", addr, blockcheck_failures);
+					DEBUG_LOG(DYNAREC, "rdv_BlockCheckFail SMC hotspot @ %08x fails %d\n", addr, blockcheck_failures);
 			}
 			bm_DiscardBlock(block.get());
 		}
@@ -364,7 +364,7 @@ DynarecCodeEntryPtr DYNACALL rdv_BlockCheckFail(u32 addr)
 			{
 				bool inserted = smc_hotspots.insert(addr).second;
 				if (inserted)
-					DEBUG_LOG(DYNAREC, "rdv_BlockCheckFail SMC hotspot @ %08x fails %d", addr, blockcheck_failures);
+					DEBUG_LOG(DYNAREC, "rdv_BlockCheckFail SMC hotspot @ %08x fails %d\n", addr, blockcheck_failures);
 			}
 			bm_DiscardBlock(block.get());
 		}
@@ -530,7 +530,7 @@ void* DYNACALL rdv_LinkBlock(u8* code,u32 dpc)
 	}
 	else if (!mmu && stale_block)
 	{
-		INFO_LOG(DYNAREC, "null RBI: from %08X to %08X -- unlinked stale block -- code %p next %p", rbi->vaddr, next_pc, code, rv);
+		INFO_LOG(DYNAREC, "null RBI: from %08X to %08X -- unlinked stale block -- code %p next %p\n", rbi->vaddr, next_pc, code, rv);
 	}
 	
 	return (void*)rv;
@@ -577,7 +577,7 @@ bool recSh4_HaveCodeCache(void)
 
 static void recSh4_Init(void)
 {
-	INFO_LOG(DYNAREC, "recSh4 Init");
+	INFO_LOG(DYNAREC, "recSh4 Init\n");
 	Sh4_int_Init();
 	bm_Init();
 
@@ -630,7 +630,7 @@ static void recSh4_Init(void)
 
 static void recSh4_Term(void)
 {
-	INFO_LOG(DYNAREC, "recSh4 Term");
+	INFO_LOG(DYNAREC, "recSh4 Term\n");
 	bm_Term();
 	Sh4_int_Term();
 }

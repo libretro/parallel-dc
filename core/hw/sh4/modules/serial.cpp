@@ -164,7 +164,7 @@ static void scif_rx()
 		{
 			SCIF_SCLSR2.ORER = 1;
 			scif_interrupts();
-			INFO_LOG(SH4, "scif: Receive overrun");
+			INFO_LOG(SH4, "scif: Receive overrun\n");
 		}
 		else
 		{

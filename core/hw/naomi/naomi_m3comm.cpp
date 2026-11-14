@@ -193,11 +193,11 @@ u32 NaomiM3Comm::ReadMem(u32 address, u32 size)
 	switch (address & 255)
 	{
 	case NAOMI_COMM2_CTRL_addr & 255:
-		//DEBUG_LOG(NAOMI, "NAOMI_COMM2_CTRL read");
+		//DEBUG_LOG(NAOMI, "NAOMI_COMM2_CTRL read\n");
 		return comm_ctrl;
 
 	case NAOMI_COMM2_OFFSET_addr & 255:
-		//DEBUG_LOG(NAOMI, "NAOMI_COMM2_OFFSET read");
+		//DEBUG_LOG(NAOMI, "NAOMI_COMM2_OFFSET read\n");
 		return comm_offset;
 
 	case NAOMI_COMM2_DATA_addr & 255:
@@ -212,23 +212,23 @@ u32 NaomiM3Comm::ReadMem(u32 address, u32 size)
 			value = *(u16*)&comm_ram[comm_offset];
 		}
 		value = swap16(value);
-		DEBUG_LOG(NAOMI, "NAOMI_COMM2_DATA %s read @ %04x: %x", (comm_ctrl & 1) ? "m68k ram" : "comm ram", comm_offset, value);
+		DEBUG_LOG(NAOMI, "NAOMI_COMM2_DATA %s read @ %04x: %x\n", (comm_ctrl & 1) ? "m68k ram" : "comm ram", comm_offset, value);
 		comm_offset += 2;
 		return value;
 	}
 
 	case NAOMI_COMM2_STATUS0_addr & 255:
 		syncNetwork();
-		DEBUG_LOG(NAOMI, "NAOMI_COMM2_STATUS0 read %x", comm_status0);
+		DEBUG_LOG(NAOMI, "NAOMI_COMM2_STATUS0 read %x\n", comm_status0);
 		return comm_status0;
 
 	case NAOMI_COMM2_STATUS1_addr & 255:
 		syncNetwork();
-		DEBUG_LOG(NAOMI, "NAOMI_COMM2_STATUS1 read %x", comm_status1);
+		DEBUG_LOG(NAOMI, "NAOMI_COMM2_STATUS1 read %x\n", comm_status1);
 		return comm_status1;
 
 	default:
-		DEBUG_LOG(NAOMI, "NaomiM3Comm::ReadMem unmapped: %08x sz %d", address, size);
+		DEBUG_LOG(NAOMI, "NaomiM3Comm::ReadMem unmapped: %08x sz %d\n", address, size);
 		return 0xffffffff;
 	}
 }
@@ -298,7 +298,7 @@ void NaomiM3Comm::WriteMem(u32 address, u32 data, u32 size)
 		// bit 15: 0 - enable / 1 - disable this device ???
 		if (data & (1 << 5))
 		{
-			DEBUG_LOG(NAOMI, "NAOMI_COMM2_CTRL m68k reset");
+			DEBUG_LOG(NAOMI, "NAOMI_COMM2_CTRL m68k reset\n");
 			closeNetwork();
 			memset(&comm_ram[0], 0, 32);
 			comm_status0 = 0; // varies...
@@ -306,16 +306,16 @@ void NaomiM3Comm::WriteMem(u32 address, u32 data, u32 size)
 			startThread();
 		}
 		comm_ctrl = (u16)(data & ~(1 << 5));
-		//DEBUG_LOG(NAOMI, "NAOMI_COMM2_CTRL set to %x", comm_ctrl);
+		//DEBUG_LOG(NAOMI, "NAOMI_COMM2_CTRL set to %x\n", comm_ctrl);
 		return;
 
 	case NAOMI_COMM2_OFFSET_addr & 255:
 		comm_offset = (u16)data;
-		//DEBUG_LOG(NAOMI, "NAOMI_COMM2_OFFSET set to %x", comm_offset);
+		//DEBUG_LOG(NAOMI, "NAOMI_COMM2_OFFSET set to %x\n", comm_offset);
 		return;
 
 	case NAOMI_COMM2_DATA_addr & 255:
-		DEBUG_LOG(NAOMI, "NAOMI_COMM2_DATA written @ %04x %04x", comm_offset, (u16)data);
+		DEBUG_LOG(NAOMI, "NAOMI_COMM2_DATA written @ %04x %04x\n", comm_offset, (u16)data);
 		data = swap16(data);
 		if (comm_ctrl & 1)
 		{
@@ -336,18 +336,18 @@ void NaomiM3Comm::WriteMem(u32 address, u32 data, u32 size)
 
 	case NAOMI_COMM2_STATUS0_addr & 255:
 		comm_status0 = (u16)data;
-		//DEBUG_LOG(NAOMI, "NAOMI_COMM2_STATUS0 set to %x", comm_status0);
+		//DEBUG_LOG(NAOMI, "NAOMI_COMM2_STATUS0 set to %x\n", comm_status0);
 		return;
 
 	case NAOMI_COMM2_STATUS1_addr & 255:
 		comm_status1 = (u16)data;
-		//DEBUG_LOG(NAOMI, "NAOMI_COMM2_STATUS1 set to %x", comm_status1);
+		//DEBUG_LOG(NAOMI, "NAOMI_COMM2_STATUS1 set to %x\n", comm_status1);
 		return;
 
 	default:
 		break;
 	}
-	DEBUG_LOG(NAOMI, "NaomiM3Comm::WriteMem: %x <= %x sz %d", address, data, size);
+	DEBUG_LOG(NAOMI, "NaomiM3Comm::WriteMem: %x <= %x sz %d\n", address, data, size);
 }
 
 bool NaomiM3Comm::DmaStart(u32 addr, u32 data)
@@ -355,7 +355,7 @@ bool NaomiM3Comm::DmaStart(u32 addr, u32 data)
 	if (comm_ctrl & 0x4000)
 		return false;
 
-	DEBUG_LOG(NAOMI, "NaomiM3Comm: DMA addr %08X <-> %04x len %d %s", SB_GDSTAR, comm_offset, SB_GDLEN, SB_GDDIR == 0 ? "OUT" : "IN");
+	DEBUG_LOG(NAOMI, "NaomiM3Comm: DMA addr %08X <-> %04x len %d %s\n", SB_GDSTAR, comm_offset, SB_GDLEN, SB_GDDIR == 0 ? "OUT" : "IN");
 	syncNetwork();
 	if (SB_GDDIR == 0)
 	{
@@ -376,7 +376,7 @@ bool NaomiM3Comm::DmaStart(u32 addr, u32 data)
 				u8 value = comm_ram[comm_offset + i];
 				sprintf(buf + strlen(buf), "%02x ", value);
 			}
-			DEBUG_LOG(NAOMI, "Comm RAM read @%x: %s", comm_offset, buf);
+			DEBUG_LOG(NAOMI, "Comm RAM read @%x: %s\n", comm_offset, buf);
 		}
 		for (u32 i = 0; i < SB_GDLEN; i++)
 			WriteMem8_nommu(SB_GDSTAR + i, comm_ram[comm_offset++]);
@@ -451,5 +451,5 @@ void NaomiM3Comm::networkThread()
 		else if (net_thread_slot_id != 0)
 			network.waitStop(1000);
 	}
-	DEBUG_LOG(NAOMI, "Network thread exiting");
+	DEBUG_LOG(NAOMI, "Network thread exiting\n");
 }

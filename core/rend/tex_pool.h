@@ -298,7 +298,7 @@ public:
 		{
 			said[cls] = true;
 			lateClasses++;
-			WARN_LOG(RENDERER, "Texture pool: no %ux%u %s%s image left, one made (the pool is too small for this game)",
+			WARN_LOG(RENDERER, "Texture pool: no %ux%u %s%s image left, one made (the pool is too small for this game)\n",
 					Width(cls), Height(cls), format, Mips(cls) ? " mipmapped" : "");
 		}
 	}
@@ -348,7 +348,7 @@ public:
 
 	void Summary(const char *api) const
 	{
-		NOTICE_LOG(RENDERER, "%s: texture pool, %u images made (%u MB), %u of them while the game ran (%u MB, %u shapes)",
+		NOTICE_LOG(RENDERER, "%s: texture pool, %u images made (%u MB), %u of them while the game ran (%u MB, %u shapes)\n",
 				api, made, (u32)(bytesMade >> 20), madeLate, (u32)(bytesLate >> 20), lateClasses);
 	}
 

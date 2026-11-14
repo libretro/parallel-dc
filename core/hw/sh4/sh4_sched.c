@@ -207,7 +207,7 @@ int sh4_sched_register(int tag, sh4_sched_callback* ssc)
 	/* (every device's fits: one more is a device added that the room was not made for) */
 	if (sch_count >= SH4_SCHED_SLOTS)
 	{
-		ERROR_LOG(SH4, "sh4_sched: no room for another event (SH4_SCHED_SLOTS)");
+		ERROR_LOG(SH4, "sh4_sched: no room for another event (SH4_SCHED_SLOTS)\n");
 		die("sh4_sched: no room for another event");
 		return -1;
 	}

@@ -405,7 +405,7 @@ ComPtr<ID3DBlob> DX11ShaderCompiler::Compile(const char *source, const char *ent
 	HRESULT hr = compile(source, strlen(source), nullptr, macros, include, entry, profile, 0, 0, blob.put(), errors.put());
 	if (FAILED(hr))
 	{
-		ERROR_LOG(RENDERER, "Shader compilation failed (%x): %s", (unsigned)hr,
+		ERROR_LOG(RENDERER, "Shader compilation failed (%x): %s\n", (unsigned)hr,
 				errors ? (const char *)errors->GetBufferPointer() : "");
 		blob.reset();
 	}
@@ -418,7 +418,7 @@ ComPtr<ID3D11VertexShader> DX11ShaderCompiler::CompileVS(const char *source, con
 	ComPtr<ID3D11VertexShader> shader;
 	ComPtr<ID3DBlob> blob = Compile(source, entry, profile, macros, include);
 	if (blob && FAILED(device->CreateVertexShader(blob->GetBufferPointer(), blob->GetBufferSize(), nullptr, shader.put())))
-		ERROR_LOG(RENDERER, "Vertex shader creation failed");
+		ERROR_LOG(RENDERER, "Vertex shader creation failed\n");
 	if (blobOut != nullptr)
 		*blobOut = blob;
 	return shader;
@@ -430,7 +430,7 @@ ComPtr<ID3D11PixelShader> DX11ShaderCompiler::CompilePS(const char *source, cons
 	ComPtr<ID3D11PixelShader> shader;
 	ComPtr<ID3DBlob> blob = Compile(source, entry, profile, macros, include);
 	if (blob && FAILED(device->CreatePixelShader(blob->GetBufferPointer(), blob->GetBufferSize(), nullptr, shader.put())))
-		ERROR_LOG(RENDERER, "Pixel shader creation failed");
+		ERROR_LOG(RENDERER, "Pixel shader creation failed\n");
 	return shader;
 }
 
@@ -673,7 +673,7 @@ ID3D11PixelShader *DX11ShaderCompiler::MissedPS(u32 family, u32 variant, ComPtr<
 	if (fromFile)
 		statFromFile++;
 	if (FAILED(device->CreatePixelShader(code, size, nullptr, slot.put())))
-		ERROR_LOG(RENDERER, "Pixel shader creation failed");
+		ERROR_LOG(RENDERER, "Pixel shader creation failed\n");
 	return slot;
 }
 
@@ -691,7 +691,7 @@ ID3D11VertexShader *DX11ShaderCompiler::MakeVS(u32 family, u32 variant, ComPtr<I
 	if (fromFile)
 		statFromFile++;
 	if (FAILED(device->CreateVertexShader(code, size, nullptr, slot.put())))
-		ERROR_LOG(RENDERER, "Vertex shader creation failed");
+		ERROR_LOG(RENDERER, "Vertex shader creation failed\n");
 	if (blob != nullptr)
 	{
 		if (!hold)
@@ -713,7 +713,7 @@ ID3D11ComputeShader *DX11ShaderCompiler::MakeCS(u32 family, u32 variant, ComPtr<
 	if (fromFile)
 		statFromFile++;
 	if (FAILED(device->CreateComputeShader(code, size, nullptr, slot.put())))
-		ERROR_LOG(RENDERER, "Compute shader creation failed");
+		ERROR_LOG(RENDERER, "Compute shader creation failed\n");
 	return slot;
 }
 
@@ -737,7 +737,7 @@ void DX11ShaderCompiler::LoadFile()
 					[](const d3d_shcache_entry_t& a, const d3d_shcache_entry_t& b) { return a.hash < b.hash; });
 		}
 		else
-			WARN_LOG(RENDERER, "DX11: shader file %s is not one: ignored", path.c_str());
+			WARN_LOG(RENDERER, "DX11: shader file %s is not one: ignored\n", path.c_str());
 		free(entries);
 	}
 	free(data);
@@ -796,7 +796,7 @@ void DX11ShaderCompiler::SaveFile()
 	if (!written)
 		filestream_delete(tmpPath.c_str());
 	else
-		NOTICE_LOG(RENDERER, "DX11: shader file saved: %u shaders", (u32)entries.size());
+		NOTICE_LOG(RENDERER, "DX11: shader file saved: %u shaders\n", (u32)entries.size());
 }
 
 void DX11ShaderCompiler::Init(ID3D11Device *device, pD3DCompile compile)
@@ -846,7 +846,7 @@ void DX11ShaderCompiler::Init(ID3D11Device *device, pD3DCompile compile)
 	if (warm == nullptr || jobs.empty())
 		return;
 	const size_t taken = d3d_warm_submit(warm, jobs.data(), jobs.size());
-	NOTICE_LOG(RENDERER, "DX11: %u shaders in %s, %u pixel shaders to be made ahead",
+	NOTICE_LOG(RENDERER, "DX11: %u shaders in %s, %u pixel shaders to be made ahead\n",
 			(u32)fileIndex.size(), FileName(), (u32)taken);
 }
 
@@ -860,7 +860,7 @@ void DX11ShaderCompiler::TermCompiler()
 		warm = nullptr;
 	}
 	if (device != nullptr)
-		NOTICE_LOG(RENDERER, "DX11: %s: %u compiled, %u the core's, %u from the file, %u made ahead (%u of them compiled), %u made on the draw path, %u draws with a general shader",
+		NOTICE_LOG(RENDERER, "DX11: %s: %u compiled, %u the core's, %u from the file, %u made ahead (%u of them compiled), %u made on the draw path, %u draws with a general shader\n",
 				FileName(), statCompiled, statBuiltIn, statFromFile, statAhead, statCompiledAhead, statDrawPath, statGeneral);
 	SaveFile();
 	file.clear();

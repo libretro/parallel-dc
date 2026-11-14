@@ -108,7 +108,7 @@ void gl_writeout_init(int width, int height, bool picture)
 		program = glprog_make_compute(pieces, 4);
 		if (program == 0)
 		{
-			WARN_LOG(RENDERER, "OpenGL: the PowerVR2 write-out pass could not be made: the picture goes without it");
+			WARN_LOG(RENDERER, "OpenGL: the PowerVR2 write-out pass could not be made: the picture goes without it\n");
 			return;
 		}
 		wordsAt = glGetUniformLocation(program, "words");
@@ -135,7 +135,7 @@ void gl_writeout_init(int width, int height, bool picture)
 		fresh = true;
 		if (!complete)
 		{
-			WARN_LOG(RENDERER, "OpenGL: no picture for the PowerVR2 write-out pass: the picture goes without it");
+			WARN_LOG(RENDERER, "OpenGL: no picture for the PowerVR2 write-out pass: the picture goes without it\n");
 			if (fbo != 0)
 				glDeleteFramebuffers(1, &fbo);
 			glcache.DeleteTextures(1, &texture);

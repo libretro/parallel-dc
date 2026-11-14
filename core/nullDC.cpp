@@ -187,13 +187,13 @@ static void LoadSpecialSettingsCPU(void)
 	if(settings.dynarec.Enable)
 	{
 		Get_Sh4Recompiler(&sh4_cpu);
-		INFO_LOG(DYNAREC, "Using Recompiler");
+		INFO_LOG(DYNAREC, "Using Recompiler\n");
 	}
 	else
 #endif
 	{
 		Get_Sh4Interpreter(&sh4_cpu);
-		INFO_LOG(INTERPRETER, "Using Interpreter");
+		INFO_LOG(INTERPRETER, "Using Interpreter\n");
 	}
    sh4_cpu.Reset(false);
 }
@@ -210,11 +210,11 @@ static void LoadSpecialSettings(void)
    const u32 cable_option      = settings.dreamcast.cable;
    const u32 alpha_sort_option = settings.pvr.Emulation.AlphaSortMode;
 
-   NOTICE_LOG(BOOT, "[LUT]: Product number: %s.", prod_id);
+   NOTICE_LOG(BOOT, "[LUT]: Product number: %s.\n", prod_id);
 	if (ip_meta.isWindowsCE() || settings.dreamcast.ForceWinCE
 			|| !strncmp("T26702N", prod_id, 7)) // PBA Tour Bowling 2001
 	{
-		NOTICE_LOG(BOOT, "Enabling Full MMU and Extra depth scaling for Windows CE game");
+		NOTICE_LOG(BOOT, "Enabling Full MMU and Extra depth scaling for Windows CE game\n");
 		settings.rend.ExtraDepthScale = 0.1;
 		settings.dreamcast.FullMMU = true;
 	}
@@ -222,36 +222,36 @@ static void LoadSpecialSettings(void)
    {
       if (!strncmp(lut_games[i].product_number, prod_id, sizeof(prod_id) - 1))
       {
-      	INFO_LOG(BOOT, "[LUT]: Found game in LUT database..");
+      	INFO_LOG(BOOT, "[LUT]: Found game in LUT database..\n");
 
          if (lut_games[i].alpha_sort_mode != -1)
          {
-         	NOTICE_LOG(BOOT, "[Hack]: Applying alpha sort hack.");
+         	NOTICE_LOG(BOOT, "[Hack]: Applying alpha sort hack.\n");
             settings.pvr.Emulation.AlphaSortMode = lut_games[i].alpha_sort_mode;
          }
 
 
          if (lut_games[i].translucentPolygonDepthMask != -1)
          {
-         	NOTICE_LOG(BOOT, "[Hack]: Applying translucent polygon depth mask hack.");
+         	NOTICE_LOG(BOOT, "[Hack]: Applying translucent polygon depth mask hack.\n");
             settings.rend.TranslucentPolygonDepthMask = lut_games[i].translucentPolygonDepthMask;
          }
 
 
          if (lut_games[i].disable_div != -1)
          {
-         	NOTICE_LOG(BOOT, "[Hack]: Applying Disable DIV hack.");
+         	NOTICE_LOG(BOOT, "[Hack]: Applying Disable DIV hack.\n");
          	settings.dynarec.ForceDisableDivMatching = settings.dynarec.DisableDivMatching = lut_games[i].disable_div;
          }
          if (lut_games[i].extra_depth_scale != 1)
          {
-         	NOTICE_LOG(BOOT, "[Hack]: Applying auto extra depth scale.");
+         	NOTICE_LOG(BOOT, "[Hack]: Applying auto extra depth scale.\n");
          	settings.rend.ExtraDepthScale = lut_games[i].extra_depth_scale;
          }
          // (with the RGB cable only: what VGA or TV gives such a game is its own)
          if (lut_games[i].no_rgb_component == 1 && settings.dreamcast.cable == 2)
          {
-         	NOTICE_LOG(BOOT, "Disabling RGB component output");
+         	NOTICE_LOG(BOOT, "Disabling RGB component output\n");
             settings.dreamcast.cable = 3;		// TV composite
          }
 
@@ -269,21 +269,21 @@ static void LoadSpecialSettings(void)
 		case 0: // Japan
 			if (!region_japan)
 			{
-				NOTICE_LOG(BOOT, "Japan region not supported. Using %s instead", region_usa ? "USA" : "Europe");
+				NOTICE_LOG(BOOT, "Japan region not supported. Using %s instead\n", region_usa ? "USA" : "Europe");
 				settings.dreamcast.region = region_usa ? 1 : 2;
 			}
 			break;
 		case 1: // USA
 			if (!region_usa)
 			{
-				NOTICE_LOG(BOOT, "USA region not supported. Using %s instead", region_eu ? "Europe" : "Japan");
+				NOTICE_LOG(BOOT, "USA region not supported. Using %s instead\n", region_eu ? "Europe" : "Japan");
 				settings.dreamcast.region = region_eu ? 2 : 0;
 			}
 			break;
 		case 2: // Europe
 			if (!region_eu)
 			{
-				NOTICE_LOG(BOOT, "Europe region not supported. Using %s instead", region_usa ? "USA" : "Japan");
+				NOTICE_LOG(BOOT, "Europe region not supported. Using %s instead\n", region_usa ? "USA" : "Japan");
 				settings.dreamcast.region = region_usa ? 1 : 0;
 			}
 			break;
@@ -298,12 +298,12 @@ static void LoadSpecialSettings(void)
 		}
 	}
 	else
-		WARN_LOG(BOOT, "No region specified in IP.BIN");
+		WARN_LOG(BOOT, "No region specified in IP.BIN\n");
 	if (settings.dreamcast.cable <= 1 && (!ip_meta.supportsVGA()
 			|| id == "T-12504N"		// Caesar's Palace 2000 (US)
 			|| id == "12502D-50"))		// Caesar's Palace 2000 (EU)
 	{
-		NOTICE_LOG(BOOT, "Game doesn't support VGA. Using TV Composite instead");
+		NOTICE_LOG(BOOT, "Game doesn't support VGA. Using TV Composite instead\n");
 		settings.dreamcast.cable = 3;
 	}
 	if (settings.dreamcast.cable == 2
@@ -311,7 +311,7 @@ static void LoadSpecialSettings(void)
 			|| id == "T28202M"		// Shin Nihon Pro Wrestling 4: stops with RGB
 			|| id == "T9512N"))		// The Grinch (US)
 	{
-		NOTICE_LOG(BOOT, "Game doesn't support RGB. Using TV Composite instead");
+		NOTICE_LOG(BOOT, "Game doesn't support RGB. Using TV Composite instead\n");
 		settings.dreamcast.cable = 3;
 	}
 	if (id == "T-9707N"			// San Francisco Rush 2049 (US)
@@ -331,14 +331,14 @@ static void LoadSpecialSettings(void)
 		game_broadcast = 1;
 	if (game_broadcast >= 0)
 	{
-		NOTICE_LOG(BOOT, "Forcing %s broadcasting", game_broadcast == 0 ? "NTSC" : "PAL");
+		NOTICE_LOG(BOOT, "Forcing %s broadcasting\n", game_broadcast == 0 ? "NTSC" : "PAL");
 		settings.dreamcast.broadcast = game_broadcast;
 		flash_broadcast[0] = sys_nvmem_flash.data[0x1a004];
 		flash_broadcast[1] = sys_nvmem_flash.data[0x1a0a4];
 	}
 	if (id == "T-8102N")			// TrickStyle (US)
 	{
-		NOTICE_LOG(BOOT, "Forcing English language");
+		NOTICE_LOG(BOOT, "Forcing English language\n");
 		game_language = 1;
 		settings.dreamcast.language = game_language;
 		flash_language[0] = sys_nvmem_flash.data[0x1a003];
@@ -376,14 +376,14 @@ static void ChooseGameBios(const char *system_dir, bool hle_bios)
    {
       if (LoadRomFiles(system_dir))
       {
-         NOTICE_LOG(BOOT, "Forcing real BIOS");
+         NOTICE_LOG(BOOT, "Forcing real BIOS\n");
          settings.bios.UseReios = false;
       }
       else
       {
          /* (a file that was there and could not be read whole may have
           * been read in part over the HLE BIOS) */
-         WARN_LOG(BOOT, "This game needs the real BIOS, which was not found: using reios");
+         WARN_LOG(BOOT, "This game needs the real BIOS, which was not found: using reios\n");
          LoadHle(system_dir);
       }
    }
@@ -393,7 +393,7 @@ static void ChooseGameBios(const char *system_dir, bool hle_bios)
          || id == "T46509M"         // Suika (JP)
          || id == "T36901M"))       // Cool Boarders Burrrn (JP)
    {
-      NOTICE_LOG(BOOT, "Forcing HLE BIOS");
+      NOTICE_LOG(BOOT, "Forcing HLE BIOS\n");
       LoadHle(system_dir);
       settings.bios.UseReios = true;
    }
@@ -403,43 +403,43 @@ static void LoadSpecialSettingsNaomi(const char *name)
 {
    unsigned i;
 
-   NOTICE_LOG(BOOT, "[LUT]: Naomi ROM name is: %s.", name);
+   NOTICE_LOG(BOOT, "[LUT]: Naomi ROM name is: %s.\n", name);
    for (i = 0; i < sizeof(lut_games_naomi)/sizeof(lut_games_naomi[0]); i++)
    {
       /* (the whole name: one that is part of another game's is not that game) */
       if (!strcmp(lut_games_naomi[i].product_number, name))
       {
-      	INFO_LOG(BOOT, "[LUT]: Found game in LUT database..");
+      	INFO_LOG(BOOT, "[LUT]: Found game in LUT database..\n");
 
          if (lut_games_naomi[i].alpha_sort_mode != -1)
          {
-         	NOTICE_LOG(BOOT, "[Hack]: Applying alpha sort hack.");
+         	NOTICE_LOG(BOOT, "[Hack]: Applying alpha sort hack.\n");
             settings.pvr.Emulation.AlphaSortMode = lut_games_naomi[i].alpha_sort_mode;
          }
 
 
          if (lut_games_naomi[i].translucentPolygonDepthMask != -1)
          {
-         	NOTICE_LOG(BOOT, "[Hack]: Applying translucent polygon depth mask hack.");
+         	NOTICE_LOG(BOOT, "[Hack]: Applying translucent polygon depth mask hack.\n");
             settings.rend.TranslucentPolygonDepthMask = lut_games_naomi[i].translucentPolygonDepthMask;
          }
 
 
          if (lut_games_naomi[i].disable_div != -1)
          {
-         	NOTICE_LOG(BOOT, "[Hack]: Applying Disable DIV hack.");
+         	NOTICE_LOG(BOOT, "[Hack]: Applying Disable DIV hack.\n");
          	settings.dynarec.ForceDisableDivMatching = settings.dynarec.DisableDivMatching = lut_games_naomi[i].disable_div;
          }
 
          if (lut_games_naomi[i].jamma_setup != JVS_Default)
          {
-         	NOTICE_LOG(BOOT, "[Hack]: Applying alternate Jamma I/O board setup.");
+         	NOTICE_LOG(BOOT, "[Hack]: Applying alternate Jamma I/O board setup.\n");
             settings.mapping.JammaSetup = lut_games_naomi[i].jamma_setup;
          }
 
          if (lut_games_naomi[i].extra_depth_scale != 1)
          {
-         	NOTICE_LOG(BOOT, "[Hack]: Applying auto extra depth scale.");
+         	NOTICE_LOG(BOOT, "[Hack]: Applying auto extra depth scale.\n");
             settings.rend.ExtraDepthScale = lut_games_naomi[i].extra_depth_scale;
          }
 
@@ -454,7 +454,7 @@ static void LoadSpecialSettingsNaomi(const char *name)
    }
    if (!strcmp(name, "MONKEY BALL JAPAN VERSION"))	// the map's depth
    {
-      NOTICE_LOG(BOOT, "[Hack]: Applying translucent polygon depth mask hack.");
+      NOTICE_LOG(BOOT, "[Hack]: Applying translucent polygon depth mask hack.\n");
       settings.rend.TranslucentPolygonDepthMask = true;
    }
 }
@@ -576,7 +576,7 @@ int dc_init()
 
    if (!_vmem_reserve())
    {
-      ERROR_LOG(VMEM, "Failed to alloc mem");
+      ERROR_LOG(VMEM, "Failed to alloc mem\n");
       dc_init_unwind(DC_INIT_SETUP);
       return -1;
    }
@@ -602,7 +602,7 @@ int dc_init()
             dc_init_unwind(DC_INIT_VMEM);
             return -3;
          }
-         WARN_LOG(COMMON, "Did not load bios, using reios");
+         WARN_LOG(COMMON, "Did not load bios, using reios\n");
          hle_bios = true;
       }
    }
@@ -634,7 +634,7 @@ int dc_init()
        * through without one): the boot ROM is reios's, which does what
        * the BIOS does to hand over to the game. */
       LoadHle(new_system_dir);
-      WARN_LOG(COMMON, "No NAOMI BIOS, using reios");
+      WARN_LOG(COMMON, "No NAOMI BIOS, using reios\n");
    }
 
    mem_map_default();

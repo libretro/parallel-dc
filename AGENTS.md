@@ -152,8 +152,9 @@ code it touches closer, and never adds C++ that was not there.
 - **A C++ file that has become C89 is renamed `.c`** and goes in the
   build's `SOURCES_C`. Headers it includes are made to compile as both
   (`types.h` and `Log.h` do: C++-only parts behind `__cplusplus`, the
-  C side in `extern "C"` or `RETRO_BEGIN_DECLS`; the log's kinds are
-  `LOG_INPUT` and the like in C, where Windows has `INPUT`).
+  C side in `extern "C"` or `RETRO_BEGIN_DECLS`). The log macros are a
+  call to the frontend's `log_cb` and nothing more: each format ends in
+  its own `\n` (`python3 tools/log/log_check.py`).
   `sh tools/c89/c89_check.sh [make arguments]` compiles every `.c` file
   of the core's own as `-std=c89 -pedantic` with the build's flags, and
   again with no recompilers, and with no MMU, where a file has code for

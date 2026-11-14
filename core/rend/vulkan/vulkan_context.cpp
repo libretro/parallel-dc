@@ -102,7 +102,7 @@ static bool createDevice(retro_vulkan_context* context, VkInstance instance, VkP
 			if (context->presentation_queue_family_index == queueFamilyProperties.size())
 			{
 				// there's nothing like a single family index that supports both graphics/compute and present -> look for an other family index that supports present
-				DEBUG_LOG(RENDERER, "Using separate Graphics and Present queue families");
+				DEBUG_LOG(RENDERER, "Using separate Graphics and Present queue families\n");
 				for (size_t i = 0; i < queueFamilyProperties.size(); i++)
 				{
 					if (physicalDevice.getSurfaceSupportKHR((u32)i, vksurface))
@@ -115,13 +115,13 @@ static bool createDevice(retro_vulkan_context* context, VkInstance instance, VkP
 		}
 		if (context->queue_family_index == queueFamilyProperties.size() || context->presentation_queue_family_index == queueFamilyProperties.size())
 		{
-			ERROR_LOG(RENDERER, "Could not find a queue for graphics or present");
+			ERROR_LOG(RENDERER, "Could not find a queue for graphics or present\n");
 			return false;
 		}
 		if (context->queue_family_index == context->presentation_queue_family_index)
-			DEBUG_LOG(RENDERER, "Using Graphics+Present queue family");
+			DEBUG_LOG(RENDERER, "Using Graphics+Present queue family\n");
 		else
-			DEBUG_LOG(RENDERER, "Using distinct Graphics and Present queue families");
+			DEBUG_LOG(RENDERER, "Using distinct Graphics and Present queue families\n");
 	}
 
 	vk::PhysicalDeviceFeatures supportedFeatures;
@@ -326,7 +326,7 @@ static bool createDevice(retro_vulkan_context* context, VkInstance instance, VkP
 				&static_cast<const VkDeviceCreateInfo&>(deviceCreateInfo)));
 		if (!device)
 		{
-			ERROR_LOG(RENDERER, "The frontend could not create the Vulkan device");
+			ERROR_LOG(RENDERER, "The frontend could not create the Vulkan device\n");
 			return false;
 		}
 	}
@@ -383,13 +383,13 @@ bool VulkanContext::Init(retro_hw_render_interface_vulkan *retro_render_if)
 	static vk::PhysicalDeviceProperties props;
 	physicalDevice.getProperties(&props);
 	
-	NOTICE_LOG(RENDERER, "GPU Supports Vulkan API: %u.%u.%u",
+	NOTICE_LOG(RENDERER, "GPU Supports Vulkan API: %u.%u.%u\n",
 						  VK_VERSION_MAJOR(props.apiVersion),
 						  VK_VERSION_MINOR(props.apiVersion),
 						  VK_VERSION_PATCH(props.apiVersion));
 	if (VK_VERSION_MINOR(props.apiVersion) >= 1 && ::vkGetPhysicalDeviceFormatProperties2 != nullptr)
 	{
-		NOTICE_LOG(RENDERER, "GPU Supports vkGetPhysicalDeviceProperties2");
+		NOTICE_LOG(RENDERER, "GPU Supports vkGetPhysicalDeviceProperties2\n");
 		static vk::PhysicalDeviceProperties2 properties2;
 		vk::PhysicalDeviceMaintenance3Properties properties3;
 		properties2.pNext = &properties3;
@@ -440,7 +440,7 @@ bool VulkanContext::Init(retro_hw_render_interface_vulkan *retro_render_if)
 #ifdef VK_PSO_TEST_NO_EDS3
 	dynamicState.blend = false;
 #endif
-	NOTICE_LOG(RENDERER, "Vulkan: general pipelines drawn with %s depth, stencil, cull and topology, and %s blend",
+	NOTICE_LOG(RENDERER, "Vulkan: general pipelines drawn with %s depth, stencil, cull and topology, and %s blend\n",
 			dynamicState.depthStencil ? "dynamic" : "fixed", dynamicState.blend ? "dynamic" : "fixed");
 	QueryVramBudget();
 	// what SSAA can have: the sample counts colour, depth and stencil attachments can all have, and memory that is only there if used
@@ -460,21 +460,21 @@ bool VulkanContext::Init(retro_hw_render_interface_vulkan *retro_render_if)
 			&& (formatProperties.optimalTilingFeatures & vk::FormatFeatureFlagBits::eBlitSrc))
 		optimalTilingSupported1555 = true;
 	else
-		NOTICE_LOG(RENDERER, "eR5G5B5A1UnormPack16 not supported for optimal tiling");
+		NOTICE_LOG(RENDERER, "eR5G5B5A1UnormPack16 not supported for optimal tiling\n");
 	formatProperties = physicalDevice.getFormatProperties(vk::Format::eR5G6B5UnormPack16);
 	if ((formatProperties.optimalTilingFeatures & vk::FormatFeatureFlagBits::eSampledImage)
 			&& (formatProperties.optimalTilingFeatures & vk::FormatFeatureFlagBits::eBlitDst)
 			&& (formatProperties.optimalTilingFeatures & vk::FormatFeatureFlagBits::eBlitSrc))
 		optimalTilingSupported565 = true;
 	else
-		NOTICE_LOG(RENDERER, "eR5G6B5UnormPack16 not supported for optimal tiling");
+		NOTICE_LOG(RENDERER, "eR5G6B5UnormPack16 not supported for optimal tiling\n");
 	formatProperties = physicalDevice.getFormatProperties(vk::Format::eR4G4B4A4UnormPack16);
 	if ((formatProperties.optimalTilingFeatures & vk::FormatFeatureFlagBits::eSampledImage)
 			&& (formatProperties.optimalTilingFeatures & vk::FormatFeatureFlagBits::eBlitDst)
 			&& (formatProperties.optimalTilingFeatures & vk::FormatFeatureFlagBits::eBlitSrc))
 		optimalTilingSupported4444 = true;
 	else
-		NOTICE_LOG(RENDERER, "eR4G4B4A4UnormPack16 not supported for optimal tiling");
+		NOTICE_LOG(RENDERER, "eR4G4B4A4UnormPack16 not supported for optimal tiling\n");
 
    // Descriptor pool
 	vk::DescriptorPoolSize pool_sizes[] =
@@ -520,9 +520,9 @@ bool VulkanContext::Init(retro_hw_render_interface_vulkan *retro_render_if)
 		code.post = RasterSpvWords(RSPV_HDR_POST_FRAG, &code.post_size);
 		hdr = hdr_vk_new(retro_render_if, heap.Raw(), (VkPipelineCache)pipelineCache, hdrFormat, (unsigned)swapChainSize, &code);
 		if (hdr == nullptr)
-			ERROR_LOG(RENDERER, "Vulkan: the HDR output could not be set up; the picture goes out as 24-bit");
+			ERROR_LOG(RENDERER, "Vulkan: the HDR output could not be set up; the picture goes out as 24-bit\n");
 		else
-			NOTICE_LOG(RENDERER, "Vulkan: HDR output, %s", hdr_output.format == HDR_OUTPUT_SCRGB ? "scRGB (RGBA16F)" : "HDR10 (A2B10G10R10)");
+			NOTICE_LOG(RENDERER, "Vulkan: HDR output, %s\n", hdr_output.format == HDR_OUTPUT_SCRGB ? "scRGB (RGBA16F)" : "HDR10 (A2B10G10R10)");
 	}
 
 	retro_image.image_layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
@@ -599,7 +599,7 @@ u32 VulkanContext::SsaaSamples(u32 requested, u32 perSampleKib, u32 fixedKib, bo
 	 * made has no sample rate shading the core knows of */
 	if (!sampleRateShading)
 	{
-		WARN_LOG(RENDERER, "%s: SSAA off: the device was made without sample rate shading", what);
+		WARN_LOG(RENDERER, "%s: SSAA off: the device was made without sample rate shading\n", what);
 		return 1;
 	}
 	const u32 device = ssaa_device_samples(requested, ssaaSampleCounts);
@@ -607,7 +607,7 @@ u32 VulkanContext::SsaaSamples(u32 requested, u32 perSampleKib, u32 fixedKib, bo
 	 * has memory that is only backed when used (tilers) */
 	const bool free = transient && lazyMemory;
 	const u32 samples = ssaa_clamp_samples(device, vramBudget.available_kib(), fixedKib, free ? 0 : perSampleKib);
-	NOTICE_LOG(RENDERER, "%s: SSAA %u samples a pixel (asked %u, the device can draw %u; %u MB a sample%s, %u MB of the budget left)",
+	NOTICE_LOG(RENDERER, "%s: SSAA %u samples a pixel (asked %u, the device can draw %u; %u MB a sample%s, %u MB of the budget left)\n",
 			what, samples, requested, device, perSampleKib >> 10, free ? " if backed" : "", vramBudget.available_kib() >> 10);
 	return samples;
 }
@@ -650,7 +650,7 @@ vk::Format VulkanContext::FindDepthFormat()
 		if (depthFormat == vk::Format::eUndefined)
 			die("No supported depth/stencil format found");
 	}
-	NOTICE_LOG(RENDERER, "Using depth format %s tiling %s", vk::to_string(depthFormat).c_str(), vk::to_string(tiling).c_str());
+	NOTICE_LOG(RENDERER, "Using depth format %s tiling %s\n", vk::to_string(depthFormat).c_str(), vk::to_string(tiling).c_str());
 
 	return depthFormat;
 }
@@ -691,7 +691,7 @@ vk::UniquePipeline VulkanContext::HdrSubpassPipeline(vk::RenderPass renderPass, 
 		return vk::UniquePipeline();
 	const VkPipeline p = hdr_vk_subpass_pipeline(hdr, (VkRenderPass)renderPass, subpass, samples);
 	if (p == VK_NULL_HANDLE)
-		ERROR_LOG(RENDERER, "Vulkan: the HDR output's subpass pipeline could not be made");
+		ERROR_LOG(RENDERER, "Vulkan: the HDR output's subpass pipeline could not be made\n");
 	return vk::UniquePipeline(vk::Pipeline(p), vk::ObjectDestroy<vk::Device, vk::DispatchLoaderStatic>(device));
 }
 
@@ -865,7 +865,7 @@ void VulkanContext::LoadPipelineCache()
 	savedBuilt = 0;
 	u32 keyCount = 0;
 	psoKeys.Keys(keyCount);
-	NOTICE_LOG(RENDERER, "Vulkan pipeline cache loaded from %s: %zd bytes, %u pipeline keys", cachePath.c_str(), dataSize, keyCount);
+	NOTICE_LOG(RENDERER, "Vulkan pipeline cache loaded from %s: %zd bytes, %u pipeline keys\n", cachePath.c_str(), dataSize, keyCount);
 	free(file);
 }
 
@@ -914,6 +914,6 @@ void VulkanContext::SavePipelineCache()
 	if (!written)
 		filestream_delete(tmpPath.c_str());
 	else
-		NOTICE_LOG(RENDERER, "Vulkan pipeline cache saved to %s: %zd bytes, %u pipeline keys", cachePath.c_str(), dataSize, keyCount);
+		NOTICE_LOG(RENDERER, "Vulkan pipeline cache saved to %s: %zd bytes, %u pipeline keys\n", cachePath.c_str(), dataSize, keyCount);
 	savedBuilt = made;
 }

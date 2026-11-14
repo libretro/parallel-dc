@@ -54,7 +54,7 @@ void VulkanHeap::Init(vk::PhysicalDevice physicalDevice, vk::Device device)
 	vk_heap_reserve(&heap, ~0u, 0, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, 0, 1);
 	vk_heap_reserve(&heap, ~0u, HOST_MEMORY, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, 1, 1);
 
-	NOTICE_LOG(RENDERER, "Vulkan heap: %u MB blocks, %u MB reserved", (u32)(blockSize >> 20), (u32)(heap.bytes_reserved >> 20));
+	NOTICE_LOG(RENDERER, "Vulkan heap: %u MB blocks, %u MB reserved\n", (u32)(blockSize >> 20), (u32)(heap.bytes_reserved >> 20));
 }
 
 void VulkanHeap::Term()
@@ -74,7 +74,7 @@ void VulkanHeap::TrimSpare()
 		return;
 	const VkDeviceSize before = heap.bytes_reserved;
 	if (vk_heap_trim_spare(&heap) != 0)
-		NOTICE_LOG(RENDERER, "Vulkan heap: %u MB given back, %u MB reserved", (u32)((before - heap.bytes_reserved) >> 20),
+		NOTICE_LOG(RENDERER, "Vulkan heap: %u MB given back, %u MB reserved\n", (u32)((before - heap.bytes_reserved) >> 20),
 				(u32)(heap.bytes_reserved >> 20));
 }
 

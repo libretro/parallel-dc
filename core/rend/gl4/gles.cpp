@@ -714,7 +714,7 @@ static bool RenderFrame()
 	 * buffer that size is none at all.) */
 	if (is_rtt && (pvrrc.fb_X_CLIP.max < pvrrc.fb_X_CLIP.min || pvrrc.fb_Y_CLIP.max < pvrrc.fb_Y_CLIP.min))
 	{
-		WARN_LOG(RENDERER, "Render to texture with an empty pixel clip: %d-%d, %d-%d",
+		WARN_LOG(RENDERER, "Render to texture with an empty pixel clip: %d-%d, %d-%d\n",
 				pvrrc.fb_X_CLIP.min, pvrrc.fb_X_CLIP.max, pvrrc.fb_Y_CLIP.min, pvrrc.fb_Y_CLIP.max);
 		return false;
 	}
@@ -851,14 +851,14 @@ static bool RenderFrame()
 		case 4: //0x4   888 RGB 24 bit packed
 		case 5: //0x5   0888 KRGB 32 bit    K is the value of fk_kval.
 		case 6: //0x6   8888 ARGB 32 bit
-			WARN_LOG(RENDERER, "Unsupported render to texture format: %d", FB_W_CTRL.fb_packmode);
+			WARN_LOG(RENDERER, "Unsupported render to texture format: %d\n", FB_W_CTRL.fb_packmode);
 			return false;
 		case 7: //7     invalid
 			// (a mode the chip does not have, which a game can write all the same: nothing is drawn)
-			WARN_LOG(RENDERER, "Invalid render to texture format: 7");
+			WARN_LOG(RENDERER, "Invalid render to texture format: 7\n");
 			return false;
 		}
-		DEBUG_LOG(RENDERER, "RTT packmode=%d stride=%d - %d,%d -> %d,%d", FB_W_CTRL.fb_packmode, FB_W_LINESTRIDE.stride * 8,
+		DEBUG_LOG(RENDERER, "RTT packmode=%d stride=%d - %d,%d -> %d,%d\n", FB_W_CTRL.fb_packmode, FB_W_LINESTRIDE.stride * 8,
  				FB_X_CLIP.min, FB_Y_CLIP.min, FB_X_CLIP.max, FB_Y_CLIP.max);
 		output_fbo = gl4BindRTT(FB_W_SOF1 & VRAM_MASK, (u32)lroundf(matrices.GetDreamcastViewport().x),
 				(u32)lroundf(matrices.GetDreamcastViewport().y), channels, format);
@@ -1060,13 +1060,13 @@ struct gl4rend : Renderer
 		findGLVersion();
 		if (gl.gl_major < 4 || (gl.gl_major == 4 && gl.gl_minor < 3))
 		{
-			WARN_LOG(RENDERER, "Warning: OpenGL %d.%d doesn't support per-pixel sorting. 4.3 required", gl.gl_major, gl.gl_minor);
+			WARN_LOG(RENDERER, "Warning: OpenGL %d.%d doesn't support per-pixel sorting. 4.3 required\n", gl.gl_major, gl.gl_minor);
 			return false;
 		}
 		// (the vertex shaders take the depth scale from a uniform buffer: findGLVersion())
 		if (gl.depth_ubo == 0)
 		{
-			WARN_LOG(RENDERER, "OpenGL: no uniform buffer for the depth scale");
+			WARN_LOG(RENDERER, "OpenGL: no uniform buffer for the depth scale\n");
 			return false;
 		}
 		glprog_open();

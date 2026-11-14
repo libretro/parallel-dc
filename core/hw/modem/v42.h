@@ -224,7 +224,7 @@ private:
 	}
 	void sendFrame(const u8 *data, unsigned len) {
 		if (!hdlcEncoder.sendFrame(data, len))
-			INFO_LOG(MODEM, "V.42: no room for a frame of %d bytes", len);
+			INFO_LOG(MODEM, "V.42: no room for a frame of %d bytes\n", len);
 	}
 
 	void sendIFrame();

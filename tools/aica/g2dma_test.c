@@ -59,10 +59,8 @@ void aicaarm_enable(bool enabled) { (void)enabled; }
 #if FEAT_SHREC != DYNAREC_NONE
 void bm_Periodical_1s(void) { }
 #endif
-void GenericLog(enum LOG_TYPE_NAME(LOG_LEVELS) level, enum LOG_TYPE_NAME(LOG_TYPE) type, const char *file, int line, const char *fmt, ...)
-{
-	(void)level; (void)type; (void)file; (void)line; (void)fmt;
-}
+/* (no log) */
+retro_log_printf_t log_cb;
 
 #define REG(a) sb_regs[((a) - SB_BASE) >> 2].data32
 

@@ -161,7 +161,7 @@ void GLTexDecoder::Init()
 	 * which a big-endian machine does not have them.) */
 	if (gl.is_gles || gl.gl_major < 3)
 	{
-		INFO_LOG(RENDERER, "OpenGL: textures are converted on the CPU");
+		INFO_LOG(RENDERER, "OpenGL: textures are converted on the CPU\n");
 		return;
 	}
 	compute = versionAtLeast(4, 3);
@@ -185,7 +185,7 @@ void GLTexDecoder::Init()
 	size = bytes & ~15ull;
 	if (size < (1u << 20))
 	{
-		INFO_LOG(RENDERER, "OpenGL: textures are converted on the CPU (no room for a ring)");
+		INFO_LOG(RENDERER, "OpenGL: textures are converted on the CPU (no room for a ring)\n");
 		return;
 	}
 	while (glGetError() != GL_NO_ERROR)
@@ -233,7 +233,7 @@ void GLTexDecoder::Init()
 	glGenVertexArrays(1, &vertexArray);
 	if (mapped == nullptr || glGetError() != GL_NO_ERROR || !MakePrograms())
 	{
-		WARN_LOG(RENDERER, "OpenGL: the texture kernels could not be made: textures are converted on the CPU");
+		WARN_LOG(RENDERER, "OpenGL: the texture kernels could not be made: textures are converted on the CPU\n");
 		Term();
 		return;
 	}
@@ -264,7 +264,7 @@ void GLTexDecoder::Init()
 	head = tail = flushed = 0;
 	jobCount = levelCount = pendingCount = 0;
 	ready = true;
-	NOTICE_LOG(RENDERER, "OpenGL: textures are made on the GPU (%s, a ring of %u KB %s; 16-bit drawn %d%d%d, 32-bit %d, 8-bit %d)",
+	NOTICE_LOG(RENDERER, "OpenGL: textures are made on the GPU (%s, a ring of %u KB %s; 16-bit drawn %d%d%d, 32-bit %d, 8-bit %d)\n",
 			compute ? "compute kernels" : "drawn", (u32)(size >> 10), persistent ? "mapped" : "written once a frame",
 			takes[0], takes[1], takes[2], takes[3], takes[4]);
 #endif
@@ -273,7 +273,7 @@ void GLTexDecoder::Init()
 void GLTexDecoder::Term()
 {
 	if (ready)
-		NOTICE_LOG(RENDERER, "OpenGL: textures made on the GPU: %u levels, %u copied as they are, %u MB of bytes; %u not, for want of room",
+		NOTICE_LOG(RENDERER, "OpenGL: textures made on the GPU: %u levels, %u copied as they are, %u MB of bytes; %u not, for want of room\n",
 				(u32)statLevels, (u32)statCopies, (u32)(statBytes >> 20), (u32)statFull);
 #ifndef HAVE_OPENGLES2
 	for (u32 i = 0; i < pendingCount; i++)
@@ -353,7 +353,7 @@ GLuint GLTexDecoder::Link(const u32 *spv, const size_t *spvSize, const char *con
 		{
 			char log[1024] = "";
 			glGetShaderInfoLog(shaders[i], sizeof(log), nullptr, log);
-			WARN_LOG(RENDERER, "OpenGL: a texture kernel did not compile: %s", log);
+			WARN_LOG(RENDERER, "OpenGL: a texture kernel did not compile: %s\n", log);
 			ok = false;
 			break;
 		}
@@ -411,7 +411,7 @@ bool GLTexDecoder::MakePrograms()
 				locations[p][0] = 0;
 				locations[p][1] = 1;
 			}
-			NOTICE_LOG(RENDERER, "OpenGL: texture kernels from SPIR-V");
+			NOTICE_LOG(RENDERER, "OpenGL: texture kernels from SPIR-V\n");
 			return true;
 		}
 		for (GLuint& p : programs)
@@ -420,7 +420,7 @@ bool GLTexDecoder::MakePrograms()
 				glDeleteProgram(p);
 			p = 0;
 		}
-		WARN_LOG(RENDERER, "OpenGL: the texture kernels' SPIR-V was refused: compiled instead");
+		WARN_LOG(RENDERER, "OpenGL: the texture kernels' SPIR-V was refused: compiled instead\n");
 	}
 
 	/* The text of each: the version this context has, then the header */
@@ -455,7 +455,7 @@ bool GLTexDecoder::MakePrograms()
 	}
 	if (programs[PROGRAM_DRAW] == 0 || (compute && (programs[PROGRAM_32] == 0 || programs[PROGRAM_8] == 0)))
 		return false;
-	NOTICE_LOG(RENDERER, "OpenGL: texture kernels from their text, or the programs kept");
+	NOTICE_LOG(RENDERER, "OpenGL: texture kernels from their text, or the programs kept\n");
 	for (int p = 0; p < PROGRAMS; p++)
 	{
 		if (programs[p] == 0)

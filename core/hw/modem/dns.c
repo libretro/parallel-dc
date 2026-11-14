@@ -100,7 +100,7 @@ void get_host_by_name(const char *host, u32 dnsaddr)
 	u8 buf[DNS_HEADER_SIZE + DNS_NAME_MAX + DNS_QSUFFIX_SIZE];
 	int len, name_len;
 
-	DEBUG_LOG(MODEM, "get_host_by_name: %s", host);
+	DEBUG_LOG(MODEM, "get_host_by_name: %s\n", host);
 	if (!VALID(sock_fd))
 	{
 		sock_fd = selectable_socket(socket(AF_INET , SOCK_DGRAM , IPPROTO_UDP));

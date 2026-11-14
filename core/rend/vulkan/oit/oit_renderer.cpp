@@ -34,7 +34,7 @@ class OITVulkanRenderer final : public BaseVulkanRenderer
 public:
 	bool Init() override
 	{
-		DEBUG_LOG(RENDERER, "OITVulkanRenderer::Init");
+		DEBUG_LOG(RENDERER, "OITVulkanRenderer::Init\n");
 
 		oitBuffers.SetCompact(rend_compute_wanted && ComputeDrawer::DeviceLacks() == nullptr);
 		samples = SsaaSamples();
@@ -47,7 +47,7 @@ public:
 		// (the compute renderer's slots are the pool's: made now, BaseInit() finds them made)
 		texCommandPool.Init();
 		MakeCompute();
-		NOTICE_LOG(RENDERER, "Vulkan per-pixel renderer: with SSAA, a translucent fragment takes the samples %s",
+		NOTICE_LOG(RENDERER, "Vulkan per-pixel renderer: with SSAA, a translucent fragment takes the samples %s\n",
 				GetContext()->postDepthCoverage ? "the depth test passed (VK_EXT_post_depth_coverage)" : "its own depth test passes, at each sample");
 		textureDrawer.SetCommandPool(&texCommandPool);
 		textureDrawer.Init(&samplerManager, &rttShaderManager, &textureCache, &oitBuffers);
@@ -75,7 +75,7 @@ public:
 
 	void Resize(int w, int h) override
 	{
-		NOTICE_LOG(RENDERER, "OIT Resize %d x %d", w, h);
+		NOTICE_LOG(RENDERER, "OIT Resize %d x %d\n", w, h);
 		// what is replaced below may be in use by frames still on the GPU
 		texCommandPool.WaitAll();
 		oitBuffers.SetCompact(rend_compute_wanted && ComputeDrawer::DeviceLacks() == nullptr);
@@ -117,7 +117,7 @@ protected:
 public:
 	void Term() override
 	{
-		DEBUG_LOG(RENDERER, "VulkanRenderer::Term");
+		DEBUG_LOG(RENDERER, "VulkanRenderer::Term\n");
 		GetContext()->LogVramUsage();
 		// (the frontend lets go of the pictures before they go)
 		GetContext()->ReleasePicture();
@@ -144,7 +144,7 @@ public:
 		{
 			/* A pixel clip that ends before it starts holds no pixel: the
 			 * chip writes nothing. (Its size would be negative here.) */
-			WARN_LOG(RENDERER, "Render to texture with an empty pixel clip: %d-%d, %d-%d",
+			WARN_LOG(RENDERER, "Render to texture with an empty pixel clip: %d-%d, %d-%d\n",
 					pvrrc.fb_X_CLIP.min, pvrrc.fb_X_CLIP.max, pvrrc.fb_Y_CLIP.min, pvrrc.fb_Y_CLIP.max);
 			return false;
 		}

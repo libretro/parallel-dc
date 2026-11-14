@@ -124,7 +124,7 @@ protected:
 			u32 newSize = mainBuffers[GetCurrentImage()]->bufferSize;
 			while (newSize < size)
 				newSize *= 2;
-			INFO_LOG(RENDERER, "Increasing main buffer size %d -> %d", (u32)mainBuffers[GetCurrentImage()]->bufferSize, newSize);
+			INFO_LOG(RENDERER, "Increasing main buffer size %d -> %d\n", (u32)mainBuffers[GetCurrentImage()]->bufferSize, newSize);
 			mainBuffers[GetCurrentImage()] = std::unique_ptr<BufferData>(new BufferData(newSize,
 					vk::BufferUsageFlagBits::eVertexBuffer | vk::BufferUsageFlagBits::eIndexBuffer | vk::BufferUsageFlagBits::eUniformBuffer
 					| vk::BufferUsageFlagBits::eStorageBuffer));
@@ -511,7 +511,7 @@ public:
 	void Term()
 	{
 		if (drewShared + drewOwn != 0)
-			NOTICE_LOG(RENDERER, "Renders to textures: %u drawn with the screen's attachments, %u with their own; %u cleared outside",
+			NOTICE_LOG(RENDERER, "Renders to textures: %u drawn with the screen's attachments, %u with their own; %u cleared outside\n",
 					drewShared, drewOwn, Texture::outsideCleared);
 		Texture::outsideCleared = 0;
 		drewShared = drewOwn = 0;

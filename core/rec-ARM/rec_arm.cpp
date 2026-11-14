@@ -487,7 +487,7 @@ u32 DynaRBI::Relink()
 				}
 				else
 				{
-					INFO_LOG(DYNAREC, "SLOW COND PATH %d", oplist.empty() ? -1 : oplist[oplist.size()-1].op);
+					INFO_LOG(DYNAREC, "SLOW COND PATH %d\n", oplist.empty() ? -1 : oplist[oplist.size()-1].op);
 					LoadSh4Reg_mem(r4, reg_sr_T);
 				}
 			}
@@ -687,7 +687,7 @@ u32 DynaRBI::Relink()
 		}
 
 	default:
-		ERROR_LOG(DYNAREC, "Error, Relink() Block Type: %X", BlockType);
+		ERROR_LOG(DYNAREC, "Error, Relink() Block Type: %X\n", BlockType);
 		verify(false);
 		break;
 	}
@@ -746,7 +746,7 @@ void ngen_Binary(shil_opcode* op, BinaryOP dtop, BinaryOPImm dtopimm)
 	}
 	else
 	{
-		ERROR_LOG(DYNAREC, "ngen_Bin ??? %d", op->rs2.type);
+		ERROR_LOG(DYNAREC, "ngen_Bin ??? %d\n", op->rs2.type);
 		verify(false);
 	}
 
@@ -1261,7 +1261,7 @@ u32* ngen_readm_fail_v2(u32* ptrv,u32* regs,u32 fault_addr)
 
 	if (offs==-1)
 	{
-		ERROR_LOG(DYNAREC, "%08X : invalid size", fop);
+		ERROR_LOG(DYNAREC, "%08X : invalid size\n", fop);
 		die("can't decode opcode\n");
 	}
 
@@ -1284,7 +1284,7 @@ u32* ngen_readm_fail_v2(u32* ptrv,u32* regs,u32 fault_addr)
 	}
 	else
 	{
-		ERROR_LOG(DYNAREC, "fail raddr %08X {@%08X}:(", ptr[0].full, regs[1]);
+		ERROR_LOG(DYNAREC, "fail raddr %08X {@%08X}:(\n", ptr[0].full, regs[1]);
 		die("Invalid opcode: vmem fixup\n");
 	}
 	//from mem op
@@ -1396,7 +1396,7 @@ eReg GenMemAddr(shil_opcode* op,eReg raddr=r0)
 	}
 	else if (!op->rs3.is_null())
 	{
-		ERROR_LOG(DYNAREC, "rs3: %08X", op->rs3.type);
+		ERROR_LOG(DYNAREC, "rs3: %08X\n", op->rs3.type);
 		die("invalid rs3");
 	}
 	else if (op->rs1.is_imm())
@@ -2162,7 +2162,7 @@ void ngen_compile_opcode(RuntimeBlockInfo* block, shil_opcode* op, bool staging,
 				}
 				else
 				{
-					ERROR_LOG(DYNAREC, "ngen_Bin ??? %d", op->rs2.type);
+					ERROR_LOG(DYNAREC, "ngen_Bin ??? %d\n", op->rs2.type);
 					verify(false);
 				}
 
@@ -2727,7 +2727,7 @@ void ngen_compile_opcode(RuntimeBlockInfo* block, shil_opcode* op, bool staging,
 			break;
 
 __default:
-			ERROR_LOG(DYNAREC, "@@  Error, Default case (0x%X) in ngen_CompileBlock!", op->op);
+			ERROR_LOG(DYNAREC, "@@  Error, Default case (0x%X) in ngen_CompileBlock!\n", op->op);
 			verify(false);
 			break;
 		}
@@ -3003,7 +3003,7 @@ void ngen_ResetBlocks()
 */
 void ngen_init(void)
 {
-   INFO_LOG(DYNAREC, "Initializing the ARM32 dynarec");
+   INFO_LOG(DYNAREC, "Initializing the ARM32 dynarec\n");
    verify(FPCB_OFFSET == -0x2100000 || FPCB_OFFSET == -0x4100000);
    verify(rcb_noffs(p_sh4rcb->fpcb) == FPCB_OFFSET);
 
@@ -3083,7 +3083,7 @@ void ngen_init(void)
 			JUMP((u32)fn);
 		}
 
-	INFO_LOG(DYNAREC, "readm helpers: up to %p", EMIT_GET_PTR());
+	INFO_LOG(DYNAREC, "readm helpers: up to %p\n", EMIT_GET_PTR());
 	emit_SetBaseAddr();
 
 

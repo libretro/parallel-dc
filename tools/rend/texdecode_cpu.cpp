@@ -32,7 +32,8 @@ void _vmem_unprotect_vram(u32, u32) {}
 u32 _vmem_get_vram_offset(void *) { return (u32)-1; }
 bool _vmem_vram_page_protected(u32) { return false; }
 void os_DebugBreak() { abort(); }
-void GenericLog(LogTypes::LOG_LEVELS, LogTypes::LOG_TYPE, const char *, int, const char *, ...) {}
+/* (no log) */
+retro_log_printf_t log_cb;
 /* (no render to a texture is watched here: rend/rtt_watch.h) */
 bool rtt_watch_pending(u32, u32, RttWatch *) { return false; }
 void rtt_watch_overwrite(u32, u32) {}

@@ -109,7 +109,7 @@ static bool session_start(void)
 	session_stop();
 	if (!start_pico())
 	{
-		WARN_LOG(NETWORK, "BBA: the network cannot be started");
+		WARN_LOG(NETWORK, "BBA: the network cannot be started\n");
 		return false;
 	}
 	/* The time is the session's number: no other session, of this */
@@ -242,7 +242,7 @@ u32 bba_ReadMem(u32 addr, u32 sz)
 
 		return data;
 	}
-	DEBUG_LOG(NETWORK, "bba_ReadMem<%d> %06x", sz, addr);
+	DEBUG_LOG(NETWORK, "bba_ReadMem<%d> %06x\n", sz, addr);
 
 	switch (addr & 0xFFFF00)
 	{
@@ -256,14 +256,14 @@ u32 bba_ReadMem(u32 addr, u32 sz)
 
 	case GAPSPCI_PCI_CONFIG:
 		memcpy(&data, &PCI_DEVICE(rtl8139device)->config[addr & (GAPSPCI_PCI_CONFIG_SIZE - 1)], sz);
-		DEBUG_LOG(NETWORK, "pcidev->config(r%d) %02x %x", sz, addr & (GAPSPCI_PCI_CONFIG_SIZE - 1), data);
+		DEBUG_LOG(NETWORK, "pcidev->config(r%d) %02x %x\n", sz, addr & (GAPSPCI_PCI_CONFIG_SIZE - 1), data);
 		break;
 
 	case GAPSPCI_RTL_REGS:
 		return rtl8139_ioport_read(rtl8139device, addr & (GAPSPCI_RTL_REGS_SIZE - 1), sz);
 
 	default:
-		INFO_LOG(NETWORK, "bba_ReadMem<%d> address %x unknown", sz, addr);
+		INFO_LOG(NETWORK, "bba_ReadMem<%d> address %x unknown\n", sz, addr);
 		data = -1;
 		break;
 	}
@@ -290,7 +290,7 @@ void bba_WriteMem(u32 addr, u32 data, u32 sz)
 
 		return;
 	}
-	DEBUG_LOG(NETWORK, "bba_WriteMem<%d> %06x = %x", sz, addr, data);
+	DEBUG_LOG(NETWORK, "bba_WriteMem<%d> %06x = %x\n", sz, addr, data);
 
 	switch (addr & 0xFFFF00)
 	{
@@ -307,7 +307,7 @@ void bba_WriteMem(u32 addr, u32 data, u32 sz)
 		case GAPS_RESET:
 			if (data & 1)
 			{
-				INFO_LOG(NETWORK, "BBA: GAPS reset");
+				INFO_LOG(NETWORK, "BBA: GAPS reset\n");
 				rtl8139_reset(rtl8139device);
 				/* A new session is started by the next frame the game sends */
 				session_stop();
@@ -322,7 +322,7 @@ void bba_WriteMem(u32 addr, u32 data, u32 sz)
 		break;
 
 	case GAPSPCI_PCI_CONFIG:
-		DEBUG_LOG(NETWORK, "pcidev->config(w%d) %02x %x", sz, addr & (GAPSPCI_PCI_CONFIG_SIZE - 1), data);
+		DEBUG_LOG(NETWORK, "pcidev->config(w%d) %02x %x\n", sz, addr & (GAPSPCI_PCI_CONFIG_SIZE - 1), data);
 		/* pci_default_write_config(pcidev, addr & 0xFF, data, sz); */
 		break;
 
@@ -331,7 +331,7 @@ void bba_WriteMem(u32 addr, u32 data, u32 sz)
 		break;
 
 	default:
-		INFO_LOG(NETWORK, "bba_WriteMem<%d> address %x unknown (data %x)", sz, addr, data);
+		INFO_LOG(NETWORK, "bba_WriteMem<%d> address %x unknown (data %x)\n", sz, addr, data);
 		break;
 	}
 }

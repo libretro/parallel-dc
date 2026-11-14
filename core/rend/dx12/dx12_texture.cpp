@@ -105,7 +105,7 @@ void DX12TexturePool::Init(const VramBudget& budget, const DX12TexDecoder *decod
 				break;
 			book.Give(texture);
 		}
-	NOTICE_LOG(RENDERER, "DX12: texture pool of %u textures, %u MB (planned %u MB)", book.made, (u32)(book.bytesMade >> 20), (u32)(bytes >> 20));
+	NOTICE_LOG(RENDERER, "DX12: texture pool of %u textures, %u MB (planned %u MB)\n", book.made, (u32)(book.bytesMade >> 20), (u32)(bytes >> 20));
 }
 
 void DX12TexturePool::Term()
@@ -151,7 +151,7 @@ bool DX12TexturePool::MakeResource(DX12PooledTexture *t, u32 f, u32 width, u32 h
 	t->srv = context->Srv().Alloc();
 	if (t->srv == ~0u)
 	{
-		WARN_LOG(RENDERER, "DX12: the bindless table is full");
+		WARN_LOG(RENDERER, "DX12: the bindless table is full\n");
 		t->resource.reset();
 		return false;
 	}
@@ -179,7 +179,7 @@ DX12PooledTexture *DX12TexturePool::Make(int cls, bool late)
 	t->writable = writable[f];
 	if (!MakeResource(t, f, width, height, TexPoolBook::Mips(cls) ? 1 + bitscanrev(std::max(width, height)) : 1))
 	{
-		WARN_LOG(RENDERER, "DX12: texture pool: a %ux%u %s texture could not be made", width, height, poolFormatNames[f]);
+		WARN_LOG(RENDERER, "DX12: texture pool: a %ux%u %s texture could not be made\n", width, height, poolFormatNames[f]);
 		delete t;
 		return nullptr;
 	}
@@ -199,7 +199,7 @@ DX12PooledTexture *DX12TexturePool::MakeOwn(u32 f, u32 width, u32 height, u32 le
 	t->cls = ~0u;
 	if (!MakeResource(t, f, width, height, levels))
 	{
-		WARN_LOG(RENDERER, "DX12: a %ux%u %s texture could not be made", width, height, poolFormatNames[f]);
+		WARN_LOG(RENDERER, "DX12: a %ux%u %s texture could not be made\n", width, height, poolFormatNames[f]);
 		delete t;
 		return nullptr;
 	}
@@ -426,7 +426,7 @@ void DX12Texture::UploadToGPU(int width, int height, u8 *data, bool mipmapped, b
 		bpp = 1;
 		break;
 	default:
-		WARN_LOG(RENDERER, "Unsupported texture type %d", (int)tex_type);
+		WARN_LOG(RENDERER, "Unsupported texture type %d\n", (int)tex_type);
 		return;
 	}
 	u32 levels = 1;
@@ -664,7 +664,7 @@ static bool readBack(ID3D12Resource *texture, D3D12_RESOURCE_STATES& state, u32 
 	void *p = nullptr;
 	if (FAILED(buffer->Map(0, &range, &p)))
 	{
-		WARN_LOG(RENDERER, "A picture could not be read back from the card");
+		WARN_LOG(RENDERER, "A picture could not be read back from the card\n");
 		if (take != nullptr)
 			take(watch, nullptr, 0);
 		else
@@ -734,7 +734,7 @@ static bool rtt_ring(u64 bytes)
 	if (rttRingSize != 0 && !rttSaidLarger)
 	{
 		rttSaidLarger = true;
-		WARN_LOG(RENDERER, "Render to a texture read back: its room made larger, %u KB", (u32)(bytes >> 10));
+		WARN_LOG(RENDERER, "Render to a texture read back: its room made larger, %u KB\n", (u32)(bytes >> 10));
 	}
 	/* (made larger twice before the card is past the first: waited for, the
 	 * once) */
@@ -766,7 +766,7 @@ static bool rtt_ring(u64 bytes)
 	if (FAILED(context->GetDevice()->CreateCommittedResource(&heap, D3D12_HEAP_FLAG_NONE, &desc,
 			D3D12_RESOURCE_STATE_COPY_DEST, nullptr, __uuidof(ID3D12Resource), (void **)rttRing.put())))
 	{
-		WARN_LOG(RENDERER, "DX12: readback buffer creation failed (%u KB)", (u32)(bytes / 1024));
+		WARN_LOG(RENDERER, "DX12: readback buffer creation failed (%u KB)\n", (u32)(bytes / 1024));
 		rttRing.reset();
 		return false;
 	}
@@ -885,7 +885,7 @@ static bool rtt_record(const RttWatch *watch, Dx12RttCopy& c)
 		DX12PooledTexture *small = pool != nullptr ? pool->TakeTarget(pw, ph) : nullptr;
 		if (small == nullptr)
 		{
-			WARN_LOG(RENDERER, "Render to texture read back: no %ux%u picture", pw, ph);
+			WARN_LOG(RENDERER, "Render to texture read back: no %ux%u picture\n", pw, ph);
 			return false;
 		}
 		context->Transition(small->resource, small->state, D3D12_RESOURCE_STATE_RENDER_TARGET);
@@ -988,7 +988,7 @@ static void dx12_rtt_read(const RttWatch *watch, u8 *, RttWatchTake take)
 	void *p = nullptr;
 	if (FAILED(rttRing->Map(0, &range, &p)))
 	{
-		WARN_LOG(RENDERER, "A picture could not be read back from the card");
+		WARN_LOG(RENDERER, "A picture could not be read back from the card\n");
 		take(watch, nullptr, 0);
 	}
 	else

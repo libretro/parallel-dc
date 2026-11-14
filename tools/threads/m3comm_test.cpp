@@ -39,7 +39,8 @@ static u8 guest_ram[0x10000];	/* the game's memory, for DMA */
 u8 DYNACALL _vmem_ReadMem8(u32 address) { return guest_ram[address & 0xFFFF]; }
 void DYNACALL _vmem_WriteMem8(u32 address, u8 data) { guest_ram[address & 0xFFFF] = data; }
 
-void GenericLog(LogTypes::LOG_LEVELS, LogTypes::LOG_TYPE, const char *, int, const char *, ...) {}
+/* (no log) */
+retro_log_printf_t log_cb;
 
 /* The board starts its network thread only for a link that has a server:
  * this one is its own. */

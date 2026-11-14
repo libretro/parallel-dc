@@ -102,7 +102,7 @@ void Sh4_int_Step(void)
 {
 	if (sh4_int_bCpuRun)
 	{
-		WARN_LOG(INTERPRETER, "Sh4 Is running , can't step");
+		WARN_LOG(INTERPRETER, "Sh4 Is running , can't step\n");
 	}
 	else
 	{
@@ -157,7 +157,7 @@ void Sh4_int_Reset(bool hard)
 	sh4_caches_reset(hard);
 
 	/* Any more registers have default value ? */
-	INFO_LOG(INTERPRETER, "Sh4 Reset");
+	INFO_LOG(INTERPRETER, "Sh4 Reset\n");
 }
 
 bool Sh4_int_IsCpuRunning(void)
@@ -210,7 +210,7 @@ void ExecuteDelayslot_RTE(void)
    }
    else
    {
-      ERROR_LOG(INTERPRETER, "Exception in RTE delay slot");
+      ERROR_LOG(INTERPRETER, "Exception in RTE delay slot\n");
       /* the return is made all the same: with SR as it was saved */
       if (!fetched)
       {
@@ -270,5 +270,5 @@ void Sh4_int_Init(void)
 void Sh4_int_Term(void)
 {
 	Sh4_int_Stop();
-	INFO_LOG(INTERPRETER, "Sh4 Term");
+	INFO_LOG(INTERPRETER, "Sh4 Term\n");
 }

@@ -31,10 +31,8 @@ void libCore_CDDA_Detach(void) {}
 void LoadSettings(void) {}
 int msgboxf(const char *text, unsigned int type, ...) { (void)text; (void)type; return 0; }
 int GetFile(char *szFileName, char *szParse, u32 flags) { (void)szFileName; (void)szParse; (void)flags; return 0; }
-void GenericLog(enum LOG_LEVELS level, enum LOG_TYPE type, const char *file, int line, const char *fmt, ...)
-{
-	(void)level; (void)type; (void)file; (void)line; (void)fmt;
-}
+/* (no log) */
+retro_log_printf_t log_cb;
 
 static u8 buf[2448 * 4];
 static u8 many[2352 * 40];

@@ -94,7 +94,7 @@ static u32 find_access_point(std::string& apName)
 	const u32 mainAddr = netthread_resolve(DCNET_HOST);
 	if (mainAddr == 0)
 	{
-		WARN_LOG(MODEM, "DCNet: can't resolve %s", DCNET_HOST);
+		WARN_LOG(MODEM, "DCNet: can't resolve %s\n", DCNET_HOST);
 		return 0;
 	}
 	sock_t s = selectable_socket(socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP));
@@ -202,11 +202,11 @@ static u32 find_access_point(std::string& apName)
 	for (const AccessPoint& ap : aps)
 	{
 		if (ap.count == 0) {
-			INFO_LOG(MODEM, "DCNet AP %s: no answer", ap.name.c_str());
+			INFO_LOG(MODEM, "DCNet AP %s: no answer\n", ap.name.c_str());
 			continue;
 		}
 		const int ping = ap.ping / ap.count;
-		INFO_LOG(MODEM, "DCNet AP %s: ping %d ms (%d pings)", ap.name.c_str(), ping, ap.count);
+		INFO_LOG(MODEM, "DCNet AP %s: ping %d ms (%d pings)\n", ap.name.c_str(), ping, ap.count);
 		if (ping < bestPing) {
 			bestPing = ping;
 			best = &ap;
@@ -251,7 +251,7 @@ static sock_t dcnet_connect(u16 port)
 		if (!netthread_running() || now_ms() - start >= 10000)
 		{
 			if (netthread_running())
-				WARN_LOG(MODEM, "DCNet: no connection after 10 s");
+				WARN_LOG(MODEM, "DCNet: no connection after 10 s\n");
 			closesocket(s);
 			return INVALID_SOCKET;
 		}
@@ -276,12 +276,12 @@ static sock_t dcnet_connect(u16 port)
 	socklen_t l = sizeof(value);
 	if (getsockopt(s, SOL_SOCKET, SO_ERROR, &value, &l) < 0 || value != 0)
 	{
-		WARN_LOG(MODEM, "DCNet: connection to %s refused", apName.empty() ? DCNET_HOST : apName.c_str());
+		WARN_LOG(MODEM, "DCNet: connection to %s refused\n", apName.empty() ? DCNET_HOST : apName.c_str());
 		closesocket(s);
 		return INVALID_SOCKET;
 	}
 	set_tcp_nodelay(s);
-	NOTICE_LOG(MODEM, "Connected to DCNet%s%s", apName.empty() ? "" : " via ", apName.c_str());
+	NOTICE_LOG(MODEM, "Connected to DCNet%s%s\n", apName.empty() ? "" : " via ", apName.c_str());
 	return s;
 }
 
@@ -421,7 +421,7 @@ void dcnet_run(bool bba)
 					continue;
 				if (is_dhcp_release(frame, size))
 				{
-					INFO_LOG(MODEM, "DCNet: DHCP release");
+					INFO_LOG(MODEM, "DCNet: DHCP release\n");
 					closing = true;
 					break;
 				}
@@ -472,7 +472,7 @@ void dcnet_run(bool bba)
 				const u32 size = fromNet[fromNetPos] | (fromNet[fromNetPos + 1] << 8);
 				if (size > MAX_ETH_FRAME_SIZE)
 				{
-					ERROR_LOG(MODEM, "DCNet: invalid Ethernet frame size: %d", size);
+					ERROR_LOG(MODEM, "DCNet: invalid Ethernet frame size: %d\n", size);
 					closing = true;
 					break;
 				}
@@ -497,7 +497,7 @@ void dcnet_run(bool bba)
 			const int r = (int)recv(sock, (char *)buf, sizeof(buf), 0);
 			if (r == 0)
 			{
-				INFO_LOG(MODEM, "DCNet: connection closed by the server");
+				INFO_LOG(MODEM, "DCNet: connection closed by the server\n");
 				closing = true;
 			}
 			else if (r < 0)

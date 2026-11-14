@@ -117,7 +117,7 @@ Disc* cue_parse(const char* file)
 
 	if (cue_len >= CUE_MAX)
 	{
-		WARN_LOG(GDROM, "CUE parse error: CUE file too big");
+		WARN_LOG(GDROM, "CUE parse error: CUE file too big\n");
 		core_fclose(fsource);
 		return NULL;
 	}
@@ -135,7 +135,7 @@ Disc* cue_parse(const char* file)
 
 	if (len >= sizeof(path))
 	{
-		WARN_LOG(GDROM, "CUE: path too long");
+		WARN_LOG(GDROM, "CUE: path too long\n");
 		free(r);
 		return NULL;
 	}
@@ -179,7 +179,7 @@ Disc* cue_parse(const char* file)
 				u32 cur_session = 0;
 				sheet_u32(&cuesheet, &cur_session);
 				if (cur_session == 0)
-					WARN_LOG(GDROM, "CUE parse error: invalid session number %s", token);
+					WARN_LOG(GDROM, "CUE parse error: invalid session number %s\n", token);
 				else if (cur_session != session_number)
 				{
 					session_number = cur_session;
@@ -192,10 +192,10 @@ Disc* cue_parse(const char* file)
 
 					if (!disc_add_session(disc, disc->track_count + 1, current_fad))
 					{
-						WARN_LOG(GDROM, "CUE file: too many sessions");
+						WARN_LOG(GDROM, "CUE file: too many sessions\n");
 						return cue_fail(r, disc, file_handle);
 					}
-					DEBUG_LOG(GDROM, "session[%u]: 1st track: %d FAD:%d", disc->session_count,
+					DEBUG_LOG(GDROM, "session[%u]: 1st track: %d FAD:%d\n", disc->session_count,
 							disc->sessions[disc->session_count - 1].FirstTrack, current_fad);
 				}
 			}
@@ -208,10 +208,10 @@ Disc* cue_parse(const char* file)
 					high_density = true;
 				}
 				else if (strcmp(token, "SINGLE-DENSITY"))
-					WARN_LOG(GDROM, "CUE parse error: unrecognized REM token %s. Expected SINGLE-DENSITY, HIGH-DENSITY or SESSION", token);
+					WARN_LOG(GDROM, "CUE parse error: unrecognized REM token %s. Expected SINGLE-DENSITY, HIGH-DENSITY or SESSION\n", token);
 				sheet_word(&cuesheet, token, CUE_WORD);
 				if (strcmp(token, "AREA"))
-					WARN_LOG(GDROM, "CUE parse error: unrecognized REM token %s. Expected AREA", token);
+					WARN_LOG(GDROM, "CUE parse error: unrecognized REM token %s. Expected AREA\n", token);
 			}
 			/* (a new area or session starts somewhere else on the disc: its tracks are in a FILE of their own) */
 			if (file_handle != NULL)
@@ -257,7 +257,7 @@ Disc* cue_parse(const char* file)
 			}
 			sheet_word(&cuesheet, token, CUE_WORD);	/* BINARY */
 			if (strcmp(token, "BINARY"))
-				WARN_LOG(GDROM, "CUE parse error: unrecognized FILE token %s. Expected BINARY", token);
+				WARN_LOG(GDROM, "CUE parse error: unrecognized FILE token %s. Expected BINARY\n", token);
 
 			if (file_handle != NULL)
 				core_fclose(file_handle);
@@ -265,14 +265,14 @@ Disc* cue_parse(const char* file)
 			have_file = false;
 			if (name_cut || name_len >= sizeof(path) - (size_t)dir_end)
 			{
-				WARN_LOG(GDROM, "CUE file: file name too long: %s", track_filename);
+				WARN_LOG(GDROM, "CUE file: file name too long: %s\n", track_filename);
 				return cue_fail(r, disc, NULL);
 			}
 			strcpy(pathptr, track_filename);
 			file_handle = core_fopen(path);
 			if (file_handle == NULL)
 			{
-				WARN_LOG(GDROM, "CUE file: cannot open %s", path);
+				WARN_LOG(GDROM, "CUE file: cannot open %s\n", path);
 				return cue_fail(r, disc, NULL);
 			}
 			have_file = true;
@@ -289,18 +289,18 @@ Disc* cue_parse(const char* file)
 			sheet_word(&cuesheet, r->track_type, CUE_WORD);
 			if (!have_file)
 			{
-				WARN_LOG(GDROM, "CUE file: track %d is not in a FILE", track_number);
+				WARN_LOG(GDROM, "CUE file: track %d is not in a FILE\n", track_number);
 				return cue_fail(r, disc, file_handle);
 			}
 			first_of_file = sector_size == 0;
 			sector_size = getSectorSize(r->track_type);
 			if (sector_size == 0)
 			{
-				WARN_LOG(GDROM, "CUE file: track %d has unknown sector type: %s", track_number, r->track_type);
+				WARN_LOG(GDROM, "CUE file: track %d has unknown sector type: %s\n", track_number, r->track_type);
 				return cue_fail(r, disc, file_handle);
 			}
 			if (file_size % sector_size != 0)
-				WARN_LOG(GDROM, "Warning: Size of track %s is not multiple of sector size %d", pathptr, sector_size);
+				WARN_LOG(GDROM, "Warning: Size of track %s is not multiple of sector size %d\n", pathptr, sector_size);
 			/* The file's sectors are on the disc one after the other from
 			 * where it starts. (Tracks of different sizes in one file are
 			 * not laid out right: the first one's size is taken for all.) */
@@ -332,11 +332,11 @@ Disc* cue_parse(const char* file)
 						&& sec < 60 && frame < 75)
 					index_fad = frame + 75 * (sec + 60 * min);
 				else
-					WARN_LOG(GDROM, "CUE file: track %d: INDEX 01 %s is not a time", track_number, token);
+					WARN_LOG(GDROM, "CUE file: track %d: INDEX 01 %s is not a time\n", track_number, token);
 				/* (no further into the file than it goes) */
 				if (index_fad > current_fad - file_start_fad)
 				{
-					WARN_LOG(GDROM, "CUE file: track %d: INDEX 01 %s is past the end of its file", track_number, token);
+					WARN_LOG(GDROM, "CUE file: track %d: INDEX 01 %s is past the end of its file\n", track_number, token);
 					index_fad = current_fad - file_start_fad;
 				}
 				if (first_of_session && index_fad != 0)
@@ -359,7 +359,7 @@ Disc* cue_parse(const char* file)
 				/* (a disc has 99 tracks at most, and so has its table of contents) */
 				if (disc->track_count >= 99)
 				{
-					WARN_LOG(GDROM, "CUE file: more than 99 tracks");
+					WARN_LOG(GDROM, "CUE file: more than 99 tracks\n");
 					return cue_fail(r, disc, file_handle);
 				}
 				/* The file's first track takes it as it was opened; another track in it opens it again. */
@@ -369,10 +369,10 @@ Disc* cue_parse(const char* file)
 					track_file = core_fopen(path);
 				if (track_file == NULL)
 				{
-					WARN_LOG(GDROM, "CUE file: cannot open track %d: %s", track_number, path);
+					WARN_LOG(GDROM, "CUE file: cannot open track %d: %s\n", track_number, path);
 					return cue_fail(r, disc, NULL);
 				}
-				DEBUG_LOG(GDROM, "file[%u] \"%s\": session %d type %s FAD:%d -> %d", disc->track_count + 1, pathptr, session_number, r->track_type, t.StartFAD, t.EndFAD);
+				DEBUG_LOG(GDROM, "file[%u] \"%s\": session %d type %s FAD:%d -> %d\n", disc->track_count + 1, pathptr, session_number, r->track_type, t.StartFAD, t.EndFAD);
 
 				if (!(t.file = raw_track_new(track_file, index_fad * sector_size, t.StartFAD, sector_size)))
 					return cue_fail(r, disc, NULL);
@@ -390,7 +390,7 @@ Disc* cue_parse(const char* file)
 	free(r);
 	if (disc->track_count == 0)
 	{
-		WARN_LOG(GDROM, "CUE parse error: failed to parse or invalid file with 0 tracks");
+		WARN_LOG(GDROM, "CUE parse error: failed to parse or invalid file with 0 tracks\n");
 		disc_free(disc);
 		return NULL;
 	}

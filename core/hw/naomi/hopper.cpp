@@ -115,7 +115,7 @@ public:
 			cfg.normalize();
 		else
 		{
-			INFO_LOG(NAOMI, "Hopper config not found");
+			INFO_LOG(NAOMI, "Hopper config not found\n");
 			cfg.setInitial();
 		}
 		saved = cfg;
@@ -135,7 +135,7 @@ public:
 	void write(u8 data) override
 	{
 		if (recvLen == 0 && data != 'H') {
-			WARN_LOG(NAOMI, "Ignored data %02x %c", data, data);
+			WARN_LOG(NAOMI, "Ignored data %02x %c\n", data, data);
 			return;
 		}
 		recv[recvLen++] = data;
@@ -147,7 +147,7 @@ public:
 			// (no message is shorter than its header and checksum, and none the game sends is this long)
 			if (expectedBytes < 5 || expectedBytes > sizeof(recv))
 			{
-				WARN_LOG(NAOMI, "Hopper message of %d bytes dropped", expectedBytes);
+				WARN_LOG(NAOMI, "Hopper message of %d bytes dropped\n", expectedBytes);
 				clearRecv();
 			}
 		}
@@ -203,7 +203,7 @@ protected:
 
 	void sendMessage(u8 command, const u8 *payload, size_t len)
 	{
-		DEBUG_LOG(NAOMI, "hopper sending command %x size %x", command, (int)len + 5);
+		DEBUG_LOG(NAOMI, "hopper sending command %x size %x\n", command, (int)len + 5);
 		u8 chksum = 'H' + command;
 		toSend.push('H');
 		toSend.push(command);
@@ -296,7 +296,7 @@ protected:
 			case 0x40:
 			{
 				// VERSION
-				INFO_LOG(NAOMI, "hopper received VERSION");
+				INFO_LOG(NAOMI, "hopper received VERSION\n");
 				std::array<u32, 4> payload{};
 				payload[0] = 0x00010001;
 				payload[1] = 3;
@@ -307,7 +307,7 @@ protected:
 			case 0x41:
 			{
 				// POWER ON
-				INFO_LOG(NAOMI, "hopper received POWER ON");
+				INFO_LOG(NAOMI, "hopper received POWER ON\n");
 				// 8: currency
 				if (cfg.currency != recv[8]) {
 					cfg.currency = recv[8];
@@ -356,7 +356,7 @@ protected:
 			case 0x42:
 			{
 				// GET_STATUS
-				INFO_LOG(NAOMI, "hopper received GET STATUS");
+				INFO_LOG(NAOMI, "hopper received GET STATUS\n");
 				std::array<u32, 4> payload{};
 				payload[0] = 0;         // atp num
 				payload[1] = 0;         // atp kind and error code
@@ -368,7 +368,7 @@ protected:
 			case 0x43:
 			{
 				// GAME START
-				INFO_LOG(NAOMI, "hopper received GAME START");
+				INFO_LOG(NAOMI, "hopper received GAME START\n");
 				bet(4);
 				std::array<u32, 0x1f> payload{};
 				payload[0] = ++cfg.gameNumber;	// game#, ?
@@ -386,7 +386,7 @@ protected:
 			case 0x44:
 			{
 				// GAME END
-				INFO_LOG(NAOMI, "hopper received GAME END");
+				INFO_LOG(NAOMI, "hopper received GAME END\n");
 				std::array<u32, 0x1e> payload{};
 				payload[0] = cfg.gameNumber;	// gameNum, upper 16 bits: ? 0, -1 or -2
 				payload[1] = cfg.credit0;
@@ -402,7 +402,7 @@ protected:
 			case 0x45:
 			{
 				// TEST
-				INFO_LOG(NAOMI, "hopper received TEST");
+				INFO_LOG(NAOMI, "hopper received TEST\n");
 				std::array<u32, 0x3c> payload{};
 				payload[0] = 0;         // atp num
 				payload[1] = 0;         // atp kind and error code
@@ -414,13 +414,13 @@ protected:
 
 			case 0x4a:
 				// SWITCH
-				INFO_LOG(NAOMI, "hopper received SWITCH");
+				INFO_LOG(NAOMI, "hopper received SWITCH\n");
 				break;
 
 			case 0x4b:
 			{
 				// CONFIG_HOP
-				INFO_LOG(NAOMI, "hopper received CONFIG HOP");
+				INFO_LOG(NAOMI, "hopper received CONFIG HOP\n");
 				if (recv[2] == 0x2c && recv[3] == 0)
 				{
 					cfg.freePlay = recv[4] & 1;
@@ -459,7 +459,7 @@ protected:
 				break;
 
 			default:
-				WARN_LOG(NAOMI, "Unexpected hopper message: %x", command);
+				WARN_LOG(NAOMI, "Unexpected hopper message: %x\n", command);
 				break;
 		}
 	}
@@ -727,7 +727,7 @@ protected:
 					cfg.currency = recv[8];
 					setDefaults();
 				}
-				INFO_LOG(NAOMI, "hopper received POWER ON");
+				INFO_LOG(NAOMI, "hopper received POWER ON\n");
 				std::array<u32, 0x13a> payload{};
 				payload[0] = cfg.gameNumber;
 				payload[1] = 0;			// atp num
@@ -762,7 +762,7 @@ protected:
 
 			case 0x21:	// GET_STATUS
 			{
-				INFO_LOG(NAOMI, "hopper received GET STATUS");
+				INFO_LOG(NAOMI, "hopper received GET STATUS\n");
 				std::array<u32, 3> payload{};
 				payload[0] = 0;			// atp num?
 				payload[1] = status;
@@ -772,7 +772,7 @@ protected:
 
 			case 0x22:	// GAME START
 			{
-				INFO_LOG(NAOMI, "hopper received GAME START");
+				INFO_LOG(NAOMI, "hopper received GAME START\n");
 				// 4: bet value: credit0
 				// 8:            credit1
 				// c:			 premium
@@ -793,7 +793,7 @@ protected:
 
 			case 0x23:	// GAME END
 			{
-				INFO_LOG(NAOMI, "hopper received GAME END");
+				INFO_LOG(NAOMI, "hopper received GAME END\n");
 				// 8: amount to pay?
 				payOut(rd32(8));
 				std::array<u32, 0x15> payload{};
@@ -808,7 +808,7 @@ protected:
 
 			case 0x24:	// TEST START
 			{
-				INFO_LOG(NAOMI, "hopper received TEST START");
+				INFO_LOG(NAOMI, "hopper received TEST START\n");
 				std::array<u32, 0x33> payload{};
 				payload[0] = 0;				// atp num
 				payload[1] = status;
@@ -821,7 +821,7 @@ protected:
 
 			case 0x25:	// BACKUP CLEAR
 			{
-				INFO_LOG(NAOMI, "hopper received BACKUP CLEAR");
+				INFO_LOG(NAOMI, "hopper received BACKUP CLEAR\n");
 				cfg.credit0 = 0;
 				cfg.credit1 = 0;
 				cfg.premium = 0;
@@ -841,7 +841,7 @@ protected:
 
 			case 0x26:	// BET
 			{
-				INFO_LOG(NAOMI, "hopper received BET");
+				INFO_LOG(NAOMI, "hopper received BET\n");
 				std::array<u32, 2> payload{};
 				payload[0] = rd32(4);
 				sendMessage(0x16, (const u8 *)payload.data(), payload.size() * sizeof(u32) - 1);
@@ -849,7 +849,7 @@ protected:
 			}
 
 			case 0x29:	// SWITCH
-				INFO_LOG(NAOMI, "hopper received SWITCH");
+				INFO_LOG(NAOMI, "hopper received SWITCH\n");
 				// 4: test button
 				// 5: service button
 				// 6-7: c01 in test menu
@@ -857,7 +857,7 @@ protected:
 
 			case 0x2a:	// CONFIG HOP
 			{
-				INFO_LOG(NAOMI, "hopper received CONFIG HOP");
+				INFO_LOG(NAOMI, "hopper received CONFIG HOP\n");
 				if (recv[2] == 0x28 && recv[3] == 0)
 				{
 					cfg.freePlay = recv[4] & 1;
@@ -889,7 +889,7 @@ protected:
 			}
 
 			case 0x2f: // TEST DATA MON
-				INFO_LOG(NAOMI, "hopper received cmd TEST DATA MON");
+				INFO_LOG(NAOMI, "hopper received cmd TEST DATA MON\n");
 				// no reply
 				break;
 
@@ -899,7 +899,7 @@ protected:
 				break;
 
 			default:
-				WARN_LOG(NAOMI, "Unexpected hopper message: %x", command);
+				WARN_LOG(NAOMI, "Unexpected hopper message: %x\n", command);
 				break;
 		}
 	}
@@ -994,7 +994,7 @@ private:
 			cfg.addBet = 100;
 			break;
 		default:
-			WARN_LOG(NAOMI, "Unsupported currency %d", cfg.currency);
+			WARN_LOG(NAOMI, "Unsupported currency %d\n", cfg.currency);
 			break;
 		}
 		cfg.totalCredit = cfg.minBet;

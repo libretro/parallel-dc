@@ -93,7 +93,7 @@ static LONG ExceptionHandler(EXCEPTION_POINTERS *ExceptionInfo)
          return EXCEPTION_CONTINUE_EXECUTION;
    }
 #endif
-   ERROR_LOG(COMMON, "[GPF]Unhandled access to : %p", address);
+   ERROR_LOG(COMMON, "[GPF]Unhandled access to : %p\n", address);
 
    return EXCEPTION_CONTINUE_SEARCH;
 }
@@ -165,7 +165,7 @@ seh_callback(
    Table[0].BeginAddress = 0;// (CodeCache - (u8*)__ImageBase);
    Table[0].EndAddress = /*(CodeCache - (u8*)__ImageBase) +*/ CODE_SIZE + TEMP_CODE_SIZE;
    Table[0].UnwindData = (ULONG)((u8 *)unwind_info - CodeCache);
-   DEBUG_LOG(COMMON, "TABLE CALLBACK");
+   DEBUG_LOG(COMMON, "TABLE CALLBACK\n");
    return Table;
 }
 
@@ -302,10 +302,10 @@ static void sigill_handler(int sn, siginfo_t * si, void *segfault_ctx)
 	bool dyna_cde = false;
 #endif
 
-	ERROR_LOG(COMMON, "SIGILL @ %p ... %p -> was not in vram, %d",
+	ERROR_LOG(COMMON, "SIGILL @ %p ... %p -> was not in vram, %d\n",
          pc, si->si_addr, dyna_cde);
 
-	ERROR_LOG(COMMON, "Entering infiniloop");
+	ERROR_LOG(COMMON, "Entering infiniloop\n");
    for (;;);
 }
 #endif
@@ -336,7 +336,7 @@ static void signal_handler(int sn, siginfo_t * si, void *segfault_ctx)
 	bool dyna_cde = false;
 #endif
 
-	DEBUG_LOG(COMMON, "mprot hit @ ptr %p @@ pc: %zx, %d", si->si_addr, ctx.pc, dyna_cde);
+	DEBUG_LOG(COMMON, "mprot hit @ ptr %p @@ pc: %zx, %d\n", si->si_addr, ctx.pc, dyna_cde);
 
 #if FEAT_SHREC != DYNAREC_NONE
 	if (bm_RamWriteAccess(si->si_addr))
@@ -405,12 +405,12 @@ static void signal_handler(int sn, siginfo_t * si, void *segfault_ctx)
          return;
       }
 #endif
-   	ERROR_LOG(COMMON, "SIGSEGV @ %zx ... %p -> was not in vram (dyna code %d)", ctx.pc, si->si_addr, dyna_cde);
+   	ERROR_LOG(COMMON, "SIGSEGV @ %zx ... %p -> was not in vram (dyna code %d)\n", ctx.pc, si->si_addr, dyna_cde);
 #ifdef HAVE_LIBNX
     MemoryInfo meminfo;
     u32 pageinfo;
     svcQueryMemory(&meminfo, &pageinfo, (u64)&__start__);
-   	ERROR_LOG(COMMON, ".text base: %p", meminfo.addr);
+   	ERROR_LOG(COMMON, ".text base: %p\n", meminfo.addr);
 #endif // HAVE_LIBNX
    	die("segfault");
    	signal(SIGSEGV, SIG_DFL);
@@ -488,7 +488,7 @@ static void enable_runfast(void)
          : "r"(x), "r"(y)
          );
 
-   DEBUG_LOG(BOOT, "ARM VFP-Run Fast (NFP) enabled !");
+   DEBUG_LOG(BOOT, "ARM VFP-Run Fast (NFP) enabled !\n");
 #endif
 }
 

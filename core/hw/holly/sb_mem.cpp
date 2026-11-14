@@ -139,7 +139,7 @@ static void add_isp_to_nvmem(DCFlashChip *flash)
 		strcpy(isp1.password, "password");
 		strcpy(isp1.phone, "1234567");
 		if (flash->WriteBlock(FLASH_PT_USER, FLASH_USER_ISP1, &isp1) != 1)
-			WARN_LOG(FLASHROM, "Failed to save ISP information to flash RAM");
+			WARN_LOG(FLASHROM, "Failed to save ISP information to flash RAM\n");
 
 		memset(block, 0, sizeof(block));
 		flash->WriteBlock(FLASH_PT_USER, FLASH_USER_ISP1 + 1, block);
@@ -156,7 +156,7 @@ static void add_isp_to_nvmem(DCFlashChip *flash)
 		strcpy(isp2.password, "password");
 		strcpy(isp2.phone, "1234567");
 		if (flash->WriteBlock(FLASH_PT_USER, FLASH_USER_ISP2, &isp2) != 1)
-			WARN_LOG(FLASHROM, "Failed to save ISP information to flash RAM");
+			WARN_LOG(FLASHROM, "Failed to save ISP information to flash RAM\n");
 		u8 block[64];
 		memset(block, 0, sizeof(block));
 		for (u32 i = FLASH_USER_ISP2 + 1; i <= 0xEA; i++)
@@ -212,7 +212,7 @@ void FixUpFlash()
      		syscfg.lang = settings.dreamcast.language;
 
      	if (sys_nvmem_flash.WriteBlock(FLASH_PT_USER, FLASH_USER_SYSCFG, &syscfg) != 1)
-     		WARN_LOG(FLASHROM, "Failed to save time and language to flash RAM");
+     		WARN_LOG(FLASHROM, "Failed to save time and language to flash RAM\n");
 
      	add_isp_to_nvmem(&sys_nvmem_flash);
 
@@ -357,12 +357,12 @@ void WriteBios(u32 addr,u32 data,u32 sz)
       case DC_PLATFORM_DEV_UNIT:
       case DC_PLATFORM_NAOMI:
       case DC_PLATFORM_NAOMI2:
-         INFO_LOG(MEMORY, "Write to [Boot ROM] is not possible, addr=%x, data=%x, size=%d", addr, data, sz);
+         INFO_LOG(MEMORY, "Write to [Boot ROM] is not possible, addr=%x, data=%x, size=%d\n", addr, data, sz);
          break;
       case DC_PLATFORM_ATOMISWAVE:
     	 if (sz != 1)
     	 {
- 			INFO_LOG(MEMORY, "Invalid access size @%08x data %x sz %d", addr, data, sz);
+ 			INFO_LOG(MEMORY, "Invalid access size @%08x data %x sz %d\n", addr, data, sz);
  			return;
     	 }
     	 sys_nvmem_flash.Write(addr, data, sz);
@@ -431,7 +431,7 @@ T DYNACALL ReadMem_area0(u32 addr)
 	{
       if (addr <= 0x005F67FF) // :Unassigned
 		{
-			INFO_LOG(MEMORY, "Read from area0_32 not implemented [Unassigned], addr=%x", addr);
+			INFO_LOG(MEMORY, "Read from area0_32 not implemented [Unassigned], addr=%x\n", addr);
 		}
       else if (addr >= 0x005F7000 && addr <= 0x005F70FF) // GD-ROM
 		{

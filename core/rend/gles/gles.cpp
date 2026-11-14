@@ -754,7 +754,7 @@ static void gl_make_programs()
 			pipeline_locations(s, true);
 		else
 		{
-			WARN_LOG(RENDERER, "OpenGL: no general program (pp_Gouraud %d)", g);
+			WARN_LOG(RENDERER, "OpenGL: no general program (pp_Gouraud %d)\n", g);
 			glDeleteProgram(s->program);
 			s->program = 0;
 		}
@@ -776,7 +776,7 @@ static void gl_make_programs()
 			}
 			else
 			{
-				WARN_LOG(RENDERER, "OpenGL: the program of key %x did not link", s->key);
+				WARN_LOG(RENDERER, "OpenGL: the program of key %x did not link\n", s->key);
 				glDeleteProgram(p);
 				if (nfailed < ARRAY_SIZE(failed))
 					failed[nfailed++] = key;
@@ -905,7 +905,7 @@ void findGLVersion()
 		glGetIntegerv(GL_MINOR_VERSION, &gl.gl_minor);
 
 	const char *version = (const char *)glGetString(GL_VERSION);
-	NOTICE_LOG(RENDERER, "OpenGL version: %s", version);
+	NOTICE_LOG(RENDERER, "OpenGL version: %s\n", version);
 	if (!strncmp(version, "OpenGL ES", 9))
 	{
 		gl.is_gles = true;
@@ -1027,7 +1027,7 @@ void findGLVersion()
 		glBindBuffer(GL_UNIFORM_BUFFER, 0);
 	}
 	(void)clip_control;
-	NOTICE_LOG(RENDERER, "OpenGL depth: %s depth buffers, the scale in a %s, clip space z in %s",
+	NOTICE_LOG(RENDERER, "OpenGL depth: %s depth buffers, the scale in a %s, clip space z in %s\n",
 			gl.depth_format == GL_DEPTH32F_STENCIL8 ? "32-bit float" : "24-bit",
 			gl.depth_ubo != 0 ? "uniform buffer" : "uniform", gl.clipControl != nullptr ? "[0,1]" : "[-1,1]");
 	while (glGetError() != GL_NO_ERROR)
@@ -1377,7 +1377,7 @@ static bool own_target_bind(int w, int h)
 		glFramebufferRenderbuffer(RARCH_GL_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT, RARCH_GL_RENDERBUFFER, own_depth);
 		if (glCheckFramebufferStatus(RARCH_GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
 		{
-			WARN_LOG(RENDERER, "OpenGL: no framebuffer with a float depth buffer: drawing into the frontend's");
+			WARN_LOG(RENDERER, "OpenGL: no framebuffer with a float depth buffer: drawing into the frontend's\n");
 			own_target_term();
 			glBindFramebuffer(RARCH_GL_FRAMEBUFFER, target);
 			return false;
@@ -1523,7 +1523,7 @@ static bool RenderFrame(void)
 		if (pvrrc.fb_X_CLIP.max < pvrrc.fb_X_CLIP.min || pvrrc.fb_Y_CLIP.max < pvrrc.fb_Y_CLIP.min
 				|| FB_X_CLIP.max < FB_X_CLIP.min || FB_Y_CLIP.max < FB_Y_CLIP.min)
 		{
-			WARN_LOG(RENDERER, "Render to texture with an empty pixel clip: %d-%d, %d-%d",
+			WARN_LOG(RENDERER, "Render to texture with an empty pixel clip: %d-%d, %d-%d\n",
 					pvrrc.fb_X_CLIP.min, pvrrc.fb_X_CLIP.max, pvrrc.fb_Y_CLIP.min, pvrrc.fb_Y_CLIP.max);
 			return false;
 		}
@@ -1559,11 +1559,11 @@ static bool RenderFrame(void)
 			case 4: //0x4   888 RGB 24 bit packed
 			case 5: //0x5   0888 KRGB 32 bit    K is the value of fk_kval.
 			case 6: //0x6   8888 ARGB 32 bit
-				WARN_LOG(RENDERER, "Unsupported render to texture format: %d", FB_W_CTRL.fb_packmode);
+				WARN_LOG(RENDERER, "Unsupported render to texture format: %d\n", FB_W_CTRL.fb_packmode);
 				return false;
 			case 7: //7     invalid
 				// (a mode the chip does not have, which a game can write all the same: nothing is drawn)
-				WARN_LOG(RENDERER, "Invalid render to texture format: 7");
+				WARN_LOG(RENDERER, "Invalid render to texture format: 7\n");
 				return false;
 		}
 		DEBUG_LOG(RENDERER, "RTT packmode=%d stride=%d - %d,%d -> %d,%d\n", FB_W_CTRL.fb_packmode, FB_W_LINESTRIDE.stride * 8,
@@ -1811,7 +1811,7 @@ void gl_frame_buffers_term()
 #ifdef HAVE_GL4
 	if (parse_arena.ready)
 	{
-		NOTICE_LOG(RENDERER, "OpenGL: %u renders parsed where the card reads them, %u copied there", parsed_here, parsed_copied);
+		NOTICE_LOG(RENDERER, "OpenGL: %u renders parsed where the card reads them, %u copied there\n", parsed_here, parsed_copied);
 		parse_arena_gl_term(&parse_arena);
 	}
 	parsed_here = parsed_copied = 0;
@@ -1831,9 +1831,9 @@ static void parse_where_drawn(TA_context* ctx)
 		size_t room[PARSE_ARENA_PARTS];
 		TA_context::ArenaRooms(room);
 		if (parse_arena_gl_init(&parse_arena, room, 3))
-			NOTICE_LOG(RENDERER, "OpenGL: renders parsed where the card reads them, not copied there");
+			NOTICE_LOG(RENDERER, "OpenGL: renders parsed where the card reads them, not copied there\n");
 		else
-			INFO_LOG(RENDERER, "OpenGL: renders copied to the card (the buffers for them could not be had, or read slowly)");
+			INFO_LOG(RENDERER, "OpenGL: renders copied to the card (the buffers for them could not be had, or read slowly)\n");
 	}
 	/* (four vertices at the head the parse keeps: the background's, FillBGP()'s) */
 	ta_list_t *lists[PARSE_ARENA_PARTS];
@@ -1845,7 +1845,7 @@ static void parse_where_drawn(TA_context* ctx)
 		/* (no slot whose frame the card is done with: a frame of more
 		 * renders than slots, the card behind - never waited for) */
 		if (parsed_copied++ == 0)
-			NOTICE_LOG(RENDERER, "OpenGL: a render copied to the card, no slot of the parse's free");
+			NOTICE_LOG(RENDERER, "OpenGL: a render copied to the card, no slot of the parse's free\n");
 	}
 #endif
 }
@@ -1862,7 +1862,7 @@ bool ProcessFrame(TA_context* ctx, u32 taFlags)
    if (KillTex)
    {
       TexCache.Clear();
-      INFO_LOG(RENDERER, "Texture cache cleared");
+      INFO_LOG(RENDERER, "Texture cache cleared\n");
    }
 
    glTaDecoder.BeginFrame();

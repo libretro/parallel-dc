@@ -30,7 +30,7 @@ void DMAC_Ch2St(void)
 
    if (0x8201 != (dmaor & DMAOR_MASK))
 	{
-		INFO_LOG(SH4, "DMAC: DMAOR has invalid settings (%X) !", dmaor);
+		INFO_LOG(SH4, "DMAC: DMAOR has invalid settings (%X) !\n", dmaor);
 		return;
 	}
 
@@ -47,7 +47,7 @@ void DMAC_Ch2St(void)
 	/* and the destination, which moves on only when it is texture memory */
 	dstat_end = 0x10000000 | ((SB_C2DSTAT + len) & 0x03ffffe0);
 
-   DEBUG_LOG(SH4, ">> DMAC: Ch2 DMA SRC=%X DST=%X LEN=%X", src, SB_C2DSTAT, SB_C2DLEN);
+   DEBUG_LOG(SH4, ">> DMAC: Ch2 DMA SRC=%X DST=%X LEN=%X\n", src, SB_C2DSTAT, SB_C2DLEN);
 
 	/* Direct DList DMA (Ch2) */
    
@@ -186,7 +186,7 @@ static INLINE void write_chcr(u32 ch, u32 data)
 			u32 count = DMAC_DMATCR(ch) & 0x00FFFFFF;
 			u32 ofs;
 
-			DEBUG_LOG(SH4, "DMAC: Manual DMA ch:%d TS:%d src: %08X dst: %08X len: %08X SM: %d, DM: %d", ch, DMAC_CHCR(ch).TS,
+			DEBUG_LOG(SH4, "DMAC: Manual DMA ch:%d TS:%d src: %08X dst: %08X len: %08X SM: %d, DM: %d\n", ch, DMAC_CHCR(ch).TS,
 					DMAC_SAR(ch), DMAC_DAR(ch), DMAC_DMATCR(ch), DMAC_CHCR(ch).SM, DMAC_CHCR(ch).DM);
 
 			if (count == 0)

@@ -70,7 +70,7 @@ void DX11TexturePool::Init(ID3D11Device *device, const VramBudget& budget, const
 				break;
 			book.Give(texture);
 		}
-	NOTICE_LOG(RENDERER, "DX11: texture pool of %u textures, %u MB (planned %u MB)", book.made, (u32)(book.bytesMade >> 20), (u32)(bytes >> 20));
+	NOTICE_LOG(RENDERER, "DX11: texture pool of %u textures, %u MB (planned %u MB)\n", book.made, (u32)(book.bytesMade >> 20), (u32)(bytes >> 20));
 }
 
 void DX11TexturePool::Term()
@@ -148,7 +148,7 @@ DX11PooledTexture *DX11TexturePool::Make(int cls, bool late)
 		}
 	if (!ok)
 	{
-		WARN_LOG(RENDERER, "DX11: texture pool: a %ux%u %s texture could not be made", width, height, poolFormatNames[f]);
+		WARN_LOG(RENDERER, "DX11: texture pool: a %ux%u %s texture could not be made\n", width, height, poolFormatNames[f]);
 		delete t;
 		return nullptr;
 	}
@@ -346,7 +346,7 @@ void DX11Texture::UploadToGPU(int width, int height, u8 *data, bool mipmapped, b
 		bpp = 1;
 		break;
 	default:
-		WARN_LOG(RENDERER, "Unsupported texture type %d", (int)tex_type);
+		WARN_LOG(RENDERER, "Unsupported texture type %d\n", (int)tex_type);
 		return;
 	}
 
@@ -426,13 +426,13 @@ void DX11Texture::UploadToGPU(int width, int height, u8 *data, bool mipmapped, b
 		HRESULT hr = device->CreateTexture2D(&desc, withData ? initial : nullptr, texture.put());
 		if (FAILED(hr))
 		{
-			ERROR_LOG(RENDERER, "Texture creation failed (%x): type %d, %d x %d, %d levels", (unsigned)hr, (int)tex_type, width, height, levels);
+			ERROR_LOG(RENDERER, "Texture creation failed (%x): type %d, %d x %d, %d levels\n", (unsigned)hr, (int)tex_type, width, height, levels);
 			texture.reset();
 			return;
 		}
 		hr = device->CreateShaderResourceView(texture, nullptr, textureView.put());
 		if (FAILED(hr))
-			ERROR_LOG(RENDERER, "Texture view creation failed (%x)", (unsigned)hr);
+			ERROR_LOG(RENDERER, "Texture view creation failed (%x)\n", (unsigned)hr);
 		if (withData)
 			return;
 	}
@@ -579,7 +579,7 @@ ID3D11SamplerState *DX11Samplers::MakeSampler(TSP tsp)
 		drawPath++;
 	ID3D11Device *device = DX11Context::Instance()->GetDevice();
 	if (device == nullptr || FAILED(device->CreateSamplerState(&desc, sampler.put())))
-		WARN_LOG(RENDERER, "Sampler creation failed");
+		WARN_LOG(RENDERER, "Sampler creation failed\n");
 	return sampler;
 }
 
@@ -625,7 +625,7 @@ ID3D11SamplerState *DX11Samplers::GetLinearSampler()
 		desc.MaxLOD = D3D11_FLOAT32_MAX;
 		ID3D11Device *device = DX11Context::Instance()->GetDevice();
 		if (device == nullptr || FAILED(device->CreateSamplerState(&desc, linear.put())))
-			WARN_LOG(RENDERER, "Sampler creation failed");
+			WARN_LOG(RENDERER, "Sampler creation failed\n");
 	}
 	return linear;
 }
@@ -663,7 +663,7 @@ static bool makeStaging(ID3D11Device *device, u32 width, u32 height)
 	desc.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
 	if (FAILED(device->CreateTexture2D(&desc, nullptr, staging.put())))
 	{
-		WARN_LOG(RENDERER, "Staging texture creation failed (%d x %d)", width, height);
+		WARN_LOG(RENDERER, "Staging texture creation failed (%d x %d)\n", width, height);
 		staging.reset();
 		return false;
 	}
@@ -692,7 +692,7 @@ static bool readBack(ID3D11Texture2D *texture, u32 x, u32 y, u32 width, u32 heig
 	D3D11_MAPPED_SUBRESOURCE mapped;
 	if (FAILED(deviceContext->Map(staging, 0, D3D11_MAP_READ, 0, &mapped)))
 	{
-		WARN_LOG(RENDERER, "A picture could not be read back from the card");
+		WARN_LOG(RENDERER, "A picture could not be read back from the card\n");
 		if (take != nullptr)
 			take(watch, nullptr, 0);
 		else
@@ -759,7 +759,7 @@ static bool rtt_ring(u32 w, u32 rows)
 	if (rttRing && !rttSaidLarger)
 	{
 		rttSaidLarger = true;
-		WARN_LOG(RENDERER, "Render to a texture read back: its room made larger, %u x %u", w, rows);
+		WARN_LOG(RENDERER, "Render to a texture read back: its room made larger, %u x %u\n", w, rows);
 	}
 	for (Dx11RttCopy& c : rttCopies)
 	{
@@ -781,7 +781,7 @@ static bool rtt_ring(u32 w, u32 rows)
 	desc.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
 	if (FAILED(device->CreateTexture2D(&desc, nullptr, rttRing.put())))
 	{
-		WARN_LOG(RENDERER, "Staging texture creation failed (%d x %d)", w, rows);
+		WARN_LOG(RENDERER, "Staging texture creation failed (%d x %d)\n", w, rows);
 		rttRing.reset();
 		return false;
 	}
@@ -856,7 +856,7 @@ static bool rtt_small(u32 w, u32 h)
 	if (FAILED(device->CreateTexture2D(&desc, nullptr, small.put()))
 			|| FAILED(device->CreateRenderTargetView(small, nullptr, smallTarget.put())))
 	{
-		WARN_LOG(RENDERER, "Render to texture read back: target creation failed");
+		WARN_LOG(RENDERER, "Render to texture read back: target creation failed\n");
 		smallTarget.reset();
 		small.reset();
 		return false;
@@ -987,7 +987,7 @@ static void dx11_rtt_read(const RttWatch *watch, u8 *, RttWatchTake take)
 	D3D11_MAPPED_SUBRESOURCE mapped;
 	if (FAILED(deviceContext->Map(rttRing, 0, D3D11_MAP_READ, 0, &mapped)))
 	{
-		WARN_LOG(RENDERER, "A picture could not be read back from the card");
+		WARN_LOG(RENDERER, "A picture could not be read back from the card\n");
 		take(watch, nullptr, 0);
 	}
 	else

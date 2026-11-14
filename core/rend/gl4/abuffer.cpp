@@ -666,7 +666,7 @@ u32 gl4OitChooseBands(bool rtt)
 		else
 			roomy = 0;
 		if (bands != was)
-			NOTICE_LOG(RENDERER, "OpenGL per-pixel renderer: %u translucent fragments in a band of %u%s, room for %u: %u band%s",
+			NOTICE_LOG(RENDERER, "OpenGL per-pixel renderer: %u translucent fragments in a band of %u%s, room for %u: %u band%s\n",
 					fragments, drawnIn, count_rtt[i] ? " (a render to a texture)" : "", (u32)room, bands, bands > 1 ? "s" : "");
 		break;
 	}

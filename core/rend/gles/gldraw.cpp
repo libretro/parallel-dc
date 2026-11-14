@@ -840,7 +840,7 @@ void DrawStrips()
 	{
 		const RenderPass& current_pass = pvrrc.render_passes.head()[render_pass];
 
-		DEBUG_LOG(RENDERER, "Render pass %d OP %d PT %d TR %d MV %d", render_pass + 1,
+		DEBUG_LOG(RENDERER, "Render pass %d OP %d PT %d TR %d MV %d\n", render_pass + 1,
 			current_pass.op_count - previous_pass.op_count,
 			current_pass.pt_count - previous_pass.pt_count,
 			current_pass.tr_count - previous_pass.tr_count,

@@ -472,7 +472,7 @@ bool cheats_reset(void)
 		fix_count++;
 	}
 	if (fixes != NULL)
-		NOTICE_LOG(COMMON, "Applying %u fixes to game %s", fix_count, fix_id);
+		NOTICE_LOG(COMMON, "Applying %u fixes to game %s\n", fix_count, fix_id);
 
 	if (!settings.rend.WidescreenGameHacks)
 		return false;
@@ -493,7 +493,7 @@ bool cheats_reset(void)
 							|| !strncmp(ip_meta.software_name, widescreen_cheats[i].area_or_version, sizeof(ip_meta.software_name))))
 			{
 				ws_cheat = &widescreen_cheats[i];
-				NOTICE_LOG(COMMON, "Applying widescreen hack to game %s", game_id);
+				NOTICE_LOG(COMMON, "Applying widescreen hack to game %s\n", game_id);
 				break;
 			}
 		}
@@ -517,7 +517,7 @@ bool cheats_reset(void)
 							|| !strcmp(set_name, naomi_widescreen_cheats[i].area_or_version)))
 			{
 				ws_cheat = &naomi_widescreen_cheats[i];
-				NOTICE_LOG(COMMON, "Applying widescreen hack to game %s", naomi_game_id);
+				NOTICE_LOG(COMMON, "Applying widescreen hack to game %s\n", naomi_game_id);
 				break;
 			}
 		}
@@ -528,7 +528,7 @@ bool cheats_reset(void)
 	for (i = 0; i < (int)ARRAY_SIZE(ws_cheat->addresses) && ws_cheat->addresses[i] != 0; i++)
 		if (ws_cheat->addresses[i] > RAM_SIZE - 4)
 		{
-			WARN_LOG(COMMON, "Widescreen hack of game %s is outside memory", game_id);
+			WARN_LOG(COMMON, "Widescreen hack of game %s is outside memory\n", game_id);
 			ws_cheat = NULL;
 			return false;
 		}

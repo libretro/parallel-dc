@@ -72,7 +72,7 @@ public:
 			if (!said)
 			{
 				said = true;
-				WARN_LOG(RENDERER, "%s: no room for more than %u, more made (too small for this game)",
+				WARN_LOG(RENDERER, "%s: no room for more than %u, more made (too small for this game)\n",
 						name, chunkCount * CHUNK);
 			}
 			if (chunkCount == MAX_CHUNKS || !AddChunk())

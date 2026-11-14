@@ -53,7 +53,7 @@ u32 ReadMem_aica_rtc(u32 addr,u32 sz)
 		return 0;
 	}
 
-	WARN_LOG(AICA, "ReadMem_aica_rtc : invalid address %x sz %d", addr, sz);
+	WARN_LOG(AICA, "ReadMem_aica_rtc : invalid address %x sz %d\n", addr, sz);
 	return 0;
 }
 
@@ -128,12 +128,12 @@ void WriteMem_aica_reg(u32 addr,u32 data,u32 sz)
 		if (addr==0x2C01)
 		{
 			VREG=data;
-			INFO_LOG(AICA_ARM, "VREG = %02X", VREG);
+			INFO_LOG(AICA_ARM, "VREG = %02X\n", VREG);
 		}
 		else if (addr==0x2C00)
 		{
 			ARMRST=data;
-			INFO_LOG(AICA_ARM, "ARMRST = %02X", ARMRST);
+			INFO_LOG(AICA_ARM, "ARMRST = %02X\n", ARMRST);
 			ArmSetRST();
 		}
 		else
@@ -147,7 +147,7 @@ void WriteMem_aica_reg(u32 addr,u32 data,u32 sz)
 		{
 			VREG=(data>>8)&0xFF;
 			ARMRST=data&0xFF;
-			INFO_LOG(AICA_ARM, "VREG = %02X ARMRST %02X", VREG, ARMRST);
+			INFO_LOG(AICA_ARM, "VREG = %02X ARMRST %02X\n", VREG, ARMRST);
 			ArmSetRST();
 		}
 		else
@@ -293,7 +293,7 @@ static void Write_DmaStart(u32 addr, u32 data)
 	/* STAR */
 	if (!check_STAR(src))
 	{
-		INFO_LOG(AICA, "%s: Invalid src address %08x", c->tag, src);
+		INFO_LOG(AICA, "%s: Invalid src address %08x\n", c->tag, src);
 		G2_REG(c->st) = 0;
 		G2_REG(c->en) = 0;
 		asic_RaiseInterrupt(c->illaddr);
@@ -302,7 +302,7 @@ static void Write_DmaStart(u32 addr, u32 data)
 	/* STAG */
 	if (!check_STAG(dst))
 	{
-		INFO_LOG(AICA, "%s: Invalid dst address %08x", c->tag, dst);
+		INFO_LOG(AICA, "%s: Invalid dst address %08x\n", c->tag, dst);
 		G2_REG(c->st) = 0;
 		G2_REG(c->en) = 0;
 		asic_RaiseInterrupt(c->illaddr);
@@ -311,7 +311,7 @@ static void Write_DmaStart(u32 addr, u32 data)
 	/* Overrun */
 	if (!check_STAR_overrun(src) || !check_STAR_overrun(src + len - 1))
 	{
-		INFO_LOG(AICA, "%s: Overrun address %08x len %x", c->tag, src, len);
+		INFO_LOG(AICA, "%s: Overrun address %08x len %x\n", c->tag, src, len);
 		G2_REG(c->st) = 0;
 		G2_REG(c->en) = 0;
 		asic_RaiseInterrupt(c->overrun);
@@ -323,10 +323,10 @@ static void Write_DmaStart(u32 addr, u32 data)
 		u32 t = src;
 		src = dst;
 		dst = t;
-		DEBUG_LOG(AICA, "%s: DIR == 1 DMA Read to 0x%X from 0x%X %d bytes", c->tag, dst, src, len);
+		DEBUG_LOG(AICA, "%s: DIR == 1 DMA Read to 0x%X from 0x%X %d bytes\n", c->tag, dst, src, len);
 	}
 	else
-		DEBUG_LOG(AICA, "%s: DIR == 0 DMA Write to 0x%X from 0x%X %d bytes", c->tag, dst, src, len);
+		DEBUG_LOG(AICA, "%s: DIR == 0 DMA Write to 0x%X from 0x%X %d bytes\n", c->tag, dst, src, len);
 
 	WriteMemBlock_nommu_dma(dst, src, len);
 
@@ -366,7 +366,7 @@ static void Write_SB_ADST(u32 addr, u32 data)
 
 			if (!check_STAR(src))
 			{
-				INFO_LOG(AICA, "AICA-DMA : Invalid src address %08x", src);
+				INFO_LOG(AICA, "AICA-DMA : Invalid src address %08x\n", src);
 				SB_ADST = 0;
 				SB_ADEN = 0;
 				asic_RaiseInterrupt(holly_AICA_ILLADDR);
@@ -374,7 +374,7 @@ static void Write_SB_ADST(u32 addr, u32 data)
 			}
 			if (!check_STAG(dst))
 			{
-				INFO_LOG(AICA, "AICA-DMA : Invalid dst address %08x", dst);
+				INFO_LOG(AICA, "AICA-DMA : Invalid dst address %08x\n", dst);
 				SB_ADST = 0;
 				SB_ADEN = 0;
 				asic_RaiseInterrupt(holly_AICA_ILLADDR);
@@ -383,7 +383,7 @@ static void Write_SB_ADST(u32 addr, u32 data)
 			/* Overrun */
 			if (!check_STAR_overrun(src) || !check_STAR_overrun(src + len - 1))
 			{
-				INFO_LOG(AICA, "AICA-DMA : Overrun address %08x len %x", src, len);
+				INFO_LOG(AICA, "AICA-DMA : Overrun address %08x len %x\n", src, len);
 				SB_ADST = 0;
 				SB_ADEN = 0;
 				asic_RaiseInterrupt(holly_AICA_OVERRUN);
@@ -396,10 +396,10 @@ static void Write_SB_ADST(u32 addr, u32 data)
 				u32 tmp=src;
 				src=dst;
 				dst=tmp;
-				DEBUG_LOG(AICA, "AICA-DMA : SB_ADDIR==1 DMA Read to 0x%X from 0x%X %x bytes", dst, src, SB_ADLEN);
+				DEBUG_LOG(AICA, "AICA-DMA : SB_ADDIR==1 DMA Read to 0x%X from 0x%X %x bytes\n", dst, src, SB_ADLEN);
 			}
 			else
-				DEBUG_LOG(AICA, "AICA-DMA : SB_ADDIR==0:DMA Write to 0x%X from 0x%X %x bytes", dst, src, SB_ADLEN);
+				DEBUG_LOG(AICA, "AICA-DMA : SB_ADDIR==0:DMA Write to 0x%X from 0x%X %x bytes\n", dst, src, SB_ADLEN);
 
 			WriteMemBlock_nommu_dma(dst,src,len);
 
@@ -444,7 +444,7 @@ static void Write_SB_STAG(u32 addr, u32 data)
 
 	if (!check_STAG(data))
 	{
-		INFO_LOG(AICA, "%s Write_SB_STAG: Invalid address %08x", c->tag, data);
+		INFO_LOG(AICA, "%s Write_SB_STAG: Invalid address %08x\n", c->tag, data);
 		asic_RaiseInterrupt(c->illaddr);
 	}
 }
@@ -456,7 +456,7 @@ static void Write_SB_STAR(u32 addr, u32 data)
 
 	if (!check_STAR(data))
 	{
-		INFO_LOG(AICA, "%s Write_SB_STAR: Invalid address %08x", c->tag, data);
+		INFO_LOG(AICA, "%s Write_SB_STAR: Invalid address %08x\n", c->tag, data);
 		asic_RaiseInterrupt(c->illaddr);
 	}
 }

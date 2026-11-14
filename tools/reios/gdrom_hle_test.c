@@ -34,11 +34,8 @@ signed int sns_asc, sns_ascq, sns_key;
 sh4_catch *sh4_catch_top;
 bool sh4_in_delay_slot;
 
-void GenericLog(enum LOG_TYPE_NAME(LOG_LEVELS) level, enum LOG_TYPE_NAME(LOG_TYPE) type,
-		const char *file, int line, const char *fmt, ...)
-{
-	(void)level; (void)type; (void)file; (void)line; (void)fmt;
-}
+/* (no log) */
+retro_log_printf_t log_cb;
 
 void sh4_throw(u32 epc, u32 expEvn, u32 callVect)
 {

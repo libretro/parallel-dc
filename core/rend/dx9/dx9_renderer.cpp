@@ -64,7 +64,7 @@ bool DX9Renderer::MakeBuffers(u32 vertexBytes, u32 indexBytes)
 			|| FAILED(device->CreateIndexBuffer(indexBytes, D3DUSAGE_DYNAMIC | D3DUSAGE_WRITEONLY, D3DFMT_INDEX32, D3DPOOL_DEFAULT,
 				indexBuffer.put(), nullptr)))
 	{
-		WARN_LOG(RENDERER, "DX9: buffer creation failed (%d and %d bytes)", vertexBytes, indexBytes);
+		WARN_LOG(RENDERER, "DX9: buffer creation failed (%d and %d bytes)\n", vertexBytes, indexBytes);
 		vertexBuffer.reset();
 		indexBuffer.reset();
 		return false;
@@ -83,7 +83,7 @@ bool DX9Renderer::Init()
 	device = context->GetDevice();
 	if (device == nullptr)
 	{
-		WARN_LOG(RENDERER, "DX9: no device");
+		WARN_LOG(RENDERER, "DX9: no device\n");
 		return false;
 	}
 	shaders = &context->GetShaders();
@@ -129,7 +129,7 @@ bool DX9Renderer::Init()
 	}
 	if (!success)
 	{
-		WARN_LOG(RENDERER, "DX9 renderer initialization failed");
+		WARN_LOG(RENDERER, "DX9 renderer initialization failed\n");
 		return false;
 	}
 	return true;
@@ -432,7 +432,7 @@ bool DX9Renderer::UploadGeometry()
 	{
 		/* (more than the tile accelerator can make of a frame: it cannot
 		 * happen, but if it does, larger buffers once) */
-		WARN_LOG(RENDERER, "DX9: a frame of %d bytes of vertices and %d of indexes: buffers made larger", vertexEnd, indexBytes);
+		WARN_LOG(RENDERER, "DX9: a frame of %d bytes of vertices and %d of indexes: buffers made larger\n", vertexEnd, indexBytes);
 		if (!MakeBuffers(std::max(vertexEnd, vertexBufferSize) * 2, std::max(indexBytes, indexBufferSize) * 2))
 			return false;
 		vertexFlags = indexFlags = D3DLOCK_DISCARD;
@@ -533,7 +533,7 @@ bool DX9Renderer::EnsureDepth(u32 width, u32 height)
 			TRUE, depthSurface.put(), nullptr);
 	if (FAILED(hr))
 	{
-		WARN_LOG(RENDERER, "DX9: depth buffer creation failed (%x, %d x %d)", (unsigned)hr, width, height);
+		WARN_LOG(RENDERER, "DX9: depth buffer creation failed (%x, %d x %d)\n", (unsigned)hr, width, height);
 		depthSurface.reset();
 		return false;
 	}
@@ -680,7 +680,7 @@ void DX9Renderer::KeepPicture()
 
 bool DX9Renderer::BeginRTT()
 {
-	DEBUG_LOG(RENDERER, "RenderToTexture packmode=%d stride=%d - %d,%d -> %d,%d @ %08x", FB_W_CTRL.fb_packmode, FB_W_LINESTRIDE.stride * 8,
+	DEBUG_LOG(RENDERER, "RenderToTexture packmode=%d stride=%d - %d,%d -> %d,%d @ %08x\n", FB_W_CTRL.fb_packmode, FB_W_LINESTRIDE.stride * 8,
 			FB_X_CLIP.min, FB_Y_CLIP.min, FB_X_CLIP.max, FB_Y_CLIP.max, FB_W_SOF1 & VRAM_MASK);
 	matrices.CalcMatrices(&pvrrc);
 
@@ -752,7 +752,7 @@ bool DX9Renderer::BeginRTT()
 		return false;
 	if (!rttTexture->spareSurface && FAILED(rttTexture->spare->GetSurfaceLevel(0, rttTexture->spareSurface.put())))
 	{
-		WARN_LOG(RENDERER, "DX9: render to texture target creation failed");
+		WARN_LOG(RENDERER, "DX9: render to texture target creation failed\n");
 		return false;
 	}
 
@@ -865,7 +865,7 @@ bool DX9Renderer::Render()
 	{
 		/* A pixel clip that ends before it starts holds no pixel: the
 		 * chip writes nothing. (Its size would be negative here.) */
-		WARN_LOG(RENDERER, "Render to texture with an empty pixel clip: %d-%d, %d-%d",
+		WARN_LOG(RENDERER, "Render to texture with an empty pixel clip: %d-%d, %d-%d\n",
 				pvrrc.fb_X_CLIP.min, pvrrc.fb_X_CLIP.max, pvrrc.fb_Y_CLIP.min, pvrrc.fb_Y_CLIP.max);
 		return false;
 	}
@@ -1214,7 +1214,7 @@ void DX9Renderer::DrawFrame()
 	{
 		const RenderPass& current_pass = pvrrc.render_passes.head()[render_pass];
 
-		DEBUG_LOG(RENDERER, "Render pass %d OP %d PT %d TR %d MV %d autosort %d", render_pass + 1,
+		DEBUG_LOG(RENDERER, "Render pass %d OP %d PT %d TR %d MV %d autosort %d\n", render_pass + 1,
 				current_pass.op_count - previous_pass.op_count,
 				current_pass.pt_count - previous_pass.pt_count,
 				current_pass.tr_count - previous_pass.tr_count,

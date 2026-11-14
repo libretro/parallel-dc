@@ -160,7 +160,7 @@ bool DX12TaDecoder::Init()
 			&& SUCCEEDED(r->pool->Map(0, nullptr, (void **)&r->poolMap));
 	if (!ok)
 	{
-		INFO_LOG(RENDERER, "DX12: TA processing stays on the CPU (no host-cached memory)");
+		INFO_LOG(RENDERER, "DX12: TA processing stays on the CPU (no host-cached memory)\n");
 		delete r;
 		failed = true;
 		return false;
@@ -176,7 +176,7 @@ bool DX12TaDecoder::Init()
 	}
 	if (!ok)
 	{
-		INFO_LOG(RENDERER, "DX12: TA processing stays on the CPU (its buffers could not be made)");
+		INFO_LOG(RENDERER, "DX12: TA processing stays on the CPU (its buffers could not be made)\n");
 		delete r;
 		failed = true;
 		return false;
@@ -237,7 +237,7 @@ bool DX12TaDecoder::Init()
 	ok = ok && SUCCEEDED(device->CreateCommandSignature(&sig, nullptr, __uuidof(ID3D12CommandSignature), (void **)r->drawIndexed.put()));
 	if (!ok)
 	{
-		INFO_LOG(RENDERER, "DX12: TA processing stays on the CPU (its kernels could not be made)");
+		INFO_LOG(RENDERER, "DX12: TA processing stays on the CPU (its kernels could not be made)\n");
 		delete r;
 		failed = true;
 		return false;
@@ -284,7 +284,7 @@ bool DX12TaDecoder::Init()
 	DX12Upload up;
 	if (!context->Upload(frm0Bytes + instBytes, 16, up))
 	{
-		INFO_LOG(RENDERER, "DX12: TA processing stays on the CPU (the upload ring is too small)");
+		INFO_LOG(RENDERER, "DX12: TA processing stays on the CPU (the upload ring is too small)\n");
 		ta_set_gpu_processing(false);
 		tactx_gpu_pool_detach();
 		delete r;
@@ -336,7 +336,7 @@ bool DX12TaDecoder::Init()
 	res = r;
 	decoding = true;
 	ready = true;
-	NOTICE_LOG(RENDERER, "DX12: TA processing on the GPU (%u frames of %u MB in host-cached memory, %u KB of tables a frame%s)",
+	NOTICE_LOG(RENDERER, "DX12: TA processing on the GPU (%u frames of %u MB in host-cached memory, %u KB of tables a frame%s)\n",
 			res->slices, res->slice >> 20, res->tableWords / 256, sortable ? "; translucent triangles sorted from the frame's depths" : "");
 	return true;
 }
@@ -348,7 +348,7 @@ void DX12TaDecoder::Log(const char *when)
 	NOTICE_LOG(RENDERER, "DX12: TA processing%s: %llu frames decoded and drawn on the GPU, %llu parsed on the CPU "
 			"(%llu without a table, %llu frame skipping, %llu sorted on the CPU, %llu the header pass leaves to the parse, "
 			"%llu might run out of room, %llu whose tables the GPU still had); pool: %u frames found it full, %u contexts allocated; "
-			"%llu with shadows the GPU decides, %llu with a sorted pass",
+			"%llu with shadows the GPU decides, %llu with a sorted pass\n",
 			when, (unsigned long long)statFrames, (unsigned long long)statSkipped,
 			(unsigned long long)statWhy[TA_GPU_WHY_TABLE], (unsigned long long)statWhy[TA_GPU_WHY_PARSE],
 			(unsigned long long)statWhy[TA_GPU_WHY_SORT], (unsigned long long)statWhy[TA_GPU_WHY_WALK],

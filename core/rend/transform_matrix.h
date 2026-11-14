@@ -120,7 +120,7 @@ public:
 					startx = VO_STARTX.HStart - 0xae;
 					break;
 				default:
-					INFO_LOG(PVR, "unknown video mode: hcount %d", SPG_LOAD.hcount);
+					INFO_LOG(PVR, "unknown video mode: hcount %d\n", SPG_LOAD.hcount);
 					break;
 			}
 			switch (SPG_LOAD.vcount)
@@ -138,7 +138,7 @@ public:
 					starty = VO_STARTY.VStart_field1 - 0x2e;
 					break;
 				default:
-					INFO_LOG(PVR, "unknown video mode: vcount %d", SPG_LOAD.vcount);
+					INFO_LOG(PVR, "unknown video mode: vcount %d\n", SPG_LOAD.vcount);
 					break;
 			}
 			// some heuristic...

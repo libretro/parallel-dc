@@ -488,7 +488,7 @@ void *vmem_platform_alloc_jit(size_t size)
 			const uintptr_t hi = (uintptr_t)p + size > text + text_size ? (uintptr_t)p + size : text + text_size;
 			if (hi - lo <= reach)
 			{
-				INFO_LOG(DYNAREC, "JIT memory at %p, %zu bytes, within reach of the core's code", p, size);
+				INFO_LOG(DYNAREC, "JIT memory at %p, %zu bytes, within reach of the core's code\n", p, size);
 				return p;
 			}
 			munmap(p, size);
@@ -497,10 +497,10 @@ void *vmem_platform_alloc_jit(size_t size)
 	void *p = mmap(NULL, size, PROT_READ | PROT_WRITE | PROT_EXEC, MAP_PRIVATE | MAP_ANON | MAP_JIT, -1, 0);
 	if (p == MAP_FAILED)
 	{
-		WARN_LOG(DYNAREC, "No JIT memory (MAP_JIT refused, errno %d): the interpreters", errno);
+		WARN_LOG(DYNAREC, "No JIT memory (MAP_JIT refused, errno %d): the interpreters\n", errno);
 		return NULL;
 	}
-	INFO_LOG(DYNAREC, "JIT memory at %p, %zu bytes, out of reach of the core's code", p, size);
+	INFO_LOG(DYNAREC, "JIT memory at %p, %zu bytes, out of reach of the core's code\n", p, size);
 	return p;
 }
 #endif
@@ -824,7 +824,7 @@ bool vmem_platform_prepare_jit_block(void *code_area, unsigned size, void **code
 		return false;
 
 	*code_area_rwx = ptr;
-	INFO_LOG(DYNAREC, "Found code area at %p, not too far away from %p", *code_area_rwx, &vmem_platform_init);
+	INFO_LOG(DYNAREC, "Found code area at %p, not too far away from %p\n", *code_area_rwx, &vmem_platform_init);
 
 	// We should have found some area in the addrspace, after all size is ~tens of megabytes.
 	// Pages are already RWX, all done
@@ -858,7 +858,7 @@ bool vmem_platform_prepare_jit_block(void *code_area, unsigned size, void **code
 
 	*code_area_rw = ptr_rw;
 	*rx_offset = (char*)ptr_rx - (char*)ptr_rw;
-	INFO_LOG(DYNAREC, "Info: Using NO_RWX mode, rx ptr: %p, rw ptr: %p, offset: %lu", ptr_rx, ptr_rw, (unsigned long)*rx_offset);
+	INFO_LOG(DYNAREC, "Info: Using NO_RWX mode, rx ptr: %p, rw ptr: %p, offset: %lu\n", ptr_rx, ptr_rw, (unsigned long)*rx_offset);
 
 	return (ptr_rw != NULL);
 }

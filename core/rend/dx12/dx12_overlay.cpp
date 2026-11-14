@@ -45,7 +45,7 @@ bool DX12Overlay::Init()
 	}
 	if (!ok)
 	{
-		WARN_LOG(RENDERER, "DX12: the overlay's pictures could not be made");
+		WARN_LOG(RENDERER, "DX12: the overlay's pictures could not be made\n");
 		Term();
 	}
 	return ok;

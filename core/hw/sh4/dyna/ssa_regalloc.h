@@ -128,7 +128,7 @@ public:
 			AllocDestReg(op->rd);
 			AllocDestReg(op->rd2);
 		}
-		ssa_printf("%08x  %s gregs %zd fregs %zd", block->vaddr + op->guest_offs, op->dissasm().c_str(), host_gregs.size(), host_fregs.size());
+		ssa_printf("%08x  %s gregs %zd fregs %zd\n", block->vaddr + op->guest_offs, op->dissasm().c_str(), host_gregs.size(), host_fregs.size());
 	}
 
 	void OpEnd(shil_opcode* op)
@@ -323,7 +323,7 @@ private:
 		{
 			if (!fast_forwarding)
 			{
-				ssa_printf("WB %s.%d <- %cx", name_reg(reg_num).c_str(), reg_alloc.version, 'a' + reg_alloc.host_reg);
+				ssa_printf("WB %s.%d <- %cx\n", name_reg(reg_num).c_str(), reg_alloc.version, 'a' + reg_alloc.host_reg);
 				if (IsFloat(reg_num))
 					Writeback_FPU(reg_num, (nregf_t)reg_alloc.host_reg);
 				else
@@ -398,7 +398,7 @@ private:
 				Alloc(sh4reg, { host_reg, (u16)param.version[i], false, false });
 				if (!fast_forwarding)
 				{
-					ssa_printf("PL %s.%d -> %cx", name_reg(sh4reg).c_str(), param.version[i], 'a' + host_reg);
+					ssa_printf("PL %s.%d -> %cx\n", name_reg(sh4reg).c_str(), param.version[i], 'a' + host_reg);
 					if (IsFloat(sh4reg))
 						Preload_FPU(sh4reg, (nregf_t)host_reg);
 					else
@@ -468,7 +468,7 @@ private:
 					host_fregs.pop_back();
 				}
 				Alloc(sh4reg, { host_reg, (u16)param.version[i], NeedsWriteBack(sh4reg, param.version[i]), true });
-				ssa_printf("   %s.%d -> %cx %s", name_reg(sh4reg).c_str(), param.version[i], 'a' + host_reg, alloced[sh4reg].write_back ? "(wb)" : "");
+				ssa_printf("   %s.%d -> %cx %s\n", name_reg(sh4reg).c_str(), param.version[i], 'a' + host_reg, alloced[sh4reg].write_back ? "(wb)" : "");
 			}
 			else
 			{
@@ -535,7 +535,7 @@ private:
 		}
 		if (latest_use != -1)
 		{
-			ssa_printf("RegAlloc: non optimal alloc? reg %s used in op %d", name_reg(spilled_reg).c_str(), latest_use);
+			ssa_printf("RegAlloc: non optimal alloc? reg %s used in op %d\n", name_reg(spilled_reg).c_str(), latest_use);
 			spills++;
 			// need to write-back if dirty so reload works
 			if (alloced[spilled_reg].dirty)

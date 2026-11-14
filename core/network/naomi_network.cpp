@@ -27,7 +27,7 @@ sock_t NaomiNetwork::createAndBind(int protocol)
 	sock_t sock = socket(AF_INET, protocol == IPPROTO_TCP ? SOCK_STREAM : SOCK_DGRAM, protocol);
 	if (sock == INVALID_SOCKET)
 	{
-		ERROR_LOG(NETWORK, "Cannot create server socket");
+		ERROR_LOG(NETWORK, "Cannot create server socket\n");
 		return INVALID_SOCKET;
 	}
 	int option = 1;
@@ -40,7 +40,7 @@ sock_t NaomiNetwork::createAndBind(int protocol)
 
 	if (::bind(sock, (struct sockaddr *)&serveraddr, sizeof(serveraddr)) < 0)
 	{
-		ERROR_LOG(NETWORK, "NaomiServer: bind() failed. errno=%d", get_last_error());
+		ERROR_LOG(NETWORK, "NaomiServer: bind() failed. errno=%d\n", get_last_error());
 		closesocket(sock);
 		sock = INVALID_SOCKET;
 	}
@@ -152,7 +152,7 @@ bool NaomiNetwork::init()
 	WSADATA wsaData;
 	if (WSAStartup(MAKEWORD(2, 0), &wsaData) != 0)
 	{
-		ERROR_LOG(NETWORK, "WSAStartup failed. errno=%d", get_last_error());
+		ERROR_LOG(NETWORK, "WSAStartup failed. errno=%d\n", get_last_error());
 		return false;
 	}
 #endif
@@ -179,7 +179,7 @@ bool NaomiNetwork::createServerSocket()
 
 	if (listen(server_sock, 5) < 0)
 	{
-		ERROR_LOG(NETWORK, "NaomiServer: listen() failed. errno=%d", get_last_error());
+		ERROR_LOG(NETWORK, "NaomiServer: listen() failed. errno=%d\n", get_last_error());
 		closesocket(server_sock);
 		server_sock = INVALID_SOCKET;
 		return false;
@@ -208,11 +208,11 @@ void NaomiNetwork::processBeacon()
 		if ((n = recvfrom(beacon_sock, buf, sizeof(buf), 0, (struct sockaddr *)&addr, &addrlen)) == -1)
 		{
 			if (get_last_error() != L_EAGAIN && get_last_error() != L_EWOULDBLOCK)
-				WARN_LOG(NETWORK, "NaomiServer: Error receiving datagram. errno=%d", get_last_error());
+				WARN_LOG(NETWORK, "NaomiServer: Error receiving datagram. errno=%d\n", get_last_error());
 		}
 		else
 		{
-			DEBUG_LOG(NETWORK, "NaomiServer: beacon received %ld bytes", n);
+			DEBUG_LOG(NETWORK, "NaomiServer: beacon received %ld bytes\n", n);
 			if (n == sizeof(buf) && !strncmp(buf, "flycast", n))
 				sendto(beacon_sock, buf, n, MSG_NOSIGNAL, (const struct sockaddr *)&addr, addrlen);
 		}
@@ -225,7 +225,7 @@ bool NaomiNetwork::findServer()
 	sock_t sockfd = socket(AF_INET, SOCK_DGRAM, 0);
     if (sockfd == INVALID_SOCKET)
     {
-        ERROR_LOG(NETWORK, "Datagram socket creation error. errno=%d", get_last_error());
+        ERROR_LOG(NETWORK, "Datagram socket creation error. errno=%d\n", get_last_error());
         return false;
     }
 
@@ -233,7 +233,7 @@ bool NaomiNetwork::findServer()
     int broadcast = 1;
     if (setsockopt(sockfd, SOL_SOCKET, SO_BROADCAST, (const char *)&broadcast, sizeof(broadcast)) == -1)
     {
-        ERROR_LOG(NETWORK, "setsockopt(SO_BROADCAST) failed. errno=%d", get_last_error());
+        ERROR_LOG(NETWORK, "setsockopt(SO_BROADCAST) failed. errno=%d\n", get_last_error());
         closesocket(sockfd);
         return false;
     }
@@ -252,7 +252,7 @@ bool NaomiNetwork::findServer()
     {
         if (sendto(sockfd, "flycast", 6, MSG_NOSIGNAL, (struct sockaddr *)&addr, sizeof addr) == -1)
         {
-            WARN_LOG(NETWORK, "Send datagram failed. errno=%d", get_last_error());
+            WARN_LOG(NETWORK, "Send datagram failed. errno=%d\n", get_last_error());
             // Try again in a tenth of a second
             waitStop(100 * 1000);
             continue;
@@ -261,7 +261,7 @@ bool NaomiNetwork::findServer()
         // The answer, for up to a second
         if (waitReadable(&sockfd, 1, 1000 * 1000) <= 0)
         {
-            INFO_LOG(NETWORK, "Recv datagram timeout. i=%d", i);
+            INFO_LOG(NETWORK, "Recv datagram timeout. i=%d\n", i);
             continue;
         }
 
@@ -270,7 +270,7 @@ bool NaomiNetwork::findServer()
         socklen_t addrlen = sizeof(server_addr);
         if (recvfrom(sockfd, buf, sizeof(buf), 0, &server_addr, &addrlen) == -1)
         {
-            WARN_LOG(NETWORK, "Recv datagram failed. errno=%d", get_last_error());
+            WARN_LOG(NETWORK, "Recv datagram failed. errno=%d\n", get_last_error());
             continue;
         }
         server_ip = ((struct sockaddr_in *)&server_addr)->sin_addr;
@@ -282,13 +282,13 @@ bool NaomiNetwork::findServer()
     closesocket(sockfd);
     if (server_ip.s_addr == INADDR_NONE)
     {
-        WARN_LOG(NETWORK, "Network Error: Can't find ad-hoc server on local network");
+        WARN_LOG(NETWORK, "Network Error: Can't find ad-hoc server on local network\n");
 #ifndef __LIBRETRO__
         gui_display_notification("No server found", 8000);
 #endif
         return false;
     }
-    INFO_LOG(NETWORK, "Found ad-hoc server at %s", server_name.c_str());
+    INFO_LOG(NETWORK, "Found ad-hoc server at %s\n", server_name.c_str());
 
     return true;
 }
@@ -308,7 +308,7 @@ bool NaomiNetwork::startNetwork()
 	const retro_time_t timeout = 10 * 1000 * 1000;
 	if (settings.network.ActAsServer)
 	{
-		NOTICE_LOG(NETWORK, "Waiting for slave connections");
+		NOTICE_LOG(NETWORK, "Waiting for slave connections\n");
 		retro_time_t start_time = cpu_features_get_time_usec();
 		while (cpu_features_get_time_usec() - start_time < timeout)
 		{
@@ -338,7 +338,7 @@ bool NaomiNetwork::startNetwork()
 			}
 			else
 			{
-				NOTICE_LOG(NETWORK, "Slave connection accepted");
+				NOTICE_LOG(NETWORK, "Slave connection accepted\n");
 				set_no_sigpipe(clientSock);
 				slaves.push_back(clientSock);
 				if (slaves.size() == 3)
@@ -366,7 +366,7 @@ bool NaomiNetwork::startNetwork()
 				set_tcp_nodelay(socket);
 			}
 		}
-		NOTICE_LOG(NETWORK, "Master starting: %zd slaves", slaves.size());
+		NOTICE_LOG(NETWORK, "Master starting: %zd slaves\n", slaves.size());
 #ifndef __LIBRETRO__
 		if (slot_count > 1)
 			gui_display_notification("Starting game", 2000);
@@ -382,7 +382,7 @@ bool NaomiNetwork::startNetwork()
 		{
 			struct addrinfo *resultAddr;
 			if (getaddrinfo(settings.network.server, 0, nullptr, &resultAddr))
-				WARN_LOG(NETWORK, "Server %s is unknown", settings.network.server);
+				WARN_LOG(NETWORK, "Server %s is unknown\n", settings.network.server);
 			else
 			{
 				for (struct addrinfo *ptr = resultAddr; ptr != nullptr; ptr = ptr->ai_next)
@@ -395,7 +395,7 @@ bool NaomiNetwork::startNetwork()
 			}
 		}
 
-		NOTICE_LOG(NETWORK, "Connecting to server");
+		NOTICE_LOG(NETWORK, "Connecting to server\n");
 #ifndef __LIBRETRO__
 		gui_display_notification("Connecting to server", 10000);
 #endif
@@ -415,7 +415,7 @@ bool NaomiNetwork::startNetwork()
 			src_addr.sin_port = htons(SERVER_PORT);
 			if (::connect(client_sock, (struct sockaddr *)&src_addr, sizeof(src_addr)) < 0)
 			{
-				ERROR_LOG(NETWORK, "Socket connect failed");
+				ERROR_LOG(NETWORK, "Socket connect failed\n");
 				closesocket(client_sock);
 				client_sock = INVALID_SOCKET;
 				// Try again in a tenth of a second
@@ -443,7 +443,7 @@ bool NaomiNetwork::startNetwork()
 				}
 				if (got < 2)
 				{
-					ERROR_LOG(NETWORK, "Connection failed: errno=%d", get_last_error());
+					ERROR_LOG(NETWORK, "Connection failed: errno=%d\n", get_last_error());
 					closesocket(client_sock);
 					client_sock = -1;
 #ifndef __LIBRETRO__
@@ -501,7 +501,7 @@ bool NaomiNetwork::receive(u8 *data, u32 size)
 	{
 		if (get_last_error() != L_EAGAIN && get_last_error() != L_EWOULDBLOCK)
 		{
-			WARN_LOG(NETWORK, "receiveNetwork: read failed. errno=%d", get_last_error());
+			WARN_LOG(NETWORK, "receiveNetwork: read failed. errno=%d\n", get_last_error());
 			if (isMaster())
 			{
 				slaves.back() = -1;
@@ -528,7 +528,7 @@ bool NaomiNetwork::receive(u8 *data, u32 size)
 					waitReadable(&sockfd, 1, -1);
 					continue;
 				}
-				WARN_LOG(NETWORK, "receiveNetwork: read failed. errno=%d", get_last_error());
+				WARN_LOG(NETWORK, "receiveNetwork: read failed. errno=%d\n", get_last_error());
 				if (isMaster())
 				{
 					slaves.back() = -1;
@@ -548,7 +548,7 @@ bool NaomiNetwork::receive(u8 *data, u32 size)
 
 	if (!receive_rest(data, size))
 		return false;
-	DEBUG_LOG(NETWORK, "[%d] Received %d bytes", slot_id, size);
+	DEBUG_LOG(NETWORK, "[%d] Received %d bytes\n", slot_id, size);
 	got_token = true;
 	return true;
 }
@@ -571,7 +571,7 @@ void NaomiNetwork::send(u8 *data, u32 size)
 	{
 		if (errno != L_EAGAIN && errno != L_EWOULDBLOCK)
 		{
-			WARN_LOG(NETWORK, "send failed. errno=%d", get_last_error());
+			WARN_LOG(NETWORK, "send failed. errno=%d\n", get_last_error());
 			if (isMaster())
 			{
 				slaves.front() = -1;
@@ -582,7 +582,7 @@ void NaomiNetwork::send(u8 *data, u32 size)
 	}
 	if (::send(sockfd, (const char *)data, size, MSG_NOSIGNAL) < (ssize_t)size)
 	{
-		WARN_LOG(NETWORK, "send failed. errno=%d", get_last_error());
+		WARN_LOG(NETWORK, "send failed. errno=%d\n", get_last_error());
 		if (isMaster())
 		{
 			slaves.front() = -1;
@@ -591,7 +591,7 @@ void NaomiNetwork::send(u8 *data, u32 size)
 	}
 	else
 	{
-		DEBUG_LOG(NETWORK, "[%d] Sent %d bytes", slot_id, size);
+		DEBUG_LOG(NETWORK, "[%d] Sent %d bytes\n", slot_id, size);
 		got_token = false;
 		packet_number = pktnum;
 	}

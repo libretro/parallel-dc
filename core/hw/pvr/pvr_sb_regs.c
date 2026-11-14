@@ -35,13 +35,13 @@ void do_pvr_dma(void)
 
 	if((dmaor &DMAOR_MASK) != 0x8201)
 	{
-		INFO_LOG(PVR, "DMAC: DMAOR has invalid settings (%X) !", dmaor);
+		INFO_LOG(PVR, "DMAC: DMAOR has invalid settings (%X) !\n", dmaor);
 		return;
 	}
 
 	if (len & 0x1F)
 	{
-		INFO_LOG(PVR, "DMAC: SB_C2DLEN has invalid size (%X) !", len);
+		INFO_LOG(PVR, "DMAC: SB_C2DLEN has invalid size (%X) !\n", len);
 		return;
 	}
 
@@ -127,7 +127,7 @@ void pvr_do_sort_dma(void)
 
 		if (count >= budget)
 		{
-			WARN_LOG(PVR, "Sort-DMA: list without end at %08x (%u blocks), transfer ended", ea, count);
+			WARN_LOG(PVR, "Sort-DMA: list without end at %08x (%u blocks), transfer ended\n", ea, count);
 			break;
 		}
 		budget         -= count + 1;

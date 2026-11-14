@@ -302,7 +302,7 @@ static u32* Sh4_int_GetRegisterPtr(Sh4RegType reg)
 			return &Sh4cntx.temp_reg;
 
 		default:
-			ERROR_LOG(SH4, "Unknown register ID %d", reg);
+			ERROR_LOG(SH4, "Unknown register ID %d\n", reg);
 			die("Invalid reg");
 			return 0;
 			break;
@@ -328,7 +328,7 @@ void sh4_throw(u32 epc, u32 expEvn, u32 callVect)
 	ex.callVect = callVect;
 	if (c == NULL)
 	{
-		ERROR_LOG(SH4, "SH4 exception %x at %08x with nothing to catch it", expEvn, epc);
+		ERROR_LOG(SH4, "SH4 exception %x at %08x with nothing to catch it\n", expEvn, epc);
 		abort();
 	}
 	if (sh4_in_delay_slot && !c->in_delay_slot)

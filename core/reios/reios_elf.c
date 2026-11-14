@@ -76,7 +76,7 @@ bool reios_loadElf(const char *path, u32* entry)
       /* The bytes to load have to be in the file... */
       if (offset > size || len > size - offset)
       {
-         WARN_LOG(REIOS, "Section %d lies outside the file", i);
+         WARN_LOG(REIOS, "Section %d lies outside the file\n", i);
          ok = false;
          break;
       }
@@ -89,11 +89,11 @@ bool reios_loadElf(const char *path, u32* entry)
       ptr = dest <= 0xFFFFFFFFu && IsOnRam((u32)dest) ? GetMemPtr((u32)dest, (u32)len) : NULL;
       if (ptr == NULL || memlen > RAM_SIZE - ((u32)dest & RAM_MASK))
       {
-         WARN_LOG(REIOS, "Invalid load address for section %d: %08lx", i, (unsigned long)dest);
+         WARN_LOG(REIOS, "Invalid load address for section %d: %08lx\n", i, (unsigned long)dest);
          ok = false;
          break;
       }
-      DEBUG_LOG(REIOS, "Loading section %d to %08lx - %08lx", i, (unsigned long)dest, (unsigned long)(dest + len - 1));
+      DEBUG_LOG(REIOS, "Loading section %d to %08lx - %08lx\n", i, (unsigned long)dest, (unsigned long)(dest + len - 1));
 
       memcpy((void*)ptr, (void*)(uintptr_t)src, len);
       memset((void*)(ptr + len), 0, memlen - len);

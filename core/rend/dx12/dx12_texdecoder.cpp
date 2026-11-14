@@ -66,7 +66,7 @@ void DX12TexDecoder::Init(DX12Context *context)
 	}
 	if (!ok)
 	{
-		WARN_LOG(RENDERER, "DX12: the texture kernels could not be made: textures are converted on the CPU");
+		WARN_LOG(RENDERER, "DX12: the texture kernels could not be made: textures are converted on the CPU\n");
 		Term();
 		return;
 	}
@@ -74,7 +74,7 @@ void DX12TexDecoder::Init(DX12Context *context)
 	uavHead = uavTail = 0;
 	uavMarkFirst = uavMarkCount = 0;
 	ready = true;
-	INFO_LOG(RENDERER, "DX12: textures are made on the GPU (32-bit %d, 8-bit %d, 16-bit drawn %d%d%d)",
+	INFO_LOG(RENDERER, "DX12: textures are made on the GPU (32-bit %d, 8-bit %d, 16-bit drawn %d%d%d)\n",
 			takes[(int)TextureType::_8888], takes[(int)TextureType::_8],
 			takes[(int)TextureType::_565], takes[(int)TextureType::_5551], takes[(int)TextureType::_4444]);
 }

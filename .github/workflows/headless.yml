@@ -72,6 +72,7 @@ on:
       - 'tools/paths/**'
       - 'tools/reios/**'
       - 'tools/cheats/**'
+      - 'tools/log/**'
       - 'tools/sh4/opcode_table_*'
       - 'Makefile*'
       - '.github/workflows/headless.yml'
@@ -104,6 +105,7 @@ on:
       - 'tools/paths/**'
       - 'tools/reios/**'
       - 'tools/cheats/**'
+      - 'tools/log/**'
       - 'tools/sh4/opcode_table_*'
       - 'Makefile*'
       - '.github/workflows/headless.yml'
@@ -130,6 +132,8 @@ jobs:
         run: sh tools/c89/c89_check.sh
       - name: No variable of the C files declared with C++ linkage, which MSVC does not link
         run: python3 tools/c89/linkage_check.py
+      - name: Every line the core logs ends with its own newline (log_cb adds none)
+        run: python3 tools/log/log_check.py
       - name: The disc with no display, its states and run-ahead among it
         run: sh tools/threads/headless.sh parallel_dc_libretro.so
       - name: The same with the interpreter alone, as a build with no recompiler has it (iOS); the SH4's exceptions caught by sh4_catch

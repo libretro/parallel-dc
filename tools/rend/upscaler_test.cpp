@@ -15,10 +15,8 @@
 static int failures;
 
 // (the lists log when they overrun, which these do not)
-void GenericLog(LogTypes::LOG_LEVELS level, LogTypes::LOG_TYPE type, const char *file, int line, const char *fmt, ...)
-{
-   (void)level; (void)type; (void)file; (void)line; (void)fmt;
-}
+/* (no log) */
+retro_log_printf_t log_cb;
 #define CHECK(cond) \
    do { \
       if (!(cond)) \

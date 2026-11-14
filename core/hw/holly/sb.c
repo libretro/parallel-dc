@@ -49,7 +49,7 @@ u32 sb_ReadMem(u32 addr,u32 sz)
 	{
       if ((sb_regs[offset].flags & REG_WO) || sb_regs[offset].readFunctionAddr == NULL)
 		{
-			INFO_LOG(HOLLY, "sb_ReadMem write-only reg %08x %d", addr, sz);
+			INFO_LOG(HOLLY, "sb_ReadMem write-only reg %08x %d\n", addr, sz);
 			return 0;
 		}
 		return sb_regs[offset].readFunctionAddr(addr);
@@ -78,21 +78,21 @@ void sb_WriteMem(u32 addr,u32 data,u32 sz)
 
 static u32 sbio_read_noacc(u32 addr)
 {
-	INFO_LOG(HOLLY, "ERROR: forbidden read on register; offset=%x", addr - SB_BASE);
+	INFO_LOG(HOLLY, "ERROR: forbidden read on register; offset=%x\n", addr - SB_BASE);
 	return 0;
 }
 static void sbio_write_noacc(u32 addr, u32 data)
 {
-	INFO_LOG(HOLLY, "ERROR: forbidden write on register; offset=%x, data=%x", addr - SB_BASE, data);
+	INFO_LOG(HOLLY, "ERROR: forbidden write on register; offset=%x, data=%x\n", addr - SB_BASE, data);
 }
 static void sbio_write_const(u32 addr, u32 data) {
-	INFO_LOG(HOLLY, "ERROR: forbidden write on const register; offset=%x, data=%x", addr - SB_BASE, data);
+	INFO_LOG(HOLLY, "ERROR: forbidden write on const register; offset=%x, data=%x\n", addr - SB_BASE, data);
 }
 
 static void sb_write_zero(u32 addr, u32 data)
 {
 	if (data != 0)
-		INFO_LOG(HOLLY, "ERROR: non-zero write on register; offset=%x, data=%x", addr - SB_BASE, data);
+		INFO_LOG(HOLLY, "ERROR: non-zero write on register; offset=%x, data=%x\n", addr - SB_BASE, data);
 }
 static void sb_write_gdrom_unlock(u32 addr, u32 data)
 {
@@ -173,7 +173,7 @@ static void sb_write_SB_SFRES(u32 addr, u32 data)
 {
 	if ((u16)data==0x7611)
 	{
-		INFO_LOG(SH4, "SB/HOLLY: System reset requested");
+		INFO_LOG(SH4, "SB/HOLLY: System reset requested\n");
 		dc_request_reset();
 	}
 }

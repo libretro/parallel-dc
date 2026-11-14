@@ -61,7 +61,7 @@ public:
 		if (!context->HasPerPixel())
 		{
 			/* (the per-triangle renderer is set up instead) */
-			WARN_LOG(RENDERER, "DX11: the per-pixel renderer needs feature level 11.0 and a context that can be read back from");
+			WARN_LOG(RENDERER, "DX11: the per-pixel renderer needs feature level 11.0 and a context that can be read back from\n");
 			return false;
 		}
 		if (!DX11Renderer::Init())
@@ -86,7 +86,7 @@ public:
 		lastConstantsValid = false;
 		if (!success)
 		{
-			WARN_LOG(RENDERER, "DX11 per-pixel renderer initialization failed");
+			WARN_LOG(RENDERER, "DX11 per-pixel renderer initialization failed\n");
 			Term();
 			return false;
 		}
@@ -271,7 +271,7 @@ u32 DX11OITRenderer::ChooseBands(bool rtt)
 		else
 			roomy = 0;
 		if (bands != was)
-			NOTICE_LOG(RENDERER, "DX11 per-pixel renderer: %u translucent pixels in a band of %u%s, room for %u: %u band%s",
+			NOTICE_LOG(RENDERER, "DX11 per-pixel renderer: %u translucent pixels in a band of %u%s, room for %u: %u band%s\n",
 					fragments, drawnIn, countRtt[slot] ? " (a render to a texture)" : "", (u32)room, bands, bands > 1 ? "s" : "");
 		break;
 	}
@@ -309,7 +309,7 @@ bool DX11OITRenderer::MakePictures(u32 width, u32 height)
 				|| FAILED(device->CreateRenderTargetView(picture.texture, nullptr, picture.target.put()))
 				|| FAILED(device->CreateShaderResourceView(picture.texture, nullptr, picture.view.put())))
 		{
-			WARN_LOG(RENDERER, "DX11: per-pixel renderer picture creation failed (%d x %d)", width, height);
+			WARN_LOG(RENDERER, "DX11: per-pixel renderer picture creation failed (%d x %d)\n", width, height);
 			picture = Picture();
 			return false;
 		}
@@ -356,7 +356,7 @@ bool DX11OITRenderer::UploadTrPolyParams()
 		if (FAILED(device->CreateBuffer(&desc, nullptr, trPolyParams.put()))
 				|| FAILED(device->CreateShaderResourceView(trPolyParams, &view, trPolyParamsView.put())))
 		{
-			WARN_LOG(RENDERER, "DX11: translucent polygon parameters buffer creation failed");
+			WARN_LOG(RENDERER, "DX11: translucent polygon parameters buffer creation failed\n");
 			trPolyParamsView.reset();
 			trPolyParams.reset();
 			return false;
@@ -398,7 +398,7 @@ bool DX11OITRenderer::UploadTrPolyParams()
 		initial.pSysMem = numbers.data();
 		if (FAILED(device->CreateBuffer(&desc, &initial, polyNumbers.put())))
 		{
-			WARN_LOG(RENDERER, "DX11: polygon number buffer creation failed");
+			WARN_LOG(RENDERER, "DX11: polygon number buffer creation failed\n");
 			polyNumbers.reset();
 			return false;
 		}
@@ -722,7 +722,7 @@ void DX11OITRenderer::DrawFrame()
 	{
 		const RenderPass& current_pass = pvrrc.render_passes.head()[render_pass];
 
-		DEBUG_LOG(RENDERER, "Render pass %d OP %d PT %d TR %d MV %d TrMV %d autosort %d", render_pass + 1,
+		DEBUG_LOG(RENDERER, "Render pass %d OP %d PT %d TR %d MV %d TrMV %d autosort %d\n", render_pass + 1,
 				current_pass.op_count - previous_pass.op_count,
 				current_pass.pt_count - previous_pass.pt_count,
 				current_pass.tr_count - previous_pass.tr_count,

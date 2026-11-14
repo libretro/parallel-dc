@@ -53,7 +53,8 @@ static u8 ram[2 * 1024 * 1024] __attribute__((aligned(4096)));
  * run whatever it stored, and that can be anything. */
 static jmp_buf stopped;
 void os_DebugBreak() { longjmp(stopped, 1); }
-void GenericLog(LogTypes::LOG_LEVELS, LogTypes::LOG_TYPE, const char*, int, const char*, ...) {}
+/* (no log) */
+retro_log_printf_t log_cb;
 u32 libAICA_ReadReg(u32, u32) { return 0; }
 void libAICA_WriteReg(u32, u32, u32) {}
 void libAICA_TimeStep() {}

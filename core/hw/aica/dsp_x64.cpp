@@ -50,7 +50,7 @@ public:
 	void Compile(struct dsp_t *DSP)
 	{
 		this->DSP = DSP;
-		DEBUG_LOG(AICA_ARM, "DSPAssembler::DSPCompile recompiling for x86/64 at %p", this->getCode());
+		DEBUG_LOG(AICA_ARM, "DSPAssembler::DSPCompile recompiling for x86/64 at %p\n", this->getCode());
 
 		if (DSP->Stopped)
 		{

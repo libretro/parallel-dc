@@ -75,7 +75,7 @@ void DX9TexturePool::Init(DX9Context *context, const DX9TexDecoder *decoder)
 				break;
 			book.Give(t);
 		}
-	NOTICE_LOG(RENDERER, "DX9: texture pool of %u textures, %u MB (planned %u MB)", book.made, (u32)(book.bytesMade >> 20), (u32)(bytes >> 20));
+	NOTICE_LOG(RENDERER, "DX9: texture pool of %u textures, %u MB (planned %u MB)\n", book.made, (u32)(book.bytesMade >> 20), (u32)(bytes >> 20));
 }
 
 void DX9TexturePool::Term()
@@ -111,7 +111,7 @@ DX9PooledTexture *DX9TexturePool::Make(int cls, bool late)
 		ok = SUCCEEDED(t->texture->GetSurfaceLevel(level, t->surfaces[level].put()));
 	if (!ok)
 	{
-		WARN_LOG(RENDERER, "DX9: texture pool: a %ux%u %s texture could not be made", width, height, poolNames[f]);
+		WARN_LOG(RENDERER, "DX9: texture pool: a %ux%u %s texture could not be made\n", width, height, poolNames[f]);
 		delete t;
 		return nullptr;
 	}
@@ -363,7 +363,7 @@ void DX9Texture::UploadToGPU(int width, int height, u8 *data, bool mipmapped, bo
 		bpp = 1;
 		break;
 	default:
-		WARN_LOG(RENDERER, "Unsupported texture type %d", (int)tex_type);
+		WARN_LOG(RENDERER, "Unsupported texture type %d\n", (int)tex_type);
 		return;
 	}
 
@@ -376,7 +376,7 @@ void DX9Texture::UploadToGPU(int width, int height, u8 *data, bool mipmapped, bo
 	const DWORD usage = context->WriteUsage() | (generate ? D3DUSAGE_AUTOGENMIPMAP : 0);
 	if (!Prepare(width, height, generate ? 0 : levels, usage, format))
 	{
-		ERROR_LOG(RENDERER, "Texture creation failed: type %d, %d x %d, %d levels", (int)tex_type, width, height, levels);
+		ERROR_LOG(RENDERER, "Texture creation failed: type %d, %d x %d, %d levels\n", (int)tex_type, width, height, levels);
 		return;
 	}
 	swapRB = tex_type == TextureType::_8888;
@@ -390,7 +390,7 @@ void DX9Texture::UploadToGPU(int width, int height, u8 *data, bool mipmapped, bo
 		D3DLOCKED_RECT rect;
 		if (FAILED(texture->LockRect(level, &rect, nullptr, context->WriteLockFlags())))
 		{
-			WARN_LOG(RENDERER, "Texture lock failed: %d x %d, level %d", w, h, level);
+			WARN_LOG(RENDERER, "Texture lock failed: %d x %d, level %d\n", w, h, level);
 			return;
 		}
 		const u32 row = w * bpp;
@@ -451,7 +451,7 @@ static IDirect3DSurface9 *stagingFor(IDirect3DDevice9 *device, u32 width, u32 he
 	s.surface.reset();
 	if (FAILED(device->CreateOffscreenPlainSurface(width, height, D3DFMT_A8R8G8B8, D3DPOOL_SYSTEMMEM, s.surface.put(), nullptr)))
 	{
-		WARN_LOG(RENDERER, "Read back surface creation failed (%d x %d)", width, height);
+		WARN_LOG(RENDERER, "Read back surface creation failed (%d x %d)\n", width, height);
 		s.surface.reset();
 		return nullptr;
 	}
@@ -479,7 +479,7 @@ static bool readBack(IDirect3DSurface9 *surface, u32 x, u32 y, u32 width, u32 he
 	const RECT area = { (LONG)x, (LONG)y, (LONG)(x + width), (LONG)(y + height) };
 	if (FAILED(device->GetRenderTargetData(surface, sysmem)) || FAILED(sysmem->LockRect(&rect, &area, D3DLOCK_READONLY)))
 	{
-		WARN_LOG(RENDERER, "A picture could not be read back from the card");
+		WARN_LOG(RENDERER, "A picture could not be read back from the card\n");
 		memset(rgba, 0, (size_t)width * height * 4);
 		return false;
 	}
@@ -550,7 +550,7 @@ static void dx9_rtt_read(const RttWatch *watch, u8 *rgba)
 		small = context->MakeTexture(std::max(w, 640u), std::max(h, 480u), 1, D3DUSAGE_RENDERTARGET, D3DFMT_A8R8G8B8);
 		if (!small || FAILED(small->GetSurfaceLevel(0, smallSurface.put())))
 		{
-			WARN_LOG(RENDERER, "Render to texture read back: target creation failed");
+			WARN_LOG(RENDERER, "Render to texture read back: target creation failed\n");
 			smallSurface.reset();
 			small.reset();
 			memset(rgba, 0, (size_t)w * h * 4);

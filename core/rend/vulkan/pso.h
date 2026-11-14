@@ -117,7 +117,7 @@ static inline VkPipeline PsoCreate(vk::Device device, vk::PipelineCache cache, c
 			reinterpret_cast<const VkGraphicsPipelineCreateInfo *>(&info), nullptr, &pipeline);
 	if (res != VK_SUCCESS)
 	{
-		WARN_LOG(RENDERER, "Vulkan: a pipeline could not be made (%d)", (int)res);
+		WARN_LOG(RENDERER, "Vulkan: a pipeline could not be made (%d)\n", (int)res);
 		return VK_NULL_HANDLE;
 	}
 	return pipeline;
@@ -131,7 +131,7 @@ static inline VkPipeline PsoCreateCompute(vk::Device device, vk::PipelineCache c
 			reinterpret_cast<const VkComputePipelineCreateInfo *>(&info), nullptr, &pipeline);
 	if (res != VK_SUCCESS)
 	{
-		WARN_LOG(RENDERER, "Vulkan: a pipeline could not be made (%d)", (int)res);
+		WARN_LOG(RENDERER, "Vulkan: a pipeline could not be made (%d)\n", (int)res);
 		return VK_NULL_HANDLE;
 	}
 	return pipeline;

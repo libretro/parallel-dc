@@ -133,7 +133,7 @@ void CCN_CCR_write(u32 addr, u32 value)
 	/* what is 0xAC13DBF8 from ? */
 	if (temp.ICI && curr_pc!=0xAC13DBF8)
 	{
-		DEBUG_LOG(SH4, "Sh4: i-cache invalidation %08X", curr_pc);
+		DEBUG_LOG(SH4, "Sh4: i-cache invalidation %08X\n", curr_pc);
 		/* Shikigami No Shiro II sets ICI frequently */
 		/* No reason to flush the dynarec cache for this */
 		/* sh4_cpu.ResetCache(); */
@@ -142,7 +142,7 @@ void CCN_CCR_write(u32 addr, u32 value)
 		temp.ICI = 0;
 	}
 	if (temp.OCI) {
-		DEBUG_LOG(SH4, "Sh4: o-cache invalidation %08X", curr_pc);
+		DEBUG_LOG(SH4, "Sh4: o-cache invalidation %08X\n", curr_pc);
 		if (!settings.dynarec.Enable)
 			sh4_ocache_invalidate();
 		temp.OCI = 0;

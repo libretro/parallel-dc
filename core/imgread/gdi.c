@@ -34,7 +34,7 @@ static Disc* load_gdi(const char* file)
 
 	if (gdi_len >= GDI_MAX)
 	{
-		WARN_LOG(GDROM, "GDI: file too big");
+		WARN_LOG(GDROM, "GDI: file too big\n");
 		core_fclose(t);
 		return NULL;
 	}
@@ -71,7 +71,7 @@ static Disc* gdi_read(sheet_t *sheet, const char *file)
 	sheet_u32(&gdi, &iso_tc);
 	if (iso_tc == 0)
 	{
-		WARN_LOG(GDROM, "GDI: empty or invalid GDI file");
+		WARN_LOG(GDROM, "GDI: empty or invalid GDI file\n");
 		return NULL;
 	}
 	/* A disc has 99 tracks at most, and so has its table of contents. (A
@@ -79,14 +79,14 @@ static Disc* gdi_read(sheet_t *sheet, const char *file)
 	 * one of them, lines in the file or not.) */
 	if (iso_tc > 99)
 	{
-		WARN_LOG(GDROM, "GDI: invalid track count: %u", iso_tc);
+		WARN_LOG(GDROM, "GDI: invalid track count: %u\n", iso_tc);
 		return NULL;
 	}
-	INFO_LOG(GDROM, "GDI : %d tracks", iso_tc);
+	INFO_LOG(GDROM, "GDI : %d tracks\n", iso_tc);
 
 	if (strlen(file) >= sizeof(path))
 	{
-		WARN_LOG(GDROM, "GDI: path too long");
+		WARN_LOG(GDROM, "GDI: path too long\n");
 		return NULL;
 	}
 	strcpy(path,file);
@@ -124,7 +124,7 @@ static Disc* gdi_read(sheet_t *sheet, const char *file)
 		 * missing.) */
 		if (gdi.fail)
 		{
-			WARN_LOG(GDROM, "GDI: track %u of %u is missing or invalid", i + 1, iso_tc);
+			WARN_LOG(GDROM, "GDI: track %u of %u is missing or invalid\n", i + 1, iso_tc);
 			disc_free(disc);
 			return NULL;
 		}
@@ -164,7 +164,7 @@ static Disc* gdi_read(sheet_t *sheet, const char *file)
 
 		sheet_s32(&gdi, &OFFSET);
 
-		DEBUG_LOG(GDROM, "file[%d] \"%s\": FAD:%d, CTRL:%d, SSIZE:%d, OFFSET:%d", TRACK, track_filename, FADS, CTRL, SSIZE, OFFSET);
+		DEBUG_LOG(GDROM, "file[%d] \"%s\": FAD:%d, CTRL:%d, SSIZE:%d, OFFSET:%d\n", TRACK, track_filename, FADS, CTRL, SSIZE, OFFSET);
 
 		memset(&tr, 0, sizeof(tr));
 		tr.ADDR=0;
@@ -177,7 +177,7 @@ static Disc* gdi_read(sheet_t *sheet, const char *file)
 		 * was read, that many bytes of it, into one sector of room. */
 		if (SSIZE!=0 && SSIZE!=2048 && SSIZE!=2336 && SSIZE!=2352 && SSIZE!=2448)
 		{
-			WARN_LOG(GDROM, "GDI: track %d: unsupported sector size %u", TRACK, SSIZE);
+			WARN_LOG(GDROM, "GDI: track %d: unsupported sector size %u\n", TRACK, SSIZE);
 			disc_free(disc);
 			return NULL;
 		}
@@ -192,7 +192,7 @@ static Disc* gdi_read(sheet_t *sheet, const char *file)
 			 * with no file behind it, found out at the first read) */
 			if (name_cut || name_len >= sizeof(path) - (size_t)len)
 			{
-				WARN_LOG(GDROM, "GDI: track %d: file name too long", TRACK);
+				WARN_LOG(GDROM, "GDI: track %d: file name too long\n", TRACK);
 				disc_free(disc);
 				return NULL;
 			}
@@ -200,7 +200,7 @@ static Disc* gdi_read(sheet_t *sheet, const char *file)
 			track_file = core_fopen(path);
 			if (track_file == NULL)
 			{
-				WARN_LOG(GDROM, "GDI: cannot open track %d: %s", TRACK, path);
+				WARN_LOG(GDROM, "GDI: cannot open track %d: %s\n", TRACK, path);
 				disc_free(disc);
 				return NULL;
 			}
@@ -209,7 +209,7 @@ static Disc* gdi_read(sheet_t *sheet, const char *file)
 			 * up to the next track.) */
 			track_bytes = (s64)core_fsize(track_file) - OFFSET;
 			if (track_bytes % SSIZE != 0)
-				WARN_LOG(GDROM, "GDI: size of track %d is not a multiple of its sector size %u", TRACK, SSIZE);
+				WARN_LOG(GDROM, "GDI: size of track %d is not a multiple of its sector size %u\n", TRACK, SSIZE);
 			if (track_bytes >= (s64)SSIZE)
 				tr.EndFAD = tr.StartFAD + (u32)(track_bytes / SSIZE) - 1;
 			if (!(tr.file = raw_track_new(track_file,(u32)OFFSET,tr.StartFAD,SSIZE)))

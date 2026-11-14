@@ -240,7 +240,7 @@ bool DX12ComputeDrawer::Init(u32 width, u32 height, u32 samples, bool depth)
 	this->samples = samples > 4 ? 8 : samples > 2 ? 4 : samples > 1 ? 2 : 1;
 
 	auto fail = [&](const char *why) {
-		INFO_LOG(RENDERER, "Direct3D 12 compute renderer: not on this device (%s); the per-pixel renderer draws", why);
+		INFO_LOG(RENDERER, "Direct3D 12 compute renderer: not on this device (%s); the per-pixel renderer draws\n", why);
 		failed = true;
 		delete res;
 		res = nullptr;
@@ -331,7 +331,7 @@ bool DX12ComputeDrawer::Init(u32 width, u32 height, u32 samples, bool depth)
 		};
 		if (!makeHdr(SSAA_LOG2(this->samples), r->walkSums) || !makeHdr(4 + SSAA_LOG2(this->samples), r->walkSumsUnsorted))
 		{
-			WARN_LOG(RENDERER, "Direct3D 12 compute renderer: the HDR output's walks could not be made; the picture is encoded as it is");
+			WARN_LOG(RENDERER, "Direct3D 12 compute renderer: the HDR output's walks could not be made; the picture is encoded as it is\n");
 			r->walkSums.reset();
 			r->walkSumsUnsorted.reset();
 		}
@@ -352,7 +352,7 @@ bool DX12ComputeDrawer::Init(u32 width, u32 height, u32 samples, bool depth)
 			ok = makeDepth(2, r->walkDepthSums) && makeDepth(3, r->walkDepthSumsUnsorted);
 		if (!ok)
 		{
-			WARN_LOG(RENDERER, "Direct3D 12 compute renderer: the temporal upscaler's walks could not be made; its frames are shown as they are");
+			WARN_LOG(RENDERER, "Direct3D 12 compute renderer: the temporal upscaler's walks could not be made; its frames are shown as they are\n");
 			r->walkDepth.reset();
 			r->walkDepthUnsorted.reset();
 			r->walkDepthSums.reset();
@@ -449,7 +449,7 @@ bool DX12ComputeDrawer::Init(u32 width, u32 height, u32 samples, bool depth)
 	}
 
 	ready = true;
-	NOTICE_LOG(RENDERER, "Direct3D 12 compute renderer: %u x %u, %u sample%s a pixel, tiles of %u, %u translucent fragments a sample at a time; %u KiB of video memory, %u KiB of host memory",
+	NOTICE_LOG(RENDERER, "Direct3D 12 compute renderer: %u x %u, %u sample%s a pixel, tiles of %u, %u translucent fragments a sample at a time; %u KiB of video memory, %u KiB of host memory\n",
 			width, height, this->samples, this->samples > 1 ? "s" : "", 1u << r->tileLog2, r->keep,
 			(u32)(deviceBytes >> 10), (u32)(((u64)r->pieceWords * 4 * Slots) >> 10));
 	return true;
@@ -461,10 +461,10 @@ void DX12ComputeDrawer::Term()
 	{
 		if (statFrames + statFallback != 0)
 		{
-			NOTICE_LOG(RENDERER, "Direct3D 12 compute renderer: %llu frames drawn (%llu of them the GPU's TA decode's, %llu renders to a texture), %llu left to the per-pixel renderer; %llu runs walked over their chunk, %llu triangles at no depth left out, %llu with a vertex behind the eye clipped, at most %u rounds of translucent fragments, %llu primitives passed over by the tiles' depths",
+			NOTICE_LOG(RENDERER, "Direct3D 12 compute renderer: %llu frames drawn (%llu of them the GPU's TA decode's, %llu renders to a texture), %llu left to the per-pixel renderer; %llu runs walked over their chunk, %llu triangles at no depth left out, %llu with a vertex behind the eye clipped, at most %u rounds of translucent fragments, %llu primitives passed over by the tiles' depths\n",
 					(unsigned long long)statFrames, (unsigned long long)statGpuFrames, (unsigned long long)statRttFrames, (unsigned long long)statFallback, (unsigned long long)res->skipped,
 					(unsigned long long)res->dropped, (unsigned long long)res->clipped, res->peels, (unsigned long long)res->hiz);
-			NOTICE_LOG(RENDERER, "Direct3D 12 compute renderer: fallbacks: %llu renders to a texture it cannot write, %llu starting from a picture it cannot take, %llu with more render passes than it takes, %llu with more textures than its slots, %llu too large, %llu the decode's without its buffers, %llu with its piece of the ring still the GPU's",
+			NOTICE_LOG(RENDERER, "Direct3D 12 compute renderer: fallbacks: %llu renders to a texture it cannot write, %llu starting from a picture it cannot take, %llu with more render passes than it takes, %llu with more textures than its slots, %llu too large, %llu the decode's without its buffers, %llu with its piece of the ring still the GPU's\n",
 					(unsigned long long)statWhy[ComputeFrame::Why_Rtt], (unsigned long long)statWhy[ComputeFrame::Why_Picture],
 					(unsigned long long)statWhy[ComputeFrame::Why_Passes], (unsigned long long)statWhy[ComputeFrame::Why_Textures],
 					(unsigned long long)statWhy[ComputeFrame::Why_Room], (unsigned long long)statWhy[ComputeFrame::Why_Decode],
@@ -601,7 +601,7 @@ bool DX12ComputeDrawer::Prepare(ComputeFrame& frame, u32 last, bool scaled, u32 
 	if (r.pieceFence[slot] > context->Completed())
 	{
 		if (statBusy++ == 0)
-			NOTICE_LOG(RENDERER, "Direct3D 12 compute renderer: the GPU still has the piece of the ring this frame would take (an earlier frame's): the per-pixel renderer draws it (and others like it, not logged)");
+			NOTICE_LOG(RENDERER, "Direct3D 12 compute renderer: the GPU still has the piece of the ring this frame would take (an earlier frame's): the per-pixel renderer draws it (and others like it, not logged)\n");
 		Fallback(ComputeFrame::Why_None);
 		return false;
 	}

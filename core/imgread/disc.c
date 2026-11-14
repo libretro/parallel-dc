@@ -240,7 +240,7 @@ void disc_read_sectors(Disc *d, u32 FAD, u32 count, u8 *dst, u32 fmt)
 			}
 			else if (fmt==2352 && (secfmt==SECFMT_2048_MODE1 || secfmt==SECFMT_2048_MODE2_FORM1 ))
 			{
-				INFO_LOG(GDROM, "GDR:fmt=2352;secfmt=2048");
+				INFO_LOG(GDROM, "GDR:fmt=2352;secfmt=2048\n");
 				memcpy(dst,src,2048);
 				/* (and the rest of what was asked for is blank, not what the buffer held) */
 				memset(dst+2048,0,2352-2048);
@@ -260,14 +260,14 @@ void disc_read_sectors(Disc *d, u32 FAD, u32 count, u8 *dst, u32 fmt)
 				 * error correction of a sector kept as 2048 bytes are
 				 * not there to give: a blank sector, not what the
 				 * buffer held before. */
-				WARN_LOG(GDROM, "Unable to convert sector. Format: %d Sector format: %d", fmt, secfmt);
+				WARN_LOG(GDROM, "Unable to convert sector. Format: %d Sector format: %d\n", fmt, secfmt);
 				memset(dst, 0, fmt);
 			}
 		}
 		else
 		{
 			/* nothing there: a blank sector, not whatever was in the buffer */
-			INFO_LOG(GDROM, "Sector Read miss FAD: %d", FAD);
+			INFO_LOG(GDROM, "Sector Read miss FAD: %d\n", FAD);
 			memset(dst, 0, fmt);
 		}
 		dst+=fmt;

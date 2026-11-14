@@ -277,7 +277,7 @@ public:
 			for (u32 i = 0; i < written[countSlot]; i++)
 				fragments = std::max(fragments, count[i]);
 			if (oit_bands_count(&bandState, countSlot, fragments, capacity))
-				NOTICE_LOG(RENDERER, "Vulkan per-pixel renderer: %u translucent fragments in a band of %u%s, room for %u: %u band%s",
+				NOTICE_LOG(RENDERER, "Vulkan per-pixel renderer: %u translucent fragments in a band of %u%s, room for %u: %u band%s\n",
 						fragments, std::max(bandState.drawn_in[countSlot], 1u), kind ? " (a render to a texture)" : "",
 						capacity, bandState.bands[kind], bandState.bands[kind] > 1 ? "s" : "");
 		}
@@ -353,7 +353,7 @@ private:
 		pixelCounterReset = std::unique_ptr<BufferData>(new BufferData(2 * sizeof(u32), vk::BufferUsageFlagBits::eTransferSrc));
 		const u32 reset[2] = { 0, capacity };
 		pixelCounterReset->upload(sizeof(reset), reset);
-		NOTICE_LOG(RENDERER, "Vulkan per-pixel renderer: fragment buffer of %u MB in %u storage buffer%s (room for %u fragments)",
+		NOTICE_LOG(RENDERER, "Vulkan per-pixel renderer: fragment buffer of %u MB in %u storage buffer%s (room for %u fragments)\n",
 				(u32)(bufferSize >> 20), bindings, bindings > 1 ? "s" : "", capacity);
 	}
 

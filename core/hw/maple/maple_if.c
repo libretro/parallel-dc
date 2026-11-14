@@ -137,11 +137,11 @@ void maple_vblank(void)
 		{
 			if (maple_ddt_pending_reset)
 			{
-				DEBUG_LOG(MAPLE, "DDT vblank ; reset pending");
+				DEBUG_LOG(MAPLE, "DDT vblank ; reset pending\n");
 			}
 			else
 			{
-				DEBUG_LOG(MAPLE, "DDT vblank");
+				DEBUG_LOG(MAPLE, "DDT vblank\n");
 				SB_MDST = 1;
 				maple_DoDma();
 				/* if trigger reset is manual, mark it as pending */
@@ -203,7 +203,7 @@ static bool check_mdapro(u32 addr)
 
 	if (area != 3 || addr < bottom || addr > top)
 	{
-		INFO_LOG(MAPLE, "MAPLE ERROR : Invalid address: %08x. SB_MDAPRO: %x %x", addr, (SB_MDAPRO >> 8) & 0x7f, SB_MDAPRO & 0x7f);
+		INFO_LOG(MAPLE, "MAPLE ERROR : Invalid address: %08x. SB_MDAPRO: %x %x\n", addr, (SB_MDAPRO >> 8) & 0x7f, SB_MDAPRO & 0x7f);
 		return false;
 	}
 	return true;
@@ -240,7 +240,7 @@ static void maple_DoDma(void)
 	verify(SB_MDEN &1)
 	verify(SB_MDST &1)
 
-	DEBUG_LOG(MAPLE, "Maple: DoMapleDma SB_MDSTAR=%x", SB_MDSTAR);
+	DEBUG_LOG(MAPLE, "Maple: DoMapleDma SB_MDSTAR=%x\n", SB_MDSTAR);
 #ifdef STRICT_MODE
 	if (!check_mdapro(addr))
 	{
@@ -254,7 +254,7 @@ static void maple_DoDma(void)
 	 * as its last went on through all of memory.) */
 	if (!IsOnSh4Ram(addr))
 	{
-		INFO_LOG(MAPLE, "MAPLE ERROR : INVALID SB_MDSTAR value 0x%X", addr);
+		INFO_LOG(MAPLE, "MAPLE ERROR : INVALID SB_MDSTAR value 0x%X\n", addr);
 		SB_MDST = 0;
 		return;
 	}
@@ -265,7 +265,7 @@ static void maple_DoDma(void)
 
 		if (addr + 4 > ram_end)
 		{
-			INFO_LOG(MAPLE, "MAPLE ERROR : the table at 0x%X has no end", SB_MDSTAR);
+			INFO_LOG(MAPLE, "MAPLE ERROR : the table at 0x%X has no end\n", SB_MDSTAR);
 			SB_MDST = 0;
 			maple_out_used = 0;
 			return;
@@ -299,7 +299,7 @@ static void maple_DoDma(void)
 			if (!IsOnSh4Ram(header_2))
 			{
 				/* nowhere for the answer to go: the overrun interrupt, when the transfer is over */
-				INFO_LOG(MAPLE, "MAPLE ERROR : DESTINATION NOT ON SH4 RAM 0x%X", header_2);
+				INFO_LOG(MAPLE, "MAPLE ERROR : DESTINATION NOT ON SH4 RAM 0x%X\n", header_2);
 				header_2 = 0;
 			}
 #endif
@@ -309,7 +309,7 @@ static void maple_DoDma(void)
 					: (u32*) GetMemPtr(addr + 8,(plen)*sizeof(u32));
 			if (p_data == NULL)
 			{
-				INFO_LOG(MAPLE, "MAPLE ERROR : INVALID SB_MDSTAR value 0x%X", addr);
+				INFO_LOG(MAPLE, "MAPLE ERROR : INVALID SB_MDSTAR value 0x%X\n", addr);
 				SB_MDST=0;
 				maple_out_used = 0;
 				return;
@@ -381,7 +381,7 @@ static void maple_DoDma(void)
 			{
 				static const u32 nobody = 0xFFFFFFFF;
 				if (port != 5 && command != 1)
-					INFO_LOG(MAPLE, "MAPLE: Unknown device bus %d port %d cmd %d", bus, port, command);
+					INFO_LOG(MAPLE, "MAPLE: Unknown device bus %d port %d cmd %d\n", bus, port, command);
 				maple_out_put(header_2, &nobody, 4);
 			}
 
@@ -421,7 +421,7 @@ static void maple_DoDma(void)
 			break;
 
 		default:
-			INFO_LOG(MAPLE, "MAPLE: Unknown maple_op == %d length %d", maple_op, plen * 4);
+			INFO_LOG(MAPLE, "MAPLE: Unknown maple_op == %d length %d\n", maple_op, plen * 4);
 			addr += 1 * 4;
 		}
 	}
@@ -448,7 +448,7 @@ static int maple_schd(int tag, int c, int j)
 		maple_dma_done();
 	else
 	{
-		INFO_LOG(MAPLE, "WARNING: MAPLE DMA ABORT");
+		INFO_LOG(MAPLE, "WARNING: MAPLE DMA ABORT\n");
 		SB_MDST=0; /* I really wonder what this means, can the DMA be continued ? */
 		maple_out_used = 0;
 	}

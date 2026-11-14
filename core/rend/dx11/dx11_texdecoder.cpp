@@ -24,7 +24,7 @@ void DX11TexDecoder::Init(DX11Context *context)
 	 * one maps a buffer only to discard it, every time */
 	if (!context->HasPerPixel())
 	{
-		INFO_LOG(RENDERER, "DX11: textures are converted on the CPU");
+		INFO_LOG(RENDERER, "DX11: textures are converted on the CPU\n");
 		return;
 	}
 	ID3D11Device *device = context->GetDevice();
@@ -95,7 +95,7 @@ void DX11TexDecoder::Init(DX11Context *context)
 	ok = ok && SUCCEEDED(device->CreateDepthStencilState(&ds, depthStencil.put()));
 	if (!ok)
 	{
-		WARN_LOG(RENDERER, "DX11: the texture kernels could not be made: textures are converted on the CPU");
+		WARN_LOG(RENDERER, "DX11: the texture kernels could not be made: textures are converted on the CPU\n");
 		Term();
 		return;
 	}
@@ -106,7 +106,7 @@ void DX11TexDecoder::Init(DX11Context *context)
 	 * levels are made without the driver waiting for each kernel to be done
 	 * before the next starts (Flush()) */
 	overlap = context->GetVendor() == 0x10de && dx11_nvapi_uav_overlap_available();
-	INFO_LOG(RENDERER, "DX11: textures are made on the GPU (a ring of %u KB%s; 32-bit %d, 8-bit %d, 16-bit drawn %d%d%d; %s)",
+	INFO_LOG(RENDERER, "DX11: textures are made on the GPU (a ring of %u KB%s; 32-bit %d, 8-bit %d, 16-bit drawn %d%d%d; %s)\n",
 			ringSize / 1024, noOverwrite ? "" : ", discarded every frame",
 			takes[(int)TextureType::_8888], takes[(int)TextureType::_8],
 			takes[(int)TextureType::_565], takes[(int)TextureType::_5551], takes[(int)TextureType::_4444],

@@ -67,7 +67,7 @@ public:
 			double sum = 0;
 			for (float t : sorted)
 				sum += t;
-			NOTICE_LOG(RENDERER, "Vulkan %s: GPU time of %u frames: mean %.3f ms, 99th percentile %.3f ms, longest %.3f ms", what,
+			NOTICE_LOG(RENDERER, "Vulkan %s: GPU time of %u frames: mean %.3f ms, 99th percentile %.3f ms, longest %.3f ms\n", what,
 					(u32)sorted.size(), sum / sorted.size(), sorted[(sorted.size() * 99) / 100 < sorted.size() ? (sorted.size() * 99) / 100 : sorted.size() - 1],
 					sorted.back());
 		}

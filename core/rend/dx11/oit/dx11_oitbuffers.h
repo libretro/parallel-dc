@@ -94,12 +94,12 @@ public:
 		}
 		if (FAILED(hr))
 		{
-			WARN_LOG(RENDERER, "DX11: pixel buffer creation failed (%x)", (unsigned)hr);
+			WARN_LOG(RENDERER, "DX11: pixel buffer creation failed (%x)\n", (unsigned)hr);
 			pixels.reset();
 			return false;
 		}
 		if (desc.ByteWidth < size)
-			NOTICE_LOG(RENDERER, "DX11: pixel buffer of %u MB", desc.ByteWidth / 1024 / 1024);
+			NOTICE_LOG(RENDERER, "DX11: pixel buffer of %u MB\n", desc.ByteWidth / 1024 / 1024);
 
 		D3D11_UNORDERED_ACCESS_VIEW_DESC uav{};
 		uav.Format = DXGI_FORMAT_UNKNOWN;
@@ -109,7 +109,7 @@ public:
 		hr = device->CreateUnorderedAccessView(pixels, &uav, pixelsView.put());
 		if (FAILED(hr))
 		{
-			WARN_LOG(RENDERER, "DX11: pixel buffer view creation failed (%x)", (unsigned)hr);
+			WARN_LOG(RENDERER, "DX11: pixel buffer view creation failed (%x)\n", (unsigned)hr);
 			pixelsView.reset();
 			pixels.reset();
 			return false;
@@ -138,7 +138,7 @@ public:
 				|| FAILED(device->CreateUnorderedAccessView(counter, &counterUav, counterView.put()))
 				|| FAILED(device->CreateBuffer(&constDesc, &initial, constants.put())))
 		{
-			WARN_LOG(RENDERER, "DX11: pixel counter creation failed");
+			WARN_LOG(RENDERER, "DX11: pixel counter creation failed\n");
 			Term();
 			return false;
 		}
@@ -152,7 +152,7 @@ public:
 		for (u32 i = 0; i < COUNT_SLOTS; i++)
 			if (FAILED(device->CreateBuffer(&stagingDesc, nullptr, countStaging[i].put())))
 			{
-				WARN_LOG(RENDERER, "DX11: pixel count staging buffer creation failed");
+				WARN_LOG(RENDERER, "DX11: pixel count staging buffer creation failed\n");
 				Term();
 				return false;
 			}
@@ -235,7 +235,7 @@ public:
 		if (FAILED(device->CreateTexture2D(&desc, &initial, pointers.put()))
 				|| FAILED(device->CreateUnorderedAccessView(pointers, nullptr, pointersView.put())))
 		{
-			WARN_LOG(RENDERER, "DX11: per-pixel list heads creation failed (%d x %d)", width, height);
+			WARN_LOG(RENDERER, "DX11: per-pixel list heads creation failed (%d x %d)\n", width, height);
 			pointersView.reset();
 			pointers.reset();
 			return false;

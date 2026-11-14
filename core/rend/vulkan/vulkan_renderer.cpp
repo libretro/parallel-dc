@@ -32,7 +32,7 @@ class VulkanRenderer final : public BaseVulkanRenderer
 public:
 	bool Init() override
 	{
-		DEBUG_LOG(RENDERER, "VulkanRenderer::Init");
+		DEBUG_LOG(RENDERER, "VulkanRenderer::Init\n");
 
 		samples = SsaaSamples();
 		samplerManager.Init();
@@ -90,7 +90,7 @@ protected:
 public:
 	void Term() override
 	{
-		DEBUG_LOG(RENDERER, "VulkanRenderer::Term");
+		DEBUG_LOG(RENDERER, "VulkanRenderer::Term\n");
 		GetContext()->LogVramUsage();
 		// (the frontend lets go of the pictures before they go)
 		GetContext()->ReleasePicture();
@@ -110,7 +110,7 @@ public:
 		{
 			/* A pixel clip that ends before it starts holds no pixel: the
 			 * chip writes nothing. (Its size would be negative here.) */
-			WARN_LOG(RENDERER, "Render to texture with an empty pixel clip: %d-%d, %d-%d",
+			WARN_LOG(RENDERER, "Render to texture with an empty pixel clip: %d-%d, %d-%d\n",
 					pvrrc.fb_X_CLIP.min, pvrrc.fb_X_CLIP.max, pvrrc.fb_Y_CLIP.min, pvrrc.fb_Y_CLIP.max);
 			return false;
 		}

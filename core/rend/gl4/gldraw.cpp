@@ -175,7 +175,7 @@ void gl4MakePrograms()
 				gl4PipelineLocations(s, true);
 			else
 			{
-				WARN_LOG(RENDERER, "OpenGL: no general program (pass %d, pp_Gouraud %d)", p, g);
+				WARN_LOG(RENDERER, "OpenGL: no general program (pass %d, pp_Gouraud %d)\n", p, g);
 				glDeleteProgram(s->program);
 				s->program = 0;
 			}
@@ -197,7 +197,7 @@ void gl4MakePrograms()
 			}
 			else
 			{
-				WARN_LOG(RENDERER, "OpenGL: the program of key %x did not link", s->key);
+				WARN_LOG(RENDERER, "OpenGL: the program of key %x did not link\n", s->key);
 				glDeleteProgram(p);
 				if (nfailed < ARRAY_SIZE(failed))
 					failed[nfailed++] = key;
@@ -826,7 +826,7 @@ void gl4DrawStrips(GLuint output_fbo, int width, int height)
 			previous_pass = current_pass;
 			continue;
 		}
-		DEBUG_LOG(RENDERER, "Render pass %d/%d OP %d PT %d TR %d autosort %d", render_pass + 1, render_pass_count,
+		DEBUG_LOG(RENDERER, "Render pass %d/%d OP %d PT %d TR %d autosort %d\n", render_pass + 1, render_pass_count,
 				current_pass.op_count - previous_pass.op_count,
 				current_pass.pt_count - previous_pass.pt_count,
 				current_pass.tr_count - previous_pass.tr_count,

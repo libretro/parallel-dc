@@ -195,15 +195,15 @@ static void UpdateTMUCounts(u32 reg)
 			break;
 
 		case 5: /* reserved */
-			INFO_LOG(SH4, "TMU ch%d - TCR%d mode is reserved (5)",reg,reg);
+			INFO_LOG(SH4, "TMU ch%d - TCR%d mode is reserved (5)\n",reg,reg);
 			break;
 
 		case 6: /* RTC */
-			INFO_LOG(SH4, "TMU ch%d - TCR%d mode is RTC (6), can't be used on Dreamcast",reg,reg);
+			INFO_LOG(SH4, "TMU ch%d - TCR%d mode is RTC (6), can't be used on Dreamcast\n",reg,reg);
 			break;
 
 		case 7: /* external */
-			INFO_LOG(SH4, "TMU ch%d - TCR%d mode is External (7), can't be used on Dreamcast",reg,reg);
+			INFO_LOG(SH4, "TMU ch%d - TCR%d mode is External (7), can't be used on Dreamcast\n",reg,reg);
 			break;
 	}
 	/* The last three are clocks this machine does not have. The divider is
@@ -237,13 +237,13 @@ static void TMU_TCR2_write(u32 addr, u32 data) { TMU_TCR_write(2, data); }
 /* Chan 2 not used functions */
 static u32 TMU_TCPR2_read(u32 addr)
 {
-	INFO_LOG(SH4, "Read from TMU_TCPR2 - this register should be not used on Dreamcast according to docs");
+	INFO_LOG(SH4, "Read from TMU_TCPR2 - this register should be not used on Dreamcast according to docs\n");
 	return 0;
 }
 
 static void TMU_TCPR2_write(u32 addr, u32 data)
 {
-	INFO_LOG(SH4, "Write to TMU_TCPR2 - this register should be not used on Dreamcast according to docs, data=%d", data);
+	INFO_LOG(SH4, "Write to TMU_TCPR2 - this register should be not used on Dreamcast according to docs, data=%d\n", data);
 }
 
 static void write_TMU_TSTR(u32 addr, u32 data)

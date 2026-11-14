@@ -106,7 +106,7 @@ void V14Decoder::write(u8 v)
 			if ((v & 1) == 0)
 			{
 				if (charsSinceMissingStop < 4)
-					INFO_LOG(MODEM, "V.14 stop bit missing after %d chars", charsSinceMissingStop);
+					INFO_LOG(MODEM, "V.14 stop bit missing after %d chars\n", charsSinceMissingStop);
 				charsSinceMissingStop = 0;
 				rxState = RX_RECEIVING;
 				rxBitCount = 0;
@@ -324,17 +324,17 @@ void HdlcDecoder<N>::write(u8 v)
 					if (rxSize != 0 || overflow)
 					{
 						if (overflow) {
-							INFO_LOG(MODEM, "HDLC frame too long");
+							INFO_LOG(MODEM, "HDLC frame too long\n");
 						}
 						else if (rxSize < 3) {
-							INFO_LOG(MODEM, "HDLC frame too short: %d bytes", rxSize);
+							INFO_LOG(MODEM, "HDLC frame too short: %d bytes\n", rxSize);
 						}
 						else
 						{
 							u16 crc = calcCrc16(rxFrame, rxSize - 2);
 							if (crc != (rxFrame[rxSize - 2] | (rxFrame[rxSize - 1] << 8)))
 							{
-								WARN_LOG(MODEM, "Invalid CRC in received frame");
+								WARN_LOG(MODEM, "Invalid CRC in received frame\n");
 							}
 							else
 							{
@@ -351,7 +351,7 @@ void HdlcDecoder<N>::write(u8 v)
 				else if (rxOnes > 6)
 				{
 					// abort
-					INFO_LOG(MODEM, "HDLC abort received");
+					INFO_LOG(MODEM, "HDLC abort received\n");
 					rxCurByte = 0;
 					rxPosition = 1; // keep the last 0
 					rxSize = 0;
@@ -457,15 +457,15 @@ void V42Protocol::handleFrame()
 	const u8 *rxFrame = hdlcDecoder.frame();
 	const unsigned size = hdlcDecoder.frameSize();
 	if (size < 2) {
-		WARN_LOG(MODEM, "Invalid frame: %d bytes", size);
+		WARN_LOG(MODEM, "Invalid frame: %d bytes\n", size);
 		return;
 	}
 	if ((rxFrame[0] & 1) == 0) {
-		WARN_LOG(MODEM, "Invalid frame: Unexpected extended address");
+		WARN_LOG(MODEM, "Invalid frame: Unexpected extended address\n");
 		return;
 	}
 	if ((rxFrame[0] >> 2) != 0) {
-		WARN_LOG(MODEM, "Invalid frame: Unknown address %02x", rxFrame[0] >> 2);
+		WARN_LOG(MODEM, "Invalid frame: Unknown address %02x\n", rxFrame[0] >> 2);
 		return;
 	}
 
@@ -473,7 +473,7 @@ void V42Protocol::handleFrame()
 	{
 		// Information and Supervisory frames have a second control byte
 		if (size < 3) {
-			WARN_LOG(MODEM, "Invalid frame: control %02x and %d bytes", rxFrame[1], size);
+			WARN_LOG(MODEM, "Invalid frame: control %02x and %d bytes\n", rxFrame[1], size);
 			return;
 		}
 		// and they acknowledge sent frames (except SREJ)
@@ -486,12 +486,12 @@ void V42Protocol::handleFrame()
 	{
 	case 0x01:	// RR
 		if (!receiverReady)
-			NOTICE_LOG(MODEM, "Received RR");
+			NOTICE_LOG(MODEM, "Received RR\n");
 		receiverReady = true;
 		break;
 	case 0x05:	// RNR
 		if (receiverReady)
-			WARN_LOG(MODEM, "Received RNR");
+			WARN_LOG(MODEM, "Received RNR\n");
 		receiverReady = false;
 		break;
 	case 0x09:	// REJECT
@@ -499,7 +499,7 @@ void V42Protocol::handleFrame()
 		handleReject(rxFrame[2]);
 		break;
 	case 0x0d:	// SREJ
-		WARN_LOG(MODEM, "Received SREJ");
+		WARN_LOG(MODEM, "Received SREJ\n");
 		break;
 	case 0x6f:	// SABME
 		handleSabme(rxFrame[0], rxFrame[1]);
@@ -507,7 +507,7 @@ void V42Protocol::handleFrame()
 	case 0x0f:	// DM
 		break;
 	case 0x03:	// UI
-		WARN_LOG(MODEM, "Received UI");
+		WARN_LOG(MODEM, "Received UI\n");
 		break;
 	case 0x43:	// DISC
 		handleDisc(rxFrame[0]);
@@ -516,7 +516,7 @@ void V42Protocol::handleFrame()
 		receiverReady = true;
 		break;
 	case 0x87:	// FRMR
-		WARN_LOG(MODEM, "Received FRMR");
+		WARN_LOG(MODEM, "Received FRMR\n");
 		break;
 	case 0xaf:	// XID
 		handleXid(rxFrame, size);
@@ -526,12 +526,12 @@ void V42Protocol::handleFrame()
 	default:
 		if (rxFrame[1] & 1)
 		{
-			WARN_LOG(MODEM, "Invalid HDLC command: %02x", rxFrame[1]);
+			WARN_LOG(MODEM, "Invalid HDLC command: %02x\n", rxFrame[1]);
 			return;
 		}
 		// I-frame
 		if (phase != Connected) {
-			WARN_LOG(MODEM, "I-frame received but not connected");
+			WARN_LOG(MODEM, "I-frame received but not connected\n");
 			return;
 		}
 		handleIFrame(rxFrame, size);
@@ -542,9 +542,9 @@ void V42Protocol::handleFrame()
 void V42Protocol::handleSabme(u8 address, u8 control)
 {
 	if (phase == Connected)
-		WARN_LOG(MODEM, "V.42: SABME received while already connected");
+		WARN_LOG(MODEM, "V.42: SABME received while already connected\n");
 	else
-		INFO_LOG(MODEM, "V.42: Received SABME");
+		INFO_LOG(MODEM, "V.42: Received SABME\n");
 	const u8 ua[] { address, (u8)(0x63 | (control & 0x10)) };
 	sendFrame(ua, sizeof(ua));
 
@@ -559,7 +559,7 @@ void V42Protocol::handleSabme(u8 address, u8 control)
 
 void V42Protocol::handleDisc(u8 address)
 {
-	INFO_LOG(MODEM, "V.42: Received DISC");
+	INFO_LOG(MODEM, "V.42: Received DISC\n");
 	phase = Release;
 	const u8 ua[] { address, 0x73 };
 	sendFrame(ua, sizeof(ua));
@@ -570,7 +570,7 @@ void V42Protocol::handleIFrame(const u8 *rxFrame, unsigned size)
 	const int seqNum = rxFrame[1] >> 1;
 	if (seqNum != rxSeqNum)
 	{
-		INFO_LOG(MODEM, "Received frame num out of sequence: expected %d but recv %d", rxSeqNum, seqNum);
+		INFO_LOG(MODEM, "Received frame num out of sequence: expected %d but recv %d\n", rxSeqNum, seqNum);
 		// send REJECT: N(R) is in the upper 7 bits
 		const u8 reject[] { rxFrame[0], 9, (u8)(rxSeqNum << 1) };
 		sendFrame(reject, sizeof(reject));
@@ -637,7 +637,7 @@ void V42Protocol::handleXid(const u8 *rxFrame, unsigned size)
 
 	// format identifier
 	if (size < 3 || rxFrame[2] != 0x82) {
-		WARN_LOG(MODEM, "Unexpected XID format: %02x", size < 3 ? 0 : rxFrame[2]);
+		WARN_LOG(MODEM, "Unexpected XID format: %02x\n", size < 3 ? 0 : rxFrame[2]);
 		return;
 	}
 	if (size > sizeof(echo))
@@ -664,7 +664,7 @@ void V42Protocol::handleXid(const u8 *rxFrame, unsigned size)
 		const unsigned end = std::min(i + 3 + groupSize, size);
 		if (gid != GID_PARAM && gid != GID_PRIVATE)
 		{
-			INFO_LOG(MODEM, "Unexpected XID GI: %02x", gid);
+			INFO_LOG(MODEM, "Unexpected XID GI: %02x\n", gid);
 			i = end;
 			continue;
 		}
@@ -679,7 +679,7 @@ void V42Protocol::handleXid(const u8 *rxFrame, unsigned size)
 			const bool small = paramSize <= 4;
 			const u32 v = small ? xidValue(pv, paramSize) : 0;
 			if (!small)
-				WARN_LOG(MODEM, "Unexpected param length for PI %d: %x", paramId, paramSize);
+				WARN_LOG(MODEM, "Unexpected param length for PI %d: %x\n", paramId, paramSize);
 			switch (paramId)
 			{
 			case 0:	// (private) Parameter set identification
@@ -687,7 +687,7 @@ void V42Protocol::handleXid(const u8 *rxFrame, unsigned size)
 			case 1:	// (private) Data compression request
 				if (gid == GID_PRIVATE && paramSize >= 1)
 				{
-					DEBUG_LOG(MODEM, "xid: Data compression request %x", pv[0]);
+					DEBUG_LOG(MODEM, "xid: Data compression request %x\n", pv[0]);
 					if (pv[0] == 3)
 						compressionEnabled = true;
 					else
@@ -698,7 +698,7 @@ void V42Protocol::handleXid(const u8 *rxFrame, unsigned size)
 			case 2:	// (private) Number of codewords
 				if (gid == GID_PRIVATE && small)
 				{
-					DEBUG_LOG(MODEM, "xid: Number of codewords %d", v);
+					DEBUG_LOG(MODEM, "xid: Number of codewords %d\n", v);
 					maxCodeWords = v;
 					if (v > v42b::MAX_TOTAL_CODEWORDS)
 					{
@@ -711,12 +711,12 @@ void V42Protocol::handleXid(const u8 *rxFrame, unsigned size)
 				if (gid == GID_PARAM && small)
 				{
 					// HDLC optional function (public)
-					DEBUG_LOG(MODEM, "xid: HDLC optional function %x", v);
+					DEBUG_LOG(MODEM, "xid: HDLC optional function %x\n", v);
 				}
 				else if (gid == GID_PRIVATE && small)
 				{
 					// (private) Maximum string length
-					DEBUG_LOG(MODEM, "xid: Maximum string length %d", v);
+					DEBUG_LOG(MODEM, "xid: Maximum string length %d\n", v);
 					maxStringLength = v;
 					if (v > (u32)v42b::MAX_STRING_SIZE)
 					{
@@ -729,7 +729,7 @@ void V42Protocol::handleXid(const u8 *rxFrame, unsigned size)
 			case 6:	// Maximum length of information field: rx
 				if (gid == GID_PARAM && small)
 				{
-					DEBUG_LOG(MODEM, "xid: Max %s len %d bits", paramId == 5 ? "tx" : "rx", v);
+					DEBUG_LOG(MODEM, "xid: Max %s len %d bits\n", paramId == 5 ? "tx" : "rx", v);
 					u32 bits = v;
 					if (bits > V42_MAX_INFO * 8)
 					{
@@ -744,7 +744,7 @@ void V42Protocol::handleXid(const u8 *rxFrame, unsigned size)
 			case 8:	// Window size: rx
 				if (gid == GID_PARAM && small)
 				{
-					DEBUG_LOG(MODEM, "xid: %s window %d", paramId == 7 ? "Tx" : "Rx", v);
+					DEBUG_LOG(MODEM, "xid: %s window %d\n", paramId == 7 ? "Tx" : "Rx", v);
 					u32 k = v;
 					if (k > 15)
 					{
@@ -756,7 +756,7 @@ void V42Protocol::handleXid(const u8 *rxFrame, unsigned size)
 				}
 				break;
 			default:
-				WARN_LOG(MODEM, "Unexpected PI %d (size %x, group id %x)", paramId, paramSize, gid);
+				WARN_LOG(MODEM, "Unexpected PI %d (size %x, group id %x)\n", paramId, paramSize, gid);
 				break;
 			}
 			j += 2 + paramSize;
@@ -767,7 +767,7 @@ void V42Protocol::handleXid(const u8 *rxFrame, unsigned size)
 
 	if (compressionEnabled)
 	{
-		NOTICE_LOG(MODEM, "V.42bis compression enabled: max dictionary size %d", maxCodeWords);
+		NOTICE_LOG(MODEM, "V.42bis compression enabled: max dictionary size %d\n", maxCodeWords);
 		compressor.setParams(maxCodeWords, maxStringLength);
 		compressor.reset();
 		decompressor.setParams(maxCodeWords, maxStringLength);
@@ -778,7 +778,7 @@ void V42Protocol::handleXid(const u8 *rxFrame, unsigned size)
 void V42Protocol::handleReject(u8 control2)
 {
 	const u8 seq = control2 >> 1;
-	INFO_LOG(MODEM, "Received REJECT %d", seq);
+	INFO_LOG(MODEM, "Received REJECT %d\n", seq);
 	// The frames from N(R) on are sent again, one at a time as the line has room
 	if (seqDistance(txSeqAck, seq) <= seqDistance(txSeqAck, txSeqNum) && seq != txSeqNum)
 	{
@@ -881,7 +881,7 @@ int V42Protocol::read()
 					sendFrame(sentFrames[slot], sentSize[slot]);
 				}
 				else {
-					WARN_LOG(MODEM, "REJ frame %d not found", resendSeq);
+					WARN_LOG(MODEM, "REJ frame %d not found\n", resendSeq);
 				}
 				resendSeq = incMod128(resendSeq);
 			}
@@ -905,7 +905,7 @@ void V42Protocol::write(u8 v)
 	if (phase == None || phase == Detection)
 	{
 		if (now() - detectionStart >= T400_CYCLES) {
-			INFO_LOG(MODEM, "Switching to V.14 mode");
+			INFO_LOG(MODEM, "Switching to V.14 mode\n");
 			phase = V14;
 		}
 		else
@@ -1010,7 +1010,7 @@ void V42Protocol::ackIFrame(int seqNum)
 		txSeqAck = seqNum;
 	}
 	else {
-		WARN_LOG(MODEM, "Ack seq# %d outside of the frames sent %d-%d", seqNum, txSeqAck, txSeqNum);
+		WARN_LOG(MODEM, "Ack seq# %d outside of the frames sent %d-%d\n", seqNum, txSeqAck, txSeqNum);
 	}
 }
 
@@ -1215,7 +1215,7 @@ void V8bisProtocol::handleMS(const u8 *frame, unsigned size)
 	const u8 spar1 = AT(p);
 	if ((spar1 & 1) == 0)
 	{
-		WARN_LOG(MODEM, "V.8 bis MS: Data bit not set in field S - SPar1");
+		WARN_LOG(MODEM, "V.8 bis MS: Data bit not set in field S - SPar1\n");
 		sendNak();
 		return;
 	}
@@ -1260,7 +1260,7 @@ void V8bisProtocol::handleMS(const u8 *frame, unsigned size)
 	#undef AT
 	if (txAck)
 		sendAck(1);
-	DEBUG_LOG(MODEM, "V8bis: received MS: V8 %d sV8 %d V14 %d V42 %d V42bis %d speed %d",
+	DEBUG_LOG(MODEM, "V8bis: received MS: V8 %d sV8 %d V14 %d V42 %d V42bis %d speed %d\n",
 			v8, shortV8, v14, v42, v42bis, speed);
 }
 
@@ -1283,7 +1283,7 @@ void V8bisProtocol::write(u8 v)
 		handleMS(frame, size);
 		break;
 	default:
-		WARN_LOG(MODEM, "Unhandled V.8 bis frame type %d", frameType);
+		WARN_LOG(MODEM, "Unhandled V.8 bis frame type %d\n", frameType);
 		break;
 	}
 	done = true;

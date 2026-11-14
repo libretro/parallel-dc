@@ -57,7 +57,8 @@ void _vmem_unprotect_vram(u32, u32) {}
 u32 _vmem_get_vram_offset(void *) { return (u32)-1; }
 bool _vmem_vram_page_protected(u32) { return false; }
 void os_DebugBreak() { abort(); }
-void GenericLog(LogTypes::LOG_LEVELS, LogTypes::LOG_TYPE, const char *, int, const char *, ...) {}
+/* (no log) */
+retro_log_printf_t log_cb;
 template<> u32 DYNACALL pvr_read_area1<u32>(u32 addr) { return *(u32 *)&vram.data[addr & VRAM_MASK]; }
 template<> u16 DYNACALL pvr_read_area1<u16>(u32 addr) { return *(u16 *)&vram.data[addr & VRAM_MASK]; }
 extern VArray2 vram;

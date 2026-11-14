@@ -198,7 +198,7 @@ static GLuint link_compute(GLuint shader)
 		char log[1024];
 		log[0] = 0;
 		glGetShaderInfoLog(shader, sizeof(log), nullptr, log);
-		WARN_LOG(RENDERER, "OpenGL: a TA processing kernel did not compile: %s", log);
+		WARN_LOG(RENDERER, "OpenGL: a TA processing kernel did not compile: %s\n", log);
 		glDeleteShader(shader);
 		return 0;
 	}
@@ -306,7 +306,7 @@ static bool mapping_reads_fast(const u8 *map, size_t bytes)
 	memset(m, 0, bytes);
 	const double plainUs = std::chrono::duration<double, std::micro>(t1 - t0).count();
 	const double mapUs = std::chrono::duration<double, std::micro>(t2 - t1).count();
-	INFO_LOG(RENDERER, "OpenGL: the TA contexts' mapped memory reads in %.0f us, ordinary memory in %.0f us (%llu)",
+	INFO_LOG(RENDERER, "OpenGL: the TA contexts' mapped memory reads in %.0f us, ordinary memory in %.0f us (%llu)\n",
 			mapUs, plainUs, (unsigned long long)(dummy & 1));
 	return mapUs <= 4 * plainUs + 200;
 }
@@ -324,7 +324,7 @@ bool GlTaDecoder::Init()
 	return false;
 #endif
 	auto no = [this](const char *why) {
-		INFO_LOG(RENDERER, "OpenGL: TA processing stays on the CPU (%s)", why);
+		INFO_LOG(RENDERER, "OpenGL: TA processing stays on the CPU (%s)\n", why);
 		failed = true;
 		return false;
 	};
@@ -498,7 +498,7 @@ bool GlTaDecoder::Init()
 	res = std::move(r);
 	ready = true;
 	NOTICE_LOG(RENDERER, "OpenGL: TA processing on the GPU (%u frames of %u MB mapped, %u KB of tables a frame; "
-			"the kernels from %s in %.1f ms; translucent groups drawn %s%s)",
+			"the kernels from %s in %.1f ms; translucent groups drawn %s%s)\n",
 			res->slices, res->slice >> 20, res->tableWords / 256, made, kernelMs,
 			gx.multiDrawElementsIndirectCount != nullptr ? "with their count" : "whole",
 			res->sortSlot != 0 ? "; translucent triangles sorted from the frame's depths" : "");
@@ -512,7 +512,7 @@ void GlTaDecoder::Log(const char *when)
 	NOTICE_LOG(RENDERER, "OpenGL: TA processing%s: %llu frames decoded and drawn on the GPU, %llu parsed on the CPU "
 			"(%llu without a table, %llu with the GPU behind, %llu frame skipping, %llu sorted on the CPU, %llu the header pass leaves to the parse, "
 			"%llu might run out of room); GPU time mean %.3f ms, max %.3f ms; pool: %u frames found it full, %u contexts allocated; "
-			"%llu with a sorted pass (the sort mean %.1f us, max %.1f us), %llu with shadows the GPU decides",
+			"%llu with a sorted pass (the sort mean %.1f us, max %.1f us), %llu with shadows the GPU decides\n",
 			when, (unsigned long long)statFrames, (unsigned long long)statSkipped,
 			(unsigned long long)statWhy[TA_GPU_WHY_TABLE], (unsigned long long)statBusy, (unsigned long long)statWhy[TA_GPU_WHY_PARSE],
 			(unsigned long long)statWhy[TA_GPU_WHY_SORT], (unsigned long long)statWhy[TA_GPU_WHY_WALK],
@@ -554,7 +554,7 @@ void GlTaDecoder::Setup(bool wanted)
 		return;
 	const auto start = std::chrono::steady_clock::now();
 	if (Init())
-		NOTICE_LOG(RENDERER, "OpenGL: TA processing set up in %.1f ms",
+		NOTICE_LOG(RENDERER, "OpenGL: TA processing set up in %.1f ms\n",
 				std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count());
 	else
 		res.reset();

@@ -357,7 +357,7 @@ void Compressor::changeMode()
 {
 	if (transparent)
 	{
-		DEBUG_LOG(MODEM, "Compressor: switching to compressed mode");
+		DEBUG_LOG(MODEM, "Compressor: switching to compressed mode\n");
 		// 7.8.1 Transition to compressed mode
 		push(escapeCode);
 		push(ECM);
@@ -366,7 +366,7 @@ void Compressor::changeMode()
 	}
 	else
 	{
-		DEBUG_LOG(MODEM, "Compressor: switching to transparent mode");
+		DEBUG_LOG(MODEM, "Compressor: switching to transparent mode\n");
 		// 7.8.2 Transition to transparent mode
 		flush(true);
 		transparent = true;
@@ -392,7 +392,7 @@ void Compressor::checkDictSize()
 		return;
 	while (nextCodeWord >= codeWordThreshold && codeWordThreshold <= maxCodeWords)
 	{
-		DEBUG_LOG(MODEM, "Compressor: STEPUP");
+		DEBUG_LOG(MODEM, "Compressor: STEPUP\n");
 		pushCode(STEPUP);
 		codeWordSize++;
 		codeWordThreshold *= 2;
@@ -476,23 +476,23 @@ bool Decompressor::write(u8 b, OutStream& out)
 			switch (b)
 			{
 			case ECM:
-				DEBUG_LOG(MODEM, "Decompressor: ECM");
+				DEBUG_LOG(MODEM, "Decompressor: ECM\n");
 				transparent = false;
 				modeTransition = true;
 				return true;
 			case EID:
-				DEBUG_LOG(MODEM, "Decompressor: EID");
+				DEBUG_LOG(MODEM, "Decompressor: EID\n");
 				// the escape code needs to be processed normally
 				b = escapeCode;
 				escapeCode += 51;
 				break;
 			case RESET:
-				DEBUG_LOG(MODEM, "Decompressor: RESET");
+				DEBUG_LOG(MODEM, "Decompressor: RESET\n");
 				reset();
 				return true;
 			default:
 				// 5.8(a) receipt of a reserved command code is an error condition
-				WARN_LOG(MODEM, "V.42bis: invalid command code %02x", b);
+				WARN_LOG(MODEM, "V.42bis: invalid command code %02x\n", b);
 				return false;
 			}
 		}
@@ -519,22 +519,22 @@ bool Decompressor::write(u8 b, OutStream& out)
 		switch (newCode)
 		{
 		case ETM:
-			DEBUG_LOG(MODEM, "Decompressor: ETM");
+			DEBUG_LOG(MODEM, "Decompressor: ETM\n");
 			transparent = true;
 			modeTransition = true;
 			inputBitCount = 0;
 			inputBitBuffer = 0;
 			break;
 		case FLUSH:
-			DEBUG_LOG(MODEM, "Decompressor: FLUSH");
+			DEBUG_LOG(MODEM, "Decompressor: FLUSH\n");
 			flush();
 			break;
 		case STEPUP:
-			DEBUG_LOG(MODEM, "Decompressor: STEPUP");
+			DEBUG_LOG(MODEM, "Decompressor: STEPUP\n");
 			// 5.8(a) receipt of a STEPUP codeword when it would cause the value of C2 to exceed N1
 			// (the size of the largest codeword) is an error condition
 			if ((1u << codeWordSize) >= maxCodeWords) {
-				WARN_LOG(MODEM, "V.42bis: codeword size exceeds the limit");
+				WARN_LOG(MODEM, "V.42bis: codeword size exceeds the limit\n");
 				return false;
 			}
 			++codeWordSize;
@@ -549,7 +549,7 @@ bool Decompressor::write(u8 b, OutStream& out)
 			// and so is a string to extend that is gone
 			|| (curCode != -1 && dict.isFree(curCode)))
 	{
-		WARN_LOG(MODEM, "V.42bis: unknown code %x", newCode);
+		WARN_LOG(MODEM, "V.42bis: unknown code %x\n", newCode);
 		return false;
 	}
 	// Walk up the tree one character at a time
@@ -564,7 +564,7 @@ bool Decompressor::write(u8 b, OutStream& out)
 		node = dict.getParent(node);
 		if (pos == 0 || node >= maxCodeWords || node < CW_RESERVED)
 		{
-			WARN_LOG(MODEM, "V.42bis: string too long");
+			WARN_LOG(MODEM, "V.42bis: string too long\n");
 			return false;
 		}
 	}

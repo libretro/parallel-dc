@@ -238,7 +238,7 @@ static void AicaInternalDMA(void)
 	running = true;
 
 	/* Start dma */
-	DEBUG_LOG(AICA, "AICA internal DMA: DGATE %d DDIR %d DLG %x", CommonData->DGATE, CommonData->DDIR, CommonData->DLG);
+	DEBUG_LOG(AICA, "AICA internal DMA: DGATE %d DDIR %d DLG %x\n", CommonData->DGATE, CommonData->DDIR, CommonData->DLG);
 	if (CommonData->DGATE)
 	{
 		/* Clear memory/registers */

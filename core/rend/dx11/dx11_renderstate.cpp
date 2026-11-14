@@ -108,7 +108,7 @@ ID3D11DepthStencilState *DX11DepthStencilStates::Make(u32 key)
 		drawPath++;
 	ID3D11Device *device = DX11Context::Instance()->GetDevice();
 	if (device == nullptr || FAILED(device->CreateDepthStencilState(&desc, state.put())))
-		WARN_LOG(RENDERER, "Depth stencil state creation failed");
+		WARN_LOG(RENDERER, "Depth stencil state creation failed\n");
 	return state;
 }
 
@@ -165,7 +165,7 @@ ID3D11BlendState *DX11BlendStates::Make(const D3D11_BLEND_DESC& desc, ComPtr<ID3
 		drawPath++;
 	ID3D11Device *device = DX11Context::Instance()->GetDevice();
 	if (device == nullptr || FAILED(device->CreateBlendState(&desc, state.put())))
-		WARN_LOG(RENDERER, "Blend state creation failed");
+		WARN_LOG(RENDERER, "Blend state creation failed\n");
 	return state;
 }
 

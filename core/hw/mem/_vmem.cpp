@@ -247,31 +247,31 @@ void DYNACALL _vmem_WriteMem64(u32 Address,u64 data) { _vmem_writet<u64>(Address
 //default read handlers
 static u8 DYNACALL _vmem_ReadMem8_not_mapped(u32 addresss)
 {
-	INFO_LOG(MEMORY, "[sh4]Read8 from 0x%X, not mapped [_vmem default handler]", addresss);
+	INFO_LOG(MEMORY, "[sh4]Read8 from 0x%X, not mapped [_vmem default handler]\n", addresss);
 	return (u8)MEM_ERROR_RETURN_VALUE;
 }
 static u16 DYNACALL _vmem_ReadMem16_not_mapped(u32 addresss)
 {
-	INFO_LOG(MEMORY, "[sh4]Read16 from 0x%X, not mapped [_vmem default handler]", addresss);
+	INFO_LOG(MEMORY, "[sh4]Read16 from 0x%X, not mapped [_vmem default handler]\n", addresss);
 	return (u16)MEM_ERROR_RETURN_VALUE;
 }
 static u32 DYNACALL _vmem_ReadMem32_not_mapped(u32 address)
 {
-	INFO_LOG(MEMORY, "[sh4]Read32 from 0x%X, not mapped [_vmem default handler]", address);
+	INFO_LOG(MEMORY, "[sh4]Read32 from 0x%X, not mapped [_vmem default handler]\n", address);
 	return (u32)MEM_ERROR_RETURN_VALUE;
 }
 //default write handers
 static void DYNACALL _vmem_WriteMem8_not_mapped(u32 addresss,u8 data)
 {
-	INFO_LOG(MEMORY, "[sh4]Write8 to 0x%X=0x%X, not mapped [_vmem default handler]", addresss, data);
+	INFO_LOG(MEMORY, "[sh4]Write8 to 0x%X=0x%X, not mapped [_vmem default handler]\n", addresss, data);
 }
 static void DYNACALL _vmem_WriteMem16_not_mapped(u32 addresss,u16 data)
 {
-	INFO_LOG(MEMORY, "[sh4]Write16 to 0x%X=0x%X, not mapped [_vmem default handler]", addresss, data);
+	INFO_LOG(MEMORY, "[sh4]Write16 to 0x%X=0x%X, not mapped [_vmem default handler]\n", addresss, data);
 }
 static void DYNACALL _vmem_WriteMem32_not_mapped(u32 addresss,u32 data)
 {
-	INFO_LOG(MEMORY, "[sh4]Write32 to 0x%X=0x%X, not mapped [_vmem default handler]", addresss, data);
+	INFO_LOG(MEMORY, "[sh4]Write32 to 0x%X=0x%X, not mapped [_vmem default handler]\n", addresss, data);
 }
 //code to register handlers
 //0 is considered error :)
@@ -480,7 +480,7 @@ bool _vmem_reserve(void)
 	
 	// Fallback to statically allocated buffers, this results in slow-ops being generated.
 	if (vmemstatus == MemTypeError) {
-		WARN_LOG(VMEM, "Warning! nvmem is DISABLED (due to failure or not being built-in)");
+		WARN_LOG(VMEM, "Warning! nvmem is DISABLED (due to failure or not being built-in)\n");
 		virt_ram_base = 0;
 
 		// Allocate it all and initialize it.
@@ -511,8 +511,8 @@ bool _vmem_reserve(void)
 			memset(aica_ram.data + ARAM_SIZE, 0, PAGE_SIZE);
 	}
 	else {
-		NOTICE_LOG(VMEM, "Info: nvmem is enabled, with addr space of size %s", vmemstatus == MemType4GB ? "4GB" : "512MB");
-		INFO_LOG(VMEM, "Info: p_sh4rcb: %p virt_ram_base: %p", p_sh4rcb, virt_ram_base);
+		NOTICE_LOG(VMEM, "Info: nvmem is enabled, with addr space of size %s\n", vmemstatus == MemType4GB ? "4GB" : "512MB");
+		INFO_LOG(VMEM, "Info: p_sh4rcb: %p virt_ram_base: %p\n", p_sh4rcb, virt_ram_base);
 		// Map the different parts of the memory file into the new memory range we got.
 		if (vmemstatus == MemType512MB)
 		{

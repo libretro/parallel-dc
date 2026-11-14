@@ -102,7 +102,7 @@ static bool makeSamples(DX12Image& image, u32 width, u32 height, u32 samples, bo
 	if (FAILED(device->CreateCommittedResource(&heap, D3D12_HEAP_FLAG_NONE, &desc, image.state, &clear,
 			__uuidof(ID3D12Resource), (void **)image.resource.put())))
 	{
-		WARN_LOG(RENDERER, "DX12: SSAA picture creation failed (%d x %d, %d samples)", width, height, samples);
+		WARN_LOG(RENDERER, "DX12: SSAA picture creation failed (%d x %d, %d samples)\n", width, height, samples);
 		image = DX12Image();
 		return false;
 	}
@@ -197,7 +197,7 @@ bool DX12Renderer::Init()
 	device = context->GetDevice();
 	if (device == nullptr)
 	{
-		WARN_LOG(RENDERER, "DX12: no device");
+		WARN_LOG(RENDERER, "DX12: no device\n");
 		return false;
 	}
 	bool success = true;
@@ -222,7 +222,7 @@ bool DX12Renderer::Init()
 	heldFromProcess = false;
 	if (!success)
 	{
-		WARN_LOG(RENDERER, "DX12 renderer initialization failed");
+		WARN_LOG(RENDERER, "DX12 renderer initialization failed\n");
 		return false;
 	}
 	dx12_make_samplers();
@@ -252,9 +252,9 @@ bool DX12Renderer::Init()
 		TA_context::ArenaRooms(room);
 		arenaMissed = false;
 		if (parse_arena_d3d12_init(&parseArena, device, context->GetFence(), room, 4))
-			NOTICE_LOG(RENDERER, "DX12: renders parsed where the card reads them, not copied there");
+			NOTICE_LOG(RENDERER, "DX12: renders parsed where the card reads them, not copied there\n");
 		else
-			INFO_LOG(RENDERER, "DX12: renders copied to the card (its memory is not the processor's, cache-coherent)");
+			INFO_LOG(RENDERER, "DX12: renders copied to the card (its memory is not the processor's, cache-coherent)\n");
 	}
 	SetupUpscaler();
 	/* GPU-side TA processing, if it is on: here, not in a frame; and the
@@ -340,7 +340,7 @@ void DX12Renderer::Term()
 	DropImage(fogTexture);
 	delete [] batch;
 	batch = nullptr;
-	NOTICE_LOG(RENDERER, "DX12: %u draws in %u batches; %u submits, %u stalls", statBatched, statBatches, context->statSubmits, context->statStalls);
+	NOTICE_LOG(RENDERER, "DX12: %u draws in %u batches; %u submits, %u stalls\n", statBatched, statBatches, context->statSubmits, context->statStalls);
 	device = nullptr;
 	context = nullptr;
 }
@@ -395,7 +395,7 @@ void DX12Renderer::SetupSsaa(u32 width, u32 height)
 	}
 	if (!ok)
 	{
-		WARN_LOG(RENDERER, "DX12: SSAA off: its pictures could not be made");
+		WARN_LOG(RENDERER, "DX12: SSAA off: its pictures could not be made\n");
 		DropSsaa();
 		return;
 	}
@@ -578,7 +578,7 @@ bool DX12Renderer::ProcessLocked(TA_context* ctx)
 		if (!parse_arena_d3d12_attach(&parseArena, lists, 4 * sizeof(Vertex)) && parseArena.ready && !arenaMissed)
 		{
 			arenaMissed = true;
-			NOTICE_LOG(RENDERER, "DX12: a render copied to the card, no slice of the parse's free");
+			NOTICE_LOG(RENDERER, "DX12: a render copied to the card, no slice of the parse's free\n");
 		}
 		result = ta_parse_vdrc(ctx);
 		if (!result)
@@ -713,7 +713,7 @@ bool DX12Renderer::UploadGeometry()
 			DX12Upload upload;
 			if (!context->Upload(pvrrc.mv_clip.bytes(), 64, upload))
 			{
-				WARN_LOG(RENDERER, "DX12: the render's volumes do not fit the upload ring (%u bytes)", pvrrc.mv_clip.bytes());
+				WARN_LOG(RENDERER, "DX12: the render's volumes do not fit the upload ring (%u bytes)\n", pvrrc.mv_clip.bytes());
 				return false;
 			}
 			memcpy(upload.cpu, pvrrc.mv_clip.head(), pvrrc.mv_clip.bytes());
@@ -759,7 +759,7 @@ bool DX12Renderer::UploadGeometry()
 	DX12Upload upload;
 	if (!context->Upload(total, 64, upload))
 	{
-		WARN_LOG(RENDERER, "DX12: the render's geometry does not fit the upload ring (%u bytes)", total);
+		WARN_LOG(RENDERER, "DX12: the render's geometry does not fit the upload ring (%u bytes)\n", total);
 		// (as it was before: the vertices made for the card, once)
 		SetProvokingVertices();
 		return false;
@@ -901,7 +901,7 @@ bool DX12Renderer::EnsureDepth(u32 width, u32 height)
 	if (!dx12_make_texture(device, width, height, 1, DX12DepthResourceFormat, D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL, depth.state,
 			depth.resource, &clear))
 	{
-		WARN_LOG(RENDERER, "DX12: depth buffer creation failed (%d x %d)", width, height);
+		WARN_LOG(RENDERER, "DX12: depth buffer creation failed (%d x %d)\n", width, height);
 		return false;
 	}
 	if (dsv == ~0u)
@@ -1339,7 +1339,7 @@ bool DX12Renderer::UpscalerJitter()
 	if (!slot.motion.resource && (!makeImage(slot.motion, screenWidth, screenHeight, DX12MotionFormat, true)
 			|| !makeImage(slot.depth, screenWidth, screenHeight, DX12UpscalerDepthFormat, true, ~0u, true)))
 	{
-		WARN_LOG(RENDERER, "DX12: the upscaler's pictures could not be made (%d x %d)", screenWidth, screenHeight);
+		WARN_LOG(RENDERER, "DX12: the upscaler's pictures could not be made (%d x %d)\n", screenWidth, screenHeight);
 		DropImage(slot.motion);
 		DropImage(slot.depth);
 		return false;
@@ -1524,7 +1524,7 @@ void DX12Renderer::RttSize(u32& widthPow2, u32& heightPow2)
 
 bool DX12Renderer::BeginRTT()
 {
-	DEBUG_LOG(RENDERER, "RenderToTexture packmode=%d stride=%d - %d,%d -> %d,%d @ %08x", FB_W_CTRL.fb_packmode, FB_W_LINESTRIDE.stride * 8,
+	DEBUG_LOG(RENDERER, "RenderToTexture packmode=%d stride=%d - %d,%d -> %d,%d @ %08x\n", FB_W_CTRL.fb_packmode, FB_W_LINESTRIDE.stride * 8,
 			FB_X_CLIP.min, FB_Y_CLIP.min, FB_X_CLIP.max, FB_Y_CLIP.max, FB_W_SOF1 & VRAM_MASK);
 	matrices.CalcMatrices(&pvrrc);
 	// (one sample a pixel, SSAA or not)
@@ -1702,7 +1702,7 @@ bool DX12Renderer::RenderFrame()
 	{
 		/* A pixel clip that ends before it starts holds no pixel: the
 		 * chip writes nothing. (Its size would be negative here.) */
-		WARN_LOG(RENDERER, "Render to texture with an empty pixel clip: %d-%d, %d-%d",
+		WARN_LOG(RENDERER, "Render to texture with an empty pixel clip: %d-%d, %d-%d\n",
 				pvrrc.fb_X_CLIP.min, pvrrc.fb_X_CLIP.max, pvrrc.fb_Y_CLIP.min, pvrrc.fb_Y_CLIP.max);
 		return false;
 	}
@@ -2246,7 +2246,7 @@ void DX12Renderer::DrawFrame()
 	{
 		const RenderPass& current_pass = pvrrc.render_passes.head()[render_pass];
 
-		DEBUG_LOG(RENDERER, "Render pass %d OP %d PT %d TR %d MV %d autosort %d", render_pass + 1,
+		DEBUG_LOG(RENDERER, "Render pass %d OP %d PT %d TR %d MV %d autosort %d\n", render_pass + 1,
 				current_pass.op_count - previous_pass.op_count,
 				current_pass.pt_count - previous_pass.pt_count,
 				current_pass.tr_count - previous_pass.tr_count,

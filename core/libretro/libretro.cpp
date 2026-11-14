@@ -93,7 +93,6 @@ extern bool naomi_card_button;
 #include "../archive/archive.h"
 #include "../imgread/common.h"
 #include "../hw/aica/dsp.h"
-#include "log/LogManager.h"
 #include "cheats.h"
 #include "rend/CustomTexture.h"
 #include "network/netservice.h"
@@ -560,7 +559,6 @@ void retro_init(void)
       log_cb = log.log;
    else
       log_cb = NULL;
-   LogManager::Init((void *)log_cb);
 
    if (environ_cb(RETRO_ENVIRONMENT_GET_PERF_INTERFACE, &perf_cb))
       perf_get_cpu_features_cb = perf_cb.get_cpu_features;
@@ -596,7 +594,6 @@ void retro_deinit(void)
 #endif
 
    libretro_supports_bitmasks = false;
-   LogManager::Shutdown();
 }
 
 void dc_apply_game_settings(void);
@@ -1034,7 +1031,7 @@ static void update_variables(bool first_startup)
       var.value = NULL;
       settings.dynarec.AccurateTiming = environ_cb(RETRO_ENVIRONMENT_GET_VARIABLE, &var) && var.value
          && !strcmp("accurate", var.value);
-      NOTICE_LOG(COMMON, "SH4 timing: %s", settings.dynarec.AccurateTiming ? "accurate" : "legacy");
+      NOTICE_LOG(COMMON, "SH4 timing: %s\n", settings.dynarec.AccurateTiming ? "accurate" : "legacy");
 
       var.key = CORE_OPTION_NAME "_system";
 
@@ -2426,7 +2423,7 @@ static void retro_vk_context_reset()
    retro_hw_render_interface* vulkan;
    if (!environ_cb(RETRO_ENVIRONMENT_GET_HW_RENDER_INTERFACE, (void**)&vulkan) || !vulkan)
    {
-   	ERROR_LOG(RENDERER, "Get Vulkan HW interface failed");
+   	ERROR_LOG(RENDERER, "Get Vulkan HW interface failed\n");
    	return;
    }
    context_resets++;
@@ -2543,19 +2540,19 @@ static void dx11_context_reset(void)
 	if (!environ_cb(RETRO_ENVIRONMENT_GET_HW_RENDER_INTERFACE, (void **)&iface) || iface == NULL
 			|| iface->interface_type != RETRO_HW_RENDER_INTERFACE_D3D11)
 	{
-		ERROR_LOG(RENDERER, "Get DX11 HW interface failed");
+		ERROR_LOG(RENDERER, "Get DX11 HW interface failed\n");
 		return;
 	}
 	if (iface->interface_version != RETRO_HW_RENDER_INTERFACE_D3D11_VERSION
 			&& iface->interface_version != RETRO_HW_RENDER_INTERFACE_D3D11_VERSION_2)
 	{
-		ERROR_LOG(RENDERER, "Unsupported DX11 interface version %d", iface->interface_version);
+		ERROR_LOG(RENDERER, "Unsupported DX11 interface version %d\n", iface->interface_version);
 		return;
 	}
 	context_resets++;
 	take_pending_size();
 	if (!DX11Context::Instance()->Init(iface))
-		ERROR_LOG(RENDERER, "DX11 context initialization failed");
+		ERROR_LOG(RENDERER, "DX11 context initialization failed\n");
 	renderer_changed = true;
 }
 
@@ -2623,19 +2620,19 @@ static void dx9_context_reset(void)
 	if (!environ_cb(RETRO_ENVIRONMENT_GET_HW_RENDER_INTERFACE, (void **)&iface) || iface == NULL
 			|| iface->interface_type != RETRO_HW_RENDER_INTERFACE_D3D9)
 	{
-		ERROR_LOG(RENDERER, "Get DX9 HW interface failed");
+		ERROR_LOG(RENDERER, "Get DX9 HW interface failed\n");
 		return;
 	}
 	/* (any version from the first on: a later one only adds to it) */
 	if (iface->interface_version < RETRO_HW_RENDER_INTERFACE_D3D9_VERSION)
 	{
-		ERROR_LOG(RENDERER, "Unsupported DX9 interface version %d", iface->interface_version);
+		ERROR_LOG(RENDERER, "Unsupported DX9 interface version %d\n", iface->interface_version);
 		return;
 	}
 	context_resets++;
 	take_pending_size();
 	if (!DX9Context::Instance()->Init(iface))
-		ERROR_LOG(RENDERER, "DX9 context initialization failed");
+		ERROR_LOG(RENDERER, "DX9 context initialization failed\n");
 	renderer_changed = true;
 }
 
@@ -2685,13 +2682,13 @@ static void dx12_context_reset(void)
 	if (!environ_cb(RETRO_ENVIRONMENT_GET_HW_RENDER_INTERFACE, (void **)&iface) || iface == NULL
 			|| iface->interface_type != RETRO_HW_RENDER_INTERFACE_D3D12)
 	{
-		ERROR_LOG(RENDERER, "Get DX12 HW interface failed");
+		ERROR_LOG(RENDERER, "Get DX12 HW interface failed\n");
 		return;
 	}
 	if (iface->interface_version != RETRO_HW_RENDER_INTERFACE_D3D12_VERSION
 			&& iface->interface_version != RETRO_HW_RENDER_INTERFACE_D3D12_VERSION_2)
 	{
-		ERROR_LOG(RENDERER, "Unsupported DX12 interface version %d", iface->interface_version);
+		ERROR_LOG(RENDERER, "Unsupported DX12 interface version %d\n", iface->interface_version);
 		return;
 	}
 	context_resets++;
@@ -2699,7 +2696,7 @@ static void dx12_context_reset(void)
 	renderer_changed = true;
 	if (!DX12Context::Instance()->Init(iface))
 	{
-		ERROR_LOG(RENDERER, "DX12 context initialization failed");
+		ERROR_LOG(RENDERER, "DX12 context initialization failed\n");
 		return;
 	}
 	/* The frontend's temporal upscaler, where it has one for this context
@@ -2847,7 +2844,7 @@ static bool set_opengl_hw_render(u32 preferred)
 	 * request so the content still loads instead of failing outright. */
 	if (settings.pvr.rend == 3)
 	{
-		NOTICE_LOG(RENDERER, "Per-pixel (OIT) GL context unavailable, falling back to the per-triangle renderer");
+		NOTICE_LOG(RENDERER, "Per-pixel (OIT) GL context unavailable, falling back to the per-triangle renderer\n");
 		settings.pvr.rend = 0;
 	}
 #endif
@@ -2957,7 +2954,7 @@ static void naomi_bios_detect_multiregion(void)
    naomi_bios_multiregion = crc == 0xcce01f1f		// epr-21576h_multi.ic27
          || crc == 0x353fdbcd;						// epr-23605c_multi.ic27
    if (naomi_bios_multiregion)
-      NOTICE_LOG(NAOMI, "Multi-region BIOS: Korea set on the DIP switches");
+      NOTICE_LOG(NAOMI, "Multi-region BIOS: Korea set on the DIP switches\n");
 }
 
 bool retro_load_game(const struct retro_game_info *game)
@@ -3092,7 +3089,7 @@ bool retro_load_game(const struct retro_game_info *game)
             if (settings.System == DC_PLATFORM_NAOMI2 && !settings.dynarec.AccurateTiming)
             {
                settings.dynarec.AccurateTiming = true;
-               NOTICE_LOG(COMMON, "SH4 timing: accurate, as a NAOMI 2 needs");
+               NOTICE_LOG(COMMON, "SH4 timing: accurate, as a NAOMI 2 needs\n");
             }
             /* System may have changed - have to update
              * hidden core options */
@@ -3225,15 +3222,15 @@ bool retro_load_game(const struct retro_game_info *game)
          || settings.pvr.rend == 9 || settings.pvr.rend == 10)
    {
       if (hdr_libretro_negotiate(environ_cb))
-         NOTICE_LOG(BOOT, "Color Format: HDR output, %s", hdr_output.format == HDR_OUTPUT_SCRGB ? "scRGB" : "HDR10");
+         NOTICE_LOG(BOOT, "Color Format: HDR output, %s\n", hdr_output.format == HDR_OUTPUT_SCRGB ? "scRGB" : "HDR10");
       else if (hdr_libretro_wanted())
-         WARN_LOG(BOOT, "Color Format: the frontend does not present this HDR output; 24-bit");
+         WARN_LOG(BOOT, "Color Format: the frontend does not present this HDR output; 24-bit\n");
    }
    else
    {
       hdr_libretro_reset();
       if (hdr_libretro_wanted())
-         WARN_LOG(BOOT, "Color Format: HDR output is for the Vulkan, Direct3D 11 and Direct3D 12 renderers; 24-bit");
+         WARN_LOG(BOOT, "Color Format: HDR output is for the Vulkan, Direct3D 11 and Direct3D 12 renderers; 24-bit\n");
    }
 #endif
 
@@ -3249,13 +3246,13 @@ bool retro_load_game(const struct retro_game_info *game)
          struct stat buf;
          if (!path_is_directory(save_dir))
          {
-            DEBUG_LOG(BOOT, "Creating dir: %s", save_dir);
+            DEBUG_LOG(BOOT, "Creating dir: %s\n", save_dir);
             path_mkdir(save_dir);
          }
       }
       else
          strncpy(save_dir, g_roms_dir, sizeof(save_dir));
-      INFO_LOG(BOOT, "Setting save dir to %s", save_dir);
+      INFO_LOG(BOOT, "Setting save dir to %s\n", save_dir);
       snprintf(eeprom_file, sizeof(eeprom_file), "%s%s.eeprom", save_dir, g_base_name);
       snprintf(nvmem_file, sizeof(nvmem_file), "%s%s.nvmem", save_dir, g_base_name);
       snprintf(nvmem_file2, sizeof(nvmem_file2), "%s%s.nvmem2", save_dir, g_base_name);
@@ -3269,7 +3266,7 @@ bool retro_load_game(const struct retro_game_info *game)
    retro_atomic_store_release_int(&naomi_ffb_request, 0);
    if (dc_init())
    {
-   	ERROR_LOG(BOOT, "Initialization failed");
+   	ERROR_LOG(BOOT, "Initialization failed\n");
    	return false;
    }
    naomi_bios_detect_multiregion();
@@ -3308,7 +3305,7 @@ void retro_unload_game(void)
    }
 #if defined(HAVE_VULKAN) || defined(HAVE_D3D12)
    if (rend_warming_runs != 0)
-      NOTICE_LOG(RENDERER, "%u frames showed the kept picture while a renderer's pipelines were made",
+      NOTICE_LOG(RENDERER, "%u frames showed the kept picture while a renderer's pipelines were made\n",
             rend_warming_runs);
    rend_warming_runs = 0;
    rend_warming = false;
@@ -3340,13 +3337,13 @@ void retro_unload_game(void)
 	   /* The emulation thread is asleep between frames. Take the machine,
 	    * so no save state on another thread is in the middle of it, then
 	    * let the thread shut it down. */
-	   DEBUG_LOG(COMMON, "Waiting for emu thread to end...");
+	   DEBUG_LOG(COMMON, "Waiting for emu thread to end...\n");
 	   emu_hold();
 	   emu_baton.TellThreadToExit();
 	   emu_thread.WaitToEnd();
 	   emu_thread_started = false;
 	   emu_baton.ThreadGone();
-	   DEBUG_LOG(COMMON, "...Done");
+	   DEBUG_LOG(COMMON, "...Done\n");
    }
    else
 #endif
@@ -3455,7 +3452,7 @@ static void disc_trailer_read(const u8 *at)
       TermDrive();
    }
    if (!in && (words[3] & DISC_TRAILER_IN))
-      WARN_LOG(GDROM, "The state's disc \"%s\" could not be opened", settings.imgread.DefaultImage);
+      WARN_LOG(GDROM, "The state's disc \"%s\" could not be opened\n", settings.imgread.DefaultImage);
 }
 
 size_t retro_serialize_size (void)
@@ -5001,7 +4998,7 @@ int push_vmu_screen(u8* buffer) { return 0; }
 
 void os_DebugBreak(void)
 {
-	ERROR_LOG(COMMON, "DEBUGBREAK!");
+	ERROR_LOG(COMMON, "DEBUGBREAK!\n");
    //exit(-1);
 #ifdef HAVE_LIBNX
    svcExitProcess();

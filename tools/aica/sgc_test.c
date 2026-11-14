@@ -94,8 +94,8 @@ bool ra_unserialize(void *dest, unsigned int size, void **src, unsigned int *tot
 	*total_size += size;
 	return true;
 }
-void GenericLog(enum LOG_TYPE_NAME(LOG_LEVELS) level, enum LOG_TYPE_NAME(LOG_TYPE) type, const char *file, int line, const char *fmt, ...)
-{ (void)level; (void)type; (void)file; (void)line; (void)fmt; }
+/* (no log) */
+retro_log_printf_t log_cb;
 
 /* ---- the programs ------------------------------------------------------ */
 

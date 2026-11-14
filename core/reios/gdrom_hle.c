@@ -109,7 +109,7 @@ static bool GDROM_HLE_BadRead(void)
 {
 	if (gd_hle_state.params[1] <= RAM_SIZE / 2048)
 		return false;
-	WARN_LOG(REIOS, "GDROM: read of %u sectors to %08x refused", gd_hle_state.params[1], gd_hle_state.params[2]);
+	WARN_LOG(REIOS, "GDROM: read of %u sectors to %08x refused\n", gd_hle_state.params[1], gd_hle_state.params[2]);
 	GDROM_HLE_BadParam();
 	return true;
 }
@@ -121,7 +121,7 @@ static void GDROM_HLE_ReadSES(void)
 	u32 ba = gd_hle_state.params[2];
 	u32 bb = gd_hle_state.params[3];
 
-	INFO_LOG(REIOS, "GDROM_HLE_ReadSES: doing nothing w/ %d, %d, %d, %d", s, b, ba, bb);
+	INFO_LOG(REIOS, "GDROM_HLE_ReadSES: doing nothing w/ %d, %d, %d, %d\n", s, b, ba, bb);
 }
 
 static void GDROM_HLE_ReadTOC(void)
@@ -131,7 +131,7 @@ static void GDROM_HLE_ReadTOC(void)
 	u32 toc[102];
 	int i;
 
-	debugf("GDROM READ TOC : %X %X", area, dest);
+	debugf("GDROM READ TOC : %X %X\n", area, dest);
 	if (area == DoubleDensity && libGDR_GetDiscType() != GdRom)
 	{
 		/* Only GD-ROM has a high-density area but no error is reported */
@@ -218,7 +218,7 @@ static void GDROM_HLE_ReadDMA(void)
 	u32 b = gd_hle_state.params[2];
 	u32 u = gd_hle_state.params[3];
 
-	debugf("GDROM: DMA READ Sector=%d, Num=%d, Buffer=0x%08X, Unk01=0x%08X", s, n, b, u);
+	debugf("GDROM: DMA READ Sector=%d, Num=%d, Buffer=0x%08X, Unk01=0x%08X\n", s, n, b, u);
 
 	gd_hle_state.cur_sector = s + n - 1;
 	if (n > 5 && GDROM_TICK == 1500000)
@@ -286,7 +286,7 @@ static void GDROM_HLE_ReadPIO(void)
 	u32 b = gd_hle_state.params[2];
 	u32 u = gd_hle_state.params[3];
 
-	debugf("GDROM: PIO READ Sector=%d, Num=%d, Buffer=0x%08X, Unk01=0x%08X", s, n, b, u);
+	debugf("GDROM: PIO READ Sector=%d, Num=%d, Buffer=0x%08X, Unk01=0x%08X\n", s, n, b, u);
 
 	read_sectors_to(true, b, s, n);
 	gd_hle_state.result[2] = n * 2048;
@@ -301,7 +301,7 @@ static void GDCC_HLE_GETSCD(void)
 	u8 scd[100];
 	u8 *pDst;
 
-	DEBUG_LOG(REIOS, "GDROM: GETSCD format %x size %x dest %08x", format, size, dest);
+	DEBUG_LOG(REIOS, "GDROM: GETSCD format %x size %x dest %08x\n", format, size, dest);
 
 	/* What the drive has to say comes first, with both sense codes in the
 	 * second result word, as the BIOS gives them: while a disc that has just
@@ -467,7 +467,7 @@ static void GD_HLE_Command(u32 cc)
 	switch(cc)
 	{
 	case GDCC_GETTOC:
-		debugf("GDROM: *FIXME* CMD GETTOC");
+		debugf("GDROM: *FIXME* CMD GETTOC\n");
 		break;
 
 	case GDCC_GETTOC2:
@@ -479,7 +479,7 @@ static void GD_HLE_Command(u32 cc)
 		break;
 
 	case GDCC_INIT:
-		debugf("GDROM: CMD INIT");
+		debugf("GDROM: CMD INIT\n");
 		gd_hle_state.multi_callback = 0;
 		gd_hle_state.multi_read_count = 0;
 		cdda.status = CDDA_NOINFO;
@@ -518,7 +518,7 @@ static void GD_HLE_Command(u32 cc)
 		{
 			u32 start_fad = gd_hle_state.params[0] & 0xffffff;
 			u32 end_fad = gd_hle_state.params[1] & 0xffffff;
-			DEBUG_LOG(REIOS, "GDROM: CMD PLAYSEC from %d to %d repeats %d", start_fad, end_fad, gd_hle_state.params[2]);
+			DEBUG_LOG(REIOS, "GDROM: CMD PLAYSEC from %d to %d repeats %d\n", start_fad, end_fad, gd_hle_state.params[2]);
 			if (libGDR_GetDiscType() == Open || libGDR_GetDiscType() == NoDisk)
 			{
 				/* nothing to play */
@@ -538,20 +538,20 @@ static void GD_HLE_Command(u32 cc)
 		break;
 
 	case GDCC_RELEASE:
-		debugf("GDROM: CMD RELEASE");
+		debugf("GDROM: CMD RELEASE\n");
 		if (cdda.status == CDDA_PAUSED)
 			cdda.status = CDDA_PLAYING;
 		SecNumber.Status = GD_PLAY;
 		break;
 
 	case GDCC_STOP:
-		debugf("GDROM: CMD STOP");
+		debugf("GDROM: CMD STOP\n");
 		cdda.status = CDDA_NOINFO;
 		SecNumber.Status = GD_STANDBY;
 		break;
 
 	case GDCC_SEEK:
-		debugf("GDROM: CMD SEEK");
+		debugf("GDROM: CMD SEEK\n");
 		/* the drive goes where it is sent, and is paused there */
 		cdda.CurrAddr.FAD = cdda.StartAddr.FAD = gd_hle_state.params[0] & 0xffffff;
 		cdda.status = CDDA_PAUSED;
@@ -579,11 +579,11 @@ static void GD_HLE_Command(u32 cc)
 				/* A track the disc has not got. Nothing says where it would
 				 * be: the command fails and the drive goes on as it was.
 				 * (It played from and to whatever was on the stack.) */
-				WARN_LOG(REIOS, "GDROM: CMD PLAY: no track %d or %d", first_track, last_track);
+				WARN_LOG(REIOS, "GDROM: CMD PLAY: no track %d or %d\n", first_track, last_track);
 				GDROM_HLE_BadParam();
 				break;
 			}
-			debugf("GDROM: CMD PLAY first_track %x last_track %x repeats %x start_fad %x end_fad %x param4 %x", first_track, last_track, repeats,
+			debugf("GDROM: CMD PLAY first_track %x last_track %x repeats %x start_fad %x end_fad %x param4 %x\n", first_track, last_track, repeats,
 					start_fad, end_fad, gd_hle_state.params[3]);
 			cdda.status = CDDA_PLAYING;
 			cdda.StartAddr.FAD = start_fad;
@@ -601,7 +601,7 @@ static void GD_HLE_Command(u32 cc)
 		break;
 
 	case GDCC_PAUSE:
-		debugf("GDROM: CMD PAUSE");
+		debugf("GDROM: CMD PAUSE\n");
 		if (cdda.status == CDDA_PLAYING)
 			cdda.status = CDDA_PAUSED;
 		SecNumber.Status = GD_PAUSE;
@@ -612,7 +612,7 @@ static void GD_HLE_Command(u32 cc)
 			u32 sector = gd_hle_state.params[0] & 0xffffff;
 			u32 num = gd_hle_state.params[1];
 
-			debugf("GDROM: CMD READ Sector=%d, Num=%d", sector, num);
+			debugf("GDROM: CMD READ Sector=%d, Num=%d\n", sector, num);
 			gd_hle_state.status = BIOS_DATA_AVAIL;
 			gd_hle_state.multi_read_sector = sector;
 			gd_hle_state.multi_read_count = num * 2048;
@@ -631,7 +631,7 @@ static void GD_HLE_Command(u32 cc)
 	case GDCC_REQ_MODE:
 		{
 			u32 dest = gd_hle_state.params[0];
-			debugf("GDROM: REQ_MODE dest:%x", dest);
+			debugf("GDROM: REQ_MODE dest:%x\n", dest);
 			WriteMem32(dest, GD_HardwareInfo.speed);
 			WriteMem32(dest + 4, (GD_HardwareInfo.standby_hi << 8) | GD_HardwareInfo.standby_lo);
 			WriteMem32(dest + 8, GD_HardwareInfo.read_flags);
@@ -649,7 +649,7 @@ static void GD_HLE_Command(u32 cc)
 			u32 read_flags = gd_hle_state.params[2];
 			u32 read_retry = gd_hle_state.params[3];
 
-			debugf("GDROM: SET_MODE speed %x standby %x read_flags %x read_retry %x", speed, standby, read_flags, read_retry);
+			debugf("GDROM: SET_MODE speed %x standby %x read_flags %x read_retry %x\n", speed, standby, read_flags, read_retry);
 
 			GD_HardwareInfo.speed = speed;
 			GD_HardwareInfo.standby_hi = (standby & 0xff00) >> 8;
@@ -669,7 +669,7 @@ static void GD_HLE_Command(u32 cc)
 			u32 len = (u32)strlen(ver);
 			u32 i;
 
-			debugf("GDROM: GDCC_GET_VER dest %x", dest);
+			debugf("GDROM: GDCC_GET_VER dest %x\n", dest);
 
 			/* 0x8c0013b8 (offset 0xd0 in the gdrom state struct) is then loaded and */
 			/* overwrites the last byte. no idea what this is, but seems to be hard */
@@ -691,7 +691,7 @@ static void GD_HLE_Command(u32 cc)
 			u32 fad, elapsed, tracknum, out;
 			u8 adr, ctrl;
 
-			debugf("GDROM: GDCC_REQ_STAT dst0=%08x dst1=%08x dst2=%08x dst3=%08x", dst0, dst1, dst2, dst3);
+			debugf("GDROM: GDCC_REQ_STAT dst0=%08x dst1=%08x dst2=%08x dst3=%08x\n", dst0, dst1, dst2, dst3);
 
 			/* bit   |  7  |  6  |  5  |  4  |  3  |  2  |  1  |  0 */
 			/* byte  |     |     |     |     |     |     |     | */
@@ -751,7 +751,7 @@ static void GD_HLE_Command(u32 cc)
 			u32 num = gd_hle_state.params[1];
 			bool dma = cc == GDCC_MULTI_DMAREAD;
 
-			debugf("GDROM: MULTI_%sREAD Sector=%d, Num=%d", dma ? "DMA" : "PIO", sector, num);
+			debugf("GDROM: MULTI_%sREAD Sector=%d, Num=%d\n", dma ? "DMA" : "PIO", sector, num);
 
 			gd_hle_state.status = BIOS_DATA_AVAIL;
 			gd_hle_state.multi_read_sector = sector;
@@ -772,7 +772,7 @@ static void GD_HLE_Command(u32 cc)
 			u32 dest = gd_hle_state.params[0];
 			u32 size = gd_hle_state.params[1];
 			bool dma = cc == GDCC_REQ_DMA_TRANS;
-			debugf("GDROM: REQ_%s_TRANS dest %x size %x", dma ? "DMA" : "PIO",
+			debugf("GDROM: REQ_%s_TRANS dest %x size %x\n", dma ? "DMA" : "PIO",
 					dest, size);
 			if (dma)
 				multi_xfer(true);
@@ -782,7 +782,7 @@ static void GD_HLE_Command(u32 cc)
 		break;
 
 	default:
-		WARN_LOG(REIOS, "GDROM: Unknown GDROM CC:%X", cc);
+		WARN_LOG(REIOS, "GDROM: Unknown GDROM CC:%X\n", cc);
 		break;
 	}
 	if (gd_hle_state.status == BIOS_ACTIVE)
@@ -821,7 +821,7 @@ void gdrom_hle_op(void)
 			/* r5 = pointer to parameter block for the command, can be NULL if the command does not take parameters */
 
 			/* Returns: a request id (>=0) if successful, negative error code if failed */
-			debugf("GDROM: HLE SEND COMMAND CC:%X  param ptr: %X bios status %d", r[4], r[5], gd_hle_state.status);
+			debugf("GDROM: HLE SEND COMMAND CC:%X  param ptr: %X bios status %d\n", r[4], r[5], gd_hle_state.status);
 			if (gd_hle_state.status != BIOS_INACTIVE)
 			{
 				r[0] = 0;
@@ -898,13 +898,13 @@ void gdrom_hle_op(void)
 					gd_hle_state.last_request_id = 0xFFFFFFFF;
 				}
 			}
-			debugf("GDROM: HLE CHECK COMMAND REQID:%X  param ptr: %X -> %X : %x %x %x %x", r[4], r[5], r[0],
+			debugf("GDROM: HLE CHECK COMMAND REQID:%X  param ptr: %X -> %X : %x %x %x %x\n", r[4], r[5], r[0],
 					gd_hle_state.result[0], gd_hle_state.result[1], gd_hle_state.result[2], gd_hle_state.result[3]);
 			break;
 
 		case GDROM_MAIN:
 			/* In order for enqueued commands to get processed, this function must be called a few times. */
-			debugf("GDROM: HLE GDROM_MAIN");
+			debugf("GDROM: HLE GDROM_MAIN\n");
 			if (gd_hle_state.status == BIOS_ACTIVE || (gd_hle_state.status == BIOS_DATA_AVAIL && gd_hle_state.command == GDCC_REQ_PIO_TRANS))
 			{
 				GD_HLE_Command(gd_hle_state.command);
@@ -913,7 +913,7 @@ void gdrom_hle_op(void)
 
 		case GDROM_INIT:
 			/* Initialize the GDROM subsystem. Should be called before any requests are enqueued. */
-			debugf("GDROM: HLE GDROM_INIT");
+			debugf("GDROM: HLE GDROM_INIT\n");
 			gd_hle_state.last_request_id = 0xFFFFFFFF;
 			gd_hle_state.next_request_id = 2;
 			gd_hle_state.status = BIOS_INACTIVE;
@@ -921,7 +921,7 @@ void gdrom_hle_op(void)
 
 		case GDROM_RESET:
 			/* Resets the drive. */
-			debugf("GDROM: HLE GDROM_RESET");
+			debugf("GDROM: HLE GDROM_RESET\n");
 			gd_hle_state.last_request_id = 0xFFFFFFFF;
 			gd_hle_state.status = BIOS_INACTIVE;
 			break;
@@ -967,7 +967,7 @@ void gdrom_hle_op(void)
 						WriteMem32(r[4] + 4, discType);
 					break;
 				}
-				debugf("GDROM: HLE GDROM_CHECK_DRIVE r4:%X -> %x %x", r[4], ReadMem32(r[4]), ReadMem32(r[4] + 4));
+				debugf("GDROM: HLE GDROM_CHECK_DRIVE r4:%X -> %x %x\n", r[4], ReadMem32(r[4]), ReadMem32(r[4] + 4));
 				r[0] = 0;
 			}
 			break;
@@ -979,7 +979,7 @@ void gdrom_hle_op(void)
 			/* r4 = request id */
 
 			/* Returns: zero if successful, nonzero if failure */
-			debugf("GDROM: HLE GDROM_ABORT_COMMAND r4:%X",r[4]);
+			debugf("GDROM: HLE GDROM_ABORT_COMMAND r4:%X\n",r[4]);
 			if (r[4] == gd_hle_state.last_request_id
 					&& (gd_hle_state.status == BIOS_DATA_AVAIL || gd_hle_state.status == BIOS_ACTIVE))
 			{
@@ -1006,7 +1006,7 @@ void gdrom_hle_op(void)
 			/* 3 	Sector size in bytes (normally 2048) */
 
 			/* Returns: zero if successful, -1 if failure */
-			debugf("GDROM: HLE GDROM_SECTOR_MODE PTR_r4:%X",r[4]);
+			debugf("GDROM: HLE GDROM_SECTOR_MODE PTR_r4:%X\n",r[4]);
 			/* (asked for, it was taken as set: the game's own block came back as the answer) */
 			SecMode[0] = ReadMem32(r[4]);
 			for(i=1; i<4; i++) {
@@ -1014,13 +1014,13 @@ void gdrom_hle_op(void)
 					SecMode[i] = ReadMem32(r[4]+(i<<2));
 				else
 					WriteMem32(r[4]+(i<<2), SecMode[i]);
-				debugf("%08X", SecMode[i]);
+				debugf("%08X\n", SecMode[i]);
 			}
 			r[0] = 0;
 			break;
 
 		case GDROM_G1_DMA_END:
-			debugf("GDROM: G1_DMA_END callback %x arg %x", r[4], r[5]);
+			debugf("GDROM: G1_DMA_END callback %x arg %x\n", r[4], r[5]);
 			gd_hle_state.multi_callback = r[4];
 			gd_hle_state.multi_callback_arg = r[5];
 			r[0] = 0;
@@ -1040,7 +1040,7 @@ void gdrom_hle_op(void)
 		case GDROM_REQ_DMA_TRANS:
 			gd_hle_state.params[0] = ReadMem32(r[5]);
 			gd_hle_state.params[1] = ReadMem32(r[5] + 4);
-			debugf("GDROM: REQ_DMA_TRANS req_id %x dest %x size %x",
+			debugf("GDROM: REQ_DMA_TRANS req_id %x dest %x size %x\n",
 					r[4], gd_hle_state.params[0], gd_hle_state.params[1]);
 
 			/* (more than main memory holds is not a transfer into any buffer there is) */
@@ -1059,7 +1059,7 @@ void gdrom_hle_op(void)
 		case GDROM_REQ_PIO_TRANS:
 			gd_hle_state.params[0] = ReadMem32(r[5]);
 			gd_hle_state.params[1] = ReadMem32(r[5] + 4);
-			debugf("GDROM: REQ_PIO_TRANS req_id %x dest %x size %x",
+			debugf("GDROM: REQ_PIO_TRANS req_id %x dest %x size %x\n",
 					r[4], gd_hle_state.params[0], gd_hle_state.params[1]);
 			if (gd_hle_state.status != BIOS_DATA_AVAIL || gd_hle_state.params[1] > gd_hle_state.multi_read_count
 					|| gd_hle_state.params[1] > RAM_SIZE)
@@ -1076,7 +1076,7 @@ void gdrom_hle_op(void)
 		case GDROM_CHECK_DMA_TRANS:
 			{
 				u32 len_addr = r[5];
-				debugf("GDROM: CHECK_DMA_TRANS req_id %x len_addr %x -> %x", r[4], len_addr, gd_hle_state.multi_read_count);
+				debugf("GDROM: CHECK_DMA_TRANS req_id %x len_addr %x -> %x\n", r[4], len_addr, gd_hle_state.multi_read_count);
 				if (gd_hle_state.status == BIOS_DATA_AVAIL)
 				{
 					WriteMem32(len_addr, gd_hle_state.multi_read_count);
@@ -1090,7 +1090,7 @@ void gdrom_hle_op(void)
 			break;
 
 		case GDROM_SET_PIO_CALLBACK:
-			debugf("GDROM: SET_PIO_CALLBACK callback %x arg %x", r[4], r[5]);
+			debugf("GDROM: SET_PIO_CALLBACK callback %x arg %x\n", r[4], r[5]);
 			gd_hle_state.multi_callback = r[4];
 			gd_hle_state.multi_callback_arg = r[5];
 			r[0] = 0;
@@ -1099,7 +1099,7 @@ void gdrom_hle_op(void)
 		case GDROM_CHECK_PIO_TRANS:
 			{
 				u32 len_addr = r[5];
-				debugf("GDROM: CHECK_PIO_TRANS req_id %x len_addr %x -> %x", r[4], len_addr, gd_hle_state.multi_read_count);
+				debugf("GDROM: CHECK_PIO_TRANS req_id %x len_addr %x -> %x\n", r[4], len_addr, gd_hle_state.multi_read_count);
 				if (gd_hle_state.status == BIOS_DATA_AVAIL)
 				{
 					WriteMem32(len_addr, gd_hle_state.multi_read_count);
@@ -1113,7 +1113,7 @@ void gdrom_hle_op(void)
 			break;
 
 		default:
-			WARN_LOG(REIOS, "GDROM: Unknown SYSCALL: %X",r[7]);
+			WARN_LOG(REIOS, "GDROM: Unknown SYSCALL: %X\n",r[7]);
 			break;
 		}
 	}
@@ -1124,7 +1124,7 @@ void gdrom_hle_op(void)
 		case MISC_INIT:
 			/* Initializes all the syscall vectors to their default values. */
 			/* Returns: zero */
-			debugf("GDROM: MISC_INIT not implemented");
+			debugf("GDROM: MISC_INIT not implemented\n");
 			r[0] = 0;
 			break;
 
@@ -1136,11 +1136,11 @@ void gdrom_hle_op(void)
 			/* r5 = pointer to handler function, or NULL to clear */
 
 			/* Returns: zero if successful, -1 if setting/clearing the handler fails */
-			debugf("GDROM: MISC_SETVECTOR not implemented");
+			debugf("GDROM: MISC_SETVECTOR not implemented\n");
 			break;
 
 		default:
-			debugf("GDROM: Unknown MISC command %x", r[7]);
+			debugf("GDROM: Unknown MISC command %x\n", r[7]);
 			break;
 		}
 	}

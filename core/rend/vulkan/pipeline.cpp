@@ -306,7 +306,7 @@ void PipelineManager::Prepare()
 				addGeneral(key);
 		else
 		{
-			WARN_LOG(RENDERER, "Vulkan: %u general pipelines a draw can reach, too many to make at the start",
+			WARN_LOG(RENDERER, "Vulkan: %u general pipelines a draw can reach, too many to make at the start\n",
 					(u32)reach.size());
 			GetContext()->PsoKeys().ForEach(who, [&](u64 key) { if (fits(key)) addGeneral(key); });
 		}
@@ -338,7 +338,7 @@ void PipelineManager::Prepare()
 					slot.pipeline = VK_NULL_HANDLE;
 					now.push_back(&slot);
 				}
-	NOTICE_LOG(RENDERER, "Vulkan: %u general pipelines made at the start", general.Used());
+	NOTICE_LOG(RENDERER, "Vulkan: %u general pipelines made at the start\n", general.Used());
 	worker.BuildSoon(now.data(), (u32)now.size(), GetContext()->GetPipelineCache());
 	/* The polygons' own pipelines made in earlier runs: asked for now, made
 	 * while nothing more pressing is */

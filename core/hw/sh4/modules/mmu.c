@@ -23,11 +23,11 @@ bool UTLB_Sync(u32 entry)
 	{
 		u32 vpn_sq = ((UTLB[entry].Address.VPN & 0x7FFFF) >> 10) & 0x3F;/* upper bits are always known [0xE0/E1/E2/E3] */
 		sq_remap[vpn_sq] = UTLB[entry].Data.PPN << 10;
-		INFO_LOG(SH4, "SQ remap %d : 0x%X to 0x%X", entry, UTLB[entry].Address.VPN << 10, UTLB[entry].Data.PPN << 10);
+		INFO_LOG(SH4, "SQ remap %d : 0x%X to 0x%X\n", entry, UTLB[entry].Address.VPN << 10, UTLB[entry].Data.PPN << 10);
 	}
 	else
 	{
-		INFO_LOG(SH4, "MEM remap %d : 0x%X to 0x%X", entry, UTLB[entry].Address.VPN << 10, UTLB[entry].Data.PPN << 10);
+		INFO_LOG(SH4, "MEM remap %d : 0x%X to 0x%X\n", entry, UTLB[entry].Address.VPN << 10, UTLB[entry].Data.PPN << 10);
 	}
 
 	return true;
@@ -35,7 +35,7 @@ bool UTLB_Sync(u32 entry)
 /* Sync memory mapping to MMU, suspend compiled blocks if needed.entry is a ITLB entry # , -1 is for full sync */
 void ITLB_Sync(u32 entry)
 {
-	INFO_LOG(SH4, "ITLB MEM remap %d : 0x%X to 0x%X",entry,ITLB[entry].Address.VPN<<10,ITLB[entry].Data.PPN<<10);
+	INFO_LOG(SH4, "ITLB MEM remap %d : 0x%X to 0x%X\n",entry,ITLB[entry].Address.VPN<<10,ITLB[entry].Data.PPN<<10);
 }
 
 void mmu_forget(u32 va)
@@ -124,7 +124,7 @@ static const u32 ITLB_LRU_AND[4] =
 /* sync mem mapping to mmu , suspend compiled blocks if needed.entry is a UTLB entry # , -1 is for full sync */
 bool UTLB_Sync(u32 entry)
 {
-	printf_mmu("UTLB MEM remap %d : 0x%X to 0x%X : %d asid %d size %d", entry, UTLB[entry].Address.VPN << 10, UTLB[entry].Data.PPN << 10, UTLB[entry].Data.V,
+	printf_mmu("UTLB MEM remap %d : 0x%X to 0x%X : %d asid %d size %d\n", entry, UTLB[entry].Address.VPN << 10, UTLB[entry].Data.PPN << 10, UTLB[entry].Data.V,
 			UTLB[entry].Address.ASID, UTLB[entry].Data.SZ0 + UTLB[entry].Data.SZ1 * 2);
 	if (UTLB[entry].Data.V == 0)
 		return true;
@@ -156,7 +156,7 @@ void mmu_utlb_written(u32 entry)
 /* sync mem mapping to mmu , suspend compiled blocks if needed.entry is a ITLB entry # , -1 is for full sync */
 void ITLB_Sync(u32 entry)
 {
-	printf_mmu("ITLB MEM remap %d : 0x%X to 0x%X : %d", entry, ITLB[entry].Address.VPN << 10, ITLB[entry].Data.PPN << 10, ITLB[entry].Data.V);
+	printf_mmu("ITLB MEM remap %d : 0x%X to 0x%X : %d\n", entry, ITLB[entry].Address.VPN << 10, ITLB[entry].Data.PPN << 10, ITLB[entry].Data.V);
 }
 #endif
 
@@ -196,7 +196,7 @@ static void mmu_tlb_missed(void)
 
 void mmu_raise_exception(u32 mmu_error, u32 address, u32 am)
 {
-	printf_mmu("mmu_raise_exception -> pc = 0x%X : ", next_pc);
+	printf_mmu("mmu_raise_exception -> pc = 0x%X : \n", next_pc);
 	CCN_TEA = address;
 	CCN_PTEH.VPN = address >> 10;
 
@@ -209,7 +209,7 @@ void mmu_raise_exception(u32 mmu_error, u32 address, u32 am)
 
 		/* TLB miss */
 	case MMU_ERROR_TLB_MISS:
-		printf_mmu("MMU_ERROR_UTLB_MISS 0x%X, handled", address);
+		printf_mmu("MMU_ERROR_UTLB_MISS 0x%X, handled\n", address);
 		mmu_tlb_missed();
 		if (am == MMU_TT_DWRITE)			/* WTLBMISS - Write Data TLB Miss Exception */
 			raise_mmu_exception(0x60, 0x400);
@@ -226,13 +226,13 @@ void mmu_raise_exception(u32 mmu_error, u32 address, u32 am)
 		 * which a program could then bring about at will. An exception
 		 * with its own code, as upstream has it: the program is no
 		 * better off, the frontend is. */
-		INFO_LOG(SH4, "MMU_ERROR_TLB_MHIT @ 0x%X", address);
+		INFO_LOG(SH4, "MMU_ERROR_TLB_MHIT @ 0x%X\n", address);
 		raise_mmu_exception(0x140, 0x100);
 		return;
 
 		/* Mem is read/write protected (depends on translation type) */
 	case MMU_ERROR_PROTECTED:
-		printf_mmu("MMU_ERROR_PROTECTED 0x%X, handled", address);
+		printf_mmu("MMU_ERROR_PROTECTED 0x%X, handled\n", address);
 		if (am == MMU_TT_DWRITE)			/* WRITEPROT - Write Data TLB Protection Violation Exception */
 			raise_mmu_exception(0xC0, 0x100);
 		else if (am == MMU_TT_DREAD)		/* READPROT - Data TLB Protection Violation Exception */
@@ -243,7 +243,7 @@ void mmu_raise_exception(u32 mmu_error, u32 address, u32 am)
 
 		/* Mem is write protected , firstwrite */
 	case MMU_ERROR_FIRSTWRITE:
-		printf_mmu("MMU_ERROR_FIRSTWRITE");
+		printf_mmu("MMU_ERROR_FIRSTWRITE\n");
 		verify(am == MMU_TT_DWRITE);
 		/* FIRSTWRITE - Initial Page Write Exception */
 		raise_mmu_exception(0x80, 0x100);
@@ -253,24 +253,24 @@ void mmu_raise_exception(u32 mmu_error, u32 address, u32 am)
 	case MMU_ERROR_BADADDR:
 		if (am == MMU_TT_DWRITE)			/* WADDERR - Write Data Address Error */
 		{
-			printf_mmu("MMU_ERROR_BADADDR(dw) 0x%X", address);
+			printf_mmu("MMU_ERROR_BADADDR(dw) 0x%X\n", address);
 			raise_mmu_exception(0x100, 0x100);
 		}
 		else if (am == MMU_TT_DREAD)		/* RADDERR - Read Data Address Error */
 		{
-			printf_mmu("MMU_ERROR_BADADDR(dr) 0x%X", address);
+			printf_mmu("MMU_ERROR_BADADDR(dr) 0x%X\n", address);
 			raise_mmu_exception(0xE0, 0x100);
 		}
 		else							/* IADDERR - Instruction Address Error */
 		{
-			printf_mmu("MMU_ERROR_BADADDR(i) 0x%X", address);
+			printf_mmu("MMU_ERROR_BADADDR(i) 0x%X\n", address);
 			raise_mmu_exception(0xE0, 0x100);
 		}
 		return;
 
 		/* Can't Execute */
 	case MMU_ERROR_EXECPROT:
-		INFO_LOG(SH4, "MMU_ERROR_EXECPROT 0x%X", address);
+		INFO_LOG(SH4, "MMU_ERROR_EXECPROT 0x%X\n", address);
 
 		/* EXECPROT - Instruction TLB Protection Violation Exception */
 		raise_mmu_exception(0xA0, 0x100);
@@ -283,7 +283,7 @@ void mmu_raise_exception(u32 mmu_error, u32 address, u32 am)
 
 void DoMMUException(u32 address, u32 mmu_error, u32 access_type)
 {
-	printf_mmu("DoMMUException -> pc = 0x%X : %d ", next_pc, access_type);
+	printf_mmu("DoMMUException -> pc = 0x%X : %d \n", next_pc, access_type);
 	CCN_TEA = address;
 	CCN_PTEH.VPN = address >> 10;
 
@@ -296,7 +296,7 @@ void DoMMUException(u32 address, u32 mmu_error, u32 access_type)
 
 		/* TLB miss */
 	case MMU_ERROR_TLB_MISS:
-		printf_mmu("MMU_ERROR_UTLB_MISS 0x%X, handled", address);
+		printf_mmu("MMU_ERROR_UTLB_MISS 0x%X, handled\n", address);
 		mmu_tlb_missed();
 		if (access_type == MMU_TT_DWRITE)			/* WTLBMISS - Write Data TLB Miss Exception */
 			Do_Exception(next_pc, 0x60, 0x400);
@@ -311,13 +311,13 @@ void DoMMUException(u32 address, u32 mmu_error, u32 access_type)
 		/* TLB Multihit */
 	case MMU_ERROR_TLB_MHIT:
 		/* (see mmu_raise_exception()) */
-		INFO_LOG(SH4, "MMU_ERROR_TLB_MHIT @ 0x%X", address);
+		INFO_LOG(SH4, "MMU_ERROR_TLB_MHIT @ 0x%X\n", address);
 		Do_Exception(next_pc, 0x140, 0x100);
 		return;
 
 		/* Mem is read/write protected (depends on translation type) */
 	case MMU_ERROR_PROTECTED:
-		printf_mmu("MMU_ERROR_PROTECTED 0x%X, handled", address);
+		printf_mmu("MMU_ERROR_PROTECTED 0x%X, handled\n", address);
 		if (access_type == MMU_TT_DWRITE)			/* WRITEPROT - Write Data TLB Protection Violation Exception */
 			Do_Exception(next_pc, 0xC0, 0x100);
 		else if (access_type == MMU_TT_DREAD)		/* READPROT - Data TLB Protection Violation Exception */
@@ -331,7 +331,7 @@ void DoMMUException(u32 address, u32 mmu_error, u32 access_type)
 
 		/* Mem is write protected , firstwrite */
 	case MMU_ERROR_FIRSTWRITE:
-		printf_mmu("MMU_ERROR_FIRSTWRITE");
+		printf_mmu("MMU_ERROR_FIRSTWRITE\n");
 		verify(access_type == MMU_TT_DWRITE);
 		/* FIRSTWRITE - Initial Page Write Exception */
 		Do_Exception(next_pc, 0x80, 0x100);
@@ -347,17 +347,17 @@ void DoMMUException(u32 address, u32 mmu_error, u32 access_type)
 			Do_Exception(next_pc, 0xE0, 0x100);
 		else							/* IADDERR - Instruction Address Error */
 		{
-			printf_mmu("MMU_ERROR_BADADDR(i) 0x%X", address);
+			printf_mmu("MMU_ERROR_BADADDR(i) 0x%X\n", address);
 			Do_Exception(next_pc, 0xE0, 0x100);
 			return;
 		}
-		printf_mmu("MMU_ERROR_BADADDR(d) 0x%X, handled", address);
+		printf_mmu("MMU_ERROR_BADADDR(d) 0x%X, handled\n", address);
 		return;
 		break;
 
 		/* Can't Execute */
 	case MMU_ERROR_EXECPROT:
-		INFO_LOG(SH4, "MMU_ERROR_EXECPROT 0x%X", address);
+		INFO_LOG(SH4, "MMU_ERROR_EXECPROT 0x%X\n", address);
 
 		/* EXECPROT - Instruction TLB Protection Violation Exception */
 		Do_Exception(next_pc, 0xA0, 0x100);
@@ -767,7 +767,7 @@ void mmu_set_state(void)
 	mmu_detect_strict();
 	mmu_strict_changed();
 	if (CCN_MMUCR.AT == 1 && settings.dreamcast.FullMMU)
-		NOTICE_LOG(SH4, "Enabling Full MMU support");
+		NOTICE_LOG(SH4, "Enabling Full MMU support\n");
 
 	SetMemoryHandlers();
 }

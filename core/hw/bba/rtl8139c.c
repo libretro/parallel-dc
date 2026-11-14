@@ -454,7 +454,7 @@ static void rtl8139_set_next_tctr_time(RTL8139State *s);
 
 static void prom9346_decode_command(EEprom9346 *eeprom, uint8_t command)
 {
-    DPRINTF("eeprom command 0x%02x", command);
+    DPRINTF("eeprom command 0x%02x\n", command);
 
     switch (command & Chip9346_op_mask)
     {
@@ -465,7 +465,7 @@ static void prom9346_decode_command(EEprom9346 *eeprom, uint8_t command)
             eeprom->eedo = 0;
             eeprom->tick = 0;
             eeprom->mode = Chip9346_data_read;
-            DPRINTF("eeprom read from address 0x%02x data=0x%04x",
+            DPRINTF("eeprom read from address 0x%02x data=0x%04x\n",
                 eeprom->address, eeprom->output);
         }
         break;
@@ -476,7 +476,7 @@ static void prom9346_decode_command(EEprom9346 *eeprom, uint8_t command)
             eeprom->input = 0;
             eeprom->tick = 0;
             eeprom->mode = Chip9346_none; /* Chip9346_data_write */
-            DPRINTF("eeprom begin write to address 0x%02x",
+            DPRINTF("eeprom begin write to address 0x%02x\n",
                 eeprom->address);
         }
         break;
@@ -485,13 +485,13 @@ static void prom9346_decode_command(EEprom9346 *eeprom, uint8_t command)
             switch (command & Chip9346_op_ext_mask)
             {
                 case Chip9346_op_write_enable:
-                    DPRINTF("eeprom write enabled");
+                    DPRINTF("eeprom write enabled\n");
                     break;
                 case Chip9346_op_write_all:
-                    DPRINTF("eeprom begin write all");
+                    DPRINTF("eeprom begin write all\n");
                     break;
                 case Chip9346_op_write_disable:
-                    DPRINTF("eeprom write disabled");
+                    DPRINTF("eeprom write disabled\n");
                     break;
             }
             break;
@@ -504,7 +504,7 @@ static void prom9346_shift_clock(EEprom9346 *eeprom)
 
     ++ eeprom->tick;
 
-    DPRINTF("eeprom: tick %d eedi=%d eedo=%d", eeprom->tick, eeprom->eedi,
+    DPRINTF("eeprom: tick %d eedi=%d eedo=%d\n", eeprom->tick, eeprom->eedi,
         eeprom->eedo);
 
     switch (eeprom->mode)
@@ -515,7 +515,7 @@ static void prom9346_shift_clock(EEprom9346 *eeprom)
                 eeprom->mode = Chip9346_read_command;
                 eeprom->tick = 0;
                 eeprom->input = 0;
-                DPRINTF("eeprom: +++ synchronized, begin command read");
+                DPRINTF("eeprom: +++ synchronized, begin command read\n");
             }
             break;
 
@@ -540,14 +540,14 @@ static void prom9346_shift_clock(EEprom9346 *eeprom)
                 eeprom->input = 0;
                 eeprom->tick = 0;
 
-                DPRINTF("eeprom: +++ end of read, awaiting next command");
+                DPRINTF("eeprom: +++ end of read, awaiting next command\n");
 #else
         /* original behaviour */
                 ++eeprom->address;
                 eeprom->address &= EEPROM_9346_ADDR_MASK;
                 eeprom->output = eeprom->contents[eeprom->address];
                 eeprom->tick = 0;
-                DPRINTF("eeprom: +++ read next address 0x%02x data=0x%04x",
+                DPRINTF("eeprom: +++ read next address 0x%02x data=0x%04x\n",
                     eeprom->address, eeprom->output);
 #endif
             }
@@ -557,7 +557,7 @@ static void prom9346_shift_clock(EEprom9346 *eeprom)
             eeprom->input = (eeprom->input << 1) | (bit & 1);
             if (eeprom->tick == 16)
             {
-                DPRINTF("eeprom write to address 0x%02x data=0x%04x",
+                DPRINTF("eeprom write to address 0x%02x data=0x%04x\n",
                     eeprom->address, eeprom->input);
 
                 eeprom->contents[eeprom->address] = eeprom->input;
@@ -576,7 +576,7 @@ static void prom9346_shift_clock(EEprom9346 *eeprom)
                 {
                     eeprom->contents[i] = eeprom->input;
                 }
-                DPRINTF("eeprom filled with data=0x%04x", eeprom->input);
+                DPRINTF("eeprom filled with data=0x%04x\n", eeprom->input);
 
                 eeprom->mode = Chip9346_enter_command_mode;
                 eeprom->tick = 0;
@@ -608,7 +608,7 @@ static void prom9346_set_wire(RTL8139State *s, int eecs, int eesk, int eedi)
     eeprom->eesk = eesk;
     eeprom->eedi = eedi;
 
-    DPRINTF("eeprom: +++ wires CS=%d SK=%d DI=%d DO=%d", eeprom->eecs,
+    DPRINTF("eeprom: +++ wires CS=%d SK=%d DI=%d DO=%d\n", eeprom->eecs,
         eeprom->eesk, eeprom->eedi, eeprom->eedo);
 
     if (!old_eecs && eecs)
@@ -619,12 +619,12 @@ static void prom9346_set_wire(RTL8139State *s, int eecs, int eesk, int eedi)
         eeprom->output = 0;
         eeprom->mode = Chip9346_enter_command_mode;
 
-        DPRINTF("=== eeprom: begin access, enter command mode");
+        DPRINTF("=== eeprom: begin access, enter command mode\n");
     }
 
     if (!eecs)
     {
-        DPRINTF("=== eeprom: end access");
+        DPRINTF("=== eeprom: end access\n");
         return;
     }
 
@@ -641,7 +641,7 @@ static void rtl8139_update_irq(RTL8139State *s)
     int isr;
     isr = (s->IntrStatus & s->IntrMask) & 0xffff;
 
-    DPRINTF("Set IRQ to %d (%04x %04x)", isr ? 1 : 0, s->IntrStatus,
+    DPRINTF("Set IRQ to %d (%04x %04x)\n", isr ? 1 : 0, s->IntrStatus,
         s->IntrMask);
 
     pci_set_irq(d, (isr != 0));
@@ -674,7 +674,7 @@ static void rtl8139_write_buffer(RTL8139State *s, const void *buf, int size)
         /* write packet data */
         if (wrapped && !(s->RxBufferSize < 65536 && rtl8139_RxWrap(s)))
         {
-            DPRINTF(">>> rx packet wrapped in buffer at %d", size - wrapped);
+            DPRINTF(">>> rx packet wrapped in buffer at %d\n", size - wrapped);
 
             if (size > wrapped)
             {
@@ -733,12 +733,12 @@ static int rtl8139_do_receive(RTL8139State *s, const uint8_t *buf, size_t size_,
     static const uint8_t broadcast_macaddr[6] =
         { 0xff, 0xff, 0xff, 0xff, 0xff, 0xff };
 
-    DPRINTF(">>> received len=%zu", size);
+    DPRINTF(">>> received len=%zu\n", size);
 
     /* test if board clock is stopped */
     if (!s->clock_enabled)
     {
-        DPRINTF("stopped ==========================");
+        DPRINTF("stopped ==========================\n");
         return -1;
     }
 
@@ -746,34 +746,34 @@ static int rtl8139_do_receive(RTL8139State *s, const uint8_t *buf, size_t size_,
 
     if (!rtl8139_receiver_enabled(s))
     {
-        DPRINTF("receiver disabled ================");
+        DPRINTF("receiver disabled ================\n");
         return -1;
     }
 
     /* XXX: check this */
     if (s->RxConfig & AcceptAllPhys) {
         /* promiscuous: receive all */
-        DPRINTF(">>> packet received in promiscuous mode");
+        DPRINTF(">>> packet received in promiscuous mode\n");
 
     } else {
         if (!memcmp(buf,  broadcast_macaddr, 6)) {
             /* broadcast address */
             if (!(s->RxConfig & AcceptBroadcast))
             {
-                DPRINTF(">>> broadcast packet rejected");
+                DPRINTF(">>> broadcast packet rejected\n");
 
                 return size;
             }
 
             packet_header |= RxBroadcast;
 
-            DPRINTF(">>> broadcast packet received");
+            DPRINTF(">>> broadcast packet received\n");
 
         } else if (buf[0] & 0x01) {
             /* multicast */
             if (!(s->RxConfig & AcceptMulticast))
             {
-                DPRINTF(">>> multicast packet rejected");
+                DPRINTF(">>> multicast packet rejected\n");
 
                 return size;
             }
@@ -782,14 +782,14 @@ static int rtl8139_do_receive(RTL8139State *s, const uint8_t *buf, size_t size_,
 
             if (!(s->mult[mcast_idx >> 3] & (1 << (mcast_idx & 7))))
             {
-                DPRINTF(">>> multicast address mismatch");
+                DPRINTF(">>> multicast address mismatch\n");
 
                 return size;
             }
 
             packet_header |= RxMulticast;
 
-            DPRINTF(">>> multicast packet received");
+            DPRINTF(">>> multicast packet received\n");
 
         } else if (s->phys[0] == buf[0] &&
                    s->phys[1] == buf[1] &&
@@ -800,18 +800,18 @@ static int rtl8139_do_receive(RTL8139State *s, const uint8_t *buf, size_t size_,
             /* match */
             if (!(s->RxConfig & AcceptMyPhys))
             {
-                DPRINTF(">>> rejecting physical address matching packet");
+                DPRINTF(">>> rejecting physical address matching packet\n");
 
                 return size;
             }
 
             packet_header |= RxPhysical;
 
-            DPRINTF(">>> physical address matching packet received");
+            DPRINTF(">>> physical address matching packet received\n");
 
         } else {
 
-            DPRINTF(">>> unknown packet");
+            DPRINTF(">>> unknown packet\n");
 
             return size;
         }
@@ -828,7 +828,7 @@ static int rtl8139_do_receive(RTL8139State *s, const uint8_t *buf, size_t size_,
         }
     }
 
-	DPRINTF("in ring Rx mode ================");
+	DPRINTF("in ring Rx mode ================\n");
 
 	/* begin ring receiver mode */
 	avail = MOD2(s->RxBufferSize + s->RxBufPtr - s->RxBufAddr, s->RxBufferSize);
@@ -840,7 +840,7 @@ static int rtl8139_do_receive(RTL8139State *s, const uint8_t *buf, size_t size_,
 	if (avail != 0 && RX_ALIGN(size + 8) >= avail)
 	{
 		DPRINTF("rx overflow: rx buffer length %d head 0x%04x "
-			"read 0x%04x === available 0x%04x need 0x%04zx",
+			"read 0x%04x === available 0x%04x need 0x%04zx\n",
 			s->RxBufferSize, s->RxBufAddr, s->RxBufPtr, avail, size + 8);
 
 		s->IntrStatus |= RxOverflow;
@@ -869,7 +869,7 @@ static int rtl8139_do_receive(RTL8139State *s, const uint8_t *buf, size_t size_,
 
 	/* now we can signal we have received something */
 
-	DPRINTF("received: rx buffer length %d head 0x%04x read 0x%04x",
+	DPRINTF("received: rx buffer length %d head 0x%04x read 0x%04x\n",
 		s->RxBufferSize, s->RxBufAddr, s->RxBufPtr);
 
     s->IntrStatus |= RxOK;
@@ -975,20 +975,20 @@ static void rtl8139_ChipCmd_write(RTL8139State *s, uint32_t val)
 {
     val &= 0xff;
 
-    DPRINTF("ChipCmd write val=0x%08x", val);
+    DPRINTF("ChipCmd write val=0x%08x\n", val);
 
     if (val & CmdReset)
     {
-        DPRINTF("ChipCmd reset");
+        DPRINTF("ChipCmd reset\n");
         rtl8139_reset(s);
     }
     if (val & CmdRxEnb)
     {
-        DPRINTF("ChipCmd enable receiver");
+        DPRINTF("ChipCmd enable receiver\n");
     }
     if (val & CmdTxEnb)
     {
-        DPRINTF("ChipCmd enable transmitter");
+        DPRINTF("ChipCmd enable transmitter\n");
     }
 
     /* mask unwritable bits */
@@ -1006,11 +1006,11 @@ static int rtl8139_RxBufferEmpty(RTL8139State *s)
 
     if (unread != 0)
     {
-        DPRINTF("receiver buffer data available 0x%04x", unread);
+        DPRINTF("receiver buffer data available 0x%04x\n", unread);
         return 0;
     }
 
-    DPRINTF("receiver buffer is empty");
+    DPRINTF("receiver buffer is empty\n");
 
     return 1;
 }
@@ -1022,7 +1022,7 @@ static uint32_t rtl8139_ChipCmd_read(RTL8139State *s)
     if (rtl8139_RxBufferEmpty(s))
         ret |= RxBufEmpty;
 
-    DPRINTF("ChipCmd read val=0x%04x", ret);
+    DPRINTF("ChipCmd read val=0x%04x\n", ret);
 
     return ret;
 }
@@ -1034,7 +1034,7 @@ static int rtl8139_config_writable(RTL8139State *s)
         return 1;
     }
 
-    DPRINTF("Configuration registers are write-protected");
+    DPRINTF("Configuration registers are write-protected\n");
 
     return 0;
 }
@@ -1046,7 +1046,7 @@ static void rtl8139_BasicModeCtrl_write(RTL8139State *s, uint32_t val)
 
     val &= 0xffff;
 
-    DPRINTF("BasicModeCtrl register write(w) val=0x%04x", val);
+    DPRINTF("BasicModeCtrl register write(w) val=0x%04x\n", val);
 
     if (1 || !rtl8139_config_writable(s))
     {
@@ -1070,7 +1070,7 @@ static uint32_t rtl8139_BasicModeCtrl_read(RTL8139State *s)
 {
     uint32_t ret = s->BasicModeCtrl;
 
-    DPRINTF("BasicModeCtrl register read(w) val=0x%04x", ret);
+    DPRINTF("BasicModeCtrl register read(w) val=0x%04x\n", ret);
 
     return ret;
 }
@@ -1079,7 +1079,7 @@ static void rtl8139_BasicModeStatus_write(RTL8139State *s, uint32_t val)
 {
     val &= 0xffff;
 
-    DPRINTF("BasicModeStatus register write(w) val=0x%04x", val);
+    DPRINTF("BasicModeStatus register write(w) val=0x%04x\n", val);
 
     /* mask unwritable bits */
     val = SET_MASKED(val, 0xff3f, s->BasicModeStatus);
@@ -1091,7 +1091,7 @@ static uint32_t rtl8139_BasicModeStatus_read(RTL8139State *s)
 {
     uint32_t ret = s->BasicModeStatus;
 
-    DPRINTF("BasicModeStatus register read(w) val=0x%04x", ret);
+    DPRINTF("BasicModeStatus register read(w) val=0x%04x\n", ret);
 
     return ret;
 }
@@ -1103,7 +1103,7 @@ static void rtl8139_Cfg9346_write(RTL8139State *s, uint32_t val)
 
     val &= 0xff;
 
-    DPRINTF("Cfg9346 write val=0x%02x", val);
+    DPRINTF("Cfg9346 write val=0x%02x\n", val);
 
     /* mask unwritable bits */
     val = SET_MASKED(val, 0x31, s->Cfg9346);
@@ -1146,7 +1146,7 @@ static uint32_t rtl8139_Cfg9346_read(RTL8139State *s)
         }
     }
 
-    DPRINTF("Cfg9346 read val=0x%02x", ret);
+    DPRINTF("Cfg9346 read val=0x%02x\n", ret);
 
     return ret;
 }
@@ -1155,7 +1155,7 @@ static void rtl8139_Config0_write(RTL8139State *s, uint32_t val)
 {
     val &= 0xff;
 
-    DPRINTF("Config0 write val=0x%02x", val);
+    DPRINTF("Config0 write val=0x%02x\n", val);
 
     if (!rtl8139_config_writable(s)) {
         return;
@@ -1171,7 +1171,7 @@ static uint32_t rtl8139_Config0_read(RTL8139State *s)
 {
     uint32_t ret = s->Config0;
 
-    DPRINTF("Config0 read val=0x%02x", ret);
+    DPRINTF("Config0 read val=0x%02x\n", ret);
 
     return ret;
 }
@@ -1180,7 +1180,7 @@ static void rtl8139_Config1_write(RTL8139State *s, uint32_t val)
 {
     val &= 0xff;
 
-    DPRINTF("Config1 write val=0x%02x", val);
+    DPRINTF("Config1 write val=0x%02x\n", val);
 
     if (!rtl8139_config_writable(s)) {
         return;
@@ -1196,7 +1196,7 @@ static uint32_t rtl8139_Config1_read(RTL8139State *s)
 {
     uint32_t ret = s->Config1;
 
-    DPRINTF("Config1 read val=0x%02x", ret);
+    DPRINTF("Config1 read val=0x%02x\n", ret);
 
     return ret;
 }
@@ -1205,7 +1205,7 @@ static void rtl8139_Config3_write(RTL8139State *s, uint32_t val)
 {
     val &= 0xff;
 
-    DPRINTF("Config3 write val=0x%02x", val);
+    DPRINTF("Config3 write val=0x%02x\n", val);
 
     if (!rtl8139_config_writable(s)) {
         return;
@@ -1221,7 +1221,7 @@ static uint32_t rtl8139_Config3_read(RTL8139State *s)
 {
     uint32_t ret = s->Config3;
 
-    DPRINTF("Config3 read val=0x%02x", ret);
+    DPRINTF("Config3 read val=0x%02x\n", ret);
 
     return ret;
 }
@@ -1230,7 +1230,7 @@ static void rtl8139_Config4_write(RTL8139State *s, uint32_t val)
 {
     val &= 0xff;
 
-    DPRINTF("Config4 write val=0x%02x", val);
+    DPRINTF("Config4 write val=0x%02x\n", val);
 
     if (!rtl8139_config_writable(s)) {
         return;
@@ -1246,7 +1246,7 @@ static uint32_t rtl8139_Config4_read(RTL8139State *s)
 {
     uint32_t ret = s->Config4;
 
-    DPRINTF("Config4 read val=0x%02x", ret);
+    DPRINTF("Config4 read val=0x%02x\n", ret);
 
     return ret;
 }
@@ -1255,7 +1255,7 @@ static void rtl8139_Config5_write(RTL8139State *s, uint32_t val)
 {
     val &= 0xff;
 
-    DPRINTF("Config5 write val=0x%02x", val);
+    DPRINTF("Config5 write val=0x%02x\n", val);
 
     /* mask unwritable bits */
     val = SET_MASKED(val, 0x80, s->Config5);
@@ -1267,7 +1267,7 @@ static uint32_t rtl8139_Config5_read(RTL8139State *s)
 {
     uint32_t ret = s->Config5;
 
-    DPRINTF("Config5 read val=0x%02x", ret);
+    DPRINTF("Config5 read val=0x%02x\n", ret);
 
     return ret;
 }
@@ -1276,11 +1276,11 @@ static void rtl8139_TxConfig_write(RTL8139State *s, uint32_t val)
 {
     if (!rtl8139_transmitter_enabled(s))
     {
-        DPRINTF("transmitter disabled; no TxConfig write val=0x%08x", val);
+        DPRINTF("transmitter disabled; no TxConfig write val=0x%08x\n", val);
         return;
     }
 
-    DPRINTF("TxConfig write val=0x%08x", val);
+    DPRINTF("TxConfig write val=0x%08x\n", val);
 
     val = SET_MASKED(val, TxVersionMask | 0x8070f80f, s->TxConfig);
 
@@ -1291,7 +1291,7 @@ static void rtl8139_TxConfig_writeb(RTL8139State *s, uint32_t val)
 {
     uint32_t tc = s->TxConfig;
 
-    DPRINTF("RTL8139C TxConfig via write(b) val=0x%02x", val);
+    DPRINTF("RTL8139C TxConfig via write(b) val=0x%02x\n", val);
 
     tc &= 0xFFFFFF00;
     tc |= (val & 0x000000FF);
@@ -1302,14 +1302,14 @@ static uint32_t rtl8139_TxConfig_read(RTL8139State *s)
 {
     uint32_t ret = s->TxConfig;
 
-    DPRINTF("TxConfig read val=0x%04x", ret);
+    DPRINTF("TxConfig read val=0x%04x\n", ret);
 
     return ret;
 }
 
 static void rtl8139_RxConfig_write(RTL8139State *s, uint32_t val)
 {
-    DPRINTF("RxConfig write val=0x%08x", val);
+    DPRINTF("RxConfig write val=0x%08x\n", val);
 
     /* mask unwritable bits */
     val = SET_MASKED(val, 0xf0fc0040, s->RxConfig);
@@ -1319,14 +1319,14 @@ static void rtl8139_RxConfig_write(RTL8139State *s, uint32_t val)
     /* reset buffer size and read/write pointers */
     rtl8139_reset_rxring(s, 8192 << ((s->RxConfig >> 11) & 0x3));
 
-    DPRINTF("RxConfig write reset buffer size to %d", s->RxBufferSize);
+    DPRINTF("RxConfig write reset buffer size to %d\n", s->RxBufferSize);
 }
 
 static uint32_t rtl8139_RxConfig_read(RTL8139State *s)
 {
     uint32_t ret = s->RxConfig;
 
-    DPRINTF("RxConfig read val=0x%08x", ret);
+    DPRINTF("RxConfig read val=0x%08x\n", ret);
 
     return ret;
 }
@@ -1336,13 +1336,13 @@ static void rtl8139_transfer_frame(RTL8139State *s, uint8_t *buf, int size,
 {
     if (!size)
     {
-        DPRINTF("+++ empty ethernet frame");
+        DPRINTF("+++ empty ethernet frame\n");
         return;
     }
 
     if (TxLoopBack == (s->TxConfig & TxLoopBack))
     {
-        DPRINTF("+++ transmit loopback mode");
+        DPRINTF("+++ transmit loopback mode\n");
         rtl8139_do_receive(s, buf, size, do_interrupt);
     }
     else
@@ -1361,23 +1361,23 @@ static int rtl8139_transmit_one(RTL8139State *s, int descriptor)
     if (!rtl8139_transmitter_enabled(s))
     {
         DPRINTF("+++ cannot transmit from descriptor %d: transmitter "
-            "disabled", descriptor);
+            "disabled\n", descriptor);
         return 0;
     }
 
     if (s->TxStatus[descriptor] & TxHostOwns)
     {
         DPRINTF("+++ cannot transmit from descriptor %d: owned by host "
-            "(%08x)", descriptor, s->TxStatus[descriptor]);
+            "(%08x)\n", descriptor, s->TxStatus[descriptor]);
         return 0;
     }
 
-    DPRINTF("+++ transmitting from descriptor %d", descriptor);
+    DPRINTF("+++ transmitting from descriptor %d\n", descriptor);
 
     d = PCI_DEVICE(s);
     txsize = s->TxStatus[descriptor] & 0x1fff;
 
-    DPRINTF("+++ transmit reading %d bytes from host memory at 0x%08x",
+    DPRINTF("+++ transmit reading %d bytes from host memory at 0x%08x\n",
         txsize, s->TxAddr[descriptor]);
 
     pci_dma_read(d, s->TxAddr[descriptor], txbuffer, txsize);
@@ -1388,7 +1388,7 @@ static int rtl8139_transmit_one(RTL8139State *s, int descriptor)
 
     rtl8139_transfer_frame(s, txbuffer, txsize, 0);
 
-    DPRINTF("+++ transmitted %d bytes from descriptor %d", txsize,
+    DPRINTF("+++ transmitted %d bytes from descriptor %d\n", txsize,
         descriptor);
 
     /* update interrupt */
@@ -1413,7 +1413,7 @@ static void rtl8139_transmit(RTL8139State *s)
     /* Mark transfer completed */
     if (!txcount)
     {
-        DPRINTF("transmitter queue stalled, current TxDesc = %d",
+        DPRINTF("transmitter queue stalled, current TxDesc = %d\n",
             s->currTxDesc);
     }
 }
@@ -1423,7 +1423,7 @@ static void rtl8139_TxStatus_write(RTL8139State *s, uint32_t txRegOffset, uint32
 
     int descriptor = txRegOffset/4;
 
-    DPRINTF("TxStatus write offset=0x%x val=0x%08x descriptor=%d",
+    DPRINTF("TxStatus write offset=0x%x val=0x%08x descriptor=%d\n",
         txRegOffset, val, descriptor);
 
     /* mask only reserved bits */
@@ -1446,7 +1446,7 @@ static uint32_t rtl8139_TxStatus_TxAddr_read(RTL8139State *s, uint32_t regs[],
 
     if (addr & (size - 1)) {
         DPRINTF("not implemented read for TxStatus/TxAddr "
-                "addr=0x%x size=0x%x", addr, size);
+                "addr=0x%x size=0x%x\n", addr, size);
         return ret;
     }
 
@@ -1455,11 +1455,11 @@ static uint32_t rtl8139_TxStatus_TxAddr_read(RTL8139State *s, uint32_t regs[],
     case 2: /* fall through */
     case 4:
         ret = (regs[reg] >> offset * 8) & (((uint64_t)1 << (size * 8)) - 1);
-        DPRINTF("TxStatus/TxAddr[%d] read addr=0x%x size=0x%x val=0x%08x",
+        DPRINTF("TxStatus/TxAddr[%d] read addr=0x%x size=0x%x val=0x%08x\n",
                 reg, addr, size, ret);
         break;
     default:
-        DPRINTF("unsupported size 0x%x of TxStatus/TxAddr reading", size);
+        DPRINTF("unsupported size 0x%x of TxStatus/TxAddr reading\n", size);
         break;
     }
 
@@ -1493,7 +1493,7 @@ static uint16_t rtl8139_TSAD_read(RTL8139State *s)
          |((s->TxStatus[0] & TxHostOwns )?TSAD_OWN0:0) ;
 
 
-    DPRINTF("TSAD read val=0x%04x", ret);
+    DPRINTF("TSAD read val=0x%04x\n", ret);
 
     return ret;
 }
@@ -1502,14 +1502,14 @@ static uint16_t rtl8139_CSCR_read(RTL8139State *s)
 {
     uint16_t ret = s->CSCR;
 
-    DPRINTF("CSCR read val=0x%04x", ret);
+    DPRINTF("CSCR read val=0x%04x\n", ret);
 
     return ret;
 }
 
 static void rtl8139_TxAddr_write(RTL8139State *s, uint32_t txAddrOffset, uint32_t val)
 {
-    DPRINTF("TxAddr write offset=0x%x val=0x%08x", txAddrOffset, val);
+    DPRINTF("TxAddr write offset=0x%x val=0x%08x\n", txAddrOffset, val);
 
     s->TxAddr[txAddrOffset/4] = val;
 }
@@ -1518,14 +1518,14 @@ static uint32_t rtl8139_TxAddr_read(RTL8139State *s, uint32_t txAddrOffset)
 {
     uint32_t ret = s->TxAddr[txAddrOffset/4];
 
-    DPRINTF("TxAddr read offset=0x%x val=0x%08x", txAddrOffset, ret);
+    DPRINTF("TxAddr read offset=0x%x val=0x%08x\n", txAddrOffset, ret);
 
     return ret;
 }
 
 static void rtl8139_RxBufPtr_write(RTL8139State *s, uint32_t val)
 {
-    DPRINTF("RxBufPtr write val=0x%04x", val);
+    DPRINTF("RxBufPtr write val=0x%04x\n", val);
 
     /* this value is off by 16 */
     s->RxBufPtr = MOD2(val + 0x10, s->RxBufferSize);
@@ -1533,7 +1533,7 @@ static void rtl8139_RxBufPtr_write(RTL8139State *s, uint32_t val)
     /* more buffer space may be available so try to receive */
     /* qemu_flush_queued_packets(qemu_get_queue(s->nic)); */
 
-    DPRINTF(" CAPR write: rx buffer length %d head 0x%04x read 0x%04x",
+    DPRINTF(" CAPR write: rx buffer length %d head 0x%04x read 0x%04x\n",
         s->RxBufferSize, s->RxBufAddr, s->RxBufPtr);
 }
 
@@ -1542,7 +1542,7 @@ static uint32_t rtl8139_RxBufPtr_read(RTL8139State *s)
     /* this value is off by 16 */
     uint32_t ret = s->RxBufPtr - 0x10;
 
-    DPRINTF("RxBufPtr read val=0x%04x", ret);
+    DPRINTF("RxBufPtr read val=0x%04x\n", ret);
 
     return ret;
 }
@@ -1552,14 +1552,14 @@ static uint32_t rtl8139_RxBufAddr_read(RTL8139State *s)
     /* this value is NOT off by 16 */
     uint32_t ret = s->RxBufAddr;
 
-    DPRINTF("RxBufAddr read val=0x%04x", ret);
+    DPRINTF("RxBufAddr read val=0x%04x\n", ret);
 
     return ret;
 }
 
 static void rtl8139_RxBuf_write(RTL8139State *s, uint32_t val)
 {
-    DPRINTF("RxBuf write val=0x%08x", val);
+    DPRINTF("RxBuf write val=0x%08x\n", val);
 
     s->RxBuf = val;
 
@@ -1570,14 +1570,14 @@ static uint32_t rtl8139_RxBuf_read(RTL8139State *s)
 {
     uint32_t ret = s->RxBuf;
 
-    DPRINTF("RxBuf read val=0x%08x", ret);
+    DPRINTF("RxBuf read val=0x%08x\n", ret);
 
     return ret;
 }
 
 static void rtl8139_IntrMask_write(RTL8139State *s, uint32_t val)
 {
-    DPRINTF("IntrMask write(w) val=0x%04x", val);
+    DPRINTF("IntrMask write(w) val=0x%04x\n", val);
 
     /* mask unwritable bits */
     val = SET_MASKED(val, 0x1e00, s->IntrMask);
@@ -1592,7 +1592,7 @@ static uint32_t rtl8139_IntrMask_read(RTL8139State *s)
 {
     uint32_t ret = s->IntrMask;
 
-    DPRINTF("IntrMask read(w) val=0x%04x", ret);
+    DPRINTF("IntrMask read(w) val=0x%04x\n", ret);
 
     return ret;
 }
@@ -1601,7 +1601,7 @@ static void rtl8139_IntrStatus_write(RTL8139State *s, uint32_t val)
 {
     uint16_t newStatus = s->IntrStatus & ~val;
 
-    DPRINTF("IntrStatus write(w) val=0x%04x", val);
+    DPRINTF("IntrStatus write(w) val=0x%04x\n", val);
 
     /* mask unwritable bits */
     newStatus = SET_MASKED(newStatus, 0x1e00, s->IntrStatus);
@@ -1619,7 +1619,7 @@ static uint32_t rtl8139_IntrStatus_read(RTL8139State *s)
 {
     uint32_t ret = s->IntrStatus;
 
-    DPRINTF("IntrStatus read(w) val=0x%04x", ret);
+    DPRINTF("IntrStatus read(w) val=0x%04x\n", ret);
 
 #if 0
 
@@ -1635,7 +1635,7 @@ static uint32_t rtl8139_IntrStatus_read(RTL8139State *s)
 
 static void rtl8139_MultiIntr_write(RTL8139State *s, uint32_t val)
 {
-    DPRINTF("MultiIntr write(w) val=0x%04x", val);
+    DPRINTF("MultiIntr write(w) val=0x%04x\n", val);
 
     /* mask unwritable bits */
     val = SET_MASKED(val, 0xf000, s->MultiIntr);
@@ -1647,7 +1647,7 @@ static uint32_t rtl8139_MultiIntr_read(RTL8139State *s)
 {
     uint32_t ret = s->MultiIntr;
 
-    DPRINTF("MultiIntr read(w) val=0x%04x", ret);
+    DPRINTF("MultiIntr read(w) val=0x%04x\n", ret);
 
     return ret;
 }
@@ -1699,12 +1699,12 @@ static void rtl8139_io_writeb(void *opaque, uint8_t addr, uint32_t val)
             break;
         case MediaStatus:
             /* ignore */
-            DPRINTF("not implemented write(b) to MediaStatus val=0x%02x",
+            DPRINTF("not implemented write(b) to MediaStatus val=0x%02x\n",
                 val);
             break;
 
         case HltClk:
-            DPRINTF("HltClk write val=0x%08x", val);
+            DPRINTF("HltClk write val=0x%08x\n", val);
             if (val == 'R')
             {
                 s->clock_enabled = 1;
@@ -1716,15 +1716,15 @@ static void rtl8139_io_writeb(void *opaque, uint8_t addr, uint32_t val)
             break;
 
         case TxThresh:
-            DPRINTF("not implemented write(b) to TxThresh val=0x%02x", val);
+            DPRINTF("not implemented write(b) to TxThresh val=0x%02x\n", val);
             break;
 
         case TxPoll:
-            DPRINTF("not implemented write(b) to TxPoll val=0x%02x", val);
+            DPRINTF("not implemented write(b) to TxPoll val=0x%02x\n", val);
             break;
 
         default:
-            WARN_LOG(NETWORK, "not implemented write(b) addr=0x%x val=0x%02x", addr,
+            WARN_LOG(NETWORK, "not implemented write(b) addr=0x%x val=0x%02x\n", addr,
                 val);
             break;
     }
@@ -1759,27 +1759,27 @@ static void rtl8139_io_writew(void *opaque, uint8_t addr, uint32_t val)
             rtl8139_BasicModeStatus_write(s, val);
             break;
         case NWayAdvert:
-            DPRINTF("NWayAdvert write(w) val=0x%04x", val);
+            DPRINTF("NWayAdvert write(w) val=0x%04x\n", val);
             s->NWayAdvert = val;
             break;
         case NWayLPAR:
-            DPRINTF("forbidden NWayLPAR write(w) val=0x%04x", val);
+            DPRINTF("forbidden NWayLPAR write(w) val=0x%04x\n", val);
             break;
         case NWayExpansion:
-            DPRINTF("NWayExpansion write(w) val=0x%04x", val);
+            DPRINTF("NWayExpansion write(w) val=0x%04x\n", val);
             s->NWayExpansion = val;
             break;
 
         case CpCmd:
-            DPRINTF("ioport write(w) CpCmd unimplemented");
+            DPRINTF("ioport write(w) CpCmd unimplemented\n");
             break;
 
         case IntrMitigate:
-            DPRINTF("ioport write(w) IntrMitigate unimplemented");
+            DPRINTF("ioport write(w) IntrMitigate unimplemented\n");
             break;
 
         default:
-            DPRINTF("ioport write(w) addr=0x%x val=0x%04x via write(b)",
+            DPRINTF("ioport write(w) addr=0x%x val=0x%04x via write(b)\n",
                 addr, val);
 
             rtl8139_io_writeb(opaque, addr, val & 0xff);
@@ -1793,7 +1793,7 @@ static void rtl8139_set_next_tctr_time(RTL8139State *s)
 #ifdef RTL8139_TIMER
     const uint64_t ns_per_period = (uint64_t)PCI_PERIOD << 32;
 
-    DPRINTF("entered rtl8139_set_next_tctr_time");
+    DPRINTF("entered rtl8139_set_next_tctr_time\n");
 
     /* This function is called at least once per period, so it is a good
      * place to update the timer base.
@@ -1825,7 +1825,7 @@ static void rtl8139_io_writel(void *opaque, uint8_t addr, uint32_t val)
     switch (addr)
     {
         case RxMissed:
-            DPRINTF("RxMissed clearing on write");
+            DPRINTF("RxMissed clearing on write\n");
             s->RxMissed = 0;
             break;
 
@@ -1856,15 +1856,15 @@ static void rtl8139_io_writel(void *opaque, uint8_t addr, uint32_t val)
             break;
 
         case RxRingAddrLO:
-            DPRINTF("ioport write(l) to C+ RxRingLO not implemented");
+            DPRINTF("ioport write(l) to C+ RxRingLO not implemented\n");
             break;
 
         case RxRingAddrHI:
-            DPRINTF("ioport write(l) to C+ RxRingHI not implemented");
+            DPRINTF("ioport write(l) to C+ RxRingHI not implemented\n");
             break;
 
         case Timer:
-            DPRINTF("TCTR Timer reset on write");
+            DPRINTF("TCTR Timer reset on write\n");
 #ifdef RTL8139_TIMER
             s->TCTR_base = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
 #endif
@@ -1872,7 +1872,7 @@ static void rtl8139_io_writel(void *opaque, uint8_t addr, uint32_t val)
             break;
 
         case FlashReg:
-            DPRINTF("FlashReg TimerInt write val=0x%08x", val);
+            DPRINTF("FlashReg TimerInt write val=0x%08x\n", val);
             if (s->TimerInt != val) {
                 s->TimerInt = val;
                 rtl8139_set_next_tctr_time(s);
@@ -1880,7 +1880,7 @@ static void rtl8139_io_writel(void *opaque, uint8_t addr, uint32_t val)
             break;
 
         default:
-            DPRINTF("ioport write(l) addr=0x%x val=0x%08x via write(w)",
+            DPRINTF("ioport write(l) addr=0x%x val=0x%08x via write(w)\n",
                 addr, val);
             rtl8139_io_writew(opaque, addr, val & 0xffff);
             rtl8139_io_writew(opaque, addr + 2, (val >> 16) & 0xffff);
@@ -1938,31 +1938,31 @@ static uint32_t rtl8139_io_readb(void *opaque, uint8_t addr)
         case MediaStatus:
             /* The LinkDown bit of MediaStatus is inverse with link status */
             ret = 0xd0 | (~s->BasicModeStatus & 0x04);
-            DPRINTF("MediaStatus read 0x%x", ret);
+            DPRINTF("MediaStatus read 0x%x\n", ret);
             break;
 
         case HltClk:
             ret = s->clock_enabled;
-            DPRINTF("HltClk read 0x%x", ret);
+            DPRINTF("HltClk read 0x%x\n", ret);
             break;
 
         case PCIRevisionID:
             ret = RTL8139_PCI_REVID;
-            DPRINTF("PCI Revision ID read 0x%x", ret);
+            DPRINTF("PCI Revision ID read 0x%x\n", ret);
             break;
 
         case TxThresh:
-            DPRINTF("not implemented read(b) TxThresh");
+            DPRINTF("not implemented read(b) TxThresh\n");
             ret = -1;
             break;
 
         case 0x43: /* Part of TxConfig register. Windows driver tries to read it */
             ret = s->TxConfig >> 24;
-            DPRINTF("RTL8139C TxConfig at 0x43 read(b) val=0x%02x", ret);
+            DPRINTF("RTL8139C TxConfig at 0x43 read(b) val=0x%02x\n", ret);
             break;
 
         default:
-        	WARN_LOG(NETWORK, "not implemented read(b) addr=0x%x", addr);
+        	WARN_LOG(NETWORK, "not implemented read(b) addr=0x%x\n", addr);
             ret = 0;
             break;
     }
@@ -2011,15 +2011,15 @@ static uint32_t rtl8139_io_readw(void *opaque, uint8_t addr)
             break;
         case NWayAdvert:
             ret = s->NWayAdvert;
-            DPRINTF("NWayAdvert read(w) val=0x%04x", ret);
+            DPRINTF("NWayAdvert read(w) val=0x%04x\n", ret);
             break;
         case NWayLPAR:
             ret = s->NWayLPAR;
-            DPRINTF("NWayLPAR read(w) val=0x%04x", ret);
+            DPRINTF("NWayLPAR read(w) val=0x%04x\n", ret);
             break;
         case NWayExpansion:
             ret = s->NWayExpansion;
-            DPRINTF("NWayExpansion read(w) val=0x%04x", ret);
+            DPRINTF("NWayExpansion read(w) val=0x%04x\n", ret);
             break;
 
         case TxSummary:
@@ -2031,22 +2031,22 @@ static uint32_t rtl8139_io_readw(void *opaque, uint8_t addr)
             break;
 
         case CpCmd:
-        	DPRINTF("ioport read(w) CpCmd unimplemented");
+        	DPRINTF("ioport read(w) CpCmd unimplemented\n");
         	ret = -1;
         	break;
 
         case IntrMitigate:
-        	DPRINTF("ioport read(w) IntrMitigate unimplemented");
+        	DPRINTF("ioport read(w) IntrMitigate unimplemented\n");
         	ret = -1;
         	break;
 
         default:
-            DPRINTF("ioport read(w) addr=0x%x via read(b)", addr);
+            DPRINTF("ioport read(w) addr=0x%x via read(b)\n", addr);
 
             ret  = rtl8139_io_readb(opaque, addr);
             ret |= rtl8139_io_readb(opaque, addr + 1) << 8;
 
-            DPRINTF("ioport read(w) addr=0x%x val=0x%04x", addr, ret);
+            DPRINTF("ioport read(w) addr=0x%x val=0x%04x\n", addr, ret);
             break;
     }
 
@@ -2063,7 +2063,7 @@ static uint32_t rtl8139_io_readl(void *opaque, uint8_t addr)
         case RxMissed:
             ret = s->RxMissed;
 
-            DPRINTF("RxMissed read val=0x%08x", ret);
+            DPRINTF("RxMissed read val=0x%08x\n", ret);
             break;
 
         case TxConfig:
@@ -2100,31 +2100,31 @@ static uint32_t rtl8139_io_readl(void *opaque, uint8_t addr)
 #else
 			ret = 0;
 #endif
-            DPRINTF("TCTR Timer read val=0x%08x", ret);
+            DPRINTF("TCTR Timer read val=0x%08x\n", ret);
             break;
 
         case FlashReg:
             ret = s->TimerInt;
-            DPRINTF("FlashReg TimerInt read val=0x%08x", ret);
+            DPRINTF("FlashReg TimerInt read val=0x%08x\n", ret);
             break;
 
         case RxRingAddrLO:
-        	DPRINTF("ioport read(l) RxRingAddrLO unimplemented");
+        	DPRINTF("ioport read(l) RxRingAddrLO unimplemented\n");
         	ret = -1;
         	break;
 
         case RxRingAddrHI:
-        	DPRINTF("ioport read(l) RxRingAddrHI unimplemented");
+        	DPRINTF("ioport read(l) RxRingAddrHI unimplemented\n");
         	ret = -1;
         	break;
 
         default:
-            DPRINTF("ioport read(l) addr=0x%x via read(w)", addr);
+            DPRINTF("ioport read(l) addr=0x%x via read(w)\n", addr);
 
             ret  = rtl8139_io_readw(opaque, addr);
             ret |= rtl8139_io_readw(opaque, addr + 2) << 16;
 
-            DPRINTF("read(l) addr=0x%x val=%08x", addr, ret);
+            DPRINTF("read(l) addr=0x%x val=%08x\n", addr, ret);
             break;
     }
 
@@ -2171,7 +2171,7 @@ static void rtl8139_timer(void *opaque)
 
     if (!s->clock_enabled)
     {
-        DPRINTF(">>> timer: clock is not running");
+        DPRINTF(">>> timer: clock is not running\n");
         return;
     }
 

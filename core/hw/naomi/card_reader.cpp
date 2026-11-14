@@ -94,7 +94,7 @@ public:
 			return;
 		memcpy(st.cardData, fileCard, cardSize);
 		st.flags |= FLAG_INSERTED;
-		INFO_LOG(NAOMI, "Card inserted");
+		INFO_LOG(NAOMI, "Card inserted\n");
 		cardLoaded();
 	}
 
@@ -194,7 +194,7 @@ public:
 	{
 		if (st.inLen == 0 && b == ENQ)
 		{
-			DEBUG_LOG(NAOMI, "Received RQ(5)");
+			DEBUG_LOG(NAOMI, "Received RQ(5)\n");
 			handleCommand();
 			return;
 		}
@@ -203,7 +203,7 @@ public:
 			return;
 		if (st.in[0] != STX)
 		{
-			INFO_LOG(NAOMI, "Unexpected cmd start byte %x", st.in[0]);
+			INFO_LOG(NAOMI, "Unexpected cmd start byte %x\n", st.in[0]);
 			st.inLen = 0;
 			return;
 		}
@@ -212,7 +212,7 @@ public:
 		{
 			if (st.inLen == sizeof(st.in))
 			{
-				WARN_LOG(NAOMI, "Card reader buffer overflow");
+				WARN_LOG(NAOMI, "Card reader buffer overflow\n");
 				st.inLen = 0;
 			}
 			return;
@@ -220,11 +220,11 @@ public:
 		const u8 crc = calcCrc(st.in + 1, st.in + st.inLen - 1);
 		if (crc != st.in[st.inLen - 1])
 		{
-			INFO_LOG(NAOMI, "Wrong crc: expected %x got %x", crc, st.in[st.inLen - 1]);
+			INFO_LOG(NAOMI, "Wrong crc: expected %x got %x\n", crc, st.in[st.inLen - 1]);
 			st.inLen = 0;
 			return;
 		}
-		DEBUG_LOG(NAOMI, "Received cmd %x len %d", st.in[2], st.in[1]);
+		DEBUG_LOG(NAOMI, "Received cmd %x len %d\n", st.in[2], st.in[1]);
 		st.out.push(ACK);
 		st.rxCommandLen = std::min<u32>(st.inLen - 3, sizeof(st.rxCommand));
 		memcpy(st.rxCommand, &st.in[2], st.rxCommandLen);
@@ -270,12 +270,12 @@ protected:
 		{
 		case CARD_DOOR:
 			setDoorOpen(cmd[4] == '1');
-			INFO_LOG(NAOMI, "Door %s", doorOpen() ? "open" : "closed");
+			INFO_LOG(NAOMI, "Door %s\n", doorOpen() ? "open" : "closed");
 			status1 = getStatus1();
 			break;
 
 		case CARD_NEW:
-			INFO_LOG(NAOMI, "New card");
+			INFO_LOG(NAOMI, "New card\n");
 			setInserted(true);
 			setDoorOpen(false);
 			status1 = getStatus1();
@@ -285,7 +285,7 @@ protected:
 			// 4: mode ('0': read 0x45 bytes, '1': variable length write 1-47 bytes)
 			// 5: parity ('0': 7-bit parity, '1': 8-bit no parity)
 			// 6: track (see below)
-			INFO_LOG(NAOMI, "Card write mode %c parity %c track %c", cmd[4], cmd[5], cmd[6]);
+			INFO_LOG(NAOMI, "Card write mode %c parity %c track %c\n", cmd[4], cmd[5], cmd[6]);
 			switch (cmd[6])
 			{
 			case '0': // track 1
@@ -311,7 +311,7 @@ protected:
 				memcpy(st.cardData, &cmd[7], TRACK_SIZE * 3);
 				break;
 			default:
-				WARN_LOG(NAOMI, "Unknown track# %02x", cmd[6]);
+				WARN_LOG(NAOMI, "Unknown track# %02x\n", cmd[6]);
 				break;
 			}
 			saveCard();
@@ -321,13 +321,13 @@ protected:
 			// 4: mode ('0': read 0x45 bytes, '1': variable length read 1-47 bytes, '2': card capture, pull in card?)
 			// 5: parity ('0': 7-bit parity, '1': 8-bit no parity)
 			// 6: track (see below)
-			DEBUG_LOG(NAOMI, "Card read mode %c parity %c track %c", cmd[4], cmd[5], cmd[6]);
+			DEBUG_LOG(NAOMI, "Card read mode %c parity %c track %c\n", cmd[4], cmd[5], cmd[6]);
 			if (!inserted() || doorOpen())
 				status3 = inserted() ? '0' : '4';
 			break;
 
 		case CARD_EJECT:
-			NOTICE_LOG(NAOMI, "Card ejected");
+			NOTICE_LOG(NAOMI, "Card ejected\n");
 			setInserted(false);
 			status1 = getStatus1();
 			break;
@@ -342,7 +342,7 @@ protected:
 			break;
 
 		default:
-			WARN_LOG(NAOMI, "Unknown command %x", cmd[0]);
+			WARN_LOG(NAOMI, "Unknown command %x\n", cmd[0]);
 			break;
 		}
 		// STX, length, command, three results, up to three tracks, ETX, crc
@@ -385,7 +385,7 @@ protected:
 				size = TRACK_SIZE * 3;
 				break;
 			default:
-				WARN_LOG(NAOMI, "Unknown track# %02x", cmd[6]);
+				WARN_LOG(NAOMI, "Unknown track# %02x\n", cmd[6]);
 				size = 0;
 				break;
 			}
@@ -586,52 +586,52 @@ private:
 				break;
 		if (cmd == CARD_MAX)
 		{
-			WARN_LOG(NAOMI, "Unhandled command '%c%c'", st.in[1], st.in[2]);
+			WARN_LOG(NAOMI, "Unhandled command '%c%c'\n", st.in[1], st.in[2]);
 			return;
 		}
 		const u8 crc = calcCrc(st.in + 1, st.in + st.inLen - 1);
 		if (crc != st.in[st.inLen - 1])
 		{
-			WARN_LOG(NAOMI, "Wrong crc: expected %x got %x", crc, st.in[st.inLen - 1]);
+			WARN_LOG(NAOMI, "Wrong crc: expected %x got %x\n", crc, st.in[st.inLen - 1]);
 			return;
 		}
 		st.out.push(ACK);
 		switch (cmd)
 		{
 		case CARD_WRITE:
-			INFO_LOG(NAOMI, "Card write");
+			INFO_LOG(NAOMI, "Card write\n");
 			memcpy(st.cardData, &st.in[3], TRACK_SIZE);
 			saveCard();
 			break;
 		case CARD_READ:
-			INFO_LOG(NAOMI, "Card read");
+			INFO_LOG(NAOMI, "Card read\n");
 			if (!inserted()) {
 				st.flags |= FLAG_READ_PENDING;
 				return;
 			}
 			break;
 		case CARD_EJECT:
-			NOTICE_LOG(NAOMI, "Card ejected");
+			NOTICE_LOG(NAOMI, "Card ejected\n");
 			setInserted(false);
 			break;
 		case CARD_NEW:
-			INFO_LOG(NAOMI, "New card");
+			INFO_LOG(NAOMI, "New card\n");
 			setInserted(true);
 			break;
 		case CARD_INIT:
-			DEBUG_LOG(NAOMI, "Card init");
+			DEBUG_LOG(NAOMI, "Card init\n");
 			break;
 		case CARD_CANCEL_CMD:
-			DEBUG_LOG(NAOMI, "Cancel cmd");
+			DEBUG_LOG(NAOMI, "Cancel cmd\n");
 			break;
 		case CARD_CLEAN:
-			DEBUG_LOG(NAOMI, "Card clean");
+			DEBUG_LOG(NAOMI, "Card clean\n");
 			break;
 		case CARD_RT5:
-			DEBUG_LOG(NAOMI, "Card RT5");
+			DEBUG_LOG(NAOMI, "Card RT5\n");
 			break;
 		case CARD_STATUS:
-			DEBUG_LOG(NAOMI, "Card status (cardInserted %d)", inserted());
+			DEBUG_LOG(NAOMI, "Card status (cardInserted %d)\n", inserted());
 			break;
 		}
 		sendReply(cmd);
@@ -742,7 +742,7 @@ public:
 	{
 		if (toSend.size() >= 32 || card.empty())
 			return;
-		INFO_LOG(NAOMI, "Card read: %s", card.c_str());
+		INFO_LOG(NAOMI, "Card read: %s\n", card.c_str());
 		for (char c : card)
 			toSend.push((u8)c);
 		toSend.push((u8)eotChar);

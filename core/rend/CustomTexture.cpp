@@ -135,14 +135,14 @@ bool CustomTexture::Init()
 
 			if (path_is_directory(textures_path.c_str()))
 			{
-				INFO_LOG(RENDERER, "Found custom textures directory: %s", textures_path.c_str());
+				INFO_LOG(RENDERER, "Found custom textures directory: %s\n", textures_path.c_str());
 				retro_atomic_store_release_int(&custom_textures_available, 1);
 				loader_thread.Start();
 				/* No loader, nothing to give work to: a texture queued for
 				 * it would wait for good, and could not be freed. */
 				if (loader_thread.hThread == NULL)
 				{
-					WARN_LOG(RENDERER, "The custom texture loader could not be started");
+					WARN_LOG(RENDERER, "The custom texture loader could not be started\n");
 					retro_atomic_store_release_int(&custom_textures_available, 0);
 				}
 			}
@@ -257,11 +257,11 @@ void CustomTexture::DumpTexture(u32 hash, int w, int h, TextureType textype, voi
 	case TextureType::_5551: texels = CUSTOM_IMAGE_5551; break;
 	case TextureType::_8888: texels = CUSTOM_IMAGE_8888; break;
 	default:
-		WARN_LOG(RENDERER, "dumpTexture: unsupported picture format %x", (u32)textype);
+		WARN_LOG(RENDERER, "dumpTexture: unsupported picture format %x\n", (u32)textype);
 		return;
 	}
 	if (!custom_image_dump(path.str().c_str(), src_buffer, (unsigned)w, (unsigned)h, texels))
-		WARN_LOG(RENDERER, "dumpTexture: %s not written", path.str().c_str());
+		WARN_LOG(RENDERER, "dumpTexture: %s not written\n", path.str().c_str());
 }
 
 void CustomTexture::LoadMap()
@@ -294,7 +294,7 @@ void CustomTexture::LoadMap()
 		u32 hash = (u32)strtoll(basename.c_str(), &endptr, 16);
 		if (endptr - basename.c_str() < (ptrdiff_t)basename.length())
 		{
-			INFO_LOG(RENDERER, "Invalid hash %s", basename.c_str());
+			INFO_LOG(RENDERER, "Invalid hash %s\n", basename.c_str());
 			continue;
 		}
 		texture_map[hash] = child_path;

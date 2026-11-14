@@ -183,7 +183,7 @@ void VkPsoWorker::Start(vk::Device device, const void *initialData, size_t size,
 #ifndef TARGET_NO_THREADS
 	thread = sthread_create(Entry, this);
 	if (thread == nullptr)
-		WARN_LOG(RENDERER, "Vulkan: no pipeline thread; polygons are drawn with the general pipelines");
+		WARN_LOG(RENDERER, "Vulkan: no pipeline thread; polygons are drawn with the general pipelines\n");
 #endif
 }
 
@@ -206,7 +206,7 @@ void VkPsoWorker::Stop(vk::PipelineCache into)
 		vkDestroyPipelineCache((VkDevice)device, cache, nullptr);
 		cache = VK_NULL_HANDLE;
 	}
-	NOTICE_LOG(RENDERER, "Vulkan pipelines: %u made by the pipeline thread, %u by a draw that had to wait",
+	NOTICE_LOG(RENDERER, "Vulkan pipelines: %u made by the pipeline thread, %u by a draw that had to wait\n",
 			Built(), syncBuilt);
 }
 

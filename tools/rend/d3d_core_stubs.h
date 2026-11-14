@@ -28,19 +28,18 @@
 
 static std::string dataDir;
 
-void GenericLog(LogTypes::LOG_LEVELS level, LogTypes::LOG_TYPE type, const char *file, int line, const char *fmt, ...)
+/* the log's warnings and errors */
+static void RETRO_CALLCONV test_log(enum retro_log_level level, const char *fmt, ...)
 {
-	(void)type; (void)file; (void)line;
 	va_list ap;
+	if (level < RETRO_LOG_WARN)
+		return;
 	va_start(ap, fmt);
-	if (level <= LogTypes::LWARNING)
-	{
-		printf("  log: ");
-		vprintf(fmt, ap);
-		printf("\n");
-	}
+	printf("  log: ");
+	vprintf(fmt, ap);
 	va_end(ap);
 }
+retro_log_printf_t log_cb = test_log;
 
 /* (stdclass.h's get_writable_data_path() is made from it) */
 size_t writable_data_path(char *out, size_t size, const char *name)

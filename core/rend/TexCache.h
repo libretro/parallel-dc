@@ -1304,7 +1304,7 @@ public:
 
 		cache.Clear();
 		KillTex = false;
-		INFO_LOG(RENDERER, "Texture cache cleared");
+		INFO_LOG(RENDERER, "Texture cache cleared\n");
 	}
 
 protected:

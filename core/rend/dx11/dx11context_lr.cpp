@@ -55,7 +55,7 @@ bool DX11Context::Init(const struct retro_hw_render_interface_d3d11 *iface)
 		/* (the renderers start with the core's bytecode, and draw every
 		 * polygon with the general shaders: dx11_shaders.h) */
 		if (compile == nullptr)
-			WARN_LOG(RENDERER, "DX11: no shader compiler (d3dcompiler_47.dll): polygons drawn with the general shaders");
+			WARN_LOG(RENDERER, "DX11: no shader compiler (d3dcompiler_47.dll): polygons drawn with the general shaders\n");
 	}
 
 	if (iface->interface_version >= RETRO_HW_RENDER_INTERFACE_D3D11_VERSION_2
@@ -90,12 +90,12 @@ bool DX11Context::Init(const struct retro_hw_render_interface_d3d11 *iface)
 			}
 			dxgiDevice->Release();
 		}
-		NOTICE_LOG(RENDERER, "DX11: feature level %x, vendor %04x, %s context, interface version %d",
+		NOTICE_LOG(RENDERER, "DX11: feature level %x, vendor %04x, %s context, interface version %d\n",
 				(unsigned)featureLevel, vendor, immediate ? "immediate" : "deferred", v2 ? 2 : 1);
 		vram_budget_log("DX11", vramBudget);
 	}
 	if (!immediate)
-		WARN_LOG(RENDERER, "DX11: the frontend's context is a deferred one: renders to textures cannot reach video memory");
+		WARN_LOG(RENDERER, "DX11: the frontend's context is a deferred one: renders to textures cannot reach video memory\n");
 
 	for (int i = 0; i < 5; i++)
 	{
@@ -111,7 +111,7 @@ bool DX11Context::Init(const struct retro_hw_render_interface_d3d11 *iface)
 	if (!formatSupported[(int)TextureType::_8888] || !formatSupported[(int)TextureType::_8]
 			|| featureLevel < D3D_FEATURE_LEVEL_10_0)
 	{
-		ERROR_LOG(RENDERER, "DX11: feature level 10.0 or later needed");
+		ERROR_LOG(RENDERER, "DX11: feature level 10.0 or later needed\n");
 		Term();
 		return false;
 	}
@@ -121,9 +121,9 @@ bool DX11Context::Init(const struct retro_hw_render_interface_d3d11 *iface)
 	{
 		hdr = hdr_d3d11_new(device, hdr_output.format == HDR_OUTPUT_SCRGB ? DXGI_FORMAT_R16G16B16A16_FLOAT : DXGI_FORMAT_R10G10B10A2_UNORM);
 		if (hdr == nullptr)
-			ERROR_LOG(RENDERER, "DX11: the HDR output could not be set up (feature level 11.0 needed); the picture goes out as 24-bit");
+			ERROR_LOG(RENDERER, "DX11: the HDR output could not be set up (feature level 11.0 needed); the picture goes out as 24-bit\n");
 		else
-			NOTICE_LOG(RENDERER, "DX11: HDR output, %s", hdr_output.format == HDR_OUTPUT_SCRGB ? "scRGB (RGBA16F)" : "HDR10 (R10G10B10A2)");
+			NOTICE_LOG(RENDERER, "DX11: HDR output, %s\n", hdr_output.format == HDR_OUTPUT_SCRGB ? "scRGB (RGBA16F)" : "HDR10 (R10G10B10A2)");
 	}
 
 	/* (what is bound is not known until the context is first taken and cleared) */
@@ -131,7 +131,7 @@ bool DX11Context::Init(const struct retro_hw_render_interface_d3d11 *iface)
 	shaders.Init(device, compile);
 	if (!quad.Init(device, deviceContext, &shaders))
 	{
-		ERROR_LOG(RENDERER, "DX11: initialization failed");
+		ERROR_LOG(RENDERER, "DX11: initialization failed\n");
 		Term();
 		return false;
 	}

@@ -114,7 +114,7 @@ bool TaDecoder::Init(CommandPool& pool)
 	if ((u64)r->slice > most || (u64)sz.verts * TAG_V_WORDS * 4 > most || (u64)workWords * 4 > most
 			|| (u64)trdSlots * TAG_C_WORDS * 4 > most)
 	{
-		INFO_LOG(RENDERER, "Vulkan: TA processing stays on the CPU (buffers larger than the device has)");
+		INFO_LOG(RENDERER, "Vulkan: TA processing stays on the CPU (buffers larger than the device has)\n");
 		failed = true;
 		return false;
 	}
@@ -124,7 +124,7 @@ bool TaDecoder::Init(CommandPool& pool)
 	draw.drawCount = context->GetDrawIndexedIndirectCount();
 	if (context->GetMaxDrawIndirectCount() < sz.verts || (draw.drawCount == nullptr && !context->SupportsMultiDrawIndirect()))
 	{
-		INFO_LOG(RENDERER, "Vulkan: TA processing stays on the CPU (no indirect draws of several at once)");
+		INFO_LOG(RENDERER, "Vulkan: TA processing stays on the CPU (no indirect draws of several at once)\n");
 		failed = true;
 		return false;
 	}
@@ -136,7 +136,7 @@ bool TaDecoder::Init(CommandPool& pool)
 		 * memory without the host's cache in front of it is too slow for that */
 		if (!(r->pool->allocation.PropertyFlags() & VK_MEMORY_PROPERTY_HOST_CACHED_BIT))
 		{
-			INFO_LOG(RENDERER, "Vulkan: TA processing stays on the CPU (no host-cached memory)");
+			INFO_LOG(RENDERER, "Vulkan: TA processing stays on the CPU (no host-cached memory)\n");
 			failed = true;
 			return false;
 		}
@@ -181,7 +181,7 @@ bool TaDecoder::Init(CommandPool& pool)
 			r->sortSlot = slot;
 		}
 	} catch (const vk::SystemError& e) {
-		INFO_LOG(RENDERER, "Vulkan: TA processing stays on the CPU (%s)", e.what());
+		INFO_LOG(RENDERER, "Vulkan: TA processing stays on the CPU (%s)\n", e.what());
 		failed = true;
 		return false;
 	}
@@ -288,7 +288,7 @@ bool TaDecoder::Init(CommandPool& pool)
 	res = std::move(r);
 	ready = true;
 	NOTICE_LOG(RENDERER, "Vulkan: TA processing on the GPU (%u frames of %u MB in host-cached memory, %u KB of tables a frame; "
-			"translucent groups drawn %s, %s strip numbers%s)",
+			"translucent groups drawn %s, %s strip numbers%s)\n",
 			res->slices, res->slice >> 20, res->tableWords / 256, draw.drawCount != nullptr ? "with their count" : "whole",
 			instance ? "with" : "without", res->sortSlot != 0 ? "; translucent triangles sorted from the frame's depths" : "");
 	return true;
@@ -301,7 +301,7 @@ void TaDecoder::Log(const char *when)
 	NOTICE_LOG(RENDERER, "Vulkan: TA processing%s: %llu frames decoded and drawn on the GPU, %llu parsed on the CPU "
 			"(%llu without a table, %llu frame skipping, %llu sorted on the CPU, %llu the header pass leaves to the parse, %llu might run out of room); "
 			"GPU time mean %.3f ms, max %.3f ms; pool: %u frames found it full, %u contexts allocated; "
-			"%llu with a sorted pass (the sort mean %.1f us, max %.1f us), %llu with shadows the GPU decides",
+			"%llu with a sorted pass (the sort mean %.1f us, max %.1f us), %llu with shadows the GPU decides\n",
 			when, (unsigned long long)statFrames, (unsigned long long)statSkipped,
 			(unsigned long long)statWhy[TA_GPU_WHY_TABLE], (unsigned long long)statWhy[TA_GPU_WHY_PARSE],
 			(unsigned long long)statWhy[TA_GPU_WHY_SORT], (unsigned long long)statWhy[TA_GPU_WHY_WALK],
@@ -360,7 +360,7 @@ void TaDecoder::Setup(CommandPool& pool, bool wanted)
 		return;
 	const auto start = std::chrono::steady_clock::now();
 	if (Init(pool))
-		NOTICE_LOG(RENDERER, "Vulkan: TA processing set up in %.1f ms",
+		NOTICE_LOG(RENDERER, "Vulkan: TA processing set up in %.1f ms\n",
 				std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count());
 }
 

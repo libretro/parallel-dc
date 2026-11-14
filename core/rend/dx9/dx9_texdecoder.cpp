@@ -70,21 +70,21 @@ void DX9TexDecoder::Init(DX9Context *context)
 	}
 	if (!ok)
 	{
-		WARN_LOG(RENDERER, "DX9: the texture shaders could not be set up: textures are converted on the CPU");
+		WARN_LOG(RENDERER, "DX9: the texture shaders could not be set up: textures are converted on the CPU\n");
 		Term();
 		return;
 	}
 	head = 0;
 	jobCount = 0;
 	ready = true;
-	NOTICE_LOG(RENDERER, "DX9: textures are drawn on the GPU (a ring of %u KB; drawn into 565 %d, 5551 %d, 4444 %d, 8888 %d, 8-bit %d)",
+	NOTICE_LOG(RENDERER, "DX9: textures are drawn on the GPU (a ring of %u KB; drawn into 565 %d, 5551 %d, 4444 %d, 8888 %d, 8-bit %d)\n",
 			ringRows * TEXD_SM3_RING_WIDTH * 4 / 1024, takes[0], takes[1], takes[2], takes[3], takes[4]);
 }
 
 void DX9TexDecoder::Term()
 {
 	if (ready)
-		NOTICE_LOG(RENDERER, "DX9: textures drawn on the GPU: %u levels, %u MB of bytes; %u not, for want of room",
+		NOTICE_LOG(RENDERER, "DX9: textures drawn on the GPU: %u levels, %u MB of bytes; %u not, for want of room\n",
 				(u32)statLevels, (u32)(statBytes >> 20), (u32)statFull);
 	if (mapped != nullptr && ring)
 		ring->UnlockRect(0);

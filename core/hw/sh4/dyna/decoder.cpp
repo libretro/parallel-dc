@@ -1229,7 +1229,7 @@ _end:
       case 0x8C0BA506:
       case 0x8C0BA526:
       case 0x8C224800:
-		INFO_LOG(DYNAREC, "HASH: %08X reloc %s",blk->addr,blk->hash());
+		INFO_LOG(DYNAREC, "HASH: %08X reloc %s\n",blk->addr,blk->hash());
          break;
    }
 #endif

@@ -104,7 +104,7 @@ bool dx12_make_texture(ID3D12Device *device, u32 width, u32 height, u32 levels, 
 	if (FAILED(device->CreateCommittedResource(&heap, D3D12_HEAP_FLAG_NONE, &desc, state, clear,
 			__uuidof(ID3D12Resource), (void **)out.put())))
 	{
-		WARN_LOG(RENDERER, "DX12: texture creation failed (%d x %d, %d levels, format %d)", width, height, levels, (int)format);
+		WARN_LOG(RENDERER, "DX12: texture creation failed (%d x %d, %d levels, format %d)\n", width, height, levels, (int)format);
 		out.reset();
 		return false;
 	}
@@ -148,7 +148,7 @@ u32 DX12Context::SsaaSamples(u32 requested, u32 perSampleKib, u32 fixedKib, cons
 	}
 	const u32 deviceSamples = ssaa_device_samples(requested, counts);
 	const u32 samples = ssaa_clamp_samples(deviceSamples, vramBudget.available_kib(), fixedKib, perSampleKib);
-	NOTICE_LOG(RENDERER, "%s: SSAA %u samples a pixel (asked %u, the device can draw %u; %u MB a sample, %u MB of the budget left)",
+	NOTICE_LOG(RENDERER, "%s: SSAA %u samples a pixel (asked %u, the device can draw %u; %u MB a sample, %u MB of the budget left)\n",
 			what, samples, requested, deviceSamples, perSampleKib >> 10, vramBudget.available_kib() >> 10);
 	return samples;
 }
@@ -177,7 +177,7 @@ bool DX12Context::Init(const struct retro_hw_render_interface_d3d12 *iface)
 	}
 	else if (set_texture == nullptr)
 	{
-		ERROR_LOG(RENDERER, "DX12: the frontend's interface has no set_texture");
+		ERROR_LOG(RENDERER, "DX12: the frontend's interface has no set_texture\n");
 		Term();
 		return false;
 	}
@@ -188,7 +188,7 @@ bool DX12Context::Init(const struct retro_hw_render_interface_d3d12 *iface)
 	{
 		/* (tier 1 has no table of thousands of textures: the Direct3D 11
 		 * renderer is for those devices) */
-		ERROR_LOG(RENDERER, "DX12: resource binding tier 2 is needed (the device has %d)", (int)options.ResourceBindingTier);
+		ERROR_LOG(RENDERER, "DX12: resource binding tier 2 is needed (the device has %d)\n", (int)options.ResourceBindingTier);
 		Term();
 		return false;
 	}
@@ -225,7 +225,7 @@ bool DX12Context::Init(const struct retro_hw_render_interface_d3d12 *iface)
 			FreeLibrary(dxgi);
 		if (vramBudget.budget_kib == 0)
 			vramBudget.budget_kib = 512 * 1024;
-		NOTICE_LOG(RENDERER, "DX12: vendor %04x, resource binding tier %d, interface version %d, required state %x",
+		NOTICE_LOG(RENDERER, "DX12: vendor %04x, resource binding tier %d, interface version %d, required state %x\n",
 				vendor, (int)options.ResourceBindingTier, v2 ? 2 : 1, (unsigned)requiredState);
 		vram_budget_log("DX12", vramBudget);
 	}
@@ -304,7 +304,7 @@ bool DX12Context::Init(const struct retro_hw_render_interface_d3d12 *iface)
 	ok = ok && MakeRootSignatures();
 	if (!ok)
 	{
-		ERROR_LOG(RENDERER, "DX12: initialization failed");
+		ERROR_LOG(RENDERER, "DX12: initialization failed\n");
 		Term();
 		return false;
 	}
@@ -318,9 +318,9 @@ bool DX12Context::Init(const struct retro_hw_render_interface_d3d12 *iface)
 		hdrFormat = hdr_output.format == HDR_OUTPUT_SCRGB ? DXGI_FORMAT_R16G16B16A16_FLOAT : DXGI_FORMAT_R10G10B10A2_UNORM;
 		hdr = hdr_d3d12_new(device, hdrFormat, requiredState, fence);
 		if (hdr == nullptr)
-			ERROR_LOG(RENDERER, "DX12: the HDR output could not be set up; the picture goes out as 24-bit");
+			ERROR_LOG(RENDERER, "DX12: the HDR output could not be set up; the picture goes out as 24-bit\n");
 		else
-			NOTICE_LOG(RENDERER, "DX12: HDR output, %s", hdr_output.format == HDR_OUTPUT_SCRGB ? "scRGB (RGBA16F)" : "HDR10 (R10G10B10A2)");
+			NOTICE_LOG(RENDERER, "DX12: HDR output, %s\n", hdr_output.format == HDR_OUTPUT_SCRGB ? "scRGB (RGBA16F)" : "HDR10 (R10G10B10A2)");
 	}
 	statStalls = statSubmits = 0;
 	return true;
@@ -340,7 +340,7 @@ bool DX12Context::MakeRootSignatures()
 				|| FAILED(device->CreateRootSignature(0, blob->GetBufferPointer(), blob->GetBufferSize(),
 						__uuidof(ID3D12RootSignature), (void **)out.put())))
 		{
-			ERROR_LOG(RENDERER, "DX12: root signature: %s", errors ? (const char *)errors->GetBufferPointer() : "");
+			ERROR_LOG(RENDERER, "DX12: root signature: %s\n", errors ? (const char *)errors->GetBufferPointer() : "");
 			out.reset();
 			return false;
 		}
@@ -442,7 +442,7 @@ bool DX12Context::MakeRootSignatures()
 	sig.pArgumentDescs = args;
 	if (FAILED(device->CreateCommandSignature(&sig, rasterRoot, __uuidof(ID3D12CommandSignature), (void **)drawSignature.put())))
 	{
-		INFO_LOG(RENDERER, "DX12: no ExecuteIndirect of root constants on this device: draws recorded one by one");
+		INFO_LOG(RENDERER, "DX12: no ExecuteIndirect of root constants on this device: draws recorded one by one\n");
 		drawSignature.reset();
 	}
 	return true;
@@ -570,7 +570,7 @@ u64 DX12Context::Submit()
 		return fenceValue;
 	recording = false;
 	if (FAILED(cmdList->Close()))
-		WARN_LOG(RENDERER, "DX12: the command list could not be closed");
+		WARN_LOG(RENDERER, "DX12: the command list could not be closed\n");
 	ID3D12CommandList * const lists[1] = { cmdList.get() };
 	queue->ExecuteCommandLists(1, lists);
 	fenceValue++;
@@ -644,7 +644,7 @@ bool DX12Context::Upload(u32 bytes, u32 align, DX12Upload& out)
 		{
 			/* (what the list being recorded has already: more than the ring
 			 * in one render) */
-			WARN_LOG(RENDERER, "DX12: the upload ring is too small for this render (%u bytes more)", bytes);
+			WARN_LOG(RENDERER, "DX12: the upload ring is too small for this render (%u bytes more)\n", bytes);
 			return false;
 		}
 		if (Completed() >= ringMarks[ringMarkFirst].fence)
@@ -740,7 +740,7 @@ ID3D12Resource *DX12Context::ReadbackBuffer(u64 bytes)
 	if (FAILED(device->CreateCommittedResource(&heap, D3D12_HEAP_FLAG_NONE, &desc, D3D12_RESOURCE_STATE_COPY_DEST,
 			nullptr, __uuidof(ID3D12Resource), (void **)readback.put())))
 	{
-		WARN_LOG(RENDERER, "DX12: readback buffer creation failed (%u KB)", (u32)(bytes / 1024));
+		WARN_LOG(RENDERER, "DX12: readback buffer creation failed (%u KB)\n", (u32)(bytes / 1024));
 		readback.reset();
 		return nullptr;
 	}

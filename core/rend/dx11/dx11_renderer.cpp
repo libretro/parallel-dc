@@ -76,7 +76,7 @@ static bool makeTexture(ID3D11Device *device, u32 width, u32 height, DXGI_FORMAT
 	if (FAILED(device->CreateTexture2D(&desc, data != nullptr ? &initial : nullptr, texture.put()))
 			|| FAILED(device->CreateShaderResourceView(texture, nullptr, view.put())))
 	{
-		WARN_LOG(RENDERER, "DX11: texture creation failed (%d x %d, format %d)", width, height, (int)format);
+		WARN_LOG(RENDERER, "DX11: texture creation failed (%d x %d, format %d)\n", width, height, (int)format);
 		view.reset();
 		texture.reset();
 		return false;
@@ -94,7 +94,7 @@ bool DX11Renderer::Init()
 	deviceContext = context->GetDeviceContext();
 	if (device == nullptr || deviceContext == nullptr)
 	{
-		WARN_LOG(RENDERER, "DX11: no device");
+		WARN_LOG(RENDERER, "DX11: no device\n");
 		return false;
 	}
 	shaders = &context->GetShaders();
@@ -151,7 +151,7 @@ bool DX11Renderer::Init()
 	heldFromProcess = false;
 	if (!success)
 	{
-		WARN_LOG(RENDERER, "DX11 renderer initialization failed");
+		WARN_LOG(RENDERER, "DX11 renderer initialization failed\n");
 		return false;
 	}
 	// textures made on the GPU, and the textures themselves, all of them now (rend/tex_pool.h)
@@ -201,7 +201,7 @@ void DX11Renderer::Term()
 	overlay.Term();
 	writeOut.Term();
 	if (shaders != nullptr)
-		NOTICE_LOG(RENDERER, "DX11: %u depth-stencil, %u blend and %u sampler states made on the draw path",
+		NOTICE_LOG(RENDERER, "DX11: %u depth-stencil, %u blend and %u sampler states made on the draw path\n",
 				depthStencilStates.drawPath, blendStates->drawPath, samplers->drawPath);
 	depthStencilStates.Term();
 	fbView.reset();
@@ -526,7 +526,7 @@ bool DX11Renderer::UploadGeometry()
 			desc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
 			if (FAILED(device->CreateBuffer(&desc, nullptr, geometry.put())))
 			{
-				WARN_LOG(RENDERER, "DX11: buffer creation failed (%d bytes)", newSize);
+				WARN_LOG(RENDERER, "DX11: buffer creation failed (%d bytes)\n", newSize);
 				geometry.reset();
 				// (as it was before: the vertices made for the card, once)
 				SetProvokingVertices();
@@ -676,7 +676,7 @@ bool DX11Renderer::EnsureDepth(u32 width, u32 height)
 	desc.BindFlags = D3D11_BIND_DEPTH_STENCIL | D3D11_BIND_SHADER_RESOURCE;
 	if (FAILED(device->CreateTexture2D(&desc, nullptr, depthTex.put())))
 	{
-		WARN_LOG(RENDERER, "DX11: depth buffer creation failed (%d x %d)", width, height);
+		WARN_LOG(RENDERER, "DX11: depth buffer creation failed (%d x %d)\n", width, height);
 		depthTex.reset();
 		return false;
 	}
@@ -696,7 +696,7 @@ bool DX11Renderer::EnsureDepth(u32 width, u32 height)
 	srv.Format = DXGI_FORMAT_X32_TYPELESS_G8X24_UINT;
 	success = SUCCEEDED(device->CreateShaderResourceView(depthTex, &srv, stencilSRV.put())) && success;
 	if (!success)
-		WARN_LOG(RENDERER, "DX11: depth buffer view creation failed");
+		WARN_LOG(RENDERER, "DX11: depth buffer view creation failed\n");
 	depthWidth = width;
 	depthHeight = height;
 	return true;
@@ -893,7 +893,7 @@ void DX11Renderer::KeepPicture()
 
 bool DX11Renderer::BeginRTT()
 {
-	DEBUG_LOG(RENDERER, "RenderToTexture packmode=%d stride=%d - %d,%d -> %d,%d @ %08x", FB_W_CTRL.fb_packmode, FB_W_LINESTRIDE.stride * 8,
+	DEBUG_LOG(RENDERER, "RenderToTexture packmode=%d stride=%d - %d,%d -> %d,%d @ %08x\n", FB_W_CTRL.fb_packmode, FB_W_LINESTRIDE.stride * 8,
 			FB_X_CLIP.min, FB_Y_CLIP.min, FB_X_CLIP.max, FB_Y_CLIP.max, FB_W_SOF1 & VRAM_MASK);
 	matrices.CalcMatrices(&pvrrc);
 
@@ -966,7 +966,7 @@ bool DX11Renderer::BeginRTT()
 	if (!rttTexture->spareTarget
 			&& FAILED(device->CreateRenderTargetView(rttTexture->spare, nullptr, rttTexture->spareTarget.put())))
 	{
-		WARN_LOG(RENDERER, "DX11: render to texture target creation failed");
+		WARN_LOG(RENDERER, "DX11: render to texture target creation failed\n");
 		return false;
 	}
 
@@ -1039,7 +1039,7 @@ bool DX11Renderer::UploadFramebuffer()
 		if (FAILED(device->CreateTexture2D(&desc, nullptr, fbTexture.put()))
 				|| FAILED(device->CreateShaderResourceView(fbTexture, nullptr, fbView.put())))
 		{
-			WARN_LOG(RENDERER, "DX11: texture creation failed (%d x %d, format %d)", width, height, (int)desc.Format);
+			WARN_LOG(RENDERER, "DX11: texture creation failed (%d x %d, format %d)\n", width, height, (int)desc.Format);
 			fbView.reset();
 			fbTexture.reset();
 			return false;
@@ -1098,7 +1098,7 @@ bool DX11Renderer::Render()
 	{
 		/* A pixel clip that ends before it starts holds no pixel: the
 		 * chip writes nothing. (Its size would be negative here.) */
-		WARN_LOG(RENDERER, "Render to texture with an empty pixel clip: %d-%d, %d-%d",
+		WARN_LOG(RENDERER, "Render to texture with an empty pixel clip: %d-%d, %d-%d\n",
 				pvrrc.fb_X_CLIP.min, pvrrc.fb_X_CLIP.max, pvrrc.fb_Y_CLIP.min, pvrrc.fb_Y_CLIP.max);
 		return false;
 	}
@@ -1494,7 +1494,7 @@ void DX11Renderer::DrawFrame()
 	{
 		const RenderPass& current_pass = pvrrc.render_passes.head()[render_pass];
 
-		DEBUG_LOG(RENDERER, "Render pass %d OP %d PT %d TR %d MV %d autosort %d", render_pass + 1,
+		DEBUG_LOG(RENDERER, "Render pass %d OP %d PT %d TR %d MV %d autosort %d\n", render_pass + 1,
 				current_pass.op_count - previous_pass.op_count,
 				current_pass.pt_count - previous_pass.pt_count,
 				current_pass.tr_count - previous_pass.tr_count,

@@ -32,7 +32,8 @@ ip_meta_t ip_meta;
 u8 net_device = NET_DEVICE_MODEM;
 u8 net_device_option = NET_DEVICE_MODEM;
 bool net_dcnet_option = false;
-void GenericLog(LogTypes::LOG_LEVELS, LogTypes::LOG_TYPE, const char *, int, const char *fmt, ...) {}
+/* (no log) */
+retro_log_printf_t log_cb;
 bool miniupnp_init(miniupnp_t *) { return false; }
 void miniupnp_term(miniupnp_t *) {}
 bool miniupnp_add_port_mapping(miniupnp_t *, int, bool) { return false; }

@@ -111,7 +111,7 @@ struct MemChip
 
 			if (Load(temp))
 			{
-				INFO_LOG(FLASHROM, "Loaded %s as %s", temp, title);
+				INFO_LOG(FLASHROM, "Loaded %s as %s\n", temp, title);
 				return true;
 			}
 		} while(next);
@@ -126,7 +126,7 @@ struct MemChip
 		sprintf(path,"%s%s%s",root.c_str(),prefix.c_str(),name_ro.c_str());
 		Save(path);
 
-		INFO_LOG(FLASHROM, "Saved %s as %s", path, title.c_str());
+		INFO_LOG(FLASHROM, "Saved %s as %s\n", path, title.c_str());
 	}
 	virtual void Reset() {}
 	virtual bool Serialize(void **data, unsigned int *total_size) { return true; }
@@ -283,7 +283,7 @@ struct DCFlashChip : MemChip
 	{
 		if (sz != 1)
 		{
-			INFO_LOG(FLASHROM, "invalid access size %d", sz);
+			INFO_LOG(FLASHROM, "invalid access size %d\n", sz);
 			return;
 		}
 
@@ -304,7 +304,7 @@ struct DCFlashChip : MemChip
 					state = FS_ReadAMDID1;
 				break;
 			default:
-				INFO_LOG(FLASHROM, "Unknown FlashWrite mode: %x", val);
+				INFO_LOG(FLASHROM, "Unknown FlashWrite mode: %x\n", val);
 				break;
 			}
 			break;
@@ -319,7 +319,7 @@ struct DCFlashChip : MemChip
 			else
 			{
 				if (val != 0xf0)
-					WARN_LOG(FLASHROM, "FlashRom: ReadAMDID1 unexpected write @ %x: %x", addr, val);
+					WARN_LOG(FLASHROM, "FlashRom: ReadAMDID1 unexpected write @ %x: %x\n", addr, val);
 				state = FS_Normal;
 			}
 			break;
@@ -342,7 +342,7 @@ struct DCFlashChip : MemChip
 			else
 			{
 				if (val != 0xf0)
-					WARN_LOG(FLASHROM, "FlashRom: ReadAMDID2 unexpected write @ %x: %x", addr, val);
+					WARN_LOG(FLASHROM, "FlashRom: ReadAMDID2 unexpected write @ %x: %x\n", addr, val);
 				state = FS_Normal;
 			}
 			break;
@@ -360,7 +360,7 @@ struct DCFlashChip : MemChip
 			else
 			{
 				if (val != 0xf0)
-					WARN_LOG(FLASHROM, "FlashRom: EraseAMD1 unexpected write @ %x: %x", addr, val);
+					WARN_LOG(FLASHROM, "FlashRom: EraseAMD1 unexpected write @ %x: %x\n", addr, val);
 				state = FS_Normal;
 			}
 			break;
@@ -375,7 +375,7 @@ struct DCFlashChip : MemChip
 			else
 			{
 				if (val != 0xf0)
-					WARN_LOG(FLASHROM, "FlashRom: EraseAMD2 unexpected write @ %x: %x", addr, val);
+					WARN_LOG(FLASHROM, "FlashRom: EraseAMD2 unexpected write @ %x: %x\n", addr, val);
 				state = FS_Normal;
 			}
 			break;
@@ -385,7 +385,7 @@ struct DCFlashChip : MemChip
 				|| ((addr & 0xfff) == 0xaaa && (val & 0xff) == 0x10))
 			{
 				// chip erase
-				INFO_LOG(FLASHROM, "Erasing Chip!");
+				INFO_LOG(FLASHROM, "Erasing Chip!\n");
 				u8 save[0x2000];
 				// this area is write-protected
 				memcpy(save, data + 0x1a000, 0x2000);
@@ -428,17 +428,17 @@ struct DCFlashChip : MemChip
 						len = 0;
 						break;
 					}
-					INFO_LOG(FLASHROM, "Erase Sector %08X!", addr);
+					INFO_LOG(FLASHROM, "Erase Sector %08X!\n", addr);
 					if (start != nullptr)
 						memset(start, 0xFF, len);
 				}
 			}
 			else if (val != 0xf0)
-				WARN_LOG(FLASHROM, "FlashRom: EraseAMD3 unexpected write @ %x: %x", addr, val);
+				WARN_LOG(FLASHROM, "FlashRom: EraseAMD3 unexpected write @ %x: %x\n", addr, val);
 			state = FS_Normal;
 			break;
 		default:
-			WARN_LOG(FLASHROM, "FlashRom: invalid state. write @ %x: %x", addr, val);
+			WARN_LOG(FLASHROM, "FlashRom: invalid state. write @ %x: %x\n", addr, val);
 			state = FS_Normal;
 			break;
 		}
@@ -457,10 +457,10 @@ struct DCFlashChip : MemChip
 				return 0xb0;	// or 0x40 or 0x3e
 			case 2:	// sector protection verification
 				// sector protection
-				DEBUG_LOG(FLASHROM, "Sector protection address %x", addr);
+				DEBUG_LOG(FLASHROM, "Sector protection address %x\n", addr);
 				return (addr & 0x1e000) == 0x1a000;
 			default:
-				WARN_LOG(FLASHROM, "SelectMode unknown address %x", addr);
+				WARN_LOG(FLASHROM, "SelectMode unknown address %x\n", addr);
 				return 0;
 			}
 		}
@@ -567,7 +567,7 @@ struct DCFlashChip : MemChip
 
 		if (!valid)
 		{
-			INFO_LOG(FLASHROM, "DCFlashChip::Validate resetting FLASH_PT_FACTORY");
+			INFO_LOG(FLASHROM, "DCFlashChip::Validate resetting FLASH_PT_FACTORY\n");
 
 			memcpy(sysinfo, "00000Dreamcast  ", sizeof(sysinfo));
 			erase_partition(FLASH_PT_FACTORY);
@@ -581,7 +581,7 @@ struct DCFlashChip : MemChip
 		// validate partition 2 (user settings, block allocated)
 		if (!validate_header(FLASH_PT_USER))
 		{
-			INFO_LOG(FLASHROM, "DCFlashChip::Validate resetting FLASH_PT_USER");
+			INFO_LOG(FLASHROM, "DCFlashChip::Validate resetting FLASH_PT_USER\n");
 
 			erase_partition(FLASH_PT_USER);
 			write_header(FLASH_PT_USER);
@@ -590,7 +590,7 @@ struct DCFlashChip : MemChip
 		// validate partition 3 (game settings, block allocated)
 		if (!validate_header(FLASH_PT_GAME))
 		{
-			INFO_LOG(FLASHROM, "DCFlashChip::Validate resetting FLASH_PT_GAME");
+			INFO_LOG(FLASHROM, "DCFlashChip::Validate resetting FLASH_PT_GAME\n");
 
 			erase_partition(FLASH_PT_GAME);
 			write_header(FLASH_PT_GAME);
@@ -599,7 +599,7 @@ struct DCFlashChip : MemChip
 		// validate partition 4 (unknown, block allocated)
 		if (!validate_header(FLASH_PT_UNKNOWN))
 		{
-			INFO_LOG(FLASHROM, "DCFlashChip::Validate resetting FLASH_PT_UNKNOWN");
+			INFO_LOG(FLASHROM, "DCFlashChip::Validate resetting FLASH_PT_UNKNOWN\n");
 
 			erase_partition(FLASH_PT_UNKNOWN);
 			write_header(FLASH_PT_UNKNOWN);
@@ -720,7 +720,7 @@ private:
 
 		if (phys_id >= phys_end)
 		{
-			WARN_LOG(FLASHROM, "Cannot allocate block in flash. Full?");
+			WARN_LOG(FLASHROM, "Cannot allocate block in flash. Full?\n");
 			return 0;
 		}
 
@@ -761,7 +761,7 @@ private:
 			if (user.block_id == block_id)
 			{
 				if (!validate_crc(&user))
-					WARN_LOG(FLASHROM, "flash_lookup_block physical block %d has an invalid crc", phys_id);
+					WARN_LOG(FLASHROM, "flash_lookup_block physical block %d has an invalid crc\n", phys_id);
 				else
 					result = phys_id;
 			}

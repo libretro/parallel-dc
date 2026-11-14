@@ -2566,13 +2566,13 @@ bool ngen_Rewrite(unat& host_pc, unat, unat)
 		return false;
 	if (bm_GetBlock2((void *)host_pc) == NULL)
 	{
-		WARN_LOG(DYNAREC, "ngen_Rewrite: Block at %p not found", (void *)host_pc);
+		WARN_LOG(DYNAREC, "ngen_Rewrite: Block at %p not found\n", (void *)host_pc);
 		return false;
 	}
 	if (!BlockCompiler::FastAccessAt((const u8 *)host_pc, &kind, &data, &length)
 			|| mem_stubs[kind][data] == NULL)
 	{
-		WARN_LOG(DYNAREC, "ngen_Rewrite: no memory access at %p", (void *)host_pc);
+		WARN_LOG(DYNAREC, "ngen_Rewrite: no memory access at %p\n", (void *)host_pc);
 		return false;
 	}
 

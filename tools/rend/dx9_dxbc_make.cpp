@@ -8,14 +8,15 @@
 #include "../../core/rend/dx9/dx9_shaders.cpp"
 #include <cstdarg>
 
-void GenericLog(LogTypes::LOG_LEVELS, LogTypes::LOG_TYPE, const char *, int, const char *fmt, ...)
+static void RETRO_CALLCONV test_log(enum retro_log_level level, const char *fmt, ...)
 {
 	va_list ap;
+	(void)level;
 	va_start(ap, fmt);
 	vfprintf(stderr, fmt, ap);
-	fprintf(stderr, "\n");
 	va_end(ap);
 }
+retro_log_printf_t log_cb = test_log;
 
 bool DX9Shaders::Compile(pD3DCompile) { return false; }
 

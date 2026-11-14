@@ -39,7 +39,7 @@ void DX12WriteOut::Init(DX12Context *ctx)
 	if (FAILED(device->CheckFeatureSupport(D3D12_FEATURE_FORMAT_SUPPORT, &fs, sizeof(fs)))
 			|| (fs.Support2 & D3D12_FORMAT_SUPPORT2_UAV_TYPED_LOAD) == 0)
 	{
-		WARN_LOG(RENDERER, "DX12: no typed loads of the picture: the PowerVR2 write-out pass is left out");
+		WARN_LOG(RENDERER, "DX12: no typed loads of the picture: the PowerVR2 write-out pass is left out\n");
 		return;
 	}
 	// the root signature: a table of the frame's words (u0) and the picture (u0 of space 2)
@@ -61,7 +61,7 @@ void DX12WriteOut::Init(DX12Context *ctx)
 		if (serialize == nullptr || FAILED(serialize(&desc, D3D_ROOT_SIGNATURE_VERSION_1, blob.put(), errors.put()))
 				|| FAILED(device->CreateRootSignature(0, blob->GetBufferPointer(), blob->GetBufferSize(), __uuidof(ID3D12RootSignature), (void **)root.put())))
 		{
-			WARN_LOG(RENDERER, "DX12: no root signature for the PowerVR2 write-out pass");
+			WARN_LOG(RENDERER, "DX12: no root signature for the PowerVR2 write-out pass\n");
 			Term();
 			return;
 		}
@@ -74,7 +74,7 @@ void DX12WriteOut::Init(DX12Context *ctx)
 		desc.CS = { code, size };
 		if (FAILED(device->CreateComputePipelineState(&desc, __uuidof(ID3D12PipelineState), (void **)pipeline.put())))
 		{
-			WARN_LOG(RENDERER, "DX12: no pipeline for the PowerVR2 write-out pass");
+			WARN_LOG(RENDERER, "DX12: no pipeline for the PowerVR2 write-out pass\n");
 			Term();
 			return;
 		}
@@ -99,7 +99,7 @@ void DX12WriteOut::Init(DX12Context *ctx)
 		if (FAILED(device->CreateCommittedResource(&heap, D3D12_HEAP_FLAG_NONE, &desc, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, nullptr,
 				__uuidof(ID3D12Resource), (void **)words.put())) || FAILED(words->Map(0, &none, (void **)&mapped)))
 		{
-			WARN_LOG(RENDERER, "DX12: no words for the PowerVR2 write-out pass");
+			WARN_LOG(RENDERER, "DX12: no words for the PowerVR2 write-out pass\n");
 			mapped = nullptr;
 			Term();
 			return;

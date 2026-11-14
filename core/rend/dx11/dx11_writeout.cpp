@@ -34,7 +34,7 @@ bool DX11WriteOut::Make(ID3D11Device *device, ID3D11DeviceContext *ctx, DX11Shad
 			|| FAILED(device->CheckFeatureSupport(D3D11_FEATURE_FORMAT_SUPPORT2, &fs, sizeof(fs)))
 			|| (fs.OutFormatSupport2 & D3D11_FORMAT_SUPPORT2_UAV_TYPED_LOAD) == 0)
 	{
-		WARN_LOG(RENDERER, "DX11: no typed loads of the picture: the PowerVR2 write-out pass is left out");
+		WARN_LOG(RENDERER, "DX11: no typed loads of the picture: the PowerVR2 write-out pass is left out\n");
 		return false;
 	}
 	D3D11_BUFFER_DESC desc{};
@@ -44,7 +44,7 @@ bool DX11WriteOut::Make(ID3D11Device *device, ID3D11DeviceContext *ctx, DX11Shad
 	if (shaders->GetWriteOutShader(shader) == nullptr
 			|| FAILED(device->CreateBuffer(&desc, nullptr, constants.put())))
 	{
-		WARN_LOG(RENDERER, "DX11: the PowerVR2 write-out pass could not be made: the picture goes without it");
+		WARN_LOG(RENDERER, "DX11: the PowerVR2 write-out pass could not be made: the picture goes without it\n");
 		shader.reset();
 		constants.reset();
 		return false;

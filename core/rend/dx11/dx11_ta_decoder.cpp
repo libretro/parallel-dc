@@ -150,7 +150,7 @@ bool DX11TaDecoder::Init()
 	if (device == nullptr)
 		return false;
 	auto no = [this](const char *why) {
-		NOTICE_LOG(RENDERER, "DX11: TA processing stays on the CPU (%s)", why);
+		NOTICE_LOG(RENDERER, "DX11: TA processing stays on the CPU (%s)\n", why);
 		delete res;
 		res = nullptr;
 		failed = true;
@@ -308,7 +308,7 @@ bool DX11TaDecoder::Init()
 	draw.sorted = sortable ? r->buffers[B_SORT].get() : nullptr;
 	ready = true;
 	NOTICE_LOG(RENDERER, "DX11: TA processing on the GPU (NVIDIA's multi-draw indirect; %u KB of tables a frame, %u pieces, "
-			"a ring of %u MB for the frames' data%s; the last kernels %s%s)",
+			"a ring of %u MB for the frames' data%s; the last kernels %s%s)\n",
 			r->tableBytes / 1024, PIECES, r->ringBytes >> 20, r->noOverwrite ? "" : ", discarded every frame",
 			r->overlap ? "overlapped through NVAPI" : "one after another",
 			sortable ? "; translucent triangles sorted from the frame's depths" : "");
@@ -320,7 +320,7 @@ void DX11TaDecoder::Log(const char *when)
 	NOTICE_LOG(RENDERER, "DX11: TA processing%s: %llu frames decoded and drawn on the GPU, %llu parsed on the CPU "
 			"(%llu without a table, %llu frame skipping, %llu sorted on the CPU, %llu the header pass leaves to the parse, "
 			"%llu might run out of room, %llu whose input the GPU still had); %llu with shadows the GPU decides, "
-			"%llu with a sorted pass, %llu multi-draws refused",
+			"%llu with a sorted pass, %llu multi-draws refused\n",
 			when, (unsigned long long)statFrames, (unsigned long long)statSkipped,
 			(unsigned long long)statWhy[TA_GPU_WHY_TABLE], (unsigned long long)statWhy[TA_GPU_WHY_PARSE],
 			(unsigned long long)statWhy[TA_GPU_WHY_SORT], (unsigned long long)statWhy[TA_GPU_WHY_WALK],
@@ -626,5 +626,5 @@ void DX11TaDecoder::DrawRecords(u32 slot, u32 count)
 	const u32 stride = TAG_C_WORDS * 4;
 	if (!dx11_nvapi_multi_draw_indexed(DX11Context::Instance()->GetDeviceContext(), count, res->buffers[B_TRD], slot * stride, stride)
 			&& statDrawFailed++ == 0)
-		WARN_LOG(RENDERER, "DX11: NVAPI's multi-draw indirect failed: a translucent draw group is not drawn");
+		WARN_LOG(RENDERER, "DX11: NVAPI's multi-draw indirect failed: a translucent draw group is not drawn\n");
 }

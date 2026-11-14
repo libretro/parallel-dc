@@ -61,7 +61,7 @@ void M4Cartridge::device_start()
 	else
 	{
 		// a set without its key file
-		WARN_LOG(NAOMI, "Missing M4 key");
+		WARN_LOG(NAOMI, "Missing M4 key\n");
 	}
 
 	enc_init();

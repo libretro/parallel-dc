@@ -43,7 +43,7 @@ static bool InitDrive_(char* fn, bool swap)
 
 	if (disc != NULL)
 	{
-		INFO_LOG(GDROM, "gdrom: Opened image \"%s\"", fn);
+		INFO_LOG(GDROM, "gdrom: Opened image \"%s\"\n", fn);
 		if (swap)
 		{
 			gd_disc_inserted();
@@ -53,7 +53,7 @@ static bool InitDrive_(char* fn, bool swap)
 	}
 	else
 	{
-		INFO_LOG(GDROM, "gdrom: Failed to open image \"%s\"", fn);
+		INFO_LOG(GDROM, "gdrom: Failed to open image \"%s\"\n", fn);
 		NullDriveDiscType = NoDisk; /* no disc :) */
 	}
 	libCore_gdrom_disc_change();
@@ -68,7 +68,7 @@ bool InitDrive(u32 fileflags)
 
 	if (settings.imgread.LoadDefaultImage)
 	{
-		INFO_LOG(GDROM, "Loading default image \"%s\"", settings.imgread.DefaultImage);
+		INFO_LOG(GDROM, "Loading default image \"%s\"\n", settings.imgread.DefaultImage);
 		if (!InitDrive_(settings.imgread.DefaultImage, false))
 		{
 			msgboxf("Default image \"%s\" failed to load", MBX_ICONERROR, settings.imgread.DefaultImage);
@@ -140,7 +140,7 @@ bool DiscSwap(u32 fileflags)
 	/* What the game is told, and when: see gd_disc_inserted() */
 	if (settings.imgread.LoadDefaultImage)
 	{
-		INFO_LOG(GDROM, "Loading default image \"%s\"", settings.imgread.DefaultImage);
+		INFO_LOG(GDROM, "Loading default image \"%s\"\n", settings.imgread.DefaultImage);
 		if (!InitDrive_(settings.imgread.DefaultImage, true))
 		{
 			msgboxf("Default image \"%s\" failed to load", MBX_ICONERROR, settings.imgread.DefaultImage);
