@@ -41,6 +41,7 @@
 #include "hw/naomi/naomi.h"
 #include "hw/naomi/naomi_cart.h"
 #include "hw/naomi/midiffb.h"
+#include "hw/naomi/naomi_periph.h"
 #include "hw/sh4/sh4_cache.h"
 #include "hw/bba/bba.h"
 
@@ -122,10 +123,6 @@ extern VArray2 vram;
 
 //./core/hw/sh4/interpr/sh4_interpreter.o
 
-//./core/hw/sh4/modules/serial.o
-extern SCIF_SCFSR2_type SCIF_SCFSR2;
-extern SCIF_SCSCR2_type SCIF_SCSCR2;
-
 //./core/hw/sh4/modules/bsc.o
 
 //./core/hw/sh4/modules/tmu.o
@@ -195,9 +192,6 @@ void lr_state_before_v23(void);
  * Broadband Adapter holds (netstate.cpp), the VMU's beep (vmu_beep.cpp),
  * the NAOMI's serial port and the card readers, touchscreen and hopper on
  * it (naomi_periph.h), and a System SP's own hardware (systemsp.cpp) */
-void naomi_periph_serialize_v24(void **data, unsigned int *total_size);
-bool naomi_periph_unserialize_v24(void **data, unsigned int *total_size);
-void naomi_periph_state_before_v24(void);
 void systemsp_serialize_v24(void **data, unsigned int *total_size);
 bool systemsp_unserialize_v24(void **data, unsigned int *total_size);
 void systemsp_state_before_v24(void);

@@ -15,19 +15,24 @@
 
     You should have received a copy of the GNU General Public License
     along with Flycast.  If not, see <https://www.gnu.org/licenses/>.
- */
+*/
 #pragma once
 #include "types.h"
 
-namespace touchscreen
-{
+#ifdef __cplusplus
+extern "C" {
+#endif
 
-void init();
-void term();
-bool active();
-// What the panel has in a save state since V24 (touchscreen.cpp)
-void serialize_v24(void **data, unsigned int *total_size);
-bool unserialize_v24(void **data, unsigned int *total_size);
-void state_before_v24();
+/* The touch panel of Manic Panic Ghosts and Touch De Zunou, on the SCIF
+ * (touchscreen.c) */
+void touchscreen_init(void);
+void touchscreen_term(void);
+bool touchscreen_active(void);
+/* What the panel has in a save state since V24 */
+void touchscreen_serialize_v24(void **data, unsigned int *total_size);
+bool touchscreen_unserialize_v24(void **data, unsigned int *total_size);
+void touchscreen_state_before_v24(void);
 
+#ifdef __cplusplus
 }
+#endif

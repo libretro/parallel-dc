@@ -769,7 +769,7 @@ void naomi_periph_term(void)
 {
 	card_reader::term();
 	card_reader::barcodeTerm();
-	touchscreen::term();
+	touchscreen_term();
 	hopper::term();
 	printer_term();
 	rfid_init(false, false);
@@ -826,7 +826,7 @@ void naomi_periph_init(void)
 	}
 	if (!strcmp(naomi_game_id, "POKASUKA GHOST (JAPANESE)")	// Manic Panic Ghosts
 			|| !strcmp(naomi_game_id, "TOUCH DE ZUNO (JAPAN)"))
-		touchscreen::init();
+		touchscreen_init();
 	if (!strcmp(naomi_game_id, " TOUCH DE UNOH -------------")
 			|| !strcmp(naomi_game_id, " TOUCH DE UNOH 2 -----------")
 			|| !strcmp(naomi_game_id, "MIRAI YOSOU STUDIO"))
@@ -872,7 +872,7 @@ void naomi_periph_poll(void)
  * more), the players' "Insert Card" buttons, and then each one's:
  *   - the SCIF's FIFOs, for a device on it (scif_serialize_v24(), 45 bytes);
  *   - the card readers' (card_reader::serialize_v24(), 2 bytes and up);
- *   - the touch panel's (touchscreen::serialize_v24(), 60 bytes);
+ *   - the touch panel's (touchscreen_serialize_v24(), 60 bytes);
  *   - the hopper board's (hopper::serialize_v24(), 2404 bytes);
  *   - the IC cards' (rfid_serialize_v24(), 262 bytes).
  * One that the state has and the game has not is read past, and one the
@@ -899,7 +899,7 @@ static u8 periph_present(void)
 		mask |= PERIPH_CARD;
 	if (card_reader::barcodeAvailable())
 		mask |= PERIPH_CARD;
-	if (touchscreen::active())
+	if (touchscreen_active())
 		mask |= PERIPH_TOUCH;
 	if (hopper::active())
 		mask |= PERIPH_HOPPER;
@@ -935,7 +935,7 @@ void naomi_periph_serialize_v24(void **data, unsigned int *total_size)
 	if (mask & PERIPH_CARD)
 		card_reader::serialize_v24(data, total_size);
 	if (mask & PERIPH_TOUCH)
-		touchscreen::serialize_v24(data, total_size);
+		touchscreen_serialize_v24(data, total_size);
 	if (mask & PERIPH_HOPPER)
 		hopper::serialize_v24(data, total_size);
 	if (mask & PERIPH_RFID)
@@ -972,9 +972,9 @@ bool naomi_periph_unserialize_v24(void **data, unsigned int *total_size)
 	else if (have & PERIPH_CARD)
 		card_reader::state_before_v24();
 	if (ok && (mask & PERIPH_TOUCH))
-		ok = (have & PERIPH_TOUCH) ? touchscreen::unserialize_v24(data, total_size) : periph_skip(data, total_size, PERIPH_TOUCH_SIZE);
+		ok = (have & PERIPH_TOUCH) ? touchscreen_unserialize_v24(data, total_size) : periph_skip(data, total_size, PERIPH_TOUCH_SIZE);
 	else if (have & PERIPH_TOUCH)
-		touchscreen::state_before_v24();
+		touchscreen_state_before_v24();
 	if (ok && (mask & PERIPH_HOPPER))
 		ok = (have & PERIPH_HOPPER) ? hopper::unserialize_v24(data, total_size) : periph_skip(data, total_size, PERIPH_HOPPER_SIZE);
 	else if (have & PERIPH_HOPPER)
@@ -997,7 +997,7 @@ void naomi_periph_state_before_v24(void)
 	if (scif_get_pipe() != NULL)
 		scif_state_before_v24();
 	card_reader::state_before_v24();
-	touchscreen::state_before_v24();
+	touchscreen_state_before_v24();
 	hopper::state_before_v24();
 	if (periph_rfid)
 		rfid_state_before_v24();

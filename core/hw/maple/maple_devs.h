@@ -2,7 +2,7 @@
 #include <math.h>
 #include "types.h"
 
-// WARNING: changing the order of this enum or inserting new values will break savestates compatibility
+/* WARNING: changing the order of this enum or inserting new values will break savestates compatibility */
 enum MapleDeviceType
 {
    MDT_SegaController,
@@ -20,14 +20,13 @@ enum MapleDeviceType
 
    MDT_None,
 
-   // IC card reader/writer of VF4 and Mushiking (after MDT_None: it came later)
+   /* IC card reader/writer of VF4 and Mushiking (after MDT_None: it came later) */
    MDT_RFIDReaderWriter,
 
-   //
-   // Add new device types before this comment
-   //
-   MDT_Count,
+   /* Add new device types before this comment */
+   MDT_Count
 };
+typedef enum MapleDeviceType MapleDeviceType;
 
 enum NAOMI_KEYS
 {
@@ -51,10 +50,10 @@ enum NAOMI_KEYS
 
 	NAOMI_TEST_KEY = 1 << 1,
 
-	// Not an actual button
+	/* Not an actual button */
 	NAOMI_COIN_KEY = 1 << 0,
-	// Nor this: a card put in the game's card reader
-	NAOMI_INSERT_CARD_KEY = 1 << 17,
+	/* Nor this: a card put in the game's card reader */
+	NAOMI_INSERT_CARD_KEY = 1 << 17
 };
 
 enum AWAVE_KEYS
@@ -75,11 +74,12 @@ enum AWAVE_KEYS
 	AWAVE_SERVICE_KEY = 1 << 13,
 	AWAVE_TEST_KEY 	  = 1 << 14,
 
-	// Not an actual button
+	/* Not an actual button */
 	AWAVE_COIN_KEY    = 1 << 15,
-	AWAVE_TRIGGER_KEY    = 1 << 12,
+	AWAVE_TRIGGER_KEY    = 1 << 12
 };
 
+#ifdef __cplusplus
 struct IMapleConfigMap;
 
 struct maple_device
@@ -136,3 +136,4 @@ void limit_joystick_magnitude(s8& joyx, s8& joyy)
 
 /* What C sees of the devices */
 #include "maple_if.h"
+#endif

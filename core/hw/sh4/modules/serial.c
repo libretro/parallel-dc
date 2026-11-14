@@ -8,8 +8,8 @@
 #include "hw/sh4/sh4_sched.h"
 #include "hw/naomi/naomi_periph.h"
 #include "modules.h"
-#include <algorithm>
-#include <vector>
+#include <string.h>
+#include <retro_miscellaneous.h>
 
 
 SCIF_SCFSR2_type SCIF_SCFSR2;
@@ -49,7 +49,7 @@ SCSPTR2_type SCIF_SCSPTR2;
 SCLSR2_type SCIF_SCLSR2;
 */
 
-static void Serial_UpdateInterrupts()
+static void Serial_UpdateInterrupts(void)
 {
     InterruptPend(sh4_SCIF_TXI, SCIF_SCFSR2.TDFE);
     InterruptMask(sh4_SCIF_TXI, SCIF_SCSCR2.TIE);
@@ -60,19 +60,19 @@ static void Serial_UpdateInterrupts()
 
 /*
 	With a device plugged in (an arcade game's card reader, touch panel or
-	hopper: see SerialPort::Pipe) the port has its 16-byte FIFOs, sends and
+	hopper: see serial_port.h) the port has its 16-byte FIFOs, sends and
 	receives a character each character time, and raises its interrupts as
 	the FIFOs fill and empty. With nothing plugged in it is what it has
 	always been here: always ready to send, never anything received.
 */
-static SerialPort::Pipe *scif_pipe;
+static serial_pipe *scif_pipe;
 static int scif_schid = -1;
 static u8 scif_txf[16];
 static u8 scif_rxf[16];
 static u32 scif_txn;
 static u32 scif_rxn;
 static bool scif_transmitting;
-// the status bits as the game last read them: only those can be cleared
+/* the status bits as the game last read them: only those can be cleared */
 static u16 scif_status_read;
 
 enum
@@ -84,10 +84,10 @@ enum
 	SCIF_BRK = 0x10,
 	SCIF_TDFE = 0x20,
 	SCIF_TEND = 0x40,
-	SCIF_ER = 0x80,
+	SCIF_ER = 0x80
 };
 
-static void scif_interrupts()
+static void scif_interrupts(void)
 {
 	InterruptPend(sh4_SCIF_TXI, SCIF_SCFSR2.TDFE);
 	InterruptMask(sh4_SCIF_TXI, SCIF_SCSCR2.TIE);
@@ -102,23 +102,23 @@ static void scif_interrupts()
 	InterruptMask(sh4_SCIF_ERI, SCIF_SCSCR2.RIE || SCIF_SCSCR2.REIE);
 }
 
-// The time a character takes on the line, in SH4 cycles
-static int scif_char_cycles()
+/* The time a character takes on the line, in SH4 cycles */
+static int scif_char_cycles(void)
 {
 	const u16 smr = SCIF_SCSMR2.full;
-	// start bit, 7 or 8 data bits, parity bit if any, 1 or 2 stop bits
+	/* start bit, 7 or 8 data bits, parity bit if any, 1 or 2 stop bits */
 	const int frame = 1 + 8 - ((smr >> 6) & 1) + ((smr >> 5) & 1) + 1 + ((smr >> 3) & 1);
-	// 95 bauds at the slowest
+	/* 95 bauds at the slowest */
 	const int bauds = SH4_MAIN_CLOCK / 4 / (SCIF_SCBRR2 + 1) / 32 / (1 << ((smr & 3) * 2));
 	return frame * (SH4_MAIN_CLOCK / bauds);
 }
 
-static bool scif_tdfe()
+static bool scif_tdfe(void)
 {
 	return scif_txn <= (1u << (3 - ((SCIF_SCFCR2.full >> 4) & 3)));
 }
 
-static bool scif_rdf()
+static bool scif_rdf(void)
 {
 	static const u32 levels[] = { 1, 4, 8, 14 };
 	return scif_rxn >= levels[(SCIF_SCFCR2.full >> 6) & 3];
@@ -130,9 +130,10 @@ static void scif_set_status(u16 bit)
 	SCIF_SCFSR2.full |= bit;
 }
 
-// The character being sent is out: the next one from the FIFO goes
-static void scif_tx_done()
+/* The character being sent is out: the next one from the FIFO goes */
+static void scif_tx_done(void)
 {
+	u8 v;
 	if (!scif_transmitting || SCIF_SCFCR2.TFRST)
 		return;
 	if (scif_txn == 0)
@@ -141,10 +142,10 @@ static void scif_tx_done()
 		scif_transmitting = false;
 		return;
 	}
-	const u8 v = scif_txf[0];
+	v = scif_txf[0];
 	scif_txn--;
 	memmove(scif_txf, scif_txf + 1, scif_txn);
-	scif_pipe->write(v);
+	scif_pipe->ops->write(scif_pipe, v);
 	if (scif_tdfe())
 	{
 		scif_set_status(SCIF_TDFE);
@@ -152,12 +153,12 @@ static void scif_tx_done()
 	}
 }
 
-// A character from the device, if it has one
-static void scif_rx()
+/* A character from the device, if it has one */
+static void scif_rx(void)
 {
-	if (scif_pipe->available() > 0)
+	if (scif_pipe->ops->available(scif_pipe) > 0)
 	{
-		const u8 v = scif_pipe->read();
+		const u8 v = scif_pipe->ops->read(scif_pipe);
 		if (!SCIF_SCSCR2.RE || SCIF_SCFCR2.RFRST)
 			return;
 		if (scif_rxn == sizeof(scif_rxf))
@@ -178,7 +179,7 @@ static void scif_rx()
 	}
 	else if (scif_rxn != 0)
 	{
-		// nothing more has come for a character's time
+		/* nothing more has come for a character's time */
 		scif_set_status(SCIF_DR);
 		scif_interrupts();
 	}
@@ -188,9 +189,9 @@ static void scif_rx()
  * going out, one the device has for the game, or the wait after the last
  * one that came. The port is not looked at otherwise: a device that has
  * something new to send says so (scif_kick()). */
-static bool scif_busy()
+static bool scif_busy(void)
 {
-	return scif_transmitting || scif_pipe->available() > 0
+	return scif_transmitting || scif_pipe->ops->available(scif_pipe) > 0
 		|| (scif_rxn != 0 && !SCIF_SCFSR2.DR);
 }
 
@@ -203,13 +204,13 @@ static int scif_sched(int tag, int cycles, int jitter)
 	return scif_busy() ? scif_char_cycles() : 0;
 }
 
-static void scif_kick()
+static void scif_kick(void)
 {
 	if (scif_pipe != NULL && !sh4_sched_is_scheduled(scif_schid))
 		sh4_sched_request(scif_schid, scif_char_cycles());
 }
 
-static void scif_clear()
+static void scif_clear(void)
 {
 	scif_txn = 0;
 	scif_rxn = 0;
@@ -219,41 +220,25 @@ static void scif_clear()
 		sh4_sched_request(scif_schid, -1);
 }
 
-void scif_set_pipe(SerialPort::Pipe *pipe)
+void scif_set_pipe(serial_pipe *pipe)
 {
 	if (pipe == scif_pipe)
 		return;
-	// (registered once a game has a device: the scheduler has one event less to look at for every other)
+	/* (registered once a game has a device: the scheduler has one event less to look at for every other) */
 	if (pipe != NULL && scif_schid < 0)
 		scif_schid = sh4_sched_register(0, &scif_sched);
 	scif_clear();
 	scif_pipe = pipe;
 }
 
-SerialPort::Pipe *scif_get_pipe()
+serial_pipe *scif_get_pipe(void)
 {
 	return scif_pipe;
 }
 
-void scif_update_status()
+void scif_update_status(void)
 {
 	scif_kick();
-}
-
-void SCIFSerialPort::setPipe(Pipe *pipe)
-{
-	scif_set_pipe(pipe);
-}
-
-void SCIFSerialPort::updateStatus()
-{
-	scif_kick();
-}
-
-SCIFSerialPort& SCIFSerialPort::Instance()
-{
-	static SCIFSerialPort instance;
-	return instance;
 }
 
 static void scif_pipe_write(u8 data)
@@ -264,10 +249,10 @@ static void scif_pipe_write(u8 data)
 		data &= 0x7f;
 	if (scif_txn == 0 && !scif_transmitting && SCIF_SCSCR2.TE)
 	{
-		scif_pipe->write(data);
+		scif_pipe->ops->write(scif_pipe, data);
 		scif_transmitting = true;
 		sh4_sched_request(scif_schid, scif_char_cycles());
-		// straight into the shift register: the FIFO is still empty
+		/* straight into the shift register: the FIFO is still empty */
 		scif_set_status(SCIF_TDFE);
 		scif_interrupts();
 	}
@@ -278,7 +263,7 @@ static void scif_pipe_write(u8 data)
 static void scif_pipe_write_status(u32 value)
 {
 	u16 data = (u16)(value | ~0x00f3u | ~(u32)scif_status_read);
-	// RDF and TDFE stay set as long as the FIFO is past its trigger level
+	/* RDF and TDFE stay set as long as the FIFO is past its trigger level */
 	if (scif_rdf())
 		data |= SCIF_RDF;
 	if (scif_tdfe())
@@ -290,11 +275,12 @@ static void scif_pipe_write_status(u32 value)
 	scif_interrupts();
 }
 
-static u8 scif_pipe_read_data()
+static u8 scif_pipe_read_data(void)
 {
+	u8 data;
 	if (scif_rxn == 0)
 		return 0;
-	const u8 data = scif_rxf[0];
+	data = scif_rxf[0];
 	scif_rxn--;
 	memmove(scif_rxf, scif_rxf + 1, scif_rxn);
 	return data;
@@ -306,8 +292,12 @@ static u8 scif_pipe_read_data()
  * has a device on the port. 45 bytes. */
 void scif_serialize_v24(void **data, unsigned int *total_size)
 {
-	u8 counts[3] = { (u8)scif_txn, (u8)scif_rxn, (u8)scif_transmitting };
+	u8 counts[3];
 	s32 start = -1, end = -1;
+
+	counts[0] = (u8)scif_txn;
+	counts[1] = (u8)scif_rxn;
+	counts[2] = (u8)scif_transmitting;
 
 	if (scif_schid >= 0)
 	{
@@ -335,8 +325,8 @@ bool scif_unserialize_v24(void **data, unsigned int *total_size)
 	LIBRETRO_US(start);
 	if (!LIBRETRO_US(end))
 		return false;
-	scif_txn = std::min<u32>(counts[0], sizeof(scif_txf));
-	scif_rxn = std::min<u32>(counts[1], sizeof(scif_rxf));
+	scif_txn = MIN((u32)counts[0], (u32)sizeof(scif_txf));
+	scif_rxn = MIN((u32)counts[1], (u32)sizeof(scif_rxf));
 	scif_transmitting = counts[2] != 0;
 	scif_status_read = status_read & 0xff;
 	periph_sched_restore(scif_schid, start, end);
@@ -364,7 +354,7 @@ static void SerialWrite(u32 addr, u32 data)
 	Serial_UpdateInterrupts();
 }
 
-//SCIF_SCFSR2 read
+/* SCIF_SCFSR2 read */
 static u32 ReadSerialStatus(u32 addr)
 {
 	if (scif_pipe != NULL)
@@ -400,23 +390,22 @@ static void WriteSerialStatus(u32 addr,u32 data)
 	Serial_UpdateInterrupts();
 }
 
-//SCIF_SCFDR2 - 16b
+/* SCIF_SCFDR2 - 16b */
 static u32 Read_SCFDR2(u32 addr)
 {
 	if (scif_pipe != NULL)
 		return scif_rxn | (scif_txn << 8);
 	return 0;
 }
-//SCIF_SCFRDR2
+/* SCIF_SCFRDR2 */
 static u32 ReadSerialData(u32 addr)
 {
 	if (scif_pipe != NULL)
 		return scif_pipe_read_data();
-	s32 rd=0;//ReadSerial();
-	return (u8)rd ;
+	return 0;
 }
 
-//SCSCR2
+/* SCSCR2 */
 
 static u32 SCSCR2_read(u32 addr)
 {
@@ -438,7 +427,7 @@ static void SCSCR2_write(u32 addr, u32 data)
 	Serial_UpdateInterrupts();
 }
 
-//SCFCR2
+/* SCFCR2 */
 static void SCFCR2_write(u32 addr, u32 data)
 {
 	if (scif_pipe == NULL)
@@ -448,7 +437,7 @@ static void SCFCR2_write(u32 addr, u32 data)
 	}
 	if (SCIF_SCFCR2.TFRST && !(data & 4))
 	{
-		// the transmit FIFO out of its reset
+		/* the transmit FIFO out of its reset */
 		scif_set_status(SCIF_TEND);
 		scif_set_status(SCIF_TDFE);
 		scif_interrupts();
@@ -463,43 +452,43 @@ static void SCFCR2_write(u32 addr, u32 data)
 		scif_rxn = 0;
 }
 
-//Init term res
-void serial_init()
+/* Init term res */
+void serial_init(void)
 {
-	//SCIF SCSMR2 0xFFE80000 0x1FE80000 16 0x0000 0x0000 Held Held Pclk
+	/* SCIF SCSMR2 0xFFE80000 0x1FE80000 16 0x0000 0x0000 Held Held Pclk */
 	sh4_rio_reg(SCIF,SCIF_SCSMR2_addr,RIO_DATA,16,0,0);
 
-	//SCIF SCBRR2 0xFFE80004 0x1FE80004 8 0xFF 0xFF Held Held Pclk
+	/* SCIF SCBRR2 0xFFE80004 0x1FE80004 8 0xFF 0xFF Held Held Pclk */
 	sh4_rio_reg(SCIF,SCIF_SCBRR2_addr,RIO_DATA,8,0,0);
 
-	//SCIF SCSCR2 0xFFE80008 0x1FE80008 16 0x0000 0x0000 Held Held Pclk
+	/* SCIF SCSCR2 0xFFE80008 0x1FE80008 16 0x0000 0x0000 Held Held Pclk */
 	sh4_rio_reg(SCIF, SCIF_SCSCR2_addr, RIO_FUNC, 16, &SCSCR2_read, &SCSCR2_write);
 
-	//Write only 
-	//SCIF SCFTDR2 0xFFE8000C 0x1FE8000C 8 Undefined Undefined Held Held Pclk
+	/* Write only */
+	/* SCIF SCFTDR2 0xFFE8000C 0x1FE8000C 8 Undefined Undefined Held Held Pclk */
 	sh4_rio_reg(SCIF,SCIF_SCFTDR2_addr,RIO_WF,8,0,&SerialWrite);
 
-	//SCIF SCFSR2 0xFFE80010 0x1FE80010 16 0x0060 0x0060 Held Held Pclk
+	/* SCIF SCFSR2 0xFFE80010 0x1FE80010 16 0x0060 0x0060 Held Held Pclk */
 	sh4_rio_reg(SCIF,SCIF_SCFSR2_addr,RIO_FUNC,16,&ReadSerialStatus,&WriteSerialStatus);
 
-	//READ only
-	//SCIF SCFRDR2 0xFFE80014 0x1FE80014 8 Undefined Undefined Held Held Pclk
+	/* READ only */
+	/* SCIF SCFRDR2 0xFFE80014 0x1FE80014 8 Undefined Undefined Held Held Pclk */
 	sh4_rio_reg(SCIF,SCIF_SCFRDR2_addr,RIO_RO_FUNC,8,&ReadSerialData,0);
 
-	//SCIF SCFCR2 0xFFE80018 0x1FE80018 16 0x0000 0x0000 Held Held Pclk
+	/* SCIF SCFCR2 0xFFE80018 0x1FE80018 16 0x0000 0x0000 Held Held Pclk */
 	sh4_rio_reg(SCIF,SCIF_SCFCR2_addr,RIO_WF,16,0,&SCFCR2_write);
 
-	//Read only
-	//SCIF SCFDR2 0xFFE8001C 0x1FE8001C 16 0x0000 0x0000 Held Held Pclk
+	/* Read only */
+	/* SCIF SCFDR2 0xFFE8001C 0x1FE8001C 16 0x0000 0x0000 Held Held Pclk */
 	sh4_rio_reg(SCIF,SCIF_SCFDR2_addr,RIO_RO_FUNC,16,&Read_SCFDR2,0);
 
-	//SCIF SCSPTR2 0xFFE80020 0x1FE80020 16 0x0000 0x0000 Held Held Pclk
+	/* SCIF SCSPTR2 0xFFE80020 0x1FE80020 16 0x0000 0x0000 Held Held Pclk */
 	sh4_rio_reg(SCIF,SCIF_SCSPTR2_addr,RIO_DATA,16,0,0);
 
-	//SCIF SCLSR2 0xFFE80024 0x1FE80024 16 0x0000 0x0000 Held Held Pclk
+	/* SCIF SCLSR2 0xFFE80024 0x1FE80024 16 0x0000 0x0000 Held Held Pclk */
 	sh4_rio_reg(SCIF,SCIF_SCLSR2_addr,RIO_DATA,16,0,0);
 }
-void serial_reset()
+void serial_reset(void)
 {
 	/*
 	SCIF SCSMR2 H'FFE8 0000 H'1FE8 0000 16 H'0000 H'0000 Held Held Pclk
@@ -520,11 +509,11 @@ void serial_reset()
 	SCIF_SCSPTR2.full=0x000;
 	SCIF_SCLSR2.full=0x000;
 	SCIF_SCSCR2.full = 0;
-	// (a device stays plugged in)
+	/* (a device stays plugged in) */
 	scif_clear();
 }
 
-void serial_term()
+void serial_term(void)
 {
 }
 

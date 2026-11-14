@@ -33,7 +33,8 @@ name: Headless
 # modem's DNS queries and the answers it reads (tools/modem/dns_run.sh), its
 # V.42 bis compression both ways (tools/modem/v42bis_run.sh), and
 # Dinosaur King's card codec against what it made before
-# (tools/naomi/dinokich_card_run.sh), and the paths the core writes to, a
+# (tools/naomi/dinokich_card_run.sh), and the SH4's serial port with the
+# touch panel on it (tools/naomi/scif_touch_run.sh), and the paths the core writes to, a
 # content's name of any length included (tools/paths/paths_run.sh), and the
 # HLE BIOS's GD-ROM transfers stopped at a fault and made again
 # (tools/reios/gdrom_hle_run.sh), and what the core reads of a disc's
@@ -207,6 +208,10 @@ jobs:
         run: |
           sh tools/naomi/dinokich_card_run.sh
           sh tools/naomi/dinokich_card_run.sh -fsanitize=address,undefined -fno-sanitize-recover=all
+      - name: The SH4's serial port with the touch panel on it, a game talking to it, saved and loaded (and with the sanitizers)
+        run: |
+          sh tools/naomi/scif_touch_run.sh
+          sh tools/naomi/scif_touch_run.sh -fsanitize=address,undefined -fno-sanitize-recover=all
       - name: The paths the core writes to, a content's name of any length (and with the sanitizers)
         run: |
           sh tools/paths/paths_run.sh
