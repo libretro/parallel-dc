@@ -144,6 +144,7 @@ on:
       - 'core/types.h'
       - 'core/network/**'
       - 'core/reios/**'
+      - 'tools/reios/**'
       - 'core/rend/last_picture.*'
       - 'tools/c89/**'
       - 'tools/threads/live_prog.c'
@@ -231,6 +232,7 @@ on:
       - 'core/types.h'
       - 'core/network/**'
       - 'core/reios/**'
+      - 'tools/reios/**'
       - 'core/rend/last_picture.*'
       - 'tools/c89/**'
       - 'tools/threads/live_prog.c'
@@ -371,6 +373,8 @@ jobs:
           WINDOWS=1 sh tools/rend/texhash_test.sh
       - name: The ELF reader on 64-bit Windows, the file above 4 GiB (wine)
         run: WINDOWS=1 sh tools/libelf/elf_test.sh
+      - name: The HLE BIOS built for Windows, its boots, calls and traps (wine)
+        run: WINDOWS=1 sh tools/reios/reios_run.sh
       - name: Direct3D 11's shaders made ahead and kept on disk, on a device
         run: sh tools/rend/dx11_shaders_ahead_test.sh
       - name: Direct3D 12's pipelines made ahead, on a device

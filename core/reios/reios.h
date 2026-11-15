@@ -79,6 +79,14 @@ static TYPES_INLINE bool ip_meta_is_milcd(const ip_meta_t *m)
 bool reios_init(void);
 /* The disc's IP.BIN read into ip_meta */
 void reios_disk_id(void);
+/* Their part of a state (serialize.cpp): the HLE BIOS's, and the NAOMI
+ * BIOS's */
+void reios_serialize_v21(void **data, unsigned int *total_size);
+bool reios_unserialize_v21(void **data, unsigned int *total_size);
+void reios_state_before_v21(void);
+void nbios_serialize_v21(void **data, unsigned int *total_size);
+bool nbios_unserialize_v21(void **data, unsigned int *total_size);
+void nbios_state_before_v21(void);
 
 #ifdef __cplusplus
 }

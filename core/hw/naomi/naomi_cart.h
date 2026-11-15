@@ -63,6 +63,9 @@ void systemsp_write_area0(u32 addr, u32 data, u32 sz);
 /* The romset of the content, loaded (false: none that runs) */
 bool naomi_cart_SelectFile(void);
 void naomi_cart_Close(void);
+/* Reads the cartridge's ROM board (false: no cartridge, or the read failed) */
+bool naomi_cart_loaded(void);
+bool naomi_cart_read(u32 offset, u32 size, void *dst);
 
 #ifdef __cplusplus
 }

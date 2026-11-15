@@ -8,7 +8,7 @@ naomi_prog.c is the program, and says what it looks at.
     naomi_cart.py out.bin      writes the cartridge
     naomi_cart.py --verdict    where in main memory the program's verdict is
 
-The header is the part of a real one the BIOS reads (core/reios/reios.cpp,
+The header is the part of a real one the BIOS reads (core/reios/reios.c,
 reios_boot_naomi()): the board's name, the game's, how an M2 board's ROMs
 lie (0x138), the settings the game wants in place of the BIOS's defaults
 (0x1e0, the same for every region: SETTINGS), two lists of what to load -

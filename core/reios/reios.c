@@ -9,7 +9,12 @@
 */
 
 #include "reios.h"
-#include <algorithm>
+#include <stdio.h>
+#include <string.h>
+#include <stdlib.h>
+#include <ctype.h>
+#include <retro_miscellaneous.h>
+#include <compat/strl.h>
 #include <streams/file_stream.h>
 
 #include "reios_elf.h"
@@ -25,6 +30,7 @@
 #include "hw/holly/sb.h"
 #include "hw/naomi/naomi_cart.h"
 #include "emulator.h"
+#include "paths.h"
 #include "hw/pvr/pvr_regs.h"
 #include "hw/pvr/pvr_mem.h"
 #include "hw/aica/aica_if.h"
@@ -32,7 +38,6 @@
 #include "font.h"
 #include "hw/aica/aica.h"
 
-#include <map>
 
 #define debugf(...) DEBUG_LOG(REIOS, __VA_ARGS__)
 
@@ -43,7 +48,7 @@
 #define dc_bios_syscall_gd2					0x8C0000C0
 #define dc_bios_syscall_misc				0x8c0000E0
 
-//At least one game (ooga) uses this directly
+/* At least one game (ooga) uses this directly */
 #define dc_bios_entrypoint_gd2	0x8c0010F0
 
 #define SYSINFO_ID_ADDR 0x8C001010
@@ -52,7 +57,7 @@
 static MemChip *flashrom;
 static u32 base_fad = 45150;
 static bool descrambl = false;
-// how many sectors of boot file were read to 8c010000 (not part of a save state)
+/* how many sectors of boot file were read to 8c010000 (not part of a save state) */
 static u32 boot_sectors;
 
 
@@ -64,15 +69,16 @@ static u32 boot_sectors;
  * here. */
 static MemChip *reios_flash()
 {
+	MemChip *flash;
 	if (settings.System != DC_PLATFORM_DREAMCAST)
 		return NULL;
-	MemChip *flash = flashrom != NULL ? flashrom : &sys_nvmem_flash;
+	flash = flashrom != NULL ? flashrom : &sys_nvmem_flash;
 	return (flash->data != NULL && flash->size >= 0x20000) ? flash : NULL;
 }
 
 /* The flash chip does not let the sector with the factory settings (the
  * system ID, the region) be written or erased. */
-static inline bool reios_flash_protected(u32 offs)
+static TYPES_INLINE bool reios_flash_protected(u32 offs)
 {
 	return (offs & 0x1e000) == 0x1a000;
 }
@@ -101,10 +107,18 @@ static u32 decode_iso733(iso733_t v)
 
 static bool reios_locate_bootfile(const char* bootfile)
 {
+	u8 *ip_bin;
+	u8 *temp;
+	u32 data_len;
+	u32 dir_room;
+	iso9660_pvd_t *pvd;
+	int bootfile_len;
+	u32 name_at;
+	u32 i;
 	reios_pre_init();
 
-	// Load IP.BIN bootstrap
-	u8 *ip_bin = GetMemPtr(0x8c008000, 0);
+	/* Load IP.BIN bootstrap */
+	ip_bin = GetMemPtr(0x8c008000, 0);
 	memset(ip_bin, 0xFF, 16);
 	libGDR_ReadSector(ip_bin, base_fad, 16, 2048);
 	/* A read from a drive with nothing in it reads nothing, and the drive
@@ -115,23 +129,25 @@ static bool reios_locate_bootfile(const char* bootfile)
 		return false;
 
 	/* What temp holds of a directory: 2 MB, which is a thousand sectors. */
-	const u32 dir_room = 2048 * 1024;
-	u32 data_len = dir_room;
+	dir_room = 2048 * 1024;
+	data_len = dir_room;
 	/* Zeroed: left as it came, it could be the block the last boot's
 	 * directory was read into and freed, and a read that read nothing
 	 * left that directory there to find the boot file in - which was then
 	 * "loaded" by reading nothing again, and run from memory that had
 	 * just been wiped. */
-	u8* temp = new u8[data_len]();
+	temp = (u8 *)calloc(1, data_len);
 
 	libGDR_ReadSector(temp, base_fad + 16, 1, 2048);
-	iso9660_pvd_t *pvd = (iso9660_pvd_t *)temp;
+	pvd = (iso9660_pvd_t *)temp;
 
 	if (pvd->type == 1 && !memcmp(pvd->id, ISO_STANDARD_ID, strlen(ISO_STANDARD_ID)) && pvd->version == 1)
 	{
+		u32 len;
+		u32 lba;
 		INFO_LOG(REIOS, "iso9660 PVD found\n");
-		u32 lba = decode_iso733(pvd->root_directory_record.extent);
-		u32 len = decode_iso733(pvd->root_directory_record.size);
+		lba = decode_iso733(pvd->root_directory_record.extent);
+		len = decode_iso733(pvd->root_directory_record.size);
 
 		/* The directory is read into temp: no more of it than temp holds,
 		 * whatever length the disc gives for it - a length above that
@@ -151,13 +167,13 @@ static bool reios_locate_bootfile(const char* bootfile)
 		libGDR_ReadSector(temp, base_fad + 16, data_len / 2048, 2048);
 	}
 
-	int bootfile_len = strlen(bootfile);
+	bootfile_len = strlen(bootfile);
 	while (bootfile_len > 0 && isspace(bootfile[bootfile_len - 1]))
 		bootfile_len--;
 	/* A record is 33 bytes and then its name (the 33rd is the name's
 	 * length). */
-	const u32 name_at = 33;
-	for (u32 i = 0; bootfile_len > 0 && i + name_at <= data_len; )
+	name_at = 33;
+	for (i = 0; bootfile_len > 0 && i + name_at <= data_len; )
 	{
 		iso9660_dir_t *dir = (iso9660_dir_t *)&temp[i];
 		const u32 record_len = dir->length;
@@ -179,10 +195,16 @@ static bool reios_locate_bootfile(const char* bootfile)
 				&& (u32)bootfile_len <= (u8)dir->filename.str[0]
 				&& memcmp(dir->filename.str + 1, bootfile, bootfile_len) == 0)
 		{
+			u32 len;
+			u32 lba;
+			u8 data[24];
+			flash_syscfg_block syscfg;
+			MemChip *flash;
+			u32 j;
 			INFO_LOG(REIOS, "Found %.*s at offset %X\n", bootfile_len, bootfile, i);
 
-			u32 lba = decode_iso733(dir->extent);
-			u32 len = decode_iso733(dir->size);
+			lba = decode_iso733(dir->extent);
+			len = decode_iso733(dir->size);
 
 			/* (on a GD-ROM. The boot file of a CD-R is scrambled from its
 			 * first byte to its last, whatever it is called, and the BIOS
@@ -195,7 +217,7 @@ static bool reios_locate_bootfile(const char* bootfile)
 				if (len < 2048)
 				{
 					ERROR_LOG(REIOS, "Boot file too small: %u\n", len);
-					delete[] temp;
+					free(temp);
 					return false;
 				}
 				libGDR_ReadSector(GetMemPtr(0x8ce01000, 0), lba + 150, 1, 2048);
@@ -214,7 +236,7 @@ static bool reios_locate_bootfile(const char* bootfile)
 			if (len == 0 || len > RAM_SIZE - 0x10000)
 			{
 				ERROR_LOG(REIOS, "Boot file too large: %u\n", len);
-				delete[] temp;
+				free(temp);
 				return false;
 			}
 			boot_sectors = (len + 2047) / 2048;
@@ -223,21 +245,21 @@ static bool reios_locate_bootfile(const char* bootfile)
 			else
 				libGDR_ReadSector(GetMemPtr(0x8c010000, 0), lba + 150, (len + 2047) / 2048, 2048);
 
-			delete[] temp;
+			free(temp);
 
-			u8 data[24] = {0};
-			// system id
-			for (u32 j = 0; j < 8; j++)
+			memset(data, 0, sizeof(data));
+			/* system id */
+			for (j = 0; j < 8; j++)
 				data[j] = _vmem_ReadMem8(0x0021a056 + j);
 
-			// system properties
-			for (u32 j = 0; j < 5; j++)
+			/* system properties */
+			for (j = 0; j < 5; j++)
 				data[8 + j] = _vmem_ReadMem8(0x0021a000 + j);
 
-			// system settings
-			// if the flash has them: a damaged one is not a reason to put junk there
-			flash_syscfg_block syscfg = {};
-			MemChip *flash = reios_flash();
+			/* system settings */
+			/* if the flash has them: a damaged one is not a reason to put junk there */
+			memset(&syscfg, 0, sizeof(syscfg));
+			flash = reios_flash();
 			if (flash != NULL && flash_read_block(flash, FLASH_PT_USER, FLASH_USER_SYSCFG, &syscfg))
 				memcpy(&data[16], &syscfg.time_lo, 8);
 			else
@@ -250,14 +272,15 @@ static bool reios_locate_bootfile(const char* bootfile)
 		i += record_len;
 	}
 
-	delete[] temp;
+	free(temp);
 	return false;
 }
 
 ip_meta_t ip_meta;
 
-void reios_disk_id()
+void reios_disk_id(void)
 {
+	u8 buf[2048];
 	if (libGDR_GetDiscType() == Open || libGDR_GetDiscType() == NoDisk)
 	{
 		memset(&ip_meta, 0, sizeof(ip_meta));
@@ -265,8 +288,8 @@ void reios_disk_id()
 	}
 	reios_pre_init();
 
-	// (zeroed: a drive that reads nothing leaves it as it was)
-	u8 buf[2048] = {0};
+	/* (zeroed: a drive that reads nothing leaves it as it was) */
+	memset(buf, 0, sizeof(buf));
 	libGDR_ReadSector(buf, base_fad, 1, sizeof(buf));
 	memcpy(&ip_meta, buf, sizeof(ip_meta));
 	INFO_LOG(REIOS, "hardware %.16s maker %.16s ks %.5s type %.6s num %.5s area %.8s ctrl %.4s dev %c vga %c wince %c "
@@ -281,7 +304,7 @@ static void reios_sys_system() {
 	u32 cmd = r[7];
 	MemChip *flash = reios_flash();
 
-	// (the BIOS has four of these, and answers -1 to any other number)
+	/* (the BIOS has four of these, and answers -1 to any other number) */
 	if (cmd >= 4 || (flash == NULL && cmd != 3))
 	{
 		WARN_LOG(REIOS, "reios_sys_system: unhandled cmd %d\n", cmd);
@@ -291,24 +314,26 @@ static void reios_sys_system() {
 
 	switch (cmd)
 	{
-	case 0:	//SYSINFO_INIT
+	case 0:	/* SYSINFO_INIT */
 		{
+			u8 data[24];
+			int i;
 			debugf("reios_sys_system: SYSINFO_INIT\n");
-			// 0x00-0x07: system_id
-			// 0x08-0x0c: system_props
-			// 0x0d-0x0f: padding (zeroed out)
-			// 0x10-0x17: settings
-			u8 data[24] = {0};
+			/* 0x00-0x07: system_id */
+			/* 0x08-0x0c: system_props */
+			/* 0x0d-0x0f: padding (zeroed out) */
+			/* 0x10-0x17: settings */
+			memset(data, 0, sizeof(data));
 
-			// read system_id from 0x0001a056
-			for (int i  = 0; i < 8; i++)
+			/* read system_id from 0x0001a056 */
+			for (i = 0; i < 8; i++)
 				data[i] = memchip_read8(flash, 0x1a056 + i);
 
-			// read system_props from 0x0001a000
-			for (int i  = 0; i < 5; i++)
+			/* read system_props from 0x0001a000 */
+			for (i = 0; i < 5; i++)
 				data[8 + i] = memchip_read8(flash, 0x1a000 + i);
 
-			// 0x0d-0x17: padding (zeroed out)
+			/* 0x0d-0x17: padding (zeroed out) */
 
 			memcpy(GetMemPtr(0x8c000068, sizeof(data)), data, sizeof(data));
 
@@ -316,10 +341,10 @@ static void reios_sys_system() {
 		}
 		break;
 
-	case 2: //SYSINFO_ICON
+	case 2: /* SYSINFO_ICON */
 		debugf("reios_sys_system: SYSINFO_ICON\n");
-		// r4 = icon number (0-9, but only 5-9 seems to really be icons)
-		// r5 = destination buffer (704 bytes in size)
+		/* r4 = icon number (0-9, but only 5-9 seems to really be icons) */
+		/* r5 = destination buffer (704 bytes in size) */
 		if (r[4] >= 10)
 		{
 			r[0] = -1;
@@ -329,15 +354,16 @@ static void reios_sys_system() {
 		 * of the flash, and the BIOS reads the one asked for from there.
 		 * (The call said it had, and left the buffer as it was.) */
 		{
+			u32 i;
 			const u32 icon = 0x1a480 + r[4] * 704;
 			u32 dest = r[5];
-			for (u32 i = 0; i < 704; i++)
+			for (i = 0; i < 704; i++)
 				WriteMem8(dest++, flash->data[icon + i]);
 		}
 		r[0] = 704;
 		break;
 
-	case 3: //SYSINFO_ID
+	case 3: /* SYSINFO_ID */
 		debugf("reios_sys_system: SYSINFO_ID\n");
 		r[0] = 0x8c000068;
 		break;
@@ -353,17 +379,17 @@ static void reios_sys_font() {
 
 	switch (cmd)
 	{
-	case 0:		// FONTROM_ADDRESS
+	case 0:		/* FONTROM_ADDRESS */
 		debugf("FONTROM_ADDRESS\n");
-		r[0] = FONT_TABLE_ADDR;	// in ROM
+		r[0] = FONT_TABLE_ADDR;	/* in ROM */
 		break;
 
-	case 1:		// FONTROM_LOCK
+	case 1:		/* FONTROM_LOCK */
 		debugf("FONTROM_LOCK\n");
 		r[0] = 0;
 		break;
 
-	case 2:		// FONTROM_UNLOCK
+	case 2:		/* FONTROM_UNLOCK */
 		debugf("FONTROM_UNLOCK\n");
 		r[0] = 0;
 		break;
@@ -387,7 +413,7 @@ static void reios_sys_flashrom() {
 
 	switch (cmd)
 	{
-		case 0: // FLASHROM_INFO
+		case 0: /* FLASHROM_INFO */
 			{
 				/*
 					r4 = partition number(0 - 4)
@@ -417,8 +443,9 @@ static void reios_sys_flashrom() {
 			}
 			break;
 
-		case 1:	//FLASHROM_READ
+		case 1:	/* FLASHROM_READ */
 			{
+				int i;
 				/*
 					r4 = read start position, in bytes from the start of the flashrom
 					r5 = pointer to destination buffer
@@ -431,23 +458,24 @@ static void reios_sys_flashrom() {
 				u32 size = r[6];
 
 				debugf("reios_sys_flashrom: FLASHROM_READ offs %x dest %08x size %x\n", offset, dest, size);
-				// (more than the flash holds is not a read of it, and went round it for as long as that took)
+				/* (more than the flash holds is not a read of it, and went round it for as long as that took) */
 				if (size > flash->size)
 				{
 					r[0] = -1;
 					break;
 				}
-				for (int i = 0; i < size; i++)
+				for (i = 0; i < size; i++)
 					WriteMem8(dest++, memchip_read8(flash, offset + i));
 
-				// 0 for success, not the number of bytes: Slave Zero (PAL) goes by it
+				/* 0 for success, not the number of bytes: Slave Zero (PAL) goes by it */
 				r[0] = 0;
 			}
 			break;
 
 
-		case 2:	//FLASHROM_WRITE
+		case 2:	/* FLASHROM_WRITE */
 			{
+				u32 i;
 				/*
 					r4 = write start position, in bytes from the start of the flashrom
 					r5 = pointer to source buffer
@@ -471,7 +499,7 @@ static void reios_sys_flashrom() {
 					r[0] = -1;
 					break;
 				}
-				for (u32 i = 0; i < size; i++)
+				for (i = 0; i < size; i++)
 				{
 					u8 v = ReadMem8(src + i);
 					if (!reios_flash_protected(offs + i))
@@ -482,8 +510,10 @@ static void reios_sys_flashrom() {
 			}
 			break;
 
-		case 3:	//FLASHROM_DELETE
+		case 3:	/* FLASHROM_DELETE */
 			{
+				bool found;
+				int part;
 				/*
 				   r4 = offset of the start of the partition you want to delete, in bytes from the start of the flashrom
 				   Returns:
@@ -493,9 +523,9 @@ static void reios_sys_flashrom() {
 
 				debugf("reios_sys_flashrom: FLASHROM_DELETE offs %x\n", offset);
 
-				bool found = false;
+				found = false;
 
-				for (int part = 0; part < FLASH_PT_NUM; part++)
+				for (part = 0; part < FLASH_PT_NUM; part++)
 				{
 					int part_offset;
 					int size;
@@ -540,7 +570,7 @@ static void reios_sys_misc()
 	INFO_LOG(REIOS, "reios_sys_misc - r7: 0x%08X, r4 0x%08X, r5 0x%08X, r6 0x%08X\n", r[7], r[4], r[5], r[6]);
 	switch (r[4])
 	{
-	case 0:	// normal init
+	case 0:	/* normal init */
 		/* The machine as the BIOS hands it over: the drive's DMA address
 		 * where reading the boot file to 8c010000 left it, nothing let
 		 * through at interrupt level 2, and the border in the colour that
@@ -551,7 +581,7 @@ static void reios_sys_misc()
 		VO_BORDER_COL.full = r[0];
 		break;
 
-	case 1:	// exit to the BIOS's menu
+	case 1:	/* exit to the BIOS's menu */
 		/* There is no menu here to go to. The call comes back, as it
 		 * always has: the boot code of a Windows CE disc makes it on its
 		 * way in, here (Sega Rally 2 does), and starting the machine
@@ -560,18 +590,18 @@ static void reios_sys_misc()
 		INFO_LOG(REIOS, "SYS_MISC 1: exit to BIOS, ignored\n");
 		break;
 
-	case 2:	// check disk
+	case 2:	/* check disk */
 		if (libGDR_GetDiscType() == NoDisk || libGDR_GetDiscType() == Open)
 		{
-			// (no disc to check: it said yes, and read nothing)
+			/* (no disc to check: it said yes, and read nothing) */
 			r[0] = -1;
 			break;
 		}
 		r[0] = 0;
-		// (where its boot sectors are goes by the disc in the drive now,
-		// which is not always the one that was booted)
+		/* (where its boot sectors are goes by the disc in the drive now, */
+		/* which is not always the one that was booted) */
 		reios_pre_init();
-		// Reload part of IP.BIN bootstrap
+		/* Reload part of IP.BIN bootstrap */
 		libGDR_ReadSector(GetMemPtr(0x8c008100, 0), base_fad, 7, 2048);
 		break;
 
@@ -597,26 +627,27 @@ static void reios_setup_state(u32 boot_addr)
 	 * protection and wants a certain sum. Words it adds up and nothing
 	 * uses are set so that it gets it. (From upstream, as it is there.) */
 	{
+		int i;
 		short *p = (short *)GetMemPtr(0x8c0010f0, 2);
 		int chksum = (int)0xFFF937D1;
-		for (int i = 0; i < 10; i++)
+		for (i = 0; i < 10; i++)
 			chksum -= *p++;
 		p += 0xee - 1;
-		for (int i = 0; i < 3; i++)
+		for (i = 0; i < 3; i++)
 			chksum += *p++;
 		p += 0x347 - 1;
-		for (int i = 0; i < 11; i++)
+		for (i = 0; i < 11; i++)
 			chksum -= *p++;
 		p += 0xbf8 - 1;
-		for (int i = 0; i < 98; i++)
+		for (i = 0; i < 98; i++)
 		{
-			short v = chksum < 0 ? std::min(-chksum, 32767) : std::max(-chksum, -32768);
+			short v = chksum < 0 ? MIN(-chksum, 32767) : MAX(-chksum, -32768);
 			*p = v;
 			chksum += *p++;
 		}
 	}
 
-	// The DMA controller on, as the BIOS leaves it: KallistiOS expects that
+	/* The DMA controller on, as the BIOS leaves it: KallistiOS expects that */
 	DMAC_DMAOR.full = 0x8201;
 
 	/* The video cable and standard, on the SH4's port as the BIOS leaves
@@ -626,7 +657,7 @@ static void reios_setup_state(u32 boot_addr)
 		BSC_PDTRA.full = 4;
 	BSC_PCTRA.full = 0x000A03F0;
 
-	// Set up AICA interrupt masks
+	/* Set up AICA interrupt masks */
 	libAICA_WriteReg(SCIEB_addr, 0x48, 2);
 	libAICA_WriteReg(SCILV0_addr, 0x18, 1);
 	libAICA_WriteReg(SCILV1_addr, 0x50, 1);
@@ -680,7 +711,7 @@ static void reios_setup_state(u32 boot_addr)
 
 	*/
 
-	//Setup registers to imitate a normal boot
+	/* Setup registers to imitate a normal boot */
 	r[15] = 0x8d000000;
 
 	gbr = 0x8c000000;
@@ -786,11 +817,11 @@ static void reios_setup_naomi(u32 boot_addr, u32 load_end, u32 now, bool test, u
 
 	*/
 
-	//Setup registers to imitate a normal boot
+	/* Setup registers to imitate a normal boot */
 	r[0] = boot_addr;
-	r[1] = test ? 0x0c01f824 : 0x0c01f820;		// the header's copy, at the entry point taken
+	r[1] = test ? 0x0c01f824 : 0x0c01f820;		/* the header's copy, at the entry point taken */
 	r[2] = 0xa0710004;
-	r[3] = 0x0c01f130;		// where the time is
+	r[3] = 0x0c01f130;		/* where the time is */
 	r[4] = now;
 	r[5] = 0xa05f7000;
 	r[6] = 0xa05f7008;
@@ -915,6 +946,8 @@ static void nb_queue_event(u32 C, u32 event)
 /* A coin of @chute for @player. The credits it made. */
 static u32 nb_add_coin(u32 S, u32 C, u32 player, u32 chute)
 {
+	u32 have;
+	u32 most;
 	u32 added = 0;
 	u32 credits = C + 16 + player * 4;
 	u32 coins = C + 32 + player * 4;
@@ -926,8 +959,8 @@ static u32 nb_add_coin(u32 S, u32 C, u32 player, u32 chute)
 		nb_wr(NB_SERVICE + player * 4, 0);
 	nb_wr(C + 80, 0);
 
-	const u32 most = nb_rd(S);
-	const u32 have = nb_rd(credits);
+	most = nb_rd(S);
+	have = nb_rd(credits);
 	if (have < most && nb_rd(S + 12) != 1)
 	{
 		/* The BIOS takes the bonus coins and the credits off one at a time.
@@ -993,9 +1026,10 @@ static bool nb_service_credit(u32 S, u32 C, u32 player)
  * four coin inputs are two chutes, twice). @B: the bookkeeping. */
 static u32 nb_process_common(u32 S, u32 C, u32 service, u32 B)
 {
+	u32 i;
 	u32 from_coins = 0, from_service = 0, did = 0;
 
-	for (u32 i = 0; i < 4; i++)
+	for (i = 0; i < 4; i++)
 	{
 		if (nb_rd(C + 64 + i * 4) == 0)
 			continue;
@@ -1023,11 +1057,12 @@ static u32 nb_process_common(u32 S, u32 C, u32 service, u32 B)
 /* The same with a chute to each player; @service has a bit for each. */
 static u32 nb_process_individual(u32 S, u32 C, u32 service, u32 B)
 {
+	s32 p;
 	s32 last = (s32)nb_rd(S + 4);
 	u32 from_coins = 0, from_service = 0, did = 0;
 
 	/* (the BIOS stops after the last player's, and at the fourth) */
-	for (s32 p = 0; p < 4; p++)
+	for (p = 0; p < 4; p++)
 	{
 		if (nb_rd(C + 64 + p * 4) != 0)
 		{
@@ -1050,7 +1085,7 @@ static u32 nb_process_individual(u32 S, u32 C, u32 service, u32 B)
 		if (nb_rd(NB_ONE_PLAYER) != 0)
 		{
 			/* to the player whose switch it was */
-			for (s32 p = 0; p <= last; p++)
+			for (p = 0; p <= last; p++)
 			{
 				if (!(service & (1u << p)) || (s32)nb_rd(NB_SERVICE + p * 4) >= 9)
 					continue;
@@ -1065,13 +1100,13 @@ static u32 nb_process_individual(u32 S, u32 C, u32 service, u32 B)
 		{
 			/* to every player */
 			did = 1;
-			for (s32 p = 0; p <= last; p++)
+			for (p = 0; p <= last; p++)
 				if (nb_rd(C + 16 + p * 4) < nb_rd(S))
 				{
 					nb_inc(C + 80);
 					break;
 				}
-			for (s32 p = 0; p <= last; p++)
+			for (p = 0; p <= last; p++)
 				if (nb_service_credit(S, C, p))
 					from_service++;
 		}
@@ -1087,6 +1122,7 @@ static u32 nb_process_individual(u32 S, u32 C, u32 service, u32 B)
  * 1 not yet, 2 yes). With one chute the first three are once, for all. */
 static void nb_status(u32 S, u32 C, u32 O)
 {
+	s32 p;
 	s32 last = (s32)nb_rd(S + 4);
 	bool individual = nb_rd(S + 8) == 1;
 
@@ -1098,7 +1134,7 @@ static void nb_status(u32 S, u32 C, u32 O)
 		WriteMem8(O + 1, (u8)nb_rd(C + 32));
 		WriteMem8(O + 2, ReadMem8(S + 64));
 	}
-	for (s32 p = 0; p <= last; p++)
+	for (p = 0; p <= last; p++)
 	{
 		u32 from = individual ? (u32)p : 0;
 		u32 credits = nb_rd(C + 16 + from * 4) & 0xff;
@@ -1141,6 +1177,7 @@ static void nb_sys_set_word()   { nb_wr(NB_GAME_WORD, r[4]); }
 
 static void nb_sys_check_settings()
 {
+	u32 i;
 	u32 S = r[4];
 	u32 bad = 0, bit = 0;
 	u32 region = nb_rd(NB_BOARD);
@@ -1175,7 +1212,7 @@ static void nb_sys_check_settings()
 	if (nb_rd(S + 64) < 1 || nb_rd(S + 64) > 9)
 		bad |= 1u << bit;
 	bit++;
-	for (u32 i = 0; i < 8; i++, bit++)
+	for (i = 0; i < 8; i++, bit++)
 		if (nb_rd(S + 20 + i * 4) < 1 || nb_rd(S + 20 + i * 4) > 5)
 			bad |= 1u << bit;
 
@@ -1186,7 +1223,7 @@ static void nb_sys_check_settings()
 		nb_wr(S + 8, 0);
 		nb_wr(S + 12, 0);
 		nb_wr(S + 16, 0);
-		for (u32 i = 0; i < 8; i++)
+		for (i = 0; i < 8; i++)
 			nb_wr(S + 20 + i * 4, 1);
 		nb_wr(S + 52, 1);
 		nb_wr(S + 56, 1);
@@ -1203,6 +1240,7 @@ static void nb_sys_coin_setting()
 
 static void nb_sys_start()
 {
+	u32 i;
 	u32 S = r[4], C = r[5], K = r[6], O = r[7];
 
 	nb_wr(NB_CREDITS_AT, K);
@@ -1215,7 +1253,7 @@ static void nb_sys_start()
 	nb_wr(C + 0xd0, 0);
 	nb_wr(C + 0xd4, 0);
 	nb_wr(C + 0xd8, 0);
-	for (u32 i = 0; i < 4; i++)
+	for (i = 0; i < 4; i++)
 	{
 		nb_wr(C + 16 + i * 4, nb_rd(K + i * 4));
 		nb_wr(C + i * 4, 0);
@@ -1235,8 +1273,9 @@ static void nb_sys_start()
 
 static void nb_sys_limit_credits()
 {
+	u32 i;
 	u32 count = 0;
-	for (u32 i = 0; i < 4; i++)
+	for (i = 0; i < 4; i++)
 		if (nb_rd(r[5] + i * 4) > r[4])
 		{
 			nb_wr(r[5] + i * 4, r[4]);
@@ -1249,23 +1288,30 @@ static void nb_sys_status()     { nb_status(r[4], r[5], r[6]); }
 
 static void nb_sys_frame()
 {
+	u32 let_go;
+	u32 pressed;
+	u32 last_sw;
+	s32 last;
+	bool individual;
+	s32 p;
+	u32 i;
 	u32 S = r[4], C = r[5], O = r[6], sw = r[7];
 	u32 counted = nb_rd(r[15]);
 	u32 B = nb_rd(r[15] + 4);
 	u32 before[4], count[4], service = 0, did;
 
-	for (u32 i = 0; i < 4; i++)
+	for (i = 0; i < 4; i++)
 		before[i] = nb_rd(C + 16 + i * 4);
 
-	const u32 last_sw = nb_rd(C + 0xcc);
-	const u32 pressed = sw & ~last_sw;
-	const u32 let_go = ~sw & last_sw;
+	last_sw = nb_rd(C + 0xcc);
+	pressed = sw & ~last_sw;
+	let_go = ~sw & last_sw;
 	nb_wr(C + 0xd0, last_sw);
 	nb_wr(C + 0xcc, sw);
 	nb_wr(C + 0xd4, pressed);
 	nb_wr(C + 0xd8, let_go);
 
-	for (u32 i = 0; i < 4; i++)
+	for (i = 0; i < 4; i++)
 	{
 		const u32 at = C + 84 + i * 4;
 		const u32 bit = 0x10u << i;
@@ -1290,17 +1336,17 @@ static void nb_sys_frame()
 	}
 
 	/* a coin switch let go is a coin; so is each the I/O board counted */
-	bool individual = nb_rd(S + 8) != 0;
-	s32 last = individual ? (s32)nb_rd(S + 4) : 3;
+	individual = nb_rd(S + 8) != 0;
+	last = individual ? (s32)nb_rd(S + 4) : 3;
 	if (last > 3)		/* (as in nb_process_individual()) */
 		last = 3;
-	for (s32 i = 0; i < 4; i++)
-		nb_wr(C + 64 + i * 4, i <= last ? ((let_go >> i) & 1) + count[i] : 0);
+	for (p = 0; p < 4; p++)
+		nb_wr(C + 64 + p * 4, p <= last ? ((let_go >> p) & 1) + count[p] : 0);
 	did = individual ? nb_process_individual(S, C, service, B)
 	                 : nb_process_common(S, C, service, B);
 
 	if (did == 1)
-		for (u32 i = 0; i < 4; i++)
+		for (i = 0; i < 4; i++)
 		{
 			u32 now = nb_rd(C + 16 + i * 4);
 			nb_wr(B + i * 4, now);
@@ -1308,7 +1354,7 @@ static void nb_sys_frame()
 		}
 	nb_status(S, C, O);
 	/* (the I/O board's counts, which the BIOS keeps here while it works) */
-	for (u32 i = 0; i < 4; i++)
+	for (i = 0; i < 4; i++)
 		nb_wr(C + 0xbc + i * 4, 0);
 	r[0] = did;
 }
@@ -1316,13 +1362,15 @@ static void nb_sys_frame()
 /* (both are words in main memory, handed over a word at a time) */
 static void nb_sys_board()
 {
-	for (u32 i = 0; i < 20; i += 4)
+	u32 i;
+	for (i = 0; i < 20; i += 4)
 		WriteMem32(r[4] + i, ReadMem32(NB_BOARD + i));
 }
 
 static void nb_sys_settings()
 {
-	for (u32 i = 0; i < 68; i += 4)
+	u32 i;
+	for (i = 0; i < 68; i += 4)
 		WriteMem32(r[4] + i, ReadMem32(NB_SETTINGS + i));
 }
 
@@ -1439,6 +1487,7 @@ static const u32 nb_coin_table[29] = {
  * a trap for each routine, and the tables of numbers they hand out. */
 static void nb_build_block(u8 *block)
 {
+	u32 i;
 	static const u32 rom_areas[3][2] = {
 		{ 0xa0080000, 0x000200 }, { 0xa0080200, 0x0a7000 }, { 0xa0127200, 0x07a000 },
 	};
@@ -1446,7 +1495,7 @@ static void nb_build_block(u8 *block)
 	u32 *w = (u32 *)block;
 
 	memset(block, 0, NB_BLOCK_SIZE);
-	for (u32 i = 0; i < 26; i++)
+	for (i = 0; i < 26; i++)
 		if (nb_routines[i])
 		{
 			w[i] = NB_ROUTINES + i * 8;
@@ -1578,7 +1627,8 @@ static void nb_handler_return()
 /* The vectors, the table and the handler that does nothing, in memory. */
 static void nb_install_interrupts()
 {
-	for (u32 i = 0; i < NB_HANDLER_COUNT; i++)
+	u32 i;
+	for (i = 0; i < NB_HANDLER_COUNT; i++)
 		WriteMem32(NB_HANDLERS + i * 4, NB_NO_HANDLER);
 	WriteMem16(NB_NO_HANDLER, 0x000b);       /* rts */
 	WriteMem16(NB_NO_HANDLER + 2, 0xe001);   /* mov #1,r0 */
@@ -1633,12 +1683,13 @@ static void nb_fill_rom()
  * words: see reios_boot_naomi().) */
 static void nb_header_settings(const u8 *wanted, u32 *set)
 {
+	u32 i;
 	const s8 *e = (const s8 *)wanted;
 	const s32 coin = e[3] - 1;
 
 	if (e[0] == 0 || e[1] < 0 || e[1] > 3 || e[2] < 0 || e[2] > 1 || coin < 0 || coin > 27)
 		return;
-	for (u32 i = 8; i < 16; i++)
+	for (i = 8; i < 16; i++)
 		if (e[i] < 1 || e[i] > 5)
 			return;
 	set[2] = e[2];
@@ -1657,7 +1708,7 @@ static void nb_header_settings(const u8 *wanted, u32 *set)
 		set[14] = (nb_coin_table[coin] >> 16) & 0xff;
 		set[15] = nb_coin_table[coin] >> 24;
 	}
-	for (u32 i = 0; i < 8; i++)
+	for (i = 0; i < 8; i++)
 		set[5 + i] = e[8 + i];
 }
 
@@ -1692,6 +1743,7 @@ static void nb_rom_address(u32 at, u32 how)
  * far calls them. */
 static void reios_boot_naomi()
 {
+	u32 i;
 	static const u32 video[][2] = {
 		{ 0x030, 0x00000101 }, { 0x044, 0x00800005 }, { 0x048, 0x00000009 }, { 0x04c, 0x000000a0 },
 		{ 0x050, 0x00c00000 }, { 0x054, 0x00c00500 }, { 0x05c, 0x00177d3f }, { 0x060, 0x00800000 },
@@ -1740,9 +1792,9 @@ static void reios_boot_naomi()
 	 * puts it: after a restart the board is as the last program left it,
 	 * which on an M4 board can be giving out deciphered data) */
 	memset(header, 0xff, sizeof(header));
-	if (CurrentCartridge != NULL)
+	if (naomi_cart_loaded())
 		nb_rom_address(0, 0);
-	if (CurrentCartridge == NULL || !CurrentCartridge->Read(0, sizeof(header), header))
+	if (!naomi_cart_read(0, sizeof(header), header))
 	{
 		WARN_LOG(REIOS, "No cartridge loaded\n");
 		return;
@@ -1767,9 +1819,9 @@ static void reios_boot_naomi()
 		}
 	}
 
-	for (u32 i = 0; i < sizeof(quiet) / sizeof(quiet[0]); i++)
+	for (i = 0; i < sizeof(quiet) / sizeof(quiet[0]); i++)
 		WriteMem32(quiet[i][0], quiet[i][1]);
-	WriteMem32(0xa05f6908, 0xffffffff);		// and no error left standing
+	WriteMem32(0xa05f6908, 0xffffffff);		/* and no error left standing */
 
 	/* The BIOS reads the pieces through the ROM board's data port, with
 	 * the address in the board's two registers: counting up by itself,
@@ -1778,7 +1830,7 @@ static void reios_boot_naomi()
 	 * piece. (The BIOS reads words: a piece of odd length is a byte
 	 * shorter to it. Here the byte is loaded all the same.) */
 	mode = (header[0x138] | header[0x139]) ? 0x2000 : 0;
-	for (u32 i = 0; i < 8; i++)
+	for (i = 0; i < 8; i++)
 	{
 		const u8 *e = header + list + i * 12;
 		u32 offset = e[0] | e[1] << 8 | e[2] << 16 | (u32)e[3] << 24;
@@ -1796,7 +1848,7 @@ static void reios_boot_naomi()
 		 * not into its last three bytes: there are cartridges that give a
 		 * whole word however little is asked for) */
 		if (ram >= RAM_SIZE || size > RAM_SIZE - ram || RAM_SIZE - ram < 4
-				|| !CurrentCartridge->Read(offset, size, GetMemPtr(0x8c000000 + ram, size)))
+				|| !naomi_cart_read(offset, size, GetMemPtr(0x8c000000 + ram, size)))
 		{
 			WARN_LOG(REIOS, "NAOMI boot: cannot load %x bytes at %08x from %x\n", size, addr, offset);
 			continue;
@@ -1808,7 +1860,7 @@ static void reios_boot_naomi()
 
 	/* the header's copy, and the time */
 	memcpy(GetMemPtr(0x8c01f400, sizeof(header)), header, sizeof(header));
-	// (the machine's clock, read from the host once, as the machine starts)
+	/* (the machine's clock, read from the host once, as the machine starts) */
 	now = RealTimeClock;
 	WriteMem32(0x8c01f130, now);
 
@@ -1845,7 +1897,7 @@ static void reios_boot_naomi()
 		WriteMem32(NB_PROGRAM, test ? NB_PROGRAM_TEST : NB_PROGRAM_GAME);
 	}
 
-	for (u32 i = 0; i < sizeof(video) / sizeof(video[0]); i++)
+	for (i = 0; i < sizeof(video) / sizeof(video[0]); i++)
 		pvr_WriteReg(0x005f8000 + video[i][0], video[i][1]);
 
 	/* Nor is there sound: after such a restart the sound chip is still
@@ -1905,9 +1957,9 @@ static void reios_boot()
 	NOTICE_LOG(REIOS, "-----------------\n");
 	NOTICE_LOG(REIOS, "REIOS: Booting up\n");
 	NOTICE_LOG(REIOS, "-----------------\n");
-	//setup syscalls
-	//find boot file
-	//boot it
+	/* setup syscalls */
+	/* find boot file */
+	/* boot it */
 
 	memset(GetMemPtr(0x8C000000, 0), 0xFF, 64 * 1024);
 
@@ -1918,7 +1970,7 @@ static void reios_boot()
 	setup_syscall(hook_addr(&reios_sys_gd2), dc_bios_syscall_gd2);
 	setup_syscall(hook_addr(&reios_sys_misc), dc_bios_syscall_misc);
 
-	//Infinite loop for arm !
+	/* Infinite loop for arm ! */
 	WriteMem32(0x80800000, 0xEAFFFFFE);
 
 	if (settings.reios.ElfFile[0] != 0) {
@@ -1939,13 +1991,15 @@ static void reios_boot()
 	}
 	else {
 		if (settings.System == DC_PLATFORM_DREAMCAST) {
+			char bootfile[sizeof(ip_meta.boot_filename) + 1];
+			bool no_disc;
 			/* The boot file is the one named by the disc in the drive
 			 * now: after a change of disc and a reset that is not the
 			 * disc the name was last read from. */
 			reios_disk_id();
-			char bootfile[sizeof(ip_meta.boot_filename) + 1] = {0};
+			memset(bootfile, 0, sizeof(bootfile));
 			memcpy(bootfile, ip_meta.boot_filename, sizeof(ip_meta.boot_filename));
-			bool no_disc = libGDR_GetDiscType() == Open || libGDR_GetDiscType() == NoDisk;
+			no_disc = libGDR_GetDiscType() == Open || libGDR_GetDiscType() == NoDisk;
 			if (no_disc || bootfile[0] == '\0' || !reios_locate_bootfile(bootfile))
 			{
 				/* Nothing to run - no disc in, or no boot file on it: the
@@ -1965,14 +2019,39 @@ static void reios_boot()
 	}
 }
 
-static std::map<u32, hook_fp*> hooks;
-static std::map<hook_fp*, u32> hooks_rev;
+/* The traps, by the address each is at; and each function's address, the
+ * last it was registered at */
+#define HOOKS_MAX 64
+static struct { u32 addr; hook_fp *fn; } hooks[HOOKS_MAX];
+static unsigned hook_count;
+static struct { hook_fp *fn; u32 pc; } hooks_rev[HOOKS_MAX];
+static unsigned hook_rev_count;
 
 #define SYSCALL_ADDR_MAP(addr) (((addr) & 0x1FFFFFFF) | 0x80000000)
 
 static void register_hook(u32 pc, hook_fp* fn) {
-	hooks[SYSCALL_ADDR_MAP(pc)] = fn;
-	hooks_rev[fn] = pc;
+	const u32 addr = SYSCALL_ADDR_MAP(pc);
+	unsigned i;
+	for (i = 0; i < hook_count && hooks[i].addr != addr; i++)
+		;
+	if (i == hook_count)
+	{
+		if (hook_count == HOOKS_MAX)
+			return;
+		hook_count++;
+	}
+	hooks[i].addr = addr;
+	hooks[i].fn = fn;
+	for (i = 0; i < hook_rev_count && hooks_rev[i].fn != fn; i++)
+		;
+	if (i == hook_rev_count)
+	{
+		if (hook_rev_count == HOOKS_MAX)
+			return;
+		hook_rev_count++;
+	}
+	hooks_rev[i].fn = fn;
+	hooks_rev[i].pc = pc;
 }
 
 bool reios_disc_is_gdrom(void)
@@ -1981,43 +2060,49 @@ bool reios_disc_is_gdrom(void)
 }
 
 void DYNACALL reios_trap(u32 op) {
+	unsigned i;
+	u32 mapd;
+	u32 pc;
 	verify(op == REIOS_OPCODE);
-	u32 pc = next_pc - 2;
+	pc = next_pc - 2;
 
-	u32 mapd = SYSCALL_ADDR_MAP(pc);
+	mapd = SYSCALL_ADDR_MAP(pc);
 
-	//debugf("dispatch %08X -> %08X\n", pc, mapd);
+	/* debugf("dispatch %08X -> %08X\n", pc, mapd); */
 
-	// (looking one up with [] would make an empty one, and then call it)
-	auto hook = hooks.find(mapd);
-	if (hook == hooks.end() || !hook->second)
+	for (i = 0; i < hook_count && hooks[i].addr != mapd; i++)
+		;
+	if (i == hook_count || !hooks[i].fn)
 	{
 		ERROR_LOG(REIOS, "Unknown trap vector %08x pc %08x\n", mapd, pc);
 		return;
 	}
-	hook->second();
+	hooks[i].fn();
 
-	// Return from syscall, except if pc was modified
+	/* Return from syscall, except if pc was modified */
 	if (pc == next_pc - 2)
 		next_pc = pr;
 }
 
 static u32 hook_addr(hook_fp* fn) {
-	if (hooks_rev.count(fn))
-		return hooks_rev[fn];
-	else {
+	unsigned i;
+	for (i = 0; i < hook_rev_count; i++)
+		if (hooks_rev[i].fn == fn)
+			return hooks_rev[i].pc;
+	{
 		ERROR_LOG(REIOS, "hook_addr: Failed to reverse lookup %p\n", fn);
 		verify(false);
 		return 0;
 	}
 }
 
-bool reios_init()
+bool reios_init(void)
 {
+	u32 i;
 	INFO_LOG(REIOS, "reios: Init\n");
 
 	register_hook(0xA0000000, reios_boot);
-	for (u32 i = 0; i < 26; i++)
+	for (i = 0; i < 26; i++)
 		if (nb_routines[i])
 			register_hook(NB_ROUTINES + i * 8, nb_routines[i]);
 	register_hook(NB_VECTORS + 0x100, nb_exception);
@@ -2038,53 +2123,59 @@ bool reios_init()
 
 void reios_reset(u8* rom, MemChip* flash)
 {
+	u16 *rom16;
+	size_t font_size;
+	size_t font_at;
+	u8 *pFont;
+	char font_file[PATH_MAX_LENGTH];
+	RFILE *font;
 	flashrom = flash;
 	reios_rom = rom;
-	// (nothing booted yet: the last content's boot file is not this one's)
+	/* (nothing booted yet: the last content's boot file is not this one's) */
 	boot_sectors = 0;
 
 	memset(rom, 0x00, BIOS_SIZE);
 	memset(GetMemPtr(0x8C000000, 0), 0, RAM_SIZE);
 
-	u16* rom16 = (u16*)rom;
+	rom16 = (u16*)rom;
 
 	rom16[0] = REIOS_OPCODE;
 
 	/* Three games read the BIOS's ROM through a pointer they never set,
 	 * and only work because of what the real one has at these places.
 	 * (From upstream.) */
-	*(u32 *)&rom[0x44c] = 0xe303d463;	// The Grinch
-	*(u32 *)&rom[0x1c] = 0x71294118;	// Jeremy McGrath Supercross 2000
-	*(u32 *)&rom[0x8] = 0x44094409;		// Rent a Hero No. 1
+	*(u32 *)&rom[0x44c] = 0xe303d463;	/* The Grinch */
+	*(u32 *)&rom[0x1c] = 0x71294118;	/* Jeremy McGrath Supercross 2000 */
+	*(u32 *)&rom[0x8] = 0x44094409;		/* Rent a Hero No. 1 */
 
-	u8 *pFont = rom + (FONT_TABLE_ADDR % BIOS_SIZE);
+	pFont = rom + (FONT_TABLE_ADDR % BIOS_SIZE);
 
-	// 288 12 × 24 pixels (36 bytes) characters
-	// 7078 24 × 24 pixels (72 bytes) characters
-	// 129 32 × 32 pixels (128 bytes) characters
+	/* 288 12 × 24 pixels (36 bytes) characters */
+	/* 7078 24 × 24 pixels (72 bytes) characters */
+	/* 129 32 × 32 pixels (128 bytes) characters */
 	/* That is the font, and no more than that is put there whatever the
 	 * size of the file: a longer one was read past the end of the ROM. */
-	const size_t font_at = FONT_TABLE_ADDR % BIOS_SIZE;
-	const size_t font_size = std::min<size_t>(536496, BIOS_SIZE - font_at);
+	font_at = FONT_TABLE_ADDR % BIOS_SIZE;
+	font_size = MIN((size_t)536496, (size_t)(BIOS_SIZE - font_at));
 	memset(pFont, 0, font_size);
-	std::string font_file(game_dir_no_slash);
-	font_file += "/font.bin";
-	RFILE *font = filestream_open(font_file.c_str(), RETRO_VFS_FILE_ACCESS_READ, RETRO_VFS_FILE_ACCESS_HINT_NONE);
+	strlcpy(font_file, game_dir_no_slash, sizeof(font_file));
+	strlcat(font_file, "/font.bin", sizeof(font_file));
+	font = filestream_open(font_file, RETRO_VFS_FILE_ACCESS_READ, RETRO_VFS_FILE_ACCESS_HINT_NONE);
 	if (font == NULL)
 	{
 		INFO_LOG(REIOS, "font.bin not found. Using built-in font\n");
-		memcpy(pFont, builtin_font, std::min(sizeof(builtin_font), font_size));
+		memcpy(pFont, builtin_font, MIN(sizeof(builtin_font), font_size));
 	}
 	else
 	{
 		int64_t file_size = filestream_get_size(font);
-		size_t size = file_size <= 0 ? 0 : (size_t)std::min<int64_t>(file_size, (int64_t)font_size);
+		size_t size = file_size <= 0 ? 0 : (size_t)MIN(file_size, (int64_t)font_size);
 		size_t nread = size == 0 ? 0 : (size_t)filestream_read(font, pFont, size);
 		filestream_close(font);
 		if (nread != size)
 			WARN_LOG(REIOS, "font.bin: read truncated\n");
 		else
-			INFO_LOG(REIOS, "font.bin: loaded %zd bytes\n", size);
+			INFO_LOG(REIOS, "font.bin: loaded %lu bytes\n", (unsigned long)size);
 	}
 }
 
@@ -2101,7 +2192,7 @@ void reios_serialize_v21(void **data, unsigned int *total_size)
 bool reios_unserialize_v21(void **data, unsigned int *total_size)
 {
 	LIBRETRO_US(boot_sectors);
-	// a boot file is no longer than main memory above 8c010000
+	/* a boot file is no longer than main memory above 8c010000 */
 	if (boot_sectors > (RAM_SIZE - 0x10000) / 2048)
 		boot_sectors = 0;
 	return true;

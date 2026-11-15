@@ -39,6 +39,16 @@
 #include "naomi_interleave.h"
 #include "file/file_path.h"
 Cartridge *CurrentCartridge;
+
+bool naomi_cart_loaded(void)
+{
+	return CurrentCartridge != NULL;
+}
+
+bool naomi_cart_read(u32 offset, u32 size, void *dst)
+{
+	return CurrentCartridge != NULL && CurrentCartridge->Read(offset, size, dst);
+}
 bool bios_loaded = false;
 
 #ifdef _WIN32

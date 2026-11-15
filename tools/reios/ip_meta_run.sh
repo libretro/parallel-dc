@@ -4,7 +4,7 @@
 #   sh tools/reios/ip_meta_run.sh [extra C flags]
 #
 # ip_meta_test.c is built with the C flags the core's C files are built
-# with (nullDC.c's), and as C++ with the C++ files' (reios.cpp's): the
+# with (nullDC.c's), and as C++ with the C++ files' (serialize.cpp's): the
 # header is read by both. Extra flags, such as
 # -fsanitize=address,undefined, go to the compiler and the link.
 set -e
@@ -21,10 +21,10 @@ CCMD=${CCMD% -o *}
 CFLAGS_T=$(echo "$CCMD" | sed 's| [^ ]*nullDC\.c||; s/ -MMD -MP//')
 CC=${CFLAGS_T%% *}
 
-XCMD=$(make -n -B core/reios/reios.o 2>/dev/null | grep 'reios\.cpp' | tail -n 1)
+XCMD=$(make -n -B core/serialize.o 2>/dev/null | grep 'serialize\.cpp' | tail -n 1)
 [ -n "$XCMD" ] || { echo "cannot get the core's C++ compile flags from make" >&2; exit 1; }
 XCMD=${XCMD% -o *}
-CXXFLAGS_T=$(echo "$XCMD" | sed 's| [^ ]*reios\.cpp||; s/ -MMD -MP//')
+CXXFLAGS_T=$(echo "$XCMD" | sed 's| [^ ]*serialize\.cpp||; s/ -MMD -MP//')
 CXX=${CXXFLAGS_T%% *}
 
 eval "$CFLAGS_T $EXTRA tools/reios/ip_meta_test.c -o \"$WORK/ip_meta_c.o\""

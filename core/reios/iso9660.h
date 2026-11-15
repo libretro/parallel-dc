@@ -121,7 +121,7 @@ extern enum iso_flag_enum_s {
   ISO_PROTECTION      =  16,   /**< No read/execute perm. in ext. attr.  */
   ISO_DRESERVED1      =  32,   /**<, Reserved bit 5                      */
   ISO_DRESERVED2      =  64,   /**<, Reserved bit 6                      */
-  ISO_MULTIEXTENT     = 128,   /**< Not final entry of a mult. ext. file */
+  ISO_MULTIEXTENT     = 128    /**< Not final entry of a mult. ext. file */
 } iso_flag_enums;
 
 /*! Volume descriptor types */

@@ -1,5 +1,5 @@
 /* A NAOMI cartridge's program, for headless.sh: the built-in BIOS
- * (core/reios/reios.cpp) as a game meets it - how it is started, and the
+ * (core/reios/reios.c) as a game meets it - how it is started, and the
  * system routines that start a cartridge's programs, the last of which is
  * what the cabinet's TEST switch leads to in a game (nb_sys_menu()).
  *
