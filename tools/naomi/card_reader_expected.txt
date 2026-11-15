@@ -1,0 +1,363 @@
+available 0
+insertRfidCard 0
+insert, no reader: 0 bytes 811c9dc5 (0 updates):
+load .card 0 of 207
+scif set
+== INITIAL D, scif
+insert, no file: 0 bytes 811c9dc5 (0 updates):
+init: 1 bytes 030c59f9 (0 updates): 06
+init: 8 bytes 0cd25701 (0 updates): 02 06 10 60 30 30 03 75
+state: 1 bytes 030c59f9 (0 updates): 06
+state: 8 bytes 0d75e721 (0 updates): 02 06 20 60 30 30 03 45
+read, no card: 1 bytes 030c59f9 (0 updates): 06
+read, no card: 8 bytes 744bc7cf (0 updates): 02 06 33 60 30 34 03 52
+door open: 1 bytes 030c59f9 (0 updates): 06
+door open: 8 bytes 1fc62781 (0 updates): 02 06 d0 a0 30 30 03 75
+new card: 1 bytes 030c59f9 (0 updates): 06
+new card: 8 bytes 55ffa9a1 (0 updates): 02 06 b0 78 30 30 03 cd
+write: 1 bytes 030c59f9 (0 updates): 06
+save .card: 207 bytes ebe28a73
+write: 8 bytes c0817587 (0 updates): 02 06 53 78 30 30 03 2e
+write: 1 bytes 030c59f9 (0 updates): 06
+save .card: 207 bytes 17bb2e4a
+write: 8 bytes c0817587 (0 updates): 02 06 53 78 30 30 03 2e
+write: 1 bytes 030c59f9 (0 updates): 06
+save .card: 207 bytes 98620be4
+write: 8 bytes c0817587 (0 updates): 02 06 53 78 30 30 03 2e
+write: 1 bytes 030c59f9 (0 updates): 06
+save .card: 207 bytes 050f2a14
+write: 8 bytes c0817587 (0 updates): 02 06 53 78 30 30 03 2e
+write: 1 bytes 030c59f9 (0 updates): 06
+save .card: 207 bytes 3d5b5877
+write: 8 bytes c0817587 (0 updates): 02 06 53 78 30 30 03 2e
+write: 1 bytes 030c59f9 (0 updates): 06
+save .card: 207 bytes ac2910d2
+write: 8 bytes c0817587 (0 updates): 02 06 53 78 30 30 03 2e
+write: 1 bytes 030c59f9 (0 updates): 06
+save .card: 207 bytes f472b42e
+write: 8 bytes c0817587 (0 updates): 02 06 53 78 30 30 03 2e
+write: 1 bytes 030c59f9 (0 updates): 06
+save .card: 207 bytes f472b42e
+write: 8 bytes c0817587 (0 updates): 02 06 53 78 30 30 03 2e
+read track 0: 1 bytes 030c59f9 (0 updates): 06
+read track 0: 77 bytes 99921f91 (0 updates): 02 4b 33 78 30 30 06 08 0d 12 17 1c 21 26 2b 30 35 3a 3f 44 49 4e 53 58
+read track 1: 1 bytes 030c59f9 (0 updates): 06
+read track 1: 77 bytes 0086c0f5 (0 updates): 02 4b 33 78 30 30 5c 61 66 6b 70 75 7a 7f 84 89 8e 93 98 9d a2 a7 ac b1
+read track 2: 1 bytes 030c59f9 (0 updates): 06
+read track 2: 77 bytes 80ade7e5 (0 updates): 02 4b 33 78 30 30 b5 ba bf c4 c9 ce d3 d8 dd e2 e7 ec f1 f6 fb 00 05 0a
+read track 3: 1 bytes 030c59f9 (0 updates): 06
+read track 3: 146 bytes d0ebb72f (0 updates): 02 90 33 78 30 30 06 08 0d 12 17 1c 21 26 2b 30 35 3a 3f 44 49 4e 53 58
+read track 4: 1 bytes 030c59f9 (0 updates): 06
+read track 4: 146 bytes 38bcec7f (0 updates): 02 90 33 78 30 30 06 08 0d 12 17 1c 21 26 2b 30 35 3a 3f 44 49 4e 53 58
+read track 5: 1 bytes 030c59f9 (0 updates): 06
+read track 5: 146 bytes 4934ff07 (0 updates): 02 90 33 78 30 30 5c 61 66 6b 70 75 7a 7f 84 89 8e 93 98 9d a2 a7 ac b1
+read track 6: 1 bytes 030c59f9 (0 updates): 06
+read track 6: 215 bytes 29d4a499 (0 updates): 02 d5 33 78 30 30 06 08 0d 12 17 1c 21 26 2b 30 35 3a 3f 44 49 4e 53 58
+read track x: 1 bytes 030c59f9 (0 updates): 06
+read track x: 8 bytes a90e3dc7 (0 updates): 02 06 33 78 30 30 03 4e
+card capture: 1 bytes 030c59f9 (0 updates): 06
+card capture: 8 bytes a90e3dc7 (0 updates): 02 06 33 78 30 30 03 4e
+door open: 1 bytes 030c59f9 (0 updates): 06
+door open: 8 bytes e3eb9161 (0 updates): 02 06 d0 b8 30 30 03 6d
+read, door open: 1 bytes 030c59f9 (0 updates): 06
+read, door open: 8 bytes e682e1c7 (0 updates): 02 06 33 b8 30 30 03 8e
+door closed: 1 bytes 030c59f9 (0 updates): 06
+door closed: 8 bytes fa193be1 (0 updates): 02 06 d0 78 30 30 03 ad
+eject: 1 bytes 030c59f9 (0 updates): 06
+eject: 8 bytes 371e3461 (0 updates): 02 06 80 60 30 30 03 e5
+insert from its file: 0 bytes 811c9dc5 (0 updates):
+read: 1 bytes 030c59f9 (0 updates): 06
+read: 215 bytes 29d4a499 (0 updates): 02 d5 33 78 30 30 06 08 0d 12 17 1c 21 26 2b 30 35 3a 3f 44 49 4e 53 58
+print: 1 bytes 030c59f9 (0 updates): 06
+print: 8 bytes 11ed8f31 (0 updates): 02 06 7c 78 30 30 03 01
+unknown: 1 bytes 030c59f9 (0 updates): 06
+unknown: 8 bytes 590fcf2f (0 updates): 02 06 99 78 30 30 03 e4
+bad crc: 8 bytes 590fcf2f (0 updates): 02 06 99 78 30 30 03 e4
+bad start: 8 bytes 590fcf2f (0 updates): 02 06 99 78 30 30 03 e4
+too long: 0 bytes 811c9dc5 (0 updates):
+state: 0 bytes 811c9dc5 (0 updates):
+state: 8 bytes 590fcf2f (0 updates): 02 06 99 78 30 30 03 e4
+state: state 1449 bytes 4cd58166
+state: read back 1 1
+state: another's 1
+state: 0 bytes 811c9dc5 (0 updates):
+the command finished: 0 bytes 811c9dc5 (0 updates):
+and answered: 0 bytes 811c9dc5 (0 updates):
+state before V24: 0 bytes 811c9dc5 (0 updates):
+insert after it: 0 bytes 811c9dc5 (0 updates):
+scif unset
+load .card 0 of 207
+mie set
+== DERBY OWNERS CLUB WE, mie
+insert, no file: 0 bytes 811c9dc5 (0 updates):
+init: 1 bytes 030c59f9 (0 updates): 06
+init: 8 bytes 0cd25701 (0 updates): 02 06 10 60 30 30 03 75
+state: 1 bytes 030c59f9 (0 updates): 06
+state: 8 bytes 0d75e721 (0 updates): 02 06 20 60 30 30 03 45
+read, no card: 1 bytes 030c59f9 (0 updates): 06
+read, no card: 8 bytes 744bc7cf (0 updates): 02 06 33 60 30 34 03 52
+door open: 1 bytes 030c59f9 (0 updates): 06
+door open: 8 bytes 1fc62781 (0 updates): 02 06 d0 a0 30 30 03 75
+new card: 1 bytes 030c59f9 (0 updates): 06
+new card: 8 bytes 55ffa9a1 (0 updates): 02 06 b0 78 30 30 03 cd
+write: 1 bytes 030c59f9 (0 updates): 06
+save .card: 207 bytes ebe28a73
+write: 8 bytes c0817587 (0 updates): 02 06 53 78 30 30 03 2e
+write: 1 bytes 030c59f9 (0 updates): 06
+save .card: 207 bytes 17bb2e4a
+write: 8 bytes c0817587 (0 updates): 02 06 53 78 30 30 03 2e
+write: 1 bytes 030c59f9 (0 updates): 06
+save .card: 207 bytes 98620be4
+write: 8 bytes c0817587 (0 updates): 02 06 53 78 30 30 03 2e
+write: 1 bytes 030c59f9 (0 updates): 06
+save .card: 207 bytes 050f2a14
+write: 8 bytes c0817587 (0 updates): 02 06 53 78 30 30 03 2e
+write: 1 bytes 030c59f9 (0 updates): 06
+save .card: 207 bytes 3d5b5877
+write: 8 bytes c0817587 (0 updates): 02 06 53 78 30 30 03 2e
+write: 1 bytes 030c59f9 (0 updates): 06
+save .card: 207 bytes ac2910d2
+write: 8 bytes c0817587 (0 updates): 02 06 53 78 30 30 03 2e
+write: 1 bytes 030c59f9 (0 updates): 06
+save .card: 207 bytes f472b42e
+write: 8 bytes c0817587 (0 updates): 02 06 53 78 30 30 03 2e
+write: 1 bytes 030c59f9 (0 updates): 06
+save .card: 207 bytes f472b42e
+write: 8 bytes c0817587 (0 updates): 02 06 53 78 30 30 03 2e
+read track 0: 1 bytes 030c59f9 (0 updates): 06
+read track 0: 77 bytes 99921f91 (0 updates): 02 4b 33 78 30 30 06 08 0d 12 17 1c 21 26 2b 30 35 3a 3f 44 49 4e 53 58
+read track 1: 1 bytes 030c59f9 (0 updates): 06
+read track 1: 77 bytes 0086c0f5 (0 updates): 02 4b 33 78 30 30 5c 61 66 6b 70 75 7a 7f 84 89 8e 93 98 9d a2 a7 ac b1
+read track 2: 1 bytes 030c59f9 (0 updates): 06
+read track 2: 77 bytes 80ade7e5 (0 updates): 02 4b 33 78 30 30 b5 ba bf c4 c9 ce d3 d8 dd e2 e7 ec f1 f6 fb 00 05 0a
+read track 3: 1 bytes 030c59f9 (0 updates): 06
+read track 3: 146 bytes d0ebb72f (0 updates): 02 90 33 78 30 30 06 08 0d 12 17 1c 21 26 2b 30 35 3a 3f 44 49 4e 53 58
+read track 4: 1 bytes 030c59f9 (0 updates): 06
+read track 4: 146 bytes 38bcec7f (0 updates): 02 90 33 78 30 30 06 08 0d 12 17 1c 21 26 2b 30 35 3a 3f 44 49 4e 53 58
+read track 5: 1 bytes 030c59f9 (0 updates): 06
+read track 5: 146 bytes 4934ff07 (0 updates): 02 90 33 78 30 30 5c 61 66 6b 70 75 7a 7f 84 89 8e 93 98 9d a2 a7 ac b1
+read track 6: 1 bytes 030c59f9 (0 updates): 06
+read track 6: 215 bytes 29d4a499 (0 updates): 02 d5 33 78 30 30 06 08 0d 12 17 1c 21 26 2b 30 35 3a 3f 44 49 4e 53 58
+read track x: 1 bytes 030c59f9 (0 updates): 06
+read track x: 8 bytes a90e3dc7 (0 updates): 02 06 33 78 30 30 03 4e
+card capture: 1 bytes 030c59f9 (0 updates): 06
+card capture: 8 bytes a90e3dc7 (0 updates): 02 06 33 78 30 30 03 4e
+door open: 1 bytes 030c59f9 (0 updates): 06
+door open: 8 bytes e3eb9161 (0 updates): 02 06 d0 b8 30 30 03 6d
+read, door open: 1 bytes 030c59f9 (0 updates): 06
+read, door open: 8 bytes e682e1c7 (0 updates): 02 06 33 b8 30 30 03 8e
+door closed: 1 bytes 030c59f9 (0 updates): 06
+door closed: 8 bytes fa193be1 (0 updates): 02 06 d0 78 30 30 03 ad
+eject: 1 bytes 030c59f9 (0 updates): 06
+eject: 8 bytes 371e3461 (0 updates): 02 06 80 60 30 30 03 e5
+insert from its file: 0 bytes 811c9dc5 (0 updates):
+read: 1 bytes 030c59f9 (0 updates): 06
+read: 215 bytes 29d4a499 (0 updates): 02 d5 33 78 30 30 06 08 0d 12 17 1c 21 26 2b 30 35 3a 3f 44 49 4e 53 58
+print: 1 bytes 030c59f9 (0 updates): 06
+print: 8 bytes 11ed8f31 (0 updates): 02 06 7c 78 30 30 03 01
+unknown: 1 bytes 030c59f9 (0 updates): 06
+unknown: 8 bytes 590fcf2f (0 updates): 02 06 99 78 30 30 03 e4
+bad crc: 8 bytes 590fcf2f (0 updates): 02 06 99 78 30 30 03 e4
+bad start: 8 bytes 590fcf2f (0 updates): 02 06 99 78 30 30 03 e4
+too long: 0 bytes 811c9dc5 (0 updates):
+state: 0 bytes 811c9dc5 (0 updates):
+state: 8 bytes 590fcf2f (0 updates): 02 06 99 78 30 30 03 e4
+state: state 1449 bytes db1a35c6
+state: read back 1 1
+state: another's 1
+state: 8 bytes 590fcf2f (0 updates): 02 06 99 78 30 30 03 e4
+the command finished: 1 bytes 030c59f9 (0 updates): 06
+and answered: 8 bytes 8b4f34c1 (0 updates): 02 06 20 78 30 30 03 5d
+state before V24: 0 bytes 811c9dc5 (0 updates):
+insert after it: 0 bytes 811c9dc5 (0 updates):
+mie unset
+load .card 0 of 207
+mie set
+==  DERBY OWNERS CLUB ------------, mie
+insert, no file: 0 bytes 811c9dc5 (0 updates):
+init: 1 bytes 030c59f9 (0 updates): 06
+init: 8 bytes 33775b01 (0 updates): 02 06 10 30 30 30 03 25
+state: 1 bytes 030c59f9 (0 updates): 06
+state: 8 bytes e6d0e321 (0 updates): 02 06 20 30 30 30 03 15
+read, no card: 1 bytes 030c59f9 (0 updates): 06
+read, no card: 8 bytes 0ac3a0ef (0 updates): 02 06 33 30 30 34 03 02
+door open: 1 bytes 030c59f9 (0 updates): 06
+door open: 8 bytes 88f5be01 (0 updates): 02 06 d0 30 30 30 03 e5
+new card: 1 bytes 030c59f9 (0 updates): 06
+new card: 8 bytes 9fb3e939 (0 updates): 02 06 b0 31 30 30 03 84
+write: 1 bytes 030c59f9 (0 updates): 06
+save .card: 207 bytes ebe28a73
+write: 8 bytes b6022a8f (0 updates): 02 06 53 31 30 30 03 67
+write: 1 bytes 030c59f9 (0 updates): 06
+save .card: 207 bytes 17bb2e4a
+write: 8 bytes b6022a8f (0 updates): 02 06 53 31 30 30 03 67
+write: 1 bytes 030c59f9 (0 updates): 06
+save .card: 207 bytes 98620be4
+write: 8 bytes b6022a8f (0 updates): 02 06 53 31 30 30 03 67
+write: 1 bytes 030c59f9 (0 updates): 06
+save .card: 207 bytes 050f2a14
+write: 8 bytes b6022a8f (0 updates): 02 06 53 31 30 30 03 67
+write: 1 bytes 030c59f9 (0 updates): 06
+save .card: 207 bytes 3d5b5877
+write: 8 bytes b6022a8f (0 updates): 02 06 53 31 30 30 03 67
+write: 1 bytes 030c59f9 (0 updates): 06
+save .card: 207 bytes ac2910d2
+write: 8 bytes b6022a8f (0 updates): 02 06 53 31 30 30 03 67
+write: 1 bytes 030c59f9 (0 updates): 06
+save .card: 207 bytes f472b42e
+write: 8 bytes b6022a8f (0 updates): 02 06 53 31 30 30 03 67
+write: 1 bytes 030c59f9 (0 updates): 06
+save .card: 207 bytes f472b42e
+write: 8 bytes b6022a8f (0 updates): 02 06 53 31 30 30 03 67
+read track 0: 1 bytes 030c59f9 (0 updates): 06
+read track 0: 77 bytes dca7daa7 (0 updates): 02 4b 33 31 30 30 06 08 0d 12 17 1c 21 26 2b 30 35 3a 3f 44 49 4e 53 58
+read track 1: 1 bytes 030c59f9 (0 updates): 06
+read track 1: 77 bytes 0bd2185b (0 updates): 02 4b 33 31 30 30 5c 61 66 6b 70 75 7a 7f 84 89 8e 93 98 9d a2 a7 ac b1
+read track 2: 1 bytes 030c59f9 (0 updates): 06
+read track 2: 77 bytes ae9ac82b (0 updates): 02 4b 33 31 30 30 b5 ba bf c4 c9 ce d3 d8 dd e2 e7 ec f1 f6 fb 00 05 0a
+read track 3: 1 bytes 030c59f9 (0 updates): 06
+read track 3: 146 bytes 671ef97b (0 updates): 02 90 33 31 30 30 06 08 0d 12 17 1c 21 26 2b 30 35 3a 3f 44 49 4e 53 58
+read track 4: 1 bytes 030c59f9 (0 updates): 06
+read track 4: 146 bytes 24a87303 (0 updates): 02 90 33 31 30 30 06 08 0d 12 17 1c 21 26 2b 30 35 3a 3f 44 49 4e 53 58
+read track 5: 1 bytes 030c59f9 (0 updates): 06
+read track 5: 146 bytes db52516f (0 updates): 02 90 33 31 30 30 5c 61 66 6b 70 75 7a 7f 84 89 8e 93 98 9d a2 a7 ac b1
+read track 6: 1 bytes 030c59f9 (0 updates): 06
+read track 6: 215 bytes 34cdec1b (0 updates): 02 d5 33 31 30 30 06 08 0d 12 17 1c 21 26 2b 30 35 3a 3f 44 49 4e 53 58
+read track x: 1 bytes 030c59f9 (0 updates): 06
+read track x: 8 bytes bbac670f (0 updates): 02 06 33 31 30 30 03 07
+card capture: 1 bytes 030c59f9 (0 updates): 06
+card capture: 8 bytes bbac670f (0 updates): 02 06 33 31 30 30 03 07
+door open: 1 bytes 030c59f9 (0 updates): 06
+door open: 8 bytes 238147b9 (0 updates): 02 06 d0 31 30 30 03 e4
+read, door open: 1 bytes 030c59f9 (0 updates): 06
+read, door open: 8 bytes bbac670f (0 updates): 02 06 33 31 30 30 03 07
+door closed: 1 bytes 030c59f9 (0 updates): 06
+door closed: 8 bytes 238147b9 (0 updates): 02 06 d0 31 30 30 03 e4
+eject: 1 bytes 030c59f9 (0 updates): 06
+eject: 8 bytes e41ddb61 (0 updates): 02 06 80 30 30 30 03 b5
+insert from its file: 0 bytes 811c9dc5 (0 updates):
+read: 1 bytes 030c59f9 (0 updates): 06
+read: 215 bytes 34cdec1b (0 updates): 02 d5 33 31 30 30 06 08 0d 12 17 1c 21 26 2b 30 35 3a 3f 44 49 4e 53 58
+print: 1 bytes 030c59f9 (0 updates): 06
+print: 8 bytes 5ba03bc9 (0 updates): 02 06 7c 31 30 30 03 48
+unknown: 1 bytes 030c59f9 (0 updates): 06
+unknown: 8 bytes 0f4807df (0 updates): 02 06 99 31 30 30 03 ad
+bad crc: 8 bytes 0f4807df (0 updates): 02 06 99 31 30 30 03 ad
+bad start: 8 bytes 0f4807df (0 updates): 02 06 99 31 30 30 03 ad
+too long: 0 bytes 811c9dc5 (0 updates):
+state: 0 bytes 811c9dc5 (0 updates):
+state: 8 bytes 0f4807df (0 updates): 02 06 99 31 30 30 03 ad
+state: state 1449 bytes e446ee9a
+state: read back 1 1
+state: another's 1
+state: 8 bytes 0f4807df (0 updates): 02 06 99 31 30 30 03 ad
+the command finished: 1 bytes 030c59f9 (0 updates): 06
+and answered: 8 bytes 615dcd79 (0 updates): 02 06 20 31 30 30 03 14
+state before V24: 0 bytes 811c9dc5 (0 updates):
+insert after it: 0 bytes 811c9dc5 (0 updates):
+mie unset
+load .card 0 of 69
+scif set
+== Club Kart
+init: 6 bytes 49f24035 (0 updates): 06 02 4f 4b 03 07
+status: 10 bytes ad135287 (0 updates): 06 02 30 30 30 30 30 31 03 02
+read, no card: 1 bytes 030c59f9 (0 updates): 06
+insert, waited for: 0 bytes 811c9dc5 (0 updates):
+new card: 6 bytes 49f24035 (0 updates): 06 02 4f 4b 03 07
+status: 10 bytes 013f4845 (0 updates): 06 02 30 30 30 31 31 31 03 02
+save .card: 69 bytes e582e418
+write: 6 bytes 49f24035 (0 updates): 06 02 4f 4b 03 07
+read: 75 bytes 635a2a33 (0 updates): 06 02 4f 4b 01 04 07 0a 0d 10 13 16 19 1c 1f 22 25 28 2b 2e 31 34 37 3a
+eject: 6 bytes 49f24035 (0 updates): 06 02 4f 4b 03 07
+RT5: 6 bytes 49f24035 (0 updates): 06 02 4f 4b 03 07
+cancel: 6 bytes 49f24035 (0 updates): 06 02 4f 4b 03 07
+clean: 6 bytes 49f24035 (0 updates): 06 02 4f 4b 03 07
+unknown: 0 bytes 811c9dc5 (0 updates):
+bad crc: 0 bytes 811c9dc5 (0 updates):
+read, no card: 1 bytes 030c59f9 (0 updates): 06
+state, a read waiting: state 1449 bytes 42054b49
+state, a read waiting: read back 1 1
+state, a read waiting: another's 1
+state, a read waiting: 0 bytes 811c9dc5 (0 updates):
+insert after the state: 74 bytes ee41c87f (1 updates): 02 4f 4b 01 04 07 0a 0d 10 13 16 19 1c 1f 22 25 28 2b 2e 31 34 37 3a 3d
+scif unset
+load .barcode 23 of 63
+scif set
+== barcode BTR 2K9 VER 1.004, a file of 23, available 1 1
+read: 13 bytes 199d2b37 (1 updates): 2a 30 31 32 33 34 35 36 37 38 39 2a 0d
+state, five read: state 69 bytes ba06a617
+state, five read: read back 1 1
+state, five read: another's 1
+state, five read: 0 bytes 811c9dc5 (3 updates):
+state before V24: 0 bytes 811c9dc5 (0 updates):
+scif unset
+available 0 0
+load .barcode 61 of 63
+scif set
+== barcode SOMETHING ELSE, a file of 61, available 1 1
+read: 62 bytes 5bf7afa2 (1 updates): 61 20 62 61 72 63 6f 64 65 20 6c 6f 6e 67 65 72 20 74 68 61 6e 20 74 68
+state, five read: state 69 bytes 236ba549
+state, five read: read back 1 1
+state, five read: another's 1
+state, five read: 0 bytes 811c9dc5 (1 updates):
+state before V24: 0 bytes 811c9dc5 (0 updates):
+scif unset
+available 0 0
+load .barcode 0 of 63
+scif set
+== barcode SOMETHING ELSE, a file of -1, available 1 1
+read: 0 bytes 811c9dc5 (0 updates):
+state, five read: state 69 bytes 1024befe
+state, five read: read back 1 1
+state, five read: another's 1
+state, five read: 0 bytes 811c9dc5 (0 updates):
+state before V24: 0 bytes 811c9dc5 (0 updates):
+scif unset
+available 0 0
+load .card 69 of 207
+scif set
+the other's card: 0 bytes 811c9dc5 (0 updates):
+scif unset
+load .card 69 of 207
+mie set
+Initial D's state, Derby's reader: read 1 1
+Initial D's state, Derby's reader: 0 bytes 811c9dc5 (0 updates):
+its card: 0 bytes 811c9dc5 (0 updates):
+mie unset
+load .card 69 of 207
+mie set
+the other's card: 0 bytes 811c9dc5 (0 updates):
+mie unset
+load .card 69 of 207
+mie set
+Derby's state, Derby's reader: read 1 1
+Derby's state, Derby's reader: 0 bytes 811c9dc5 (0 updates):
+its card: 0 bytes 811c9dc5 (0 updates):
+mie unset
+load .card 69 of 69
+scif set
+the other's card: 0 bytes 811c9dc5 (0 updates):
+scif unset
+load .card 69 of 207
+scif set
+Club Kart's state, Initial D's reader: read 1 1
+Club Kart's state, Initial D's reader: 0 bytes 811c9dc5 (0 updates):
+its card: 0 bytes 811c9dc5 (0 updates):
+scif unset
+load .card 69 of 207
+scif set
+the other's card: 0 bytes 811c9dc5 (0 updates):
+scif unset
+load .card 69 of 207
+scif set
+with IC card readers: read 1 1
+with IC card readers: 0 bytes 811c9dc5 (0 updates):
+its card: 0 bytes 811c9dc5 (0 updates):
+scif unset
+available 1
+bad kind: 0 1 0
+load .card 69 of 207
+scif set
+cut short: 0 0
+scif unset
+Dreamcast: 0 bytes 1

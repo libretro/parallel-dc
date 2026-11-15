@@ -40,6 +40,7 @@
 #include "hw/sh4/dyna/ngen.h"
 #include "hw/naomi/naomi.h"
 #include "hw/naomi/naomi_cart.h"
+#include "hw/naomi/card_reader.h"
 #include "hw/naomi/midiffb.h"
 #include "hw/naomi/naomi_periph.h"
 #include "hw/sh4/sh4_cache.h"
@@ -215,10 +216,7 @@ void pvr_state_before_v28(void);
 /* and since V29: SB_ADST, the AICA DMA's start register, which is read
  * through a function and so is not in the register block (aica_if.cpp) */
 /* and since V30: the cards the NAOMI's card readers and IC card readers
- * keep out of the reader, as the game last wrote them (card_reader.cpp) */
-void naomi_cards_serialize_v30(void **data, unsigned int *total_size);
-bool naomi_cards_unserialize_v30(void **data, unsigned int *total_size);
-void naomi_cards_state_before_v30(void);
+ * keep out of the reader, as the game last wrote them (card_reader.h) */
 /* and since V31: the network DIMM board of a NAOMI GD-ROM game
  * (gdcartridge.cpp) */
 void naomi_gd_serialize_v31(void **data, unsigned int *total_size);

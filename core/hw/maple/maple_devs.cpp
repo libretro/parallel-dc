@@ -2741,9 +2741,9 @@ static u8 jvs_firmware[0x10000];
 /* What is on the I/O board bridge's RS-422 port: Derby Owners Club's card
  * reader, through a converter board. Not the bridge's own: the bridge is
  * made anew by a state load. */
-static SerialPort::Pipe *mie_pipe;
+static serial_pipe *mie_pipe;
 
-void naomi_mie_set_pipe(SerialPort::Pipe *pipe)
+void naomi_mie_set_pipe(serial_pipe *pipe)
 {
 	mie_pipe = pipe;
 }
@@ -3343,8 +3343,8 @@ struct maple_naomi_jamma : maple_sega_controller
 				if (mie_pipe == NULL)
 					goto unknown;
 				DEBUG_LOG(MAPLE, "JVS: RS422 reset\n");
-				while (mie_pipe->available() > 0)
-					mie_pipe->read();
+				while (mie_pipe->ops->available(mie_pipe) > 0)
+					mie_pipe->ops->read(mie_pipe);
 				break;
 
 			case 0x47: // send data
@@ -3352,14 +3352,14 @@ struct maple_naomi_jamma : maple_sega_controller
 					goto unknown;
 				DEBUG_LOG(MAPLE, "JVS: RS422 send %02x\n", dma_buffer_in[4]);
 				if (dma_count_in >= 5)
-					mie_pipe->write(dma_buffer_in[4]);
+					mie_pipe->ops->write(mie_pipe, dma_buffer_in[4]);
 				break;
 
 			case 0x4d: // receive data
 				{
 					if (mie_pipe == NULL)
 						goto unknown;
-					const int avail = std::min(mie_pipe->available(), 0xfe);
+					const int avail = std::min(mie_pipe->ops->available(mie_pipe), 0xfe);
 					DEBUG_LOG(MAPLE, "JVS: RS422 receive %d bytes\n", avail);
 					w8(MDRS_JVSReply);
 					w8(0x00);
@@ -3371,7 +3371,7 @@ struct maple_naomi_jamma : maple_sega_controller
 					w8(avail == 0 ? 0xff : avail); // 0xff => no data, else byte count
 
 					for (int i = 0; i < ((avail + 3) / 4) * 4; i++)
-						w8(i >= avail ? 0 : mie_pipe->read());
+						w8(i >= avail ? 0 : mie_pipe->ops->read(mie_pipe));
 					break;
 				}
 

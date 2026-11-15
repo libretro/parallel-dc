@@ -1,6 +1,6 @@
 /*
 	The devices an arcade game has besides its I/O board: card readers,
-	touch panel, hopper (naomi.cpp, card_reader.cpp, touchscreen.c,
+	touch panel, hopper (naomi.cpp, card_reader.c, touchscreen.c,
 	hopper.c, and the IC card reader in maple_devs.cpp).
 */
 #pragma once
@@ -9,66 +9,11 @@
 #include <retro_atomic.h>
 
 #ifdef __cplusplus
-#include <algorithm>
-
-/* The bytes a device has for the game, oldest first. A device that is
- * sent more than this without the game reading drops the rest. */
-template<u32 N>
-struct PeriphQueue
-{
-	u8 buf[N];
-	u32 head = 0;
-	u32 count = 0;
-
-	bool empty() const { return count == 0; }
-	u32 size() const { return count; }
-	void clear() { head = count = 0; }
-	void push(u8 b)
-	{
-		if (count == N)
-			return;
-		buf[(head + count) % N] = b;
-		count++;
-	}
-	void push(const u8 *p, u32 len)
-	{
-		for (u32 i = 0; i < len; i++)
-			push(p[i]);
-	}
-	u8 pop()
-	{
-		if (count == 0)
-			return 0;
-		const u8 b = buf[head];
-		head = (head + 1) % N;
-		count--;
-		return b;
-	}
-	/* oldest first, and zeroes after: the same bytes however far round the ring they are */
-	void serialize(void **data, unsigned int *total_size) const
-	{
-		u8 lin[N];
-		for (u32 i = 0; i < N; i++)
-			lin[i] = i < count ? buf[(head + i) % N] : 0;
-		u16 c = (u16)count;
-		LIBRETRO_S(c);
-		LIBRETRO_SA(lin, N);
-	}
-	void unserialize(void **data, unsigned int *total_size)
-	{
-		u16 c = 0;
-		LIBRETRO_US(c);
-		LIBRETRO_USA(buf, N);
-		head = 0;
-		count = std::min<u32>(c, N);
-	}
-};
-
 extern "C" {
 #endif
 
-/* The same in C: the bytes a device has for the game, oldest first, in
- * @buf (@size bytes, the device's own); more than that, the rest dropped */
+/* The bytes a device has for the game, oldest first, in @buf (@size
+ * bytes, the device's own); more than that, the rest dropped */
 typedef struct periph_queue
 {
 	u8 *buf;
@@ -104,8 +49,8 @@ static TYPES_INLINE u8 periph_queue_pop(periph_queue *q)
 	q->count--;
 	return b;
 }
-/* as PeriphQueue's: the count (16 bits), then the bytes oldest first and
- * zeroes after, the same however far round the ring they are */
+/* the count (16 bits), then the bytes oldest first and zeroes after: the
+ * same however far round the ring they are */
 static TYPES_INLINE void periph_queue_serialize(const periph_queue *q, void **data, unsigned int *total_size)
 {
 	static const u8 zeroes[64] = { 0 };
@@ -178,9 +123,9 @@ void naomi_periph_serialize_v24(void **data, unsigned int *total_size);
 bool naomi_periph_unserialize_v24(void **data, unsigned int *total_size);
 void naomi_periph_state_before_v24(void);
 
+/* The RS-422 port of the I/O board bridge, which a card reader can be on (maple_devs.cpp) */
+void naomi_mie_set_pipe(serial_pipe *pipe);
+
 #ifdef __cplusplus
 }
-
-/* The RS-422 port of the I/O board bridge, which a card reader can be on (maple_devs.cpp) */
-void naomi_mie_set_pipe(SerialPort::Pipe *pipe);
 #endif

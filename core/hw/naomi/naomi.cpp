@@ -766,8 +766,8 @@ static bool set_starts(const char *prefix)
 
 void naomi_periph_term(void)
 {
-	card_reader::term();
-	card_reader::barcodeTerm();
+	card_reader_term();
+	card_reader_barcode_term();
 	touchscreen_term();
 	hopper_term();
 	printer_term();
@@ -795,15 +795,15 @@ void naomi_periph_init(void)
 				|| !strcmp(naomi_game_id, "INITIAL D Ver.2")
 				|| !strcmp(naomi_game_id, "INITIAL D Ver.3")
 				|| !strcmp(naomi_game_id, "INITIAL D CYCRAFT"))
-			card_reader::initdInit();
+			card_reader_initd_init();
 		else if (!strcmp(naomi_game_id, "CLUB KART IN JAPAN")
 				&& (!strcmp(naomi_set_name, "clubkrt") || !strcmp(naomi_set_name, "clubkrto")
 					|| !strcmp(naomi_set_name, "clubkrta") || !strcmp(naomi_set_name, "clubkrtc")))
-			card_reader::clubkInit();
+			card_reader_clubk_init();
 		else if (!strcmp(naomi_game_id, " DERBY OWNERS CLUB WE ---------")
 				|| !strcmp(naomi_game_id, " DERBY OWNERS CLUB ------------")
 				|| !strcmp(naomi_game_id, " DERBY OWNERS CLUB II-----------"))
-			card_reader::derbyInit();
+			card_reader_derby_init();
 		else if (id_starts("MKG TKOB")
 				|| id_starts("MUSHIKING")
 				|| !strcmp(naomi_game_id, "MUSHIUSA '04 1ST VER0.900-")
@@ -811,7 +811,7 @@ void naomi_periph_init(void)
 				|| !strcmp(naomi_game_id, "INW PUPPY 2008 VER1.001")
 				|| id_starts("LOVE AND BERRY")
 				|| !strcmp(naomi_game_id, "BTR 2K9 VER 1.004"))
-			card_reader::barcodeInit();
+			card_reader_barcode_init();
 
 		if (id_starts("MKG TKOB")
 				|| !strcmp(naomi_game_id, "VIRTUA FIGHTER 4 JAPAN")
@@ -835,7 +835,7 @@ void naomi_periph_init(void)
 			|| !strcmp(naomi_game_id, "KICK '4' CASH"))
 		hopper_init();
 
-	naomi_card_button = card_reader::readerAvailable();
+	naomi_card_button = card_reader_available();
 	periph_polled = naomi_card_button || hopper_active();
 }
 
@@ -859,7 +859,7 @@ void naomi_periph_poll(void)
 		{
 			const u8 down = (mcfg_ArcadeKcode(i) & NAOMI_INSERT_CARD_KEY) == 0;
 			if (down && !periph_card_button[i])
-				card_reader::insertCard(i);
+				card_reader_insert_card(i);
 			periph_card_button[i] = down;
 		}
 	}
@@ -870,7 +870,7 @@ void naomi_periph_poll(void)
  * byte that says which there are (0 for most games, and then nothing
  * more), the players' "Insert Card" buttons, and then each one's:
  *   - the SCIF's FIFOs, for a device on it (scif_serialize_v24(), 45 bytes);
- *   - the card readers' (card_reader::serialize_v24(), 2 bytes and up);
+ *   - the card readers' (card_reader_serialize_v24(), 2 bytes and up);
  *   - the touch panel's (touchscreen_serialize_v24(), 60 bytes);
  *   - the hopper board's (hopper_serialize_v24(), 2404 bytes);
  *   - the IC cards' (rfid_serialize_v24(), 262 bytes).
@@ -894,9 +894,9 @@ static u8 periph_present(void)
 	u8 mask = 0;
 	if (scif_get_pipe() != NULL)
 		mask |= PERIPH_SCIF;
-	if (card_reader::readerAvailable() && !periph_rfid)
+	if (card_reader_available() && !periph_rfid)
 		mask |= PERIPH_CARD;
-	if (card_reader::barcodeAvailable())
+	if (card_reader_barcode_available())
 		mask |= PERIPH_CARD;
 	if (touchscreen_active())
 		mask |= PERIPH_TOUCH;
@@ -932,7 +932,7 @@ void naomi_periph_serialize_v24(void **data, unsigned int *total_size)
 	if (mask & PERIPH_SCIF)
 		scif_serialize_v24(data, total_size);
 	if (mask & PERIPH_CARD)
-		card_reader::serialize_v24(data, total_size);
+		card_reader_serialize_v24(data, total_size);
 	if (mask & PERIPH_TOUCH)
 		touchscreen_serialize_v24(data, total_size);
 	if (mask & PERIPH_HOPPER)
@@ -967,9 +967,9 @@ bool naomi_periph_unserialize_v24(void **data, unsigned int *total_size)
 		scif_state_before_v24();
 	// (the readers' part says which it is, and reads past a reader the game has not got)
 	if (ok && (mask & PERIPH_CARD))
-		ok = card_reader::unserialize_v24(data, total_size);
+		ok = card_reader_unserialize_v24(data, total_size);
 	else if (have & PERIPH_CARD)
-		card_reader::state_before_v24();
+		card_reader_state_before_v24();
 	if (ok && (mask & PERIPH_TOUCH))
 		ok = (have & PERIPH_TOUCH) ? touchscreen_unserialize_v24(data, total_size) : periph_skip(data, total_size, PERIPH_TOUCH_SIZE);
 	else if (have & PERIPH_TOUCH)
@@ -995,7 +995,7 @@ void naomi_periph_state_before_v24(void)
 	memset(periph_card_button, 0, sizeof(periph_card_button));
 	if (scif_get_pipe() != NULL)
 		scif_state_before_v24();
-	card_reader::state_before_v24();
+	card_reader_state_before_v24();
 	touchscreen_state_before_v24();
 	hopper_state_before_v24();
 	if (periph_rfid)

@@ -17,32 +17,40 @@
     along with Flycast.  If not, see <https://www.gnu.org/licenses/>.
  */
 #pragma once
-#include <string>
+#include "types.h"
 
-namespace card_reader {
+#ifdef __cplusplus
+extern "C" {
+#endif
 
-void initdInit();
-void derbyInit();
-void clubkInit();
-void term();
+/* The card reader of the game that is loaded, made on a hard reset:
+ * Initial D's, Derby Owners Club's, Club Kart's; and gone */
+void card_reader_initd_init(void);
+void card_reader_derby_init(void);
+void card_reader_clubk_init(void);
+void card_reader_term(void);
 
-void barcodeInit();
-void barcodeTerm();
-bool barcodeAvailable();
-std::string barcodeGetCard();
-void barcodeSetCard(const std::string& card);
+/* A barcode reader on the SCIF instead */
+void card_reader_barcode_init(void);
+void card_reader_barcode_term(void);
+bool card_reader_barcode_available(void);
 
-void insertCard(int playerNum);
-bool readerAvailable();
+/* The "Insert Card" button: the reader's card, the barcode, or player
+ * @playerNum's IC card */
+void card_reader_insert_card(int playerNum);
+/* the game has something to put a card in */
+bool card_reader_available(void);
 
-// What the readers have in a save state since V24 (card_reader.cpp)
-void serialize_v24(void **data, unsigned int *total_size);
-bool unserialize_v24(void **data, unsigned int *total_size);
-void state_before_v24();
+/* What the readers have in a save state since V24 (card_reader.c) */
+void card_reader_serialize_v24(void **data, unsigned int *total_size);
+bool card_reader_unserialize_v24(void **data, unsigned int *total_size);
+void card_reader_state_before_v24(void);
 
-}
-
-// The cards out of the readers in a save state from V30 on (card_reader.cpp)
+/* The cards out of the readers in a save state from V30 on (card_reader.c) */
 void naomi_cards_serialize_v30(void **data, unsigned int *total_size);
 bool naomi_cards_unserialize_v30(void **data, unsigned int *total_size);
 void naomi_cards_state_before_v30(void);
+
+#ifdef __cplusplus
+}
+#endif
