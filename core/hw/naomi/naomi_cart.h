@@ -67,130 +67,110 @@ void naomi_cart_Close(void);
 bool naomi_cart_loaded(void);
 bool naomi_cart_read(u32 offset, u32 size, void *dst);
 
-#ifdef __cplusplus
-}
-
-#include <string>
-
-class Cartridge
+/* A cartridge: a ROM board and its ROMs, as the NAOMI (or the AtomisWave,
+ * or the System SP) sees them. The board's kind is in its ops; what every
+ * kind has is here. */
+typedef struct cartridge cartridge;
+typedef struct cartridge_ops
 {
-public:
-	Cartridge(u32 size);
-	virtual ~Cartridge();
-
-	virtual bool Init() { return true; }
+	/* Once its ROMs are in place: false if the board cannot run */
+	bool (*init)(cartridge *c);
 	/* The machine is reset as when it is switched on: the board's
 	 * registers are as they are then. (Its ROMs stay as they are.) */
-	virtual void Reset() {}
-	virtual u32 ReadMem(u32 address, u32 size) = 0;
-	virtual void WriteMem(u32 address, u32 data, u32 size) = 0;
+	void (*reset)(cartridge *c);
+	/* The board's registers, at 5f7000-5f70ff */
+	u32 (*read_mem)(cartridge *c, u32 address, u32 size);
+	void (*write_mem)(cartridge *c, u32 address, u32 data, u32 size);
+	/* What the board gives at @offset, or takes there */
+	bool (*read)(cartridge *c, u32 offset, u32 size, void *dst);
+	bool (*write)(cartridge *c, u32 offset, u32 size, u32 data);
+	/* The ROMs at @offset, @*size bytes of them (NULL and 0 past them) */
+	void *(*get_ptr)(cartridge *c, u32 offset, u32 *size);
+	/* What a transfer reads next, @*size bytes of it at most; and that
+	 * @size bytes of it were read */
+	void *(*get_dma_ptr)(cartridge *c, u32 *size);
+	void (*advance_ptr)(cartridge *c, u32 size);
+	/* The game's name, without the spaces after it: CART_GAME_ID_SIZE
+	 * bytes at most, with its end */
+	void (*game_id)(cartridge *c, char *id);
+	void (*serialize)(cartridge *c, void **data, unsigned int *total_size);
+	void (*unserialize)(cartridge *c, void **data, unsigned int *total_size);
+	/* What a cartridge keeps that the save states before V21 did not hold:
+	 * written and read after everything else, by naomi_serialize_v21() and
+	 * naomi_unserialize_v21(). */
+	void (*serialize_v21)(cartridge *c, void **data, unsigned int *total_size);
+	void (*unserialize_v21)(cartridge *c, void **data, unsigned int *total_size);
+	/* The set's key, and its key file (malloc()ed: the board's from here) */
+	void (*set_key)(cartridge *c, u32 key);
+	void (*set_key_data)(cartridge *c, u8 *key_data);
+	/* A NAOMI board's transfer, or its PIO, starts at another offset */
+	void (*dma_offset_changed)(cartridge *c, u32 dma_offset);
+	void (*pio_offset_changed)(cartridge *c, u32 pio_offset);
+	/* Done with: what it has is released */
+	void (*close)(cartridge *c);
+} cartridge_ops;
 
-	virtual bool Read(u32 offset, u32 size, void* dst);
-	virtual bool Write(u32 offset, u32 size, u32 data);
-	virtual void* GetPtr(u32 offset, u32& size);
-	virtual void* GetDmaPtr(u32 &size) = 0;
-	virtual void AdvancePtr(u32 size) = 0;
-	virtual std::string GetGameId();
-	virtual void Serialize(void **data, unsigned int *total_size) {}
-	virtual void Unserialize(void **data, unsigned int *total_size) {}
-	/* What a cartridge keeps that the save states before V21 did not hold: */
-	/* written and read after everything else, by naomi_serialize_v21() and */
-	/* naomi_unserialize_v21(). */
-	virtual void SerializeV21(void **data, unsigned int *total_size) {}
-	virtual void UnserializeV21(void **data, unsigned int *total_size) {}
-	virtual void SetKey(u32 key) { }
-	virtual void SetKeyData(u8 *key_data) { }
-	u32 GetSize() const { return RomSize; }
+#define CART_GAME_ID_SIZE 33
 
-protected:
-	/* a cartridge that is memory someone else has: none is allocated for it */
-	Cartridge(u8 *rom_ptr, u32 size) : RomPtr(rom_ptr), RomSize(size) {}
-
-	u8* RomPtr;
-	u32 RomSize;
-};
-
-class NaomiCartridge : public Cartridge
+struct cartridge
 {
-public:
-   NaomiCartridge(u32 size) : Cartridge(size), RomPioOffset(0), RomPioAutoIncrement(false), DmaOffset(0), DmaCount(0xffff) {}
-
-	virtual u32 ReadMem(u32 address, u32 size) override;
-	virtual void WriteMem(u32 address, u32 data, u32 size) override;
-	virtual void* GetDmaPtr(u32 &size) override;
-	virtual void AdvancePtr(u32 size) override;
-	virtual void Serialize(void** data, unsigned int* total_size) override;
-	virtual void Unserialize(void** data, unsigned int* total_size) override;
-	virtual void Reset() override
-	{
-		RomPioOffset = 0;
-		RomPioAutoIncrement = false;
-		DmaOffset = 0;
-		DmaCount = 0xffff;
-	}
-
-	void SetKey(u32 key) override { this->key = key; }
-
-protected:
-   NaomiCartridge(u8 *rom_ptr, u32 size) : Cartridge(rom_ptr, size), RomPioOffset(0), RomPioAutoIncrement(false), DmaOffset(0), DmaCount(0xffff) {}
-
-	virtual void DmaOffsetChanged(u32 dma_offset) {}
-	virtual void PioOffsetChanged(u32 pio_offset) {}
-	u32 RomPioOffset;
-	bool RomPioAutoIncrement;
-	u32 DmaOffset;
-	u32 DmaCount;
-	u32 key = 0;
+	const cartridge_ops *ops;
+	u8 *rom_ptr;
+	u32 rom_size;
+	/* a NAOMI ROM board's registers */
+	u32 rom_pio_offset;
+	bool rom_pio_autoinc;
+	u32 dma_offset;
+	u32 dma_count;
+	u32 key;
 };
 
-class DecryptedCartridge : public NaomiCartridge
-{
-public:
-	/* (The image is the cartridge. One of its size used to be allocated,
-	 * filled and freed first, for nothing.) */
-	DecryptedCartridge(u8 *rom_ptr, u32 size) : NaomiCartridge(rom_ptr, size) {}
-	virtual ~DecryptedCartridge() override;
-};
+extern cartridge *CurrentCartridge;
 
-/* A flat image that was a member of an archive, and is the archive's
- * memory. */
-class ArchivedCartridge : public NaomiCartridge
-{
-public:
-	ArchivedCartridge(const u8 *rom_ptr, u32 size, struct archive *archive)
-		: NaomiCartridge((u8 *)rom_ptr, size), archive(archive) {}
-	virtual ~ArchivedCartridge() override;
+/* @size bytes of ROM, all ones (none, and a size of 0, when there is no
+ * memory for them); and released (cartridge.c) */
+void cart_construct(cartridge *c, const cartridge_ops *ops, u32 size);
+void cart_destruct(cartridge *c);
+/* What every kind of board does, for those that do nothing else */
+bool cart_init(cartridge *c);
+void cart_nothing(cartridge *c);
+bool cart_read(cartridge *c, u32 offset, u32 size, void *dst);
+bool cart_write(cartridge *c, u32 offset, u32 size, u32 data);
+void *cart_get_ptr(cartridge *c, u32 offset, u32 *size);
+void cart_game_id(cartridge *c, char *id);
+void cart_no_state(cartridge *c, void **data, unsigned int *total_size);
+void cart_set_key(cartridge *c, u32 key);
+void cart_set_key_data(cartridge *c, u8 *key_data);
+void cart_offset_changed(cartridge *c, u32 offset);
+/* And a NAOMI ROM board's */
+void naomi_board_reset(cartridge *c);
+u32 naomi_board_read_mem(cartridge *c, u32 address, u32 size);
+void naomi_board_write_mem(cartridge *c, u32 address, u32 data, u32 size);
+void *naomi_board_get_dma_ptr(cartridge *c, u32 *size);
+void naomi_board_advance_ptr(cartridge *c, u32 size);
+void naomi_board_serialize(cartridge *c, void **data, unsigned int *total_size);
+void naomi_board_unserialize(cartridge *c, void **data, unsigned int *total_size);
+void naomi_board_set_key(cartridge *c, u32 key);
+/* @len bytes at @s, with the spaces after them taken off, into @id: how
+ * many are left */
+u32 cart_trim_id(char *id, const char *s, u32 len);
 
-private:
-	struct archive *archive;
-};
-
-class M2Cartridge : public NaomiCartridge
-{
-public:
-	/* (its RAM starts as zeroes: it was whatever the host's memory had, and */
-	/* two machines that should be the same, in netplay, were not) */
-	M2Cartridge(u32 size) : NaomiCartridge(size) { memset(naomi_cart_ram, 0, sizeof(naomi_cart_ram)); }
-
-	virtual bool Read(u32 offset, u32 size, void* dst) override;
-	virtual bool Write(u32 offset, u32 size, u32 data) override;
-	u16 ReadCipheredData(u32 offset);
-	virtual void Serialize(void** data, unsigned int* total_size) override;
-	virtual void Unserialize(void** data, unsigned int* total_size) override;
-	virtual void SerializeV21(void** data, unsigned int* total_size) override;
-	virtual void UnserializeV21(void** data, unsigned int* total_size) override;
-	virtual void* GetDmaPtr(u32& size) override;
-	virtual std::string GetGameId() override;
-
-private:
-	u8 naomi_cart_ram[64 * 1024];
-};
+struct archive;
+/* The boards, one of each at a time (NULL: no memory for its ROMs) */
+/* (an M2 board: its ROMs, and a decryption chip) */
+cartridge *m2_cart_open(u32 size);
+/* (a flat image, mapped by the loader, which is the cartridge) */
+cartridge *decrypted_cart_open(u8 *rom_ptr, u32 size);
+/* (a flat image that was a member of @archive, and is the archive's
+ * memory: the cartridge closes the archive) */
+cartridge *archived_cart_open(const u8 *rom_ptr, u32 size, struct archive *archive);
 
 /* The platform of the romset at @file, or -1 for an archive that is not
  * a known Naomi or AtomisWave romset. */
-int naomi_cart_GetSystemType(const char* file);
+int naomi_cart_GetSystemType(const char *file);
 /* A merged romset's games, for the core option that chooses among them,
  * and the choice: naomi_cart.cpp has the particulars. */
+typedef struct NaomiSet NaomiSet;
 struct NaomiSet
 {
    const char *name;          /* the set's, which is the option's value */
@@ -198,13 +178,12 @@ struct NaomiSet
 };
 int naomi_cart_MergedSets(const char *path, NaomiSet *sets, int max);
 void naomi_cart_WantSet(const char *name);
-int naomi_cart_GetRotation();
+int naomi_cart_GetRotation(void);
 
 extern u8 *naomi_default_eeprom;
 
-extern Cartridge *CurrentCartridge;
-
-
-#endif /* __cplusplus */
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* NAOMI_CART_H */

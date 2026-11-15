@@ -738,7 +738,7 @@ bool dc_serialize(void **data, unsigned int *total_size)
 	LIBRETRO_S(settings.dreamcast.region);
 
 	if (CurrentCartridge != NULL)
-	   STATE_PART("CurrentCartridge->Serialize"), CurrentCartridge->Serialize(data, total_size);
+	   STATE_PART("CurrentCartridge->Serialize"), CurrentCartridge->ops->serialize(CurrentCartridge, data, total_size);
 	STATE_PART("gd_hle_state.Serialize"), gd_hle_serialize(data, total_size);
    settings.network.EmulateBBA = false;
 
@@ -1507,7 +1507,7 @@ bool dc_unserialize(void **data, unsigned int *total_size, size_t actual_data_si
 
 	if (version >= V4 && CurrentCartridge != NULL)
 	{
-	   CurrentCartridge->Unserialize(data, total_size);
+	   CurrentCartridge->ops->unserialize(CurrentCartridge, data, total_size);
 	}
 	if (version >= V7)
 		gd_hle_unserialize(data, total_size);

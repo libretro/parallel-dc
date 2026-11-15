@@ -472,11 +472,11 @@ bool GDCartridge::device_start()
 	u64 key;
 	u8 netpic = 0;
 
-	const u8 *picdata = this->RomPtr;
+	const u8 *picdata = rom_ptr;
 
-	if (RomSize > 0 && gdrom_name != NULL)
+	if (rom_size > 0 && gdrom_name != NULL)
 	{
-		if (RomSize >= 0x4000) {
+		if (rom_size >= 0x4000) {
 			DEBUG_LOG(NAOMI, "Real PIC binary found\n");
 			for(int i=0;i<7;i++)
 				name[i] = picdata[0x7c0+i*2];
@@ -641,7 +641,7 @@ void *GDCartridge::GetDmaPtr(u32 &size)
 		return NULL;
 	}
 
-	dimm_cur_address = DmaOffset & (dimm_data_size-1);
+	dimm_cur_address = dma_offset & (dimm_data_size-1);
 	size = std::min(size, dimm_data_size - dimm_cur_address);
 	return dimm_data + dimm_cur_address;
 }
@@ -658,14 +658,54 @@ bool GDCartridge::Read(u32 offset, u32 size, void *dst)
 	return true;
 }
 
-std::string GDCartridge::GetGameId()
+void GDCartridge::GetGameId(char *id)
 {
 	if (dimm_data_size < 0x30 + 0x20)
-		return "(ROM too small)";
-	std::string game_id((char *)(dimm_data + 0x30), 0x20);
-	while (!game_id.empty() && game_id.back() == ' ')
-		game_id.pop_back();
-	return game_id;
+		strcpy(id, "(ROM too small)");
+	else
+		cart_trim_id(id, (const char *)dimm_data + 0x30, 0x20);
+}
+
+/* The board's ops: its own, and a NAOMI ROM board's */
+static GDCartridge *gd_of(cartridge *c)
+{
+	return static_cast<GDCartridge *>(c);
+}
+
+static bool gd_init(cartridge *c) { return gd_of(c)->Init(); }
+static void gd_reset(cartridge *c) { gd_of(c)->Reset(); }
+static u32 gd_read_mem(cartridge *c, u32 address, u32 size) { return gd_of(c)->ReadMem(address, size); }
+static void gd_write_mem(cartridge *c, u32 address, u32 data, u32 size) { gd_of(c)->WriteMem(address, data, size); }
+static bool gd_read(cartridge *c, u32 offset, u32 size, void *dst) { return gd_of(c)->Read(offset, size, dst); }
+static void *gd_get_dma_ptr(cartridge *c, u32 *size) { return gd_of(c)->GetDmaPtr(*size); }
+static void gd_game_id(cartridge *c, char *id) { gd_of(c)->GetGameId(id); }
+static void gd_close(cartridge *c) { delete gd_of(c); }
+
+static const cartridge_ops gd_ops = {
+	gd_init,
+	gd_reset,
+	gd_read_mem,
+	gd_write_mem,
+	gd_read,
+	cart_write,
+	cart_get_ptr,
+	gd_get_dma_ptr,
+	naomi_board_advance_ptr,
+	gd_game_id,
+	naomi_board_serialize,
+	naomi_board_unserialize,
+	cart_no_state,
+	cart_no_state,
+	naomi_board_set_key,
+	cart_set_key_data,
+	cart_offset_changed,
+	cart_offset_changed,
+	gd_close
+};
+
+GDCartridge::GDCartridge(u32 size)
+{
+	cart_construct(this, &gd_ops, size);
 }
 
 /* The DIMM board, as its firmware answers the NAOMI (naomi_dimm.c says
@@ -698,6 +738,7 @@ GDCartridge::~GDCartridge()
 {
 	SetDimmBoard(false, false);
 	free(dimm_data);
+	cart_destruct(this);
 }
 
 void GDCartridge::SetDimmBoard(bool on, bool net)
@@ -727,7 +768,7 @@ void GDCartridge::dimm_reset()
 u32 GDCartridge::ReadMem(u32 address, u32 size)
 {
 	if (!dimm_on)
-		return NaomiCartridge::ReadMem(address, size);
+		return naomi_board_read_mem(this, address, size);
 	switch (address & 255)
 	{
 	case 0x3c:	// 5f703c: DIMM COMMAND
@@ -741,7 +782,7 @@ u32 GDCartridge::ReadMem(u32 address, u32 size)
 	case 0x4c:	// 5f704c: DIMM STATUS
 		return DIMM_STATUS & ~(((SB_ISTEXT >> 3) & 1) << 8);
 	default:
-		return NaomiCartridge::ReadMem(address, size);
+		return naomi_board_read_mem(this, address, size);
 	}
 }
 
@@ -749,7 +790,7 @@ void GDCartridge::WriteMem(u32 address, u32 data, u32 size)
 {
 	if (!dimm_on)
 	{
-		NaomiCartridge::WriteMem(address, data, size);
+		naomi_board_write_mem(this, address, data, size);
 		return;
 	}
 	switch (address & 255)
@@ -775,7 +816,7 @@ void GDCartridge::WriteMem(u32 address, u32 data, u32 size)
 			dimm_process();
 		return;
 	default:
-		NaomiCartridge::WriteMem(address, data, size);
+		naomi_board_write_mem(this, address, data, size);
 		return;
 	}
 }
@@ -911,7 +952,7 @@ void GDCartridge::StateBeforeBoard()
 
 static GDCartridge *dimm_cart_current(int net)
 {
-	if (dimm_cart == NULL || dimm_cart != CurrentCartridge || dimm_cart->IsNetBoard() != (net != 0))
+	if (dimm_cart == NULL || static_cast<cartridge *>(dimm_cart) != CurrentCartridge || dimm_cart->IsNetBoard() != (net != 0))
 		return NULL;
 	return dimm_cart;
 }

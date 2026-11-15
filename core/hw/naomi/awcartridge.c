@@ -1,5 +1,5 @@
 /*
- * awcartridge.cpp
+ * awcartridge.c
  *
  *  Created on: Nov 5, 2018
  *      Author: flyinghead
@@ -160,85 +160,32 @@ ROM board internal layouts:
  +--------------+ 0x07ffffff
 
 */
+#include <string.h>
 #include "awcartridge.h"
 #include "awave_regs.h"
 
-u32 AWCartridge::ReadMem(u32 address, u32 size) {
-	switch(address & 255)
-	{
-//	case AW_EPR_OFFSETH_addr:
-//		break;
-//	case AW_EPR_OFFSETL_addr:
-//		break;
-//	case AW_MPR_RECORD_INDEX_addr:
-//		break;
-//	case AW_MPR_FIRST_FILE_INDEX_addr:
-//		break;
-//	case AW_MPR_FILE_OFFSETH_addr:
-//		break;
-//	case AW_MPR_FILE_OFFSETL_addr:
-//		break;
-	case AW_PIO_DATA_addr:
-		{
-			u32 roffset = epr_offset & 0x3ffffff;
-			if (roffset >= (mpr_offset / 2))
-				roffset += mpr_bank * 0x4000000;
-			u16 retval = (RomSize > (roffset * 2)) ? ((u16 *)RomPtr)[roffset] : 0; // not endian-safe?
-			DEBUG_LOG(NAOMI, "AWCART ReadMem %08x: %x\n", address, retval);
-			return retval;
-		}
-	default:
-		INFO_LOG(NAOMI, "Unhandled awcart read %X, %d\n", address, size);
-		return 0xffff;
-	}
-}
+enum { EPR, MPR_RECORD, MPR_FILE };
 
-void AWCartridge::WriteMem(u32 address, u32 data, u32 size)
+typedef struct
 {
-	switch(address & 255)
-	{
-	case AW_EPR_OFFSETH_addr:
-		epr_offset = (epr_offset & 0x0000ffff) | (data << 16);
-		recalc_dma_offset(EPR);
-		break;
+	u8 S0[32];
+	u8 S1[16];
+	u8 S2[16];
+	u8 S3[8];
+} sbox_set;
 
-	case AW_EPR_OFFSETL_addr:
-		epr_offset = (epr_offset & 0xffff0000) | (u16)data;
-		recalc_dma_offset(EPR);
-		break;
+typedef struct
+{
+	cartridge base;
+	u32 rombd_key;
+	u32 mpr_offset, mpr_bank;
+	u32 epr_offset, mpr_file_offset;
+	u16 mpr_record_index, mpr_first_file_index;
+	u16 decrypted_buf[16];
+	u32 dma_offset, dma_limit;
+} aw_cart;
 
-	case AW_MPR_RECORD_INDEX_addr:
-		mpr_record_index = data;
-		recalc_dma_offset(MPR_RECORD);
-		break;
-
-	case AW_MPR_FIRST_FILE_INDEX_addr:
-		mpr_first_file_index = data;
-		recalc_dma_offset(MPR_FILE);
-		break;
-
-	case AW_MPR_FILE_OFFSETH_addr:
-		mpr_file_offset = (mpr_file_offset & 0x0000ffff) | (data << 16);
-		recalc_dma_offset(MPR_FILE);
-		break;
-
-	case AW_MPR_FILE_OFFSETL_addr:
-		mpr_file_offset = (mpr_file_offset & 0xffff0000) | (u16)data;
-		recalc_dma_offset(MPR_FILE);
-		break;
-
-	case AW_PIO_DATA_addr:
-		// write to ROM board address space, including FlashROM programming using CFI (TODO)
-		DEBUG_LOG(NAOMI, "Write to AW_PIO_DATA: %x\n", data);
-		if (epr_offset == 0x7fffff)
-			mpr_bank = data & 3;
-		break;
-
-	default:
-		INFO_LOG(NAOMI, "Unhandled awcart write %X: %d sz %d\n", address, data, size);
-		break;
-	}
-}
+static aw_cart aw;
 
 /*
 We are using 8 bits keys with the following subfields' structure:
@@ -253,8 +200,7 @@ These subfields could be differing from the "real" ones in the following ways:
 - Of course, the way in which we are mixing 3 subfields in one only key is arbitrary too.
 */
 
-
-const u8 AWCartridge::permutation_table[4][16] =
+static const u8 permutation_table[4][16] =
 {
 	{14,1,11,15,7,3,8,13,0,4,2,12,6,10,5,9},
 	{8,10,1,3,7,4,11,2,5,15,6,0,12,13,9,14},
@@ -262,7 +208,7 @@ const u8 AWCartridge::permutation_table[4][16] =
 	{12,7,11,2,0,5,15,6,1,8,14,4,9,13,3,10}
 };
 
-const AWCartridge::sbox_set AWCartridge::sboxes_table[4] =
+static const sbox_set sboxes_table[4] =
 {
 	{
 		{11,8,6,25,2,7,23,28,5,10,21,20,1,26,17,19,14,27,22,30,15,4,9,24,31,3,16,12,0,18,29,13},
@@ -290,164 +236,281 @@ const AWCartridge::sbox_set AWCartridge::sboxes_table[4] =
 	}
 };
 
-const int AWCartridge::xor_table[16] =  // -1 = unknown/unused
+/* -1 = unknown/unused */
+static const int xor_table[16] =
 {
 	0x0000, -1, 0x97CF, 0x4BE3, 0x2255, 0x8DD6, -1, 0xC6A2,	0xA1E8, 0xB3BF, 0x3B1A, 0x547A, -1, 0x935F, -1, -1
 };
 
-static u16 bitswap16(u16 in, const u8* vec)
+static u16 bitswap16(u16 in, const u8 *vec)
 {
-  u16 ret = 0;
-  for (int i = 0; i<16; i++) {
-    ret |= ((in >> vec[i])&0x1)<<(15-i);
-  }
-  return ret;
+	u16 ret = 0;
+	int i;
+	for (i = 0; i < 16; i++)
+		ret |= ((in >> vec[i]) & 0x1) << (15 - i);
+	return ret;
 }
 
-u16 AWCartridge::decrypt(u16 cipherText, u32 address, const u8 key)
+static u16 decrypt(u16 cipherText, u32 address, u8 key)
 {
-	u8 b0,b1,b2,b3;
+	static const u8 addr_swap_vec[] = { 13,5,2, 14,10,9,4, 15,11,6,1, 12,8,7,3,0 };
+	const u8 *pbox = permutation_table[key >> 6];
+	const sbox_set *ss = &sboxes_table[(key >> 4) & 3];
+	u8 text_swap_vec[16];
+	u8 b0, b1, b2, b3;
 	u16 aux;
-	const u8* pbox = permutation_table[key>>6];
-	const sbox_set* ss = &sboxes_table[(key>>4)&3];
+	int i;
 
-	const u8 text_swap_vec[] = {
-			pbox[15],pbox[14],pbox[13],pbox[12],pbox[11],pbox[10],pbox[9],pbox[8],
-			pbox[7],pbox[6],pbox[5],pbox[4],pbox[3],pbox[2],pbox[1],pbox[0] };
+	for (i = 0; i < 16; i++)
+		text_swap_vec[i] = pbox[15 - i];
 	aux = bitswap16(cipherText, text_swap_vec);
-	const u8 addr_swap_vec[] = { 13,5,2, 14,10,9,4, 15,11,6,1, 12,8,7,3,0 };
 	aux = aux ^ bitswap16((u16)address, addr_swap_vec);
 
-	b0 = aux&0x1f;
-	b1 = (aux>>5)&0xf;
-	b2 = (aux>>9)&0xf;
-	b3 = aux>>13;
+	b0 = aux & 0x1f;
+	b1 = (aux >> 5) & 0xf;
+	b2 = (aux >> 9) & 0xf;
+	b3 = aux >> 13;
 
 	b0 = ss->S0[b0];
 	b1 = ss->S1[b1];
 	b2 = ss->S2[b2];
 	b3 = ss->S3[b3];
 
-	return ((b3<<13)|(b2<<9)|(b1<<5)|b0)^xor_table[key&0xf];
+	return (u16)(((b3 << 13) | (b2 << 9) | (b1 << 5) | b0) ^ xor_table[key & 0xf]);
 }
 
-
-bool AWCartridge::Init()
+static u16 decrypt16(const aw_cart *a, u32 address)
 {
-	mpr_offset = decrypt16(0x58/2) | (decrypt16(0x5a/2) << 16);
-	INFO_LOG(NAOMI, "AWCartridge::SetKey rombd_key %02x mpr_offset %08x\n", rombd_key, mpr_offset);
-	device_reset();
-	return true;
+	const cartridge *c = &a->base;
+	return decrypt(((const u16 *)c->rom_ptr)[address % (c->rom_size / 2)], address, (u8)a->rombd_key);
 }
 
-void AWCartridge::SetKey(u32 key)
+static void device_reset(aw_cart *a)
 {
-	rombd_key = key;
+	a->epr_offset = 0;
+	a->mpr_record_index = 0;
+	a->mpr_first_file_index = 0;
+	a->mpr_file_offset = 0;
+	a->mpr_bank = 0;
+	a->dma_offset = 0;
+	a->dma_limit = 0;
 }
 
-void AWCartridge::device_reset()
+static void recalc_dma_offset(aw_cart *a, int mode)
 {
-	epr_offset = 0;
-	mpr_record_index = 0;
-	mpr_first_file_index = 0;
-	mpr_file_offset = 0;
-	mpr_bank = 0;
-
-	dma_offset = 0;
-	dma_limit  = 0;
-}
-
-void AWCartridge::recalc_dma_offset(int mode)
-{
-	switch(mode) {
+	const u32 rom_size = a->base.rom_size;
+	switch (mode)
+	{
 	case EPR:
-		dma_offset = epr_offset * 2;
-		dma_limit  = mpr_offset;
+		a->dma_offset = a->epr_offset * 2;
+		a->dma_limit = a->mpr_offset;
 		break;
 
 	case MPR_RECORD:
-		dma_offset = mpr_offset + mpr_record_index * 0x40;
-		dma_limit = std::min((u32)0x8000000, RomSize);
+		a->dma_offset = a->mpr_offset + a->mpr_record_index * 0x40;
+		a->dma_limit = rom_size < 0x8000000 ? rom_size : 0x8000000;
 		break;
 
-	case MPR_FILE: {
-		u32 filedata_offs = (mpr_bank * 0x8000000 + mpr_offset + mpr_first_file_index * 0x40 + 8) / 2;
-		dma_offset = decrypt16(filedata_offs) | (decrypt16(filedata_offs + 1) << 16);
-		dma_offset = (mpr_offset + dma_offset + mpr_file_offset * 2) & 0x7ffffff;
-		dma_limit  = std::min((uint32_t)0x8000000, RomSize);
+	case MPR_FILE:
+		{
+			const u32 filedata_offs = (a->mpr_bank * 0x8000000 + a->mpr_offset + a->mpr_first_file_index * 0x40 + 8) / 2;
+			a->dma_offset = decrypt16(a, filedata_offs) | ((u32)decrypt16(a, filedata_offs + 1) << 16);
+			a->dma_offset = (a->mpr_offset + a->dma_offset + a->mpr_file_offset * 2) & 0x7ffffff;
+			a->dma_limit = rom_size < 0x8000000 ? rom_size : 0x8000000;
+		}
 		break;
 	}
+
+	if (a->dma_offset >= a->mpr_offset)
+	{
+		const u32 bank_base = a->mpr_bank * 0x8000000;
+		a->dma_offset += bank_base;
+		a->dma_limit += bank_base;
+		if (a->dma_limit > rom_size)
+			a->dma_limit = rom_size;
 	}
+}
 
-	if (dma_offset >= mpr_offset) {
-		u32 bank_base = mpr_bank * 0x8000000;
-		dma_offset += bank_base;
-		dma_limit = std::min(dma_limit + bank_base, RomSize);
+static u32 aw_read_mem(cartridge *c, u32 address, u32 size)
+{
+	switch (address & 255)
+	{
+	case AW_PIO_DATA_addr:
+		{
+			u32 roffset = aw.epr_offset & 0x3ffffff;
+			u16 retval;
+			if (roffset >= (aw.mpr_offset / 2))
+				roffset += aw.mpr_bank * 0x4000000;
+			retval = (c->rom_size > (roffset * 2)) ? ((const u16 *)c->rom_ptr)[roffset] : 0;
+			DEBUG_LOG(NAOMI, "AWCART ReadMem %08x: %x\n", address, retval);
+			return retval;
+		}
+	default:
+		INFO_LOG(NAOMI, "Unhandled awcart read %X, %d\n", address, size);
+		return 0xffff;
 	}
 }
 
-void *AWCartridge::GetDmaPtr(u32 &size)
+static void aw_write_mem(cartridge *c, u32 address, u32 data, u32 size)
 {
-	size = std::min(std::min(size, 32u), dma_limit - dma_offset);
-	u32 offset = dma_offset / 2;
-	for (u32 i = 0; i < size / 2; i++)
-		decrypted_buf[i] = decrypt16(offset + i);
+	(void)c;
+	switch (address & 255)
+	{
+	case AW_EPR_OFFSETH_addr:
+		aw.epr_offset = (aw.epr_offset & 0x0000ffff) | (data << 16);
+		recalc_dma_offset(&aw, EPR);
+		break;
 
-//	printf("AWCART Decrypted data @ %08x:\n", dma_offset);
-//	for (int i = 0; i < 16; i++)
-//	{
-//		printf("%c %c ", decrypted_buf[i] & 0xff, decrypted_buf[i] >> 8);
-//		if ((i + 1) % 8 == 0)
-//			printf("\n");
-//	}
+	case AW_EPR_OFFSETL_addr:
+		aw.epr_offset = (aw.epr_offset & 0xffff0000) | (u16)data;
+		recalc_dma_offset(&aw, EPR);
+		break;
 
-	return decrypted_buf;
+	case AW_MPR_RECORD_INDEX_addr:
+		aw.mpr_record_index = (u16)data;
+		recalc_dma_offset(&aw, MPR_RECORD);
+		break;
+
+	case AW_MPR_FIRST_FILE_INDEX_addr:
+		aw.mpr_first_file_index = (u16)data;
+		recalc_dma_offset(&aw, MPR_FILE);
+		break;
+
+	case AW_MPR_FILE_OFFSETH_addr:
+		aw.mpr_file_offset = (aw.mpr_file_offset & 0x0000ffff) | (data << 16);
+		recalc_dma_offset(&aw, MPR_FILE);
+		break;
+
+	case AW_MPR_FILE_OFFSETL_addr:
+		aw.mpr_file_offset = (aw.mpr_file_offset & 0xffff0000) | (u16)data;
+		recalc_dma_offset(&aw, MPR_FILE);
+		break;
+
+	case AW_PIO_DATA_addr:
+		/* write to ROM board address space, including FlashROM programming
+		 * using CFI (TODO) */
+		DEBUG_LOG(NAOMI, "Write to AW_PIO_DATA: %x\n", data);
+		if (aw.epr_offset == 0x7fffff)
+			aw.mpr_bank = data & 3;
+		break;
+
+	default:
+		INFO_LOG(NAOMI, "Unhandled awcart write %X: %d sz %d\n", address, data, size);
+		break;
+	}
 }
 
-void AWCartridge::AdvancePtr(u32 size)
+static bool aw_init(cartridge *c)
 {
-	dma_offset += size;
+	(void)c;
+	aw.mpr_offset = decrypt16(&aw, 0x58 / 2) | ((u32)decrypt16(&aw, 0x5a / 2) << 16);
+	INFO_LOG(NAOMI, "AWCartridge::SetKey rombd_key %02x mpr_offset %08x\n", aw.rombd_key, aw.mpr_offset);
+	device_reset(&aw);
+	return true;
 }
 
-std::string AWCartridge::GetGameId()
+static void aw_reset(cartridge *c)
 {
-	if (RomSize < 0x30 + 0x20)
-		return "(ROM too small)";
+	(void)c;
+	device_reset(&aw);
+}
 
-	dma_offset = 0x30;
+static void aw_set_key(cartridge *c, u32 key)
+{
+	(void)c;
+	aw.rombd_key = key;
+}
+
+static void *aw_get_dma_ptr(cartridge *c, u32 *size)
+{
+	u32 offset, i;
+	(void)c;
+	if (*size > 32)
+		*size = 32;
+	if (*size > aw.dma_limit - aw.dma_offset)
+		*size = aw.dma_limit - aw.dma_offset;
+	offset = aw.dma_offset / 2;
+	for (i = 0; i < *size / 2; i++)
+		aw.decrypted_buf[i] = decrypt16(&aw, offset + i);
+	return aw.decrypted_buf;
+}
+
+static void aw_advance_ptr(cartridge *c, u32 size)
+{
+	(void)c;
+	aw.dma_offset += size;
+}
+
+static void aw_game_id(cartridge *c, char *id)
+{
 	u32 limit = 0x20;
-	char *name = (char *)GetDmaPtr(limit);
-	std::string game_id(name, limit);
-	while (!game_id.empty() && game_id.back() == ' ')
-		game_id.pop_back();
-	return game_id;
+	const char *name;
+	if (c->rom_size < 0x30 + 0x20)
+	{
+		strcpy(id, "(ROM too small)");
+		return;
+	}
+	aw.dma_offset = 0x30;
+	name = (const char *)aw_get_dma_ptr(c, &limit);
+	cart_trim_id(id, name, limit);
 }
 
-void AWCartridge::Serialize(void **data, unsigned int *total_size)
+static void aw_serialize(cartridge *c, void **data, unsigned int *total_size)
 {
-	LIBRETRO_S(mpr_offset);
-	LIBRETRO_S(mpr_bank);
-	LIBRETRO_S(epr_offset);
-	LIBRETRO_S(mpr_file_offset);
-	LIBRETRO_S(mpr_record_index);
-	LIBRETRO_S(mpr_first_file_index);
-	LIBRETRO_S(dma_offset);
-	LIBRETRO_S(dma_limit);
-	Cartridge::Serialize(data, total_size);
+	(void)c;
+	LIBRETRO_S(aw.mpr_offset);
+	LIBRETRO_S(aw.mpr_bank);
+	LIBRETRO_S(aw.epr_offset);
+	LIBRETRO_S(aw.mpr_file_offset);
+	LIBRETRO_S(aw.mpr_record_index);
+	LIBRETRO_S(aw.mpr_first_file_index);
+	LIBRETRO_S(aw.dma_offset);
+	LIBRETRO_S(aw.dma_limit);
 }
 
-void AWCartridge::Unserialize(void **data, unsigned int *total_size)
+static void aw_unserialize(cartridge *c, void **data, unsigned int *total_size)
 {
-	LIBRETRO_US(mpr_offset);
-	LIBRETRO_US(mpr_bank);
-	// (two bits of what the game writes: more would take a read of the
-	// ROMs' words past the end of them)
-	mpr_bank &= 3;
-	LIBRETRO_US(epr_offset);
-	LIBRETRO_US(mpr_file_offset);
-	LIBRETRO_US(mpr_record_index);
-	LIBRETRO_US(mpr_first_file_index);
-	LIBRETRO_US(dma_offset);
-	LIBRETRO_US(dma_limit);
-	Cartridge::Unserialize(data, total_size);
+	(void)c;
+	LIBRETRO_US(aw.mpr_offset);
+	LIBRETRO_US(aw.mpr_bank);
+	/* (two bits of what the game writes: more would take a read of the
+	 * ROMs' words past the end of them) */
+	aw.mpr_bank &= 3;
+	LIBRETRO_US(aw.epr_offset);
+	LIBRETRO_US(aw.mpr_file_offset);
+	LIBRETRO_US(aw.mpr_record_index);
+	LIBRETRO_US(aw.mpr_first_file_index);
+	LIBRETRO_US(aw.dma_offset);
+	LIBRETRO_US(aw.dma_limit);
+}
+
+static const cartridge_ops aw_ops = {
+	aw_init,
+	aw_reset,
+	aw_read_mem,
+	aw_write_mem,
+	cart_read,
+	cart_write,
+	cart_get_ptr,
+	aw_get_dma_ptr,
+	aw_advance_ptr,
+	aw_game_id,
+	aw_serialize,
+	aw_unserialize,
+	cart_no_state,
+	cart_no_state,
+	aw_set_key,
+	cart_set_key_data,
+	cart_offset_changed,
+	cart_offset_changed,
+	cart_destruct
+};
+
+cartridge *aw_cart_open(u32 size)
+{
+	cart_construct(&aw.base, &aw_ops, size);
+	aw.rombd_key = 0;
+	aw.mpr_offset = 0;
+	device_reset(&aw);
+	return &aw.base;
 }

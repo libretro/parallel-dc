@@ -13,73 +13,21 @@
 #define CORE_HW_NAOMI_M4CARTRIDGE_H_
 
 #include "naomi_cart.h"
-#include "naomi_regs.h"
 
-class M4Cartridge: public NaomiCartridge {
-public:
-	M4Cartridge(u32 size) : NaomiCartridge(size) { }
-	~M4Cartridge();
+#ifdef __cplusplus
+extern "C" {
+#endif
 
-	virtual bool Init() override
-	{
-		device_start();
-		device_reset();
-		return true;
-	}
-	virtual void Reset() override
-	{
-		NaomiCartridge::Reset();
-		device_reset();
-	}
-
-	virtual u32 ReadMem(u32 address, u32 size) override
-	{
-		if ((address & 0xff) == 0x34)
-			return m4id & 0xff80;
-
-		u32 data = NaomiCartridge::ReadMem(address, size);
-
-		if ((address & 0xff) == (NAOMI_ROM_OFFSETH_addr & 0xff))
-			// indicates that security PIC is present
-			data |= 0x2000;
-
-		return data;
-	}
-	virtual bool Read(u32 offset, u32 size, void *dst) override;
-	virtual bool Write(u32 offset, u32 size, u32 data) override;
-
-	virtual void* GetDmaPtr(u32 &size) override;
-	virtual void AdvancePtr(u32 size) override;
-	virtual std::string GetGameId() override;
-	virtual void Serialize(void** data, unsigned int* total_size) override;
-	virtual void Unserialize(void** data, unsigned int* total_size) override;
-
-	void SetKey(u32 key) override { this->m4id = key; }
-	void SetKeyData(u8 *key_data) override { this->m_key_data = key_data; }
-
-protected:
-	virtual void DmaOffsetChanged(u32 dma_offset) override;
-	virtual void PioOffsetChanged(u32 pio_offset) override;
-
-private:
-	void device_start();
-	void device_reset();
-
-	static const u8 k_sboxes[4][16];
-
+/* An M4 board: ROMs read through its stream cipher, and a flash's CFI
+ * table. (The System SP's ROM board is one, and more: systemsp.cpp.) */
+typedef struct m4_cart
+{
+	cartridge base;
 	u16 m4id;
-	u8 *m_key_data = NULL;			// 2048 bytes
-	u16 subkey1 = 0;
-	u16 subkey2 = 0;
+	u8 *key_data;			/* 2048 bytes */
+	u16 subkey1;
+	u16 subkey2;
 	u16 one_round[0x10000];
-
-	// How much is decoded ahead of what is read: a transfer moves this much
-	// at a time, so nothing is left over to be moved down the buffer, and a
-	// word read through the data register moves 1 KB down and not 32. (The
-	// buffer is 32 KB, as the save states have it, and an older state's is
-	// full: that is read to its end before any more is decoded.)
-	enum { BUFFER_FILL = 1024 };
-
 	u8 buffer[32768];
 	u32 rom_cur_address, buffer_actual_size;
 	u16 iv;
@@ -87,11 +35,33 @@ private:
 	bool encryption;
 	bool cfi_mode;
 	bool xfer_ready;
+} m4_cart;
 
-	void enc_init();
-	void enc_reset();
-	void enc_fill();
-	u16 decrypt_one_round(u16 word, u16 subkey);
-};
+/* NULL: no memory for its ROMs */
+cartridge *m4_cart_open(u32 size);
+
+/* For a board that is an M4 board and more: one with @ops, @size bytes of
+ * ROM; and released */
+void m4_cart_construct(m4_cart *m, const cartridge_ops *ops, u32 size);
+void m4_cart_destruct(cartridge *c);
+/* What an M4 board does, for a board that does it too */
+bool m4_cart_init(cartridge *c);
+void m4_cart_reset(cartridge *c);
+u32 m4_cart_read_mem(cartridge *c, u32 address, u32 size);
+bool m4_cart_read(cartridge *c, u32 offset, u32 size, void *dst);
+bool m4_cart_write(cartridge *c, u32 offset, u32 size, u32 data);
+void *m4_cart_get_dma_ptr(cartridge *c, u32 *size);
+void m4_cart_advance_ptr(cartridge *c, u32 size);
+void m4_cart_game_id(cartridge *c, char *id);
+void m4_cart_serialize(cartridge *c, void **data, unsigned int *total_size);
+void m4_cart_unserialize(cartridge *c, void **data, unsigned int *total_size);
+void m4_cart_set_key(cartridge *c, u32 key);
+void m4_cart_set_key_data(cartridge *c, u8 *key_data);
+void m4_cart_dma_offset_changed(cartridge *c, u32 dma_offset);
+void m4_cart_pio_offset_changed(cartridge *c, u32 pio_offset);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* CORE_HW_NAOMI_M4CARTRIDGE_H_ */

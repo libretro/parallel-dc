@@ -41,7 +41,9 @@ name: Headless
 # touch panel on it (tools/naomi/scif_touch_run.sh), and the hopper boards
 # (tools/naomi/hopper_run.sh), card readers (tools/naomi/card_reader_run.sh)
 # and the System SP's IC card reader (tools/naomi/dinokich_run.sh), RFID
-# readers and touchscreen (tools/naomi/sp_serial_run.sh),
+# readers and touchscreen (tools/naomi/sp_serial_run.sh), and the
+# cartridges' ROM boards, M1, M2, M4, AtomisWave and flat
+# (tools/naomi/cart_run.sh),
 # and the paths the core writes to, a
 # content's name of any length included (tools/paths/paths_run.sh), and the
 # HLE BIOS's GD-ROM transfers stopped at a fault and made again
@@ -251,6 +253,10 @@ jobs:
         run: |
           sh tools/naomi/sp_serial_run.sh
           sh tools/naomi/sp_serial_run.sh -fsanitize=address,undefined -fno-sanitize-recover=all
+      - name: The cartridges' ROM boards, M1, M2, M4, AtomisWave and flat, their registers, transfers, ciphers, names and part of a state (and with the sanitizers)
+        run: |
+          sh tools/naomi/cart_run.sh
+          sh tools/naomi/cart_run.sh -fsanitize=address,undefined -fno-sanitize-recover=all
       - name: The paths the core writes to, a content's name of any length (and with the sanitizers)
         run: |
           sh tools/paths/paths_run.sh

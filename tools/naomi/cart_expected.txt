@@ -1,0 +1,229 @@
+flat
+  init 1
+  id [  THE GAME]
+  regs 0 0 0 0 ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff 0 0 0 0 1 1 ffff ffff ffff ffff ffff ffff ffff ffff 1 0 ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff
+  dimm process 1e03 1234 5678 9abc
+  cancel interrupt 103
+  game id write ffff
+  regs 0 0 0 0 2345 ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff 1234 5678 9abc 1 1 1 ffff ffff ffff ffff ffff ffff ffff ffff 1 8000 ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff
+  write 0
+  read 1 ffffffff
+  pio db2b e41a 4011 78 52c3 e051 2f4e 91 ffff ffff ffff ffff
+  pio 2020 2020 2020 2020
+  dma 700 4a726787
+  dma 700 f6a50133
+  dma 200 3f2d6fb1
+  dma 0 00000000
+  dma 100 c0a9c4df
+  state 13 cceb8b19
+  dma 100 a140d65b
+  state read 13
+  dma 100 a140d65b
+  regs 0 40 0 3200 2345 ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff 1234 5678 9abc 1 1 1 ffff ffff ffff ffff ffff ffff ffff ffff 1 0 ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff
+  regs 0 0 0 0 ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff 1234 5678 9abc 1 1 1 ffff ffff ffff ffff ffff ffff ffff ffff 1 8000 ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff
+  ptr 0 4
+  ptr 1 4
+  mapping released (20000 bytes)
+archived
+  init 1
+  id [  THE GAME]
+  regs 0 0 0 0 ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff 1234 5678 9abc 1 1 1 ffff ffff ffff ffff ffff ffff ffff ffff 1 0 ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff
+  dimm process 1e03 1234 5678 9abc
+  cancel interrupt 103
+  game id write ffff
+  regs 0 0 0 0 2345 ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff 1234 5678 9abc 1 1 1 ffff ffff ffff ffff ffff ffff ffff ffff 1 8000 ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff
+  write 0
+  read 1 ffffffff
+  pio db2b e41a 4011 78 52c3 e051 2f4e 91 ffff ffff ffff ffff
+  pio 2020 2020 2020 2020
+  dma 700 4a726787
+  dma 700 f6a50133
+  dma 200 3f2d6fb1
+  dma 0 00000000
+  dma 100 c0a9c4df
+  state 13 cceb8b19
+  dma 100 a140d65b
+  state read 13
+  dma 100 a140d65b
+  regs 0 40 0 3200 2345 ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff 1234 5678 9abc 1 1 1 ffff ffff ffff ffff ffff ffff ffff ffff 1 0 ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff
+  regs 0 0 0 0 ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff 1234 5678 9abc 1 1 1 ffff ffff ffff ffff ffff ffff ffff ffff 1 8000 ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff
+  ptr 0 4
+  ptr 1 4
+  archive closed
+m2
+  init 1
+  id [M2 GAME]
+  regs 0 0 0 0 ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff 1234 5678 9abc 1 1 1 ffff ffff ffff ffff ffff ffff ffff ffff 1 0 ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff
+  dimm process 1e03 1234 5678 9abc
+  cancel interrupt 103
+  game id write ffff
+  regs 0 0 0 0 2345 ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff 1234 5678 9abc 1 1 1 ffff ffff ffff ffff ffff ffff ffff ffff 1 8000 ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff
+  write 0
+  read 1 ffffffff
+  pio a1dd cd9a 8478 979f
+  pio a1dd cd9a 8478 979f
+  pio ffff ffff ffff ffff
+  dma 80 cf7e266a
+  dma 80 dc7a36c8
+  dma 80 4a8706a3
+  pio b07e
+  dma 80 cf7e266a
+  dma 80 dc7a36c8
+  dma 80 789440e4
+  dma 10 aba426a2
+  dma 0 00000000
+  decrypt bc24 31af 7ab2 1c50 da1a 579a 7a7d 3bfe
+  bad read 0 0
+  decrypt bc24 31af 7ab2 1c50 da1a 579a 7a7d 3bfe
+  state 65549 9fe55341
+  v21 558 e529b3c1
+  again 9432 9432
+  state read 65549
+  decrypt bc24 31af 7ab2 1c50
+  regs 0 0 0 0 ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff 1234 5678 9abc 1 1 1 ffff ffff ffff ffff ffff ffff ffff ffff 1 0 ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff
+  id [M2 GAME]
+m1
+  init 1
+  id [M1 GAME]
+  regs 0 0 0 0 0 ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff 1234 5678 9abc 1 1 1 ffff ffff ffff ffff ffff ffff ffff ffff 1 8000 ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff
+  dimm process 1e03 1234 5678 9abc
+  cancel interrupt 103
+  game id write ffff
+  regs 0 0 0 0 0 ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff 1234 5678 9abc 1 1 1 ffff ffff ffff ffff ffff ffff ffff ffff 1 0 ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff
+  write 0
+  read 1 ffffffff
+  dma 400 153180e3
+  dma 400 1f116dc5
+  dma 400 1f116dc5
+  dma 180 25e26bc5
+  dma 180 25e26bc5
+  dma 180 25e26bc5
+  dma 400 6f8d5967
+  dma 400 1f116dc5
+  dma 400 1f116dc5
+  dma 300 783e0ca0
+  dma 300 f59c39c5
+  state 32917 ebfe41f3
+  dma 300 f59c39c5
+  dma 300 f59c39c5
+  state read 32917
+  dma 300 f59c39c5
+  dma 300 f59c39c5
+  dma 200 c4f270b1
+  dma 200 45422ab1
+  dma 80 5001d538
+  state 32917 9f95d743
+  state read 32917
+  state 32917 638e78a4
+  dma 100 e6a1d1c5
+  dma 100 e6a1d1c5
+  dma 7e00 d89c35c5
+  dma 400 1f116dc5
+  regs 0 0 0 0 0 ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff 1234 5678 9abc 1 1 1 ffff ffff ffff ffff ffff ffff ffff ffff 1 8000 ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff
+  dma 100 b98c8ab5
+  dma 400 f89b4a32
+  dma 400 1f116dc5
+  dma 400 1f116dc5
+  dma 3ff 1dc1ca47
+  dma 3ff 1dc1ca47
+  dma 400 661d815d
+  dma 400 1f116dc5
+  dma 400 1f116dc5
+  dma 3ff 1dc1ca47
+  dma 3ff 1dc1ca47
+  dma 400 3c732648
+  dma 400 1f116dc5
+  dma 400 1f116dc5
+  dma 3ff 1dc1ca47
+  dma 3ff 1dc1ca47
+  dma 400 0b1ca364
+  dma 400 1f116dc5
+  dma 400 1f116dc5
+  dma 3ff 1dc1ca47
+  dma 3ff 1dc1ca47
+  dma 400 e4e65313
+  dma 400 1f116dc5
+  dma 400 1f116dc5
+  dma 3ff 1dc1ca47
+  dma 3ff 1dc1ca47
+  dma 400 33df866c
+  dma 400 1f116dc5
+  dma 400 1f116dc5
+  dma 3ff 1dc1ca47
+  dma 3ff 1dc1ca47
+  dma 400 7d0e07b9
+  dma 400 a31b90e1
+  dma 400 4ff9f8b9
+  dma 3fe 4322101c
+  dma 3fe a122ee6a
+  dma 3fe 745454fd
+  dma 400 1f116dc5
+  dma 400 1f116dc5
+  id [(ROM too small)]
+m4
+  init 1
+  id [\xeay:\x9d\xf8.\x1a29\xc2?Z\x9e\x9d"jV\x86r=\xa8\xb7:\x15u\xd5'Y>Rlw]
+  regs 2000 0 0 0 ffff ffff ffff ffff ffff ffff ffff ffff 5580 ffff ffff 1234 5678 9abc 1 1 1 ffff ffff ffff ffff ffff ffff ffff ffff 1 0 ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff
+  dimm process 1e03 1234 5678 9abc
+  cancel interrupt 103
+  game id write ffff
+  regs 2000 0 0 0 2345 ffff ffff ffff ffff ffff ffff ffff 5580 ffff ffff 1234 5678 9abc 1 1 1 ffff ffff ffff ffff ffff ffff ffff ffff 1 8000 ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff
+  write 1
+  read 1 ffffffff
+  pio f6fd cfae af6c c83d
+  pio bd76 420d 914d 9c8c 3357 97b7 31d2 ee66
+  pio ecbd ecbd ecbd ecbd
+  dma 400 5c0d6153
+  dma 400 fddca8ff
+  dma 400 24dcd5ae
+  dma 37e 250ee888
+  dma 37e a36868d2
+  pio f6fd
+  dma 10 efe68f60
+  dma 2 117697cd
+  dma 2 117697cd
+  pio 51 52 59 2 0 40
+  pio 0
+  pio ffff
+  dma 2 cafd29b4
+  dma 2 3d0498ef
+  dma 2 117697cd
+  pio f52b f52b
+  pio bcb6 5e2 934c
+  state 32795 eaeeb29e
+  pio f429 cfb4 8dc6
+  state read 32795
+  pio 170e
+  state read 32795
+  state 32795 40cd31da
+  dma 8000 3027b2b8
+  state read 32795
+  state 32795 2510ed3f
+  dma 100 cd92515d
+  regs 2000 0 0 0 ffff ffff ffff ffff ffff ffff ffff ffff 5580 ffff ffff 1234 5678 9abc 1 1 1 ffff ffff ffff ffff ffff ffff ffff ffff 1 0 ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff
+  id [\xeay:\x9d\xf8.\x1a29\xc2?Z\x9e\x9d"jV\x86r=\xa8\xb7:\x15u\xd5'Y>Rlw]
+  id [M4 PLAIN]
+aw
+  init 1
+  id [k2\xfa:?\xaf"`F\xe0\xfd\x8d\xcc\xb7?W\xce`\xe7\xa29.L{\xf1\x19\x18/\xff\x1b\xdfB]
+  regs ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff
+  dma 20 cd2fbe19
+  dma 20 c4982683
+  dma 20 4cbff8df
+  pio 1d60
+  dma 20 de8d6b78
+  dma 20 3e0634a1
+  dma 20 e07399db
+  dma 20 cf28f6df
+  pio 0
+  dma 20 72324967
+  dma 20 4e940789
+  state 28 a3174bf3
+  state read 28
+  dma 20 5bc41180
+  state read 28
+  state 28 f28d4956
+  dma 20 3d8e161a
+  dma 0 811c9dc5
+  id [k2\xfa:?\xaf"`F\xe0\xfd\x8d\xcc\xb7?W\xce`\xe7\xa29.L{\xf1\x19\x18/\xff\x1b\xdfB]
+done

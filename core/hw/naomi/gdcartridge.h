@@ -16,30 +16,31 @@
 #include "naomi_cart.h"
 #include "imgread/common.h"
 
-class GDCartridge: public NaomiCartridge {
+#include <string>
+
+/* A NAOMI's DIMM board, and the GD-ROM it loads the game from */
+class GDCartridge: public cartridge {
 public:
-	GDCartridge(u32 size) : NaomiCartridge(size)
-	{
-	}
+	GDCartridge(u32 size);
 	~GDCartridge();
-	virtual bool Init() override
+	bool Init()
 	{
 		if (!device_start())
 			return false;
 		device_reset();
 		return true;
 	}
-	virtual void Reset() override
+	void Reset()
 	{
-		NaomiCartridge::Reset();
+		naomi_board_reset(this);
 		device_reset();
 		dimm_reset();
 	}
-	virtual u32 ReadMem(u32 address, u32 size) override;
-	virtual void WriteMem(u32 address, u32 data, u32 size) override;
-	virtual void* GetDmaPtr(u32 &size) override;
-	virtual bool Read(u32 offset, u32 size, void* dst) override;
-	virtual std::string GetGameId() override;
+	u32 ReadMem(u32 address, u32 size);
+	void WriteMem(u32 address, u32 data, u32 size);
+	void* GetDmaPtr(u32 &size);
+	bool Read(u32 offset, u32 size, void* dst);
+	void GetGameId(char *id);
 
 	void SetGDRomName(const char *name) { this->gdrom_name = name; }
 	// The board answers as a DIMM board at 5f703c-5f704c: the plain one

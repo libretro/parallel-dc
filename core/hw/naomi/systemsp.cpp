@@ -20,6 +20,7 @@
 // license:BSD-3-Clause
 // copyright-holders:David Haywood, MetalliC
 #include <streams/file_stream.h>
+#include <compat/strl.h>
 #include "systemsp.h"
 #include "dinokich.h"
 #include "naomi_cart.h"
@@ -901,7 +902,7 @@ void AT93C46SerialEeprom::unserialize(void **data, unsigned int *total_size)
 }
 
 //
-// The cartridge's cipher, as M4Cartridge has it: a round of it for every
+// The cartridge's cipher, as the M4 board has it (m4cartridge.c): a round of it for every
 // 16-bit word, once for the cartridge's whole life.
 //
 static const u8 k_sboxes[4][16] = {
@@ -1418,9 +1419,48 @@ void SystemSpCart::ataReady()
 	updateInterrupt(INT_ATA);
 }
 
-SystemSpCart::SystemSpCart(u32 size, const char *gameName, const char *mediaName, const char *parentName)
-	: M4Cartridge(size), gameName(gameName), mediaName(mediaName), parentName(parentName), uart1(this, 1), uart2(this, 2)
+/* The board's ops: its own, and an M4 board's */
+static SystemSpCart *sp_of(cartridge *c)
 {
+	return static_cast<SystemSpCart *>(reinterpret_cast<m4_cart *>(c));
+}
+
+static bool sp_init(cartridge *c) { return sp_of(c)->Init(); }
+static void sp_reset(cartridge *c) { sp_of(c)->Reset(); }
+static u32 sp_read_mem(cartridge *c, u32 address, u32 size) { return sp_of(c)->ReadMem(address, size); }
+static void sp_write_mem(cartridge *c, u32 address, u32 data, u32 size) { sp_of(c)->WriteMem(address, data, size); }
+static bool sp_read(cartridge *c, u32 offset, u32 size, void *dst) { return sp_of(c)->Read(offset, size, dst); }
+static bool sp_write(cartridge *c, u32 offset, u32 size, u32 data) { return sp_of(c)->Write(offset, size, data); }
+static void sp_game_id(cartridge *c, char *id) { sp_of(c)->GetGameId(id); }
+static void sp_set_key_data(cartridge *c, u8 *key_data) { sp_of(c)->SetKeyData(key_data); }
+static void sp_close(cartridge *c) { delete sp_of(c); }
+
+static const cartridge_ops systemsp_ops = {
+	sp_init,
+	sp_reset,
+	sp_read_mem,
+	sp_write_mem,
+	sp_read,
+	sp_write,
+	cart_get_ptr,
+	m4_cart_get_dma_ptr,
+	m4_cart_advance_ptr,
+	sp_game_id,
+	m4_cart_serialize,
+	m4_cart_unserialize,
+	cart_no_state,
+	cart_no_state,
+	m4_cart_set_key,
+	sp_set_key_data,
+	m4_cart_dma_offset_changed,
+	m4_cart_pio_offset_changed,
+	sp_close
+};
+
+SystemSpCart::SystemSpCart(u32 size, const char *gameName, const char *mediaName, const char *parentName)
+	: gameName(gameName), mediaName(mediaName), parentName(parentName), uart1(this, 1), uart2(this, 2)
+{
+	m4_cart_construct(this, &systemsp_ops, size);
 	retro_atomic_int_init(&eepromFailed, 0);
 	encInit();
 	ataSchedId = sh4_sched_register(0, ataSchedCallback);
@@ -1462,6 +1502,12 @@ SystemSpCart::~SystemSpCart()
 	if (chd != nullptr)
 		chd_image_close(chd);
 	Instance = nullptr;
+	m4_cart_destruct(&base);
+}
+
+cartridge *SystemSpCart::Open(u32 size, const char *gameName, const char *mediaName, const char *parentName)
+{
+	return &(new SystemSpCart(size, gameName, mediaName, parentName))->base;
 }
 
 void SystemSpCart::SetKeyData(u8 *key_data)
@@ -1471,7 +1517,7 @@ void SystemSpCart::SetKeyData(u8 *key_data)
 		subkey1 = (key_data[0x5e2] << 8) | key_data[0x5e0];
 		subkey2 = (key_data[0x5e6] << 8) | key_data[0x5e4];
 	}
-	M4Cartridge::SetKeyData(key_data);
+	m4_cart_set_key_data(&base, key_data);
 }
 
 std::string SystemSpCart::savePath(const char *suffix) const
@@ -1709,7 +1755,7 @@ private:
 
 bool SystemSpCart::Init()
 {
-	M4Cartridge::Init();
+	m4_cart_init(&base);
 
 	// The ROM board's battery-backed SRAM is 128 KB, a NAOMI's 32: it is
 	// the machine's (sys_nvmem_sram), saved to its file and in the state as
@@ -1738,23 +1784,23 @@ bool SystemSpCart::Init()
 		RFILE *f = filestream_open(savePath(".flash").c_str(), RETRO_VFS_FILE_ACCESS_READ, RETRO_VFS_FILE_ACCESS_HINT_NONE);
 		if (f != nullptr)
 		{
-			if (filestream_get_size(f) == (int64_t)RomSize
-					&& filestream_read(f, RomPtr, RomSize) == (int64_t)RomSize)
+			if (filestream_get_size(f) == (int64_t)base.rom_size
+					&& filestream_read(f, base.rom_ptr, base.rom_size) == (int64_t)base.rom_size)
 				INFO_LOG(NAOMI, "System SP: flash loaded from %s\n", savePath(".flash").c_str());
 			else
-				memset(RomPtr, 0xff, RomSize);
+				memset(base.rom_ptr, 0xff, base.rom_size);
 			filestream_close(f);
 		}
 	}
-	else if (RomSize >= 0x500)
+	else if (base.rom_size >= 0x500)
 	{
-		memcpy(bootId.get(), RomPtr, 0x500);
-		if (memcmp(RomPtr, "NAOMI", 5) && memcmp(RomPtr, "Naomi2", 6) && memcmp(RomPtr, "SystemSP", 8))
+		memcpy(bootId.get(), base.rom_ptr, 0x500);
+		if (memcmp(base.rom_ptr, "NAOMI", 5) && memcmp(base.rom_ptr, "Naomi2", 6) && memcmp(base.rom_ptr, "SystemSP", 8))
 		{
 			encReset();
 			for (u32 i = 0; i < 0x500; i += 2)
 			{
-				const u16 w = decrypt(le16(&RomPtr[i]));
+				const u16 w = decrypt(le16(&base.rom_ptr[i]));
 				bootId[i] = (u8)w;
 				bootId[i + 1] = w >> 8;
 			}
@@ -1859,7 +1905,7 @@ void SystemSpCart::saveFlash()
 {
 	const std::string path = savePath(".flash");
 	RFILE *f = filestream_open(path.c_str(), RETRO_VFS_FILE_ACCESS_WRITE, RETRO_VFS_FILE_ACCESS_HINT_NONE);
-	if (f == nullptr || filestream_write(f, RomPtr, RomSize) != (int64_t)RomSize)
+	if (f == nullptr || filestream_write(f, base.rom_ptr, base.rom_size) != (int64_t)base.rom_size)
 		WARN_LOG(NAOMI, "System SP: cannot save the flash to %s\n", path.c_str());
 	else
 		INFO_LOG(NAOMI, "System SP: flash saved to %s\n", path.c_str());
@@ -1870,7 +1916,7 @@ void SystemSpCart::saveFlash()
 
 void SystemSpCart::Reset()
 {
-	M4Cartridge::Reset();
+	m4_cart_reset(&base);
 	bank = 0;
 	memset(&ata, 0, sizeof(ata));
 	ata.status = 0x50;		// RDY, DSC
@@ -1901,21 +1947,34 @@ void SystemSpCart::Reset()
 		sh4_sched_request(ataSchedId, -1);
 }
 
-std::string SystemSpCart::GetGameId()
+/* @len bytes at @s, without the spaces and zeroes after them: how many */
+static u32 sp_id_length(const u8 *s, u32 len)
+{
+	while (len != 0 && (s[len - 1] == ' ' || s[len - 1] == '\0'))
+		len--;
+	return len;
+}
+
+void SystemSpCart::GetGameId(char *id)
 {
 	if (!bootId)
-		return mediaName != nullptr ? gameName : M4Cartridge::GetGameId();
-	// the game's title, as the System SP's BIOS has it: the second
-	std::string id((const char *)&bootId[0x50], 0x20);
-	while (!id.empty() && (id.back() == ' ' || id.back() == '\0'))
-		id.pop_back();
-	if (id.empty())
 	{
-		id = std::string((const char *)&bootId[0x30], 0x20);
-		while (!id.empty() && (id.back() == ' ' || id.back() == '\0'))
-			id.pop_back();
+		if (mediaName != nullptr)
+			strlcpy(id, gameName.c_str(), CART_GAME_ID_SIZE);
+		else
+			m4_cart_game_id(&base, id);
+		return;
 	}
-	return id;
+	// the game's title, as the System SP's BIOS has it: the second
+	u32 len = sp_id_length(&bootId[0x50], 0x20);
+	const u8 *title = &bootId[0x50];
+	if (len == 0)
+	{
+		title = &bootId[0x30];
+		len = sp_id_length(title, 0x20);
+	}
+	memcpy(id, title, len);
+	id[len] = '\0';
 }
 
 u32 SystemSpCart::ReadMem(u32 address, u32 size)
@@ -1926,7 +1985,7 @@ u32 SystemSpCart::ReadMem(u32 address, u32 size)
 		return DIMM_STATUS & ~(((SB_ISTEXT >> 3) & 1) << 8);
 	}
 	else {
-		return M4Cartridge::ReadMem(address, size);
+		return m4_cart_read_mem(&base, address, size);
 	}
 }
 
@@ -1942,7 +2001,7 @@ void SystemSpCart::WriteMem(u32 address, u32 data, u32 size)
 			process();
 	}
 	else {
-		M4Cartridge::WriteMem(address, data, size);
+		naomi_board_write_mem(&base, address, data, size);
 	}
 }
 
@@ -1973,7 +2032,7 @@ bool SystemSpCart::Read(u32 offset, u32 size, void *dst)
 		}
 		return true;
 	}
-	return M4Cartridge::Read(offset, size, dst);
+	return m4_cart_read(&base, offset, size, dst);
 }
 
 void SystemSpCart::flashChanged(u32 op, u32 offset, u32 data)
@@ -2053,7 +2112,7 @@ bool SystemSpCart::Write(u32 offset, u32 size, u32 data)
 		break;
 	case PROGRAM:
 		// (a whole word, inside the flash)
-		*(u16 *)&RomPtr[offset & (RomSize - 2)] = data;
+		*(u16 *)&base.rom_ptr[offset & (base.rom_size - 2)] = data;
 		flashChanged(1, offset, data);
 		flash.cmdState = INIT;
 		return true;
@@ -2062,7 +2121,7 @@ bool SystemSpCart::Write(u32 offset, u32 size, u32 data)
 		flash.cmdState = WRITE_BUF_2;
 		return true;
 	case WRITE_BUF_2:
-		*(u16 *)&RomPtr[offset & (RomSize - 2)] = data;
+		*(u16 *)&base.rom_ptr[offset & (base.rom_size - 2)] = data;
 		flashChanged(2, offset, data);
 		if (--flash.wordCount == 0)
 			flash.cmdState = INIT;
@@ -2089,9 +2148,9 @@ bool SystemSpCart::Write(u32 offset, u32 size, u32 data)
 			// Erase chip: a chip is 64 MB
 			const u32 chip = 64 * 1024 * 1024;
 			const u32 start = offset & 0x1fffffff & ~(chip - 1);
-			if (start < RomSize)
+			if (start < base.rom_size)
 			{
-				memset(&RomPtr[start], 0xff, std::min(chip, RomSize - start));
+				memset(&base.rom_ptr[start], 0xff, std::min(chip, base.rom_size - start));
 				flashChanged(3, offset, data);
 			}
 			flash.cmdState = INIT;
@@ -2100,12 +2159,12 @@ bool SystemSpCart::Write(u32 offset, u32 size, u32 data)
 		else if (data == 0x30)
 		{
 			// Erase sector: the chips' sectors are 128 KB, as their CFI
-			// data says (m4cartridge.cpp: 512 sectors of 0x200 * 256 bytes)
+			// data says (m4cartridge.c: 512 sectors of 0x200 * 256 bytes)
 			const u32 sector = 128 * 1024;
 			const u32 start = offset & 0x1fffffff & ~(sector - 1);
-			if (start < RomSize)
+			if (start < base.rom_size)
 			{
-				memset(&RomPtr[start], 0xff, std::min(sector, RomSize - start));
+				memset(&base.rom_ptr[start], 0xff, std::min(sector, base.rom_size - start));
 				flashChanged(4, offset, data);
 			}
 			flash.cmdState = INIT;
@@ -2119,7 +2178,7 @@ bool SystemSpCart::Write(u32 offset, u32 size, u32 data)
 		break;
 	}
 
-	return M4Cartridge::Write(offset, size, data);
+	return m4_cart_write(&base, offset, size, data);
 }
 
 // inet_addr() of a dotted quad: the address with its first number in its
@@ -2161,7 +2220,7 @@ static u32 parseInetAddr(const char *s, size_t len)
 // and taken back; nothing goes on any network.
 void SystemSpCart::process()
 {
-	DmaOffset |= 0x40000000; // needed by BIOS. why?
+	base.dma_offset |= 0x40000000; // needed by BIOS. why?
 	const u8 reqId = readNetMem<u8>(0x200);
 	const int cmd = readNetMem<u16>(0x202);
 	const u8 netmem4 = readNetMem<u8>(4); // FIXME memset should be done later on

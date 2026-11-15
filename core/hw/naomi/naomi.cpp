@@ -205,7 +205,7 @@ u32 ReadMem_naomi(u32 address, u32 size)
 	if (address >= NAOMI_COMM2_CTRL_addr && address <= NAOMI_COMM2_STATUS1_addr && SYSTEM_IS_NAOMI())
 		return m3comm_read(address, size);
 	else
-		return CurrentCartridge->ReadMem(address, size);
+		return CurrentCartridge->ops->read_mem(CurrentCartridge, address, size);
 }
 
 void WriteMem_naomi(u32 address, u32 data, u32 size)
@@ -218,7 +218,7 @@ void WriteMem_naomi(u32 address, u32 data, u32 size)
 	if (address >= NAOMI_COMM2_CTRL_addr && address <= NAOMI_COMM2_STATUS1_addr && SYSTEM_IS_NAOMI())
 		m3comm_write(address, data, size);
 	else
-		CurrentCartridge->WriteMem(address, data, size);
+		CurrentCartridge->ops->write_mem(CurrentCartridge, address, data, size);
 }
 
 /* The next piece of the transfer that is under way. */
@@ -239,7 +239,7 @@ static int naomi_dma_sched(int tag, int sch_cycl, int jitter)
 	while (len > 0)
 	{
 		u32 block_len = len;
-		void* ptr = CurrentCartridge->GetDmaPtr(block_len);
+		void* ptr = CurrentCartridge->ops->get_dma_ptr(CurrentCartridge, &block_len);
 		if (block_len == 0 || ptr == NULL)
 		{
 			// Nothing there to read: the rest of the piece is zeroes, and
@@ -250,7 +250,7 @@ static int naomi_dma_sched(int tag, int sch_cycl, int jitter)
 			break;
 		}
 		WriteMemBlock_nommu_ptr(start, (u32*)ptr, block_len);
-		CurrentCartridge->AdvancePtr(block_len);
+		CurrentCartridge->ops->advance_ptr(CurrentCartridge, block_len);
 		len -= block_len;
 		start += block_len;
 	}
@@ -416,7 +416,7 @@ void naomi_reg_Reset(bool hard)
 	cryptoReset();
 	m3comm_reset();
 	if (hard && CurrentCartridge != NULL)
-		CurrentCartridge->Reset();
+		CurrentCartridge->ops->reset(CurrentCartridge);
 	// (the chips keep what they hold: only a power cycle stops what they were doing)
 	if (hard)
 	{
@@ -485,7 +485,7 @@ void naomi_serialize_v21(void **data, unsigned int *total_size)
 	LIBRETRO_SA(board, 7);
 
 	if (CurrentCartridge != NULL)
-		CurrentCartridge->SerializeV21(data, total_size);
+		CurrentCartridge->ops->serialize_v21(CurrentCartridge, data, total_size);
 }
 
 bool naomi_unserialize_v21(void **data, unsigned int *total_size)
@@ -508,7 +508,7 @@ bool naomi_unserialize_v21(void **data, unsigned int *total_size)
 		coin_chute[i] = std::min<int>(board[3 + i], 5);
 
 	if (CurrentCartridge != NULL)
-		CurrentCartridge->UnserializeV21(data, total_size);
+		CurrentCartridge->ops->unserialize_v21(CurrentCartridge, data, total_size);
 	return true;
 }
 

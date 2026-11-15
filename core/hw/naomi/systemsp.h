@@ -119,24 +119,26 @@ private:
 	u8 dataOutBits = 0;
 };
 
-class SystemSpCart : public M4Cartridge
+class SystemSpCart : public m4_cart
 {
 public:
 	/* @gameName is the set's name; @mediaName the CompactFlash image of a
 	 * game that comes on one (found as <set>/<media>.chd beside the set,
 	 * or <parent>/<media>.chd), NULL for one in ROM. */
 	SystemSpCart(u32 size, const char *gameName, const char *mediaName, const char *parentName);
-	~SystemSpCart() override;
+	~SystemSpCart();
+	/* One, as the current cartridge has it */
+	static cartridge *Open(u32 size, const char *gameName, const char *mediaName, const char *parentName);
 
-	bool Init() override;
-	void Reset() override;
-	void SetKeyData(u8 *key_data) override;
-	std::string GetGameId() override;
+	bool Init();
+	void Reset();
+	void SetKeyData(u8 *key_data);
+	void GetGameId(char *id);
 
-	u32 ReadMem(u32 address, u32 size) override;
-	void WriteMem(u32 address, u32 data, u32 size) override;
-	bool Read(u32 offset, u32 size, void *dst) override;
-	bool Write(u32 offset, u32 size, u32 data) override;
+	u32 ReadMem(u32 address, u32 size);
+	void WriteMem(u32 address, u32 data, u32 size);
+	bool Read(u32 offset, u32 size, void *dst);
+	bool Write(u32 offset, u32 size, u32 data);
 
 	/* The region the game is started in: the one asked for, unless the
 	 * game's header says it does not run there (known after Init()). */

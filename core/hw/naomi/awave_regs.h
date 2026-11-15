@@ -28,6 +28,6 @@ enum
 	AW_MPR_FIRST_FILE_INDEX_addr	= 0x10,
 	AW_MPR_FILE_OFFSETL_addr		= 0x14,
 	AW_MPR_FILE_OFFSETH_addr		= 0x18,
-	AW_PIO_DATA_addr				= 0x80,
+	AW_PIO_DATA_addr				= 0x80
 };
 
