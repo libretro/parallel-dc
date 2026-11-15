@@ -882,7 +882,7 @@ void bm_LoadRam(const u8 *from)
 		memcpy(ram + run, from + run, RAM_SIZE - run);
 }
 
-bool bm_RamWriteAccess(void *p)
+bool bm_RamWriteFault(void *p)
 {
 	if (_nvmem_enabled())
 	{

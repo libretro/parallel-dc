@@ -167,11 +167,34 @@ private:
 	void* param;
 public :
 	sthread_t *hThread;
-	cThread(ThreadEntryFP* function,void* param);
+	cThread(ThreadEntryFP* function,void* prm) : Entry(function), param(prm), hThread(NULL) {}
 	~cThread() { WaitToEnd(); }
-	
+
+#ifndef TARGET_NO_THREADS
+	/* (once: started again, the first thread is not waited for) */
+	void Start()
+	{
+		hThread = sthread_create(Run, this);
+	}
+	void WaitToEnd()
+	{
+		if (hThread != NULL)
+		{
+			sthread_join(hThread);
+			hThread = NULL;
+		}
+	}
+#else
 	void Start();
 	void WaitToEnd();
+#endif
+private:
+	/* (the entry is called as what it is: it answers a pointer) */
+	static void Run(void *self)
+	{
+		cThread *t = (cThread *)self;
+		t->Entry(t->param);
+	}
 };
 #endif
 

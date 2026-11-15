@@ -4,7 +4,6 @@
  * interface (the name lookup of dcnet.flyca.st answered with 127.0.0.1). */
 #include <stdio.h>
 #include <string.h>
-#include <utility>
 #include <atomic>
 #include <vector>
 #include <pthread.h>
@@ -37,12 +36,6 @@ retro_log_printf_t log_cb;
 bool miniupnp_init(miniupnp_t *) { return false; }
 void miniupnp_term(miniupnp_t *) {}
 bool miniupnp_add_port_mapping(miniupnp_t *, int, bool) { return false; }
-
-typedef std::pair<ThreadEntryFP *, void *> thread_start;
-static void thread_trampoline(void *p) { thread_start *s = (thread_start *)p; s->first(s->second); delete s; }
-cThread::cThread(ThreadEntryFP *function, void *prm) : Entry(function), param(prm), hThread(NULL) {}
-void cThread::Start() { hThread = sthread_create(thread_trampoline, new thread_start(Entry, param)); }
-void cThread::WaitToEnd() { if (hThread) sthread_join(hThread); hThread = NULL; }
 
 // dcnet.flyca.st and dns.flyca.st are this machine
 extern "C" int getaddrinfo(const char *node, const char *service, const struct addrinfo *hints, struct addrinfo **res)

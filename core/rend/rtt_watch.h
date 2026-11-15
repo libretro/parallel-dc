@@ -19,11 +19,17 @@
  * the pages are being filled. The table below belongs to the thread that
  * renders; the emulation thread only looks at the page marks, and hands
  * what it touched over. */
+#include <stdint.h>
 #include "types.h"
-#include <cstdint>
 
+#ifdef __cplusplus
 class BaseTextureCacheData;
+extern "C" {
+#else
+typedef struct BaseTextureCacheData BaseTextureCacheData;
+#endif
 
+typedef struct RttWatch RttWatch;
 struct RttWatch
 {
 	u32 addr;            /* where in video memory, in bytes */
@@ -52,6 +58,7 @@ struct RttWatch
  * when there is none. Each byte is read once, in order, before it returns. */
 typedef void (*RttWatchTake)(const RttWatch *watch, const u8 *rgba, size_t pitch);
 
+typedef struct RttWatchBackend RttWatchBackend;
 struct RttWatchBackend
 {
 	/* The picture handed to @take, once: where the renderer has it (its
@@ -112,3 +119,7 @@ void rtt_watch_term(void);
 void rtt_watch_reserve(void);
 /* The emulation thread says which one it is. */
 void rtt_watch_emu_thread(void);
+
+#ifdef __cplusplus
+}
+#endif

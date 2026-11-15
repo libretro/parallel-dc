@@ -1,3 +1,10 @@
+/* The host's faults that are the emulator's own (pages of memory it closed
+ * to find out when they are written), and the rest of what the core sets
+ * up of the process. */
+#if !defined(__MACH__) && !defined(_GNU_SOURCE)
+/* (sigaction(), and the registers' names in a ucontext_t) */
+#define _GNU_SOURCE
+#endif
 #include "types.h"
 #include "emulator.h"
 #include "rend/rtt_watch.h"
@@ -30,37 +37,33 @@
 #include <unistd.h>
 #include "oslib/host_context.h"
 #include "hw/sh4/dyna/blockmanager.h"
-
-#include "hw/sh4/dyna/ngen.h"
+#include "hw/mem/_vmem.h"
+#include "hw/pvr/pvr_mem.h"
 
 #ifdef _WIN32
 #include "../imgread/common.h"
 
 #include <windows.h>
 
+#ifndef UNW_FLAG_NHANDLER
 #define UNW_FLAG_NHANDLER 0x00
 #define UNW_FLAG_UHANDLER 0x02
+#endif
 
-bool VramLockedWrite(u8* address);
-bool ngen_Rewrite(size_t &addr, size_t retadr, size_t acc);
-
-static LONG ExceptionHandler(EXCEPTION_POINTERS *ExceptionInfo)
+static LONG WINAPI ExceptionHandler(EXCEPTION_POINTERS *ExceptionInfo)
 {
    EXCEPTION_POINTERS* ep = ExceptionInfo;
-
    u32 dwCode = ep->ExceptionRecord->ExceptionCode;
-
    EXCEPTION_RECORD* pExceptionRecord=ep->ExceptionRecord;
+   u8* address;
 
    if (dwCode != EXCEPTION_ACCESS_VIOLATION)
       return EXCEPTION_CONTINUE_SEARCH;
 
-   u8* address=(u8*)pExceptionRecord->ExceptionInformation[1];
-
-   //printf("[EXC] During access to : 0x%X\n", address);
+   address=(u8*)pExceptionRecord->ExceptionInformation[1];
 
 #if FEAT_SHREC != DYNAREC_NONE
-	if (bm_RamWriteAccess(address))
+	if (bm_RamWriteFault(address))
 	{
 		return EXCEPTION_CONTINUE_EXECUTION;
 	}
@@ -79,17 +82,17 @@ static LONG ExceptionHandler(EXCEPTION_POINTERS *ExceptionInfo)
       const u8 *const pc = (const u8 *)CC_RX2RW(ep->ContextRecord->Rip);
 
       if (pc > CodeCache && pc < CodeCache + CODE_SIZE + TEMP_CODE_SIZE
-            && ngen_Rewrite((size_t&)ep->ContextRecord->Rip, 0, 0))
+            && ngen_Rewrite((unat *)&ep->ContextRecord->Rip))
          return EXCEPTION_CONTINUE_EXECUTION;
    }
 #endif
 #if FEAT_SHREC == DYNAREC_JIT && HOST_CPU == CPU_X86
-   // (the same, for the 32-bit recompiler)
+   /* (the same, for the 32-bit recompiler) */
    {
       const u8 *const pc = (const u8 *)ep->ContextRecord->Eip;
 
       if (pc > CodeCache && pc < CodeCache + CODE_SIZE + TEMP_CODE_SIZE
-            && ngen_Rewrite((size_t&)ep->ContextRecord->Eip, 0, 0))
+            && ngen_Rewrite((unat *)&ep->ContextRecord->Eip))
          return EXCEPTION_CONTINUE_EXECUTION;
    }
 #endif
@@ -99,40 +102,29 @@ static LONG ExceptionHandler(EXCEPTION_POINTERS *ExceptionInfo)
 }
 
 #ifdef _WIN64
-#include "hw/sh4/dyna/ngen.h"
-
-typedef union _UNWIND_CODE {
-   struct {
-      u8 CodeOffset;
-      u8 UnwindOp : 4;
-      u8 OpInfo : 4;
-   };
-   USHORT FrameOffset;
-} UNWIND_CODE, *PUNWIND_CODE;
-
+/* An x64 unwind record (UNWIND_INFO) as the system reads it: the version
+ * in the low 3 bits of the first byte and the flags in the high 5; the
+ * frame register in the low 4 bits of the fourth and its offset in the
+ * high 4; and each unwind code the offset in the prologue, then the
+ * operation in the low 4 bits and its information in the high 4. (Bytes,
+ * not bit-fields, whose layout C leaves to the compiler.) */
 typedef struct _UNWIND_INFO {
-   u8 Version : 3;
-   u8 Flags : 5;
+   u8 VersionFlags;
    u8 SizeOfProlog;
    u8 CountOfCodes;
-   u8 FrameRegister : 4;
-   u8 FrameOffset : 4;
-   //ULONG ExceptionHandler;
-   UNWIND_CODE UnwindCode[1];
-   /*  UNWIND_CODE MoreUnwindCode[((CountOfCodes + 1) & ~1) - 1];
-    *   union {
-    *       OPTIONAL ULONG ExceptionHandler;
-    *       OPTIONAL ULONG FunctionEntry;
-    *   };
-    *   OPTIONAL ULONG ExceptionData[]; */
+   u8 FrameRegisterOffset;
+   u8 UnwindCode[1][2];
 } UNWIND_INFO, *PUNWIND_INFO;
 
+#define UNWIND_VERSION_FLAGS(version, flags) ((u8)((version) | (flags) << 3))
+#define UNWIND_OP_INFO(op, info) ((u8)((op) | (info) << 4))
+
 static RUNTIME_FUNCTION Table[1];
-static _UNWIND_INFO unwind_info[1];
+static UNWIND_INFO unwind_info[1];
 static bool seh_installed = false;
 static PVOID veh_handle = NULL;
 
-   EXCEPTION_DISPOSITION
+EXCEPTION_DISPOSITION
 __gnat_SEH_error_handler(struct _EXCEPTION_RECORD* ExceptionRecord,
       void *EstablisherFrame,
       struct _CONTEXT* ContextRecord,
@@ -150,20 +142,14 @@ seh_callback(
       _In_ DWORD64 ControlPc,
       _In_opt_ PVOID Context
       ) {
-   unwind_info[0].Version = 1;
-   unwind_info[0].Flags = UNW_FLAG_UHANDLER;
+   unwind_info[0].VersionFlags = UNWIND_VERSION_FLAGS(1, UNW_FLAG_UHANDLER);
    /* We don't use the unwinding info so fill the structure with 0 values.  */
    unwind_info[0].SizeOfProlog = 0;
    unwind_info[0].CountOfCodes = 0;
-   unwind_info[0].FrameOffset = 0;
-   unwind_info[0].FrameRegister = 0;
-   /* Add the exception handler.  */
-
-   //		unwind_info[0].ExceptionHandler =
-   //	(DWORD)((u8 *)__gnat_SEH_error_handler - CodeCache);
+   unwind_info[0].FrameRegisterOffset = 0;
    /* Set its scope to the entire program.  */
-   Table[0].BeginAddress = 0;// (CodeCache - (u8*)__ImageBase);
-   Table[0].EndAddress = /*(CodeCache - (u8*)__ImageBase) +*/ CODE_SIZE + TEMP_CODE_SIZE;
+   Table[0].BeginAddress = 0;
+   Table[0].EndAddress = CODE_SIZE + TEMP_CODE_SIZE;
    Table[0].UnwindData = (ULONG)((u8 *)unwind_info - CodeCache);
    DEBUG_LOG(COMMON, "TABLE CALLBACK\n");
    return Table;
@@ -183,22 +169,18 @@ void setup_seh(void)
    /* Get the base of the module.  */
    /* Current version is always 1 and we are registering an
       exception handler.  */
-   unwind_info[0].Version = 1;
-   unwind_info[0].Flags = UNW_FLAG_NHANDLER;
+   unwind_info[0].VersionFlags = UNWIND_VERSION_FLAGS(1, UNW_FLAG_NHANDLER);
    /* We don't use the unwinding info so fill the structure with 0 values.  */
    unwind_info[0].SizeOfProlog = 0;
    unwind_info[0].CountOfCodes = 1;
-   unwind_info[0].FrameOffset = 0;
-   unwind_info[0].FrameRegister = 0;
-   /* Add the exception handler.  */
-
-   unwind_info[0].UnwindCode[0].CodeOffset = 0;
-   unwind_info[0].UnwindCode[0].UnwindOp = 2;// UWOP_ALLOC_SMALL;
-   unwind_info[0].UnwindCode[0].OpInfo = 0x20 / 8;	// OpInfo * 8 + 8 bytes -> 0x28 bytes
+   unwind_info[0].FrameRegisterOffset = 0;
+   /* UWOP_ALLOC_SMALL of OpInfo * 8 + 8 bytes: 0x28 */
+   unwind_info[0].UnwindCode[0][0] = 0;
+   unwind_info[0].UnwindCode[0][1] = UNWIND_OP_INFO(2, 0x20 / 8);
 
    /* Set its scope to the entire program.  */
-   Table[0].BeginAddress = 0;// (CodeCache - (u8*)__ImageBase);
-   Table[0].EndAddress = /*(CodeCache - (u8*)__ImageBase) +*/ CODE_SIZE + TEMP_CODE_SIZE;
+   Table[0].BeginAddress = 0;
+   Table[0].EndAddress = CODE_SIZE + TEMP_CODE_SIZE;
    Table[0].UnwindData = (ULONG)((u8 *)unwind_info - CodeCache);
    /* Register the unwind information.  */
    RtlAddFunctionTable(Table, 1, (DWORD64)CodeCache);
@@ -209,29 +191,26 @@ void setup_seh(void)
 
 #define MCTX(p) (((ucontext_t *)(segfault_ctx))->uc_mcontext p)
 
-template <typename Ta, typename Tb>
-static void bicopy(Ta& rei, Tb& seg, bool to_segfault)
-{
-   if (to_segfault)
-      seg = rei;
-   else
-      rei = seg;
-}
+/* @rei from @seg, or the other way */
+#define bicopy(rei, seg, to_segfault) \
+   do { if (to_segfault) (seg) = (rei); else (rei) = (seg); } while (0)
 
 static void context_segfault(host_context_t* reictx, void* segfault_ctx, bool to_segfault)
 {
 #if !defined(TARGET_NO_EXCEPTIONS)
 #if HOST_CPU == CPU_ARM
 #ifdef __linux__
-   bicopy(reictx->pc, MCTX(.arm_pc), to_segfault);
    u32* r =(u32*) &MCTX(.arm_r0);
+   int i;
 
-   for (int i = 0; i < 15; i++)
+   bicopy(reictx->pc, MCTX(.arm_pc), to_segfault);
+   for (i = 0; i < 15; i++)
       bicopy(reictx->r[i], r[i], to_segfault);
 #elif defined(__MACH__)
-   bicopy(reictx->pc, MCTX(->__ss.__pc), to_segfault);
+   int i;
 
-   for (int i = 0; i < 15; i++)
+   bicopy(reictx->pc, MCTX(->__ss.__pc), to_segfault);
+   for (i = 0; i < 15; i++)
       bicopy(reictx->r[i], MCTX(->__ss.__r[i]), to_segfault);
 #endif
 #elif HOST_CPU == CPU_ARM64
@@ -263,7 +242,7 @@ static void context_segfault(host_context_t* reictx, void* segfault_ctx, bool to
 #elif HOST_CPU == CPU_MIPS
    bicopy(reictx->pc, MCTX(.pc), to_segfault);
 #elif HOST_CPU == CPU_GENERIC
-   // (no registers of the host's are known: no recompiler rewrites code)
+   /* (no registers of the host's are known: no recompiler rewrites code) */
    if (!to_segfault)
       reictx->pc = 0;
 #else
@@ -283,22 +262,20 @@ static void context_to_segfault(host_context_t* reictx, void* segfault_ctx)
 }
 
 #if !defined(TARGET_NO_EXCEPTIONS)
-bool ngen_Rewrite(size_t& addr,size_t retadr,size_t acc);
-u32* ngen_readm_fail_v2(u32* ptr,u32* regs,u32 saddr);
-bool VramLockedWrite(u8* address);
-
 #ifdef __MACH__
 static void sigill_handler(int sn, siginfo_t * si, void *segfault_ctx)
 {
    host_context_t ctx;
+   size_t pc;
+   bool dyna_cde;
 
    context_from_segfault(&ctx, segfault_ctx);
 
-   size_t pc     = (size_t)ctx.pc;
+   pc     = (size_t)ctx.pc;
 #if FEAT_SHREC == DYNAREC_JIT
-   bool dyna_cde = (pc > (size_t)CodeCache) && (pc < (size_t)(CodeCache + CODE_SIZE + TEMP_CODE_SIZE));
+   dyna_cde = (pc > (size_t)CodeCache) && (pc < (size_t)(CodeCache + CODE_SIZE + TEMP_CODE_SIZE));
 #else
-	bool dyna_cde = false;
+	dyna_cde = false;
 #endif
 
 	ERROR_LOG(COMMON, "SIGILL @ %p ... %p -> was not in vram, %d\n",
@@ -311,11 +288,9 @@ static void sigill_handler(int sn, siginfo_t * si, void *segfault_ctx)
 
 #if defined(__MACH__) || defined(__linux__) || defined(__HAIKU__) || \
    defined(__FreeBSD__) || defined(__DragonFly__) || defined(HAVE_LIBNX)
-//#define LOG_SIGHANDLER
-
 #ifdef HAVE_LIBNX
-extern "C" char __start__;
-#endif // HAVE_LIBNX
+extern char __start__;
+#endif
 
 #if !defined(TARGET_NO_EXCEPTIONS)
 static struct sigaction old_sigsegv;
@@ -326,19 +301,23 @@ static struct sigaction old_sigill;
 static void signal_handler(int sn, siginfo_t * si, void *segfault_ctx)
 {
    host_context_t ctx;
+   bool dyna_cde;
+#if !defined(HAVE_LIBNX)
+   struct sigaction *prev;
+#endif
 
    context_from_segfault(&ctx, segfault_ctx);
 
 #if FEAT_SHREC == DYNAREC_JIT
-	bool dyna_cde = ((uintptr_t)CC_RX2RW(ctx.pc) > (uintptr_t)CodeCache) && ((uintptr_t)CC_RX2RW(ctx.pc) < (uintptr_t)(CodeCache + CODE_SIZE + TEMP_CODE_SIZE));
+	dyna_cde = ((uintptr_t)CC_RX2RW(ctx.pc) > (uintptr_t)CodeCache) && ((uintptr_t)CC_RX2RW(ctx.pc) < (uintptr_t)(CodeCache + CODE_SIZE + TEMP_CODE_SIZE));
 #else
-	bool dyna_cde = false;
+	dyna_cde = false;
 #endif
 
 	DEBUG_LOG(COMMON, "mprot hit @ ptr %p @@ pc: %zx, %d\n", si->si_addr, ctx.pc, dyna_cde);
 
 #if FEAT_SHREC != DYNAREC_NONE
-	if (bm_RamWriteAccess(si->si_addr))
+	if (bm_RamWriteFault(si->si_addr))
 		return;
 #endif
 	if (rtt_watch_fault(si->si_addr) || VramLockedWrite((u8*)si->si_addr))
@@ -356,22 +335,22 @@ static void signal_handler(int sn, siginfo_t * si, void *segfault_ctx)
       context_to_segfault(&ctx, segfault_ctx);
    }
 #elif HOST_CPU==CPU_X86
-	if (dyna_cde && ngen_Rewrite((unat&)ctx.pc, 0, 0))
+	if (dyna_cde && ngen_Rewrite(&ctx.pc))
 	{
 		context_to_segfault(&ctx, segfault_ctx);
 	}
 #elif HOST_CPU == CPU_X64
-	else if (dyna_cde && ngen_Rewrite((unat&)ctx.pc, 0, 0))
+	else if (dyna_cde && ngen_Rewrite(&ctx.pc))
 	{
 		context_to_segfault(&ctx, segfault_ctx);
 	}
 #elif HOST_CPU == CPU_ARM64
-	else if (dyna_cde && ngen_Rewrite(ctx.pc, 0, 0))
+	else if (dyna_cde && ngen_Rewrite(&ctx.pc))
 	{
 		context_to_segfault(&ctx, segfault_ctx);
 	}
 #else
-	// (the generic recompiler's code makes no accesses that fault)
+	/* (the generic recompiler's code makes no accesses that fault) */
 	if (false)
 	{
 	}
@@ -389,7 +368,7 @@ static void signal_handler(int sn, siginfo_t * si, void *segfault_ctx)
        * the POSIX equivalent. Only when nobody else can handle the fault is
        * it a genuine crash. */
 #if !defined(HAVE_LIBNX)
-      struct sigaction *prev = (sn == SIGBUS) ? &old_sigbus : &old_sigsegv;
+      prev = (sn == SIGBUS) ? &old_sigbus : &old_sigsegv;
       if (prev->sa_flags & SA_SIGINFO)
       {
          if (prev->sa_sigaction != NULL && prev->sa_sigaction != signal_handler)
@@ -406,11 +385,13 @@ static void signal_handler(int sn, siginfo_t * si, void *segfault_ctx)
 #endif
    	ERROR_LOG(COMMON, "SIGSEGV @ %zx ... %p -> was not in vram (dyna code %d)\n", ctx.pc, si->si_addr, dyna_cde);
 #ifdef HAVE_LIBNX
-    MemoryInfo meminfo;
-    u32 pageinfo;
-    svcQueryMemory(&meminfo, &pageinfo, (u64)&__start__);
-   	ERROR_LOG(COMMON, ".text base: %p\n", meminfo.addr);
-#endif // HAVE_LIBNX
+    {
+       MemoryInfo meminfo;
+       u32 pageinfo;
+       svcQueryMemory(&meminfo, &pageinfo, (u64)&__start__);
+       ERROR_LOG(COMMON, ".text base: %p\n", meminfo.addr);
+    }
+#endif
    	die("segfault");
    	signal(SIGSEGV, SIG_DFL);
    }
@@ -478,11 +459,11 @@ static void enable_runfast(void)
    static const unsigned int x = 0x04086060;
    static const unsigned int y = 0x03000000;
    int r;
-   asm volatile (
-         "fmrx	%0, fpscr			\n\t"	//r0 = FPSCR
-         "and	%0, %0, %1			\n\t"	//r0 = r0 & 0x04086060
-         "orr	%0, %0, %2			\n\t"	//r0 = r0 | 0x03000000
-         "fmxr	fpscr, %0			\n\t"	//FPSCR = r0
+   __asm__ __volatile__ (
+         "fmrx	%0, fpscr			\n\t"	/* r0 = FPSCR */
+         "and	%0, %0, %1			\n\t"	/* r0 = r0 & 0x04086060 */
+         "orr	%0, %0, %2			\n\t"	/* r0 = r0 | 0x03000000 */
+         "fmxr	fpscr, %0			\n\t"	/* FPSCR = r0 */
          : "=r"(r)
          : "r"(x), "r"(y)
          );
@@ -491,132 +472,105 @@ static void enable_runfast(void)
 #endif
 }
 
-#if !defined(TARGET_NO_THREADS)
-
-//Thread class
-cThread::cThread(ThreadEntryFP* function,void* prm) : hThread(NULL)
-{
-	Entry=function;
-	param=prm;
-}
-
-void cThread::Start()
-{
-	verify(hThread == NULL);
-   hThread = sthread_create((void (*)(void *))Entry, param);
-}
-
-void cThread::WaitToEnd()
-{
-	if (hThread != NULL)
-	{
-		sthread_join(hThread);
-		hThread = NULL;
-	}
-}
-
-//End thread class
-#endif
-
-#ifndef TARGET_NO_EXCEPTIONS
-void VArray2::UnLockRegion(u32 offset,u32 size_bytes)
-{
-   mem_region_unlock(&data[offset], size_bytes);
-}
-#endif
-
 void varray2_zero(VArray2 *a)
 {
-   a->Zero();
+#ifndef TARGET_NO_EXCEPTIONS
+   mem_region_unlock(a->data, a->size);
+#endif
+   memset(a->data, 0, a->size);
 }
 
 #if defined(_WIN64) && defined(_DEBUG)
+/* All of the address space below 4 GB taken, so that a pointer kept in 32
+ * bits somewhere shows up at once in a debug build */
 static void ReserveBottomMemory(void)
 {
     static bool s_initialized = false;
-    if ( s_initialized )
-        return;
-    s_initialized = true;
- 
-    // Start by reserving large blocks of address space, and then
-    // gradually reduce the size in order to capture all of the
-    // fragments. Technically we should continue down to 64 KB but
-    // stopping at 1 MB is sufficient to keep most allocators out.
- 
     const size_t LOW_MEM_LINE = 0x100000000LL;
     size_t totalReservation = 0;
     size_t numVAllocs = 0;
     size_t numHeapAllocs = 0;
     size_t oneMB = 1024 * 1024;
-    for (size_t size = 256 * oneMB; size >= oneMB; size /= 2)
+    size_t size, blockSize;
+    HANDLE heap;
+    char buffer[1000];
+
+    if ( s_initialized )
+        return;
+    s_initialized = true;
+
+    /* Start by reserving large blocks of address space, and then
+     * gradually reduce the size in order to capture all of the
+     * fragments. Technically we should continue down to 64 KB but
+     * stopping at 1 MB is sufficient to keep most allocators out. */
+    for (size = 256 * oneMB; size >= oneMB; size /= 2)
     {
         for (;;)
         {
             void* p = VirtualAlloc(0, size, MEM_RESERVE, PAGE_NOACCESS);
             if (!p)
                 break;
- 
+
             if ((size_t)p >= LOW_MEM_LINE)
             {
-                // We don't need this memory, so release it completely.
+                /* We don't need this memory, so release it completely. */
                 VirtualFree(p, 0, MEM_RELEASE);
                 break;
             }
- 
+
             totalReservation += size;
             ++numVAllocs;
         }
     }
- 
-    // Now repeat the same process but making heap allocations, to use up
-    // the already reserved heap blocks that are below the 4 GB line.
-    HANDLE heap = GetProcessHeap();
-    for (size_t blockSize = 64 * 1024; blockSize >= 16; blockSize /= 2)
+
+    /* Now repeat the same process but making heap allocations, to use up
+     * the already reserved heap blocks that are below the 4 GB line. */
+    heap = GetProcessHeap();
+    for (blockSize = 64 * 1024; blockSize >= 16; blockSize /= 2)
     {
         for (;;)
         {
             void* p = HeapAlloc(heap, 0, blockSize);
             if (!p)
                 break;
- 
+
             if ((size_t)p >= LOW_MEM_LINE)
             {
-                // We don't need this memory, so release it completely.
+                /* We don't need this memory, so release it completely. */
                 HeapFree(heap, 0, p);
                 break;
             }
- 
+
             totalReservation += blockSize;
             ++numHeapAllocs;
         }
     }
- 
-    // Perversely enough the CRT doesn't use the process heap. Suck up
-    // the memory the CRT heap has already reserved.
-    for (size_t blockSize = 64 * 1024; blockSize >= 16; blockSize /= 2)
+
+    /* Perversely enough the CRT doesn't use the process heap. Suck up
+     * the memory the CRT heap has already reserved. */
+    for (blockSize = 64 * 1024; blockSize >= 16; blockSize /= 2)
     {
         for (;;)
         {
             void* p = malloc(blockSize);
             if (!p)
                 break;
- 
+
             if ((size_t)p >= LOW_MEM_LINE)
             {
-                // We don't need this memory, so release it completely.
+                /* We don't need this memory, so release it completely. */
                 free(p);
                 break;
             }
- 
+
             totalReservation += blockSize;
             ++numHeapAllocs;
         }
     }
- 
-    // Print diagnostics showing how many allocations we had to make in
-    // order to reserve all of low memory, typically less than 200.
-    char buffer[1000];
-    sprintf_s(buffer, "Reserved %1.3f MB (%d vallocs,"
+
+    /* Print diagnostics showing how many allocations we had to make in
+     * order to reserve all of low memory, typically less than 200. */
+    sprintf_s(buffer, sizeof(buffer), "Reserved %1.3f MB (%d vallocs,"
                       "%d heap allocs) of low-memory.\n",
             totalReservation / (1024 * 1024.0),
             (int)numVAllocs, (int)numHeapAllocs);
@@ -681,75 +635,33 @@ void common_libretro_cleanup(void)
 }
 
 #if !defined(TARGET_NO_EXCEPTIONS) && defined(HAVE_LIBNX)
-extern "C"
-{
-
-alignas(16) u8 __nx_exception_stack[0x1000];
+__attribute__((aligned(16))) u8 __nx_exception_stack[0x1000];
 u64 __nx_exception_stack_size = sizeof(__nx_exception_stack);
-#include <malloc.h>
 extern void context_switch_aarch64(void* context);
 
 void __libnx_exception_handler(ThreadExceptionDump *ctx)
-{   
+{
    mcontext_t m_ctx;
+   ucontext_t u_ctx;
+   siginfo_t sig_info;
+   uint64_t handle[64] = { 0 };
+   uint64_t *ptr = (uint64_t*)handle;
+   int i;
 
    m_ctx.pc = ctx->pc.x;
 
-   for(int i=0; i<29; i++)
-   {
-      // printf("X%d: %p\n", i, ctx->cpu_gprs[i].x);
+   for (i = 0; i < 29; i++)
       m_ctx.regs[i] = ctx->cpu_gprs[i].x;
-   }
 
-   /*
-   printf("PC: %p\n", ctx->pc.x);
-   printf("FP: %p\n", ctx->fp.x);
-   printf("LR: %p\n", ctx->lr.x);
-   printf("SP: %p\n", ctx->sp.x);
-   */
-
-   ucontext_t u_ctx;
    u_ctx.uc_mcontext = m_ctx;
-
-   siginfo_t sig_info;
 
    sig_info.si_addr = (void*)ctx->far.x;
 
    signal_handler(0, &sig_info, (void*) &u_ctx);
 
-   uint64_t handle[64] = { 0 };
-
-   uint64_t *ptr = (uint64_t*)handle;
-   ptr[0]  = m_ctx.regs[0]; /* x0 0  */
-   ptr[1]  = m_ctx.regs[1]; /* x1 8 */
-   ptr[2]  = m_ctx.regs[2]; /* x2 16 */
-   ptr[3]  = m_ctx.regs[3]; /* x3 24 */
-   ptr[4]  = m_ctx.regs[4]; /* x4 32 */
-   ptr[5]  = m_ctx.regs[5]; /* x5 40 */
-   ptr[6]  = m_ctx.regs[6]; /* x6 48 */
-   ptr[7]  = m_ctx.regs[7]; /* x7 56 */
-   /* Non-volatiles.  */
-   ptr[8]  = m_ctx.regs[8]; /* x8 64 */
-   ptr[9]  = m_ctx.regs[9]; /* x9 72 */
-   ptr[10]  = m_ctx.regs[10]; /* x10 80 */
-   ptr[11]  = m_ctx.regs[11]; /* x11 88 */
-   ptr[12]  = m_ctx.regs[12]; /* x12 96 */
-   ptr[13]  = m_ctx.regs[13]; /* x13 104 */
-   ptr[14]  = m_ctx.regs[14]; /* x14 112 */
-   ptr[15]  = m_ctx.regs[15]; /* x15 120 */
-   ptr[16]  = m_ctx.regs[16]; /* x16 128 */
-   ptr[17]  = m_ctx.regs[17]; /* x17 136 */
-   ptr[18]  = m_ctx.regs[18]; /* x18 144 */
-   ptr[19]  = m_ctx.regs[19]; /* x19 152 */
-   ptr[20] = m_ctx.regs[20]; /* x20 160 */
-   ptr[21] = m_ctx.regs[21]; /* x21 168 */
-   ptr[22] = m_ctx.regs[22]; /* x22 176 */
-   ptr[23] = m_ctx.regs[23]; /* x23 184 */
-   ptr[24] = m_ctx.regs[24]; /* x24 192 */
-   ptr[25] = m_ctx.regs[25]; /* x25 200 */
-   ptr[26] = m_ctx.regs[26]; /* x26 208 */
-   ptr[27] = m_ctx.regs[27]; /* x27 216 */
-   ptr[28] = m_ctx.regs[28]; /* x28 224 */
+   /* x0 to x28 (the non-volatiles from x8), at 0 to 224 */
+   for (i = 0; i < 29; i++)
+      ptr[i] = m_ctx.regs[i];
    /* Special regs */
    ptr[29] = ctx->fp.x; /* frame pointer 232 */
    ptr[30] = ctx->lr.x; /* link register 240 */
@@ -758,6 +670,4 @@ void __libnx_exception_handler(ThreadExceptionDump *ctx)
 
    context_switch_aarch64(ptr);
 }
-}
-
 #endif

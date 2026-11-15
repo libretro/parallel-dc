@@ -582,18 +582,6 @@ struct VArray2
 	u8* data;
 	u32 size;
 #ifdef __cplusplus
-#ifdef TARGET_NO_EXCEPTIONS
-	void UnLockRegion(u32 offset,u32 size) {}
-#else
-	void UnLockRegion(u32 offset,u32 size);
-#endif
-
-	void Zero()
-	{
-		UnLockRegion(0,size);
-		memset(data,0,size);
-	}
-
 	INLINE u8& operator [](const u32 i)
 	{
 #ifdef MEM_BOUND_CHECK
@@ -608,7 +596,7 @@ struct VArray2
 #endif
 };
 
-/* All of it 0 (VArray2::Zero(), for C: libretro/common.cpp) */
+/* All of it 0, and open to writes (libretro/common.c) */
 void varray2_zero(VArray2 *a);
 
 typedef struct RegisterStruct RegisterStruct;

@@ -4,7 +4,8 @@ name: Vulkan negotiation
 # the frontend's vkCreateDevice wrapper) and as a frontend without v2 does
 # (v1), on lavapipe under the validation layer: tools/vulkan/vk_negotiate.sh.
 # And the host's side of the SH4's address space on Windows, under wine:
-# tools/mem/vmem_platform_run.sh.
+# tools/mem/vmem_platform_run.sh; and the faults the core takes for its own
+# there: tools/mem/fault_run.sh.
 # Then the HDR output (Color Format), the frames run and the pictures read
 # back: tools/vulkan/vk_hdr.sh; and its HLSL, which Direct3D 11 and 12
 # draw with, against the GLSL: tools/vulkan/hdr_hlsl.sh. And ACES 2.0
@@ -68,6 +69,7 @@ on:
       - 'core/hw/**'
       - 'core/libretro/vmem_utils.c'
       - 'tools/mem/vmem_platform_*'
+      - 'tools/mem/fault_*'
       - 'core/rec-x64/**'
       - 'core/deps/xbyak/**'
       - 'core/node_pool.h'
@@ -156,6 +158,7 @@ on:
       - 'core/hw/**'
       - 'core/libretro/vmem_utils.c'
       - 'tools/mem/vmem_platform_*'
+      - 'tools/mem/fault_*'
       - 'core/rec-x64/**'
       - 'core/deps/xbyak/**'
       - 'core/node_pool.h'
@@ -346,6 +349,8 @@ jobs:
         run: make -j"$(nproc)" platform=win CC=x86_64-w64-mingw32-gcc CXX=x86_64-w64-mingw32-g++
       - name: The core's C as MSVC C89 takes it, with the Windows headers (AGENTS.md)
         run: CC=x86_64-w64-mingw32-gcc sh tools/c89/c89_check.sh platform=win CC=x86_64-w64-mingw32-gcc CXX=x86_64-w64-mingw32-g++
+      - name: The core's C for 32-bit Windows as MSVC C89 takes it, with the system's calling conventions (a handler the system calls is WINAPI)
+        run: CC=i686-w64-mingw32-gcc sh tools/c89/c89_check.sh platform=win ARCH=i686 CC=i686-w64-mingw32-gcc CXX=i686-w64-mingw32-g++
       - name: Nothing built for Windows that the core does not use
         run: NM=x86_64-w64-mingw32-nm OBJDUMP=x86_64-w64-mingw32-objdump python3 tools/unused_sources.py platform=win
       - name: HDR output with Direct3D 11 and 12 (24-bit, refused, HDR10, scRGB, each renderer)
@@ -362,6 +367,8 @@ jobs:
         run: VK_DRIVER_FILES=/usr/share/vulkan/icd.d/lvp_icd.json sh tools/rend/d3d_allocs.sh parallel_dc_libretro.dll
       - name: The host's side of the SH4's address space on Windows - its mirrors, page protection and code memory (wine)
         run: WINDOWS=1 sh tools/mem/vmem_platform_run.sh
+      - name: The faults the core takes for its own on 64-bit Windows, recompiled code's rewritten, the rest passed on, and the code cache's unwind record (wine)
+        run: WINDOWS=1 sh tools/mem/fault_run.sh
       - name: The Direct3D renderers' thread ahead and their shader file (TSan, ASan/UBSan, no threads, Windows), and the band pool on Windows
         run: |
           sh tools/rend/d3d_warm_test.sh

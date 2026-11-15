@@ -2558,8 +2558,9 @@ void ngen_CC_Finish(shil_opcode* op)
  * written over with a call to the routine that does such an access by
  * asking (mem_stubs), and run again from where it was. It is six bytes or
  * more, and a call takes five; what is left of it is filled in. */
-bool ngen_Rewrite(unat& host_pc, unat, unat)
+bool ngen_Rewrite(unat *host_pc_at)
 {
+	unat &host_pc = *host_pc_at;
 	int kind, data, length;
 
 	if (!BlockCompiler::FastMemory())

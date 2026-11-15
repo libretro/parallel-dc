@@ -25,7 +25,8 @@ name: Headless
 # and operand caches as they always were (tools/sh4/sh4_cache_run.sh), the
 # SH4's address space as it always was (tools/mem/vmem_run.sh) and the host's
 # side of it, its mappings and code memory (tools/mem/vmem_platform_run.sh),
-# and the sound
+# and the faults the core takes for its own, passed on when they are not
+# (tools/mem/fault_run.sh), and the sound
 # chip's channels against what they made before (tools/aica/sgc_run.sh), and
 # the G2 bus's expansion DMA channels (tools/aica/g2dma_run.sh), and the
 # broadband adapter, a frame each way and its state (tools/bba/run.sh), and
@@ -197,6 +198,10 @@ jobs:
         run: |
           sh tools/mem/vmem_platform_run.sh
           sh tools/mem/vmem_platform_run.sh -fsanitize=undefined -fno-sanitize-recover=all
+      - name: The faults the core takes for its own, recompiled code's rewritten, and the rest passed on (and with the sanitizers)
+        run: |
+          sh tools/mem/fault_run.sh
+          sh tools/mem/fault_run.sh -fsanitize=address,undefined -fno-sanitize-recover=all
       - name: The recompilers against the interpreters, built alone with Xbyak (the SH-4's vectors, the sound chip's ARM7 and DSP)
         run: |
           sh tools/sh4/run.sh

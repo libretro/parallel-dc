@@ -1,6 +1,7 @@
 #pragma once
 #include "types.h"
 
+typedef struct host_context_t host_context_t;
 struct host_context_t {
 	size_t pc;		/* 0 where the host's is not had (CPU_GENERIC) */
 

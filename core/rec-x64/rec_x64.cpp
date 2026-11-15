@@ -3197,8 +3197,9 @@ void ngen_CC_Finish(shil_opcode* op)
  * where it was. It is five bytes or more, which is what a call takes, so
  * there is no room kept after it for this; what is left of it is filled
  * in. */
-bool ngen_Rewrite(unat& host_pc, unat, unat)
+bool ngen_Rewrite(unat *host_pc_at)
 {
+	unat &host_pc = *host_pc_at;
 	int kind, addr, data, length;
 
 	if (!BlockCompiler::FastMemory())

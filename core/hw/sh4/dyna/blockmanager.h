@@ -30,15 +30,6 @@ void bm_Periodical_1s(void);
 /* The table of blocks' entries, each to the "not compiled yet" stub */
 void bm_vmem_pagefill(void **ptr, u32 size_bytes);
 
-#ifdef __cplusplus
-}
-
-#include <memory>
-#include <map>
-#include "decoder.h"
-#include "node_pool.h"
-typedef std::shared_ptr<RuntimeBlockInfo> RuntimeBlockInfoPtr;
-
 #define CODE_SIZE   (16*1024*1024)
 
 /* For the blocks whose code keeps being rewritten (smc_hotspots). A build
@@ -56,6 +47,41 @@ typedef std::shared_ptr<RuntimeBlockInfo> RuntimeBlockInfoPtr;
 #define CODE_MARGIN (64*1024)
 
 extern u8* CodeCache;
+
+/* When NO_RWX is enabled there's two address-spaces, one executable and
+ * one writtable. The emitter and most of the code in rec-* will work with
+ * the RW pointer. However the fpcb table and other pointers during execution
+ * (ie. exceptions) are RX pointers. These two macros convert between them by
+ * sub/add the pointer offset. CodeCache will point to the RW pointer for simplicity. */
+#ifdef FEAT_NO_RWX_PAGES
+	extern uintptr_t cc_rx_offset;
+	#define CC_RW2RX(ptr) (void*)(((uintptr_t)(ptr)) + cc_rx_offset)
+	#define CC_RX2RW(ptr) (void*)(((uintptr_t)(ptr)) - cc_rx_offset)
+#else
+	#define CC_RW2RX(ptr) (ptr)
+	#define CC_RX2RW(ptr) (ptr)
+#endif
+
+/* A write to main memory that faulted at @p, the host's address: the page
+ * it is in had code compiled from it, which is thrown away and the page
+ * opened (false: not main memory) */
+bool bm_RamWriteFault(void *p);
+
+/* The recompiler's (rec-*): an access to the SH4's memory at *@host_pc in
+ * compiled code that faulted, written over with a call that does it the
+ * slow way; *@host_pc is where to go on from (false: not one of its) */
+bool ngen_Rewrite(unat *host_pc);
+/* The 32-bit ARM recompiler's: the same, with the host's registers */
+u32* ngen_readm_fail_v2(u32* ptr, u32* regs, u32 saddr);
+
+#ifdef __cplusplus
+}
+
+#include <memory>
+#include <map>
+#include "decoder.h"
+#include "node_pool.h"
+typedef std::shared_ptr<RuntimeBlockInfo> RuntimeBlockInfoPtr;
 
 struct RuntimeBlockInfo_Core
 {
@@ -177,6 +203,5 @@ void bm_ResetTempCache(bool full);
 void bm_Init();
 void bm_Term();
 
-bool bm_RamWriteAccess(void *p);
 void bm_RamWriteAccess(u32 addr);
 #endif

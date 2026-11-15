@@ -10,6 +10,10 @@ u32 vri(u32 addr);
 
 /* vram 32-64b */
 extern VArray2 vram;
+/* A write to video memory that faulted at @address, the host's: in a page
+ * locked for the textures made from it, which are to be made again, and
+ * which is opened (TexCache.cpp; false: not video memory) */
+bool VramLockedWrite(u8* address);
 
 #define VRAM_BANK_BIT 0x400000
 

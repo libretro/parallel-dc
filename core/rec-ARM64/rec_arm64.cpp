@@ -2767,8 +2767,9 @@ static bool mem_access_at(const u32 *site, int *kind, int *addr, int *data)
 /* A fast memory access faulted: it is written over with a call to the
  * routine that does such an access by asking, with the registers this one
  * has (mem_stubs), and run again. */
-bool ngen_Rewrite(unat& host_pc, unat, unat)
+bool ngen_Rewrite(unat *host_pc_at)
 {
+	unat &host_pc = *host_pc_at;
 	u32 *const site = (u32 *)CC_RX2RW(host_pc);
 	int kind, addr, data;
 
