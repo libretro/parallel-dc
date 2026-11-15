@@ -38,7 +38,8 @@ name: Headless
 # V.42 bis compression both ways (tools/modem/v42bis_run.sh), and
 # Dinosaur King's card codec against what it made before
 # (tools/naomi/dinokich_card_run.sh), and the SH4's serial port with the
-# touch panel on it (tools/naomi/scif_touch_run.sh), and the paths the core writes to, a
+# touch panel on it (tools/naomi/scif_touch_run.sh), and the hopper boards
+# (tools/naomi/hopper_run.sh), and the paths the core writes to, a
 # content's name of any length included (tools/paths/paths_run.sh), and the
 # HLE BIOS's GD-ROM transfers stopped at a fault and made again
 # (tools/reios/gdrom_hle_run.sh), and what the core reads of a disc's
@@ -231,6 +232,10 @@ jobs:
         run: |
           sh tools/naomi/scif_touch_run.sh
           sh tools/naomi/scif_touch_run.sh -fsanitize=address,undefined -fno-sanitize-recover=all
+      - name: The hopper boards, each message they know in each currency, the coin switch, their file and their part of a state (and with the sanitizers)
+        run: |
+          sh tools/naomi/hopper_run.sh
+          sh tools/naomi/hopper_run.sh -fsanitize=address,undefined -fno-sanitize-recover=all
       - name: The paths the core writes to, a content's name of any length (and with the sanitizers)
         run: |
           sh tools/paths/paths_run.sh

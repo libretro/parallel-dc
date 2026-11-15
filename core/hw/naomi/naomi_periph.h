@@ -1,7 +1,7 @@
 /*
 	The devices an arcade game has besides its I/O board: card readers,
 	touch panel, hopper (naomi.cpp, card_reader.cpp, touchscreen.c,
-	hopper.cpp, and the IC card reader in maple_devs.cpp).
+	hopper.c, and the IC card reader in maple_devs.cpp).
 */
 #pragma once
 #include "types.h"
@@ -66,6 +66,70 @@ struct PeriphQueue
 
 extern "C" {
 #endif
+
+/* The same in C: the bytes a device has for the game, oldest first, in
+ * @buf (@size bytes, the device's own); more than that, the rest dropped */
+typedef struct periph_queue
+{
+	u8 *buf;
+	u32 size;
+	u32 head;
+	u32 count;
+} periph_queue;
+
+static TYPES_INLINE void periph_queue_init(periph_queue *q, u8 *buf, u32 size)
+{
+	q->buf = buf;
+	q->size = size;
+	q->head = q->count = 0;
+}
+static TYPES_INLINE void periph_queue_clear(periph_queue *q)
+{
+	q->head = q->count = 0;
+}
+static TYPES_INLINE void periph_queue_push(periph_queue *q, u8 b)
+{
+	if (q->count == q->size)
+		return;
+	q->buf[(q->head + q->count) % q->size] = b;
+	q->count++;
+}
+static TYPES_INLINE u8 periph_queue_pop(periph_queue *q)
+{
+	u8 b;
+	if (q->count == 0)
+		return 0;
+	b = q->buf[q->head];
+	q->head = (q->head + 1) % q->size;
+	q->count--;
+	return b;
+}
+/* as PeriphQueue's: the count (16 bits), then the bytes oldest first and
+ * zeroes after, the same however far round the ring they are */
+static TYPES_INLINE void periph_queue_serialize(const periph_queue *q, void **data, unsigned int *total_size)
+{
+	static const u8 zeroes[64] = { 0 };
+	u16 c = (u16)q->count;
+	u32 first = q->size - q->head < q->count ? q->size - q->head : q->count;
+	u32 left = q->size - q->count;
+	LIBRETRO_S(c);
+	ra_serialize(q->buf + q->head, first, data, total_size);
+	ra_serialize(q->buf, q->count - first, data, total_size);
+	while (left > 0)
+	{
+		u32 n = left < sizeof(zeroes) ? left : (u32)sizeof(zeroes);
+		ra_serialize(zeroes, n, data, total_size);
+		left -= n;
+	}
+}
+static TYPES_INLINE void periph_queue_unserialize(periph_queue *q, void **data, unsigned int *total_size)
+{
+	u16 c = 0;
+	LIBRETRO_US(c);
+	LIBRETRO_USA(q->buf, q->size);
+	q->head = 0;
+	q->count = c < q->size ? c : q->size;
+}
 
 /* The ROM set's name ("clubkrt"), or "" for a game that is not a set */
 extern char naomi_set_name[];

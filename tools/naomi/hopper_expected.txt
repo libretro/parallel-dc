@@ -1,0 +1,124 @@
+load -hopper.bin: 0 bytes
+pipe set
+== KICK '4' CASH: active 1
+coin before start: 0 bytes 811c9dc5 (0 updates):
+version: 20 bytes c646b825 (1 updates): 48 20 14 00 01 00 01 00 03 00 00 00 00 00 00 00 00 00 00 81
+save -hopper.bin: 92 bytes ceaa6d39
+power on, currency 0: 1964 bytes b1c7b7ef (1 updates): 48 21 ac 07 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 01 05 00 01 64 01 00 00 00 00 1c 84 1e 00 1c 84 1e 00
+save -hopper.bin: 92 bytes b18d6ef4
+power on, currency 1: 1964 bytes 0b271cfb (1 updates): 48 21 ac 07 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 01 00 00 00 00 05 00 00 00 00 00 10 27 00 00 1c 84 1e 00
+save -hopper.bin: 92 bytes 2a45b329
+power on, currency 2: 1964 bytes 4a0a5949 (1 updates): 48 21 ac 07 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 01 00 00 00 00 05 00 00 00 00 00 10 27 00 00 1c 84 1e 00
+save -hopper.bin: 92 bytes e1b156b0
+power on, currency 3: 1964 bytes 322c293f (1 updates): 48 21 ac 07 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 01 00 00 00 00 05 00 00 00 00 00 10 27 00 00 1c 84 1e 00
+save -hopper.bin: 92 bytes 65b2cba8
+power on, currency 4: 1964 bytes ab1da765 (1 updates): 48 21 ac 07 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 64 01 00 00 00 00 1c 84 1e 00 1c 84 1e 00
+save -hopper.bin: 92 bytes e882825e
+power on, currency 5: 1964 bytes 0ce0b8f1 (1 updates): 48 21 ac 07 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 01 00 00 00 00 05 00 00 00 00 00 10 27 00 00 1c 84 1e 00
+save -hopper.bin: 92 bytes 36265c1a
+power on, currency 255: 1964 bytes 6c1fd327 (1 updates): 48 21 ac 07 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 01 05 00 01 64 01 00 00 00 00 1c 84 1e 00 1c 84 1e 00
+status: 20 bytes 20bf976d (1 updates): 48 22 14 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 7e
+save -hopper.bin: 92 bytes ca6cb343
+game start 0: 128 bytes d8d60e61 (1 updates): 48 23 80 00 01 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 e8 03 00 00 00 00 00 00 00 00 00 00
+save -hopper.bin: 92 bytes 03ee0a4f
+coin: 36 bytes 597231ab (1 updates): 48 01 24 00 00 00 00 00 00 00 00 00 00 00 00 00 64 00 00 00 00 00 00 00 e8 03 00 00 00 00 00 00 00 00 00 bc
+save -hopper.bin: 92 bytes 7b87cafc
+game start 1: 128 bytes 18193723 (1 updates): 48 23 80 00 02 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 e8 03 00 00 00 00 00 00 00 00 00 00
+save -hopper.bin: 92 bytes a58e18f8
+coin: 36 bytes 597231ab (1 updates): 48 01 24 00 00 00 00 00 00 00 00 00 00 00 00 00 64 00 00 00 00 00 00 00 e8 03 00 00 00 00 00 00 00 00 00 bc
+save -hopper.bin: 92 bytes f97a0b65
+game start 2: 128 bytes ae88cdad (1 updates): 48 23 80 00 03 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 e8 03 00 00 00 00 00 00 00 00 00 00
+save -hopper.bin: 92 bytes f9601171
+coin: 36 bytes 597231ab (1 updates): 48 01 24 00 00 00 00 00 00 00 00 00 00 00 00 00 64 00 00 00 00 00 00 00 e8 03 00 00 00 00 00 00 00 00 00 bc
+game end: 124 bytes e5747aa1 (1 updates): 48 24 7c 00 03 00 00 00 64 00 00 00 00 00 00 00 e8 03 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+test: 244 bytes 567c68e5 (1 updates): 48 25 f4 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+save -hopper.bin: 92 bytes 7ace1b52
+configuration: 44 bytes e75d92cd (1 updates): 48 2b 2c 00 01 00 01 28 01 00 4f 00 00 00 00 00 9d aa b7 c4 d1 de eb f8 05 12 1f 2c 39 46 53 60 6d 7a 87 94 a1 ae bb c8
+save -hopper.bin: 92 bytes 902e7e23
+power on, pounds: 1964 bytes ad2a83fd (1 updates): 48 21 ac 07 03 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 01 00 00 00 00 05 00 00 00 00 00 10 27 00 00 1c 84 1e 00
+game end, paid out: 124 bytes 8833e5b3 (1 updates): 48 24 7c 00 03 00 00 00 64 00 00 00 00 00 00 00 64 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+switch, coin acks: 0 bytes 811c9dc5 (0 updates):
+not messages, unknown: 0 bytes 811c9dc5 (0 updates):
+state: state 2404 bytes d1c1b8c7
+state: read back 1
+state: 20 bytes 20bf976d (1 updates): 48 22 14 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 7e
+the message finished: 0 bytes 811c9dc5 (0 updates):
+bad state: read back 1
+bad state, then a message: 20 bytes 20bf976d (1 updates): 48 22 14 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 7e
+statuses: 800 bytes 6b68b605 (40 updates): 48 22 14 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 7e 48 22 14 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 7e
+save -hopper.bin: 92 bytes f931ee02
+state, round the ring: state 2404 bytes 58b3a5e0
+state, round the ring: read back 1
+state, round the ring: 1964 bytes 918aaddf (1 updates): 48 21 ac 07 03 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 01 05 00 01 64 01 00 00 00 00 1c 84 1e 00 1c 84 1e 00
+state before V24: 0 bytes 811c9dc5 (1 updates):
+coin after state before V24: 0 bytes 811c9dc5 (0 updates):
+pipe unset
+load -hopper.bin: 92 bytes
+pipe set
+status, from its file: 20 bytes 20bf976d (1 updates): 48 22 14 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 7e
+pipe unset
+active 0
+load -hopper.bin: 0 bytes
+pipe set
+== CLUB KART PRIZE: active 1
+coin before start: 0 bytes 811c9dc5 (0 updates):
+save -hopper.bin: 92 bytes ceaa6d39
+power on, currency 0: 1260 bytes ca35450f (1 updates): 48 10 ec 04 00 00 00 00 00 00 00 00 00 00 00 00 00 00 01 05 00 01 64 01 1c 84 1e 00 1c 84 1e 00 dc 9b 00 00 10 27 00 00
+save -hopper.bin: 92 bytes 74114283
+power on, currency 1: 1260 bytes 4cc57101 (1 updates): 48 10 ec 04 00 00 00 00 00 00 00 00 00 00 00 00 00 01 00 00 00 00 05 00 a0 0f 00 00 1c 84 1e 00 1c 84 1e 00 64 00 00 00
+save -hopper.bin: 92 bytes 44288127
+power on, currency 2: 1260 bytes 7bed611f (1 updates): 48 10 ec 04 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 05 01 1c 84 1e 00 1c 84 1e 00 dc 9b 00 00 10 27 00 00
+save -hopper.bin: 92 bytes 1ee55d06
+power on, currency 3: 1260 bytes 4a4618b3 (1 updates): 48 10 ec 04 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 05 01 1c 84 1e 00 1c 84 1e 00 dc 9b 00 00 10 27 00 00
+save -hopper.bin: 92 bytes 65b2cba8
+power on, currency 4: 1260 bytes cf580f91 (1 updates): 48 10 ec 04 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 64 01 1c 84 1e 00 1c 84 1e 00 dc 9b 00 00 10 27 00 00
+save -hopper.bin: 92 bytes 4b109e01
+power on, currency 5: 1260 bytes 3e04d01b (1 updates): 48 10 ec 04 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 64 01 1c 84 1e 00 1c 84 1e 00 dc 9b 00 00 10 27 00 00
+save -hopper.bin: 92 bytes e62f947b
+power on, currency 255: 1260 bytes 7fa84edb (1 updates): 48 10 ec 04 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 64 01 1c 84 1e 00 1c 84 1e 00 dc 9b 00 00 10 27 00 00
+status: 16 bytes 16bf5dfd (1 updates): 48 11 10 00 00 00 00 00 00 00 00 00 00 00 00 69
+save -hopper.bin: 92 bytes ffcef1da
+game start 0: 96 bytes 85ee3a1b (1 updates): 48 12 60 00 01 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 64 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+save -hopper.bin: 92 bytes 859fd04e
+coin: 32 bytes cc033d75 (1 updates): 48 01 20 00 00 00 00 00 00 00 00 00 64 00 00 00 00 00 00 00 64 00 00 00 00 00 00 00 00 00 00 31
+save -hopper.bin: 92 bytes 47373229
+game start 1: 96 bytes 4f5586a1 (1 updates): 48 12 60 00 02 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 64 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+save -hopper.bin: 92 bytes b18affad
+coin: 32 bytes cc033d75 (1 updates): 48 01 20 00 00 00 00 00 00 00 00 00 64 00 00 00 00 00 00 00 64 00 00 00 00 00 00 00 00 00 00 31
+save -hopper.bin: 92 bytes 32047320
+game start 2: 96 bytes ad3663c3 (1 updates): 48 12 60 00 03 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 64 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+save -hopper.bin: 92 bytes 461f38f4
+coin: 32 bytes cc033d75 (1 updates): 48 01 20 00 00 00 00 00 00 00 00 00 64 00 00 00 00 00 00 00 64 00 00 00 00 00 00 00 00 00 00 31
+save -hopper.bin: 92 bytes 7ff8b477
+game end: 88 bytes 883ff0c5 (1 updates): 48 13 58 00 03 00 00 00 5e 01 00 00 00 00 00 00 64 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+test: 208 bytes f44c41b1 (1 updates): 48 14 d0 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+save -hopper.bin: 92 bytes 609392a4
+configuration: 40 bytes 4027b439 (1 updates): 48 1a 28 00 01 00 01 28 01 00 4f 00 69 76 83 90 9d aa b7 c4 d1 de eb f8 05 12 1f 2c 39 46 53 60 6d 7a 87 94 00 00 00 e0
+save -hopper.bin: 92 bytes d45e6673
+power on, pounds: 1260 bytes 22c26497 (1 updates): 48 10 ec 04 03 00 00 00 00 00 00 00 00 00 00 00 01 01 00 00 01 00 05 00 a0 0f 00 00 1c 84 1e 00 1c 84 1e 00 64 00 00 00
+save -hopper.bin: 92 bytes 22e1f9f2
+game end, paid out: 128 bytes 4b76637f (2 updates): 48 03 28 00 00 00 00 00 00 00 00 00 5e 01 00 00 00 00 00 00 64 00 00 00 00 00 00 00 ee 02 00 00 f4 01 00 00 00 00 00 1b
+save -hopper.bin: 92 bytes cc880eec
+backup clear: 276 bytes e784e8b3 (1 updates): 48 15 14 01 00 00 00 00 00 00 00 00 64 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+bet: 12 bytes 5e006145 (1 updates): 48 16 0c 00 09 03 00 00 00 00 00 76
+switch, test data, coin ack: 0 bytes 811c9dc5 (0 updates):
+not messages, unknown: 0 bytes 811c9dc5 (0 updates):
+state: state 2404 bytes a0d2644d
+state: read back 1
+state: 16 bytes 16bf5dfd (1 updates): 48 11 10 00 00 00 00 00 00 00 00 00 00 00 00 69
+the message finished: 0 bytes 811c9dc5 (0 updates):
+bad state: read back 1
+bad state, then a message: 16 bytes 16bf5dfd (1 updates): 48 11 10 00 00 00 00 00 00 00 00 00 00 00 00 69
+statuses: 640 bytes af75c585 (40 updates): 48 11 10 00 00 00 00 00 00 00 00 00 00 00 00 69 48 11 10 00 00 00 00 00 00 00 00 00 00 00 00 69 48 11 10 00 00 00 00 00
+save -hopper.bin: 92 bytes 63177b7e
+state, round the ring: state 2404 bytes 3eec7627
+state, round the ring: read back 1
+state, round the ring: 1260 bytes 425e8651 (1 updates): 48 10 ec 04 03 00 00 00 00 00 00 00 00 00 00 00 01 00 01 05 01 01 64 01 1c 84 1e 00 1c 84 1e 00 dc 9b 00 00 10 27 00 00
+state before V24: 0 bytes 811c9dc5 (1 updates):
+coin after state before V24: 0 bytes 811c9dc5 (0 updates):
+pipe unset
+load -hopper.bin: 92 bytes
+pipe set
+status, from its file: 16 bytes 16bf5dfd (1 updates): 48 11 10 00 00 00 00 00 00 00 00 00 00 00 00 69
+pipe unset
+active 0

@@ -19,18 +19,23 @@
 #pragma once
 #include "types.h"
 
-namespace hopper
-{
+#ifdef __cplusplus
+extern "C" {
+#endif
 
-void init();
-void term();
-bool active();
-// The coin switch, as the I/O board bridge reads it (naomi_periph_poll())
-void poll();
+/* The hopper board on the SCIF, for the game that is loaded (a medal or
+ * prize game), and gone */
+void hopper_init(void);
+void hopper_term(void);
+bool hopper_active(void);
+/* The coin switch, as the I/O board bridge reads it (naomi_periph_poll()) */
+void hopper_poll(void);
 
-// What the hopper board has in a save state since V24 (hopper.cpp)
-void serialize_v24(void **data, unsigned int *total_size);
-bool unserialize_v24(void **data, unsigned int *total_size);
-void state_before_v24();
+/* What the hopper board has in a save state since V24 (hopper.c) */
+void hopper_serialize_v24(void **data, unsigned int *total_size);
+bool hopper_unserialize_v24(void **data, unsigned int *total_size);
+void hopper_state_before_v24(void);
 
+#ifdef __cplusplus
 }
+#endif
