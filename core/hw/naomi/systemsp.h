@@ -28,6 +28,7 @@
  * that it is this one.
  */
 #pragma once
+#include "dinokich.h"
 #include <memory>
 #include <string>
 #include <retro_atomic.h>
@@ -46,7 +47,6 @@ void writeMemArea0(u32 addr, T v);
 
 class SystemSpCart;
 class IOPortManager;
-class DinokichCardReader;
 
 // What is plugged into one of the ROM board's serial ports
 class SerialPipe
@@ -182,7 +182,7 @@ public:
 	// the touchscreen on the first port, if there is one
 	SerialPipe *touchscreen = nullptr;
 	// the IC card reader on the first port, if there is one (the port has it)
-	DinokichCardReader *dinokich = nullptr;
+	dinokich_reader *dinokich = nullptr;
 
 private:
 	friend class BootIdLoader;

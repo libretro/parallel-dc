@@ -849,6 +849,31 @@ void SerialPort::updateStatus()
 	cart->updateInterrupt(index == 1 ? SystemSpCart::INT_UART1 : SystemSpCart::INT_UART2);
 }
 
+/* The IC card reader of dinokich and loveber3cn (dinokich.c) on a port,
+ * which has it: what it keeps in a state is in V25's part, not here */
+class DinokichPipe : public SerialPipe
+{
+public:
+	DinokichPipe(SerialPort *port, const std::string& gameName, const std::string& path1, const std::string& path2)
+	{
+		reader = dinokich_reader_open(gameName.c_str(), path1.c_str(), path2.c_str(), &updateStatus, port);
+		port->setPipe(this);
+	}
+	~DinokichPipe() override { dinokich_reader_close(reader); }
+
+	void write(u8 v) override { dinokich_reader_write(reader, v); }
+	int available() override { return dinokich_reader_available(reader); }
+	u8 read() override { return dinokich_reader_read(reader); }
+	void reset() override { dinokich_reader_reset(reader); }
+	void serialize(void **, unsigned int *) override { }
+	void unserialize(void **, unsigned int *) override { }
+
+	dinokich_reader *reader;
+
+private:
+	static void updateStatus(void *port) { static_cast<SerialPort *>(port)->updateStatus(); }
+};
+
 //
 // The I/O ports: the cabinet's switches, and what the game drives
 //
@@ -2488,7 +2513,7 @@ bool SystemSpCart::Init()
 	// dinoki4 doesn't use rfid chips. dinokich and loveber3cn have an IC card reader instead
 	if (gameName == "dinokich" || gameName == "loveber3cn")
 	{
-		dinokich = new DinokichCardReader(&uart1, gameName, getCardPath(1), getCardPath(2));
+		dinokich = (new DinokichPipe(&uart1, gameName, getCardPath(1), getCardPath(2)))->reader;
 	}
 	else if ((gameName.compare(0, 6, "dinoki") == 0 && gameName != "dinoki4")
 			|| gameName.compare(0, 7, "loveber") == 0)
@@ -3193,7 +3218,7 @@ void systemsp_state_before_v24(void)
 {
 }
 
-static systemsp::DinokichCardReader *stateDinokich()
+static dinokich_reader *stateDinokich()
 {
 	if (SYSTEM_IS_NAOMI() && naomi_cart_systemsp && systemsp::SystemSpCart::Instance != nullptr)
 		return systemsp::SystemSpCart::Instance->dinokich;
@@ -3202,24 +3227,24 @@ static systemsp::DinokichCardReader *stateDinokich()
 
 void systemsp_serialize_v25(void **data, unsigned int *total_size)
 {
-	systemsp::DinokichCardReader *reader = stateDinokich();
+	dinokich_reader *reader = stateDinokich();
 	if (reader != nullptr)
-		reader->serializeV25(data, total_size);
+		dinokich_reader_serialize_v25(reader, data, total_size);
 }
 
 bool systemsp_unserialize_v25(void **data, unsigned int *total_size)
 {
-	systemsp::DinokichCardReader *reader = stateDinokich();
+	dinokich_reader *reader = stateDinokich();
 	if (reader != nullptr)
-		reader->unserializeV25(data, total_size);
+		dinokich_reader_unserialize_v25(reader, data, total_size);
 	return true;
 }
 
 void systemsp_state_before_v25(void)
 {
-	systemsp::DinokichCardReader *reader = stateDinokich();
+	dinokich_reader *reader = stateDinokich();
 	if (reader != nullptr)
-		reader->stateBeforeV25();
+		dinokich_reader_state_before_v25(reader);
 }
 
 u32 systemsp_read_area0(u32 addr, u32 sz)

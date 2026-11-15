@@ -368,11 +368,11 @@ SOURCES_CXX += $(CORE_DIR)/core/hw/naomi/naomi.cpp \
 					$(CORE_DIR)/core/hw/naomi/m4cartridge.cpp \
 					$(CORE_DIR)/core/hw/naomi/awcartridge.cpp \
 					$(CORE_DIR)/core/hw/naomi/gdcartridge.cpp \
-					$(CORE_DIR)/core/hw/naomi/systemsp.cpp \
-					$(CORE_DIR)/core/hw/naomi/dinokich.cpp
+					$(CORE_DIR)/core/hw/naomi/systemsp.cpp
 SOURCES_C += $(CORE_DIR)/core/hw/naomi/touchscreen.c \
 					$(CORE_DIR)/core/hw/naomi/hopper.c \
 					$(CORE_DIR)/core/hw/naomi/card_reader.c \
+					$(CORE_DIR)/core/hw/naomi/dinokich.c \
 					$(CORE_DIR)/core/hw/naomi/naomi_m3comm.c \
 					$(CORE_DIR)/core/network/naomi_network.c
 

@@ -27,64 +27,42 @@
  * there are none.
  */
 #pragma once
-#include <string>
 #include <retro_atomic.h>
-#include "systemsp.h"
+#include "types.h"
 
-namespace systemsp
-{
+#ifdef __cplusplus
+extern "C" {
+#endif
 
-class DinokichCardReader : public SerialPipe
-{
-public:
-	DinokichCardReader(SerialPort *port, const std::string& gameName, const std::string& path1, const std::string& path2);
-	~DinokichCardReader() override;
+#define DINOKICH_EEPROM_SIZE 1024
+#define DINOKICH_MAX_FRAME (255 + 5)
+#define DINOKICH_TX_SIZE 512
+/* what the reader has in a save state from V25 */
+#define DINOKICH_STATE_SIZE (2 * (1 + DINOKICH_EEPROM_SIZE) + 2 + DINOKICH_MAX_FRAME + 4 + DINOKICH_TX_SIZE)
 
-	void write(u8 v) override;
-	int available() override { return txCount; }
-	u8 read() override;
-	void reset() override;
-	// (nothing in the part of the state that is V24's: see serializeV25())
-	void serialize(void **, unsigned int *) override { }
-	void unserialize(void **, unsigned int *) override { }
+typedef struct dinokich_reader dinokich_reader;
 
-	// What the reader has in a save state from V25: STATE_SIZE bytes
-	void serializeV25(void **data, unsigned int *total_size);
-	void unserializeV25(void **data, unsigned int *total_size);
-	void stateBeforeV25();
+/* The reader of @gameName ("dinokich", "loveber3cn"), with its two cards in
+ * the files at @path1 and @path2 (made when there are none), on a port
+ * that @update_status(@port) tells it has something new to send. There is
+ * one: opened again, it is made again. */
+dinokich_reader *dinokich_reader_open(const char *gameName, const char *path1, const char *path2,
+		void (*update_status)(void *port), void *port);
+/* The cards' files written */
+void dinokich_reader_close(dinokich_reader *r);
 
-	static constexpr u32 EEPROM_SIZE = 1024;
-	static constexpr u32 MAX_FRAME = 255 + 5;
-	static constexpr u32 TX_SIZE = 512;
-	static constexpr u32 STATE_SIZE = 2 * (1 + EEPROM_SIZE) + 2 + MAX_FRAME + 4 + TX_SIZE;
+/* a byte from the game; how many it has for the game; the next of them */
+void dinokich_reader_write(dinokich_reader *r, u8 v);
+int dinokich_reader_available(const dinokich_reader *r);
+u8 dinokich_reader_read(dinokich_reader *r);
+/* what a power-on leaves it with (the cards stay) */
+void dinokich_reader_reset(dinokich_reader *r);
 
-private:
-	void handleFrame();
-	u8 command(const u8 *f, u32 len, u8 *payload, u32& payloadLen);
-	void sendResponse(u8 status, const u8 *payload, u32 len);
-	void makeCard(int slot, bool loveBerry, u32& random);
-	void saveCard(int slot);
+/* What the reader has in a save state from V25: DINOKICH_STATE_SIZE bytes */
+void dinokich_reader_serialize_v25(dinokich_reader *r, void **data, unsigned int *total_size);
+void dinokich_reader_unserialize_v25(dinokich_reader *r, void **data, unsigned int *total_size);
+void dinokich_reader_state_before_v25(dinokich_reader *r);
 
-	SerialPort *port;
-	std::string paths[2];
-	retro_atomic_int_t failed[2];
-
-	enum : u8 {
-		PRESENT = 1,
-		POWERED = 2,
-	};
-	struct Slot {
-		u8 flags;
-		u8 eeprom[EEPROM_SIZE];
-	} slots[2];
-
-	// the request so far
-	u8 rx[MAX_FRAME];
-	u16 rxLen = 0;
-	// what the reader has to send
-	u8 tx[TX_SIZE];
-	u16 txHead = 0;
-	u16 txCount = 0;
-};
-
-}	// namespace systemsp
+#ifdef __cplusplus
+}
+#endif

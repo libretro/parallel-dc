@@ -1,0 +1,95 @@
+save card1: 1024 bytes, id BLXCHN, check 12, sum right
+save card2: 1024 bytes, id BLXCHN, check 12, sum right
+drain
+save card1: 1024 bytes, id BKACHN, check 12, sum right
+save card2: 1024 bytes, id BKACHN, check 12, sum right
+drain
+files open: 0
+version: 13 bytes 49540d21 (13 updates): 55 00 00 08 44 4b 5f 43 20 31 2e 30 41
+version, not right: 5 bytes 1050891f (13 updates): 55 80 00 00 d5
+version, short: 5 bytes 1050891f (12 updates): 55 80 00 00 d5
+lamp: 5 bytes a66f481f (6 updates): 55 00 00 00 55
+which cards: 5 bytes 17f33d65 (6 updates): 55 03 00 00 56
+slot 0: salt: 5 bytes 1050891f (13 updates): 55 80 00 00 d5
+slot 0: power on: 5 bytes 1050891f (13 updates): 55 80 00 00 d5
+slot 0: read: 5 bytes 1050891f (15 updates): 55 80 00 00 d5
+slot 0: read at the end: 5 bytes 1050891f (15 updates): 55 80 00 00 d5
+slot 0: read nothing: 5 bytes 1050891f (15 updates): 55 80 00 00 d5
+slot 0: write: 5 bytes 1050891f (53 updates): 55 80 00 00 d5
+slot 0: write past the end: 5 bytes 1050891f (53 updates): 55 80 00 00 d5
+slot 0: write 0x6d: 5 bytes 1050891f (29 updates): 55 80 00 00 d5
+slot 0: read what was written: 5 bytes 1050891f (15 updates): 55 80 00 00 d5
+slot 0: check value shown: 5 bytes 1050891f (15 updates): 55 80 00 00 d5
+slot 0: check value written: 5 bytes 1050891f (15 updates): 55 80 00 00 d5
+slot 0: power off: 5 bytes 1050891f (13 updates): 55 80 00 00 d5
+slot 1: salt: 6 bytes 240f2c37 (13 updates): 55 00 00 01 9e ca
+slot 1: power on: 5 bytes a66f481f (13 updates): 55 00 00 00 55
+slot 1: read: 21 bytes 9e83b457 (15 updates): 55 00 00 10 7e 73 48 91 54 bf d0 1d ed 2c 50 14 23 fb 1c b7 41
+slot 1: read at the end: 5 bytes 99331fff (15 updates): 55 70 00 00 25
+slot 1: read nothing: 5 bytes 99331fff (15 updates): 55 70 00 00 25
+save card1: 1024 bytes 8344314f
+slot 1: write: 5 bytes a66f481f (53 updates): 55 00 00 00 55
+slot 1: write past the end: 5 bytes 99331fff (53 updates): 55 70 00 00 25
+save card1: 1024 bytes 590a733b
+slot 1: write 0x6d: 5 bytes a66f481f (29 updates): 55 00 00 00 55
+slot 1: read what was written: 45 bytes b901ac6f (15 updates): 55 00 00 28 01 04 07 0a 0d 10 13 16 19 1c 1f 22 25 28 2b 2e 31 34 37 3a 3d 40 43 46
+slot 1: check value shown: 5 bytes a66f481f (15 updates): 55 00 00 00 55
+save card1: 1024 bytes 99166e1c
+slot 1: check value written: 5 bytes a66f481f (15 updates): 55 00 00 00 55
+slot 1: power off: 5 bytes a66f481f (13 updates): 55 00 00 00 55
+slot 2: salt: 6 bytes 240f2c37 (13 updates): 55 00 00 01 9e ca
+slot 2: power on: 5 bytes a66f481f (13 updates): 55 00 00 00 55
+slot 2: read: 21 bytes 3772859f (15 updates): 55 00 00 10 fa eb dc e1 38 27 7c bd 49 c4 a4 e4 ff 33 a0 f7 e1
+slot 2: read at the end: 5 bytes 99331fff (15 updates): 55 70 00 00 25
+slot 2: read nothing: 5 bytes 99331fff (15 updates): 55 70 00 00 25
+save card2: 1024 bytes 16c306ff
+slot 2: write: 5 bytes a66f481f (53 updates): 55 00 00 00 55
+slot 2: write past the end: 5 bytes 99331fff (53 updates): 55 70 00 00 25
+save card2: 1024 bytes 90053d5f
+slot 2: write 0x6d: 5 bytes a66f481f (29 updates): 55 00 00 00 55
+slot 2: read what was written: 45 bytes 12bdf077 (15 updates): 55 00 00 28 02 05 08 0b 0e 11 14 17 1a 1d 20 23 26 29 2c 2f 32 35 38 3b 3e 41 44 47
+slot 2: check value shown: 5 bytes a66f481f (15 updates): 55 00 00 00 55
+save card2: 1024 bytes 563e7074
+slot 2: check value written: 5 bytes a66f481f (15 updates): 55 00 00 00 55
+slot 2: power off: 5 bytes a66f481f (13 updates): 55 00 00 00 55
+slot 3: salt: 5 bytes 1050891f (13 updates): 55 80 00 00 d5
+slot 3: power on: 5 bytes 1050891f (13 updates): 55 80 00 00 d5
+slot 3: read: 5 bytes 1050891f (15 updates): 55 80 00 00 d5
+slot 3: read at the end: 5 bytes 1050891f (15 updates): 55 80 00 00 d5
+slot 3: read nothing: 5 bytes 1050891f (15 updates): 55 80 00 00 d5
+slot 3: write: 5 bytes 1050891f (53 updates): 55 80 00 00 d5
+slot 3: write past the end: 5 bytes 1050891f (53 updates): 55 80 00 00 d5
+slot 3: write 0x6d: 5 bytes 1050891f (29 updates): 55 80 00 00 d5
+slot 3: read what was written: 5 bytes 1050891f (15 updates): 55 80 00 00 d5
+slot 3: check value shown: 5 bytes 1050891f (15 updates): 55 80 00 00 d5
+slot 3: check value written: 5 bytes 1050891f (15 updates): 55 80 00 00 d5
+slot 3: power off: 5 bytes 1050891f (13 updates): 55 80 00 00 d5
+write, nothing: 5 bytes 99331fff (7 updates): 55 70 00 00 25
+read, short: 5 bytes 1050891f (7 updates): 55 80 00 00 d5
+salt, short: 5 bytes 1050891f (7 updates): 55 80 00 00 d5
+unknown: 5 bytes 1050891f (13 updates): 55 80 00 00 d5
+bad checksum: 0 bytes 811c9dc5 (5 updates):
+bytes before a frame: 5 bytes 17f33d65 (8 updates): 55 03 00 00 56
+read: 260 bytes 8c14c3e7 (15 updates): 55 00 00 ff 9e 93 a8 71 b4 9f f0 3d cd 4c 30 74 43 9b 3c 97 ee e3 d8 e1 24 2f 40 ad
+read: 260 bytes 8c14c3e7 (15 updates): 55 00 00 ff 9e 93 a8 71 b4 9f f0 3d cd 4c 30 74 43 9b 3c 97 ee e3 d8 e1 24 2f 40 ad
+read: 260 bytes 8c14c3e7 (15 updates): 55 00 00 ff 9e 93 a8 71 b4 9f f0 3d cd 4c 30 74 43 9b 3c 97 ee e3 d8 e1 24 2f 40 ad
+read, nobody reading: 260 bytes 8c14c3e7 (15 updates): 55 00 00 ff 9e 93 a8 71 b4 9f f0 3d cd 4c 30 74 43 9b 3c 97 ee e3 d8 e1 24 2f 40 ad
+four answers, three sent: 410 bytes b3198585 (57 updates): 55 00 00 c8 fc 9d cb f0 08 41 23 79 e9 1c 40 25 f3 57 33 eb 8c ed bb 60 98 f1 93 e9
+two answers, one sent: 257 bytes cc9bed77 (29 updates): 55 00 00 fc fc 9d cb f0 08 41 23 79 e9 1c 40 25 f3 57 33 eb 8c ed bb 60 98 f1 93 e9
+state, a request on its way: state 2828 bytes 24d1e466
+state, a request on its way: read 24d1e466
+state, a request on its way: 0 bytes 811c9dc5 (7 updates):
+the request finished: 0 bytes 811c9dc5 (3 updates):
+state, not right: state 2828 bytes 880a2caa
+state, not right: read 9e1fe264
+state, not right: 0 bytes 811c9dc5 (5 updates):
+after it: 5 bytes 17f33d65 (6 updates): 55 03 00 00 56
+state, not a request: state 2828 bytes 6c4b81ee
+state, not a request: read b10b0387
+state, not a request: 0 bytes 811c9dc5 (1 updates):
+after it: 5 bytes 17f33d65 (6 updates): 55 03 00 00 56
+power on: 5 bytes a66f481f (13 updates): 55 00 00 00 55
+state before V25: 0 bytes 811c9dc5 (5 updates):
+reset: 0 bytes 811c9dc5 (5 updates):
+drain
+files open: 0
