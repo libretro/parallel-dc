@@ -89,7 +89,6 @@ char g_parent_name[128];
 
 /* (an AtomisWave's BIOS is loaded into sys_nvmem_flash) */
 
-extern char g_roms_dir[PATH_MAX];
 
 InputDescriptors *naomi_game_inputs;
 u8 *naomi_default_eeprom;
@@ -747,12 +746,9 @@ static bool naomi_cart_LoadZip(const char *filename)
 		break;
 	case GD:
 	    {
-	       GDCartridge *gdcart = new GDCartridge(game->size);
-	       gdcart->SetGDRomName(game->gdrom_name);
 	       // (these have the network DIMM board, firmware 3.17)
-	       gdcart->SetDimmBoard(true, strncmp(game->name, "vf4", 3) == 0
+	       CurrentCartridge = gd_cart_open(game->size, game->gdrom_name, true, strncmp(game->name, "vf4", 3) == 0
 	             || strcmp(game->name, "mj1") == 0 || strncmp(game->name, "wccf", 4) == 0);
-	       CurrentCartridge = gdcart;
 	    }
 	    break;
 	default:

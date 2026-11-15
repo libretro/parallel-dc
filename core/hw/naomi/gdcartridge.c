@@ -1,28 +1,28 @@
 /*
- * gdcartridge.cpp
+ * gdcartridge.c
  *
  *  Created on: Nov 16, 2018
  *      Author: flyinghead
  *
  * From mame naomigd.cpp
- * // license:BSD-3-Clause
- * // copyright-holders:Olivier Galibert
+ * license:BSD-3-Clause
+ * copyright-holders:Olivier Galibert
  *
  */
 
+#include <stdlib.h>
+#include <string.h>
+#include <compat/strl.h>
 #include "gdcartridge.h"
 #include "naomi.h"
 #include "naomi_periph.h"
 #include "naomi_regs.h"
 #include "naomi_dimm.h"
+#include "imgread/common.h"
 #include "hw/holly/sb.h"
 #include "hw/holly/holly_intc.h"
 #include "hw/sh4/sh4_mem.h"
 #include "hw/sh4/sh4_sched.h"
-
-extern char g_base_name[128];
-extern char g_parent_name[128];
-extern char g_roms_dir[PATH_MAX];
 
 /*
 
@@ -117,17 +117,36 @@ SH4 IO port A bits
 
 */
 
-const u32 GDCartridge::DES_LEFTSWAP[] = {
+#define FILENAME_LENGTH 24
+
+/* The board, one at a time */
+typedef struct
+{
+	cartridge base;
+	/* the set has a DIMM board, and it answers (see naomi_gd_state_before());
+	 * the board is the network one */
+	bool dimm_board;
+	bool dimm_on;
+	bool dimm_net;
+	const char *gdrom_name;
+	u32 dimm_cur_address;
+	u8 *dimm_data;
+	u32 dimm_data_size;
+} gd_cart;
+
+static gd_cart gd;
+
+static const u32 DES_LEFTSWAP[] = {
 	0x00000000, 0x00000001, 0x00000100, 0x00000101, 0x00010000, 0x00010001, 0x00010100, 0x00010101,
 	0x01000000, 0x01000001, 0x01000100, 0x01000101, 0x01010000, 0x01010001, 0x01010100, 0x01010101
 };
 
-const u32 GDCartridge::DES_RIGHTSWAP[] = {
+static const u32 DES_RIGHTSWAP[] = {
 	0x00000000, 0x01000000, 0x00010000, 0x01010000, 0x00000100, 0x01000100, 0x00010100, 0x01010100,
 	0x00000001, 0x01000001, 0x00010001, 0x01010001, 0x00000101, 0x01000101, 0x00010101, 0x01010101,
 };
 
-const u32 GDCartridge::DES_SBOX1[] = {
+static const u32 DES_SBOX1[] = {
 	0x00808200, 0x00000000, 0x00008000, 0x00808202, 0x00808002, 0x00008202, 0x00000002, 0x00008000,
 	0x00000200, 0x00808200, 0x00808202, 0x00000200, 0x00800202, 0x00808002, 0x00800000, 0x00000002,
 	0x00000202, 0x00800200, 0x00800200, 0x00008200, 0x00008200, 0x00808000, 0x00808000, 0x00800202,
@@ -138,7 +157,7 @@ const u32 GDCartridge::DES_SBOX1[] = {
 	0x00000202, 0x00800200, 0x00800200, 0x00000000, 0x00008002, 0x00008200, 0x00000000, 0x00808002
 };
 
-const u32 GDCartridge::DES_SBOX2[] = {
+static const u32 DES_SBOX2[] = {
 	0x40084010, 0x40004000, 0x00004000, 0x00084010, 0x00080000, 0x00000010, 0x40080010, 0x40004010,
 	0x40000010, 0x40084010, 0x40084000, 0x40000000, 0x40004000, 0x00080000, 0x00000010, 0x40080010,
 	0x00084000, 0x00080010, 0x40004010, 0x00000000, 0x40000000, 0x00004000, 0x00084010, 0x40080000,
@@ -149,7 +168,7 @@ const u32 GDCartridge::DES_SBOX2[] = {
 	0x00084000, 0x00000000, 0x40004000, 0x00004010, 0x40000000, 0x40080010, 0x40084010, 0x00084000
 };
 
-const u32 GDCartridge::DES_SBOX3[] = {
+static const u32 DES_SBOX3[] = {
 	0x00000104, 0x04010100, 0x00000000, 0x04010004, 0x04000100, 0x00000000, 0x00010104, 0x04000100,
 	0x00010004, 0x04000004, 0x04000004, 0x00010000, 0x04010104, 0x00010004, 0x04010000, 0x00000104,
 	0x04000000, 0x00000004, 0x04010100, 0x00000100, 0x00010100, 0x04010000, 0x04010004, 0x00010104,
@@ -160,7 +179,7 @@ const u32 GDCartridge::DES_SBOX3[] = {
 	0x04010000, 0x04000104, 0x00000104, 0x04010000, 0x00010104, 0x00000004, 0x04010004, 0x00010100
 };
 
-const u32 GDCartridge::DES_SBOX4[] = {
+static const u32 DES_SBOX4[] = {
 	0x80401000, 0x80001040, 0x80001040, 0x00000040, 0x00401040, 0x80400040, 0x80400000, 0x80001000,
 	0x00000000, 0x00401000, 0x00401000, 0x80401040, 0x80000040, 0x00000000, 0x00400040, 0x80400000,
 	0x80000000, 0x00001000, 0x00400000, 0x80401000, 0x00000040, 0x00400000, 0x80001000, 0x00001040,
@@ -171,7 +190,7 @@ const u32 GDCartridge::DES_SBOX4[] = {
 	0x80001000, 0x00001040, 0x00400000, 0x80401000, 0x00000040, 0x00400000, 0x00001000, 0x00401040
 };
 
-const u32 GDCartridge::DES_SBOX5[] = {
+static const u32 DES_SBOX5[] = {
 	0x00000080, 0x01040080, 0x01040000, 0x21000080, 0x00040000, 0x00000080, 0x20000000, 0x01040000,
 	0x20040080, 0x00040000, 0x01000080, 0x20040080, 0x21000080, 0x21040000, 0x00040080, 0x20000000,
 	0x01000000, 0x20040000, 0x20040000, 0x00000000, 0x20000080, 0x21040080, 0x21040080, 0x01000080,
@@ -182,7 +201,7 @@ const u32 GDCartridge::DES_SBOX5[] = {
 	0x00040080, 0x01000080, 0x20000080, 0x00040000, 0x00000000, 0x20040000, 0x01040080, 0x20000080
 };
 
-const u32 GDCartridge::DES_SBOX6[] = {
+static const u32 DES_SBOX6[] = {
 	0x10000008, 0x10200000, 0x00002000, 0x10202008, 0x10200000, 0x00000008, 0x10202008, 0x00200000,
 	0x10002000, 0x00202008, 0x00200000, 0x10000008, 0x00200008, 0x10002000, 0x10000000, 0x00002008,
 	0x00000000, 0x00200008, 0x10002008, 0x00002000, 0x00202000, 0x10002008, 0x00000008, 0x10200008,
@@ -193,7 +212,7 @@ const u32 GDCartridge::DES_SBOX6[] = {
 	0x00002000, 0x00200008, 0x10002008, 0x00000000, 0x10202000, 0x10000000, 0x00200008, 0x10002008
 };
 
-const u32 GDCartridge::DES_SBOX7[] = {
+static const u32 DES_SBOX7[] = {
 	0x00100000, 0x02100001, 0x02000401, 0x00000000, 0x00000400, 0x02000401, 0x00100401, 0x02100400,
 	0x02100401, 0x00100000, 0x00000000, 0x02000001, 0x00000001, 0x02000000, 0x02100001, 0x00000401,
 	0x02000400, 0x00100401, 0x00100001, 0x02000400, 0x02000001, 0x02100000, 0x02100400, 0x00100001,
@@ -204,7 +223,7 @@ const u32 GDCartridge::DES_SBOX7[] = {
 	0x00000000, 0x00100401, 0x02100000, 0x00000400, 0x02000001, 0x02000400, 0x00000400, 0x00100001
 };
 
-const u32 GDCartridge::DES_SBOX8[] = {
+static const u32 DES_SBOX8[] = {
 	0x08000820, 0x00000800, 0x00020000, 0x08020820, 0x08000000, 0x08000820, 0x00000020, 0x08000000,
 	0x00020020, 0x08020000, 0x08020820, 0x00020800, 0x08020800, 0x00020820, 0x00000800, 0x00000020,
 	0x08020000, 0x08000020, 0x08000800, 0x00000820, 0x00020800, 0x00020020, 0x08020020, 0x08020800,
@@ -215,7 +234,7 @@ const u32 GDCartridge::DES_SBOX8[] = {
 	0x08020820, 0x00020800, 0x00020800, 0x00000820, 0x00000820, 0x00020020, 0x08000000, 0x08020800
 };
 
-const u32 GDCartridge::DES_MASK_TABLE[] = {
+static const u32 DES_MASK_TABLE[] = {
 	0x24000000, 0x10000000, 0x08000000, 0x02080000, 0x01000000,
 	0x00200000, 0x00100000, 0x00040000, 0x00020000, 0x00010000,
 	0x00002000, 0x00001000, 0x00000800, 0x00000400, 0x00000200,
@@ -227,24 +246,25 @@ const u32 GDCartridge::DES_MASK_TABLE[] = {
 	0x00000020, 0x00000011, 0x00000004, 0x00000002
 };
 
-const u8 GDCartridge::DES_ROTATE_TABLE[16] = {
+static const u8 DES_ROTATE_TABLE[16] = {
 	1, 1, 2, 2, 2, 2, 2, 2, 1, 2, 2, 2, 2, 2, 2, 1
 };
 
-void GDCartridge::permutate(u32 &a, u32 &b, u32 m, int shift)
+static void permutate(u32 *a, u32 *b, u32 m, int shift)
 {
-	u32 temp = ((a>>shift) ^ b) & m;
-	a ^= temp<<shift;
-	b ^= temp;
+	const u32 temp = ((*a >> shift) ^ *b) & m;
+	*a ^= temp << shift;
+	*b ^= temp;
 }
 
-void GDCartridge::des_generate_subkeys(const u64 key, u32 *subkeys)
+static void des_generate_subkeys(const u64 key, u32 *subkeys)
 {
-	u32 l = key >> 32;
-	u32 r = key;
+	u32 l = (u32)(key >> 32);
+	u32 r = (u32)key;
+	int round;
 
-	permutate(r, l, 0x0f0f0f0f, 4);
-	permutate(r, l, 0x10101010, 0);
+	permutate(&r, &l, 0x0f0f0f0f, 4);
+	permutate(&r, &l, 0x10101010, 0);
 
 	l = (DES_LEFTSWAP[(l >> 0)  & 0xf] << 3) |
 		(DES_LEFTSWAP[(l >> 8)  & 0xf] << 2) |
@@ -268,7 +288,7 @@ void GDCartridge::des_generate_subkeys(const u64 key, u32 *subkeys)
 	r &= 0x0fffffff;
 
 
-	for(int round = 0; round < 16; round++) {
+	for (round = 0; round < 16; round++) {
 		l = ((l << DES_ROTATE_TABLE[round]) | (l >> (28 - DES_ROTATE_TABLE[round]))) & 0x0fffffff;
 		r = ((r << DES_ROTATE_TABLE[round]) | (r >> (28 - DES_ROTATE_TABLE[round]))) & 0x0fffffff;
 
@@ -322,25 +342,24 @@ void GDCartridge::des_generate_subkeys(const u64 key, u32 *subkeys)
 	}
 }
 
-template<bool decrypt>
-u64 GDCartridge::des_encrypt_decrypt(u64 src, const u32 *des_subkeys)
+static u64 des_encrypt_decrypt(int decrypt, u64 src, const u32 *des_subkeys)
 {
-	u32 r = (src & 0x00000000ffffffffULL) >> 0;
-	u32 l = (src & 0xffffffff00000000ULL) >> 32;
+	u32 r = (u32)src;
+	u32 l = (u32)(src >> 32);
+	int subkey, i;
 
-	permutate(l, r, 0x0f0f0f0f, 4);
-	permutate(l, r, 0x0000ffff, 16);
-	permutate(r, l, 0x33333333, 2);
-	permutate(r, l, 0x00ff00ff, 8);
-	permutate(l, r, 0x55555555, 1);
+	permutate(&l, &r, 0x0f0f0f0f, 4);
+	permutate(&l, &r, 0x0000ffff, 16);
+	permutate(&r, &l, 0x33333333, 2);
+	permutate(&r, &l, 0x00ff00ff, 8);
+	permutate(&l, &r, 0x55555555, 1);
 
-	int subkey;
 	if(decrypt)
 		subkey = 30;
 	else
 		subkey = 0;
 
-	for(int i = 0; i < 32 ; i+=4) {
+	for (i = 0; i < 32; i += 4) {
 		u32 temp;
 
 		temp = ((r<<1) | (r>>31)) ^ des_subkeys[subkey];
@@ -376,20 +395,18 @@ u64 GDCartridge::des_encrypt_decrypt(u64 src, const u32 *des_subkeys)
 			subkey -= 4;
 	}
 
-	permutate(r, l, 0x55555555, 1);
-	permutate(l, r, 0x00ff00ff, 8);
-	permutate(l, r, 0x33333333, 2);
-	permutate(r, l, 0x0000ffff, 16);
-	permutate(r, l, 0x0f0f0f0f, 4);
+	permutate(&r, &l, 0x55555555, 1);
+	permutate(&l, &r, 0x00ff00ff, 8);
+	permutate(&l, &r, 0x33333333, 2);
+	permutate(&r, &l, 0x0000ffff, 16);
+	permutate(&r, &l, 0x0f0f0f0f, 4);
 
-	return (u64(r) << 32) | u64(l);
+	return ((u64)r << 32) | (u64)l;
 }
 
-u64 GDCartridge::rev64(u64 src)
+static u64 rev64(u64 src)
 {
-	u64 ret;
-
-	ret = ((src & 0x00000000000000ffULL) << 56)
+	return ((src & 0x00000000000000ffULL) << 56)
 		| ((src & 0x000000000000ff00ULL) << 40)
 		| ((src & 0x0000000000ff0000ULL) << 24)
 		| ((src & 0x00000000ff000000ULL) << 8 )
@@ -397,289 +414,525 @@ u64 GDCartridge::rev64(u64 src)
 		| ((src & 0x0000ff0000000000ULL) >> 24)
 		| ((src & 0x00ff000000000000ULL) >> 40)
 		| ((src & 0xff00000000000000ULL) >> 56);
-
-	return ret;
 }
 
-void GDCartridge::find_file(const char *name, const u8 *dir_sector, u32 &file_start, u32 &file_size)
+/* The file @name in the directory @dir_sector: its first sector and its
+ * size (0 and 0 if it is not there) */
+static void find_file(const char *name, const u8 *dir_sector, u32 *file_start, u32 *file_size)
 {
-	file_start = 0;
-	file_size = 0;
+	u32 pos;
+	*file_start = 0;
+	*file_size = 0;
 	DEBUG_LOG(NAOMI, "Looking for file [%s]\n", name);
-	for(u32 pos = 0; pos < 2048; pos += dir_sector[pos]) {
+	for (pos = 0; pos < 2048; pos += dir_sector[pos])
+	{
 		int fnlen = 0;
-		// A record starts with its length, and is whole inside the sector:
-		// 33 bytes and a name. One that is not ends the list (as the
-		// padding at the end of the sector does, whose length is 0).
+		/* A record starts with its length, and is whole inside the sector:
+		 * 33 bytes and a name. One that is not ends the list (as the
+		 * padding at the end of the sector does, whose length is 0). */
 		const u32 reclen = dir_sector[pos];
 		if (reclen < 34 || reclen > 2048 - pos)
 			break;
-		if(!(dir_sector[pos+25] & 2)) {
-			int len = dir_sector[pos+32];
-//          printf("file: [%s]\n", &dir_sector[pos+33+fnlen]);
-			for(fnlen=0; fnlen < FILENAME_LENGTH; fnlen++) {
-				// (the name is compared up to one byte past its end, which
-				// may be past the sector's: nothing follows there)
-				const u8 c = pos+33+fnlen < 2048 ? dir_sector[pos+33+fnlen] : 0;
-				if((c == ';') && (name[fnlen] == 0)) {
-					fnlen = FILENAME_LENGTH+1;
+		if (!(dir_sector[pos + 25] & 2))
+		{
+			const int len = dir_sector[pos + 32];
+			for (fnlen = 0; fnlen < FILENAME_LENGTH; fnlen++)
+			{
+				/* (the name is compared up to one byte past its end, which
+				 * may be past the sector's: nothing follows there) */
+				const u8 c = pos + 33 + fnlen < 2048 ? dir_sector[pos + 33 + fnlen] : 0;
+				if (c == ';' && name[fnlen] == 0)
+				{
+					fnlen = FILENAME_LENGTH + 1;
 					break;
 				}
-				if(c != name[fnlen])
+				if (c != (u8)name[fnlen])
 					break;
-				if(fnlen == len) {
-					if(name[fnlen] == 0)
-						fnlen = FILENAME_LENGTH+1;
+				if (fnlen == len)
+				{
+					if (name[fnlen] == 0)
+						fnlen = FILENAME_LENGTH + 1;
 					else
 						fnlen = FILENAME_LENGTH;
 				}
 			}
 		}
-		if(fnlen == FILENAME_LENGTH+1) {
-			// start sector and size of file
-			file_start = ((dir_sector[pos+2] << 0) |
-							(dir_sector[pos+3] << 8) |
-							(dir_sector[pos+4] << 16) |
-							(dir_sector[pos+5] << 24));
-			file_size =  ((dir_sector[pos+10] << 0) |
-							(dir_sector[pos+11] << 8) |
-							(dir_sector[pos+12] << 16) |
-							(dir_sector[pos+13] << 24));
-
-			DEBUG_LOG(NAOMI, "start %08x size %08x\n", file_start, file_size);
+		if (fnlen == FILENAME_LENGTH + 1)
+		{
+			/* start sector and size of file */
+			*file_start = (u32)dir_sector[pos + 2] | ((u32)dir_sector[pos + 3] << 8)
+					| ((u32)dir_sector[pos + 4] << 16) | ((u32)dir_sector[pos + 5] << 24);
+			*file_size = (u32)dir_sector[pos + 10] | ((u32)dir_sector[pos + 11] << 8)
+					| ((u32)dir_sector[pos + 12] << 16) | ((u32)dir_sector[pos + 13] << 24);
+			DEBUG_LOG(NAOMI, "start %08x size %08x\n", *file_start, *file_size);
 			break;
 		}
 	}
 }
 
-void GDCartridge::read_gdrom(Disc *gdrom, u32 sector, u8* dst, u32 count)
+static void read_gdrom(Disc *gdrom, u32 sector, u8 *dst, u32 count)
 {
 	disc_read_sectors(gdrom, sector + 150, count, dst, 2048);
 }
 
-bool GDCartridge::device_start()
+static u32 le32(const u8 *p)
 {
-	if (dimm_data != NULL)
+	return (u32)p[0] | ((u32)p[1] << 8) | ((u32)p[2] << 16) | ((u32)p[3] << 24);
+}
+
+/* Where the disc is looked for: the content's folder and the disc's name,
+ * and that with the image's extension */
+#define GD_PATH_SIZE (4096 + 256)
+static char gdrom_path[GD_PATH_SIZE];
+static char gdrom_file[GD_PATH_SIZE];
+
+/* The disc at gdrom_path, as a CHD image or a GDI one; or the parent set's */
+static Disc *open_gdrom(const char *gdrom_name)
+{
+	Disc *gdrom;
+	char *pdot;
+	strlcpy(gdrom_path, g_roms_dir, sizeof(gdrom_path));
+	strlcat(gdrom_path, "/", sizeof(gdrom_path));
+	strlcat(gdrom_path, g_base_name, sizeof(gdrom_path));
+	/* (the content's name without what is after its last dot) */
+	pdot = strrchr(gdrom_path + strlen(gdrom_path) - strlen(g_base_name), '.');
+	if (pdot != NULL)
+		*pdot = '\0';
+	strlcat(gdrom_path, "/", sizeof(gdrom_path));
+	strlcat(gdrom_path, gdrom_name, sizeof(gdrom_path));
+
+	strlcpy(gdrom_file, gdrom_path, sizeof(gdrom_file));
+	strlcat(gdrom_file, ".chd", sizeof(gdrom_file));
+	gdrom = OpenDisc(gdrom_file);
+	if (gdrom == NULL)
 	{
-		free(dimm_data);
-		dimm_data = NULL;
+		strlcpy(gdrom_file, gdrom_path, sizeof(gdrom_file));
+		strlcat(gdrom_file, ".gdi", sizeof(gdrom_file));
+		gdrom = OpenDisc(gdrom_file);
 	}
-	dimm_data_size = 0;
-
-	char name[128];
-	memset(name,'\0',128);
-
-	u64 key;
-	u8 netpic = 0;
-
-	const u8 *picdata = rom_ptr;
-
-	if (rom_size > 0 && gdrom_name != NULL)
+	if (gdrom == NULL && g_parent_name[0] != '\0')
 	{
-		if (rom_size >= 0x4000) {
-			DEBUG_LOG(NAOMI, "Real PIC binary found\n");
-			for(int i=0;i<7;i++)
-				name[i] = picdata[0x7c0+i*2];
-			for(int i=0;i<7;i++)
-				name[i+7] = picdata[0x7e0+i*2];
+		strlcpy(gdrom_file, g_roms_dir, sizeof(gdrom_file));
+		strlcat(gdrom_file, "/", sizeof(gdrom_file));
+		strlcat(gdrom_file, g_parent_name, sizeof(gdrom_file));
+		strlcat(gdrom_file, "/", sizeof(gdrom_file));
+		strlcat(gdrom_file, gdrom_name, sizeof(gdrom_file));
+		strlcat(gdrom_file, ".chd", sizeof(gdrom_file));
+		gdrom = OpenDisc(gdrom_file);
+	}
+	return gdrom;
+}
 
-			key = 0;
-			for(int i=0;i<7;i++)
-				key |= u64(picdata[0x780+i*2]) << (56 - i*8);
+/* The disc's sectors, read at load (as dir_sector below: nothing in them
+ * if a sector cannot be read) */
+static u8 sector_buf[2048];
+static u8 dir_sector[2048];
 
-			key |= picdata[0x7a0];
+/* The board's memory, from the file on the disc that the PIC names,
+ * decrypted with its key */
+static bool device_start(gd_cart *g)
+{
+	const cartridge *c = &g->base;
+	const u8 *picdata = c->rom_ptr;
+	char name[128];
+	u64 key = 0;
+	u8 netpic = 0;
+	Disc *gdrom;
+	u32 path_table, file_start = 0, file_size = 0;
+	int i;
 
-			netpic = picdata[0x6ee];
-		} else {
-			// use extracted pic data
-			//printf("This PIC key hasn't been converted to a proper PIC binary yet!\n");
-			memcpy(name, picdata+33, 7);
-			memcpy(name+7, picdata+25, 7);
+	if (g->dimm_data != NULL)
+	{
+		free(g->dimm_data);
+		g->dimm_data = NULL;
+	}
+	g->dimm_data_size = 0;
+	memset(name, '\0', sizeof(name));
 
-			key =((u64(picdata[0x31]) << 56) |
-					(u64(picdata[0x32]) << 48) |
-					(u64(picdata[0x33]) << 40) |
-					(u64(picdata[0x34]) << 32) |
-					(u64(picdata[0x35]) << 24) |
-					(u64(picdata[0x36]) << 16) |
-					(u64(picdata[0x37]) << 8)  |
-					(u64(picdata[0x29]) << 0));
-		}
+	if (c->rom_size == 0 || g->gdrom_name == NULL)
+		return true;
 
-		DEBUG_LOG(NAOMI, "key is %08x%08x\n", (u32)((key & 0xffffffff00000000ULL)>>32), (u32)(key & 0x00000000ffffffffULL));
+	if (c->rom_size >= 0x4000)
+	{
+		DEBUG_LOG(NAOMI, "Real PIC binary found\n");
+		for (i = 0; i < 7; i++)
+			name[i] = picdata[0x7c0 + i * 2];
+		for (i = 0; i < 7; i++)
+			name[i + 7] = picdata[0x7e0 + i * 2];
+		for (i = 0; i < 7; i++)
+			key |= (u64)picdata[0x780 + i * 2] << (56 - i * 8);
+		key |= picdata[0x7a0];
+		netpic = picdata[0x6ee];
+	}
+	else
+	{
+		/* use extracted pic data */
+		memcpy(name, picdata + 33, 7);
+		memcpy(name + 7, picdata + 25, 7);
+		key = ((u64)picdata[0x31] << 56) | ((u64)picdata[0x32] << 48)
+				| ((u64)picdata[0x33] << 40) | ((u64)picdata[0x34] << 32)
+				| ((u64)picdata[0x35] << 24) | ((u64)picdata[0x36] << 16)
+				| ((u64)picdata[0x37] << 8) | (u64)picdata[0x29];
+	}
+	DEBUG_LOG(NAOMI, "key is %08x%08x\n", (u32)(key >> 32), (u32)key);
 
-		// (as dir_sector below: nothing in it if a sector cannot be read)
-		u8 buffer[2048];
-		memset(buffer, 0, sizeof(buffer));
-		std::string gdrom_dir;
-		char *pdot = strrchr(g_base_name, '.');
-		if (pdot != NULL)
-		   gdrom_dir = std::string(g_base_name, pdot - g_base_name);
-		else
-		   gdrom_dir = g_base_name;
-		std::string gdrom_path = std::string(g_roms_dir) + "/" + gdrom_dir + "/" + gdrom_name;
-		Disc *gdrom = OpenDisc((gdrom_path + ".chd").c_str());
-		if (gdrom == NULL)
-			gdrom = OpenDisc((gdrom_path + ".gdi").c_str());
-		if (gdrom == NULL && g_parent_name[0] != '\0')
-			gdrom = OpenDisc((std::string(g_roms_dir) + "/" + g_parent_name + "/" + gdrom_name + ".chd").c_str());
-		if (gdrom == NULL)
+	memset(sector_buf, 0, sizeof(sector_buf));
+	gdrom = open_gdrom(g->gdrom_name);
+	if (gdrom == NULL)
+	{
+		/* The game is on the disc and nowhere else: with nothing in the
+		 * board's memory neither the BIOS nor the built-in boot has
+		 * anything to start. */
+		ERROR_LOG(NAOMI, "Naomi GD-ROM: cannot open the disc image %s.chd (or .gdi): the game cannot start without it\n", gdrom_path);
+		return false;
+	}
+	/* primary volume descriptor: read frame 0xb06e (frame=sector+150); the
+	 * dimm board firmware starts straight from this frame */
+	read_gdrom(gdrom, (netpic ? 0 : 45000) + 16, sector_buf, 1);
+	path_table = le32(&sector_buf[0x8c]);
+	/* path table */
+	read_gdrom(gdrom, path_table, sector_buf, 1);
+
+	/* directory (empty until one is read: a disc whose path table has no
+	 * ROM directory, or a sector that cannot be read) */
+	memset(dir_sector, 0, sizeof(dir_sector));
+	if (netpic == 0)
+	{
+		read_gdrom(gdrom, le32(&sector_buf[0x2]), dir_sector, 1);
+		find_file(name, dir_sector, &file_start, &file_size);
+		if (file_start && file_size == 0x100)
 		{
-		   // The game is on the disc and nowhere else: with nothing in the
-		   // board's memory neither the BIOS nor the built-in boot has
-		   // anything to start.
-		   ERROR_LOG(NAOMI, "Naomi GD-ROM: cannot open the disc image %s.chd (or .gdi): the game cannot start without it\n", gdrom_path.c_str());
-		   return false;
+			/* read file, and the "rom" file's name in it */
+			read_gdrom(gdrom, file_start, sector_buf, 1);
+			memset(name, '\0', sizeof(name));
+			memcpy(name, sector_buf + 0xc0, FILENAME_LENGTH - 1);
 		}
-		// primary volume descriptor
-		// read frame 0xb06e (frame=sector+150)
-		// dimm board firmware starts straight from this frame
-		read_gdrom(gdrom, (netpic ? 0 : 45000) + 16, buffer);
-		u32 path_table = ((buffer[0x8c+0] << 0) |
-								(buffer[0x8c+1] << 8) |
-								(buffer[0x8c+2] << 16) |
-								(buffer[0x8c+3] << 24));
-		// path table
-		read_gdrom(gdrom, path_table, buffer);
-
-		// directory (empty until one is read: a disc whose path table
-		// has no ROM directory, or a sector that cannot be read)
-		u8 dir_sector[2048];
-		memset(dir_sector, 0, sizeof(dir_sector));
-		// find data of file
-		u32 file_start, file_size;
-
-		if (netpic == 0) {
-			u32 dir = ((buffer[0x2 + 0] << 0) |
-				(buffer[0x2 + 1] << 8) |
-				(buffer[0x2 + 2] << 16) |
-				(buffer[0x2 + 3] << 24));
-
-			read_gdrom(gdrom, dir, dir_sector);
-			find_file(name, dir_sector, file_start, file_size);
-
-			if (file_start && (file_size == 0x100)) {
-				// read file
-				read_gdrom(gdrom, file_start, buffer);
-				// get "rom" file name
-				memset(name, '\0', 128);
-				memcpy(name, buffer + 0xc0, FILENAME_LENGTH - 1);
-			}
-		} else {
-			u32 i = 0;
-			// (an entry is 8 bytes and its name, whole inside the sector)
-			while (i < 2048 && buffer[i] != 0 && 8u + buffer[i] <= 2048 - i)
-			{
-				if (buffer[i] == 3 && buffer[i + 8] == 'R' && buffer[i + 9] == 'O' && buffer[i + 10] == 'M')    // find ROM dir
-				{
-					u32 dir = ((buffer[i + 2] << 0) |
-						(buffer[i + 3] << 8) |
-						(buffer[i + 4] << 16) |
-						(buffer[i + 5] << 24));
-					memcpy(name, "ROM.BIN", 7);
-					read_gdrom(gdrom, dir, dir_sector);
-					break;
-				}
-				i += buffer[i] + 8 + (buffer[i] & 1);
-			}
-		}
-
-		find_file(name, dir_sector, file_start, file_size);
-
-		if (file_start) {
-			u32 file_rounded_size = (file_size + 2047) & -2048;
-			// (a size the disc gives: one that no power of two holds is not
-			// a file of this board's, and would never end the loop below)
-			if (file_rounded_size <= 0x80000000u)
-			{
-				for (dimm_data_size = 4096; dimm_data_size < file_rounded_size; dimm_data_size <<= 1)
-					;
-				dimm_data = (u8 *)malloc(dimm_data_size);
-			}
-			if (dimm_data == NULL)
-			{
-				ERROR_LOG(NAOMI, "Naomi GDROM: no memory for a file of %u bytes\n", file_size);
-				dimm_data_size = 0;
-				disc_free(gdrom);
-				return false;
-			}
-			if (dimm_data_size != file_rounded_size)
-				memset(dimm_data + file_rounded_size, 0, dimm_data_size - file_rounded_size);
-
-			// read encrypted data into dimm_data
-			u32 sectors = file_rounded_size / 2048;
-			read_gdrom(gdrom, file_start, dimm_data, sectors);
-
-			// decrypt loaded data
-			u32 des_subkeys[32];
-			des_generate_subkeys(rev64(key), des_subkeys);
-
-			for (u32 i = 0; i < file_rounded_size; i += 8)
-				*(u64 *)(dimm_data + i) = des_encrypt_decrypt<true>(*(u64 *)(dimm_data + i), des_subkeys);
-		}
-
-		disc_free(gdrom);
-
-		if (!dimm_data)
+	}
+	else
+	{
+		u32 j = 0;
+		/* (an entry is 8 bytes and its name, whole inside the sector) */
+		while (j < 2048 && sector_buf[j] != 0 && 8u + sector_buf[j] <= 2048 - j)
 		{
-			ERROR_LOG(NAOMI, "Naomi GDROM: Could not find the file to decrypt on the disc image %s\n", gdrom_path.c_str());
+			if (sector_buf[j] == 3 && sector_buf[j + 8] == 'R' && sector_buf[j + 9] == 'O' && sector_buf[j + 10] == 'M')
+			{
+				/* the ROM directory */
+				memcpy(name, "ROM.BIN", 7);
+				read_gdrom(gdrom, le32(&sector_buf[j + 2]), dir_sector, 1);
+				break;
+			}
+			j += sector_buf[j] + 8 + (sector_buf[j] & 1);
+		}
+	}
+
+	find_file(name, dir_sector, &file_start, &file_size);
+
+	if (file_start)
+	{
+		const u32 file_rounded_size = (file_size + 2047) & ~2047u;
+		u32 des_subkeys[32];
+		u32 k;
+		/* (a size the disc gives: one that no power of two holds is not a
+		 * file of this board's, and would never end the loop below) */
+		if (file_rounded_size <= 0x80000000u)
+		{
+			for (g->dimm_data_size = 4096; g->dimm_data_size < file_rounded_size; g->dimm_data_size <<= 1)
+				;
+			g->dimm_data = (u8 *)malloc(g->dimm_data_size);
+		}
+		if (g->dimm_data == NULL)
+		{
+			ERROR_LOG(NAOMI, "Naomi GDROM: no memory for a file of %u bytes\n", file_size);
+			g->dimm_data_size = 0;
+			disc_free(gdrom);
 			return false;
 		}
+		if (g->dimm_data_size != file_rounded_size)
+			memset(g->dimm_data + file_rounded_size, 0, g->dimm_data_size - file_rounded_size);
+
+		/* the encrypted data, decrypted where it is */
+		read_gdrom(gdrom, file_start, g->dimm_data, file_rounded_size / 2048);
+		des_generate_subkeys(rev64(key), des_subkeys);
+		for (k = 0; k < file_rounded_size; k += 8)
+		{
+			u64 block;
+			memcpy(&block, g->dimm_data + k, 8);
+			block = des_encrypt_decrypt(1, block, des_subkeys);
+			memcpy(g->dimm_data + k, &block, 8);
+		}
+	}
+
+	disc_free(gdrom);
+
+	if (g->dimm_data == NULL)
+	{
+		ERROR_LOG(NAOMI, "Naomi GDROM: Could not find the file to decrypt on the disc image %s\n", gdrom_path);
+		return false;
 	}
 	return true;
 }
 
-void GDCartridge::device_reset()
+static void *gd_get_dma_ptr(cartridge *c, u32 *size)
 {
-	dimm_cur_address = 0;
-}
-void *GDCartridge::GetDmaPtr(u32 &size)
-{
-	if (dimm_data == NULL)
+	gd_cart *g = &gd;
+	if (g->dimm_data == NULL)
 	{
-		size = 0;
+		*size = 0;
 		return NULL;
 	}
-
-	dimm_cur_address = dma_offset & (dimm_data_size-1);
-	size = std::min(size, dimm_data_size - dimm_cur_address);
-	return dimm_data + dimm_cur_address;
+	g->dimm_cur_address = c->dma_offset & (g->dimm_data_size - 1);
+	if (*size > g->dimm_data_size - g->dimm_cur_address)
+		*size = g->dimm_data_size - g->dimm_cur_address;
+	return g->dimm_data + g->dimm_cur_address;
 }
 
-bool GDCartridge::Read(u32 offset, u32 size, void *dst)
+static bool gd_read(cartridge *c, u32 offset, u32 size, void *dst)
 {
-	if (dimm_data == NULL)
+	const gd_cart *g = &gd;
+	u32 addr;
+	(void)c;
+	if (g->dimm_data == NULL)
 	{
-		*(u32 *)dst = 0;
+		memset(dst, 0, 4);
 		return true;
 	}
-	u32 addr = offset & (dimm_data_size-1);
-	memcpy(dst, &dimm_data[addr], std::min(size, dimm_data_size - addr));
+	addr = offset & (g->dimm_data_size - 1);
+	if (size > g->dimm_data_size - addr)
+		size = g->dimm_data_size - addr;
+	memcpy(dst, &g->dimm_data[addr], size);
 	return true;
 }
 
-void GDCartridge::GetGameId(char *id)
+static void gd_game_id(cartridge *c, char *id)
 {
-	if (dimm_data_size < 0x30 + 0x20)
+	(void)c;
+	if (gd.dimm_data_size < 0x30 + 0x20)
 		strcpy(id, "(ROM too small)");
 	else
-		cart_trim_id(id, (const char *)dimm_data + 0x30, 0x20);
+		cart_trim_id(id, (const char *)gd.dimm_data + 0x30, 0x20);
 }
 
-/* The board's ops: its own, and a NAOMI ROM board's */
-static GDCartridge *gd_of(cartridge *c)
+/* The DIMM board, as its firmware answers the NAOMI (naomi_dimm.c says
+ * what it leaves in the NAOMI's memory): the BIOS finds a GD-ROM system,
+ * and the board puts its memory size, firmware version and the ROM board's
+ * serial number where the BIOS and the games look for them (a game that
+ * finds no serial number there stops with error 04). The registers are
+ * reg_dimm_command, reg_dimm_offsetl, reg_dimm_parameterl and
+ * reg_dimm_parameterh, which the save state has always held. */
+
+/* the cartridge with a DIMM board that answers (at most one at a time) */
+static gd_cart *dimm_cart;
+static int dimm_sched_id = -1;
+/* bit 0: no command for the board; bit 4: always set; bit 8, cleared while
+ * the board's interrupt to the NAOMI is waiting */
+#define DIMM_STATUS 0x111u
+
+static void dimm_write32(uint32_t addr, uint32_t value)
 {
-	return static_cast<GDCartridge *>(c);
+	WriteMem32_nommu(addr, value);
 }
 
-static bool gd_init(cartridge *c) { return gd_of(c)->Init(); }
-static void gd_reset(cartridge *c) { gd_of(c)->Reset(); }
-static u32 gd_read_mem(cartridge *c, u32 address, u32 size) { return gd_of(c)->ReadMem(address, size); }
-static void gd_write_mem(cartridge *c, u32 address, u32 data, u32 size) { gd_of(c)->WriteMem(address, data, size); }
-static bool gd_read(cartridge *c, u32 offset, u32 size, void *dst) { return gd_of(c)->Read(offset, size, dst); }
-static void *gd_get_dma_ptr(cartridge *c, u32 *size) { return gd_of(c)->GetDmaPtr(*size); }
-static void gd_game_id(cartridge *c, char *id) { gd_of(c)->GetGameId(id); }
-static void gd_close(cartridge *c) { delete gd_of(c); }
+static void dimm_write8(uint32_t addr, uint8_t value)
+{
+	WriteMem8_nommu(addr, value);
+}
+
+static int dimm_sched(int tag, int cycles, int jitter);
+
+static void set_dimm_board(gd_cart *g, bool on, bool net)
+{
+	if (on)
+	{
+		dimm_cart = g;
+		dimm_sched_id = sh4_sched_register(0, dimm_sched);
+	}
+	else if (dimm_cart == g)
+	{
+		sh4_sched_request(dimm_sched_id, -1);
+		dimm_cart = NULL;
+	}
+	g->dimm_board = on;
+	g->dimm_on = on;
+	g->dimm_net = on && net;
+}
+
+static void dimm_reset(gd_cart *g)
+{
+	g->dimm_on = g->dimm_board;
+	if (dimm_cart == g)
+		sh4_sched_request(dimm_sched_id, -1);
+}
+
+static void dimm_return(bool failed, u16 offsetl, u32 parameter)
+{
+	reg_dimm_command = ((reg_dimm_command & 0x7e00) + 0x400) | (failed ? 0xff : 0x4);
+	reg_dimm_offsetl = offsetl;
+	reg_dimm_parameterh = parameter >> 16;
+	reg_dimm_parameterl = parameter & 0xffff;
+	asic_RaiseInterrupt(holly_EXP_PCI);
+}
+
+static void dimm_system_command(gd_cart *g, u32 cmd)
+{
+	switch (cmd)
+	{
+	case 0xf:	/* start up */
+		naomi_dimm_startup(g->dimm_net, g->dimm_data_size, naomi_rom_serial_data() + 0x20, dimm_write32);
+		/* the board asks the NAOMI to set its base address to 0c000000 */
+		reg_dimm_command = 0x8600;
+		reg_dimm_offsetl = 0;
+		reg_dimm_parameterl = 0;
+		reg_dimm_parameterh = 0x0c00;
+		asic_RaiseInterrupt(holly_EXP_PCI);
+		if (dimm_cart == g)
+			sh4_sched_request(dimm_sched_id, SH4_MAIN_CLOCK);
+		break;
+
+	case 0:		/* nothing */
+	case 1:		/* control read */
+	case 3:		/* set base address */
+	case 4:		/* peek8 */
+	case 5:		/* peek16 */
+	case 6:		/* peek32 */
+	case 8:		/* poke8 */
+	case 9:		/* poke16 */
+	case 10:	/* poke32 */
+		/* the NAOMI's answer to a command of the board's */
+		DEBUG_LOG(NAOMI, "DIMM: answer to command %x\n", cmd);
+		break;
+
+	default:
+		WARN_LOG(NAOMI, "DIMM: system command %x not handled\n", cmd);
+		break;
+	}
+}
+
+/* A command from the NAOMI: bits 14-13 its group, 12-9 the command. */
+static void dimm_process(gd_cart *g)
+{
+	const u32 group = (reg_dimm_command >> 13) & 3;
+	const u32 cmd = (reg_dimm_command >> 9) & 0xf;
+
+	DEBUG_LOG(NAOMI, "DIMM command %04x offset %04x param %04x%04x\n", reg_dimm_command,
+			reg_dimm_offsetl, reg_dimm_parameterh, reg_dimm_parameterl);
+	if (group == 0)
+		dimm_system_command(g, cmd);
+	else
+	{
+		/* (network commands: this board has none) */
+		WARN_LOG(NAOMI, "DIMM command group %d command %x not handled\n", group, cmd);
+		dimm_return(true, 0, 0xffffffff);
+	}
+}
+
+/* Once a second the board asks the NAOMI for the word at 0c01fc08, where
+ * the BIOS's test menu leaves its requests, and answers them. */
+static int dimm_poll(gd_cart *g)
+{
+	if (!g->dimm_on)
+		return 0;
+	if (SB_ISTEXT & 8)	/* the last interrupt is not taken yet */
+		return SH4_MAIN_CLOCK;
+
+	/* peek32(0c01fc08) */
+	reg_dimm_command = 0x8000 | (6 << 9) | ((0x0c01fc08 >> 16) & 0x1ff);
+	reg_dimm_offsetl = 0x0c01fc08 & 0xffff;
+	reg_dimm_parameterl = 0;
+	reg_dimm_parameterh = 0;
+	asic_RaiseInterrupt(holly_EXP_PCI);
+
+	naomi_dimm_answer(g->dimm_net, ReadMem32_nommu(NAOMI_DIMM_REQUEST), dimm_write32, dimm_write8);
+	return SH4_MAIN_CLOCK;
+}
+
+static int dimm_sched(int tag, int cycles, int jitter)
+{
+	(void)tag;
+	(void)cycles;
+	(void)jitter;
+	return dimm_cart != NULL ? dimm_poll(dimm_cart) : 0;
+}
+
+static u32 gd_read_mem(cartridge *c, u32 address, u32 size)
+{
+	if (!gd.dimm_on)
+		return naomi_board_read_mem(c, address, size);
+	switch (address & 255)
+	{
+	case 0x3c:	/* 5f703c: DIMM COMMAND */
+		return reg_dimm_command & 0xffff;
+	case 0x40:	/* 5f7040: DIMM OFFSETL */
+		return reg_dimm_offsetl & 0xffff;
+	case 0x44:	/* 5f7044: DIMM PARAMETERL */
+		return reg_dimm_parameterl & 0xffff;
+	case 0x48:	/* 5f7048: DIMM PARAMETERH */
+		return reg_dimm_parameterh & 0xffff;
+	case 0x4c:	/* 5f704c: DIMM STATUS */
+		return DIMM_STATUS & ~(((SB_ISTEXT >> 3) & 1) << 8);
+	default:
+		return naomi_board_read_mem(c, address, size);
+	}
+}
+
+static void gd_write_mem(cartridge *c, u32 address, u32 data, u32 size)
+{
+	if (!gd.dimm_on)
+	{
+		naomi_board_write_mem(c, address, data, size);
+		return;
+	}
+	switch (address & 255)
+	{
+	case 0x3c:	/* 5f703c: DIMM COMMAND */
+		reg_dimm_command = data & 0xffff;
+		return;
+	case 0x40:	/* 5f7040: DIMM OFFSETL */
+		reg_dimm_offsetl = data & 0xffff;
+		return;
+	case 0x44:	/* 5f7044: DIMM PARAMETERL */
+		reg_dimm_parameterl = data & 0xffff;
+		return;
+	case 0x48:	/* 5f7048: DIMM PARAMETERH */
+		reg_dimm_parameterh = data & 0xffff;
+		return;
+	case 0x4c:	/* 5f704c: DIMM STATUS */
+		/* bit 8 set: the board's interrupt is taken (a 0 there does
+		 * nothing); bit 0 clear: a command for the board */
+		if (data & 0x100)
+			asic_CancelInterrupt(holly_EXP_PCI);
+		if ((data & 1) == 0)
+			dimm_process(&gd);
+		return;
+	default:
+		naomi_board_write_mem(c, address, data, size);
+		return;
+	}
+}
+
+static bool gd_init(cartridge *c)
+{
+	(void)c;
+	if (!device_start(&gd))
+		return false;
+	gd.dimm_cur_address = 0;
+	return true;
+}
+
+static void gd_reset(cartridge *c)
+{
+	naomi_board_reset(c);
+	gd.dimm_cur_address = 0;
+	dimm_reset(&gd);
+}
+
+static void gd_close(cartridge *c)
+{
+	set_dimm_board(&gd, false, false);
+	free(gd.dimm_data);
+	gd.dimm_data = NULL;
+	gd.dimm_data_size = 0;
+	cart_destruct(c);
+}
 
 static const cartridge_ops gd_ops = {
 	gd_init,
@@ -703,230 +956,34 @@ static const cartridge_ops gd_ops = {
 	gd_close
 };
 
-GDCartridge::GDCartridge(u32 size)
+cartridge *gd_cart_open(u32 size, const char *gdrom_name, bool dimm, bool net)
 {
-	cart_construct(this, &gd_ops, size);
-}
-
-/* The DIMM board, as its firmware answers the NAOMI (naomi_dimm.c says
- * what it leaves in the NAOMI's memory): the BIOS finds a GD-ROM system, and the board puts its memory
- * size, firmware version and the ROM board's serial number where the
- * BIOS and the games look for them (a game that finds no serial number
- * there stops with error 04). The registers are reg_dimm_command,
- * reg_dimm_offsetl, reg_dimm_parameterl and reg_dimm_parameterh, which
- * the save state has always held. */
-
-
-// the cartridge with a DIMM board that answers (at most one at a time)
-static GDCartridge *dimm_cart;
-static int dimm_sched_id = -1;
-// bit 0: no command for the board; bit 4: always set; bit 8, cleared while
-// the board's interrupt to the NAOMI is waiting
-static const u32 DIMM_STATUS = 0x111;
-
-static void dimm_write32(uint32_t addr, uint32_t value)
-{
-	WriteMem32_nommu(addr, value);
-}
-
-static void dimm_write8(uint32_t addr, uint8_t value)
-{
-	WriteMem8_nommu(addr, value);
-}
-
-GDCartridge::~GDCartridge()
-{
-	SetDimmBoard(false, false);
-	free(dimm_data);
-	cart_destruct(this);
-}
-
-void GDCartridge::SetDimmBoard(bool on, bool net)
-{
-	if (on)
-	{
-		dimm_cart = this;
-		dimm_sched_id = sh4_sched_register(0, &GDCartridge::dimm_sched);
-	}
-	else if (dimm_cart == this)
-	{
-		sh4_sched_request(dimm_sched_id, -1);
-		dimm_cart = NULL;
-	}
-	dimm_board = on;
-	dimm_on = on;
-	dimm_net = on && net;
-}
-
-void GDCartridge::dimm_reset()
-{
-	dimm_on = dimm_board;
-	if (dimm_cart == this)
-		sh4_sched_request(dimm_sched_id, -1);
-}
-
-u32 GDCartridge::ReadMem(u32 address, u32 size)
-{
-	if (!dimm_on)
-		return naomi_board_read_mem(this, address, size);
-	switch (address & 255)
-	{
-	case 0x3c:	// 5f703c: DIMM COMMAND
-		return reg_dimm_command & 0xffff;
-	case 0x40:	// 5f7040: DIMM OFFSETL
-		return reg_dimm_offsetl & 0xffff;
-	case 0x44:	// 5f7044: DIMM PARAMETERL
-		return reg_dimm_parameterl & 0xffff;
-	case 0x48:	// 5f7048: DIMM PARAMETERH
-		return reg_dimm_parameterh & 0xffff;
-	case 0x4c:	// 5f704c: DIMM STATUS
-		return DIMM_STATUS & ~(((SB_ISTEXT >> 3) & 1) << 8);
-	default:
-		return naomi_board_read_mem(this, address, size);
-	}
-}
-
-void GDCartridge::WriteMem(u32 address, u32 data, u32 size)
-{
-	if (!dimm_on)
-	{
-		naomi_board_write_mem(this, address, data, size);
-		return;
-	}
-	switch (address & 255)
-	{
-	case 0x3c:	// 5f703c: DIMM COMMAND
-		reg_dimm_command = data & 0xffff;
-		return;
-	case 0x40:	// 5f7040: DIMM OFFSETL
-		reg_dimm_offsetl = data & 0xffff;
-		return;
-	case 0x44:	// 5f7044: DIMM PARAMETERL
-		reg_dimm_parameterl = data & 0xffff;
-		return;
-	case 0x48:	// 5f7048: DIMM PARAMETERH
-		reg_dimm_parameterh = data & 0xffff;
-		return;
-	case 0x4c:	// 5f704c: DIMM STATUS
-		// bit 8 set: the board's interrupt is taken (a 0 there does nothing);
-		// bit 0 clear: a command for the board
-		if (data & 0x100)
-			asic_CancelInterrupt(holly_EXP_PCI);
-		if ((data & 1) == 0)
-			dimm_process();
-		return;
-	default:
-		naomi_board_write_mem(this, address, data, size);
-		return;
-	}
-}
-
-/* A command from the NAOMI: bits 14-13 its group, 12-9 the command. */
-void GDCartridge::dimm_process()
-{
-	const u32 group = (reg_dimm_command >> 13) & 3;
-	const u32 cmd = (reg_dimm_command >> 9) & 0xf;
-
-	DEBUG_LOG(NAOMI, "DIMM command %04x offset %04x param %04x%04x\n", reg_dimm_command,
-			reg_dimm_offsetl, reg_dimm_parameterh, reg_dimm_parameterl);
-	if (group == 0)
-		dimm_system_command(cmd);
-	else
-	{
-		// (network commands: this board has none)
-		WARN_LOG(NAOMI, "DIMM command group %d command %x not handled\n", group, cmd);
-		dimm_return(true, 0, 0xffffffff);
-	}
-}
-
-void GDCartridge::dimm_return(bool failed, u16 offsetl, u32 parameter)
-{
-	reg_dimm_command = ((reg_dimm_command & 0x7e00) + 0x400) | (failed ? 0xff : 0x4);
-	reg_dimm_offsetl = offsetl;
-	reg_dimm_parameterh = parameter >> 16;
-	reg_dimm_parameterl = parameter & 0xffff;
-	asic_RaiseInterrupt(holly_EXP_PCI);
-}
-
-void GDCartridge::dimm_system_command(u32 cmd)
-{
-	switch (cmd)
-	{
-	case 0xf:	// start up
-		{
-			naomi_dimm_startup(dimm_net, dimm_data_size, naomi_rom_serial_data() + 0x20, dimm_write32);
-			// the board asks the NAOMI to set its base address to 0c000000
-			reg_dimm_command = 0x8600;
-			reg_dimm_offsetl = 0;
-			reg_dimm_parameterl = 0;
-			reg_dimm_parameterh = 0x0c00;
-			asic_RaiseInterrupt(holly_EXP_PCI);
-			if (dimm_cart == this)
-				sh4_sched_request(dimm_sched_id, SH4_MAIN_CLOCK);
-		}
-		break;
-
-	case 0:		// nothing
-	case 1:		// control read
-	case 3:		// set base address
-	case 4:		// peek8
-	case 5:		// peek16
-	case 6:		// peek32
-	case 8:		// poke8
-	case 9:		// poke16
-	case 10:	// poke32
-		// the NAOMI's answer to a command of the board's
-		DEBUG_LOG(NAOMI, "DIMM: answer to command %x\n", cmd);
-		break;
-
-	default:
-		WARN_LOG(NAOMI, "DIMM: system command %x not handled\n", cmd);
-		break;
-	}
-}
-
-int GDCartridge::dimm_sched(int tag, int cycles, int jitter)
-{
-	return dimm_cart != NULL ? dimm_cart->dimm_poll() : 0;
-}
-
-/* Once a second the board asks the NAOMI for the word at 0c01fc08, where the
- * BIOS's test menu leaves its requests, and answers them. */
-int GDCartridge::dimm_poll()
-{
-	if (!dimm_on)
-		return 0;
-	if (SB_ISTEXT & 8)	// the last interrupt is not taken yet
-		return SH4_MAIN_CLOCK;
-
-	// peek32(0c01fc08)
-	reg_dimm_command = 0x8000 | (6 << 9) | ((0x0c01fc08 >> 16) & 0x1ff);
-	reg_dimm_offsetl = 0x0c01fc08 & 0xffff;
-	reg_dimm_parameterl = 0;
-	reg_dimm_parameterh = 0;
-	asic_RaiseInterrupt(holly_EXP_PCI);
-
-	naomi_dimm_answer(dimm_net, ReadMem32_nommu(NAOMI_DIMM_REQUEST), dimm_write32, dimm_write8);
-	return SH4_MAIN_CLOCK;
+	cart_construct(&gd.base, &gd_ops, size);
+	gd.gdrom_name = gdrom_name;
+	gd.dimm_cur_address = 0;
+	gd.dimm_data = NULL;
+	gd.dimm_data_size = 0;
+	set_dimm_board(&gd, dimm, net);
+	return &gd.base;
 }
 
 /* In the save state, on a NAOMI with a DIMM board only: whether it
  * answers, when it next polls (9 bytes), and for the plain board its
  * serial EEPROM (142). */
-void GDCartridge::SerializeBoard(void **data, unsigned int *total_size)
+static void serialize_board(gd_cart *g, void **data, unsigned int *total_size)
 {
-	u8 on = dimm_on;
+	u8 on = g->dimm_on;
 	s32 start = sch_list[dimm_sched_id].start;
 	s32 end = sch_list[dimm_sched_id].end;
 
 	LIBRETRO_S(on);
 	LIBRETRO_S(start);
 	LIBRETRO_S(end);
-	if (!dimm_net)
+	if (!g->dimm_net)
 		naomi_rom_serial_serialize(data, total_size);
 }
 
-void GDCartridge::UnserializeBoard(void **data, unsigned int *total_size)
+static void unserialize_board(gd_cart *g, void **data, unsigned int *total_size)
 {
 	u8 on = 0;
 	s32 start = -1, end = -1;
@@ -934,71 +991,71 @@ void GDCartridge::UnserializeBoard(void **data, unsigned int *total_size)
 	LIBRETRO_US(on);
 	LIBRETRO_US(start);
 	LIBRETRO_US(end);
-	if (!dimm_net)
+	if (!g->dimm_net)
 		naomi_rom_serial_unserialize(data, total_size);
-	dimm_on = on != 0;
+	g->dimm_on = on != 0;
 	periph_sched_restore(dimm_sched_id, start, end);
 }
 
 /* A state from before the board's part: the board did not answer in it,
  * and it goes on not answering till the machine is reset. */
-void GDCartridge::StateBeforeBoard()
+static void state_before_board(gd_cart *g)
 {
-	dimm_on = false;
-	if (!dimm_net)
+	g->dimm_on = false;
+	if (!g->dimm_net)
 		naomi_rom_serial_reset();
 	sh4_sched_request(dimm_sched_id, -1);
 }
 
-static GDCartridge *dimm_cart_current(int net)
+static gd_cart *dimm_cart_current(int net)
 {
-	if (dimm_cart == NULL || static_cast<cartridge *>(dimm_cart) != CurrentCartridge || dimm_cart->IsNetBoard() != (net != 0))
+	if (dimm_cart == NULL || &dimm_cart->base != CurrentCartridge || dimm_cart->dimm_net != (net != 0))
 		return NULL;
 	return dimm_cart;
 }
 
 void naomi_gd_serialize_v25(void **data, unsigned int *total_size)
 {
-	GDCartridge *cart = dimm_cart_current(0);
-	if (cart != NULL)
-		cart->SerializeBoard(data, total_size);
+	gd_cart *g = dimm_cart_current(0);
+	if (g != NULL)
+		serialize_board(g, data, total_size);
 }
 
 bool naomi_gd_unserialize_v25(void **data, unsigned int *total_size)
 {
-	GDCartridge *cart = dimm_cart_current(0);
-	if (cart != NULL)
-		cart->UnserializeBoard(data, total_size);
+	gd_cart *g = dimm_cart_current(0);
+	if (g != NULL)
+		unserialize_board(g, data, total_size);
 	return true;
 }
 
 void naomi_gd_state_before_v25(void)
 {
-	GDCartridge *cart = dimm_cart_current(0);
-	if (cart != NULL)
-		cart->StateBeforeBoard();
+	gd_cart *g = dimm_cart_current(0);
+	if (g != NULL)
+		state_before_board(g);
 }
 
 void naomi_gd_serialize_v31(void **data, unsigned int *total_size)
 {
-	GDCartridge *cart = dimm_cart_current(1);
-	if (cart != NULL)
-		cart->SerializeBoard(data, total_size);
+	gd_cart *g = dimm_cart_current(1);
+	if (g != NULL)
+		serialize_board(g, data, total_size);
 }
 
 bool naomi_gd_unserialize_v31(void **data, unsigned int *total_size)
 {
-	GDCartridge *cart = dimm_cart_current(1);
-	if (cart != NULL)
-		cart->UnserializeBoard(data, total_size);
+	gd_cart *g = dimm_cart_current(1);
+	if (g != NULL)
+		unserialize_board(g, data, total_size);
 	return true;
 }
 
 void naomi_gd_state_before_v31(void)
 {
-	GDCartridge *cart = dimm_cart_current(1);
-	if (cart != NULL)
-		cart->StateBeforeBoard();
+	gd_cart *g = dimm_cart_current(1);
+	if (g != NULL)
+		state_before_board(g);
 }
 
 /* The ROM board's serial EEPROM is in the V25 part of the state, not the

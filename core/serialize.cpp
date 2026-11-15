@@ -40,6 +40,7 @@
 #include "hw/sh4/dyna/ngen.h"
 #include "hw/naomi/naomi.h"
 #include "hw/naomi/naomi_cart.h"
+#include "hw/naomi/gdcartridge.h"
 #include "hw/naomi/card_reader.h"
 #include "hw/naomi/midiffb.h"
 #include "hw/naomi/naomi_periph.h"
@@ -192,13 +193,10 @@ bool systemsp_unserialize_v24(void **data, unsigned int *total_size);
 void systemsp_state_before_v24(void);
 /* and since V25: the dinokich IC card reader of a System SP (systemsp.cpp),
  * what a Mushiking I/O board holds back (maple_devs.cpp), and the DIMM
- * board of a NAOMI GD-ROM game (gdcartridge.cpp) */
+ * board of a NAOMI GD-ROM game (gdcartridge.h) */
 void systemsp_serialize_v25(void **data, unsigned int *total_size);
 bool systemsp_unserialize_v25(void **data, unsigned int *total_size);
 void systemsp_state_before_v25(void);
-void naomi_gd_serialize_v25(void **data, unsigned int *total_size);
-bool naomi_gd_unserialize_v25(void **data, unsigned int *total_size);
-void naomi_gd_state_before_v25(void);
 /* and since V26: the NAOMI's two X76F100 serial flash chips, the main
  * board's and the ROM board's (naomi.cpp) */
 void naomi_serial_serialize_v26(void **data, unsigned int *total_size);
@@ -218,10 +216,7 @@ void pvr_state_before_v28(void);
 /* and since V30: the cards the NAOMI's card readers and IC card readers
  * keep out of the reader, as the game last wrote them (card_reader.h) */
 /* and since V31: the network DIMM board of a NAOMI GD-ROM game
- * (gdcartridge.cpp) */
-void naomi_gd_serialize_v31(void **data, unsigned int *total_size);
-bool naomi_gd_unserialize_v31(void **data, unsigned int *total_size);
-void naomi_gd_state_before_v31(void);
+ * (gdcartridge.h) */
 
 /* The modem's part is this long on a Dreamcast (modem_serialize_v21() in
  * modem.cpp: 33 registers, the DSP's 4096 bytes, and 36 more), and a build

@@ -181,6 +181,12 @@ void naomi_cart_WantSet(const char *name);
 int naomi_cart_GetRotation(void);
 
 extern u8 *naomi_default_eeprom;
+/* The content's file name, the folder it is in, and the set's parent's
+ * name: where a set's other files are looked for (libretro.cpp,
+ * naomi_cart.cpp) */
+extern char g_base_name[128];
+extern char g_roms_dir[];
+extern char g_parent_name[128];
 
 #ifdef __cplusplus
 }

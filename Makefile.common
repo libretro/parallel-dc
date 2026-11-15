@@ -364,12 +364,12 @@ endif
 
 SOURCES_CXX += $(CORE_DIR)/core/hw/naomi/naomi.cpp \
 					$(CORE_DIR)/core/hw/naomi/naomi_cart.cpp \
-					$(CORE_DIR)/core/hw/naomi/gdcartridge.cpp \
 					$(CORE_DIR)/core/hw/naomi/systemsp.cpp
 SOURCES_C += $(CORE_DIR)/core/hw/naomi/cartridge.c \
 					$(CORE_DIR)/core/hw/naomi/m1cartridge.c \
 					$(CORE_DIR)/core/hw/naomi/m4cartridge.c \
 					$(CORE_DIR)/core/hw/naomi/awcartridge.c \
+					$(CORE_DIR)/core/hw/naomi/gdcartridge.c \
 					$(CORE_DIR)/core/hw/naomi/touchscreen.c \
 					$(CORE_DIR)/core/hw/naomi/hopper.c \
 					$(CORE_DIR)/core/hw/naomi/card_reader.c \

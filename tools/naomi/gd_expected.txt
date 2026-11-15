@@ -1,0 +1,135 @@
+plain
+  sched register 0
+  open /roms/game.v2/gdl-0001.chd: yes
+  disc read 45166 1 2048
+  disc read 45170 1 2048
+  disc read 45171 1 2048
+  disc read 45180 1 2048
+  disc read 45190 3 2048
+  disc freed 1
+  init 1
+  id []
+  read f64885bf
+  read 8e1
+  read f64885bf
+  read 8e1
+  read 55550000
+  dma 10 69691905
+  dma 2000 e47a6d37
+  dma 2000 e47a6d37
+  regs 0 0 8000 4000 ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff 0 0 0 0 111 1 1 ffff ffff ffff ffff ffff ffff ffff ffff 1 0 ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff
+  raise interrupt 103
+  sched request 0 200000000
+  written 6 716d34b1
+  regs 0 0 8000 4000 ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff 8600 0 0 c00 111 1 1 ffff ffff ffff ffff ffff ffff ffff ffff 1 0 ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff
+  cancel interrupt 103
+  raise interrupt 103
+  regs 0 0 8000 4000 ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff 26ff 0 ffff ffff 111 1 1 ffff ffff ffff ffff ffff ffff ffff ffff 1 0 ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff
+  cancel interrupt 103
+  poll 200000000
+  regs 0 0 8000 4000 ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff 1a00 0 ffff ffff 11 1 1 ffff ffff ffff ffff ffff ffff ffff ffff 1 0 ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff
+  raise interrupt 103
+  read c01fc08
+  poll 200000000
+  written 72 44aec966
+  regs 0 0 8000 4000 ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff 8c01 fc08 0 0 111 1 1 ffff ffff ffff ffff ffff ffff ffff ffff 1 0 ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff
+  in v25 1
+  state 151 c514bed0
+  sched restore 0 0 200000000
+  state read 151
+  regs 0 0 8000 4000 ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff fc08 0 0 0 1 1 ffff ffff ffff ffff ffff ffff ffff ffff 1 0 ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff
+  sched request 0 -1
+  regs 0 0 0 0 ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff 8c01 fc08 0 0 111 1 1 ffff ffff ffff ffff ffff ffff ffff ffff 1 0 ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff
+  serial reset
+  sched request 0 -1
+  regs 0 0 0 0 ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff fc08 0 0 0 1 1 ffff ffff ffff ffff ffff ffff ffff ffff 1 0 ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff
+  other state 0
+  not current 0 0
+  sched request 0 -1
+  regs 0 0 0 0 ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff 8c01 fc08 0 0 111 1 1 ffff ffff ffff ffff ffff ffff ffff ffff 1 0 ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff
+  sched request 0 -1
+net
+  sched register 1
+  open /roms/game.v2/gds-0002.chd: no
+  open /roms/game.v2/gds-0002.gdi: yes
+  disc read 166 1 2048
+  disc read 168 1 2048
+  disc read 171 1 2048
+  disc read 180 3 2048
+  disc freed 1
+  init 1
+  id [\xe5\xa7\xc0iK\x98\xd1:3p\xdb\xe4^\xf2|\xa3\x94\xd4\xa1\xef\x09\x02.\xb20\xfc\x11\x96\xa3\xd4&\xad]
+  read 52592021
+  read e364
+  read 52592021
+  read e364
+  read 55550000
+  dma 10 69691905
+  dma 2000 d6579295
+  dma 2000 d6579295
+  regs 0 0 8000 4000 ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff 8c01 fc08 0 0 111 1 1 ffff ffff ffff ffff ffff ffff ffff ffff 1 0 ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff
+  raise interrupt 103
+  sched request 1 200000000
+  written 78 9bdb51fa
+  regs 0 0 8000 4000 ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff 8600 0 0 c00 111 1 1 ffff ffff ffff ffff ffff ffff ffff ffff 1 0 ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff
+  cancel interrupt 103
+  raise interrupt 103
+  regs 0 0 8000 4000 ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff 26ff 0 ffff ffff 111 1 1 ffff ffff ffff ffff ffff ffff ffff ffff 1 0 ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff
+  cancel interrupt 103
+  poll 200000000
+  regs 0 0 8000 4000 ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff 1a00 0 ffff ffff 11 1 1 ffff ffff ffff ffff ffff ffff ffff ffff 1 0 ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff
+  raise interrupt 103
+  read c01fc08
+  poll 200000000
+  written 144 99cb09b1
+  regs 0 0 8000 4000 ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff 8c01 fc08 0 0 111 1 1 ffff ffff ffff ffff ffff ffff ffff ffff 1 0 ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff
+  in v25 0
+  state 9 aa7f4f50
+  sched restore 1 0 200000000
+  state read 9
+  regs 0 0 8000 4000 ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff fc08 0 0 0 1 1 ffff ffff ffff ffff ffff ffff ffff ffff 1 0 ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff
+  sched request 1 -1
+  regs 0 0 0 0 ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff 8c01 fc08 0 0 111 1 1 ffff ffff ffff ffff ffff ffff ffff ffff 1 0 ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff
+  sched request 1 -1
+  regs 0 0 0 0 ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff fc08 0 0 0 1 1 ffff ffff ffff ffff ffff ffff ffff ffff 1 0 ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff
+  other state 0
+  not current 0 0
+  sched request 1 -1
+  regs 0 0 0 0 ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff 8c01 fc08 0 0 111 1 1 ffff ffff ffff ffff ffff ffff ffff ffff 1 0 ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff
+  sched request 1 -1
+extracted, the parent's
+  sched register 2
+  open /roms/game/gdl-0003.chd: no
+  open /roms/game/gdl-0003.gdi: no
+  open /roms/parent/gdl-0003.chd: yes
+  disc read 45166 1 2048
+  disc read 45170 1 2048
+  disc read 45171 1 2048
+  disc read 45180 1 2048
+  disc read 45190 1 2048
+  disc freed 1
+  init 1
+  id [\xa8\xde\x82\x83\x93\xf7\xb0T\x07\xfe[[T\xb5_\x12T\x09\xe82\xc0l\xc7\x85b\x1a\x89\xf0D\x09!\xf5]
+  dma 1000 429bfa78
+  sched request 2 -1
+no disc
+  sched register 3
+  open /roms/game/gdl-0004.chd: no
+  open /roms/game/gdl-0004.gdi: no
+  open /roms/parent/gdl-0004.chd: no
+  init 0
+  sched request 3 -1
+no file, no DIMM board
+  open /roms/game/gdl-0005.chd: yes
+  disc read 45166 1 2048
+  disc read 45170 1 2048
+  disc read 45171 1 2048
+  disc freed 1
+  init 0
+  read 0
+  id [(ROM too small)]
+  regs 0 0 0 0 ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff fc08 0 0 0 1 1 ffff ffff ffff ffff ffff ffff ffff ffff 1 0 ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff
+  naomi process 8c01 fc08 0 0
+  in v25 0
+  regs 0 0 0 0 ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff fc08 0 0 0 1 1 ffff ffff ffff ffff ffff ffff ffff ffff 1 0 ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff ffff
+done

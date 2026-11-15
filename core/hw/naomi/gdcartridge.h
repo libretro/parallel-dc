@@ -5,8 +5,8 @@
  *      Author: flyinghead
  *
  * From mame naomigd.h
- * // license:BSD-3-Clause
- * // copyright-holders:Olivier Galibert
+ * license:BSD-3-Clause
+ * copyright-holders:Olivier Galibert
  *
  */
 
@@ -14,98 +14,22 @@
 #define CORE_HW_NAOMI_GDCARTRIDGE_H_
 
 #include "naomi_cart.h"
-#include "imgread/common.h"
 
-#include <string>
+#ifdef __cplusplus
+extern "C" {
+#endif
 
-/* A NAOMI's DIMM board, and the GD-ROM it loads the game from */
-class GDCartridge: public cartridge {
-public:
-	GDCartridge(u32 size);
-	~GDCartridge();
-	bool Init()
-	{
-		if (!device_start())
-			return false;
-		device_reset();
-		return true;
-	}
-	void Reset()
-	{
-		naomi_board_reset(this);
-		device_reset();
-		dimm_reset();
-	}
-	u32 ReadMem(u32 address, u32 size);
-	void WriteMem(u32 address, u32 data, u32 size);
-	void* GetDmaPtr(u32 &size);
-	bool Read(u32 offset, u32 size, void* dst);
-	void GetGameId(char *id);
+/* A NAOMI's DIMM board, and the GD-ROM it loads the game from: @size bytes
+ * of the PIC's data, the disc @gdrom_name (in the content's folder, or the
+ * parent set's). @dimm: the board answers as a DIMM board at
+ * 5f703c-5f704c, the plain one (firmware 1.02) or, @net, the network one
+ * (firmware 3.17, with no network behind it); without it, those answer
+ * as they do for a ROM cartridge. NULL: no memory for the PIC's data. */
+cartridge *gd_cart_open(u32 size, const char *gdrom_name, bool dimm, bool net);
 
-	void SetGDRomName(const char *name) { this->gdrom_name = name; }
-	// The board answers as a DIMM board at 5f703c-5f704c: the plain one
-	// (firmware 1.02) or the network one (firmware 3.17, with no network
-	// behind it). Without it, those answer as they do for a ROM cartridge.
-	void SetDimmBoard(bool on, bool net);
-
-	// The board's part of the save state: from V25 for the plain board,
-	// with the ROM board's serial EEPROM; from V31 for the network board,
-	// whose serial EEPROM is in the V26 part.
-	void SerializeBoard(void **data, unsigned int *total_size);
-	void UnserializeBoard(void **data, unsigned int *total_size);
-	void StateBeforeBoard();
-	bool IsNetBoard() const { return dimm_net; }
-
-private:
-	void dimm_reset();
-	void dimm_process();
-	void dimm_system_command(u32 cmd);
-	void dimm_return(bool failed, u16 offsetl, u32 parameter);
-	static int dimm_sched(int tag, int cycles, int jitter);
-	int dimm_poll();
-
-	// the set has a DIMM board, and it answers (see StateBeforeBoard());
-	// the board is the network one
-	bool dimm_board = false;
-	bool dimm_on = false;
-	bool dimm_net = false;
-
-	enum { FILENAME_LENGTH=24 };
-
-	const char *gdrom_name = nullptr;
-
-	u32 dimm_cur_address = 0;
-
-	u8 *dimm_data = nullptr;
-	u32 dimm_data_size = 0;
-
-	static const u32 DES_LEFTSWAP[];
-	static const u32 DES_RIGHTSWAP[];
-	static const u32 DES_SBOX1[];
-	static const u32 DES_SBOX2[];
-	static const u32 DES_SBOX3[];
-	static const u32 DES_SBOX4[];
-	static const u32 DES_SBOX5[];
-	static const u32 DES_SBOX6[];
-	static const u32 DES_SBOX7[];
-	static const u32 DES_SBOX8[];
-	static const u32 DES_MASK_TABLE[];
-	static const u8 DES_ROTATE_TABLE[16];
-
-	bool device_start();
-	void device_reset();
-	void find_file(const char *name, const u8 *dir_sector, u32 &file_start, u32 &file_size);
-
-	inline void permutate(u32 &a, u32 &b, u32 m, int shift);
-   void des_generate_subkeys(u64 key, u32 *subkeys);
-	template<bool decrypt>
-	u64 des_encrypt_decrypt(u64 src, const u32 *des_subkeys);
-	u64 rev64(u64 src);
-	void read_gdrom(Disc *gdrom, u32 sector, u8* dst, u32 count = 1);
-};
-
-// the DIMM board's part of the save state, from V25 for the plain board and
-// from V31 for the network board (gdcartridge.cpp)
+/* The DIMM board's part of the save state, from V25 for the plain board,
+ * with the ROM board's serial EEPROM, and from V31 for the network board,
+ * whose serial EEPROM is in the V26 part */
 void naomi_gd_serialize_v25(void **data, unsigned int *total_size);
 bool naomi_gd_unserialize_v25(void **data, unsigned int *total_size);
 void naomi_gd_state_before_v25(void);
@@ -113,5 +37,9 @@ bool naomi_gd_serial_in_v25(void);
 void naomi_gd_serialize_v31(void **data, unsigned int *total_size);
 bool naomi_gd_unserialize_v31(void **data, unsigned int *total_size);
 void naomi_gd_state_before_v31(void);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* CORE_HW_NAOMI_GDCARTRIDGE_H_ */

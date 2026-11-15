@@ -8,6 +8,7 @@
 #include "hw/holly/holly_intc.h"
 #include "hw/maple/maple_devs.h"
 
+#include "gdcartridge.h"
 #include "naomi.h"
 #include "naomi_cart.h"
 #include "naomi_regs.h"
@@ -553,7 +554,6 @@ void naomi_state_before_v23(void)
 {
 }
 
-bool naomi_gd_serial_in_v25(void);
 
 /* The old serial number's variables, which states before V26 load. */
 static void naomi_serial_legacy_clear(void)

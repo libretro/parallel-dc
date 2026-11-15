@@ -35,8 +35,6 @@
 #include "savewriter.h"
 
 extern char eeprom_file[PATH_MAX];
-extern char g_roms_dir[PATH_MAX];
-extern char g_base_name[128];
 #include "libretro/pad_state.h"
 
 bool naomi_cart_systemsp;
