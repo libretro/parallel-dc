@@ -2,8 +2,9 @@
  * themselves: a write to a page closed for each of the reasons the core
  * closes them is handed to the one that closed it, and goes on; one that
  * is none of them is handed to whoever had the fault before the core (a
- * second instance of it, under run-ahead); one in recompiled code is
- * rewritten by the recompiler and goes on. On 64-bit Windows, the unwind
+ * second instance of it, under run-ahead), after a second content as after
+ * the first; one in recompiled code is rewritten by the recompiler and goes
+ * on. On 64-bit Windows, the unwind
  * record registered for the code cache, and taken away again; and a
  * VArray2 zeroed and opened (sh tools/mem/fault_run.sh). */
 #if !defined(_WIN32) && !defined(_GNU_SOURCE)
@@ -177,11 +178,10 @@ int main(void)
 	code_cache();
 
 	common_libretro_setup();
-#ifdef _WIN32
-	/* (and again, as for a second content: no second handler) */
+	/* (and again, as for a second content: no second handler, and the
+	 * one before still handed what is not the core's) */
 	common_libretro_cleanup();
 	common_libretro_setup();
-#endif
 
 	/* each page closed, and written */
 	for (i = P_RAM; i <= P_OTHER; i++)

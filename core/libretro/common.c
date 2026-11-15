@@ -407,7 +407,16 @@ static int exception_handler_install_platform(void)
 #if defined(HAVE_LIBNX)
    return 0;
 #elif !defined(TARGET_NO_EXCEPTIONS)
-   struct sigaction new_sa;
+   struct sigaction new_sa, cur_sa;
+
+   /* Already ours (a second content, the same instance): what was there
+    * before stays what a fault that is not ours is handed to. Taken again,
+    * it would be this handler itself, and another instance's faults (a
+    * second instance's under run-ahead) would be taken for crashes. */
+   if (sigaction(SIGSEGV, NULL, &cur_sa) == 0 && (cur_sa.sa_flags & SA_SIGINFO)
+         && cur_sa.sa_sigaction == signal_handler)
+      return 1;
+
    new_sa.sa_flags = SA_SIGINFO;
    sigemptyset(&new_sa.sa_mask);
    new_sa.sa_sigaction = signal_handler;
