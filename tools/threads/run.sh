@@ -63,7 +63,7 @@ for san in thread address,undefined; do
       -o "$WORK/naomi_net_test" tools/threads/naomi_net_test.c \
       core/network/naomi_network.c "$WORK/rthreads.o" "$WORK/features_cpu.o" \
       "$WORK/rtime.o" "$WORK/net_socket.o" "$WORK/net_compat.o" -lpthread
-   # The network thread: the core's own picoppp.cpp and dcnet.cpp with picoTCP,
+   # The network thread: the core's own picoppp.cpp and dcnet.c with picoTCP,
    # and the test playing the Dreamcast's end of the line. picoTCP itself
    # is built without UBSan, which it was not written to pass.
    mkdir -p "$WORK/pico"
@@ -82,11 +82,13 @@ for san in thread address,undefined; do
    done
    $CC -O1 -g -fsanitize=$san -fno-sanitize-recover=undefined $DEFS $INC \
       -c core/hw/modem/dns.c -o "$WORK/dns.o"
+   $CC -O1 -g -fsanitize=$san -fno-sanitize-recover=undefined $DEFS $INC \
+      -c core/network/dcnet.c -o "$WORK/dcnet.o"
    $CXX -std=c++11 -fpermissive -O1 -g -w $DEFS \
       -fsanitize=$san -fno-sanitize-recover=undefined $INC \
       -Icore/deps/picotcp/include -Icore/deps/picotcp/modules \
-      -o "$WORK/pico_test" tools/threads/pico_test.cpp core/network/picoppp.cpp core/network/dcnet.cpp \
-      "$WORK/dns.o" "$WORK"/pico/*.o "$WORK/rthreads.o" "$WORK/features_cpu.o" \
+      -o "$WORK/pico_test" tools/threads/pico_test.cpp core/network/picoppp.cpp \
+      "$WORK/dcnet.o" "$WORK/dns.o" "$WORK"/pico/*.o "$WORK/rthreads.o" "$WORK/features_cpu.o" \
       "$WORK/rtime.o" "$WORK/net_socket.o" "$WORK/net_compat.o" -lpthread
    # The save writer: the core's own savewriter.c over libretro-common's
    # file streams, with a file system of the test's that can be slow and

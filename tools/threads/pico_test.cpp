@@ -1,4 +1,4 @@
-/* The network thread (core/network/picoppp.cpp + dcnet.cpp) under
+/* The network thread (core/network/picoppp.cpp + dcnet.c) under
  * ThreadSanitizer: picoTCP for the modem (an LCP request answered) and
  * the adapter (ARP), and DCNet against a stand-in relay on the loopback
  * interface (the name lookup of dcnet.flyca.st answered with 127.0.0.1). */
@@ -130,8 +130,30 @@ static void pico_bba()
 
 /* ---- the relay ---- */
 static std::atomic<int> relay_stop(0);
-static int udp_fd, ppp_fd, tap_fd;
+static int udp_fd, ppp_fd, tap_fd, smash_fd;
 static std::atomic<int> modem_bytes_seen(0), frames_seen(0), prolog_seen(0);
+static std::atomic<int> pings_seen(0), connections(0), closed(0);
+
+/* Power Smash's port: frames sent with a flag at their end only, and one
+ * cut in two, and the connection kept until the other end closes it */
+static void serve_smash(int c)
+{
+	static const char *const parts[] = { "abc~", "~def~gh", "i~" };
+	for (unsigned i = 0; i < sizeof(parts) / sizeof(parts[0]); i++)
+	{
+		send(c, parts[i], strlen(parts[i]), MSG_NOSIGNAL);
+		usleep(50000);
+	}
+	while (!relay_stop)
+	{
+		fd_set r2; FD_ZERO(&r2); FD_SET(c, &r2);
+		timeval t2 = { 0, 100000 };
+		if (select(c + 1, &r2, NULL, NULL, &t2) <= 0) continue;
+		u8 buf[256];
+		if (recv(c, buf, sizeof(buf), 0) <= 0) break;
+	}
+	close(c);
+}
 
 static void serve(int c, bool tap)
 {
@@ -162,6 +184,7 @@ static void serve(int c, bool tap)
 			in.erase(in.begin(), in.begin() + 2 + len);
 		}
 	}
+	closed++;
 	close(c);
 }
 
@@ -169,18 +192,37 @@ static void *relay(void *)
 {
 	while (!relay_stop)
 	{
-		fd_set rd; FD_ZERO(&rd); FD_SET(udp_fd, &rd); FD_SET(ppp_fd, &rd); FD_SET(tap_fd, &rd);
+		fd_set rd; FD_ZERO(&rd); FD_SET(udp_fd, &rd); FD_SET(ppp_fd, &rd); FD_SET(tap_fd, &rd); FD_SET(smash_fd, &rd);
 		timeval tv = { 0, 100000 };
-		if (select(std::max(udp_fd, std::max(ppp_fd, tap_fd)) + 1, &rd, NULL, NULL, &tv) <= 0) continue;
+		if (select(std::max(std::max(udp_fd, smash_fd), std::max(ppp_fd, tap_fd)) + 1, &rd, NULL, NULL, &tv) <= 0) continue;
 		if (FD_ISSET(udp_fd, &rd))
 		{
 			u8 buf[64]; sockaddr_in from; socklen_t fl = sizeof(from);
 			int n = recvfrom(udp_fd, buf, sizeof(buf), 0, (sockaddr *)&from, &fl);
-			if (n == 5 && buf[4] == 3)	// DISCOVER: no access points of its own
-				sendto(udp_fd, buf, 5, 0, (sockaddr *)&from, fl);
+			if (n == 5 && buf[4] == 3)
+			{
+				/* DISCOVER: two access points, this one and one that never
+				 * answers (127.0.0.3): this one is chosen */
+				u8 list[5 + 2 * (5 + 4)];
+				memcpy(list, buf, 5);
+				u8 *p = list + 5;
+				u32 a = htonl(0x7f000003);
+				memcpy(p, &a, 4); p[4] = 4; memcpy(p + 5, "dead", 4); p += 9;
+				a = htonl(INADDR_LOOPBACK);
+				memcpy(p, &a, 4); p[4] = 4; memcpy(p + 5, "live", 4); p += 9;
+				sendto(udp_fd, list, p - list, 0, (sockaddr *)&from, fl);
+			}
+			else if (n == 13 && buf[4] == 1)
+			{
+				// PING: a PONG with its time as it was
+				pings_seen++;
+				buf[4] = 2;
+				sendto(udp_fd, buf, 13, 0, (sockaddr *)&from, fl);
+			}
 		}
-		if (FD_ISSET(ppp_fd, &rd)) { int c = accept(ppp_fd, NULL, NULL); if (c >= 0) serve(c, false); }
-		if (FD_ISSET(tap_fd, &rd)) { int c = accept(tap_fd, NULL, NULL); if (c >= 0) serve(c, true); }
+		if (FD_ISSET(ppp_fd, &rd)) { int c = accept(ppp_fd, NULL, NULL); if (c >= 0) { connections++; serve(c, false); } }
+		if (FD_ISSET(tap_fd, &rd)) { int c = accept(tap_fd, NULL, NULL); if (c >= 0) { connections++; serve(c, true); } }
+		if (FD_ISSET(smash_fd, &rd)) { int c = accept(smash_fd, NULL, NULL); if (c >= 0) { connections++; serve_smash(c); } }
 	}
 	return NULL;
 }
@@ -200,7 +242,8 @@ static bool open_relay()
 	udp_fd = listen_on(SOCK_DGRAM, 7655);
 	ppp_fd = listen_on(SOCK_STREAM, 7654);
 	tap_fd = listen_on(SOCK_STREAM, 7655);
-	return udp_fd >= 0 && ppp_fd >= 0 && tap_fd >= 0;
+	smash_fd = listen_on(SOCK_STREAM, 7656);
+	return udp_fd >= 0 && ppp_fd >= 0 && tap_fd >= 0 && smash_fd >= 0;
 }
 
 static void dcnet_modem(pthread_t *th)
@@ -236,6 +279,28 @@ static void dcnet_modem(pthread_t *th)
 	stop_pico();
 	printf("dcnet modem: echo ok, %d sent, %d received (relay saw %d)\n", sent, recvd, modem_bytes_seen.load());
 	CHECK(recvd > 0);
+	// the access point that answered, five times
+	CHECK(pings_seen == 5);
+}
+
+/* Power Smash: its frames each with a flag at both ends, however they came */
+static void dcnet_power_smash()
+{
+	static const char want[] = "~abc~~def~~ghi~";
+	memcpy(ip_meta.product_number, "HDR-0113  ", 10);
+	net_device = NET_DEVICE_MODEM;
+	CHECK(start_pico());
+	std::vector<u8> got;
+	retro_time_t t0 = cpu_features_get_time_usec();
+	while (got.size() < strlen(want) && cpu_features_get_time_usec() - t0 < 3000000)
+	{
+		int c = read_pico();
+		if (c >= 0) got.push_back(c);
+	}
+	stop_pico();
+	memset(ip_meta.product_number, ' ', 10);
+	CHECK(got.size() == strlen(want) && !memcmp(&got[0], want, strlen(want)));
+	printf("dcnet power smash: %.*s\n", (int)got.size(), got.empty() ? "" : (const char *)&got[0]);
 }
 
 static void dcnet_bba()
@@ -258,6 +323,28 @@ static void dcnet_bba()
 	CHECK(prolog_seen == 1);
 	CHECK(got > 10);
 	printf("dcnet bba: prolog %d, %d frames echoed (relay saw %d)\n", prolog_seen.load(), got, frames_seen.load());
+	/* the game's DHCP release: the connection is closed, and the next frame
+	 * (within five seconds of the last connection) opens none */
+	{
+		static u8 release[0x120];
+		memset(release, 0, sizeof(release));
+		release[0xc] = 0x08; release[0xd] = 0x00;
+		release[0x17] = 0x11;
+		release[0x23] = 68;
+		release[0x25] = 67;
+		release[0x11a] = 53; release[0x11b] = 1; release[0x11c] = 7;	// message type: release
+		release[0x11d] = 0xff;
+		const int before = closed.load(), conns = connections.load();
+		pico_receive_eth_frame(release, sizeof(release));
+		t0 = cpu_features_get_time_usec();
+		while (closed.load() == before && cpu_features_get_time_usec() - t0 < 2000000)
+			retro_sleep(10);
+		CHECK(closed.load() == before + 1);
+		pico_receive_eth_frame(fr, sizeof(fr));
+		retro_sleep(300);
+		CHECK(connections.load() == conns);
+		printf("dcnet bba: closed on a DHCP release, %d connections\n", connections.load());
+	}
 	net_thread_join();
 }
 
@@ -268,6 +355,7 @@ int main()
 	pthread_t th;
 	if (!open_relay()) { printf("no relay ports\n"); return 1; }
 	dcnet_modem(&th);
+	dcnet_power_smash();
 	dcnet_bba();
 	relay_stop = 1;
 	pthread_join(th, NULL);

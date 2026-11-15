@@ -207,8 +207,8 @@ ifeq ($(ENABLE_MODEM), 1)
 					$(CORE_DIR)/core/hw/modem/v42bis.c
 	SOURCES_C += $(CORE_DIR)/core/hw/bba/bba.c \
 					$(CORE_DIR)/core/hw/bba/rtl8139c.c
-	SOURCES_CXX += $(CORE_DIR)/core/hw/modem/v42.cpp \
-						$(CORE_DIR)/core/network/dcnet.cpp
+	SOURCES_CXX += $(CORE_DIR)/core/hw/modem/v42.cpp
+	SOURCES_C += $(CORE_DIR)/core/network/dcnet.c
 
 	# the gateway's ports forwarded (UPnP; RetroArch does not build it)
 	SOURCES_C += $(LIBRETRO_COMM_DIR)/net/net_upnp.c

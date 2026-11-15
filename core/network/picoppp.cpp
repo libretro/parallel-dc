@@ -1132,7 +1132,7 @@ static void wait_for_work(int kicks)
 		;
 }
 
-/* For DCNet (dcnet.cpp), which runs on this thread in place of the stack:
+/* For DCNet (dcnet.c), which runs on this thread in place of the stack:
  * the same rings, the same way of waiting. */
 bool netthread_running()
 {
