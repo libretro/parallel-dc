@@ -5,6 +5,7 @@
 #include "maple_helper.h"
 #include "maple_devs.h"
 #include "maple_cfg.h"
+#include "libretro/pad_state.h"
 #include "hw/pvr/spg.h"
 #include "hw/naomi/naomi_cart.h"
 #include "hw/naomi/naomi_periph.h"
@@ -1830,7 +1831,6 @@ struct atomiswave_lightgun : maple_lightgun
 	}
 };
 
-#include "libretro/pad_state.h"
 extern char eeprom_file[PATH_MAX];
 
 /*

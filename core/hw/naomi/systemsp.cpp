@@ -19,7 +19,6 @@
 // based on mame code:
 // license:BSD-3-Clause
 // copyright-holders:David Haywood, MetalliC
-#include <ctime>
 #include <streams/file_stream.h>
 #include "systemsp.h"
 #include "dinokich.h"
@@ -38,8 +37,6 @@ extern char eeprom_file[PATH_MAX];
 extern char g_roms_dir[PATH_MAX];
 extern char g_base_name[128];
 #include "libretro/pad_state.h"
-extern f32 mo_x_abs[4];
-extern f32 mo_y_abs[4];
 
 bool naomi_cart_systemsp;
 
@@ -60,7 +57,6 @@ constexpr u32 SystemSpCart::NETMEM_STATE_PAGES;
 constexpr u16 SystemSpCart::NET_OK;
 constexpr u16 SystemSpCart::NET_ERROR;
 int SystemSpCart::ataSchedId = -1;
-static int touchSchedId = -1;
 
 static u16 le16(const u8 *p) { return p[0] | (p[1] << 8); }
 static u32 le32(const u8 *p) { return p[0] | (p[1] << 8) | (p[2] << 16) | ((u32)p[3] << 24); }
@@ -74,720 +70,20 @@ static size_t boundedLength(const char *s, size_t max)
 	return end != NULL ? (size_t)(end - s) : max;
 }
 
-/* A scheduler event as a save state has it, and back: one that the state
- * says is waiting more than @most cycles from now (a bad state) is due at
- * once. */
-static void saveEvent(int id, void **data, unsigned int *total_size)
-{
-	s32 start = -1, end = -1;
-	if (id >= 0)
-	{
-		start = sch_list[id].start;
-		end = sch_list[id].end;
-	}
-	LIBRETRO_S(start);
-	LIBRETRO_S(end);
-}
-
-static void loadEvent(int id, u32 most, void **data, unsigned int *total_size)
-{
-	s32 start = -1, end = -1;
-	LIBRETRO_US(start);
-	LIBRETRO_US(end);
-	if (id < 0)
-		return;
-	if (end != -1)
-	{
-		const u32 now = sh4_sched_now();
-		if ((u32)end - now > most)
-		{
-			start = (s32)now;
-			end = start == -1 ? 0 : start;
-		}
-	}
-	sch_list[id].start = start;
-	sch_list[id].end = end;
-}
-
-//
-// What the ROM board's serial devices send: a queue of fixed size, which
-// what does not fit is dropped from.
-//
-struct ByteQueue
-{
-	static constexpr u32 SIZE = 512;
-	u8 buf[SIZE];
-	u16 head = 0;
-	u16 count = 0;
-
-	bool empty() const { return count == 0; }
-	int size() const { return count; }
-	void clear() { head = 0; count = 0; memset(buf, 0, sizeof(buf)); }
-	void push(u8 v)
-	{
-		if (count == SIZE)
-		{
-			WARN_LOG(NAOMI, "System SP serial port: nothing reads what the device sends; dropped\n");
-			return;
-		}
-		buf[(head + count) % SIZE] = v;
-		count++;
-	}
-	void push(const u8 *p, u32 len)
-	{
-		for (u32 i = 0; i < len; i++)
-			push(p[i]);
-	}
-	u8 pop()
-	{
-		if (count == 0)
-			return 0;
-		const u8 v = buf[head];
-		head = (head + 1) % SIZE;
-		count--;
-		return v;
-	}
-	void serialize(void **data, unsigned int *total_size)
-	{
-		LIBRETRO_S(head);
-		LIBRETRO_S(count);
-		LIBRETRO_SA(buf, SIZE);
-	}
-	void unserialize(void **data, unsigned int *total_size)
-	{
-		LIBRETRO_US(head);
-		LIBRETRO_US(count);
-		LIBRETRO_USA(buf, SIZE);
-		if (head >= SIZE)
-			head = 0;
-		if (count > SIZE)
-			count = 0;
-	}
-};
-
-constexpr u8 DINOKING_CHIP_DATA[128] = {
-    0x12, 0x34, 0x56, 0x78, // Serial No.0
-    0x31, 0x00, 0x86, 0x07, // Serial No.1
-    0x00, 0x00, 0x00, 0x00, // Key
-    0x05, 0x40, 0x00, 0xAA, // Extend  Extend  Access  Mode
-    0x23, 0xFF, 0xFF, 0xFF, // Counter4  Counter3  Counter2  Counter1
-    0x00, 0x00, 0x00, 0x00, // User Data (first set date: day bits 0-4, month bits 5-8, year bits 9-... + 2000)
-    0x00, 0x00, 0x00, 0x00, // User Data
-    0x00, 0x00, 0x00, 0x00, // User Data
-    0x00, 0x00, 0x00, 0x00, // User Data
-    0x00, 0x00, 0x00, 0x00, // User Data
-    0x00, 0x00, 0x00, 0x00, // User Data
-    0x23, 0xFF, 0xFF, 0xFF, // User Data (max counters)
-};
-constexpr u8 LOVEBERRY_CHIP_DATA[128] = {
-    0x10, 0xc5, 0x10, 0x96, // Serial No.0
-    0xab, 0x2f, 0xf1, 0x74, // Serial No.1
-    0x99, 0x33, 0x78, 0xa7, // Key
-    0x05, 0x77, 0x00, 0xAA, // Extend  Extend  Access  Mode
-    0x23, 0xFF, 0xFF, 0xFF, // Counter4  Counter3  Counter2  Counter1
-    0x00, 0x00, 0x00, 0x00, // User Data
-    0x00, 0x00, 0x00, 0x00, // User Data
-    0x00, 0x00, 0x00, 0x00, // User Data
-    0x00, 0x00, 0x00, 0x00, // User Data
-    0x00, 0x00, 0x00, 0x00, // User Data
-    0x00, 0x00, 0x00, 0x00, // User Data
-    0x23, 0xFF, 0xFF, 0xFF, // User Data
-};
-
-//
-// RS232C I/F board (838-14244) connected to RFID Chip R/W board (838-14243 aka Maxell Picochet ME-MR23)
-//
-class RfidReaderWriter : public SerialPipe
-{
-	enum Response : u8 {
-		OK = 0xa,
-		RETRY = 0xca,
-		NG = 0x3a,
-		NOT = 0x6a,
-	};
-
-	enum Command : u8 {
-		REQ = 0x4e,
-		SEL = 0x2e,
-		READ = 0xe,
-		WRITE = 0xce,
-		WRITE_NOP = 0x8e,
-		WRITE_ST = 0xee,
-		HALT = 0xae,
-		COUNT = 0x6e,
-		RESET = 0x7e,
-		TEST = 0x5e,
-		CHANGE = 0x3e,
-	};
-	static constexpr u8 RF_OFF = 0x80;
-
-	enum State : u8 {
-		Off,
-		Connecting,
-		Connected,
-		FullRead
-	};
-
-public:
-	RfidReaderWriter(SerialPort *port, int index, const std::string& gameName, int region, const std::string& path)
-		: port(port), index(index), gameName(gameName), region(region), path(path)
-	{
-		retro_atomic_int_init(&failed, 0);
-		// (the numbers a new card is made with: they are kept in the state,
-		// so a card made while the game runs is the same card again when a
-		// frame is run again from a state)
-		random = (u32)time(nullptr) * 2654435761u + index;
-		port->setPipe(this);
-
-		bool loaded = false;
-		RFILE *f = filestream_open(path.c_str(), RETRO_VFS_FILE_ACCESS_READ, RETRO_VFS_FILE_ACCESS_HINT_NONE);
-		if (f != nullptr)
-		{
-			if (filestream_read(f, cardData, sizeof(cardData)) != (int64_t)sizeof(cardData))
-				WARN_LOG(NAOMI, "Rfid card %d: truncated read\n", index);
-			filestream_close(f);
-			loaded = true;
-		}
-		if (!loaded)
-			makeNewCard();
-	}
-
-	void write(u8 v) override
-	{
-		if (expectedBytes > 0)
-		{
-			if (recvLen < sizeof(recvBuffer))
-				recvBuffer[recvLen++] = v;
-			if (recvLen < expectedBytes)
-				return;
-
-			switch (recvBuffer[0])
-			{
-			case TEST:
-				if (recvBuffer[1] == RF_OFF)
-				{
-					state = Off;
-					toSend.push(OK);
-				}
-				else if (state == Off)
-				{
-					state = Connecting;
-					toSend.push(NOT);
-				}
-				else
-					toSend.push(OK);
-				break;
-			case SEL:
-				if ((state == Connected || state == FullRead)
-						&& (recvBuffer[5] != 0 || recvBuffer[6] != 0 || recvBuffer[7] != 0 || recvBuffer[8] != 0))
-					state = FullRead;
-				else
-					state = Connected;
-				toSend.push(OK);
-				break;
-			case COUNT:
-				{
-					u8 newVal = 0;
-					switch (recvBuffer[1])
-					{
-					case 0xc0:
-						newVal = --cardData[16];
-						break;
-					case 0x30:
-						newVal = --cardData[17];
-						break;
-					case 0x0c:
-						newVal = --cardData[18];
-						break;
-					case 0x03:
-						newVal = --cardData[19];
-						if (newVal == 0)
-							makeNewCard();
-						break;
-					}
-					toSend.push(OK);
-					toSend.push(newVal);
-					saveData();
-					break;
-				}
-			case WRITE:
-				// (a row past the chip's 32 is not written: the count of rows
-				// is the game's, and went on past the end of the card's data)
-				if (rowCounter < sizeof(cardData) / 4)
-				{
-					memcpy(&cardData[4 * rowCounter], &recvBuffer[1], 4);
-					saveData();
-				}
-				toSend.push(OK);
-				break;
-			case WRITE_NOP:
-			case WRITE_ST:
-			case CHANGE:
-			case HALT:
-				toSend.push(OK);
-				break;
-			default:
-				break;
-			}
-			expectedBytes = 0;
-		}
-		else
-		{
-			switch (v)
-			{
-			case TEST:
-				expect(v, 2);
-				break;
-			case CHANGE: // change baud rate
-				expect(v, 1);
-				break;
-			case RESET:
-				state = Off;
-				toSend.push(OK);
-				break;
-			case HALT:
-				expect(v, 4); // ser0
-				break;
-			case READ:
-				toSend.push(OK);
-				if (state == FullRead) {
-					toSend.push(cardData, sizeof(cardData));
-				}
-				else
-				{
-					toSend.push(cardData, 8);
-					static const u8 maskedData[120] = { 0, 0, 0, 0, 0, 0, 0, 0xaa };
-					toSend.push(maskedData, sizeof(maskedData));
-				}
-				break;
-			case SEL:
-				expect(v, 8);	// ser0 key (key is calc'ed from ser1)
-				break;
-			case REQ:
-				if (state == Connecting)
-				{
-					state = Connected;
-					toSend.push(RETRY);
-				}
-				else if (state == Connected || state == FullRead)
-				{
-					toSend.push(OK);
-					toSend.push(cardData, 4);	// ser0
-				}
-				else
-					toSend.push(RETRY);
-				break;
-			case COUNT:
-				expect(v, 1);
-				break;
-			case WRITE:
-				rowCounter++;
-				expect(v, 4);
-				break;
-			case WRITE_ST:
-			case WRITE_NOP:
-				if (v == WRITE_ST)
-					rowCounter = 0;
-				else
-					rowCounter++;
-				expect(v, 4);
-				break;
-			default:
-				INFO_LOG(NAOMI, "UART%d write data out: unknown cmd %x\n", index, v);
-				toSend.push(NG);
-				break;
-			}
-		}
-		port->updateStatus();
-	}
-
-	int available() override {
-		return toSend.size();
-	}
-
-	u8 read() override
-	{
-		const u8 b = toSend.pop();
-		if (toSend.empty())
-			port->updateStatus();
-		return b;
-	}
-
-	void reset() override
-	{
-		toSend.clear();
-		expectedBytes = 0;
-		recvLen = 0;
-		memset(recvBuffer, 0, sizeof(recvBuffer));
-		state = Off;
-		rowCounter = 0;
-	}
-
-	void serialize(void **data, unsigned int *total_size) override
-	{
-		toSend.serialize(data, total_size);
-		LIBRETRO_S(expectedBytes);
-		LIBRETRO_S(recvLen);
-		LIBRETRO_SA(recvBuffer, sizeof(recvBuffer));
-		u8 st = state;
-		LIBRETRO_S(st);
-		LIBRETRO_S(rowCounter);
-		LIBRETRO_SA(cardData, sizeof(cardData));
-		LIBRETRO_S(random);
-	}
-
-	void unserialize(void **data, unsigned int *total_size) override
-	{
-		toSend.unserialize(data, total_size);
-		LIBRETRO_US(expectedBytes);
-		LIBRETRO_US(recvLen);
-		LIBRETRO_USA(recvBuffer, sizeof(recvBuffer));
-		u8 st = Off;
-		LIBRETRO_US(st);
-		LIBRETRO_US(rowCounter);
-		LIBRETRO_USA(cardData, sizeof(cardData));
-		LIBRETRO_US(random);
-		if (expectedBytes > sizeof(recvBuffer))
-			expectedBytes = 0;
-		if (recvLen > sizeof(recvBuffer))
-			recvLen = 0;
-		state = st <= FullRead ? (State)st : Off;
-	}
-
-	~RfidReaderWriter() override
-	{
-		// (the flag is this one's: the writer is done with it first)
-		save_writer_drain();
-	}
-
-private:
-	void expect(u8 cmd, int bytes)
-	{
-		expectedBytes = bytes + 1;
-		recvLen = 0;
-		recvBuffer[recvLen++] = cmd;
-	}
-
-	u8 nextRandom()
-	{
-		random = random * 1103515245u + 12345u;
-		return random >> 16;
-	}
-
-	void makeNewCard()
-	{
-		INFO_LOG(NAOMI, "Creating new RFID card\n");
-		if (gameName.substr(0, 6) == "dinoki")
-		{
-			memcpy(&cardData[0], &DINOKING_CHIP_DATA[0], sizeof(DINOKING_CHIP_DATA));
-			for (int i = 0; i < 4; i++)
-				cardData[i] = nextRandom();
-
-			u32 ser1 = (nextRandom() << 24) | (nextRandom() << 16) | (nextRandom() << 8) | nextRandom();
-			ser1 &= ~0xc0000000;
-			if (region == 1) // USA (dinoking, dinokior)
-				ser1 |= 0x40000000;
-			ser1 = dinoShuffle(ser1);
-			cardData[4] = ser1 >> 24;
-			cardData[5] = ser1 >> 16;
-			cardData[6] = ser1 >> 8;
-			cardData[7] = ser1;
-		}
-		else
-		{
-			memcpy(&cardData[0], &LOVEBERRY_CHIP_DATA[0], sizeof(LOVEBERRY_CHIP_DATA));
-			for (int i = 0; i < 4; i++)
-				cardData[i] = nextRandom();
-
-			cardData[5] = nextRandom();
-			cardData[7] = nextRandom();
-			u32 ser1 = (cardData[4] << 24) | (cardData[5] << 16) | (cardData[6] << 8) | cardData[7];
-			if (region == 2) // Export
-			{
-				ser1 = loveberyDeobfuscate(ser1);
-				ser1 &= ~0xc0000000;
-				ser1 = loveberyObfuscate(ser1);
-				cardData[4] = ser1 >> 24;
-				cardData[5] = ser1 >> 16;
-				cardData[6] = ser1 >> 8;
-				cardData[7] = ser1;
-			}
-
-			ser1 ^= 0x321c89d3;
-			cardData[8] = ser1 >> 24;
-			cardData[9] = ser1 >> 16;
-			cardData[10] = ser1 >> 8;
-			cardData[11] = ser1;
-		}
-	}
-
-	void saveData()
-	{
-		if (retro_atomic_load_acquire_int(&failed) && retro_atomic_exchange_int(&failed, 0))
-			WARN_LOG(NAOMI, "Can't save RFID card to %s\n", path.c_str());
-		if (!save_writer_put_file(path.c_str(), cardData, sizeof(cardData), &failed))
-			WARN_LOG(NAOMI, "Can't save RFID card to %s\n", path.c_str());
-	}
-
-	static u32 dinoShuffle(u32 v) {
-		return ((v & 1) << 22) | ((v & 2) << 28) | ((v & 4) << 1) | ((v & 8) << 3)
-				| ((v & 0x10) << 21) | ((v & 0x20) << 10) | ((v & 0x40) << 1) | ((v & 0x80) >> 7)
-				| ((v & 0x100) << 22) | ((v & 0x200) >> 1) | ((v & 0x400) >> 1) | ((v & 0x800) << 17)
-				| ((v & 0x1000) << 4) | ((v & 0x2000) << 18) | ((v & 0x4000) >> 4) | ((v & 0x8000) >> 13)
-				| ((v & 0x10000) >> 15) | ((v & 0x20000) >> 4) | ((v & 0x40000) << 1) | ((v & 0x80000) >> 8)
-				| ((v & 0x100000) >> 6) | ((v & 0x200000) << 2) | ((v & 0x400000) >> 18) | ((v & 0x800000) >> 2)
-				| ((v & 0x1000000) >> 12) | ((v & 0x2000000) >> 7) | ((v & 0x4000000) << 1) | ((v & 0x8000000) >> 3)
-				| ((v & 0x10000000) >> 11) | ((v & 0x20000000) >> 9) | ((v & 0x40000000) >> 25) | ((v & 0x80000000) >> 5);
-	}
-
-	static u32 loveberyDeobfuscate(u32 v)
-	{
-		v ^= 0xa35ec5e3;
-		// 87654321 -> 34781256
-		return ((v & 0xf00000) >> 20) | ((v & 0xf0000) >> 12)
-				| ((v & 0xf0) << 4) | ((v & 0xf) << 12)
-				| ((v & 0xf0000000) >> 12) | ((v & 0xf000000) >> 4)
-				| ((v & 0xf000) << 12) | ((v & 0xf00) << 20);
-	}
-	static u32 loveberyObfuscate(u32 v)
-	{
-		v = ((v & 0xf) << 20) | ((v & 0xf0) << 12)
-				| ((v & 0xf00) >> 4) | ((v & 0xf000) >> 12)
-				| ((v & 0xf0000) << 12) | ((v & 0xf00000) << 4)
-				| ((v & 0xf000000) >> 12) | ((v & 0xf0000000) >> 20);
-		return v ^ 0xa35ec5e3;
-	}
-
-	SerialPort *port;
-	const int index;
-	const std::string gameName;
-	const int region;
-	const std::string path;
-	retro_atomic_int_t failed;
-	ByteQueue toSend;
-	u8 cardData[128];
-	u8 expectedBytes = 0;
-	u8 recvBuffer[10] = {};
-	u8 recvLen = 0;
-	State state = Off;
-	u8 rowCounter = 0;
-	u32 random;
-};
-
-//
-// Isshoni Wanwan Waiwai Puppy touchscreen
-//
-class Touchscreen : public SerialPipe
-{
-public:
-	Touchscreen(SerialPort *port) : port(port)
-	{
-		port->setPipe(this);
-		touchSchedId = sh4_sched_register(0, schedCallback);
-	}
-
-	~Touchscreen() override
-	{
-		if (touchSchedId >= 0)
-			sh4_sched_request(touchSchedId, -1);
-	}
-
-	void write(u8 v) override
-	{
-		if (v == '\r')
-		{
-			if (recvLen >= 2 && recvBuffer[0] == 1)
-			{
-				toSend.push(1);
-				if (recvLen == 3 && recvBuffer[1] == 'O' && recvBuffer[2] == 'I')
-				{
-					// get name
-					static const u8 name[] { 'A','3','0','9','9','9' };
-					toSend.push(name, sizeof(name));
-				}
-				else if (recvLen == 3 && recvBuffer[1] == 'N' && recvBuffer[2] == 'M')
-				{
-					// unit verify
-					static const u8 id[] { 'E','X','I','I','-','7','7','2','0','S','C',' ','R','e','v',' ','3','.','0' };
-					toSend.push(id, sizeof(id));
-				}
-				else if (recvLen == 3 && recvBuffer[1] == 'U' && recvBuffer[2] == 'V')
-				{
-					// reset
-					static const u8 resp[] { 'Q','M','V','*','*','*','0','0' };
-					toSend.push(resp, sizeof(resp));
-				}
-				else if (recvLen == 2 && recvBuffer[1] == 'R')
-				{
-					toSend.push('0');
-					sh4_sched_request(touchSchedId, SCHED_CYCLES);
-				}
-				else
-				{
-					toSend.push('0');
-				}
-				toSend.push('\r');
-				port->updateStatus();
-
-				// FIXME
-				if (recvLen == 2 && recvBuffer[1] == 'Z')
-					sendPosition(0);
-			}
-			else
-			{
-				WARN_LOG(NAOMI, "\\r ignored. buf size %d\n", (int)recvLen);
-			}
-			recvLen = 0;
-		}
-		else
-		{
-			if (recvLen == 9)
-			{
-				if (!memcmp(&recvBuffer[0], "Ua0000000", 9))
-					sendPosition(1);
-				else
-					WARN_LOG(NAOMI, "Unknown command %.9s\n", (const char *)&recvBuffer[0]);
-				recvLen = 0;
-			}
-			else
-			{
-				recvBuffer[recvLen++] = v;
-			}
-		}
-	}
-
-	int available() override {
-		return toSend.size();
-	}
-
-	u8 read() override
-	{
-		const u8 data = toSend.pop();
-		if (toSend.empty())
-			port->updateStatus();
-		return data;
-	}
-
-	void reset() override
-	{
-		toSend.clear();
-		recvLen = 0;
-		memset(recvBuffer, 0, sizeof(recvBuffer));
-		lastPosX = ~0u;
-		lastPosY = ~0u;
-		lastButton = 0;
-		if (touchSchedId >= 0)
-			sh4_sched_request(touchSchedId, -1);
-	}
-
-	void serialize(void **data, unsigned int *total_size) override
-	{
-		toSend.serialize(data, total_size);
-		LIBRETRO_S(recvLen);
-		LIBRETRO_SA(recvBuffer, sizeof(recvBuffer));
-		LIBRETRO_S(lastPosX);
-		LIBRETRO_S(lastPosY);
-		LIBRETRO_S(lastButton);
-		saveEvent(touchSchedId, data, total_size);
-	}
-
-	void unserialize(void **data, unsigned int *total_size) override
-	{
-		toSend.unserialize(data, total_size);
-		LIBRETRO_US(recvLen);
-		LIBRETRO_USA(recvBuffer, sizeof(recvBuffer));
-		LIBRETRO_US(lastPosX);
-		LIBRETRO_US(lastPosY);
-		LIBRETRO_US(lastButton);
-		loadEvent(touchSchedId, SCHED_CYCLES, data, total_size);
-		if (recvLen > 9)
-			recvLen = 0;
-	}
-
-private:
-	void sendPosition(int type)
-	{
-		// where the light gun of the first port points, 0-1023
-		int ax = (int)mo_x_abs[0];
-		int ay = (int)mo_y_abs[0];
-		ax = std::min(std::max(ax, 0), 639);
-		ay = std::min(std::max(ay, 0), 479);
-		const u32 x = (640 - ax) * 1023 / 639;
-		const u32 y = ay * 1023 / 479;
-
-		if (type == 1)
-		{
-			u8 msg[9];
-			msg[0] = 'U';
-			msg[1] = 'T';
-			msg[2] = 0x20;	// bit 0 and 1 are checked
-			msg[3] = x & 0xff;
-			msg[4] = (x >> 8) & 0x1f;
-			msg[5] = y & 0xff;
-			msg[6] = (y >> 8) & 0x1f;
-			msg[7] = 0;	// z pos
-			u8 crc = 0xaa;
-			for (int i = 0; i < 8; i++)
-				crc += msg[i];
-			msg[8] = crc;
-			toSend.push(msg, sizeof(msg));
-			port->updateStatus();
-		}
-		else
-		{
-			const u8 button = (kcode[0] & NAOMI_BTN0_KEY) == 0;
-			if (button != lastButton || x != lastPosX || y != lastPosY)
-			{
-				// bit 6 is touch down
-				toSend.push(button ? 0xc0 : 0x80);
-				toSend.push((x & 7) << 4);
-				toSend.push((x >> 3) & 0x7f);
-				toSend.push((y & 7) << 4);
-				toSend.push((y >> 3) & 0x7f);
-				lastButton = button;
-				lastPosX = x;
-				lastPosY = y;
-				port->updateStatus();
-			}
-		}
-	}
-
-	static int schedCallback(int tag, int cycles, int jitter)
-	{
-		if (SystemSpCart::Instance == nullptr)
-			return 0;
-		Touchscreen *ts = (Touchscreen *)SystemSpCart::Instance->touchscreen;
-		if (ts == nullptr)
-			return 0;
-		ts->sendPosition(0);
-		return SCHED_CYCLES;
-	}
-
-	SerialPort *port;
-	ByteQueue toSend;
-	u8 recvBuffer[10] = {};
-	u8 recvLen = 0;
-	u32 lastPosX = ~0u;
-	u32 lastPosY = ~0u;
-	u8 lastButton = 0;
-
-	static constexpr u32 SCHED_CYCLES = SH4_MAIN_CLOCK / 60;
-};
-
 u8 SerialPort::readReg(u32 addr)
 {
 	switch ((addr & 0x3f) / 4)
 	{
 	case 0: // data in
 		if (pipe != nullptr)
-			return pipe->read();
+			return pipe->ops->read(pipe);
 		else
 			return 0;
 	case 1: // out buffer len
 		return 0;
 	case 2: // in buffer len
 		if (pipe != nullptr)
-			return pipe->available();
+			return pipe->ops->available(pipe);
 		else
 			return 0;
 	case 3: // errors?
@@ -795,7 +91,7 @@ u8 SerialPort::readReg(u32 addr)
 	case 5: // flow control
 		return 0;
 	case 6: // status. bit 3: receive buffer not empty
-		if (pipe != nullptr && pipe->available() > 0)
+		if (pipe != nullptr && pipe->ops->available(pipe) > 0)
 			return 8;
 		else
 			return 0;
@@ -817,7 +113,7 @@ void SerialPort::writeReg(u32 addr, u8 v)
 	{
 	case 0: // data out
 		if (pipe != nullptr)
-			pipe->write(v);
+			pipe->ops->write(pipe, v);
 		else
 			INFO_LOG(NAOMI, "UART%d out: %02x %c\n", index, v, v);
 		break;
@@ -849,30 +145,6 @@ void SerialPort::updateStatus()
 	cart->updateInterrupt(index == 1 ? SystemSpCart::INT_UART1 : SystemSpCart::INT_UART2);
 }
 
-/* The IC card reader of dinokich and loveber3cn (dinokich.c) on a port,
- * which has it: what it keeps in a state is in V25's part, not here */
-class DinokichPipe : public SerialPipe
-{
-public:
-	DinokichPipe(SerialPort *port, const std::string& gameName, const std::string& path1, const std::string& path2)
-	{
-		reader = dinokich_reader_open(gameName.c_str(), path1.c_str(), path2.c_str(), &updateStatus, port);
-		port->setPipe(this);
-	}
-	~DinokichPipe() override { dinokich_reader_close(reader); }
-
-	void write(u8 v) override { dinokich_reader_write(reader, v); }
-	int available() override { return dinokich_reader_available(reader); }
-	u8 read() override { return dinokich_reader_read(reader); }
-	void reset() override { dinokich_reader_reset(reader); }
-	void serialize(void **, unsigned int *) override { }
-	void unserialize(void **, unsigned int *) override { }
-
-	dinokich_reader *reader;
-
-private:
-	static void updateStatus(void *port) { static_cast<SerialPort *>(port)->updateStatus(); }
-};
 
 //
 // The I/O ports: the cabinet's switches, and what the game drives
@@ -2513,17 +1785,19 @@ bool SystemSpCart::Init()
 	// dinoki4 doesn't use rfid chips. dinokich and loveber3cn have an IC card reader instead
 	if (gameName == "dinokich" || gameName == "loveber3cn")
 	{
-		dinokich = (new DinokichPipe(&uart1, gameName, getCardPath(1), getCardPath(2)))->reader;
+		dinokich = dinokich_reader_open(gameName.c_str(), getCardPath(1).c_str(), getCardPath(2).c_str(),
+				&SerialPort::updateStatusOf, &uart1);
+		uart1.setPipe(dinokich_reader_pipe(dinokich));
 	}
 	else if ((gameName.compare(0, 6, "dinoki") == 0 && gameName != "dinoki4")
 			|| gameName.compare(0, 7, "loveber") == 0)
 	{
-		new RfidReaderWriter(&uart1, 1, gameName, region, getCardPath(1));
-		new RfidReaderWriter(&uart2, 2, gameName, region, getCardPath(2));
+		uart1.setPipe(sp_rfid_open(1, gameName.c_str(), region, getCardPath(1).c_str(), &SerialPort::updateStatusOf, &uart1));
+		uart2.setPipe(sp_rfid_open(2, gameName.c_str(), region, getCardPath(2).c_str(), &SerialPort::updateStatusOf, &uart2));
 	}
 	else if (gameName == "isshoni")
 	{
-		touchscreen = new Touchscreen(&uart1);
+		uart1.setPipe(sp_touchscreen_open(&SerialPort::updateStatusOf, &uart1));
 		ioPortManager.reset(new IsshoniIOManager());
 	}
 	else if (gameName == "manpuku") {
@@ -2618,9 +1892,9 @@ void SystemSpCart::Reset()
 	netmask = 0x00ffffff;	// 255.255.255.0
 	sockets = 0;
 	if (uart1.getPipe() != nullptr)
-		uart1.getPipe()->reset();
+		uart1.getPipe()->ops->reset(uart1.getPipe());
 	if (uart2.getPipe() != nullptr)
-		uart2.getPipe()->reset();
+		uart2.getPipe()->ops->reset(uart2.getPipe());
 	if (ioPortManager)
 		ioPortManager->reset();
 	if (ataSchedId >= 0)
@@ -3035,7 +2309,7 @@ static void serializePipe(SerialPort& port, void **data, unsigned int *total_siz
 	static const u8 zeroes[SystemSpCart::PIPE_STATE_SIZE] = {};
 	const unsigned int start = *total_size;
 	if (port.getPipe() != nullptr)
-		port.getPipe()->serialize(data, total_size);
+		port.getPipe()->ops->serialize(port.getPipe(), data, total_size);
 	const unsigned int used = *total_size - start;
 	if (used < SystemSpCart::PIPE_STATE_SIZE)
 		LIBRETRO_SA(zeroes, SystemSpCart::PIPE_STATE_SIZE - used);
@@ -3046,7 +2320,7 @@ static void unserializePipe(SerialPort& port, void **data, unsigned int *total_s
 	static u8 skip[SystemSpCart::PIPE_STATE_SIZE];
 	const unsigned int start = *total_size;
 	if (port.getPipe() != nullptr)
-		port.getPipe()->unserialize(data, total_size);
+		port.getPipe()->ops->unserialize(port.getPipe(), data, total_size);
 	const unsigned int used = *total_size - start;
 	if (used < SystemSpCart::PIPE_STATE_SIZE)
 		LIBRETRO_USA(skip, SystemSpCart::PIPE_STATE_SIZE - used);
@@ -3082,7 +2356,7 @@ void SystemSpCart::serializeV24(void **data, unsigned int *total_size)
 	LIBRETRO_S(ata.reg84);
 	LIBRETRO_SA(ata.buffer, SECTOR_SIZE);
 	LIBRETRO_S(ata.bufferIndex);
-	saveEvent(ataSchedId, data, total_size);
+	sp_save_event(ataSchedId, data, total_size);
 
 	LIBRETRO_S(flash.cmdState);
 	LIBRETRO_S(flash.progAddress);
@@ -3143,7 +2417,7 @@ bool SystemSpCart::unserializeV24(void **data, unsigned int *total_size)
 	LIBRETRO_US(ata.reg84);
 	LIBRETRO_USA(ata.buffer, SECTOR_SIZE);
 	LIBRETRO_US(ata.bufferIndex);
-	loadEvent(ataSchedId, 2000, data, total_size);
+	sp_load_event(ataSchedId, 2000, data, total_size);
 
 	const u32 changes = flash.changes;
 	const u32 changesHash = flash.changesHash;

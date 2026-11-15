@@ -29,6 +29,7 @@
  */
 #pragma once
 #include "dinokich.h"
+#include "systemsp_serial.h"
 #include <memory>
 #include <string>
 #include <retro_atomic.h>
@@ -48,45 +49,32 @@ void writeMemArea0(u32 addr, T v);
 class SystemSpCart;
 class IOPortManager;
 
-// What is plugged into one of the ROM board's serial ports
-class SerialPipe
-{
-public:
-	virtual ~SerialPipe() = default;
-	virtual void write(u8 v) = 0;
-	virtual int available() = 0;
-	virtual u8 read() = 0;
-	// what a power-on leaves it with (what it keeps in a file stays)
-	virtual void reset() = 0;
-	// at most PIPE_STATE_SIZE bytes, in the save state from V24
-	virtual void serialize(void **data, unsigned int *total_size) = 0;
-	virtual void unserialize(void **data, unsigned int *total_size) = 0;
-};
-
-// The ROM board's own UARTs
+// The ROM board's own UARTs, and what is plugged into each (systemsp_serial.h)
 class SerialPort
 {
 public:
 	SerialPort(SystemSpCart *cart, int index) : cart(cart), index(index) {}
-	~SerialPort() { delete pipe; }
+	~SerialPort() { if (pipe != nullptr) pipe->ops->close(pipe); }
 
 	u8 readReg(u32 addr);
 	void writeReg(u32 addr, u8 v);
-	void setPipe(SerialPipe *pipe) { this->pipe = pipe; }
-	SerialPipe *getPipe() const { return pipe; }
+	void setPipe(sp_pipe *pipe) { this->pipe = pipe; }
+	sp_pipe *getPipe() const { return pipe; }
 	void updateStatus();
+	// (for a device: the port that has it has something new to send)
+	static void updateStatusOf(void *port) { static_cast<SerialPort *>(port)->updateStatus(); }
 
 private:
 	void flush()
 	{
 		if (pipe != nullptr)
-			while (pipe->available())
-				pipe->read();
+			while (pipe->ops->available(pipe))
+				pipe->ops->read(pipe);
 	}
 
 	SystemSpCart *cart;
 	const int index;
-	SerialPipe *pipe = nullptr;
+	sp_pipe *pipe = nullptr;
 };
 
 // Three-wire serial EEPROM, 1 Kb (64 words of 16 bits)
@@ -172,15 +160,13 @@ public:
 	static constexpr u32 INT_UART2 = 0x02;
 	static constexpr u32 INT_DIMM = 0x08;
 	static constexpr u32 INT_ATA = 0x10;
-	static constexpr u32 PIPE_STATE_SIZE = 768;
+	static constexpr u32 PIPE_STATE_SIZE = SP_PIPE_STATE_SIZE;
 
 	static SystemSpCart *Instance;
 	static int ataSchedId;
 
 	// the RFID chips' files, by port number
 	std::string getCardPath(int index) const;
-	// the touchscreen on the first port, if there is one
-	SerialPipe *touchscreen = nullptr;
 	// the IC card reader on the first port, if there is one (the port has it)
 	dinokich_reader *dinokich = nullptr;
 

@@ -1,0 +1,605 @@
+== dinoking, region 0, port 1
+known: read 16621094
+known: 0 bytes 811c9dc5 (0 updates, 0 saved 811c9dc5):
+reset: 1 bytes 0f0c6cdd (2 updates, 0 saved 811c9dc5): 0a
+unknown: 1 bytes 3f0cb86d (2 updates, 0 saved 811c9dc5): 3a
+request, off: 1 bytes 4f0b3e9d (2 updates, 0 saved 811c9dc5): ca
+test: 1 bytes ef0c3a7d (3 updates, 0 saved 811c9dc5): 6a
+request: 1 bytes 4f0b3e9d (2 updates, 0 saved 811c9dc5): ca
+request again: 5 bytes b74b26cb (2 updates, 0 saved 811c9dc5): 0a 01 0a 11 18
+select: 1 bytes 0f0c6cdd (3 updates, 0 saved 811c9dc5): 0a
+read: 129 bytes 41c0d485 (2 updates, 0 saved 811c9dc5): 0a 01 0a 11 18 1f 26 2d 34 00 00 00 00 00 00 00 aa 00 00 00 00 00 00 00
+select with the key: 1 bytes 0f0c6cdd (3 updates, 0 saved 811c9dc5): 0a
+read all: 129 bytes 213df8a9 (2 updates, 0 saved 811c9dc5): 0a 01 0a 11 18 1f 26 2d 34 3b 42 49 50 57 5e 65 6c 05 05 05 23 8f 96 9d
+test, on: 1 bytes 0f0c6cdd (3 updates, 0 saved 811c9dc5): 0a
+change: 1 bytes 0f0c6cdd (3 updates, 0 saved 811c9dc5): 0a
+write, first row: 1 bytes 0f0c6cdd (3 updates, 0 saved 811c9dc5): 0a
+write, past the last row: 34 bytes ee243d75 (69 updates, 31 saved 1ff44b18): 0a 0a 0a 0a 0a 0a 0a 0a 0a 0a 0a 0a 0a 0a 0a 0a 0a 0a 0a 0a 0a 0a 0a 0a
+rows written: 0 bytes 811c9dc5 (0 updates, 31 saved 1ff44b18):
+write nothing: 1 bytes 0f0c6cdd (3 updates, 31 saved 1ff44b18): 0a
+read all: 129 bytes db8e9eb3 (2 updates, 31 saved 1ff44b18): 0a 01 0a 11 18 09 08 07 06 09 08 07 06 09 08 07 06 09 08 07 06 09 08 07
+count 0: 2 bytes 858f534f (3 updates, 32 saved b33f52b4): 0a 08
+count 1: 2 bytes 8a8f5b2e (3 updates, 33 saved 583ab963): 0a 07
+count 2: 2 bytes 8b8f5cc1 (3 updates, 34 saved 3c96c40b): 0a 06
+count, the last but one: 70 bytes c12944be (71 updates, 69 saved 95ac753d): 0a 05 0a 04 0a 03 0a 02 0a 01 0a 00 0a fe 0a fd 0a fc 0a fb 0a fa 0a f9
+count, the last: 2 bytes ec8e6274 (3 updates, 70 saved 3709cfe2): 0a e1
+counted: 0 bytes 811c9dc5 (0 updates, 70 saved 3709cfe2):
+read the new card: 129 bytes 2704a5eb (2 updates, 70 saved 3709cfe2): 0a 52 88 82 34 89 ef 7d 0e 00 00 00 00 05 40 00 aa 23 ff ff e1 00 00 00
+halt: 1 bytes 0f0c6cdd (3 updates, 70 saved 3709cfe2): 0a
+counted down again: 74 bytes d98b8307 (75 updates, 107 saved e5ed05cc): 0a e0 0a df 0a de 0a dd 0a dc 0a db 0a da 0a d9 0a d8 0a d7 0a d6 0a d5
+state: state 662 bytes a68de24e
+state: read a68de24e
+state: 0 bytes 811c9dc5 (1 updates, 107 saved e5ed05cc):
+the command finished: 1 bytes 0f0c6cdd (2 updates, 107 saved e5ed05cc): 0a
+state not right: state 662 bytes 020daf15
+state not right: read 30460802
+state not right: 0 bytes 811c9dc5 (1 updates, 107 saved e5ed05cc):
+state not right: state 662 bytes 30460802
+state not right: read 4952a5a5
+state not right: 0 bytes 811c9dc5 (0 updates, 107 saved e5ed05cc):
+after it: 1 bytes 0f0c6cdd (3 updates, 107 saved e5ed05cc): 0a
+queue not right: state 662 bytes 1b0e0890
+queue not right: read 964a5b5d
+queue not right: 0 bytes 811c9dc5 (0 updates, 107 saved e5ed05cc):
+test, off: 1 bytes 0f0c6cdd (3 updates, 107 saved e5ed05cc): 0a
+request, off: 1 bytes 4f0b3e9d (2 updates, 107 saved e5ed05cc): ca
+power on: 0 bytes 811c9dc5 (0 updates, 107 saved e5ed05cc):
+drain
+== dinoking, region 0, port 2
+new card: mode 05 40 00 aa counters 23 ff ff ff
+known: read 004d2bc0
+known: 0 bytes 811c9dc5 (0 updates, 107 saved e5ed05cc):
+reset: 1 bytes 0f0c6cdd (2 updates, 107 saved e5ed05cc): 0a
+unknown: 1 bytes 3f0cb86d (2 updates, 107 saved e5ed05cc): 3a
+request, off: 1 bytes 4f0b3e9d (2 updates, 107 saved e5ed05cc): ca
+test: 1 bytes ef0c3a7d (3 updates, 107 saved e5ed05cc): 6a
+request: 1 bytes 4f0b3e9d (2 updates, 107 saved e5ed05cc): ca
+request again: 5 bytes 1daeee6c (2 updates, 107 saved e5ed05cc): 0a 02 0a 11 18
+select: 1 bytes 0f0c6cdd (3 updates, 107 saved e5ed05cc): 0a
+read: 129 bytes 8c6f59aa (2 updates, 107 saved e5ed05cc): 0a 02 0a 11 18 1f 26 2d 34 00 00 00 00 00 00 00 aa 00 00 00 00 00 00 00
+select with the key: 1 bytes 0f0c6cdd (3 updates, 107 saved e5ed05cc): 0a
+read all: 129 bytes 1716f53a (2 updates, 107 saved e5ed05cc): 0a 02 0a 11 18 1f 26 2d 34 3b 42 49 50 57 5e 65 6c 05 05 05 23 8f 96 9d
+test, on: 1 bytes 0f0c6cdd (3 updates, 107 saved e5ed05cc): 0a
+change: 1 bytes 0f0c6cdd (3 updates, 107 saved e5ed05cc): 0a
+write, first row: 1 bytes 0f0c6cdd (3 updates, 107 saved e5ed05cc): 0a
+write, past the last row: 34 bytes ee243d75 (69 updates, 138 saved f00b30b5): 0a 0a 0a 0a 0a 0a 0a 0a 0a 0a 0a 0a 0a 0a 0a 0a 0a 0a 0a 0a 0a 0a 0a 0a
+rows written: 0 bytes 811c9dc5 (0 updates, 138 saved f00b30b5):
+write nothing: 1 bytes 0f0c6cdd (3 updates, 138 saved f00b30b5): 0a
+read all: 129 bytes 40e1b758 (2 updates, 138 saved f00b30b5): 0a 02 0a 11 18 09 08 07 06 09 08 07 06 09 08 07 06 09 08 07 06 09 08 07
+count 0: 2 bytes 858f534f (3 updates, 139 saved 93fdffd5): 0a 08
+count 1: 2 bytes 8a8f5b2e (3 updates, 140 saved 990289a6): 0a 07
+count 2: 2 bytes 8b8f5cc1 (3 updates, 141 saved a5311efa): 0a 06
+count, the last but one: 70 bytes c12944be (71 updates, 176 saved b77170a4): 0a 05 0a 04 0a 03 0a 02 0a 01 0a 00 0a fe 0a fd 0a fc 0a fb 0a fa 0a f9
+count, the last: 2 bytes ec8e6274 (3 updates, 177 saved bfca7206): 0a e1
+counted: 0 bytes 811c9dc5 (0 updates, 177 saved bfca7206):
+read the new card: 129 bytes 0adc7dc3 (2 updates, 177 saved bfca7206): 0a c9 0c a0 bd 0b 26 f7 15 00 00 00 00 05 40 00 aa 23 ff ff e1 00 00 00
+halt: 1 bytes 0f0c6cdd (3 updates, 177 saved bfca7206): 0a
+counted down again: 74 bytes d98b8307 (75 updates, 214 saved aaceb069): 0a e0 0a df 0a de 0a dd 0a dc 0a db 0a da 0a d9 0a d8 0a d7 0a d6 0a d5
+state: state 662 bytes 9200409b
+state: read 9200409b
+state: 0 bytes 811c9dc5 (1 updates, 214 saved aaceb069):
+the command finished: 1 bytes 0f0c6cdd (2 updates, 214 saved aaceb069): 0a
+state not right: state 662 bytes f3f643d8
+state not right: read 64ab8523
+state not right: 0 bytes 811c9dc5 (1 updates, 214 saved aaceb069):
+state not right: state 662 bytes 64ab8523
+state not right: read 65856bb4
+state not right: 0 bytes 811c9dc5 (0 updates, 214 saved aaceb069):
+after it: 1 bytes 0f0c6cdd (3 updates, 214 saved aaceb069): 0a
+queue not right: state 662 bytes 38773931
+queue not right: read 185e0a14
+queue not right: 0 bytes 811c9dc5 (0 updates, 214 saved aaceb069):
+test, off: 1 bytes 0f0c6cdd (3 updates, 214 saved aaceb069): 0a
+request, off: 1 bytes 4f0b3e9d (2 updates, 214 saved aaceb069): ca
+power on: 0 bytes 811c9dc5 (0 updates, 214 saved aaceb069):
+drain
+== dinoking, region 1, port 1
+known: read 06e6cdc7
+known: 0 bytes 811c9dc5 (0 updates, 214 saved aaceb069):
+reset: 1 bytes 0f0c6cdd (2 updates, 214 saved aaceb069): 0a
+unknown: 1 bytes 3f0cb86d (2 updates, 214 saved aaceb069): 3a
+request, off: 1 bytes 4f0b3e9d (2 updates, 214 saved aaceb069): ca
+test: 1 bytes ef0c3a7d (3 updates, 214 saved aaceb069): 6a
+request: 1 bytes 4f0b3e9d (2 updates, 214 saved aaceb069): ca
+request again: 5 bytes b74b26cb (2 updates, 214 saved aaceb069): 0a 01 0a 11 18
+select: 1 bytes 0f0c6cdd (3 updates, 214 saved aaceb069): 0a
+read: 129 bytes 41c0d485 (2 updates, 214 saved aaceb069): 0a 01 0a 11 18 1f 26 2d 34 00 00 00 00 00 00 00 aa 00 00 00 00 00 00 00
+select with the key: 1 bytes 0f0c6cdd (3 updates, 214 saved aaceb069): 0a
+read all: 129 bytes 213df8a9 (2 updates, 214 saved aaceb069): 0a 01 0a 11 18 1f 26 2d 34 3b 42 49 50 57 5e 65 6c 05 05 05 23 8f 96 9d
+test, on: 1 bytes 0f0c6cdd (3 updates, 214 saved aaceb069): 0a
+change: 1 bytes 0f0c6cdd (3 updates, 214 saved aaceb069): 0a
+write, first row: 1 bytes 0f0c6cdd (3 updates, 214 saved aaceb069): 0a
+write, past the last row: 34 bytes ee243d75 (69 updates, 245 saved 2b7dd6fc): 0a 0a 0a 0a 0a 0a 0a 0a 0a 0a 0a 0a 0a 0a 0a 0a 0a 0a 0a 0a 0a 0a 0a 0a
+rows written: 0 bytes 811c9dc5 (0 updates, 245 saved 2b7dd6fc):
+write nothing: 1 bytes 0f0c6cdd (3 updates, 245 saved 2b7dd6fc): 0a
+read all: 129 bytes db8e9eb3 (2 updates, 245 saved 2b7dd6fc): 0a 01 0a 11 18 09 08 07 06 09 08 07 06 09 08 07 06 09 08 07 06 09 08 07
+count 0: 2 bytes 858f534f (3 updates, 246 saved 74be4578): 0a 08
+count 1: 2 bytes 8a8f5b2e (3 updates, 247 saved cabb8e67): 0a 07
+count 2: 2 bytes 8b8f5cc1 (3 updates, 248 saved 3e77d82f): 0a 06
+count, the last but one: 70 bytes c12944be (71 updates, 283 saved 78afab09): 0a 05 0a 04 0a 03 0a 02 0a 01 0a 00 0a fe 0a fd 0a fc 0a fb 0a fa 0a f9
+count, the last: 2 bytes ec8e6274 (3 updates, 284 saved 7041b9b5): 0a e1
+counted: 0 bytes 811c9dc5 (0 updates, 284 saved 7041b9b5):
+read the new card: 129 bytes aa316056 (2 updates, 284 saved 7041b9b5): 0a 19 2b 00 3a e0 68 cb a1 00 00 00 00 05 40 00 aa 23 ff ff e1 00 00 00
+halt: 1 bytes 0f0c6cdd (3 updates, 284 saved 7041b9b5): 0a
+counted down again: 74 bytes d98b8307 (75 updates, 321 saved 3e734110): 0a e0 0a df 0a de 0a dd 0a dc 0a db 0a da 0a d9 0a d8 0a d7 0a d6 0a d5
+state: state 662 bytes 5ca5257b
+state: read 5ca5257b
+state: 0 bytes 811c9dc5 (1 updates, 321 saved 3e734110):
+the command finished: 1 bytes 0f0c6cdd (2 updates, 321 saved 3e734110): 0a
+state not right: state 662 bytes aed80290
+state not right: read dceb6bd3
+state not right: 0 bytes 811c9dc5 (1 updates, 321 saved 3e734110):
+state not right: state 662 bytes dceb6bd3
+state not right: read 13fedb74
+state not right: 0 bytes 811c9dc5 (0 updates, 321 saved 3e734110):
+after it: 1 bytes 0f0c6cdd (3 updates, 321 saved 3e734110): 0a
+queue not right: state 662 bytes f1658fd5
+queue not right: read 44e6f8a0
+queue not right: 0 bytes 811c9dc5 (0 updates, 321 saved 3e734110):
+test, off: 1 bytes 0f0c6cdd (3 updates, 321 saved 3e734110): 0a
+request, off: 1 bytes 4f0b3e9d (2 updates, 321 saved 3e734110): ca
+power on: 0 bytes 811c9dc5 (0 updates, 321 saved 3e734110):
+drain
+== dinoking, region 1, port 2
+new card: mode 05 40 00 aa counters 23 ff ff ff
+known: read 8d95d523
+known: 0 bytes 811c9dc5 (0 updates, 321 saved 3e734110):
+reset: 1 bytes 0f0c6cdd (2 updates, 321 saved 3e734110): 0a
+unknown: 1 bytes 3f0cb86d (2 updates, 321 saved 3e734110): 3a
+request, off: 1 bytes 4f0b3e9d (2 updates, 321 saved 3e734110): ca
+test: 1 bytes ef0c3a7d (3 updates, 321 saved 3e734110): 6a
+request: 1 bytes 4f0b3e9d (2 updates, 321 saved 3e734110): ca
+request again: 5 bytes 1daeee6c (2 updates, 321 saved 3e734110): 0a 02 0a 11 18
+select: 1 bytes 0f0c6cdd (3 updates, 321 saved 3e734110): 0a
+read: 129 bytes 8c6f59aa (2 updates, 321 saved 3e734110): 0a 02 0a 11 18 1f 26 2d 34 00 00 00 00 00 00 00 aa 00 00 00 00 00 00 00
+select with the key: 1 bytes 0f0c6cdd (3 updates, 321 saved 3e734110): 0a
+read all: 129 bytes 1716f53a (2 updates, 321 saved 3e734110): 0a 02 0a 11 18 1f 26 2d 34 3b 42 49 50 57 5e 65 6c 05 05 05 23 8f 96 9d
+test, on: 1 bytes 0f0c6cdd (3 updates, 321 saved 3e734110): 0a
+change: 1 bytes 0f0c6cdd (3 updates, 321 saved 3e734110): 0a
+write, first row: 1 bytes 0f0c6cdd (3 updates, 321 saved 3e734110): 0a
+write, past the last row: 34 bytes ee243d75 (69 updates, 352 saved 77d0c661): 0a 0a 0a 0a 0a 0a 0a 0a 0a 0a 0a 0a 0a 0a 0a 0a 0a 0a 0a 0a 0a 0a 0a 0a
+rows written: 0 bytes 811c9dc5 (0 updates, 352 saved 77d0c661):
+write nothing: 1 bytes 0f0c6cdd (3 updates, 352 saved 77d0c661): 0a
+read all: 129 bytes 40e1b758 (2 updates, 352 saved 77d0c661): 0a 02 0a 11 18 09 08 07 06 09 08 07 06 09 08 07 06 09 08 07 06 09 08 07
+count 0: 2 bytes 858f534f (3 updates, 353 saved c09b4749): 0a 08
+count 1: 2 bytes 8a8f5b2e (3 updates, 354 saved c6af363a): 0a 07
+count 2: 2 bytes 8b8f5cc1 (3 updates, 355 saved 828f1b1e): 0a 06
+count, the last but one: 70 bytes c12944be (71 updates, 390 saved 57616800): 0a 05 0a 04 0a 03 0a 02 0a 01 0a 00 0a fe 0a fd 0a fc 0a fb 0a fa 0a f9
+count, the last: 2 bytes ec8e6274 (3 updates, 391 saved cecba400): 0a e1
+counted: 0 bytes 811c9dc5 (0 updates, 391 saved cecba400):
+read the new card: 129 bytes 0fa7dd2d (2 updates, 391 saved cecba400): 0a 8f af 1e c4 f0 a9 2d 6d 00 00 00 00 05 40 00 aa 23 ff ff e1 00 00 00
+halt: 1 bytes 0f0c6cdd (3 updates, 391 saved cecba400): 0a
+counted down again: 74 bytes d98b8307 (75 updates, 428 saved d6637c85): 0a e0 0a df 0a de 0a dd 0a dc 0a db 0a da 0a d9 0a d8 0a d7 0a d6 0a d5
+state: state 662 bytes 62fe9b9d
+state: read 62fe9b9d
+state: 0 bytes 811c9dc5 (1 updates, 428 saved d6637c85):
+the command finished: 1 bytes 0f0c6cdd (2 updates, 428 saved d6637c85): 0a
+state not right: state 662 bytes 8e92a61e
+state not right: read b56813ed
+state not right: 0 bytes 811c9dc5 (1 updates, 428 saved d6637c85):
+state not right: state 662 bytes b56813ed
+state not right: read e8f057fa
+state not right: 0 bytes 811c9dc5 (0 updates, 428 saved d6637c85):
+after it: 1 bytes 0f0c6cdd (3 updates, 428 saved d6637c85): 0a
+queue not right: state 662 bytes cf5c7c7f
+queue not right: read 4ab9bf96
+queue not right: 0 bytes 811c9dc5 (0 updates, 428 saved d6637c85):
+test, off: 1 bytes 0f0c6cdd (3 updates, 428 saved d6637c85): 0a
+request, off: 1 bytes 4f0b3e9d (2 updates, 428 saved d6637c85): ca
+power on: 0 bytes 811c9dc5 (0 updates, 428 saved d6637c85):
+drain
+== dinoking, region 2, port 1
+known: read 20375296
+known: 0 bytes 811c9dc5 (0 updates, 428 saved d6637c85):
+reset: 1 bytes 0f0c6cdd (2 updates, 428 saved d6637c85): 0a
+unknown: 1 bytes 3f0cb86d (2 updates, 428 saved d6637c85): 3a
+request, off: 1 bytes 4f0b3e9d (2 updates, 428 saved d6637c85): ca
+test: 1 bytes ef0c3a7d (3 updates, 428 saved d6637c85): 6a
+request: 1 bytes 4f0b3e9d (2 updates, 428 saved d6637c85): ca
+request again: 5 bytes b74b26cb (2 updates, 428 saved d6637c85): 0a 01 0a 11 18
+select: 1 bytes 0f0c6cdd (3 updates, 428 saved d6637c85): 0a
+read: 129 bytes 41c0d485 (2 updates, 428 saved d6637c85): 0a 01 0a 11 18 1f 26 2d 34 00 00 00 00 00 00 00 aa 00 00 00 00 00 00 00
+select with the key: 1 bytes 0f0c6cdd (3 updates, 428 saved d6637c85): 0a
+read all: 129 bytes 213df8a9 (2 updates, 428 saved d6637c85): 0a 01 0a 11 18 1f 26 2d 34 3b 42 49 50 57 5e 65 6c 05 05 05 23 8f 96 9d
+test, on: 1 bytes 0f0c6cdd (3 updates, 428 saved d6637c85): 0a
+change: 1 bytes 0f0c6cdd (3 updates, 428 saved d6637c85): 0a
+write, first row: 1 bytes 0f0c6cdd (3 updates, 428 saved d6637c85): 0a
+write, past the last row: 34 bytes ee243d75 (69 updates, 459 saved 15af29d8): 0a 0a 0a 0a 0a 0a 0a 0a 0a 0a 0a 0a 0a 0a 0a 0a 0a 0a 0a 0a 0a 0a 0a 0a
+rows written: 0 bytes 811c9dc5 (0 updates, 459 saved 15af29d8):
+write nothing: 1 bytes 0f0c6cdd (3 updates, 459 saved 15af29d8): 0a
+read all: 129 bytes db8e9eb3 (2 updates, 459 saved 15af29d8): 0a 01 0a 11 18 09 08 07 06 09 08 07 06 09 08 07 06 09 08 07 06 09 08 07
+count 0: 2 bytes 858f534f (3 updates, 460 saved 524925f4): 0a 08
+count 1: 2 bytes 8a8f5b2e (3 updates, 461 saved 87a89523): 0a 07
+count 2: 2 bytes 8b8f5cc1 (3 updates, 462 saved e25ebf4b): 0a 06
+count, the last but one: 70 bytes c12944be (71 updates, 497 saved adc8c635): 0a 05 0a 04 0a 03 0a 02 0a 01 0a 00 0a fe 0a fd 0a fc 0a fb 0a fa 0a f9
+count, the last: 2 bytes ec8e6274 (3 updates, 498 saved 1a658d3e): 0a e1
+counted: 0 bytes 811c9dc5 (0 updates, 498 saved 1a658d3e):
+read the new card: 129 bytes ab53ae1f (2 updates, 498 saved 1a658d3e): 0a df cd 7e 41 10 d1 5e 91 00 00 00 00 05 40 00 aa 23 ff ff e1 00 00 00
+halt: 1 bytes 0f0c6cdd (3 updates, 498 saved 1a658d3e): 0a
+counted down again: 74 bytes d98b8307 (75 updates, 535 saved 3ce2c38c): 0a e0 0a df 0a de 0a dd 0a dc 0a db 0a da 0a d9 0a d8 0a d7 0a d6 0a d5
+state: state 662 bytes a5ecc81b
+state: read a5ecc81b
+state: 0 bytes 811c9dc5 (1 updates, 535 saved 3ce2c38c):
+the command finished: 1 bytes 0f0c6cdd (2 updates, 535 saved 3ce2c38c): 0a
+state not right: state 662 bytes 12835b48
+state not right: read 9588300f
+state not right: 0 bytes 811c9dc5 (1 updates, 535 saved 3ce2c38c):
+state not right: state 662 bytes 9588300f
+state not right: read 9d6f19e0
+state not right: 0 bytes 811c9dc5 (0 updates, 535 saved 3ce2c38c):
+after it: 1 bytes 0f0c6cdd (3 updates, 535 saved 3ce2c38c): 0a
+queue not right: state 662 bytes 14abd039
+queue not right: read d194b8c0
+queue not right: 0 bytes 811c9dc5 (0 updates, 535 saved 3ce2c38c):
+test, off: 1 bytes 0f0c6cdd (3 updates, 535 saved 3ce2c38c): 0a
+request, off: 1 bytes 4f0b3e9d (2 updates, 535 saved 3ce2c38c): ca
+power on: 0 bytes 811c9dc5 (0 updates, 535 saved 3ce2c38c):
+drain
+== dinoking, region 2, port 2
+new card: mode 05 40 00 aa counters 23 ff ff ff
+known: read f677e9be
+known: 0 bytes 811c9dc5 (0 updates, 535 saved 3ce2c38c):
+reset: 1 bytes 0f0c6cdd (2 updates, 535 saved 3ce2c38c): 0a
+unknown: 1 bytes 3f0cb86d (2 updates, 535 saved 3ce2c38c): 3a
+request, off: 1 bytes 4f0b3e9d (2 updates, 535 saved 3ce2c38c): ca
+test: 1 bytes ef0c3a7d (3 updates, 535 saved 3ce2c38c): 6a
+request: 1 bytes 4f0b3e9d (2 updates, 535 saved 3ce2c38c): ca
+request again: 5 bytes 1daeee6c (2 updates, 535 saved 3ce2c38c): 0a 02 0a 11 18
+select: 1 bytes 0f0c6cdd (3 updates, 535 saved 3ce2c38c): 0a
+read: 129 bytes 8c6f59aa (2 updates, 535 saved 3ce2c38c): 0a 02 0a 11 18 1f 26 2d 34 00 00 00 00 00 00 00 aa 00 00 00 00 00 00 00
+select with the key: 1 bytes 0f0c6cdd (3 updates, 535 saved 3ce2c38c): 0a
+read all: 129 bytes 1716f53a (2 updates, 535 saved 3ce2c38c): 0a 02 0a 11 18 1f 26 2d 34 3b 42 49 50 57 5e 65 6c 05 05 05 23 8f 96 9d
+test, on: 1 bytes 0f0c6cdd (3 updates, 535 saved 3ce2c38c): 0a
+change: 1 bytes 0f0c6cdd (3 updates, 535 saved 3ce2c38c): 0a
+write, first row: 1 bytes 0f0c6cdd (3 updates, 535 saved 3ce2c38c): 0a
+write, past the last row: 34 bytes ee243d75 (69 updates, 566 saved 5831e8f5): 0a 0a 0a 0a 0a 0a 0a 0a 0a 0a 0a 0a 0a 0a 0a 0a 0a 0a 0a 0a 0a 0a 0a 0a
+rows written: 0 bytes 811c9dc5 (0 updates, 566 saved 5831e8f5):
+write nothing: 1 bytes 0f0c6cdd (3 updates, 566 saved 5831e8f5): 0a
+read all: 129 bytes 40e1b758 (2 updates, 566 saved 5831e8f5): 0a 02 0a 11 18 09 08 07 06 09 08 07 06 09 08 07 06 09 08 07 06 09 08 07
+count 0: 2 bytes 858f534f (3 updates, 567 saved b7661495): 0a 08
+count 1: 2 bytes 8a8f5b2e (3 updates, 568 saved 01ce23e6): 0a 07
+count 2: 2 bytes 8b8f5cc1 (3 updates, 569 saved 3613c1ba): 0a 06
+count, the last but one: 70 bytes c12944be (71 updates, 604 saved 1cbf7c8c): 0a 05 0a 04 0a 03 0a 02 0a 01 0a 00 0a fe 0a fd 0a fc 0a fb 0a fa 0a f9
+count, the last: 2 bytes ec8e6274 (3 updates, 605 saved e2c044ca): 0a e1
+counted: 0 bytes 811c9dc5 (0 updates, 605 saved e2c044ca):
+read the new card: 129 bytes 62b823e7 (2 updates, 605 saved e2c044ca): 0a 55 51 9c ca c0 35 a8 c8 00 00 00 00 05 40 00 aa 23 ff ff e1 00 00 00
+halt: 1 bytes 0f0c6cdd (3 updates, 605 saved e2c044ca): 0a
+counted down again: 74 bytes d98b8307 (75 updates, 642 saved 60915f31): 0a e0 0a df 0a de 0a dd 0a dc 0a db 0a da 0a d9 0a d8 0a d7 0a d6 0a d5
+state: state 662 bytes 5e5b0f0b
+state: read 5e5b0f0b
+state: 0 bytes 811c9dc5 (1 updates, 642 saved 60915f31):
+the command finished: 1 bytes 0f0c6cdd (2 updates, 642 saved 60915f31): 0a
+state not right: state 662 bytes e150a6e4
+state not right: read 66ffc7ab
+state not right: 0 bytes 811c9dc5 (1 updates, 642 saved 60915f31):
+state not right: state 662 bytes 66ffc7ab
+state not right: read 16da9e40
+state not right: 0 bytes 811c9dc5 (0 updates, 642 saved 60915f31):
+after it: 1 bytes 0f0c6cdd (3 updates, 642 saved 60915f31): 0a
+queue not right: state 662 bytes 903975c1
+queue not right: read 6813b8b8
+queue not right: 0 bytes 811c9dc5 (0 updates, 642 saved 60915f31):
+test, off: 1 bytes 0f0c6cdd (3 updates, 642 saved 60915f31): 0a
+request, off: 1 bytes 4f0b3e9d (2 updates, 642 saved 60915f31): ca
+power on: 0 bytes 811c9dc5 (0 updates, 642 saved 60915f31):
+drain
+== loveber, region 0, port 1
+known: read 16621094
+known: 0 bytes 811c9dc5 (0 updates, 642 saved 60915f31):
+reset: 1 bytes 0f0c6cdd (2 updates, 642 saved 60915f31): 0a
+unknown: 1 bytes 3f0cb86d (2 updates, 642 saved 60915f31): 3a
+request, off: 1 bytes 4f0b3e9d (2 updates, 642 saved 60915f31): ca
+test: 1 bytes ef0c3a7d (3 updates, 642 saved 60915f31): 6a
+request: 1 bytes 4f0b3e9d (2 updates, 642 saved 60915f31): ca
+request again: 5 bytes b74b26cb (2 updates, 642 saved 60915f31): 0a 01 0a 11 18
+select: 1 bytes 0f0c6cdd (3 updates, 642 saved 60915f31): 0a
+read: 129 bytes 41c0d485 (2 updates, 642 saved 60915f31): 0a 01 0a 11 18 1f 26 2d 34 00 00 00 00 00 00 00 aa 00 00 00 00 00 00 00
+select with the key: 1 bytes 0f0c6cdd (3 updates, 642 saved 60915f31): 0a
+read all: 129 bytes 213df8a9 (2 updates, 642 saved 60915f31): 0a 01 0a 11 18 1f 26 2d 34 3b 42 49 50 57 5e 65 6c 05 05 05 23 8f 96 9d
+test, on: 1 bytes 0f0c6cdd (3 updates, 642 saved 60915f31): 0a
+change: 1 bytes 0f0c6cdd (3 updates, 642 saved 60915f31): 0a
+write, first row: 1 bytes 0f0c6cdd (3 updates, 642 saved 60915f31): 0a
+write, past the last row: 34 bytes ee243d75 (69 updates, 673 saved dfdb0234): 0a 0a 0a 0a 0a 0a 0a 0a 0a 0a 0a 0a 0a 0a 0a 0a 0a 0a 0a 0a 0a 0a 0a 0a
+rows written: 0 bytes 811c9dc5 (0 updates, 673 saved dfdb0234):
+write nothing: 1 bytes 0f0c6cdd (3 updates, 673 saved dfdb0234): 0a
+read all: 129 bytes db8e9eb3 (2 updates, 673 saved dfdb0234): 0a 01 0a 11 18 09 08 07 06 09 08 07 06 09 08 07 06 09 08 07 06 09 08 07
+count 0: 2 bytes 858f534f (3 updates, 674 saved 830f0850): 0a 08
+count 1: 2 bytes 8a8f5b2e (3 updates, 675 saved 31eff09f): 0a 07
+count 2: 2 bytes 8b8f5cc1 (3 updates, 676 saved 97ef2d57): 0a 06
+count, the last but one: 70 bytes c12944be (71 updates, 711 saved 38652779): 0a 05 0a 04 0a 03 0a 02 0a 01 0a 00 0a fe 0a fd 0a fc 0a fb 0a fa 0a f9
+count, the last: 2 bytes ec8e6274 (3 updates, 712 saved 89f06266): 0a e1
+counted: 0 bytes 811c9dc5 (0 updates, 712 saved 89f06266):
+read the new card: 129 bytes 10c41093 (2 updates, 712 saved 89f06266): 0a 52 88 82 34 ab 1f f1 bf 99 03 78 6c 05 77 00 aa 23 ff ff e1 00 00 00
+halt: 1 bytes 0f0c6cdd (3 updates, 712 saved 89f06266): 0a
+counted down again: 74 bytes d98b8307 (75 updates, 749 saved 01608610): 0a e0 0a df 0a de 0a dd 0a dc 0a db 0a da 0a d9 0a d8 0a d7 0a d6 0a d5
+state: state 662 bytes 81dfd1a2
+state: read 81dfd1a2
+state: 0 bytes 811c9dc5 (1 updates, 749 saved 01608610):
+the command finished: 1 bytes 0f0c6cdd (2 updates, 749 saved 01608610): 0a
+state not right: state 662 bytes 6a454261
+state not right: read 970e9576
+state not right: 0 bytes 811c9dc5 (1 updates, 749 saved 01608610):
+state not right: state 662 bytes 970e9576
+state not right: read af0c9851
+state not right: 0 bytes 811c9dc5 (0 updates, 749 saved 01608610):
+after it: 1 bytes 0f0c6cdd (3 updates, 749 saved 01608610): 0a
+queue not right: state 662 bytes 31a13634
+queue not right: read 4d13b6b9
+queue not right: 0 bytes 811c9dc5 (0 updates, 749 saved 01608610):
+test, off: 1 bytes 0f0c6cdd (3 updates, 749 saved 01608610): 0a
+request, off: 1 bytes 4f0b3e9d (2 updates, 749 saved 01608610): ca
+power on: 0 bytes 811c9dc5 (0 updates, 749 saved 01608610):
+drain
+== loveber, region 0, port 2
+new card: mode 05 77 00 aa counters 23 ff ff ff
+known: read 004d2bc0
+known: 0 bytes 811c9dc5 (0 updates, 749 saved 01608610):
+reset: 1 bytes 0f0c6cdd (2 updates, 749 saved 01608610): 0a
+unknown: 1 bytes 3f0cb86d (2 updates, 749 saved 01608610): 3a
+request, off: 1 bytes 4f0b3e9d (2 updates, 749 saved 01608610): ca
+test: 1 bytes ef0c3a7d (3 updates, 749 saved 01608610): 6a
+request: 1 bytes 4f0b3e9d (2 updates, 749 saved 01608610): ca
+request again: 5 bytes 1daeee6c (2 updates, 749 saved 01608610): 0a 02 0a 11 18
+select: 1 bytes 0f0c6cdd (3 updates, 749 saved 01608610): 0a
+read: 129 bytes 8c6f59aa (2 updates, 749 saved 01608610): 0a 02 0a 11 18 1f 26 2d 34 00 00 00 00 00 00 00 aa 00 00 00 00 00 00 00
+select with the key: 1 bytes 0f0c6cdd (3 updates, 749 saved 01608610): 0a
+read all: 129 bytes 1716f53a (2 updates, 749 saved 01608610): 0a 02 0a 11 18 1f 26 2d 34 3b 42 49 50 57 5e 65 6c 05 05 05 23 8f 96 9d
+test, on: 1 bytes 0f0c6cdd (3 updates, 749 saved 01608610): 0a
+change: 1 bytes 0f0c6cdd (3 updates, 749 saved 01608610): 0a
+write, first row: 1 bytes 0f0c6cdd (3 updates, 749 saved 01608610): 0a
+write, past the last row: 34 bytes ee243d75 (69 updates, 780 saved 614e0761): 0a 0a 0a 0a 0a 0a 0a 0a 0a 0a 0a 0a 0a 0a 0a 0a 0a 0a 0a 0a 0a 0a 0a 0a
+rows written: 0 bytes 811c9dc5 (0 updates, 780 saved 614e0761):
+write nothing: 1 bytes 0f0c6cdd (3 updates, 780 saved 614e0761): 0a
+read all: 129 bytes 40e1b758 (2 updates, 780 saved 614e0761): 0a 02 0a 11 18 09 08 07 06 09 08 07 06 09 08 07 06 09 08 07 06 09 08 07
+count 0: 2 bytes 858f534f (3 updates, 781 saved ea29d849): 0a 08
+count 1: 2 bytes 8a8f5b2e (3 updates, 782 saved d51c5d3a): 0a 07
+count 2: 2 bytes 8b8f5cc1 (3 updates, 783 saved a501181e): 0a 06
+count, the last but one: 70 bytes c12944be (71 updates, 818 saved 07d4b468): 0a 05 0a 04 0a 03 0a 02 0a 01 0a 00 0a fe 0a fd 0a fc 0a fb 0a fa 0a f9
+count, the last: 2 bytes ec8e6274 (3 updates, 819 saved 8288c2b4): 0a e1
+counted: 0 bytes 811c9dc5 (0 updates, 819 saved 8288c2b4):
+read the new card: 129 bytes 03ab2419 (2 updates, 819 saved 8288c2b4): 0a c9 0c a0 bd ab 1f f1 d2 99 03 78 01 05 77 00 aa 23 ff ff e1 00 00 00
+halt: 1 bytes 0f0c6cdd (3 updates, 819 saved 8288c2b4): 0a
+counted down again: 74 bytes d98b8307 (75 updates, 856 saved 4a8da02d): 0a e0 0a df 0a de 0a dd 0a dc 0a db 0a da 0a d9 0a d8 0a d7 0a d6 0a d5
+state: state 662 bytes c4b57603
+state: read c4b57603
+state: 0 bytes 811c9dc5 (1 updates, 856 saved 4a8da02d):
+the command finished: 1 bytes 0f0c6cdd (2 updates, 856 saved 4a8da02d): 0a
+state not right: state 662 bytes 2a4994b8
+state not right: read 9af555df
+state not right: 0 bytes 811c9dc5 (1 updates, 856 saved 4a8da02d):
+state not right: state 662 bytes 9af555df
+state not right: read 2f5e4814
+state not right: 0 bytes 811c9dc5 (0 updates, 856 saved 4a8da02d):
+after it: 1 bytes 0f0c6cdd (3 updates, 856 saved 4a8da02d): 0a
+queue not right: state 662 bytes 31b83d8d
+queue not right: read 8c69ad40
+queue not right: 0 bytes 811c9dc5 (0 updates, 856 saved 4a8da02d):
+test, off: 1 bytes 0f0c6cdd (3 updates, 856 saved 4a8da02d): 0a
+request, off: 1 bytes 4f0b3e9d (2 updates, 856 saved 4a8da02d): ca
+power on: 0 bytes 811c9dc5 (0 updates, 856 saved 4a8da02d):
+drain
+== loveber, region 1, port 1
+known: read 06e6cdc7
+known: 0 bytes 811c9dc5 (0 updates, 856 saved 4a8da02d):
+reset: 1 bytes 0f0c6cdd (2 updates, 856 saved 4a8da02d): 0a
+unknown: 1 bytes 3f0cb86d (2 updates, 856 saved 4a8da02d): 3a
+request, off: 1 bytes 4f0b3e9d (2 updates, 856 saved 4a8da02d): ca
+test: 1 bytes ef0c3a7d (3 updates, 856 saved 4a8da02d): 6a
+request: 1 bytes 4f0b3e9d (2 updates, 856 saved 4a8da02d): ca
+request again: 5 bytes b74b26cb (2 updates, 856 saved 4a8da02d): 0a 01 0a 11 18
+select: 1 bytes 0f0c6cdd (3 updates, 856 saved 4a8da02d): 0a
+read: 129 bytes 41c0d485 (2 updates, 856 saved 4a8da02d): 0a 01 0a 11 18 1f 26 2d 34 00 00 00 00 00 00 00 aa 00 00 00 00 00 00 00
+select with the key: 1 bytes 0f0c6cdd (3 updates, 856 saved 4a8da02d): 0a
+read all: 129 bytes 213df8a9 (2 updates, 856 saved 4a8da02d): 0a 01 0a 11 18 1f 26 2d 34 3b 42 49 50 57 5e 65 6c 05 05 05 23 8f 96 9d
+test, on: 1 bytes 0f0c6cdd (3 updates, 856 saved 4a8da02d): 0a
+change: 1 bytes 0f0c6cdd (3 updates, 856 saved 4a8da02d): 0a
+write, first row: 1 bytes 0f0c6cdd (3 updates, 856 saved 4a8da02d): 0a
+write, past the last row: 34 bytes ee243d75 (69 updates, 887 saved eb995b90): 0a 0a 0a 0a 0a 0a 0a 0a 0a 0a 0a 0a 0a 0a 0a 0a 0a 0a 0a 0a 0a 0a 0a 0a
+rows written: 0 bytes 811c9dc5 (0 updates, 887 saved eb995b90):
+write nothing: 1 bytes 0f0c6cdd (3 updates, 887 saved eb995b90): 0a
+read all: 129 bytes db8e9eb3 (2 updates, 887 saved eb995b90): 0a 01 0a 11 18 09 08 07 06 09 08 07 06 09 08 07 06 09 08 07 06 09 08 07
+count 0: 2 bytes 858f534f (3 updates, 888 saved 31f707cc): 0a 08
+count 1: 2 bytes 8a8f5b2e (3 updates, 889 saved 6739bd1b): 0a 07
+count 2: 2 bytes 8b8f5cc1 (3 updates, 890 saved 2d74adb3): 0a 06
+count, the last but one: 70 bytes c12944be (71 updates, 925 saved a3ce33d9): 0a 05 0a 04 0a 03 0a 02 0a 01 0a 00 0a fe 0a fd 0a fc 0a fb 0a fa 0a f9
+count, the last: 2 bytes ec8e6274 (3 updates, 926 saved cd2100c4): 0a e1
+counted: 0 bytes 811c9dc5 (0 updates, 926 saved cd2100c4):
+read the new card: 129 bytes 8e2bbc2d (2 updates, 926 saved cd2100c4): 0a 19 2b 00 3a ab c0 f1 9c 99 dc 78 4f 05 77 00 aa 23 ff ff e1 00 00 00
+halt: 1 bytes 0f0c6cdd (3 updates, 926 saved cd2100c4): 0a
+counted down again: 74 bytes d98b8307 (75 updates, 963 saved ca453554): 0a e0 0a df 0a de 0a dd 0a dc 0a db 0a da 0a d9 0a d8 0a d7 0a d6 0a d5
+state: state 662 bytes 59a7abb6
+state: read 59a7abb6
+state: 0 bytes 811c9dc5 (1 updates, 963 saved ca453554):
+the command finished: 1 bytes 0f0c6cdd (2 updates, 963 saved ca453554): 0a
+state not right: state 662 bytes ac57f8ad
+state not right: read 225e704a
+state not right: 0 bytes 811c9dc5 (1 updates, 963 saved ca453554):
+state not right: state 662 bytes 225e704a
+state not right: read 30d9e25d
+state not right: 0 bytes 811c9dc5 (0 updates, 963 saved ca453554):
+after it: 1 bytes 0f0c6cdd (3 updates, 963 saved ca453554): 0a
+queue not right: state 662 bytes e53258f4
+queue not right: read af8180b9
+queue not right: 0 bytes 811c9dc5 (0 updates, 963 saved ca453554):
+test, off: 1 bytes 0f0c6cdd (3 updates, 963 saved ca453554): 0a
+request, off: 1 bytes 4f0b3e9d (2 updates, 963 saved ca453554): ca
+power on: 0 bytes 811c9dc5 (0 updates, 963 saved ca453554):
+drain
+== loveber, region 1, port 2
+new card: mode 05 77 00 aa counters 23 ff ff ff
+known: read 8d95d523
+known: 0 bytes 811c9dc5 (0 updates, 963 saved ca453554):
+reset: 1 bytes 0f0c6cdd (2 updates, 963 saved ca453554): 0a
+unknown: 1 bytes 3f0cb86d (2 updates, 963 saved ca453554): 3a
+request, off: 1 bytes 4f0b3e9d (2 updates, 963 saved ca453554): ca
+test: 1 bytes ef0c3a7d (3 updates, 963 saved ca453554): 6a
+request: 1 bytes 4f0b3e9d (2 updates, 963 saved ca453554): ca
+request again: 5 bytes 1daeee6c (2 updates, 963 saved ca453554): 0a 02 0a 11 18
+select: 1 bytes 0f0c6cdd (3 updates, 963 saved ca453554): 0a
+read: 129 bytes 8c6f59aa (2 updates, 963 saved ca453554): 0a 02 0a 11 18 1f 26 2d 34 00 00 00 00 00 00 00 aa 00 00 00 00 00 00 00
+select with the key: 1 bytes 0f0c6cdd (3 updates, 963 saved ca453554): 0a
+read all: 129 bytes 1716f53a (2 updates, 963 saved ca453554): 0a 02 0a 11 18 1f 26 2d 34 3b 42 49 50 57 5e 65 6c 05 05 05 23 8f 96 9d
+test, on: 1 bytes 0f0c6cdd (3 updates, 963 saved ca453554): 0a
+change: 1 bytes 0f0c6cdd (3 updates, 963 saved ca453554): 0a
+write, first row: 1 bytes 0f0c6cdd (3 updates, 963 saved ca453554): 0a
+write, past the last row: 34 bytes ee243d75 (69 updates, 994 saved 8b152bfd): 0a 0a 0a 0a 0a 0a 0a 0a 0a 0a 0a 0a 0a 0a 0a 0a 0a 0a 0a 0a 0a 0a 0a 0a
+rows written: 0 bytes 811c9dc5 (0 updates, 994 saved 8b152bfd):
+write nothing: 1 bytes 0f0c6cdd (3 updates, 994 saved 8b152bfd): 0a
+read all: 129 bytes 40e1b758 (2 updates, 994 saved 8b152bfd): 0a 02 0a 11 18 09 08 07 06 09 08 07 06 09 08 07 06 09 08 07 06 09 08 07
+count 0: 2 bytes 858f534f (3 updates, 995 saved 16a8dc7d): 0a 08
+count 1: 2 bytes 8a8f5b2e (3 updates, 996 saved a36c444e): 0a 07
+count 2: 2 bytes 8b8f5cc1 (3 updates, 997 saved b7315212): 0a 06
+count, the last but one: 70 bytes c12944be (71 updates, 1032 saved 54f4a6a4): 0a 05 0a 04 0a 03 0a 02 0a 01 0a 00 0a fe 0a fd 0a fc 0a fb 0a fa 0a f9
+count, the last: 2 bytes ec8e6274 (3 updates, 1033 saved 3ced0072): 0a e1
+counted: 0 bytes 811c9dc5 (0 updates, 1033 saved 3ced0072):
+read the new card: 129 bytes 3ffef097 (2 updates, 1033 saved 3ced0072): 0a 8f af 1e c4 ab c0 f1 ae 99 dc 78 7d 05 77 00 aa 23 ff ff e1 00 00 00
+halt: 1 bytes 0f0c6cdd (3 updates, 1033 saved 3ced0072): 0a
+counted down again: 74 bytes d98b8307 (75 updates, 1070 saved bd772ea9): 0a e0 0a df 0a de 0a dd 0a dc 0a db 0a da 0a d9 0a d8 0a d7 0a d6 0a d5
+state: state 662 bytes 71671140
+state: read 71671140
+state: 0 bytes 811c9dc5 (1 updates, 1070 saved bd772ea9):
+the command finished: 1 bytes 0f0c6cdd (2 updates, 1070 saved bd772ea9): 0a
+state not right: state 662 bytes 93ca6e23
+state not right: read 56d39a40
+state not right: 0 bytes 811c9dc5 (1 updates, 1070 saved bd772ea9):
+state not right: state 662 bytes 56d39a40
+state not right: read 57ca7eff
+state not right: 0 bytes 811c9dc5 (0 updates, 1070 saved bd772ea9):
+after it: 1 bytes 0f0c6cdd (3 updates, 1070 saved bd772ea9): 0a
+queue not right: state 662 bytes d4c9b30a
+queue not right: read 5600dd77
+queue not right: 0 bytes 811c9dc5 (0 updates, 1070 saved bd772ea9):
+test, off: 1 bytes 0f0c6cdd (3 updates, 1070 saved bd772ea9): 0a
+request, off: 1 bytes 4f0b3e9d (2 updates, 1070 saved bd772ea9): ca
+power on: 0 bytes 811c9dc5 (0 updates, 1070 saved bd772ea9):
+drain
+== loveber, region 2, port 1
+known: read 20375296
+known: 0 bytes 811c9dc5 (0 updates, 1070 saved bd772ea9):
+reset: 1 bytes 0f0c6cdd (2 updates, 1070 saved bd772ea9): 0a
+unknown: 1 bytes 3f0cb86d (2 updates, 1070 saved bd772ea9): 3a
+request, off: 1 bytes 4f0b3e9d (2 updates, 1070 saved bd772ea9): ca
+test: 1 bytes ef0c3a7d (3 updates, 1070 saved bd772ea9): 6a
+request: 1 bytes 4f0b3e9d (2 updates, 1070 saved bd772ea9): ca
+request again: 5 bytes b74b26cb (2 updates, 1070 saved bd772ea9): 0a 01 0a 11 18
+select: 1 bytes 0f0c6cdd (3 updates, 1070 saved bd772ea9): 0a
+read: 129 bytes 41c0d485 (2 updates, 1070 saved bd772ea9): 0a 01 0a 11 18 1f 26 2d 34 00 00 00 00 00 00 00 aa 00 00 00 00 00 00 00
+select with the key: 1 bytes 0f0c6cdd (3 updates, 1070 saved bd772ea9): 0a
+read all: 129 bytes 213df8a9 (2 updates, 1070 saved bd772ea9): 0a 01 0a 11 18 1f 26 2d 34 3b 42 49 50 57 5e 65 6c 05 05 05 23 8f 96 9d
+test, on: 1 bytes 0f0c6cdd (3 updates, 1070 saved bd772ea9): 0a
+change: 1 bytes 0f0c6cdd (3 updates, 1070 saved bd772ea9): 0a
+write, first row: 1 bytes 0f0c6cdd (3 updates, 1070 saved bd772ea9): 0a
+write, past the last row: 34 bytes ee243d75 (69 updates, 1101 saved 5c42d23c): 0a 0a 0a 0a 0a 0a 0a 0a 0a 0a 0a 0a 0a 0a 0a 0a 0a 0a 0a 0a 0a 0a 0a 0a
+rows written: 0 bytes 811c9dc5 (0 updates, 1101 saved 5c42d23c):
+write nothing: 1 bytes 0f0c6cdd (3 updates, 1101 saved 5c42d23c): 0a
+read all: 129 bytes db8e9eb3 (2 updates, 1101 saved 5c42d23c): 0a 01 0a 11 18 09 08 07 06 09 08 07 06 09 08 07 06 09 08 07 06 09 08 07
+count 0: 2 bytes 858f534f (3 updates, 1102 saved b62c9c38): 0a 08
+count 1: 2 bytes 8a8f5b2e (3 updates, 1103 saved 6ddd89a7): 0a 07
+count 2: 2 bytes 8b8f5cc1 (3 updates, 1104 saved 7f313def): 0a 06
+count, the last but one: 70 bytes c12944be (71 updates, 1139 saved dd49b889): 0a 05 0a 04 0a 03 0a 02 0a 01 0a 00 0a fe 0a fd 0a fc 0a fb 0a fa 0a f9
+count, the last: 2 bytes ec8e6274 (3 updates, 1140 saved 6627ff9d): 0a e1
+counted: 0 bytes 811c9dc5 (0 updates, 1140 saved 6627ff9d):
+read the new card: 129 bytes a63aee5e (2 updates, 1140 saved 6627ff9d): 0a df cd 7e 41 ab 61 f5 78 99 7d 7c ab 05 77 00 aa 23 ff ff e1 00 00 00
+halt: 1 bytes 0f0c6cdd (3 updates, 1140 saved 6627ff9d): 0a
+counted down again: 74 bytes d98b8307 (75 updates, 1177 saved ead03e80): 0a e0 0a df 0a de 0a dd 0a dc 0a db 0a da 0a d9 0a d8 0a d7 0a d6 0a d5
+state: state 662 bytes f0c00383
+state: read f0c00383
+state: 0 bytes 811c9dc5 (1 updates, 1177 saved ead03e80):
+the command finished: 1 bytes 0f0c6cdd (2 updates, 1177 saved ead03e80): 0a
+state not right: state 662 bytes c304b740
+state not right: read 7dcb873b
+state not right: 0 bytes 811c9dc5 (1 updates, 1177 saved ead03e80):
+state not right: state 662 bytes 7dcb873b
+state not right: read e53f488c
+state not right: 0 bytes 811c9dc5 (0 updates, 1177 saved ead03e80):
+after it: 1 bytes 0f0c6cdd (3 updates, 1177 saved ead03e80): 0a
+queue not right: state 662 bytes 7f66b8ad
+queue not right: read 58c49740
+queue not right: 0 bytes 811c9dc5 (0 updates, 1177 saved ead03e80):
+test, off: 1 bytes 0f0c6cdd (3 updates, 1177 saved ead03e80): 0a
+request, off: 1 bytes 4f0b3e9d (2 updates, 1177 saved ead03e80): ca
+power on: 0 bytes 811c9dc5 (0 updates, 1177 saved ead03e80):
+drain
+== loveber, region 2, port 2
+new card: mode 05 77 00 aa counters 23 ff ff ff
+known: read f677e9be
+known: 0 bytes 811c9dc5 (0 updates, 1177 saved ead03e80):
+reset: 1 bytes 0f0c6cdd (2 updates, 1177 saved ead03e80): 0a
+unknown: 1 bytes 3f0cb86d (2 updates, 1177 saved ead03e80): 3a
+request, off: 1 bytes 4f0b3e9d (2 updates, 1177 saved ead03e80): ca
+test: 1 bytes ef0c3a7d (3 updates, 1177 saved ead03e80): 6a
+request: 1 bytes 4f0b3e9d (2 updates, 1177 saved ead03e80): ca
+request again: 5 bytes 1daeee6c (2 updates, 1177 saved ead03e80): 0a 02 0a 11 18
+select: 1 bytes 0f0c6cdd (3 updates, 1177 saved ead03e80): 0a
+read: 129 bytes 8c6f59aa (2 updates, 1177 saved ead03e80): 0a 02 0a 11 18 1f 26 2d 34 00 00 00 00 00 00 00 aa 00 00 00 00 00 00 00
+select with the key: 1 bytes 0f0c6cdd (3 updates, 1177 saved ead03e80): 0a
+read all: 129 bytes 1716f53a (2 updates, 1177 saved ead03e80): 0a 02 0a 11 18 1f 26 2d 34 3b 42 49 50 57 5e 65 6c 05 05 05 23 8f 96 9d
+test, on: 1 bytes 0f0c6cdd (3 updates, 1177 saved ead03e80): 0a
+change: 1 bytes 0f0c6cdd (3 updates, 1177 saved ead03e80): 0a
+write, first row: 1 bytes 0f0c6cdd (3 updates, 1177 saved ead03e80): 0a
+write, past the last row: 34 bytes ee243d75 (69 updates, 1208 saved e31eac31): 0a 0a 0a 0a 0a 0a 0a 0a 0a 0a 0a 0a 0a 0a 0a 0a 0a 0a 0a 0a 0a 0a 0a 0a
+rows written: 0 bytes 811c9dc5 (0 updates, 1208 saved e31eac31):
+write nothing: 1 bytes 0f0c6cdd (3 updates, 1208 saved e31eac31): 0a
+read all: 129 bytes 40e1b758 (2 updates, 1208 saved e31eac31): 0a 02 0a 11 18 09 08 07 06 09 08 07 06 09 08 07 06 09 08 07 06 09 08 07
+count 0: 2 bytes 858f534f (3 updates, 1209 saved c5624e19): 0a 08
+count 1: 2 bytes 8a8f5b2e (3 updates, 1210 saved 9ce644aa): 0a 07
+count 2: 2 bytes 8b8f5cc1 (3 updates, 1211 saved 3dc71f0e): 0a 06
+count, the last but one: 70 bytes c12944be (71 updates, 1246 saved 5a77acc0): 0a 05 0a 04 0a 03 0a 02 0a 01 0a 00 0a fe 0a fd 0a fc 0a fb 0a fa 0a f9
+count, the last: 2 bytes ec8e6274 (3 updates, 1247 saved 991f8e7a): 0a e1
+counted: 0 bytes 811c9dc5 (0 updates, 1247 saved 991f8e7a):
+read the new card: 129 bytes a7ac7da3 (2 updates, 1247 saved 991f8e7a): 0a 55 51 9c ca ab 62 f5 8a 99 7e 7c 59 05 77 00 aa 23 ff ff e1 00 00 00
+halt: 1 bytes 0f0c6cdd (3 updates, 1247 saved 991f8e7a): 0a
+counted down again: 74 bytes d98b8307 (75 updates, 1284 saved d16b05fd): 0a e0 0a df 0a de 0a dd 0a dc 0a db 0a da 0a d9 0a d8 0a d7 0a d6 0a d5
+state: state 662 bytes 531c7429
+state: read 531c7429
+state: 0 bytes 811c9dc5 (1 updates, 1284 saved d16b05fd):
+the command finished: 1 bytes 0f0c6cdd (2 updates, 1284 saved d16b05fd): 0a
+state not right: state 662 bytes 6fc91602
+state not right: read de178329
+state not right: 0 bytes 811c9dc5 (1 updates, 1284 saved d16b05fd):
+state not right: state 662 bytes de178329
+state not right: read 42766b66
+state not right: 0 bytes 811c9dc5 (0 updates, 1284 saved d16b05fd):
+after it: 1 bytes 0f0c6cdd (3 updates, 1284 saved d16b05fd): 0a
+queue not right: state 662 bytes 9744dc2b
+queue not right: read 2ab41c96
+queue not right: 0 bytes 811c9dc5 (0 updates, 1284 saved d16b05fd):
+test, off: 1 bytes 0f0c6cdd (3 updates, 1284 saved d16b05fd): 0a
+request, off: 1 bytes 4f0b3e9d (2 updates, 1284 saved d16b05fd): ca
+power on: 0 bytes 811c9dc5 (0 updates, 1284 saved d16b05fd):
+drain
+== touchscreen
+sched register 0
+name: 8 bytes 4a1efc4c (2 updates, 1284 saved d16b05fd): 01 41 33 30 39 39 39 0d
+verify: 21 bytes 8e3d7ad5 (2 updates, 1284 saved d16b05fd): 01 45 58 49 49 2d 37 37 32 30 53 43 20 52 65 76 20 33 2e 30 0d
+reset: 10 bytes ac299de5 (2 updates, 1284 saved d16b05fd): 01 51 4d 56 2a 2a 2a 30 30 0d
+other: 3 bytes 31413ffb (2 updates, 1284 saved d16b05fd): 01 30 0d
+one byte: 0 bytes 811c9dc5 (0 updates, 1284 saved d16b05fd):
+nothing: 0 bytes 811c9dc5 (0 updates, 1284 saved d16b05fd):
+where: 8 bytes 504fda76 (3 updates, 1284 saved d16b05fd): 01 30 0d 80 00 6c 30 35
+where, the same: 3 bytes 31413ffb (2 updates, 1284 saved d16b05fd): 01 30 0d
+where, touched: 8 bytes 19d78f36 (3 updates, 1284 saved d16b05fd): 01 30 0d c0 00 6c 30 35
+position: 9 bytes c1d1e71d (2 updates, 1284 saved d16b05fd): 55 54 20 00 04 ff 03 00 79
+not a position: 0 bytes 811c9dc5 (0 updates, 1284 saved d16b05fd):
+sched request 0 3333333
+run: 3 bytes 31413ffb (2 updates, 1284 saved d16b05fd): 01 30 0d
+timer: 3333333
+timer: 5 bytes 11d70cbf (2 updates, 1284 saved d16b05fd): c0 10 00 00 00
+timer: 3333333
+timer, the same: 0 bytes 811c9dc5 (0 updates, 1284 saved d16b05fd):
+state: state 544 bytes b1102084
+state: read b1102084
+state: 0 bytes 811c9dc5 (0 updates, 1284 saved d16b05fd):
+the command finished: 8 bytes 4a1efc4c (2 updates, 1284 saved d16b05fd): 01 41 33 30 39 39 39 0d
+timer far off: state 544 bytes 5df9068c
+timer far off: read f9693b96
+timer far off: 0 bytes 811c9dc5 (0 updates, 1284 saved d16b05fd):
+timer at 1000 1000
+command not right: state 544 bytes f9693b96
+command not right: read f9693b96
+command not right: 0 bytes 811c9dc5 (0 updates, 1284 saved d16b05fd):
+after it: 8 bytes 4a1efc4c (2 updates, 1284 saved d16b05fd): 01 41 33 30 39 39 39 0d
+sched request 0 -1
+power on: 0 bytes 811c9dc5 (0 updates, 1284 saved d16b05fd):
+sched request 0 -1
+timer after it: 0

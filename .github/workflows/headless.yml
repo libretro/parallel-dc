@@ -40,7 +40,8 @@ name: Headless
 # (tools/naomi/dinokich_card_run.sh), and the SH4's serial port with the
 # touch panel on it (tools/naomi/scif_touch_run.sh), and the hopper boards
 # (tools/naomi/hopper_run.sh), card readers (tools/naomi/card_reader_run.sh)
-# and the System SP's IC card reader (tools/naomi/dinokich_run.sh),
+# and the System SP's IC card reader (tools/naomi/dinokich_run.sh), RFID
+# readers and touchscreen (tools/naomi/sp_serial_run.sh),
 # and the paths the core writes to, a
 # content's name of any length included (tools/paths/paths_run.sh), and the
 # HLE BIOS's GD-ROM transfers stopped at a fault and made again
@@ -246,6 +247,10 @@ jobs:
         run: |
           sh tools/naomi/dinokich_run.sh
           sh tools/naomi/dinokich_run.sh -fsanitize=address,undefined -fno-sanitize-recover=all
+      - name: The System SP's serial devices, its RFID readers and touchscreen, each command, a new card, the touch timer, and their part of a state (and with the sanitizers)
+        run: |
+          sh tools/naomi/sp_serial_run.sh
+          sh tools/naomi/sp_serial_run.sh -fsanitize=address,undefined -fno-sanitize-recover=all
       - name: The paths the core writes to, a content's name of any length (and with the sanitizers)
         run: |
           sh tools/paths/paths_run.sh

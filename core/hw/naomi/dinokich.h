@@ -29,6 +29,7 @@
 #pragma once
 #include <retro_atomic.h>
 #include "types.h"
+#include "systemsp_serial.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -50,6 +51,8 @@ dinokich_reader *dinokich_reader_open(const char *gameName, const char *path1, c
 		void (*update_status)(void *port), void *port);
 /* The cards' files written */
 void dinokich_reader_close(dinokich_reader *r);
+/* The reader as a device on its port, which closes it when it goes */
+sp_pipe *dinokich_reader_pipe(dinokich_reader *r);
 
 /* a byte from the game; how many it has for the game; the next of them */
 void dinokich_reader_write(dinokich_reader *r, u8 v);

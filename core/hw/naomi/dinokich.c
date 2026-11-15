@@ -54,8 +54,7 @@ enum
 
 struct dinokich_reader
 {
-	void (*update_status)(void *port);
-	void *port;
+	sp_pipe pipe;
 	char paths[2][PATH_MAX_LENGTH];
 	retro_atomic_int_t failed[2];
 	struct
@@ -132,6 +131,27 @@ static void save_card(dinokich_reader *r, int slot)
 		WARN_LOG(NAOMI, "Can't save IC card to %s\n", r->paths[slot]);
 }
 
+/* As a device on a port: what it keeps in a state is in V25's part, not
+ * in the port's */
+static void op_write(sp_pipe *pipe, u8 v) { dinokich_reader_write((dinokich_reader *)pipe, v); }
+static int op_available(sp_pipe *pipe) { return dinokich_reader_available((dinokich_reader *)pipe); }
+static u8 op_read(sp_pipe *pipe) { return dinokich_reader_read((dinokich_reader *)pipe); }
+static void op_reset(sp_pipe *pipe) { dinokich_reader_reset((dinokich_reader *)pipe); }
+static void op_state(sp_pipe *pipe, void **data, unsigned int *total_size)
+{
+	(void)pipe;
+	(void)data;
+	(void)total_size;
+}
+static void op_close(sp_pipe *pipe) { dinokich_reader_close((dinokich_reader *)pipe); }
+
+static const sp_pipe_ops dinokich_ops = { op_write, op_available, op_read, op_reset, op_state, op_state, op_close };
+
+sp_pipe *dinokich_reader_pipe(dinokich_reader *r)
+{
+	return &r->pipe;
+}
+
 dinokich_reader *dinokich_reader_open(const char *gameName, const char *path1, const char *path2,
 		void (*update_status)(void *port), void *port)
 {
@@ -140,8 +160,9 @@ dinokich_reader *dinokich_reader_open(const char *gameName, const char *path1, c
 	int i;
 
 	memset(r, 0, sizeof(*r));
-	r->update_status = update_status;
-	r->port = port;
+	r->pipe.ops = &dinokich_ops;
+	r->pipe.update_status = update_status;
+	r->pipe.port = port;
 	strlcpy(r->paths[0], path1, sizeof(r->paths[0]));
 	strlcpy(r->paths[1], path2, sizeof(r->paths[1]));
 	for (i = 0; i < 2; i++)
@@ -347,7 +368,7 @@ void dinokich_reader_write(dinokich_reader *r, u8 v)
 			r->rxLen = 0;
 		}
 	}
-	r->update_status(r->port);
+	r->pipe.update_status(r->pipe.port);
 }
 
 int dinokich_reader_available(const dinokich_reader *r)
@@ -364,7 +385,7 @@ u8 dinokich_reader_read(dinokich_reader *r)
 	r->txHead = (r->txHead + 1) % TX_SIZE;
 	r->txCount--;
 	if (r->txCount == 0)
-		r->update_status(r->port);
+		r->pipe.update_status(r->pipe.port);
 	return v;
 }
 

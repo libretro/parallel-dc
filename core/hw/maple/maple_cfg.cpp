@@ -76,8 +76,6 @@ void UpdateVibration(u32 port, u32 value, u32 max_duration);
 
 #include "libretro/pad_state.h"
 extern bool enable_purupuru;
-extern f32 mo_x_abs[4];
-extern f32 mo_y_abs[4];
 extern u32 mo_buttons[4];
 extern f32 mo_x_delta[4];
 extern f32 mo_y_delta[4];
