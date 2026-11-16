@@ -7,6 +7,7 @@
 #include "maple_cfg.h"
 #include "libretro/pad_state.h"
 #include "hw/pvr/spg.h"
+#include "hw/naomi/naomi.h"
 #include "hw/naomi/naomi_cart.h"
 #include "hw/naomi/naomi_periph.h"
 #include "hw/naomi/printer.h"

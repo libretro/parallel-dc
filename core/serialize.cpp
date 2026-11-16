@@ -127,25 +127,7 @@ extern VArray2 vram;
 
 //./core/imgread/common.o
 
-//./core/hw/naomi/naomi.o
-extern u32 GSerialBuffer;
-extern u32 BSerialBuffer;
-extern int GBufPos;
-extern int BBufPos;
-extern int GState;
-extern int BState;
-extern int GOldClk;
-extern int BOldClk;
-extern int BControl;
-extern int BCmd;
-extern int BLastCmd;
-extern int GControl;
-extern int GCmd;
-extern int GLastCmd;
-extern int SerStep;
-extern int SerStep2;
-extern unsigned char BSerial[];
-extern unsigned char GSerial[];
+//./core/hw/naomi/naomi.o: the old serial number's variables (naomi.h)
 
 /* What each part of the machine has had in a state since V21, in a block of
  * its own at the end: written by X_serialize_v21(), read by
@@ -159,7 +141,6 @@ extern unsigned char GSerial[];
 V21_PART(aica);
 V21_PART(gdrom);
 V21_PART(maple);
-V21_PART(naomi);
 V21_PART(modem);
 V21_PART(reios);
 V21_PART(gdhle);
@@ -173,14 +154,11 @@ void pvr_unserialize_v22(void **data, unsigned int *total_size);
 void pvr_state_before_v22(void);
 /* and since V23: the NAOMI 2 geometry processor's clipping planes
  * (elan_host.c), the NAOMI's communication board and the I/O board's
- * program on its way (naomi.cpp), and the libretro layer's mouse motion
+ * program on its way (naomi.h), and the libretro layer's mouse motion
  * not yet read and sound not yet sent (libretro.cpp) */
 void pvr_serialize_v23(void **data, unsigned int *total_size);
 bool pvr_unserialize_v23(void **data, unsigned int *total_size);
 void pvr_state_before_v23(void);
-void naomi_serialize_v23(void **data, unsigned int *total_size);
-bool naomi_unserialize_v23(void **data, unsigned int *total_size);
-void naomi_state_before_v23(void);
 void lr_serialize_v23(void **data, unsigned int *total_size);
 bool lr_unserialize_v23(void **data, unsigned int *total_size);
 void lr_state_before_v23(void);
@@ -198,7 +176,7 @@ void systemsp_serialize_v25(void **data, unsigned int *total_size);
 bool systemsp_unserialize_v25(void **data, unsigned int *total_size);
 void systemsp_state_before_v25(void);
 /* and since V26: the NAOMI's two X76F100 serial flash chips, the main
- * board's and the ROM board's (naomi.cpp) */
+ * board's and the ROM board's (naomi.c) */
 void naomi_serial_serialize_v26(void **data, unsigned int *total_size);
 bool naomi_serial_unserialize_v26(void **data, unsigned int *total_size);
 void naomi_serial_state_before_v26(void);

@@ -362,9 +362,9 @@ ifeq ($(HAVE_D3D9), 1)
 					$(CORE_DIR)/core/rend/dx9/dx9_texdecoder.cpp
 endif
 
-SOURCES_CXX += $(CORE_DIR)/core/hw/naomi/naomi.cpp \
-					$(CORE_DIR)/core/hw/naomi/systemsp.cpp
-SOURCES_C += $(CORE_DIR)/core/hw/naomi/naomi_cart.c \
+SOURCES_CXX += $(CORE_DIR)/core/hw/naomi/systemsp.cpp
+SOURCES_C += $(CORE_DIR)/core/hw/naomi/naomi.c \
+					$(CORE_DIR)/core/hw/naomi/naomi_cart.c \
 					$(CORE_DIR)/core/hw/naomi/cartridge.c \
 					$(CORE_DIR)/core/hw/naomi/m1cartridge.c \
 					$(CORE_DIR)/core/hw/naomi/m4cartridge.c \

@@ -20,7 +20,7 @@ void NaomiBoardIDWrite(u16 Data);
 u16 NaomiBoardIDRead(void);
 u16 NaomiGameIDRead(void);
 void NaomiGameIDWrite(u16 Data);
-/* the serial EEPROMs of the main board and the ROM board (naomi.cpp) */
+/* the serial EEPROMs of the main board and the ROM board (naomi.c) */
 void naomi_serial_id_load(const u8 *rom_board);
 const u8 *naomi_rom_serial_data(void);
 void naomi_rom_serial_reset(void);
@@ -30,6 +30,29 @@ void naomi_serial_serialize_v26(void **data, unsigned int *total_size);
 bool naomi_serial_unserialize_v26(void **data, unsigned int *total_size);
 void naomi_serial_state_before_v26(void);
 void naomi_process(u32 command,u32 offset1,u32 parameterl, u32 parameterh);
+/* What the save states before V21 did not hold, for an arcade board,
+ * and before V23 (naomi.c) */
+void naomi_serialize_v21(void **data, unsigned int *total_size);
+bool naomi_unserialize_v21(void **data, unsigned int *total_size);
+void naomi_state_before_v21(void);
+void naomi_serialize_v23(void **data, unsigned int *total_size);
+bool naomi_unserialize_v23(void **data, unsigned int *total_size);
+void naomi_state_before_v23(void);
+/* The I/O board's program on its way (maple_devs.cpp) */
+void naomi_jvs_serialize_v23(void **data, unsigned int *total_size);
+bool naomi_jvs_unserialize_v23(void **data, unsigned int *total_size);
+
+/* What stood for the serial EEPROMs before, which the save state still
+ * holds: not used, and zeroes */
+extern u32 GSerialBuffer, BSerialBuffer;
+extern int GBufPos, BBufPos;
+extern int GState, BState;
+extern int GOldClk, BOldClk;
+extern int BControl, BCmd, BLastCmd;
+extern int GControl, GCmd, GLastCmd;
+extern int SerStep, SerStep2;
+extern unsigned char BSerial[70];
+extern unsigned char GSerial[70];
 
 extern u32 reg_dimm_command;	/* command, written, 0x1E03 some flag ? */
 extern u32 reg_dimm_offsetl;

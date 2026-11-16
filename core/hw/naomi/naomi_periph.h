@@ -1,6 +1,6 @@
 /*
 	The devices an arcade game has besides its I/O board: card readers,
-	touch panel, hopper (naomi.cpp, card_reader.c, touchscreen.c,
+	touch panel, hopper (naomi.c, card_reader.c, touchscreen.c,
 	hopper.c, and the IC card reader in maple_devs.cpp).
 */
 #pragma once
@@ -80,9 +80,11 @@ static TYPES_INLINE void periph_queue_unserialize(periph_queue *q, void **data, 
 extern char naomi_set_name[];
 /* Core option: the card readers and the barcode reader are plugged in */
 extern bool naomi_card_readers_enabled;
+/* Whether L is the "Insert Card" button (naomi.c) */
+extern bool naomi_card_button;
 
 /* The game's devices made, for the game that is loaded: on a hard reset,
- * before the maple devices are (naomi.cpp). */
+ * before the maple devices are (naomi.c). */
 void naomi_periph_init(void);
 void naomi_periph_term(void);
 /* What a card reader game's I/O board bridge does once each time it is asked */
@@ -118,7 +120,7 @@ void rfid_state_before_v24(void);
 void rfid_files_serialize_v30(void **data, unsigned int *total_size);
 bool rfid_files_unserialize_v30(void **data, unsigned int *total_size);
 
-/* What the devices have in a save state since V24 (naomi.cpp) */
+/* What the devices have in a save state since V24 (naomi.c) */
 void naomi_periph_serialize_v24(void **data, unsigned int *total_size);
 bool naomi_periph_unserialize_v24(void **data, unsigned int *total_size);
 void naomi_periph_state_before_v24(void);

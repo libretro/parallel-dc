@@ -1,0 +1,325 @@
+init
+  sched register 0
+  rio 5f7418 16
+  rio 5f7414 16
+  crypto reset
+  m3comm reset
+serial
+  serial main: reset 980055aa 0 0 0 0 0 0 0 0 0 data 9be17165
+  serial rom: reset 980055aa 0 0 0 0 0 0 0 0 0 data 0b2ae445
+  rom data 7dac59a7
+  serial rom: reset 3cbc7cfc 0 0 0 0 0 0 0 0 0 data 0b2ae445
+  rom data fe3947b5
+  v26 284 19b30442
+  rom serial 142 fbcf70b7
+  v26 284 73984b84
+  v26 read 1 284
+  serial main: reset 980055aa 0 0 0 0 0 0 0 0 0 data 4b95f515
+  legacy 0 0 0
+dimm
+  raise 103
+  raise 103
+  raise 103
+  raise 103
+  raise 103
+  raise 103
+  raise 103
+  raise 103
+  raise 103
+  raise 103
+  raise 103
+  raise 103
+  raise 103
+  raise 103
+  command 8200
+registers
+  read ffff
+  cart read 5f7000 2
+  read 55
+  m3comm read 5f7018 4
+  read 1234
+  cart read 5f702c 4
+  read 55
+  m3comm write 5f7028 3 4
+  cart write 5f7030 3 2
+  cart read 5f7018 4
+  read 55
+  cart write 5f7020 3 4
+dma
+  m3comm dma 5f7418 1
+  sched request 0 10240
+  gdst 1 gden 1 gdstard c100000 gdlend 0 sched 5000 15240
+  piece 10240
+  piece 10240
+  piece 10240
+  raise e
+  piece 0
+  written 4096 f5fc4ea5
+  gdst 0 gden 1 gdstard c101000 gdlend 1000 sched -1 -1
+  m3comm dma 5f7418 1
+  sched request 0 650
+  gdst 1 gden 1 gdstard c200000 gdlend 0 sched 45960 46610
+  raise e
+  piece 0
+  written 4192 eeab8fce
+  gdst 0 gden 1 gdstard c200060 gdlend 60 sched -1 -1
+  m3comm dma 5f7418 1
+  sched request 0 10240
+  gdst 1 gden 1 gdstard c280000 gdlend 0 sched 46610 56850
+  piece 10240
+  piece 10240
+  piece 10240
+  piece 2560
+  raise e
+  piece 0
+  written 8544 97a9637d
+  gdst 0 gden 1 gdstard c281100 gdlend 1100 sched -1 -1
+  m3comm dma 5f7418 1
+  sched request 0 10240
+  gdst 1 gden 1 gdstard c300000 gdlend 0 sched 90130 100370
+  piece 10240
+  piece 10240
+  piece 10240
+  raise e
+  piece 0
+  written 12640 4f392ea5
+  gdst 0 gden 1 gdstard c301000 gdlend 1000 sched -1 -1
+  m3comm dma 5f7418 1
+  sched request 0 10240
+  gdst 1 gden 1 gdstard fc00 gdlend 0 sched 131090 141330
+  piece 10240
+  piece 0
+  written 14688 803cec95
+  gdst 0 gden 1 gdstard 10400 gdlend 800 sched -1 -1
+  m3comm dma 5f7418 1
+  sched request 0 10240
+  gdst 1 gden 1 gdstard c400000 gdlend 0 sched 151570 161810
+  sched request 0 -1
+  gdst 0 gden 0 gdstard c400000 gdlend 0 sched -1 -1
+  gdst 0 gden 0 gdstard c400000 gdlend 0 sched -1 -1
+  m3comm dma 5f7418 1
+  raise e
+  gdst 0 gden 1 gdstard c500100 gdlend 100 sched -1 -1
+  m3comm dma 5f7418 1
+  raise e
+  gdst 0 gden 1 gdstard c500100 gdlend 100 sched -1 -1
+  m3comm dma 5f7418 1
+  sched request 0 10240
+  v21 16 16420238
+  cart v21 9
+  v21 read 1 16
+  gdst 1 gden 1 gdstard c600000 gdlend 0 sched 171570 171570
+  cart v21 9
+  v21 read 1 16
+  gdst 1 gden 1 gdstard c600000 gdlend 0 sched 171570 171570
+  gdst 1 gden 1 gdstard c600000 gdlend 0 sched 171570 171570
+  cart v21 9
+  v21 read 1 16
+  gdst 0 gden 1 gdstard c600000 gdlend 0 sched 151570 -1
+atomiswave
+  crypto reset
+  m3comm reset
+  gdst 0 gden 0 gdstard c600000 gdlend 0 sched 151570 -1
+  coins 0
+  coins 5
+  coins 5
+  coins 5
+  coins 5
+  coins 5
+  coins f
+  coins f
+  coins f
+  devices 50 ff
+  v21 16 edfd7260
+  crypto reset
+  m3comm reset
+  cart v21 9
+  v21 read 1 16
+  devices 30 coins f f
+  v21 16 9a295680
+  v23 0 811c9dc5
+  v21 0 811c9dc5
+  v21 read 1 0
+  v26 0 811c9dc5
+  crypto reset
+  m3comm reset
+  cart reset
+  m3comm dma 5f7418 1
+  sched request 0 27648
+  gdst 1 gden 1 gdstard c700000 gdlend 0 sched 171570 199218
+  piece 27648
+  raise e
+  piece 0
+  written 16736 f7d9ac85
+  gdst 0 gden 1 gdstard c700800 gdlend 800 sched -1 -1
+  v23 5 bfe534e8
+  v23 read 1 5
+  v23 read 0 3
+periph [INITIAL D Ver.3] [initdv3j]
+  card reader initd
+  card 1 rfid 0
+  insert card 0
+  insert card 1
+  v24 5 cb801080
+  card reader state
+  v24 read 1 5
+  card reader state
+  v24 read 0 5
+periph [CLUB KART IN JAPAN] [clubkrt]
+  card reader clubk
+  card 1 rfid 0
+  insert card 0
+  insert card 1
+  v24 50 55281c52
+  scif state
+  card reader state
+  v24 read 1 50
+  scif state
+  card reader state
+  v24 read 0 50
+periph [CLUB KART IN JAPAN] [clubkprz]
+  hopper
+  card 0 rfid 0
+  hopper poll
+  hopper poll
+  hopper poll
+  v24 2407 88f87c0f
+  hopper state
+  v24 read 1 2407
+  hopper state
+  v24 read 0 2407
+periph [ DERBY OWNERS CLUB II-----------] [derbyoc2]
+  card reader derby
+  card 1 rfid 0
+  insert card 0
+  insert card 1
+  v24 50 55281c52
+  scif state
+  card reader state
+  v24 read 1 50
+  scif state
+  card reader state
+  v24 read 0 50
+periph [MUSHIKING II] [mushi2k5]
+  barcode reader
+  card 0 rfid 0
+  v24 5 2857e87b
+  card reader state
+  v24 read 1 5
+  card reader state
+  v24 read 0 5
+periph [MKG TKOB 2K3 2ND VER1.003-] [mushike]
+  barcode reader
+  rfid 1
+  card 0 rfid 1
+  v24 312 0f2af257
+  scif state
+  card reader state
+  rfid state
+  v24 read 1 312
+  scif state
+  card reader state
+  rfid state
+  v24 read 0 312
+periph [VF4 EVOLUTION JAPAN] [vf4evo]
+  rfid 0
+  card 0 rfid 1
+  v24 265 57af35bf
+  rfid state
+  v24 read 1 265
+  rfid state
+  v24 read 0 265
+periph [TOUCH DE ZUNO (JAPAN)] [zunou]
+  touchscreen
+  card 0 rfid 0
+  v24 108 11e3b23b
+  scif state
+  touchscreen state
+  v24 read 1 108
+  scif state
+  touchscreen state
+  v24 read 0 108
+periph [ TOUCH DE UNOH 2 -----------] [tduno2]
+  printer
+  card 0 rfid 0
+  v24 1 050c5d1f
+  card reader before
+  touchscreen before
+  hopper before
+  v24 read 1 1
+  v24 read 0 1
+periph [SHOOTOUT POOL] [shootplm]
+  hopper
+  card 0 rfid 0
+  hopper poll
+  hopper poll
+  hopper poll
+  v24 2452 750c80cf
+  scif state
+  hopper state
+  v24 read 1 2452
+  scif state
+  hopper state
+  v24 read 0 2452
+periph [KICK '4' CASH] [kick4csh]
+  hopper
+  card 0 rfid 0
+  hopper poll
+  hopper poll
+  hopper poll
+  v24 2407 88f87c0f
+  hopper state
+  v24 read 1 2407
+  hopper state
+  v24 read 0 2407
+periph [OTHER GAME] [other]
+  card 0 rfid 0
+  v24 48 495f4b37
+  scif state
+  v24 read 1 48
+  scif state
+  v24 read 0 48
+periph [VF4 EVOLUTION JAPAN] [vf4evo]
+  rfid 0
+  card 0 rfid 1
+  v24 310 8fc1875f
+periph [OTHER GAME] [other]
+  card 0 rfid 0
+  v24 read 1 310
+  v24 read 0 1
+  card reader before
+  touchscreen before
+  hopper before
+  v24 read 1 1
+  card reader before
+  touchscreen before
+  hopper before
+periph [INITIAL D Ver.3] [initdv3j]
+  card 0 rfid 0
+periph [INITIAL D Ver.3] [initdv3j]
+  card 0 rfid 0
+  v24 0 811c9dc5
+files
+  loaded 0
+  open /saves/game.zip.card
+  loaded 0
+  open /saves/there.card
+  loaded 10 69691905
+  open /saves/there.nvmem.card
+  loaded 4
+  save /saves/there.nvmem.card 8 a9cb3885
+  save /saves/there.nvmem.x 8 a9cb3885
+  failed 0
+sched
+  ffts
+  226866 226866
+  ffts
+  226866 226866
+  ffts
+  226866 226866
+  ffts
+  0 -1
+term
+  m3comm term
+  gdst 0 gden 1 gdstard c700800 gdlend 800 sched -1 -1
+done

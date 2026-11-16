@@ -23,18 +23,17 @@
 #include "hw/sh4/modules/modules.h"
 #include "savewriter.h"
 #include "hw/flashrom/x76f100.h"
+#include <string.h>
 #include <streams/file_stream.h>
-#include <algorithm>
-#include <vector>
-
-//#define NAOMI_COMM
+#include <compat/strl.h>
+#include "libretro/pad_state.h"
 
 
 /* The serial EEPROMs of the main board (read through the SH4's port A) and
  * of the ROM board (5f7078/5f707c), both X76F100. */
 static X76F100 mainSerialId;
 static X76F100 romSerialId;
-// what the ROM board's chip holds at the start: its set's or the default
+/* what the ROM board's chip holds at the start: its set's or the default */
 static u8 romSerialSet[0x84];
 /* What stood for them before, which the save state still holds: not used,
  * and zeroes. */
@@ -51,7 +50,7 @@ unsigned char GSerial[70];
 static bool aw_ram_test_skipped = false;
 static u8 aw_maple_devs;
 static int coin_chute[4];
-// how many times the DIMM board has answered: see naomi_process()
+/* how many times the DIMM board has answered: see naomi_process() */
 static int opcd;
 
 /* A transfer from the cartridge takes time. It moves a piece at a time at
@@ -59,17 +58,12 @@ static int opcd;
  * move with it, and SB_GDST goes back to 0 and the interrupt is raised
  * after the last piece. Games count on it: one starts a sound whose data
  * is still coming, another looks at SB_GDST and SB_GDLEND while it waits. */
-#define NAOMI_DMA_CHUNK 1024	// bytes moved at a time
+#define NAOMI_DMA_CHUNK 1024	/* bytes moved at a time */
 static int naomi_dma_schid = -1;
-// SH4 cycles for a byte: 10 is 20 MB a second, 27 is 7
+/* SH4 cycles for a byte: 10 is 20 MB a second, 27 is 7 */
 static int naomi_dma_delay = 10;
 
 
-#ifdef NAOMI_COMM
-	u32 CommOffset;
-	u32* CommSharedMem;
-	HANDLE CommMapFile=INVALID_HANDLE_VALUE;
-#endif
 
 /* What both chips hold when the set gives the ROM board's none: the
  * response to reset, the write and read passwords, and the data, the
@@ -116,7 +110,7 @@ void naomi_rom_serial_unserialize(void **data, unsigned int *total_size)
 
 void NaomiBoardIDWrite(const u16 Data)
 {
-	// bit 2 the clock, bit 3 the data, bit 4 reset, bit 5 chip select
+	/* bit 2 the clock, bit 3 the data, bit 4 reset, bit 5 chip select */
 	x76f100_writeCS(&mainSerialId, Data & 0x20);
 	x76f100_writeRST(&mainSerialId, Data & 0x10);
 	x76f100_writeSCL(&mainSerialId, Data & 4);
@@ -125,8 +119,8 @@ void NaomiBoardIDWrite(const u16 Data)
 
 u16 NaomiBoardIDRead()
 {
-	// bit 0 set: the chip is an X76F100 (clear, the BIOS expects an
-	// AT93C46); bit 3 its data line
+	/* bit 0 set: the chip is an X76F100 (clear, the BIOS expects an
+	 * AT93C46); bit 3 its data line */
 	return (x76f100_readSDA(&mainSerialId) << 3) | 1;
 }
 
@@ -143,32 +137,31 @@ u16 NaomiGameIDRead()
 	return x76f100_readSDA(&romSerialId) ? 1 : 0;
 }
 
-//DIMM board
-//Uses interrupt ext#3  (holly_EXT_PCI)
+/* DIMM board
+ * Uses interrupt ext#3  (holly_EXT_PCI) */
 
-//status/flags ? 0x1 is some completion/init flag(?), 0x100 is the interrupt disable flag (?)
-//n1 bios rev g (n2/epr-23605b has similar behavior of not same):
-//3c=0x1E03
-//40=0
-//44=0
-//48=0
-//read 4c
-//wait for 4c not 0
-//4c=[4c]-1
+/* status/flags ? 0x1 is some completion/init flag(?), 0x100 is the interrupt disable flag (?)
+ * n1 bios rev g (n2/epr-23605b has similar behavior of not same):
+ * 3c=0x1E03
+ * 40=0
+ * 44=0
+ * 48=0
+ * read 4c
+ * wait for 4c not 0
+ * 4c=[4c]-1 */
 
-//Naomi 2 bios epr-23609
-//read 3c
-//wait 4c to be non 0
-//
+/* Naomi 2 bios epr-23609
+ * read 3c
+ * wait 4c to be non 0 */
 
-//SO the writes to 3c/stuff are not relaced with 4c '1'
-//If the dimm board has some internal cpu/pic logic 
-//4c '1' seems to be the init done bit (?)
-//n1/n2 clears it after getting a non 0 value
-//n1 bios writes the value -1, meaning it expects the bit 0 to be set
-//.//
+/* SO the writes to 3c/stuff are not relaced with 4c '1'
+ * If the dimm board has some internal cpu/pic logic
+ * 4c '1' seems to be the init done bit (?)
+ * n1/n2 clears it after getting a non 0 value
+ * n1 bios writes the value -1, meaning it expects the bit 0 to be set
+ * .// */
 
-u32 reg_dimm_command;		// command, written, 0x1E03 some flag ?
+u32 reg_dimm_command;		/* command, written, 0x1E03 some flag ? */
 u32 reg_dimm_offsetl;
 u32 reg_dimm_parameterl;
 u32 reg_dimm_parameterh;
@@ -176,16 +169,17 @@ u32 reg_dimm_status = 0x11;
 
 void naomi_process(u32 command, u32 offsetl, u32 parameterl, u32 parameterh)
 {
+	u32 param;
 	DEBUG_LOG(NAOMI, "Naomi process 0x%04X 0x%04X 0x%04X 0x%04X\n", command, offsetl, parameterl, parameterh);
 	DEBUG_LOG(NAOMI, "Possible format 0 %d 0x%02X 0x%04X\n",command >> 15,(command & 0x7e00) >> 9, command & 0x1FF);
 	DEBUG_LOG(NAOMI, "Possible format 1 0x%02X 0x%02X\n", (command & 0xFF00) >> 8,command & 0xFF);
 
-	u32 param=(command&0xFF);
+	param = command & 0xff;
 	if (param==0xFF)
 	{
 		DEBUG_LOG(NAOMI, "invalid opcode or smth ?\n");
 	}
-	//else if (param!=3)
+	/* else if (param!=3) */
 	if (opcd<255)
 	{
 		reg_dimm_command=0x8000 | (opcd%12<<9) | (0x0);
@@ -203,7 +197,7 @@ u32 ReadMem_naomi(u32 address, u32 size)
 		INFO_LOG(NAOMI, "called without cartridge\n");
 		return 0xFFFF;
 	}
-	// (a NAOMI's: an Atomiswave has no such board, and its cartridge answers there - as for a write)
+	/* (a NAOMI's: an Atomiswave has no such board, and its cartridge answers there - as for a write) */
 	if (address >= NAOMI_COMM2_CTRL_addr && address <= NAOMI_COMM2_STATUS1_addr && SYSTEM_IS_NAOMI())
 		return m3comm_read(address, size);
 	else
@@ -230,13 +224,17 @@ static int naomi_dma_sched(int tag, int sch_cycl, int jitter)
 	const u32 total = (SB_GDLEN + 31) & ~31;
 	u32 start = SB_GDSTARD;
 	u32 len = 0;
+	u32 left;
+	(void)tag;
+	(void)sch_cycl;
+	(void)jitter;
 
-	// (nothing under way: a save state's doing, or the cartridge is gone)
+	/* (nothing under way: a save state's doing, or the cartridge is gone) */
 	if (SB_GDST != 1 || CurrentCartridge == NULL)
 		return 0;
 
 	if (SB_GDLEND < total)
-		len = std::min(total - SB_GDLEND, (u32)NAOMI_DMA_CHUNK);
+		len = total - SB_GDLEND < NAOMI_DMA_CHUNK ? total - SB_GDLEND : NAOMI_DMA_CHUNK;
 	SB_GDLEND += len;
 	while (len > 0)
 	{
@@ -244,8 +242,8 @@ static int naomi_dma_sched(int tag, int sch_cycl, int jitter)
 		void* ptr = CurrentCartridge->ops->get_dma_ptr(CurrentCartridge, &block_len);
 		if (block_len == 0 || ptr == NULL)
 		{
-			// Nothing there to read: the rest of the piece is zeroes, and
-			// the transfer goes on to where it was asked to end.
+			/* Nothing there to read: the rest of the piece is zeroes, and
+			 * the transfer goes on to where it was asked to end. */
 			INFO_LOG(NAOMI, "DMA transfer past the end of the cartridge\n");
 			WriteMemBlock_nommu_ptr(start, zeroes, len);
 			start += len;
@@ -257,7 +255,7 @@ static int naomi_dma_sched(int tag, int sch_cycl, int jitter)
 		start += block_len;
 	}
 	SB_GDSTARD = start;
-	// (stopped by what it wrote: a piece can land on the register that does that)
+	/* (stopped by what it wrote: a piece can land on the register that does that) */
 	if (SB_GDST != 1)
 		return 0;
 	if (SB_GDLEND >= total)
@@ -266,15 +264,15 @@ static int naomi_dma_sched(int tag, int sch_cycl, int jitter)
 		asic_RaiseInterrupt(holly_GDROM_DMA);
 		return 0;
 	}
-	// (the time the next piece takes: never none, with a piece still to come)
-	const u32 left = SB_GDLEN - SB_GDLEND;
+	/* (the time the next piece takes: never none, with a piece still to come) */
+	left = SB_GDLEN - SB_GDLEND;
 	return (left == 0 || left > NAOMI_DMA_CHUNK ? NAOMI_DMA_CHUNK : left) * naomi_dma_delay;
 }
 
-//Dma Start
-void Naomi_DmaStart(u32 addr, u32 data)
+/* Dma Start */
+static void Naomi_DmaStart(u32 addr, u32 data)
 {
-	// (a transfer that is under way goes on to its end: it is not started again)
+	/* (a transfer that is under way goes on to its end: it is not started again) */
 	if ((data & 1) == 0 || SB_GDST == 1)
 		return;
 
@@ -287,13 +285,13 @@ void Naomi_DmaStart(u32 addr, u32 data)
 	if (!m3comm_dma_start(addr, data) && CurrentCartridge != NULL)
 	{
 		DEBUG_LOG(NAOMI, "NAOMI-DMA start addr %08X len %d\n", SB_GDSTAR, SB_GDLEN);
-		// (a cartridge is only read: the other direction is taken as this one)
+		/* (a cartridge is only read: the other direction is taken as this one) */
 		if (SB_GDDIR != 1)
 			DEBUG_LOG(NAOMI, "NAOMI-DMA to the cartridge (SB_GDDIR=0): done as a read\n");
 		SB_GDST = 1;
 		SB_GDSTARD = SB_GDSTAR & 0x1FFFFFE0;
 		SB_GDLEND = 0;
-		sh4_sched_request(naomi_dma_schid, std::min(SB_GDLEN, (u32)NAOMI_DMA_CHUNK) * naomi_dma_delay);
+		sh4_sched_request(naomi_dma_schid, (SB_GDLEN < NAOMI_DMA_CHUNK ? SB_GDLEN : NAOMI_DMA_CHUNK) * naomi_dma_delay);
 		return;
 	}
 	SB_GDSTARD = SB_GDSTAR + SB_GDLEN;
@@ -308,7 +306,7 @@ static void naomi_dma_cancel()
 		sh4_sched_request(naomi_dma_schid, -1);
 }
 
-void Naomi_DmaEnable(u32 addr, u32 data)
+static void Naomi_DmaEnable(u32 addr, u32 data)
 {
 	SB_GDEN=data&1;
 	if (SB_GDEN==0 && SB_GDST==1)
@@ -320,51 +318,6 @@ void Naomi_DmaEnable(u32 addr, u32 data)
 }
 void naomi_reg_Init()
 {
-	#ifdef NAOMI_COMM
-	CommMapFile = CreateFileMapping(
-		INVALID_HANDLE_VALUE,    // use paging file
-		NULL,                    // default security 
-		PAGE_READWRITE,          // read/write access
-		0,                       // max. object size 
-		0x1000*4,                // buffer size  
-		L"Global\\nullDC_103_naomi_comm");                 // name of mapping object
-
-	if (CommMapFile == NULL || CommMapFile==INVALID_HANDLE_VALUE) 
-	{ 
-		_tprintf(TEXT("Could not create file mapping object (%d).\nTrying to open existing one\n"), 	GetLastError());
-		
-		CommMapFile=OpenFileMapping(
-                   FILE_MAP_ALL_ACCESS,   // read/write access
-                   FALSE,                 // do not inherit the name
-                   L"Global\\nullDC_103_naomi_comm");               // name of mapping object 
-	}
-	
-	if (CommMapFile == NULL || CommMapFile==INVALID_HANDLE_VALUE) 
-	{ 
-		_tprintf(TEXT("Could not open existing file either\n"), 	GetLastError());
-		CommMapFile=INVALID_HANDLE_VALUE;
-	}
-	else
-	{
-		printf("NAOMI: Created \"Global\\nullDC_103_naomi_comm\"\n");
-		CommSharedMem = (u32*) MapViewOfFile(CommMapFile,   // handle to map object
-			FILE_MAP_ALL_ACCESS, // read/write permission
-			0,                   
-			0,                   
-			0x1000*4);           
-
-		if (CommSharedMem == NULL) 
-		{ 
-			_tprintf(TEXT("Could not map view of file (%d).\n"), 
-				GetLastError()); 
-
-			CloseHandle(CommMapFile);
-			CommMapFile=INVALID_HANDLE_VALUE;
-		}
-		else
-			printf("NAOMI: Mapped CommSharedMem\n");
-	}
-	#endif
 
 	naomi_dma_schid = sh4_sched_register(0, &naomi_dma_sched);
 
@@ -375,17 +328,7 @@ void naomi_reg_Init()
 
 void naomi_reg_Term()
 {
-#ifdef NAOMI_COMM
-	if (CommSharedMem)
-	{
-		UnmapViewOfFile(CommSharedMem);
-	}
-	if (CommMapFile!=INVALID_HANDLE_VALUE)
-	{
-		CloseHandle(CommMapFile);
-	}
-#endif
-	// (the machine set up next may be a Dreamcast, which does not register this again)
+	/* (the machine set up next may be a Dreamcast, which does not register this again) */
 	naomi_dma_cancel();
 	m3comm_term();
 	naomi_periph_term();
@@ -396,8 +339,8 @@ void naomi_reg_Reset(bool hard)
 	SB_GDST = 0;
 	SB_GDEN = 0;
 	naomi_dma_cancel();
-	// An Atomiswave's bus is the slower one, and two games made for it and
-	// moved to a NAOMI cartridge still expect its pace.
+	/* An Atomiswave's bus is the slower one, and two games made for it and
+	 * moved to a NAOMI cartridge still expect its pace. */
 	if (settings.System == DC_PLATFORM_ATOMISWAVE
 			|| !strcmp(naomi_game_id, "FORCE FIVE") || !strcmp(naomi_game_id, "KENJU"))
 		naomi_dma_delay = 27;
@@ -405,8 +348,8 @@ void naomi_reg_Reset(bool hard)
 		naomi_dma_delay = 10;
 
 	aw_ram_test_skipped = false;
-	// (the kinds of device the last game had on ports 3 and 4: the next one
-	// may leave the register alone and want plain controllers)
+	/* (the kinds of device the last game had on ports 3 and 4: the next one
+	 * may leave the register alone and want plain controllers) */
 	aw_maple_devs = 0;
 	reg_dimm_command = 0;
 	reg_dimm_offsetl = 0;
@@ -419,13 +362,13 @@ void naomi_reg_Reset(bool hard)
 	m3comm_reset();
 	if (hard && CurrentCartridge != NULL)
 		CurrentCartridge->ops->reset(CurrentCartridge);
-	// (the chips keep what they hold: only a power cycle stops what they were doing)
+	/* (the chips keep what they hold: only a power cycle stops what they were doing) */
 	if (hard)
 	{
 		x76f100_reset(&mainSerialId);
 		x76f100_reset(&romSerialId);
 	}
-	// (a hard reset is a power cycle: the devices start again, from their files)
+	/* (a hard reset is a power cycle: the devices start again, from their files) */
 	if (hard)
 		naomi_periph_init();
 }
@@ -467,6 +410,7 @@ void naomi_serialize_v21(void **data, unsigned int *total_size)
 {
 	s32 dma_start = -1, dma_end = -1;
 	u8 board[7];
+	int i;
 
 	if (settings.System == DC_PLATFORM_DREAMCAST)
 		return;
@@ -479,7 +423,7 @@ void naomi_serialize_v21(void **data, unsigned int *total_size)
 	board[0] = aw_maple_devs;
 	board[1] = aw_ram_test_skipped;
 	board[2] = (u8)opcd;
-	for (int i = 0; i < 4; i++)
+	for (i = 0; i < 4; i++)
 		board[3 + i] = (u8)coin_chute[i];
 
 	LIBRETRO_S(dma_start);
@@ -494,6 +438,7 @@ bool naomi_unserialize_v21(void **data, unsigned int *total_size)
 {
 	s32 dma_start = -1, dma_end = -1;
 	u8 board[7] = { 0 };
+	int i;
 
 	if (settings.System == DC_PLATFORM_DREAMCAST)
 		return true;
@@ -506,8 +451,8 @@ bool naomi_unserialize_v21(void **data, unsigned int *total_size)
 	aw_maple_devs = board[0] & 0xF0;
 	aw_ram_test_skipped = board[1] != 0;
 	opcd = board[2];
-	for (int i = 0; i < 4; i++)
-		coin_chute[i] = std::min<int>(board[3 + i], 5);
+	for (i = 0; i < 4; i++)
+		coin_chute[i] = board[3 + i] < 5 ? board[3 + i] : 5;
 
 	if (CurrentCartridge != NULL)
 		CurrentCartridge->ops->unserialize_v21(CurrentCartridge, data, total_size);
@@ -524,8 +469,6 @@ void naomi_state_before_v21(void)
 	naomi_dma_set_state(-1, -1);
 }
 
-void naomi_jvs_serialize_v23(void **data, unsigned int *total_size);
-bool naomi_jvs_unserialize_v23(void **data, unsigned int *total_size);
 
 /* What the save states before V23 did not hold, on a NAOMI and NAOMI 2
  * (nothing is written for a Dreamcast or an Atomiswave, which have neither):
@@ -611,36 +554,30 @@ void naomi_serial_state_before_v26(void)
 	naomi_serial_legacy_clear();
 }
 
-#include "libretro/pad_state.h"
-
 u32 libExtDevice_ReadMem_A0_006(u32 addr,u32 size) {
 	addr &= 0x7ff;
-	//printf("libExtDevice_ReadMem_A0_006 %d@%08x: %x\n", size, addr, mem600[addr]);
 	switch (addr)
 	{
-//	case 0:
-//		return 0;
-//	case 4:
-//		return 1;
 	case 0x280:
 	   {
-		  // 0x00600280 r  0000dcba
-		  //	a/b - 1P/2P coin inputs (JAMMA), active low
-		  //	c/d - 3P/4P coin inputs (EX. IO board), active low
-		  //
-		  //	(ab == 0) -> BIOS skip RAM test
+		  u8 coins = 0xF;
+		  int i;
+		  /* 0x00600280 r  0000dcba
+		   * a/b - 1P/2P coin inputs (JAMMA), active low
+		   * c/d - 3P/4P coin inputs (EX. IO board), active low
+		   *
+		   * (ab == 0) -> BIOS skip RAM test */
 		  if (!aw_ram_test_skipped)
 		  {
-			 // Skip the RAM test. Also fixes Dolphin Blue in-game freeze
+			 /* Skip the RAM test. Also fixes Dolphin Blue in-game freeze */
 			  aw_ram_test_skipped = true;
 			 return 0;
 		  }
-		  u8 coins = 0xF;
-		  for (int i = 0; i < 4; i++)
+		  for (i = 0; i < 4; i++)
 		  {
 			 if (!(kcode[i] & AWAVE_COIN_KEY))
 			 {
-				// ggx15 needs 4 or 5 reads to register the coin but it needs to be limited to avoid coin errors
+				/* ggx15 needs 4 or 5 reads to register the coin but it needs to be limited to avoid coin errors */
 				if (coin_chute[i] < 5)
 				{
 				   coin_chute[i]++;
@@ -653,12 +590,11 @@ u32 libExtDevice_ReadMem_A0_006(u32 addr,u32 size) {
 
 		  return coins;
 	   }
-	case 0x284:		// Atomiswave maple devices
-		// ddcc0000 where cc/dd are the types of devices on maple bus 2 and 3:
-		// 0: regular AtomisWave controller
-		// 1: light gun
-		// 2,3: mouse/trackball
-		//printf("NAOMI 600284 read %x\n", aw_maple_devs);
+	case 0x284:		/* Atomiswave maple devices */
+		/* ddcc0000 where cc/dd are the types of devices on maple bus 2 and 3:
+		 * 0: regular AtomisWave controller
+		 * 1: light gun
+		 * 2,3: mouse/trackball */
 		return aw_maple_devs;
 	}
 	INFO_LOG(NAOMI, "Unhandled read @ %x sz %d\n", addr, size);
@@ -667,14 +603,13 @@ u32 libExtDevice_ReadMem_A0_006(u32 addr,u32 size) {
 
 void libExtDevice_WriteMem_A0_006(u32 addr,u32 data,u32 size) {
 	addr &= 0x7ff;
-	//printf("libExtDevice_WriteMem_A0_006 %d@%08x: %x\n", size, addr, data);
 	switch (addr)
 	{
-	case 0x284:		// Atomiswave maple devices
+	case 0x284:		/* Atomiswave maple devices */
 		DEBUG_LOG(NAOMI, "NAOMI 600284 write %x\n", data);
 		aw_maple_devs = data & 0xF0;
 		return;
-	//case 0x28C:		// Wheel force feedback?
+	/* case 0x28C:		// Wheel force feedback? */
 	default:
 		break;
 	}
@@ -686,37 +621,44 @@ void libExtDevice_WriteMem_A0_006(u32 addr,u32 data,u32 size) {
 */
 char naomi_set_name[32];
 bool naomi_card_readers_enabled;
-// L is the "Insert Card" button (libretro.cpp)
+/* L is the "Insert Card" button (libretro.cpp) */
 bool naomi_card_button;
 
 static bool periph_rfid;
-// what is read once each time the I/O board bridge is asked
+/* what is read once each time the I/O board bridge is asked */
 static bool periph_polled;
-// the "Insert Card" button of each player, as it was the last time
+/* the "Insert Card" button of each player, as it was the last time */
 static u8 periph_card_button[2];
 
 
 static void periph_path(char *path, size_t size, const char *suffix)
 {
-	// the EEPROM's name, without its extension
+	/* the EEPROM's name, without its extension */
 	size_t len = strlen(eeprom_file);
 	static const char ext[] = ".eeprom";
 	if (len >= sizeof(ext) - 1 && !strcmp(eeprom_file + len - (sizeof(ext) - 1), ext))
 		len -= sizeof(ext) - 1;
-	snprintf(path, size, "%.*s%s", (int)len, eeprom_file, suffix);
+	/* (as much of both as there is room for) */
+	strlcpy(path, eeprom_file, len + 1 < size ? len + 1 : size);
+	strlcat(path, suffix, size);
 }
+
+/* (the frontend's paths are shorter than this) */
+#define PERIPH_PATH_SIZE (4096 + 16)
 
 size_t periph_load_file(const char *suffix, void *buf, size_t size)
 {
-	char path[PATH_MAX + 16];
+	static char path[PERIPH_PATH_SIZE];
+	RFILE *f;
+	int64_t n;
 	memset(buf, 0, size);
 	if (eeprom_file[0] == '\0')
 		return 0;
 	periph_path(path, sizeof(path), suffix);
-	RFILE *f = filestream_open(path, RETRO_VFS_FILE_ACCESS_READ, RETRO_VFS_FILE_ACCESS_HINT_NONE);
+	f = filestream_open(path, RETRO_VFS_FILE_ACCESS_READ, RETRO_VFS_FILE_ACCESS_HINT_NONE);
 	if (f == NULL)
 		return 0;
-	const int64_t n = filestream_read(f, buf, size);
+	n = filestream_read(f, buf, size);
 	filestream_close(f);
 	INFO_LOG(NAOMI, "Loaded %s\n", path);
 	return n > 0 ? (size_t)n : 0;
@@ -724,7 +666,7 @@ size_t periph_load_file(const char *suffix, void *buf, size_t size)
 
 void periph_save_file(const char *suffix, const void *buf, size_t size, retro_atomic_int_t *failed)
 {
-	char path[PATH_MAX + 16];
+	static char path[PERIPH_PATH_SIZE];
 	if (eeprom_file[0] == '\0')
 		return;
 	if (retro_atomic_load_acquire_int(failed) && retro_atomic_exchange_int(failed, 0))
@@ -786,7 +728,7 @@ void naomi_periph_init(void)
 	naomi_periph_term();
 	if (!SYSTEM_IS_NAOMI())
 		return;
-	// (what was saved last is in the files first)
+	/* (what was saved last is in the files first) */
 	save_writer_drain();
 
 	if (naomi_card_readers_enabled)
@@ -819,11 +761,11 @@ void naomi_periph_init(void)
 				|| !strcmp(naomi_game_id, "VF4 FINAL TUNED JAPAN"))
 		{
 			periph_rfid = true;
-			// Mushiking's cards are in from the start
+			/* Mushiking's cards are in from the start */
 			rfid_init(true, id_starts("MKG TKOB"));
 		}
 	}
-	if (!strcmp(naomi_game_id, "POKASUKA GHOST (JAPANESE)")	// Manic Panic Ghosts
+	if (!strcmp(naomi_game_id, "POKASUKA GHOST (JAPANESE)")	/* Manic Panic Ghosts */
 			|| !strcmp(naomi_game_id, "TOUCH DE ZUNO (JAPAN)"))
 		touchscreen_init();
 	if (!strcmp(naomi_game_id, " TOUCH DE UNOH -------------")
@@ -855,7 +797,8 @@ void naomi_periph_poll(void)
 		return;
 	if (naomi_card_button)
 	{
-		for (int i = 0; i < 2; i++)
+		int i;
+		for (i = 0; i < 2; i++)
 		{
 			const u8 down = (mcfg_ArcadeKcode(i) & NAOMI_INSERT_CARD_KEY) == 0;
 			if (down && !periph_card_button[i])
@@ -882,12 +825,12 @@ enum
 	PERIPH_CARD = 2,
 	PERIPH_TOUCH = 4,
 	PERIPH_HOPPER = 8,
-	PERIPH_RFID = 16,
+	PERIPH_RFID = 16
 };
-static const u32 PERIPH_SCIF_SIZE = 45;
-static const u32 PERIPH_TOUCH_SIZE = 60;
-static const u32 PERIPH_HOPPER_SIZE = 2404;
-static const u32 PERIPH_RFID_SIZE = 262;
+#define PERIPH_SCIF_SIZE 45
+#define PERIPH_TOUCH_SIZE 60
+#define PERIPH_HOPPER_SIZE 2404
+#define PERIPH_RFID_SIZE 262
 
 static u8 periph_present(void)
 {
@@ -912,7 +855,7 @@ static bool periph_skip(void **data, unsigned int *total_size, u32 size)
 	u8 scratch[256];
 	while (size > 0)
 	{
-		const u32 n = std::min<u32>(size, sizeof(scratch));
+		const u32 n = size < sizeof(scratch) ? size : (u32)sizeof(scratch);
 		if (!ra_unserialize(scratch, n, data, total_size))
 			return false;
 		size -= n;
@@ -922,9 +865,10 @@ static bool periph_skip(void **data, unsigned int *total_size, u32 size)
 
 void naomi_periph_serialize_v24(void **data, unsigned int *total_size)
 {
+	u8 mask;
 	if (!SYSTEM_IS_NAOMI())
 		return;
-	const u8 mask = periph_present();
+	mask = periph_present();
 	LIBRETRO_S(mask);
 	if (mask == 0)
 		return;
@@ -943,10 +887,11 @@ void naomi_periph_serialize_v24(void **data, unsigned int *total_size)
 
 bool naomi_periph_unserialize_v24(void **data, unsigned int *total_size)
 {
+	u8 have, mask = 0;
+	bool ok = true;
 	if (!SYSTEM_IS_NAOMI())
 		return true;
-	const u8 have = periph_present();
-	u8 mask = 0;
+	have = periph_present();
 	if (!LIBRETRO_US(mask))
 		return false;
 	if (mask & ~(PERIPH_SCIF | PERIPH_CARD | PERIPH_TOUCH | PERIPH_HOPPER | PERIPH_RFID))
@@ -960,12 +905,11 @@ bool naomi_periph_unserialize_v24(void **data, unsigned int *total_size)
 	periph_card_button[0] = periph_card_button[0] != 0;
 	periph_card_button[1] = periph_card_button[1] != 0;
 
-	bool ok = true;
 	if (mask & PERIPH_SCIF)
 		ok = (have & PERIPH_SCIF) ? scif_unserialize_v24(data, total_size) : periph_skip(data, total_size, PERIPH_SCIF_SIZE);
 	else if (have & PERIPH_SCIF)
 		scif_state_before_v24();
-	// (the readers' part says which it is, and reads past a reader the game has not got)
+	/* (the readers' part says which it is, and reads past a reader the game has not got) */
 	if (ok && (mask & PERIPH_CARD))
 		ok = card_reader_unserialize_v24(data, total_size);
 	else if (have & PERIPH_CARD)

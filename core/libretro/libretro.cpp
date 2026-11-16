@@ -87,8 +87,6 @@ void texcache_scratch_largest(void);
 #include "../hw/naomi/midiffb.h"
 #include "../hw/flashrom/flashrom.h"
 #include <encodings/crc32.h>
-// whether L is the "Insert Card" button (naomi.cpp)
-extern bool naomi_card_button;
 #include "../savewriter.h"
 #include "../archive/archive.h"
 #include "../imgread/common.h"
