@@ -1,0 +1,512 @@
+ state v42 set up 18448 a5d19ab6
+ state v8 set up 408 762b22a5
+v14
+ d7 1
+ d14 1
+ d21 1
+ d28 1
+ d35 1
+ d42 1
+ d49 1
+ stop 1: 52 6685bc3c avail 0
+ decoded 16 29abad55 stop bits 0
+ state encoder 517 b3d420ac
+ d7 17
+ d14 2
+ d21 2
+ d28 2
+ d35 2
+ d42 2
+ d49 2
+ d56 2
+ stop 2: 57 4c58b871 avail 0
+ decoded 16 79716e35 stop bits 0
+ d7 18
+ d14 9
+ d21 9
+ d28 9
+ d35 9
+ d42 9
+ d49 9
+ d56 9
+ d63 9
+ d70 9
+ d77 9
+ d84 9
+ d91 9
+ stop 9: 92 57b7fbf7 avail 0
+ decoded 16 ca562a05 stop bits 0
+ d7 25
+ d14 17
+ d21 17
+ d28 17
+ d35 17
+ d42 17
+ d49 17
+ d56 17
+ d63 17
+ d70 17
+ d77 17
+ d84 17
+ d91 17
+ d98 17
+ d105 17
+ d112 17
+ d119 17
+ d126 17
+ stop 17: 132 5492fd3e avail 0
+ decoded 16 2ca3f0d5 stop bits 17
+ state decoder many 33 f798e2de
+ state decoder 33 ee0034fa
+ state decoder idle 33 de580de1
+ state decoder start 33 1c78469d
+ state decoder reset 33 d985589f
+ state encoder one 517 7a387c9b
+ state encoder bad 517 6913fd03
+ state encoder bad stops 517 6913fd03
+ 511 170
+ state decoder 33 d985589f
+ state decoder bad 33 5c9588d6
+ state decoder bad 2 33 412f95c7
+ state decoder bad 3 33 f309e38c
+ state decoder bad 4 33 c11b3557
+hdlc
+ send 0: 1 4
+ send 7: 1 11
+ frame 7 6ad5c1f5
+ send 14: 1 18
+ frame 14 8bf67128
+ send 21: 1 25
+ send 28: 1 32
+ frame 21 78ce7bbe
+ send 35: 1 40
+ frame 28 0d6e1925
+ send 42: 1 47
+ frame 35 629f4679
+ frame 42 9a71fe0c
+ send 49: 1 53
+ send 56: 1 61
+ frame 49 f1b3efe6
+ send 63: 1 68
+ frame 56 70ff0c3d
+ send 70: 1 76
+ frame 63 6d0fdda4
+ frame 70 8f132f20
+ send 77: 1 82
+ send 84: 1 89
+ frame 77 eb698b1b
+ send 91: 1 97
+ frame 84 c920f469
+ send 98: 1 104
+ frame 91 109f6888
+ send 105: 1 110
+ frame 98 1bfd23d0
+ send 112: 1 118
+ frame 105 c0c65a23
+ send 119: 1 125
+ frame 112 a8f120cd
+ send 126: 1 133
+ frame 119 19f5e9d7
+ frame 126 077fc1ec
+ send 133: 1 139
+ ones: 1
+ frame 64 bbc5c685
+ frame 64 4b55f105
+ big: 0 0
+ again: 1 0
+ again: 1 72
+ again: 1 144
+ state encoder full 263 83a572ce
+ frame 60 93cf5301
+ frame 60 93cf5301
+ room 0: 209
+ room 1: 207
+ room 2: 204
+ room 3: 202
+ room 4: 199
+ room 5: 197
+ room 6: 194
+ room 7: 192
+ room 8: 189
+ room 9: 187
+ room 10: 184
+ room 11: 182
+ state decoder mid 134 6540ed2c
+ frame 33 15549a01
+ not taken 0
+ state decoder idle 134 6486654d
+ frame 70 39ce0be2
+ frame 70 39ce0be2
+ frame 70 39ce0be2
+ frame 1 040c5b8c
+ state decoder full 134 49498a3b
+ state decoder over 134 6bfa22ca
+ state encoder 263 bab32054
+ state encoder bad 263 252525eb
+ state decoder 134 4954ac0d
+ state decoder bad 134 f4fbeb3f
+ state decoder bad 2 134 f6fdaeff
+ state decoder full size 134 c87a5ccf
+ frame 9 e1f48df4
+v42 0
+ read none 8: ff ff ff ff 7971cea5 out 0 811c9dc5 in 0
+ read three of 17 8: ff ff ff ff 7971cea5 out 0 811c9dc5 in 0
+ read establish 4: 7e 7e 7e 7e 20fea065 out 0 811c9dc5 in 0
+ state v42 establish 18448 657a466b
+ read i too soon 10: 7e 7e 7e 7e 92081a55 out 0 811c9dc5 in 0
+  got 55: 03 bf 82 136f4e12
+ read xid 80: 7e 03 5f 05 584ff990 out 0 811c9dc5 in 0
+  got 2: 03 73 00 467929d3
+ read ua 10: fc 06 e6 66 c835342b out 0 811c9dc5 in 0
+ read data 300: fc 02 00 00 9c976a6f out 0 811c9dc5 in 300
+ state v42 sending 18448 b10b29b6
+  got 47: 01 02 00 c9d7bdea
+  got 3: 03 01 02 b19a2891
+ read after i 30: ef bb 41 03 a2afa4d4 out 20 d3b02bc9 in 300
+  got 3: 03 01 04 b39a2bb7
+ read after i 30: 3f bf 81 00 47473c80 out 41 6d3fbc27 in 300
+  got 3: 03 01 07 b49a2d4a
+ read after i 30: 3f bf 81 80 41cc120d out 63 a6d88f1b in 300
+  got 3: 03 01 08 a79a18d3
+ read after i 30: 3f bf 81 00 d8d58645 out 86 a56b4e56 in 300
+  got 3: 03 09 08 e7ae054b
+ read reject sent 20: 3f bf 81 04 7f49423c out 86 a56b4e56 in 300
+ read rnr 20: 7e 7e 7e 7e c0db4ae5 out 86 a56b4e56 in 0
+  got 24: 01 04 08 8fdc47ea
+ read rr 60: 7e 01 04 08 3a7b9a06 out 86 a56b4e56 in 21
+  got 24: 01 04 08 8fdc47ea
+ read rej 200: fc 02 08 10 2a42eba2 out 86 a56b4e56 in 21
+ state v42 srej 18448 4311ca47
+ read bad acks 20: f9 f9 f9 f9 a580e2d5 out 86 a56b4e56 in 21
+ read rnr 2 20: f9 f9 f9 f9 a580e2d5 out 86 a56b4e56 in 0
+  got 24: 01 04 08 8fdc47ea
+ read rej ready 40: f9 05 10 20 b71b0f88 out 86 a56b4e56 in 26
+ read rnr 3 20: 4b 53 5b 63 b543ab33 out 86 a56b4e56 in 0
+  got 29: 01 06 08 86eef271
+  got 29: 01 08 08 e9f7b3a7
+ read ua ready 40: f6 f3 0b 40 b4fb92d8 out 86 a56b4e56 in 26
+ state v42 wrong address 18448 15fa2200
+ read wrong 20: f3 f3 f3 f3 042230b5 out 86 a56b4e56 in 26
+ read window 2000: f3 0b 50 40 ebfe6298 out 86 a56b4e56 in 2048
+ state v42 window 18448 2533ff71
+ read acked 500: ed f5 f5 05 a40be6de out 86 a56b4e56 in 2560
+ read unacked 100: 68 80 98 b0 66737e62 out 86 a56b4e56 in 0
+ state v42 far ack 18448 f0971b9a
+ read more 400: a7 b2 b5 b8 a9d9dfeb out 86 a56b4e56 in 512
+ state v42 sent 18448 ec292fc1
+  got 29: 01 06 0a edc49817
+  got 29: 01 08 0a 36b72101
+ read resent 600: 7c 29 5a 8a 038efa64 out 87 8eec0765 in 512
+ read more 400: f7 ad 70 31 38a59f27 out 87 8eec0765 in 0
+ state v42 sent 18448 6dc17d21
+ read resent 600: 19 4c 7c 58 230a99b1 out 88 118f247c in 0
+ read more 400: 28 40 58 70 b80200a3 out 88 118f247c in 0
+ state v42 sent 18448 0bf6cfdc
+ read resent 600: 7c 7a 7c fb da702d29 out 89 b155c077 in 0
+ read more 400: 54 b5 15 76 38064889 out 89 b155c077 in 0
+ state v42 sent 18448 0e1004b8
+ read resent 600: 5e 6a 76 82 7c0f5fdb out 90 2ffd4972 in 512
+ read more 400: 06 0a 0e 12 d929a87e out 90 2ffd4972 in 256
+ state v42 sent 18448 51da3cea
+ read resent 600: 5b 7b 9b bb 3f18f5d6 out 91 8eb9efb9 in 926
+ read round 30: 3e df 02 07 0287ca3d out 91 8eb9efb9 in 0
+ state round 18448 df330cb0
+  got 23: 01 44 12 28a7fbc6
+ read round 30: 53 a3 21 f7 adc2dfe1 out 91 8eb9efb9 in 20
+ state round 18448 75b97004
+  got 23: 01 6e 12 c0be02e8
+ read round 30: 7e 01 6e 12 cbceb695 out 91 8eb9efb9 in 20
+ state round 18448 aaf545fd
+  got 23: 01 96 12 7472d930
+ read round 30: cf 2f c0 52 ceb21687 out 91 8eb9efb9 in 20
+ state round 18448 c3c6fa09
+  got 23: 01 be 12 f15f9f98
+ read round 30: 7e 01 3e 25 e8bfd467 out 91 8eb9efb9 in 20
+ state round 18448 6527c027
+  got 23: 01 e6 12 a073d9e0
+ read round 30: 3f bf 00 73 84637e71 out 91 8eb9efb9 in 20
+ state round 18448 1d4bc885
+  got 23: 01 0e 12 811ba388
+ read round 30: 7e 01 0e 12 f0813166 out 91 8eb9efb9 in 20
+ state round 18448 d93a155c
+ read idle 50: e7 e7 e7 e7 d528d7dd out 91 8eb9efb9 in 20
+  got 3: 01 01 13 1ecca0ec
+  got 3: 01 01 13 1ecca0ec
+  got 3: 01 01 13 1ecca0ec
+  got 3: 01 01 13 1ecca0ec
+  got 3: 01 01 13 1ecca0ec
+  got 3: 01 01 13 1ecca0ec
+ read inactive 50: e7 17 10 30 a5beec19 out 91 8eb9efb9 in 20
+  got 3: 01 01 13 1ecca0ec
+  got 2: 03 73 00 467929d3
+ read sabme again 20: f3 1b 98 9b 32a8793c out 91 8eb9efb9 in 20
+  got 2: 03 73 00 467929d3
+ read disc 20: f3 1b 98 9b 32a8793c out 91 8eb9efb9 in 20
+ read after disc 20: f3 f3 f3 f3 042230b5 out 91 8eb9efb9 in 20
+ state v42 end 18448 410b0d26
+ all 12960 776739d7 50913be7
+v42 1
+ read none 8: ff ff ff ff 7971cea5 out 91 8eb9efb9 in 20
+ read not odp 4: ff ff ff ff 08d5e135 out 91 8eb9efb9 in 20
+ read same parity 8: ff ff ff ff 7971cea5 out 91 8eb9efb9 in 20
+ read adp 8: 8a fe 1b fa 83b76ee0 out 91 8eb9efb9 in 20
+ read three 8: ff ff ff ff 7971cea5 out 91 8eb9efb9 in 20
+ read establish 4: 7e 7e 7e 7e 20fea065 out 91 8eb9efb9 in 20
+ state v42 establish 18448 264a9c0d
+ read i too soon 10: 7e 7e 7e 7e 92081a55 out 91 8eb9efb9 in 20
+  got 42: 03 bf 82 99e55138
+ read xid 80: 7e 03 5f 05 891c9aa9 out 91 8eb9efb9 in 20
+  got 2: 03 73 00 467929d3
+ read ua 10: f9 0d cc cd ee9e2311 out 91 8eb9efb9 in 20
+  got 11: 01 00 00 4f3e3464
+  got 11: 01 02 00 ea9d2c3e
+  got 11: 01 04 00 2d42a780
+  got 11: 01 06 00 184b677a
+  got 11: 01 08 00 624c8b6c
+ read data 300: f9 05 00 00 4b2de2bd out 91 8eb9efb9 in 40
+ state v42 sending 18448 23750909
+ read after i 30: 7e 7e 7e 7e e5b41775 out 131 f6d78ca1 in 40
+  got 11: 01 0a 04 b5057572
+ read after i 30: 7e 01 0a 04 c71b18d4 out 171 f8e5f058 in 56
+  got 11: 01 0c 04 f868e524
+  got 3: 03 01 07 b49a2d4a
+  got 11: 01 0e 06 27aa1d58
+ read after i 30: fc 06 02 0e 69d68cea out 211 2ebc72e1 in 72
+  got 11: 01 10 06 201136b6
+  got 11: 01 12 08 89aef946
+ read after i 30: 00 71 e1 51 950a051f out 251 220ab1ac in 88
+  got 11: 01 14 08 6239f808
+  got 3: 03 09 08 e7ae054b
+ read reject sent 20: 07 78 e8 58 a285c0ba out 251 220ab1ac in 88
+ read rnr 20: cf cf cf cf 28d21d35 out 251 220ab1ac in 0
+ read rr 60: cf cf cf cf 95075115 out 251 220ab1ac in 0
+ read rej 200: cf cf cf cf 50c08da5 out 251 220ab1ac in 0
+ state v42 srej 18448 1609da7c
+ read bad acks 20: cf cf cf cf 28d21d35 out 251 220ab1ac in 0
+ read rnr 2 20: cf cf cf cf 28d21d35 out 251 220ab1ac in 0
+ read rej ready 40: cf cf cf cf cb24d625 out 251 220ab1ac in 0
+ read rnr 3 20: cf cf cf cf 28d21d35 out 251 220ab1ac in 0
+ read ua ready 40: cf cf cf cf cb24d625 out 251 220ab1ac in 0
+ state v42 wrong address 18448 698c23db
+ read wrong 20: cf cf cf cf 28d21d35 out 251 220ab1ac in 0
+ read window 2000: cf cf cf cf 18613c85 out 251 220ab1ac in 0
+ state v42 window 18448 64131139
+ read acked 500: cf cf cf cf 63ac0fb5 out 251 220ab1ac in 0
+ read unacked 100: cf cf cf cf 56124ff5 out 251 220ab1ac in 0
+ state v42 far ack 18448 64131139
+ read repeated 40: cf cf cf cf cb24d625 out 251 220ab1ac in 0
+ read repeated 40: 7e 7e 7e 7e 672d9805 out 251 220ab1ac in 360
+ read repeated 40: 7e 7e 7e 7e 672d9805 out 251 220ab1ac in 360
+ read repeated 40: 7e 7e 7e 7e 672d9805 out 251 220ab1ac in 360
+ read tail 100: fc fc fc fc c0975105 out 251 220ab1ac in 3
+  got 11: 01 72 08 76e20f9e
+  got 11: 01 74 08 736fe7f0
+  got 11: 01 76 08 faa321ea
+  got 11: 01 78 08 fbe1b72c
+  got 11: 01 7a 08 320fcf46
+ read more 400: fc 02 e4 10 d4a33157 out 251 220ab1ac in 40
+ state v42 sent 18448 3fcd2a7e
+  got 11: 01 74 0a 38d3c51e
+  got 11: 01 76 0a bb97847c
+  got 11: 01 78 0a b3d7072a
+  got 11: 01 7a 0a e8da9308
+  got 11: 01 7c 0a a0f3dce6
+ read resent 600: f9 05 d0 29 2709a57c out 252 73d5fee7 in 48
+ read more 400: 3f 3f 3f 3f 34b8a485 out 252 73d5fee7 in 0
+ state v42 sent 18448 dc7fe869
+  got 11: 01 78 0c 9156a8c0
+  got 11: 01 7a 0c 5fe7a802
+  got 11: 01 7c 0c f2d8f2e4
+  got 11: 01 7e 0c 94a3fb56
+  got 11: 01 80 0c b3e662c8
+ read resent 600: 3f bf 00 3c 48b9f1a6 out 253 efdfc622 in 16
+ read more 400: e7 e7 e7 e7 302a0385 out 253 efdfc622 in 0
+ state v42 sent 18448 b97ffec2
+  got 11: 01 7e 0e 2349c698
+  got 11: 01 80 0e d99bc7f6
+  got 11: 01 82 0e cd4eebdc
+  got 11: 01 84 0e 516a8aca
+  got 11: 01 86 0e d774e140
+ read resent 600: e7 17 e0 cb 07cc8f5a out 254 f04534a9 in 24
+ read more 400: fc fc fc fc 4566eec5 out 254 f04534a9 in 0
+ state v42 sent 18448 6200aac6
+  got 11: 01 88 10 879bd204
+  got 11: 01 8a 10 5595030e
+  got 11: 01 8c 10 680f1200
+  got 11: 01 8e 10 d7c42cba
+  got 11: 01 90 10 887d74fc
+ read resent 600: fc 02 10 21 750bd181 out 255 14f23008 in 40
+ read more 400: 9f 9f 9f 9f 1003a485 out 255 14f23008 in 0
+ state v42 sent 18448 45306e39
+  got 11: 01 92 12 51708ce8
+  got 11: 01 94 12 e3cba266
+  got 11: 01 96 12 9c3edca4
+  got 11: 01 98 12 c1324672
+  got 11: 01 9a 12 c912b7c0
+ read resent 600: 9f 5f 80 a4 916c49e8 out 256 72424e7b in 40
+ read round 30: f9 f9 f9 f9 89be241d out 256 72424e7b in 0
+ state round 18448 60bcdd90
+  got 11: 01 e6 12 c3f087bc
+  got 11: 01 e8 12 033ff06a
+ read round 30: 55 5d 65 a5 1126b83c out 256 72424e7b in 16
+ state round 18448 a36756e5
+  got 11: 01 36 12 a42701b4
+  got 11: 01 38 12 f62ea102
+ read round 30: 24 74 77 79 01a34481 out 256 72424e7b in 16
+ state round 18448 021857ac
+  got 11: 01 84 12 7b82b976
+  got 11: 01 86 12 0c567324
+ read round 30: 73 48 a9 9f 6edbff48 out 256 72424e7b in 16
+ state round 18448 a41d35e4
+  got 11: 01 d4 12 489c9056
+  got 11: 01 d6 12 eb738fc4
+ read round 30: f6 be 0d 1e c06decca out 256 72424e7b in 16
+ state round 18448 e4e6654e
+  got 11: 01 24 12 8d43e94e
+  got 11: 01 26 12 8ab04870
+ read round 30: 48 24 ce d0 1a299946 out 256 72424e7b in 16
+ state round 18448 1385ba37
+  got 11: 01 74 12 530daf7e
+  got 11: 01 76 12 42cfa120
+ read round 30: 02 e8 24 ce 5501b82e out 256 72424e7b in 16
+ state round 18448 2504b6b3
+  got 11: 01 c2 12 e9d8611c
+ read idle 50: f3 f3 f3 f3 b11b889d out 256 72424e7b in 1940
+  got 3: 01 01 13 1ecca0ec
+  got 3: 01 01 13 1ecca0ec
+  got 3: 01 01 13 1ecca0ec
+  got 3: 01 01 13 1ecca0ec
+  got 3: 01 01 13 1ecca0ec
+  got 3: 01 01 13 1ecca0ec
+ read inactive 50: f3 0b 08 98 d2cc42cb out 256 72424e7b in 1940
+  got 3: 01 01 13 1ecca0ec
+  got 2: 03 73 00 467929d3
+ read sabme again 20: f9 0d cc cd 6de45f59 out 256 72424e7b in 1940
+  got 2: 03 73 00 467929d3
+ read disc 20: f9 0d cc cd 6de45f59 out 256 72424e7b in 1940
+ read after disc 20: f9 f9 f9 f9 a580e2d5 out 256 72424e7b in 1940
+ state v42 end 18448 dd57dca4
+ all 30840 653e4a47 98914ea0
+v42 2
+ read none 8: ff ff ff ff 7971cea5 out 256 72424e7b in 1940
+ read not odp 4: ff ff ff ff 08d5e135 out 256 72424e7b in 1940
+ read same parity 8: ff ff ff ff 7971cea5 out 256 72424e7b in 1940
+ read adp 8: 8a fe 1b fa 83b76ee0 out 256 72424e7b in 1940
+ read three 8: ff ff ff ff 7971cea5 out 256 72424e7b in 1940
+ read establish 4: 7e 7e 7e 7e 20fea065 out 256 72424e7b in 1940
+ state v42 establish 18448 6e9185a9
+ read i too soon 10: 7e 7e 7e 7e 92081a55 out 256 72424e7b in 1940
+  got 42: 03 bf 82 99e55138
+ read xid 80: 7e 03 5f 05 891c9aa9 out 256 72424e7b in 1940
+  got 2: 03 73 00 467929d3
+ read ua 10: f9 0d cc cd ee9e2311 out 256 72424e7b in 1940
+  got 2: 01 43 00 2e7486dd
+ read v42bis error 20: f9 05 0c 01 32b41c95 out 256 72424e7b in 1940
+ read released 20: f9 f9 f9 f9 a580e2d5 out 256 72424e7b in 1940
+ state v42 released 18448 867b225f
+v42 v14
+ read before 4: ff ff ff ff 08d5e135 out 256 72424e7b in 1940
+ read v14 4: ff ff ff ff 08d5e135 out 261 d176ec09 in 1940
+ read v14 data 40: cc 92 eb ad 0b4d51f6 out 261 d176ec09 in 16
+ read v14 more 300: 00 0a 48 a0 f27444b7 out 264 a5447e47 in 200
+ state v42 v14 18448 328aa7c0
+v42 states
+ read none 8: ff ff ff ff 7971cea5 out 264 a5447e47 in 200
+ read not odp 4: ff ff ff ff 08d5e135 out 264 a5447e47 in 200
+ read same parity 8: ff ff ff ff 7971cea5 out 264 a5447e47 in 200
+ read adp 8: 8a fe 1b fa 83b76ee0 out 264 a5447e47 in 200
+ read three 8: ff ff ff ff 7971cea5 out 264 a5447e47 in 200
+ read establish 4: 7e 7e 7e 7e 20fea065 out 264 a5447e47 in 200
+  got 2: 03 73 00 467929d3
+ read ua 10: 7e 03 73 33 f1ec9de2 out 264 a5447e47 in 200
+ state good 18448 8f74fa6b
+ state same 18448 8f74fa6b
+ state bad 18448 14095704
+ state bad window 18448 e5afe3e7
+ state bad size 18448 9cc22a32
+ read after 10: 7e 7e 7e 7e 92081a55 out 264 a5447e47 in 200
+v8bis
+ start available 0 0 811c9dc5 done 0
+ tone too soon available 0 0 811c9dc5 done 0
+ 00 00 00 00 00 00 00 00 e0 e0 20 20
+ other tone available 0 0 811c9dc5 done 0
+ state v8 cl 408 75a399e4
+ cl available 26 [19 12] 26 a93c0ce2 done 0
+ completed 0
+ ms available 8 [1 14] 8 5cb28715 done 1
+ state v8 408 ede48b7a
+ start available 0 0 811c9dc5 done 0
+ tone too soon available 0 0 811c9dc5 done 0
+ 00 00 00 00 00 00 00 00 e0 e0 20 20
+ other tone available 0 0 811c9dc5 done 0
+ cl available 26 [19 12] 26 a93c0ce2 done 0
+ completed 0
+ ms available 8 [1 14] 8 5cb28715 done 1
+ state v8 408 84710841
+ start available 0 0 811c9dc5 done 0
+ tone too soon available 0 0 811c9dc5 done 0
+ 00 00 00 00 00 00 00 00 e0 e0 20 20
+ other tone available 0 0 811c9dc5 done 0
+ cl available 26 [19 12] 26 a93c0ce2 done 0
+ completed 1
+ ms available 0 0 811c9dc5 done 1
+ state v8 408 a825bfe3
+ start available 0 0 811c9dc5 done 0
+ tone too soon available 0 0 811c9dc5 done 0
+ 00 00 00 00 00 00 00 00 e0 e0 20 20
+ other tone available 0 0 811c9dc5 done 0
+ cl available 26 [19 12] 26 a93c0ce2 done 0
+ completed 0
+ ms available 8 [1 08] 8 4b05e007 done 1
+ state v8 408 19d6f299
+ start available 0 0 811c9dc5 done 0
+ tone too soon available 0 0 811c9dc5 done 0
+ 00 00 00 00 00 00 00 00 e0 e0 20 20
+ other tone available 0 0 811c9dc5 done 0
+ cl available 26 [19 12] 26 a93c0ce2 done 0
+ completed 1
+ ms available 0 0 811c9dc5 done 1
+ state v8 408 93eb01e8
+ start available 0 0 811c9dc5 done 0
+ tone too soon available 0 0 811c9dc5 done 0
+ 00 00 00 00 00 00 00 00 e0 e0 20 20
+ other tone available 0 0 811c9dc5 done 0
+ cl available 26 [19 12] 26 a93c0ce2 done 0
+ completed 1
+ ms available 0 0 811c9dc5 done 1
+ state v8 408 1ce42345
+ start available 0 0 811c9dc5 done 0
+ tone too soon available 0 0 811c9dc5 done 0
+ 00 00 00 00 00 00 00 00 e0 e0 20 20
+ other tone available 0 0 811c9dc5 done 0
+ cl available 26 [19 12] 26 a93c0ce2 done 0
+ completed 1
+ ms available 0 0 811c9dc5 done 1
+ state v8 408 af5554f9
+ start available 0 0 811c9dc5 done 0
+ tone too soon available 0 0 811c9dc5 done 0
+ 00 00 00 00 00 00 00 00 e0 e0 20 20
+ other tone available 0 0 811c9dc5 done 0
+ cl available 26 [19 12] 26 a93c0ce2 done 0
+ completed 0
+ ms available 8 [1 08] 8 4b05e007 done 1
+ state v8 408 0710dfce
+ start available 0 0 811c9dc5 done 0
+ tone too soon available 0 0 811c9dc5 done 0
+ 00 00 00 00 00 00 00 00 e0 e0 20 20
+ other tone available 0 0 811c9dc5 done 0
+ cl available 26 [19 12] 26 a93c0ce2 done 0
+ completed 0
+ ms available 8 [1 08] 8 4b05e007 done 1
+ state v8 408 0e4ecf5d
+ start available 0 0 811c9dc5 done 0
+ tone too soon available 0 0 811c9dc5 done 0
+ 00 00 00 00 00 00 00 00 e0 e0 20 20
+ other tone available 0 0 811c9dc5 done 0
+ cl available 26 [19 12] 26 a93c0ce2 done 0
+ completed 1
+ ms available 0 0 811c9dc5 done 1
+ state v8 408 f18f82b8
+ state v8 bad 408 2c46131a
+ state v8 bad 2 408 aaa437ed
+ bad available 0 0 811c9dc5 done 1

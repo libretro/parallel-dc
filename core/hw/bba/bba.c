@@ -57,7 +57,7 @@ static bool interruptPending;
  * DCNet) that is up while the game uses the network, started when the
  * game sends its first frame and stopped when it resets the adapter.
  *
- * As with the modem's line (see modem.cpp), a save state says which
+ * As with the modem's line (see modem.c), a save state says which
  * session its adapter is on, by a number no other session has, and how
  * many frames it has received and sent on it. A state loaded on the
  * session that is up - run-ahead, rewind - is given again the frames it

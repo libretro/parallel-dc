@@ -35,7 +35,10 @@ name: Headless
 # the NAOMI's X76F100 serial flash (tools/flashrom/x76f100_run.sh), the BIOS
 # ROM, the SRAM and the flash memory (tools/flashrom/flashrom_run.sh), and the
 # modem's DNS queries and the answers it reads (tools/modem/dns_run.sh), its
-# V.42 bis compression both ways (tools/modem/v42bis_run.sh), and
+# V.42 bis compression both ways (tools/modem/v42bis_run.sh), the far end
+# of a synchronous connection, V.14, HDLC, V.42 and V.8 bis
+# (tools/modem/v42_run.sh), and the modem itself through its registers, its
+# calls at each speed and its state (tools/modem/modem_run.sh), and
 # Dinosaur King's card codec against what it made before
 # (tools/naomi/dinokich_card_run.sh), and the SH4's serial port with the
 # touch panel on it (tools/naomi/scif_touch_run.sh), and the hopper boards
@@ -319,6 +322,14 @@ jobs:
         run: |
           sh tools/modem/v42bis_run.sh
           sh tools/modem/v42bis_run.sh -fsanitize=address,undefined -fno-sanitize-recover=all
+      - name: The far end of the modem's synchronous connection, V.14 and HDLC both ways, V.42 from the detection phase to frames rejected and numbers going round, V.8 bis, and their states, wrong ones too (and with the sanitizers)
+        run: |
+          sh tools/modem/v42_run.sh
+          sh tools/modem/v42_run.sh -fsanitize=address,undefined -fno-sanitize-recover=all
+      - name: The modem through its registers, the self tests, DSP memory, a download, dialling, calls at each speed and V.8 AUTO, V.8 bis, the FIFOs, the line lost, run-ahead and its state (and with the sanitizers)
+        run: |
+          sh tools/modem/modem_run.sh
+          sh tools/modem/modem_run.sh -fsanitize=address,undefined -fno-sanitize-recover=all
 
   generic-cpu:
     runs-on: ubuntu-24.04

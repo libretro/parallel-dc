@@ -16,94 +16,54 @@
     You should have received a copy of the GNU General Public License
     along with Flycast.  If not, see <https://www.gnu.org/licenses/>.
 */
-#pragma once
+#ifndef MODEM_INTERNAL_H
+#define MODEM_INTERNAL_H
 #include "types.h"
 #include <string.h>
 
-namespace modem
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+/* A stream of bytes between two parts of the modem: what is read from it,
+ * how much is there, and what is written to it, with @ctx */
+typedef struct modem_stream
 {
+	int (*read)(void *ctx);
+	int (*available)(void *ctx);
+	void (*write)(void *ctx, u8 v);
+	void *ctx;
+} modem_stream;
 
-class InStream
+/* A queue of bytes of a fixed size, in @buf, so that what it holds can go
+ * into a save state as it is. The size is a power of two. A byte that does
+ * not fit is refused: the users of these are sized so that it does not
+ * happen. */
+typedef struct byte_fifo
 {
-public:
-	virtual ~InStream() {}
-	virtual int read() = 0;
-	virtual int available() = 0;
-};
-
-class OutStream
-{
-public:
-	virtual ~OutStream() {}
-	virtual void write(u8 v) = 0;
-};
-
-/* A queue of bytes of a fixed size, so that what it holds can go into a
- * save state as it is. N is a power of two. A byte that does not fit is
- * refused: the users of these are sized so that it does not happen. */
-template<unsigned N>
-class ByteFifo
-{
-public:
-	ByteFifo() : head(0), count(0) {
-		memset(buf, 0, sizeof(buf));
-	}
-
-	void clear() {
-		head = 0;
-		count = 0;
-	}
-	int size() const {
-		return count;
-	}
-	int room() const {
-		return N - count;
-	}
-	bool push(u8 v)
-	{
-		if (count == N)
-			return false;
-		buf[(head + count) & (N - 1)] = v;
-		count++;
-		return true;
-	}
-	int pop()
-	{
-		if (count == 0)
-			return -1;
-		u8 v = buf[head];
-		head = (head + 1) & (N - 1);
-		count--;
-		return v;
-	}
-	int front() const {
-		return count == 0 ? -1 : buf[head];
-	}
-
-	/* Always N + 2 bytes: the count, then the bytes in order and zeroes after
-	 * them, so that two queues holding the same bytes are saved the same. */
-	void serialize(void **data, unsigned int *total_size) const
-	{
-		u8 lin[N];
-		u16 n = (u16)count;
-		for (unsigned i = 0; i < N; i++)
-			lin[i] = i < count ? buf[(head + i) & (N - 1)] : 0;
-		LIBRETRO_S(n);
-		LIBRETRO_SA(lin, N);
-	}
-	void unserialize(void **data, unsigned int *total_size)
-	{
-		u16 n = 0;
-		LIBRETRO_US(n);
-		LIBRETRO_USA(buf, N);
-		head = 0;
-		count = n <= N ? n : N;
-	}
-
-private:
-	u8 buf[N];
+	u8 *buf;
+	unsigned size;
 	unsigned head;
 	unsigned count;
-};
+} byte_fifo;
 
+/* Empty, over the @size bytes at @buf (zeroed) */
+void byte_fifo_init(byte_fifo *f, u8 *buf, unsigned size);
+void byte_fifo_clear(byte_fifo *f);
+int byte_fifo_size(const byte_fifo *f);
+int byte_fifo_room(const byte_fifo *f);
+bool byte_fifo_push(byte_fifo *f, u8 v);
+/* The first byte, taken; -1 if there is none */
+int byte_fifo_pop(byte_fifo *f);
+int byte_fifo_front(const byte_fifo *f);
+/* Always size + 2 bytes: the count, then the bytes in order and zeroes
+ * after them, so that two queues holding the same bytes are saved the
+ * same. */
+void byte_fifo_serialize(const byte_fifo *f, void **data, unsigned int *total_size);
+void byte_fifo_unserialize(byte_fifo *f, void **data, unsigned int *total_size);
+
+#ifdef __cplusplus
 }
+#endif
+
+#endif

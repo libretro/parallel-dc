@@ -83,8 +83,8 @@ extern bool EEPROM_loaded;
 #include "hw/maple/maple_if.h"
 
 #ifdef ENABLE_MODEM
-//./core/hw/modem/modem.cpp
-extern int modem_sched;
+//./core/hw/modem/modem.c
+#include "hw/modem/modem.h"
 #endif
 
 
@@ -197,7 +197,7 @@ void pvr_state_before_v28(void);
  * (gdcartridge.h) */
 
 /* The modem's part is this long on a Dreamcast (modem_serialize_v21() in
- * modem.cpp: 33 registers, the DSP's 4096 bytes, and 36 more), and a build
+ * modem.c: 33 registers, the DSP's 4096 bytes, and 36 more), and a build
  * without the modem has to leave room for it all the same: a state is the
  * same whichever build made it. */
 #define MODEM_V21_SIZE 4165
