@@ -102,8 +102,7 @@ extern u32 fb_w_cur;
 
 //./core/hw/pvr/ta_vtx.o
 
-//./core/rend/TexCache.o
-extern VArray2 vram;
+//./core/rend/vram_lock.o: vram (pvr_mem.h)
 
 //./core/hw/sh4/sh4_mmr.o
 

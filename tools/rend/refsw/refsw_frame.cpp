@@ -59,8 +59,8 @@ bool _vmem_vram_page_protected(u32) { return false; }
 void os_DebugBreak() { abort(); }
 /* (no log) */
 retro_log_printf_t log_cb;
-template<> u32 DYNACALL pvr_read_area1<u32>(u32 addr) { return *(u32 *)&vram.data[addr & VRAM_MASK]; }
-template<> u16 DYNACALL pvr_read_area1<u16>(u32 addr) { return *(u16 *)&vram.data[addr & VRAM_MASK]; }
+u32 DYNACALL pvr_read_area1_32(u32 addr) { return *(u32 *)&vram.data[addr & VRAM_MASK]; }
+u16 DYNACALL pvr_read_area1_16(u32 addr) { return *(u16 *)&vram.data[addr & VRAM_MASK]; }
 extern VArray2 vram;
 
 static u8 *vram_bytes;

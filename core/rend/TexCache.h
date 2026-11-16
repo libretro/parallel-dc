@@ -10,6 +10,7 @@
 #include <unordered_map>
 #include "rend/tex_map.h"
 #include "rend/texconv.h"
+#include "rend/vram_lock.h"
 
 /* A converter's texels, as C++ has them: the picture or mipmapped
  * texture of tex_buf_t (texconv.h) for texels of pixel_type */
@@ -87,10 +88,6 @@ static inline u32 texcache_upscale_factor(void)
 
 class BaseTextureCacheData;
 
-bool VramLockedWriteOffset(size_t offset);
-void VramLockedWriteRange(u32 offset, u32 size);
-void VramRendered(u32 offset, u32 size, const BaseTextureCacheData *target);
-void vram_load(const u8 *from);
 void libCore_vramlock_Lock(u32 start_offset, u32 end_offset, BaseTextureCacheData *texture);
 
 #ifdef HAVE_TEXUPSCALE
