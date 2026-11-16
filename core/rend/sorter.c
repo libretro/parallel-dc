@@ -20,8 +20,8 @@
 
 /* (sorting: in memory kept from one frame to the next) */
 static grow_buf_t sortPairs, sortPairsTmp;
-/* SortPParams()'s, GenSortedTo()'s, GenPrepassTo()'s */
-static grow_buf_t gathered, lstBuf, orderBuf, runsBuf, runsTmp;
+/* GenSortedTo()'s, GenPrepassTo()'s */
+static grow_buf_t lstBuf, orderBuf, runsBuf, runsTmp;
 
 typedef struct IndexTrig
 {
@@ -51,7 +51,7 @@ void SortPParams(int first, int count)
 {
 	Vertex *vtx_base;
 	u32 *idx_base;
-	PolyParam *pp, *pp_end, *base, *to;
+	PolyParam *pp, *pp_end, *base;
 	sort_pair_t *pairs;
 	int i;
 
@@ -93,11 +93,11 @@ void SortPParams(int first, int count)
 		pp++;
 	}
 
-	/* sorted by zvZ, stably: the polygons gathered in that order, and put back */
+	/* sorted by zvZ, stably: the polygons moved where they go in place, a
+	 * cycle of the order at a time, each once (and one of each cycle twice) */
 	base = TRANSLUCENT() + first;
 	pairs = (sort_pair_t *)grow_buf_reserve(&sortPairs, (size_t)count * sizeof(sort_pair_t));
-	to = (PolyParam *)grow_buf_reserve(&gathered, (size_t)count * sizeof(PolyParam));
-	if (pairs == NULL || to == NULL)
+	if (pairs == NULL)
 		return;
 	for (i = 0; i < count; i++)
 	{
@@ -108,8 +108,24 @@ void SortPParams(int first, int count)
 	if (pairs == NULL)
 		return;
 	for (i = 0; i < count; i++)
-		to[i] = base[pairs[i].index];
-	memcpy(base, to, (size_t)count * sizeof(PolyParam));
+	{
+		/* (an entry done, or in its place, has its own index) */
+		u32 at = (u32)i, from;
+		PolyParam held;
+		if (pairs[i].index == (u32)i)
+			continue;
+		held = base[i];
+		for (;;)
+		{
+			from = pairs[at].index;
+			pairs[at].index = at;
+			if (from == (u32)i)
+				break;
+			base[at] = base[from];
+			at = from;
+		}
+		base[at] = held;
+	}
 }
 
 /* are two poly params the same? */
@@ -543,7 +559,6 @@ void SortReserve(void)
 	const size_t pairs = polys > SORT_RESERVE_TRIS ? polys : SORT_RESERVE_TRIS;
 	grow_buf_reserve(&sortPairs, pairs * sizeof(sort_pair_t));
 	grow_buf_reserve(&sortPairsTmp, SORT_PAIRS_TMP(pairs));
-	grow_buf_reserve(&gathered, polys * sizeof(PolyParam));
 	grow_buf_reserve(&lstBuf, (size_t)SORT_RESERVE_TRIS * sizeof(IndexTrig));
 	grow_buf_reserve(&orderBuf, polys * sizeof(u32));
 	grow_buf_reserve(&runsBuf, polys * sizeof(PrepassRun));
