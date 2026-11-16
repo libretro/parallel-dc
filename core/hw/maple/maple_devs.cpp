@@ -16,6 +16,7 @@
 #include <math.h>
 #include <time.h>
 #include <algorithm>
+#include "paths.h"
 
 #include <encodings/deflate.h>
 #include <encodings/xxh32.h>
@@ -1447,7 +1448,6 @@ struct maple_sega_purupuru : maple_base
 char EEPROM[0x100];
 bool EEPROM_loaded = false;
 
-bool naomi_cart_GetBootHeader(u8 *header, u32 size);	// naomi_cart.cpp
 
 /* The games with two I/O boards whose players 1 and 2 are on the second
  * board (node 2) when the cabinet is set for more than two. */
@@ -1831,7 +1831,6 @@ struct atomiswave_lightgun : maple_lightgun
 	}
 };
 
-extern char eeprom_file[PATH_MAX];
 
 /*
    Sega JVS I/O board

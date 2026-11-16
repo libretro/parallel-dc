@@ -18,6 +18,8 @@ extern char nvmem_file[];
 extern char nvmem_file2[];
 /* The content's path, as the frontend gave it */
 extern char *game_data;
+/* The NAOMI's EEPROM's file (and the System SP's, without its extension) */
+extern char eeprom_file[];
 /* 1: port A1's memory card is the content's own; 2: all of them are */
 extern unsigned per_content_vmus;
 

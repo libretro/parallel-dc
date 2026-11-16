@@ -165,6 +165,17 @@ cartridge *decrypted_cart_open(u8 *rom_ptr, u32 size);
  * memory: the cartridge closes the archive) */
 cartridge *archived_cart_open(const u8 *rom_ptr, u32 size, struct archive *archive);
 
+/* The System SP's ROM board (systemsp.cpp): one for the set @game_name,
+ * whose game is on the CompactFlash card @media_name (NULL: in ROM), or
+ * its parent's @parent_name; the region the game is started in (known
+ * once it is initialized), and its EEPROM, for that region */
+cartridge *systemsp_cart_open(u32 size, const char *game_name, const char *media_name, const char *parent_name);
+int systemsp_cart_region(void);
+void systemsp_cart_load_eeprom(void);
+/* The game's header, @size bytes of it (naomi_cart.c): false if what is
+ * there is not this game's */
+bool naomi_cart_GetBootHeader(u8 *header, u32 size);
+
 /* The platform of the romset at @file, or -1 for an archive that is not
  * a known Naomi or AtomisWave romset. */
 int naomi_cart_GetSystemType(const char *file);

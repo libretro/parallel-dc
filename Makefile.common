@@ -363,9 +363,9 @@ ifeq ($(HAVE_D3D9), 1)
 endif
 
 SOURCES_CXX += $(CORE_DIR)/core/hw/naomi/naomi.cpp \
-					$(CORE_DIR)/core/hw/naomi/naomi_cart.cpp \
 					$(CORE_DIR)/core/hw/naomi/systemsp.cpp
-SOURCES_C += $(CORE_DIR)/core/hw/naomi/cartridge.c \
+SOURCES_C += $(CORE_DIR)/core/hw/naomi/naomi_cart.c \
+					$(CORE_DIR)/core/hw/naomi/cartridge.c \
 					$(CORE_DIR)/core/hw/naomi/m1cartridge.c \
 					$(CORE_DIR)/core/hw/naomi/m4cartridge.c \
 					$(CORE_DIR)/core/hw/naomi/awcartridge.c \

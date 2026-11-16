@@ -1,0 +1,498 @@
+  system /roms/sgtetris.zip
+  archive /roms/sgtetris.zip
+  is 2 sp 0
+  archive /roms/sgtetris.zip
+  merged 0
+  load /roms/sgtetris.zip
+  archive /roms/sgtetris.zip
+  archive /roms/sgtetris.zip
+  archive /sys/naomi.zip
+  read epr-21577h.ic27
+  open m2 3800000
+  key 2808ae51
+  read epr-22909.ic22
+  read epr-22909.ic22
+  read mpr-22910.ic1
+  read mpr-22911.ic2
+  data mpr-22912.ic3
+  read mpr-22913.ic4
+  read mpr-22914.ic5
+  read mpr-22915.ic6
+  init
+  loaded 1 [S\x99\xe3\xdf\xf3=A\xf9\xcb[\x97y\xf1\xc9sY\xb31]O?E[]\x17\xc5;7/+\xabY] set [sgtetris] bios 1 rotation 0 inputs 1
+  rom 88e4e9a5 flash 3b849dc5 eeprom 00000000
+  header 1
+  closed m2: 3000040 bytes, c70200cb
+  load /roms/sgtetris.zip
+  archive /roms/sgtetris.zip
+  archive /roms/sgtetris.zip
+  archive /sys/naomi.zip
+  data epr-21578h.ic27
+  open m2 3800000
+  key 2808ae51
+  read epr-22909.ic22
+  read epr-22909.ic22
+  read mpr-22910.ic1
+  read mpr-22911.ic2
+  data mpr-22912.ic3
+  read mpr-22913.ic4
+  read mpr-22914.ic5
+  read mpr-22915.ic6
+  init
+  loaded 1 [S\x99\xe3\xdf\xf3=A\xf9\xcb[\x97y\xf1\xc9sY\xb31]O?E[]\x17\xc5;7/+\xabY] set [sgtetris] bios 1 rotation 0 inputs 1
+  rom 65bb7ebf flash 3b849dc5 eeprom 00000000
+  header 1
+  closed m2: 3000040 bytes, c70200cb
+  load /roms/sgtetris.zip
+  archive /roms/sgtetris.zip
+  archive /roms/sgtetris.zip
+  archive /sys/naomi.zip
+  archive /sys/naomi.zip
+  read epr-21576h.ic27
+  open m2 3800000
+  key 2808ae51
+  read epr-22909.ic22
+  read epr-22909.ic22
+  read mpr-22910.ic1
+  read mpr-22911.ic2
+  data mpr-22912.ic3
+  read mpr-22913.ic4
+  read mpr-22914.ic5
+  read mpr-22915.ic6
+  init
+  loaded 1 [S\x99\xe3\xdf\xf3=A\xf9\xcb[\x97y\xf1\xc9sY\xb31]O?E[]\x17\xc5;7/+\xabY] set [sgtetris] bios 1 rotation 0 inputs 1
+  rom ae1f31ff flash 3b849dc5 eeprom 00000000
+  header 1
+  closed m2: 3000040 bytes, c70200cb
+  load /roms/sgtetris.zip
+  archive /roms/sgtetris.zip
+  archive /roms/sgtetris.zip
+  open m2 3800000
+  key 2808ae51
+  read epr-22909.ic22
+  read epr-22909.ic22
+  read mpr-22910.ic1
+  read mpr-22911.ic2
+  data mpr-22912.ic3
+  read mpr-22913.ic4
+  read mpr-22914.ic5
+  read mpr-22915.ic6
+  init
+  loaded 1 [S\x99\xe3\xdf\xf3=A\xf9\xcb[\x97y\xf1\xc9sY\xb31]O?E[]\x17\xc5;7/+\xabY] set [sgtetris] bios 0 rotation 0 inputs 1
+  rom 279c9dc5 flash 3b849dc5 eeprom 00000000
+  header 1
+  closed m2: 3000040 bytes, c70200cb
+  load /roms/sgtetris.zip
+  archive /roms/sgtetris.zip
+  archive /roms/sgtetris.zip
+  archive /sys/naomi.zip
+  read epr-21576h.ic27
+  open m2 3800000
+  key 2808ae51
+  read epr-22909.ic22
+  read epr-22909.ic22
+  read mpr-22910.ic1
+  read mpr-22911.ic2
+  data mpr-22912.ic3
+  read mpr-22913.ic4
+  read mpr-22914.ic5
+  read mpr-22915.ic6
+  init
+  loaded 1 [S\x99\xe3\xdf\xf3=A\xf9\xcb[\x97y\xf1\xc9sY\xb31]O?E[]\x17\xc5;7/+\xabY] set [sgtetris] bios 1 rotation 0 inputs 1
+  rom ae1f31ff flash 3b849dc5 eeprom 00000000
+  header 1
+  closed m2: 3000040 bytes, c70200cb
+  system /roms/My Tetris.zip
+  archive /roms/My Tetris.zip
+  is 2 sp 0
+  load /roms/My Tetris.zip
+  archive /roms/My Tetris.zip
+  archive /roms/My Tetris.zip
+  archive /sys/naomi.zip
+  read epr-21577h.ic27
+  open m2 3800000
+  key 2808ae51
+  read epr-22909.ic22
+  read epr-22909.ic22
+  read mpr-22910.ic1
+  read mpr-22911.ic2
+  data mpr-22912.ic3
+  read mpr-22913.ic4
+  read mpr-22914.ic5
+  read mpr-22915.ic6
+  init
+  loaded 1 [S\x99\xe3\xdf\xf3=A\xf9\xcb[\x97y\xf1\xc9sY\xb31]O?E[]\x17\xc5;7/+\xabY] set [sgtetris] bios 1 rotation 0 inputs 1
+  rom 88e4e9a5 flash 3b849dc5 eeprom 00000000
+  header 1
+  closed m2: 3000040 bytes, c70200cb
+  load /roms/csmasho.zip
+  archive /roms/csmasho.zip
+  archive /roms/csmash.zip
+  open m2 4800000
+  key 28103347
+  read epr-23428.ic22
+  read mpr-23420.ic1
+  read mpr-23421.ic2
+  read mpr-23422.ic3
+  read mpr-23423.ic4
+  read mpr-23424.ic5
+  read mpr-23425.ic6
+  read mpr-23426.ic7
+  read mpr-23427.ic8
+  init
+  loaded 1 [\xe7\xc7e\xd3\xe3\x7f\xad\x13\x93\x0d\xd3\x91keM\xf5\x03\x15\x8f\x95\xb7\xa5\x03\xc9\x01\xcb\xc7\xed\x95M-5] set [csmasho] bios 0 rotation 0 inputs 1
+  rom 279c9dc5 flash 3b849dc5 eeprom 00000000
+  header 1
+  closed m2: 4000020 bytes, c16f78df
+  archive /roms/csmash.zip
+  archive /roms/csmash.zip
+  merged 2: csmash (Cosmic Smash (Rev A)) csmasho (Cosmic Smash)
+  load /roms/csmash.zip
+  archive /roms/csmash.zip
+  archive /roms/csmash.zip
+  archive /roms/csmash.zip
+  open m2 4800000
+  key 28103347
+  read csmasho/epr-23428.ic22
+  read mpr-23420.ic1
+  read mpr-23421.ic2
+  read mpr-23422.ic3
+  read mpr-23423.ic4
+  read mpr-23424.ic5
+  read mpr-23425.ic6
+  read mpr-23426.ic7
+  read mpr-23427.ic8
+  init
+  loaded 1 [I-\xbf\x83\xaf\xa7\xbd\xff\xef\xd9\xaf\x15\x01G?EE\xab\xc1\xad/E\xb1\xb3\xaf\xc5\x0fWc\x13aU] set [csmasho] bios 0 rotation 0 inputs 1
+  rom 279c9dc5 flash 3b849dc5 eeprom 00000000
+  header 1
+  closed m2: 4000020 bytes, 6383cc1d
+  load /roms/csmash.zip
+  archive /roms/csmash.zip
+  archive /roms/csmash.zip
+  open m2 4800000
+  key 28103347
+  read epr-23428a.ic22
+  read mpr-23420.ic1
+  read mpr-23421.ic2
+  read mpr-23422.ic3
+  read mpr-23423.ic4
+  read mpr-23424.ic5
+  read mpr-23425.ic6
+  read mpr-23426.ic7
+  read mpr-23427.ic8
+  init
+  loaded 1 [w)k'\xb5M\xf1+\x0bi\xc3\x01\x8f\x91\xad\xe1\xeb\xdd'\xc9\xc9U\xa5\xd1\xfd\xb7\xa7Ks\xf3}\xa1] set [csmash] bios 0 rotation 0 inputs 1
+  rom 279c9dc5 flash 3b849dc5 eeprom 00000000
+  header 1
+  closed m2: 4000020 bytes, 72ec2197
+  load /roms/csmash.zip
+  archive /roms/csmash.zip
+  archive /roms/csmash.zip
+  open m2 4800000
+  key 28103347
+  read epr-23428a.ic22
+  read mpr-23420.ic1
+  read mpr-23421.ic2
+  read mpr-23422.ic3
+  read mpr-23423.ic4
+  read mpr-23424.ic5
+  read mpr-23425.ic6
+  read mpr-23426.ic7
+  read mpr-23427.ic8
+  init
+  loaded 1 [w)k'\xb5M\xf1+\x0bi\xc3\x01\x8f\x91\xad\xe1\xeb\xdd'\xc9\xc9U\xa5\xd1\xfd\xb7\xa7Ks\xf3}\xa1] set [csmash] bios 0 rotation 0 inputs 1
+  rom 279c9dc5 flash 3b849dc5 eeprom 00000000
+  header 1
+  closed m2: 4000020 bytes, 72ec2197
+  load /roms/mushike.zip
+  archive /roms/mushike.zip
+  archive /roms/mushike.zip
+  open m1 4000000
+  key 3892fb3a
+  read epr-24217.ic11
+  stream mpr-24218.ic17s
+  data mpr-24219.ic18
+  stream mpr-24220.ic19s
+  stream mpr-24221.ic20
+  stream mpr-24222.ic21s
+  stream MPR-24223.IC22
+  init
+  loaded 1 [\xf7\xf3\xd3\xf1!1\xe1]yaw\xa3sm;\x05\xdb\xd7\x11\xbb[Q\x8f\xdb\xcb\x1b!%=\x1f\x01u] set [mushike] bios 0 rotation 0 inputs 1
+  rom 279c9dc5 flash 3b849dc5 eeprom 00000000
+  header 1
+  closed m1: 3000080 bytes, ebb305cb
+  load /roms/mushike.zip
+  archive /roms/mushike.zip
+  archive /roms/mushike.zip
+  open m1 4000000
+  key 3892fb3a
+  read epr-24217.ic11
+  stream mpr-24218.ic17s
+  data mpr-24219.ic18
+  stream mpr-24220.ic19s
+  stream mpr-24221.ic20
+  closed m1: 2000080 bytes, 25f349f5
+  loaded 0 [\xf7\xf3\xd3\xf1!1\xe1]yaw\xa3sm;\x05\xdb\xd7\x11\xbb[Q\x8f\xdb\xcb\x1b!%=\x1f\x01u] set [] bios 0 rotation 0 inputs 1
+  rom 279c9dc5 flash 3b849dc5 eeprom 00000000
+  header 0
+  system /roms/anmlbskt.zip
+  archive /roms/anmlbskt.zip
+  is 4 sp 0
+  load /roms/anmlbskt.zip
+  archive /roms/anmlbskt.zip
+  archive /roms/anmlbskt.zip
+  no archive /sys/awbios
+  memchip reload 1
+  no archive /sys/awbios
+  memchip reload 1
+  loaded 0 [\xf7\xf3\xd3\xf1!1\xe1]yaw\xa3sm;\x05\xdb\xd7\x11\xbb[Q\x8f\xdb\xcb\x1b!%=\x1f\x01u] set [] bios 0 rotation 0 inputs 1
+  rom 279c9dc5 flash 3b849dc5 eeprom 00000000
+  header 0
+  load /roms/anmlbskt.zip
+  archive /roms/anmlbskt.zip
+  archive /roms/anmlbskt.zip
+  archive /sys/awbios.zip
+  memchip reload 1
+  archive /sys/awbios.zip
+  read bios0.ic23
+  memchip reload 1
+  open aw 4000000
+  key 45
+  read vm2001f01.u3
+  read vm2001f01.u4
+  read vm2001f01.u2
+  read vm2001f01.u15
+  init
+  loaded 1 [\xc7\x85\xbb;3a#-[]\x87\xedu\x0bq9] set [anmlbskt] bios 1 rotation 3 inputs 0
+  rom 279c9dc5 flash 43d1256f eeprom 00000000
+  header 0
+  closed aw: 2000040 bytes, 12c59959
+  load /roms/marstv.zip
+  archive /roms/marstv.zip
+  archive /roms/marstv.zip
+  archive /sys/naomi.zip
+  read epr-21576d.ic27
+  open m2 8000000
+  key 280b8ef5
+  read epr-22993.ic22
+  read epr-22993.ic22
+  closed m2: 200040 bytes, b2dd272d
+  loaded 0 [\xc7\x85\xbb;3a#-[]\x87\xedu\x0bq9] set [] bios 1 rotation 3 inputs 0
+  rom 705aa6ab flash 3b849dc5 eeprom 00000000
+  header 0
+  load /roms/marstv.zip
+  archive /roms/marstv.zip
+  archive /roms/marstv.zip
+  archive /sys/naomi.zip
+  archive /sys/naomi.zip
+  archive /sys/naomi.zip
+  archive /sys/naomi.zip
+  read epr-21577h.ic27
+  open m2 8000000
+  key 280b8ef5
+  read epr-22993.ic22
+  read epr-22993.ic22
+  closed m2: 200040 bytes, b2dd272d
+  loaded 0 [\xc7\x85\xbb;3a#-[]\x87\xedu\x0bq9] set [] bios 1 rotation 3 inputs 0
+  rom 88e4e9a5 flash 3b849dc5 eeprom 00000000
+  header 0
+  load /roms/vstrik3c.zip
+  archive /roms/vstrik3c.zip
+  archive /roms/vstrik3c.zip
+  archive /sys/naomi2.zip
+  read epr-23608c.ic27
+  open m2 b000000
+  key 2cee834a
+  read epr-23663b.ic22
+  closed m2: 40 bytes, 31c933fd
+  loaded 0 [\xc7\x85\xbb;3a#-[]\x87\xedu\x0bq9] set [] bios 1 rotation 3 inputs 1
+  rom 703cfd77 flash 3b849dc5 eeprom 00000000
+  header 0
+  system /roms/partial.zip
+  archive /roms/partial.zip
+  archive /roms/partial.zip
+  is -1 sp 0
+  system /roms/most.zip
+  archive /roms/most.zip
+  is 2 sp 0
+  load /roms/zunou.zip
+  archive /roms/zunou.zip
+  archive /roms/zunou.zip
+  open m4 8000000
+  key 5502
+  read fpr-24338.ic8
+  read fpr-24339.ic9
+  data 317-0435-jpn.ic3
+  key data b53b646d
+  init
+  loaded 1 [\xd9se_\xe7\xd9S\x9d\x09\xd1\xd3\xeb\x8bOu\x9f] set [zunou] bios 0 rotation 0 inputs 0
+  rom 279c9dc5 flash 3b849dc5 eeprom 00000000
+  header 0
+  closed m4: 4000040 bytes, 76951173
+  load /roms/tduno.zip
+  archive /roms/tduno.zip
+  archive /roms/tduno.zip
+  open m2 4000000
+  key 28028ea5
+  read epr-22073.ic22
+  read epr-22073.ic22
+  read mpr-22074.ic1
+  read mpr-22075.ic2
+  read mpr-22076.ic3
+  read mpr-22077.ic4
+  data x76f100.ic37
+  serial id df759455
+  init
+  loaded 1 [\xfd)q\xb3\xdf\xf1}+C%\x13\xf3\x9f\x0d9A] set [tduno] bios 0 rotation 0 inputs 1
+  rom 279c9dc5 flash 3b849dc5 eeprom a2127b51
+  header 0
+  closed m2: 2000040 bytes, 9b8ceaf9
+  load /roms/bdrdown.zip
+  archive /roms/bdrdown.zip
+  archive /roms/bdrdown.zip
+  gd gdl-0023a 1 0
+  open gd 4000
+  key 0
+  read 317-5097-jpn.pic
+  data bdrdown-default-eeprom.bin
+  init
+  loaded 1 [\xcb\x9fu[E\x7fa\x8f\x839G1_\x81\x81\xa5g\xa19\xb1E\x7f\xb9\xd7\xefSmu\x93'\xbd\x9f] set [bdrdown] bios 0 rotation 0 inputs 1
+  rom 279c9dc5 flash 3b849dc5 eeprom 16a130a5
+  header 1
+  closed gd: 4000 bytes, 151b1c7f
+  load /roms/tduno.zip
+  archive /roms/tduno.zip
+  archive /roms/tduno.zip
+  open m2 4000000
+  key 28028ea5
+  read epr-22073.ic22
+  read epr-22073.ic22
+  read mpr-22074.ic1
+  read mpr-22075.ic2
+  read mpr-22076.ic3
+  read mpr-22077.ic4
+  data x76f100.ic37
+  init
+  loaded 1 [\xfd)q\xb3\xdf\xf1}+C%\x13\xf3\x9f\x0d9A] set [tduno] bios 0 rotation 0 inputs 1
+  rom 279c9dc5 flash 3b849dc5 eeprom a2127b51
+  header 0
+  closed m2: 2000040 bytes, 9b8ceaf9
+  load /roms/bdrdown.zip
+  archive /roms/bdrdown.zip
+  archive /roms/bdrdown.zip
+  gd gdl-0023a 1 0
+  open gd 4000
+  key 0
+  read 317-5097-jpn.pic
+  init
+  loaded 1 [\xcb\x9fu[E\x7fa\x8f\x839G1_\x81\x81\xa5g\xa19\xb1E\x7f\xb9\xd7\xefSmu\x93'\xbd\x9f] set [bdrdown] bios 0 rotation 0 inputs 1
+  rom 279c9dc5 flash 3b849dc5 eeprom 00000000
+  header 1
+  closed gd: 4000 bytes, 151b1c7f
+  load /roms/alpilot.zip
+  archive /roms/alpilot.zip
+  archive /roms/alpilot.zip
+  open m2 b000000
+  key 28070e41
+  closed m2: 0 bytes, 811c9dc5
+  loaded 0 [\xcb\x9fu[E\x7fa\x8f\x839G1_\x81\x81\xa5g\xa19\xb1E\x7f\xb9\xd7\xefSmu\x93'\xbd\x9f] set [] bios 0 rotation 0 inputs 1
+  rom 279c9dc5 flash 3b849dc5 eeprom 00000000
+  header 0
+  system /roms/vstrik3c.zip
+  archive /roms/vstrik3c.zip
+  is 3 sp 0
+  system /roms/bingogal.zip
+  archive /roms/bingogal.zip
+  is 2 sp 1
+  system /roms/azumanga.zip
+  archive /roms/azumanga.zip
+  is 2 sp 0
+  load /roms/azumanga.zip
+  archive /roms/azumanga.zip
+  archive /roms/azumanga.zip
+  gd gdl-0018 1 0
+  open gd 4000
+  key 0
+  read 317-5091-jpn.pic
+  init
+  loaded 1 [\xc1\x1dmK\x93\x99w_\xdf\xed\x15\x93SaqM\xb3\xf7\x03E\xf3\x8fu\x07\xf5\xb7W!\x1fY\x8b5] set [azumanga] bios 0 rotation 0 inputs 1
+  rom 279c9dc5 flash 3b849dc5 eeprom 00000000
+  header 1
+  closed gd: 4000 bytes, 7b03cc75
+  system /roms/image.zip
+  archive /roms/image.zip
+  archive /roms/image.zip
+  data game.BIN
+  is -1 sp 0
+  system /roms/two.zip
+  archive /roms/two.zip
+  archive /roms/two.zip
+  is -1 sp 0
+  system /roms/none.7z
+  no archive /roms/none.7z
+  no archive /roms/none.7z
+  is -1 sp 0
+  system /roms/image.zip
+  archive /roms/image.zip
+  archive /roms/image.zip
+  data game.BIN
+  is 2 sp 0
+  load /roms/image.zip
+  no archive /sys/naomi
+  no archive /sys/naomi
+  open archived 600
+  loaded 1 [FLAT GAME] set [] bios 0 rotation 0 inputs 1
+  rom 279c9dc5 flash 3b849dc5 eeprom 00000000
+  header 1
+  closed archived: 600 bytes, 919283aa
+  system /roms/image2.zip
+  archive /roms/image2.zip
+  archive /roms/image2.zip
+  data game.dat
+  is 3 sp 0
+  system /roms/image.zip
+  archive /roms/image.zip
+  archive /roms/image.zip
+  data game.BIN
+  is 2 sp 0
+  load /roms/two.zip
+  no archive /roms/two.zip
+  loaded 0 [FLAT GAME] set [] bios 0 rotation 0 inputs 1
+  rom 279c9dc5 flash 3b849dc5 eeprom 00000000
+  header 0
+  system $T/game.bin
+  is 3 sp 0
+  load $T/game.bin
+  mapped 2000 bytes (8192 read) at 0
+  open flat 2000
+  loaded 1 [BIN GAME] set [] bios 0 rotation 0 inputs 1
+  rom 279c9dc5 flash 3b849dc5 eeprom 00000000
+  header 1
+  closed flat: 2000 bytes, 480f4448
+  load $T/game.lst
+  mapped 1000 bytes (4096 read) at 0
+  mapped 800 bytes (2048 read) at 2000
+  open flat 2800
+  loaded 1 [BIN GAME] set [] bios 0 rotation 0 inputs 1
+  rom 279c9dc5 flash 3b849dc5 eeprom 00000000
+  header 1
+  closed flat: 2800 bytes, 7a584448
+  load $T/short.lst
+  loaded 0 [BIN GAME] set [] bios 0 rotation 0 inputs 1
+  rom 279c9dc5 flash 3b849dc5 eeprom 00000000
+  header 0
+  load $T/missing.lst
+  loaded 0 [BIN GAME] set [] bios 0 rotation 0 inputs 1
+  rom 279c9dc5 flash 3b849dc5 eeprom 00000000
+  header 0
+  load $T/noline.lst
+  loaded 0 [BIN GAME] set [] bios 0 rotation 0 inputs 1
+  rom 279c9dc5 flash 3b849dc5 eeprom 00000000
+  header 0
+  load /roms/unknown.zip
+  no archive /roms/unknown.zip
+  loaded 0 [BIN GAME] set [] bios 0 rotation 0 inputs 1
+  rom 279c9dc5 flash 3b849dc5 eeprom 00000000
+  header 0
+done

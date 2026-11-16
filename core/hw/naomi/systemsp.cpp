@@ -33,8 +33,7 @@
 #include "hw/holly/sb.h"
 #include "imgread/chd_image.h"
 #include "savewriter.h"
-
-extern char eeprom_file[PATH_MAX];
+#include "paths.h"
 #include "libretro/pad_state.h"
 
 bool naomi_cart_systemsp;
@@ -1507,6 +1506,25 @@ cartridge *SystemSpCart::Open(u32 size, const char *gameName, const char *mediaN
 {
 	return &(new SystemSpCart(size, gameName, mediaName, parentName))->base;
 }
+
+}
+
+cartridge *systemsp_cart_open(u32 size, const char *game_name, const char *media_name, const char *parent_name)
+{
+	return systemsp::SystemSpCart::Open(size, game_name, media_name, parent_name);
+}
+
+int systemsp_cart_region(void)
+{
+	return systemsp::SystemSpCart::Instance->GetRegion();
+}
+
+void systemsp_cart_load_eeprom(void)
+{
+	systemsp::SystemSpCart::Instance->LoadEeprom();
+}
+
+namespace systemsp {
 
 void SystemSpCart::SetKeyData(u8 *key_data)
 {

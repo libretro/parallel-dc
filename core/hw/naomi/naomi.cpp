@@ -7,6 +7,7 @@
 #include "hw/sh4/sh4_sched.h"
 #include "hw/holly/holly_intc.h"
 #include "hw/maple/maple_devs.h"
+#include "paths.h"
 
 #include "gdcartridge.h"
 #include "naomi.h"
@@ -694,7 +695,6 @@ static bool periph_polled;
 // the "Insert Card" button of each player, as it was the last time
 static u8 periph_card_button[2];
 
-extern char eeprom_file[PATH_MAX];
 
 static void periph_path(char *path, size_t size, const char *suffix)
 {
