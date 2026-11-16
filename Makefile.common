@@ -200,7 +200,7 @@ else
 endif
 
 ifeq ($(ENABLE_MODEM), 1)
-	SOURCES_CXX += $(CORE_DIR)/core/network/picoppp.cpp
+	SOURCES_C += $(CORE_DIR)/core/network/picoppp.c
 	SOURCES_C += $(CORE_DIR)/core/hw/modem/modem.c \
 					$(CORE_DIR)/core/hw/modem/v42.c \
 					$(CORE_DIR)/core/network/miniupnp.c \

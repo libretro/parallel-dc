@@ -23,7 +23,7 @@ extern "C" {
 #endif
 
 /* The network thread's side of what it shares with the emulation thread
- * (picoppp.cpp): rings that take no lock, one writer and one reader each,
+ * (picoppp.c): rings that take no lock, one writer and one reader each,
  * and a socket the emulation thread wakes it with. For what runs on that
  * thread: picoTCP, or DCNet. */
 
