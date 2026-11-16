@@ -31,7 +31,7 @@ enum
 typedef struct TA_context TA_context;
 #endif
 
-/* Aligned memory, and its freeing (ta_ctx.cpp) */
+/* Aligned memory, and its freeing (ta_ctx.c) */
 void* OS_aligned_malloc(size_t align, size_t size);
 void OS_aligned_free(void *ptr);
 
@@ -94,6 +94,19 @@ void ta_walk_term(void);
  * (From the thread that renders, between frames.) */
 void ta_set_walk_check(bool on);
 
+/* The tile accelerator's state machine: by state, parameter type and
+ * object control, the next state and whether the block is handled
+ * (ta.c); [2048] is the current state. ta_fsm_cl: the list open, 7 for
+ * none. Filled once, before the machine runs (ta_fsm_fill()). */
+extern u8 ta_fsm[2049];
+extern u32 ta_fsm_cl;
+void ta_fsm_fill(void);
+/* By object control, a polygon's header and vertex types (TaTypeLut's
+ * table, ta_vtx.cpp) */
+const u32 *ta_type_lut(void);
+
+#define STRIPS_AS_PPARAMS 1
+
 #ifdef __cplusplus
 }
 
@@ -109,8 +122,6 @@ public:
 private:
 	TaTypeLut();
 };
-
-#define STRIPS_AS_PPARAMS 1
 
 #include "ta_ctx.h"
 #endif

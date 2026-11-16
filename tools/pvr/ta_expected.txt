@@ -1,0 +1,27 @@
+fsm: 4abaa27a, the list's warning set 1
+rooms: verts 4194300 idx 491520 modtrig 589824 mv_clip 884736
+lists: 62b47af8 irq 0 binds df01a0f0 logs 0 811c9dc5
+run: b99b1523 irq 12203 binds e489eeb0 logs 0 811c9dc5
+run, walked, with states: 51839fb3 irq 24638 binds 104a1c10 logs 0 811c9dc5
+run, all addresses: 6816f2eb irq 27973 binds 9f238b50 logs 0 811c9dc5
+walk just full: room 2097850, used 556996, e472706c
+walk just full: loaded 1, saved again the same 1
+walk full: room 2097850, used 557028, 797db6fe
+walk full: loaded 1, saved again the same 1
+overflow: 6e2ab3fc irq 27982 binds 0fc15c85 logs 0 811c9dc5
+aged: room 2097850, used 306, 13090b69
+aged: loaded 1, saved again the same 1
+ages: room 2097850, used 634, 666167df
+ages: loaded 1, saved again the same 1
+room: room 2097850, used 1433708, 65f63a66
+room: loaded 1, saved again the same 0
+ages: 4c39e3e5 irq 27988 binds cc3ab59d logs 0 811c9dc5
+queue: 79b89e4d irq 27988 binds 5b213c18 logs 0 811c9dc5
+old states: 547b50e2 irq 27991 binds 71799d18 logs 0 811c9dc5
+bad states: 21fadacb irq 27991 binds 71799d18 logs 0 811c9dc5
+gpu pool: 39626171 irq 27997 binds ee4f5bb8 logs 0 811c9dc5
+rooms: verts 16777200 idx 1966080 modtrig 2359296 mv_clip 3538944
+naomi 2: 2d3a6d0f irq 29604 binds d3c166e0 logs 0 811c9dc5
+  log 2: TA processing: every frame of the GPU pool and the spare are in use: one is allocated
+gpu pool again: ed02db8f irq 29613 binds 45e1ff80 logs 1 4089f3c9
+dreamcast again: bb9fa71d irq 30617 binds 45e1ff80 logs 1 4089f3c9

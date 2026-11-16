@@ -98,9 +98,7 @@ extern u32 fb_w_cur;
 
 //./core/hw/pvr/spg.o
 
-//./core/hw/pvr/ta.o
-extern u8 ta_fsm[2049];	//[2048] stores the current state
-extern u32 ta_fsm_cl;
+//./core/hw/pvr/ta.o: ta_fsm, ta_fsm_cl (ta.h)
 
 //./core/hw/pvr/ta_vtx.o
 
@@ -185,7 +183,7 @@ void naomi_serial_state_before_v26(void);
  * header), and F355's printer status (sb_mem.c) */
 /* and since V28: a light gun's transfer owed its end at vblank-out
  * (spg.cpp) and how many renders ago each TA context was last used
- * (ta_ctx.cpp) */
+ * (ta_ctx.c) */
 void pvr_serialize_v28(void **data, unsigned int *total_size);
 bool pvr_unserialize_v28(void **data, unsigned int *total_size);
 void pvr_state_before_v28(void);

@@ -55,6 +55,9 @@ name: Headless
 # and the System SP's ROM board, its CompactFlash card and the game's
 # header on it, its I/O ports, EEPROM, flash and network board
 # (tools/naomi/systemsp_run.sh),
+# and the tile accelerator's front and its frames, blocks sent every way,
+# frames found, drawn, kept, aged and recycled, the GPU pool's slices and
+# states of every version (tools/pvr/ta_run.sh),
 # and the paths the core writes to, a
 # content's name of any length included (tools/paths/paths_run.sh), and the
 # HLE BIOS's GD-ROM transfers stopped at a fault and made again
@@ -78,6 +81,9 @@ on:
       - 'tools/threads/live_*'
       - 'tools/pvr/ta_index_test.*'
       - 'tools/pvr/ta_parse_bench.*'
+      - 'tools/pvr/ta_run.sh'
+      - 'tools/pvr/ta_test.c'
+      - 'tools/pvr/ta_expected.txt'
       - 'tools/sh4/reglist_test.*'
       - 'tools/sh4/node_pool_test.*'
       - 'tools/rend/band_pool_test.*'
@@ -113,6 +119,9 @@ on:
       - 'tools/threads/live_*'
       - 'tools/pvr/ta_index_test.*'
       - 'tools/pvr/ta_parse_bench.*'
+      - 'tools/pvr/ta_run.sh'
+      - 'tools/pvr/ta_test.c'
+      - 'tools/pvr/ta_expected.txt'
       - 'tools/sh4/reglist_test.*'
       - 'tools/sh4/node_pool_test.*'
       - 'tools/rend/band_pool_test.*'
@@ -284,6 +293,10 @@ jobs:
         run: |
           sh tools/naomi/systemsp_run.sh
           sh tools/naomi/systemsp_run.sh -fsanitize=address,undefined -fno-sanitize-recover=all
+      - name: The tile accelerator's front and its frames, blocks sent one at a time, many at once and made in place, lists begun, continued and ended, frames found, drawn, kept, aged and recycled, the GPU pool's slices, the control-word walk's tables and states of every version (and with the sanitizers)
+        run: |
+          sh tools/pvr/ta_run.sh
+          sh tools/pvr/ta_run.sh -fsanitize=address,undefined -fno-sanitize-recover=all
       - name: The paths the core writes to, a content's name of any length (and with the sanitizers)
         run: |
           sh tools/paths/paths_run.sh

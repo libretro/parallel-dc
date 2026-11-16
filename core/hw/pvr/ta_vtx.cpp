@@ -34,7 +34,6 @@ u32 pal_rev_16[64]={0};
 
 u32 decoded_colors[3][65536];
 
-extern rend_context vd_rc;
 extern int screen_height;
 
 #define TACALL DYNACALL
@@ -2288,6 +2287,20 @@ void vtxdec_init(void)
 
 static OnLoad ol_vtxdec(&vtxdec_init);
 
+const u32 *ta_type_lut(void)
+{
+	return TaTypeLut::instance().table;
+}
+
+/* The tile accelerator's state machine, and its lists' log, before the
+ * machine is made (ta.c, ta_ctx.c) */
+static void ta_load(void)
+{
+	ta_fsm_fill();
+	ta_ctx_log_init();
+}
+static OnLoad ol_ta(&ta_load);
+
 void FillBGP(TA_context* ctx)
 {
 	
@@ -2649,7 +2662,7 @@ void ta_select_passes(TA_context* ctx)
 /* ---- The header pass: a frame from its control words alone ----
  *
  * The CPU side of GPU-side TA processing. As the blocks come in, the
- * control-word walk (ta.cpp, ta_set_walk()) notes where each block that is
+ * control-word walk (ta.c, ta_set_walk()) notes where each block that is
  * not a vertex is (TA_context::walk). From that table and the parameters
  * themselves, this pass makes what the full parse above makes of the
  * frame but for the vertices: the polygon parameters with their texture

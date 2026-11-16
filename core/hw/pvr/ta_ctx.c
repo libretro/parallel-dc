@@ -1,3 +1,5 @@
+#include <stdlib.h>
+#include <string.h>
 #include "ta_ctx.h"
 #include "lockfree.h"
 #include "spg.h"
@@ -9,20 +11,238 @@
 #include <malloc.h>
 #endif
 
-extern u32 fskip;
 #include "Renderer_if.h"
 #include "pvr_mem.h"
 
-int frameskip=0;
-bool FrameSkipping=false;		// global switch to enable/disable frameskip
+static int frameskip=0;
+static bool FrameSkipping=false;		/* (a frame of two skipped: never on) */
 
 TA_context* ta_ctx;
 tad_context ta_tad;
 
+/*
+ * A frame's lists, made, emptied and given back
+ */
+void rend_context_clear(rend_context *r)
+{
+	ta_list_clear(&r->verts.l);
+	ta_list_clear(&r->idx.l);
+	ta_list_clear(&r->global_param_op.l);
+	ta_list_clear(&r->global_param_pt.l);
+	ta_list_clear(&r->global_param_tr.l);
+	ta_list_clear(&r->modtrig.l);
+	ta_list_clear(&r->global_param_mvo.l);
+	ta_list_clear(&r->global_param_mvo_tr.l);
+	ta_list_clear(&r->render_passes.l);
+	r->region_tile_count = 0;
+	r->gpu = false;
+	r->gpu_modtrig = 0;
+	ta_list_clear(&r->mv_clip.l);
+	ta_list_clear(&r->mv_clip_range.l);
+
+	r->Overrun = false;
+	r->fZ_min = 1000000.0f;
+	r->fZ_max = 1.0f;
+	r->isRenderFramebuffer = false;
+	r->clearFramebuffer = false;
+}
+
+bool tactx_all_passes(const TA_context *ctx)
+{
+	return ctx->rend.pass_first == 0 && ctx->rend.pass_last >= ctx->tad.render_pass_count;
+}
+
+void tactx_mark_rend(TA_context *ctx, u32 render_pass)
+{
+	ctx->rend.proc_start = render_pass == 0 ? ctx->tad.thd_root :
+		ctx->tad.render_passes[render_pass - 1];
+	ctx->rend.proc_end = render_pass == ctx->tad.render_pass_count ? tad_end(&ctx->tad) :
+		ctx->tad.render_passes[render_pass];
+}
+
+size_t tactx_vert_room(void)
+{
+	const size_t bytes = (size_t)4 * 1024 * 1024 * (ta_data_size() / TA_DATA_SIZE);	/* ~96k vertices a frame */
+	return bytes - bytes % sizeof(Vertex);
+}
+
+size_t tactx_idx_room(void)
+{
+	return (size_t)120 * 1024 * (ta_data_size() / TA_DATA_SIZE) * sizeof(u32);	/* (indices have the strips' joins) */
+}
+
+size_t tactx_modtrig_room(void)
+{
+	return (size_t)16384 * (ta_data_size() / TA_DATA_SIZE) * sizeof(ModTriangle);
+}
+
+size_t tactx_mv_clip_room(void)
+{
+	return tactx_modtrig_room() + tactx_modtrig_room() / sizeof(ModTriangle) / 2 * sizeof(ModTriangle);
+}
+
+void tactx_arena_rooms(size_t *room)
+{
+	room[PARSE_ARENA_VERTS] = tactx_vert_room();
+	room[PARSE_ARENA_IDX] = tactx_idx_room();
+	room[PARSE_ARENA_MODTRIG] = tactx_modtrig_room();
+	room[PARSE_ARENA_MV_CLIP] = tactx_mv_clip_room();
+}
+
+void tactx_arena_lists(TA_context *ctx, ta_list_t **lists)
+{
+	lists[PARSE_ARENA_VERTS] = &ctx->rend.verts.l;
+	lists[PARSE_ARENA_IDX] = &ctx->rend.idx.l;
+	lists[PARSE_ARENA_MODTRIG] = &ctx->rend.modtrig.l;
+	lists[PARSE_ARENA_MV_CLIP] = &ctx->rend.mv_clip.l;
+}
+
+/* A list of @count elements of @elem bytes */
+static void list_init(ta_list_t *l, int count, size_t elem, bool *overrun, const char *name)
+{
+	ta_list_init(l, (size_t)count * elem, elem, (unsigned char *)overrun, name);
+}
+
+bool tactx_alloc_lists(TA_context *ctx, u8 *data, int slot)
+{
+	rend_context *r = &ctx->rend;
+	unsigned scale;
+	unsigned modtrig_size;
+	ctx->data_size = ta_data_size();
+	scale = ctx->data_size / TA_DATA_SIZE;
+	modtrig_size = (unsigned)(tactx_modtrig_room() / sizeof(ModTriangle));
+	ctx->pool = data != NULL ? slot : -1;
+	ctx->gpu_serial = 0;
+	tad_reset(&ctx->tad, data != NULL ? data : (u8*)OS_aligned_malloc(32, ctx->data_size));
+	ctx->regs = (u8*)calloc(1, pvr_RegSize);
+
+	ta_list_init(&r->verts.l, tactx_vert_room(), sizeof(Vertex), (unsigned char *)&r->Overrun, "verts");
+	ta_list_init(&r->idx.l, tactx_idx_room(), sizeof(u32), (unsigned char *)&r->Overrun, "idx");
+	list_init(&r->global_param_op.l, 16384 * scale, sizeof(PolyParam), &r->Overrun, "global_param_op");
+	list_init(&r->global_param_pt.l, 5120 * scale, sizeof(PolyParam), &r->Overrun, "global_param_pt");
+	list_init(&r->global_param_mvo.l, 4096 * scale, sizeof(ModifierVolumeParam), &r->Overrun, "global_param_mvo");
+	list_init(&r->global_param_mvo_tr.l, 4096 * scale, sizeof(ModifierVolumeParam), &r->Overrun, "global_param_mvo_tr");
+#if STRIPS_AS_PPARAMS
+	/* That makes a lot of polyparams but this is required for proper sorting...
+	 * Rez uses more than 8192 translucent polygons sometimes */
+	list_init(&r->global_param_tr.l, 10240 * scale, sizeof(PolyParam), &r->Overrun, "global_param_tr");
+#else
+	list_init(&r->global_param_tr.l, 8192 * scale, sizeof(PolyParam), &r->Overrun, "global_param_tr");
+#endif
+
+	list_init(&r->modtrig.l, modtrig_size, sizeof(ModTriangle), &r->Overrun, "modtrig");
+	/* (room for a third of them as fans of three; its own flag when full, never the frame's) */
+	list_init(&r->mv_clip.l, modtrig_size + modtrig_size / 2, sizeof(ModTriangle), &r->mv_clip_full, NULL);
+	list_init(&r->mv_clip_range.l, 2 * 2 * 4096 * scale, sizeof(u32), &r->mv_clip_full, NULL);
+
+	list_init(&r->render_passes.l, sizeof(RenderPass) * 10, sizeof(RenderPass), &r->Overrun, "render_passes");	/* 10 render passes */
+	r->region_tiles = (u32 *)malloc(REGION_TILES_MAX * sizeof(u32));
+	r->region_tile_count = 0;
+	{
+		/* (each list's room, in elements) */
+		u32 polys[3];
+		u32 at = 0;
+		int i;
+		polys[0] = (u32)((r->global_param_op.l.end - r->global_param_op.l.base) / sizeof(PolyParam));
+		polys[1] = (u32)((r->global_param_pt.l.end - r->global_param_pt.l.base) / sizeof(PolyParam));
+		polys[2] = (u32)((r->global_param_tr.l.end - r->global_param_tr.l.base) / sizeof(PolyParam));
+		r->strip_ok_words = (u32 *)malloc(((polys[0] + 31) / 32 + (polys[1] + 31) / 32 + (polys[2] + 31) / 32)
+				* sizeof(u32));
+		for (i = 0; i < 3; i++)
+		{
+			ta_strip_ok_bind(&r->strip_ok[i], r->strip_ok_words != NULL ? r->strip_ok_words + at : NULL,
+					r->strip_ok_words != NULL ? polys[i] : 0);
+			at += (polys[i] + 31) / 32;
+		}
+	}
+	ctx->walk_size = TA_WALK_MAX * scale;
+	ctx->walk = (u32 *)malloc(ctx->walk_size * sizeof(u32));
+
+	if (!ctx->tad.thd_root || !ctx->regs || !r->verts.l.base || !r->idx.l.base
+			|| !r->global_param_op.l.base || !r->global_param_pt.l.base
+			|| !r->global_param_mvo.l.base || !r->global_param_mvo_tr.l.base
+			|| !r->global_param_tr.l.base || !r->modtrig.l.base
+			|| !r->mv_clip.l.base || !r->mv_clip_range.l.base
+			|| !r->render_passes.l.base || !r->region_tiles || !r->strip_ok_words || !ctx->walk)
+	{
+		tactx_free_lists(ctx);
+		tad_reset(&ctx->tad, NULL);
+		ctx->regs = NULL;
+		ctx->data_size = 0;
+		return false;
+	}
+
+	tactx_reset_lists(ctx);
+	return true;
+}
+
+void tactx_reset_lists(TA_context *ctx)
+{
+	tad_clear(&ctx->tad);
+	rend_context_clear(&ctx->rend);
+	ctx->rend.pass_first = 0;
+	ctx->rend.pass_last = 0xFF;
+	ctx->rend.keep = false;
+	ctx->drawn = false;
+	ctx->rend.proc_end = ctx->rend.proc_start = ctx->tad.thd_root;
+	ctx->walk_count = TA_WALK_INVALID;
+	ctx->walk_restart = false;
+}
+
+void tactx_free_lists(TA_context *ctx)
+{
+	rend_context *r = &ctx->rend;
+	int i;
+	if (ctx->pool < 0)
+		OS_aligned_free(ctx->tad.thd_root);
+	ctx->pool = -1;
+	free(ctx->regs);
+	ta_list_free(&r->verts.l);
+	ta_list_free(&r->idx.l);
+	ta_list_free(&r->global_param_op.l);
+	ta_list_free(&r->global_param_pt.l);
+	ta_list_free(&r->global_param_tr.l);
+	ta_list_free(&r->modtrig.l);
+	ta_list_free(&r->mv_clip.l);
+	ta_list_free(&r->mv_clip_range.l);
+	ta_list_free(&r->global_param_mvo.l);
+	ta_list_free(&r->global_param_mvo_tr.l);
+	ta_list_free(&r->render_passes.l);
+	free(r->region_tiles);
+	r->region_tiles = NULL;
+	free(r->strip_ok_words);
+	r->strip_ok_words = NULL;
+	for (i = 0; i < 3; i++)
+		ta_strip_ok_bind(&r->strip_ok[i], NULL, 0);
+	free(ctx->walk);
+	ctx->walk = NULL;
+}
+
+/* A new context, all of it zero, its lists made; NULL without the memory
+ * for it (and @data, @slot as tactx_alloc_lists() takes them) */
+static TA_context *tactx_new(u8 *data, int slot)
+{
+	TA_context *ctx = (TA_context *)calloc(1, sizeof(TA_context));
+	if (ctx == NULL)
+		return NULL;
+	if (!tactx_alloc_lists(ctx, data, slot))
+	{
+		free(ctx);
+		return NULL;
+	}
+	return ctx;
+}
+
+static void tactx_delete(TA_context *ctx)
+{
+	tactx_free_lists(ctx);
+	free(ctx);
+}
+
 TA_context*  vd_ctx;
 rend_context vd_rc;
 
-// helper for 32 byte aligned memory allocation
+/* helper for 32 byte aligned memory allocation */
 void* OS_aligned_malloc(size_t align, size_t size)
 {
 #ifdef __MINGW32__
@@ -38,7 +258,7 @@ void* OS_aligned_malloc(size_t align, size_t size)
 #endif
 }
 
-// helper for 32 byte aligned memory de-allocation
+/* helper for 32 byte aligned memory de-allocation */
 void OS_aligned_free(void *ptr)
 {
 #ifdef __MINGW32__
@@ -57,8 +277,8 @@ void SetCurrentTARC(u32 addr)
 		if (ta_ctx)
 			SetCurrentTARC(TACTX_NONE);
 
-      verify(ta_ctx == 0);
-		//set new context
+		verify(ta_ctx == 0);
+		/* set new context */
 		ta_ctx = tactx_Find(addr,true);
 
 		/* No memory for it: there is no frame being written, and what the
@@ -66,18 +286,18 @@ void SetCurrentTARC(u32 addr)
 		if (ta_ctx == NULL)
 			return;
 
-		//copy cached params
+		/* copy cached params */
 		ta_tad = ta_ctx->tad;
 	}
 	else
 	{
-		//Flush cache to context
-      verify(ta_ctx != 0);
+		/* Flush cache to context */
+		verify(ta_ctx != 0);
 		ta_ctx->tad=ta_tad;
 		
-		//clear context
+		/* clear context */
 		ta_ctx=0;
-      ta_tad.Reset(0);
+		tad_reset(&ta_tad, NULL);
 	}
 }
 
@@ -138,11 +358,42 @@ static void ta_list_log(const char *name)
 {
 	WARN_LOG(PVR, "List overrun for list %s\n", name);
 }
-static struct TaListLog { TaListLog() { ta_list_warn = ta_list_log; } } ta_list_log_set;
+
+void ta_ctx_log_init(void)
+{
+	ta_list_warn = ta_list_log;
+}
 
 /* Spare contexts. Both threads give them back; a slot hands each one to
  * a single taker. */
-static cSlotCache<TA_context, 3> ctx_pool;
+#define CTX_POOL_SLOTS 3
+static retro_atomic_ptr_t ctx_pool[CTX_POOL_SLOTS];
+
+/* NULL when there is nothing to reuse */
+static TA_context *ctx_pool_take(void)
+{
+	int i;
+	for (i = 0; i < CTX_POOL_SLOTS; i++)
+	{
+		if (retro_atomic_load_relaxed_ptr(&ctx_pool[i]) != NULL)
+		{
+			void *p = retro_atomic_exchange_ptr(&ctx_pool[i], NULL);
+			if (p != NULL)
+				return (TA_context *)p;
+		}
+	}
+	return NULL;
+}
+
+/* false when every slot is taken: it stays the caller's */
+static bool ctx_pool_put(TA_context *p)
+{
+	int i;
+	for (i = 0; i < CTX_POOL_SLOTS; i++)
+		if (retro_atomic_cas_ptr(&ctx_pool[i], NULL, p))
+			return true;
+	return false;
+}
 /* The contexts being written, by the address the game gives each: a
  * handful, looked up a few times a frame. An address is a megabyte
  * (TA_CURRENT_CTX), so there are never more than sixteen. */
@@ -178,7 +429,8 @@ static TA_context *gpu_pool_take(void)
 {
 	const int n = retro_atomic_load_acquire_int(&gpu_pool_count);
 	const u32 done = (u32)retro_atomic_load_acquire_int(&gpu_done_serial);
-	for (int i = 0; i < n; i++)
+	int i;
+	for (i = 0; i < n; i++)
 	{
 		const int st = retro_atomic_load_acquire_int(&gpu_pool_state[i]);
 		TA_context *ctx = gpu_pool[i];
@@ -199,17 +451,17 @@ void tactx_gpu_done(u32 serial)
 
 bool tactx_gpu_pool_attach(u8 *base, u32 slice, u32 count)
 {
+	u32 i;
 	tactx_gpu_pool_detach();
 	if (count > TA_GPU_POOL_MAX)
 		count = TA_GPU_POOL_MAX;
 	if (slice < ta_data_size())
 		return false;
-	for (u32 i = 0; i < count; i++)
+	for (i = 0; i < count; i++)
 	{
-		TA_context *ctx = new TA_context();
-		if (!ctx->Alloc(base + (size_t)i * slice, (int)i))
+		TA_context *ctx = tactx_new(base + (size_t)i * slice, (int)i);
+		if (ctx == NULL)
 		{
-			delete ctx;
 			count = i;
 			break;
 		}
@@ -221,27 +473,16 @@ bool tactx_gpu_pool_attach(u8 *base, u32 slice, u32 count)
 	 * spares, so that it is not made while a game runs */
 	if (count != 0)
 	{
-		TA_context *spare = ctx_pool.Take();
+		TA_context *spare = ctx_pool_take();
 		if (spare != NULL && spare->data_size != ta_data_size())
 		{
-			spare->Free();
-			delete spare;
+			tactx_delete(spare);
 			spare = NULL;
 		}
 		if (spare == NULL)
-		{
-			spare = new TA_context();
-			if (!spare->Alloc())
-			{
-				delete spare;
-				spare = NULL;
-			}
-		}
-		if (spare != NULL && !ctx_pool.Put(spare))
-		{
-			spare->Free();
-			delete spare;
-		}
+			spare = tactx_new(NULL, -1);
+		if (spare != NULL && !ctx_pool_put(spare))
+			tactx_delete(spare);
 	}
 	retro_atomic_store_relaxed_int(&gpu_pool_short, 0);
 	retro_atomic_store_relaxed_int(&gpu_pool_allocated, 0);
@@ -258,19 +499,23 @@ void tactx_gpu_pool_stats(u32 *short_frames, u32 *allocated)
 /* @ctx's data moved to memory of its own, @from its old place */
 static void tactx_rebase(TA_context *ctx, u8 *to)
 {
-	tad_context *tads[2] = { &ctx->tad, ctx == ta_ctx ? &ta_tad : NULL };
+	tad_context *tads[2];
 	const u8 *from = ctx->tad.thd_root;
-	// (the one being written has its pointers in ta_tad)
-	const tad_context &live = ctx == ta_ctx ? ta_tad : ctx->tad;
-	memcpy(to, from, live.End() - from);
-	for (int t = 0; t < 2; t++)
+	/* (the one being written has its pointers in ta_tad) */
+	const tad_context *live = ctx == ta_ctx ? &ta_tad : &ctx->tad;
+	int t;
+	tads[0] = &ctx->tad;
+	tads[1] = ctx == ta_ctx ? &ta_tad : NULL;
+	memcpy(to, from, tad_end(live) - from);
+	for (t = 0; t < 2; t++)
 	{
 		tad_context *tad = tads[t];
+		u32 p;
 		if (tad == NULL)
 			continue;
 		tad->thd_data = to + (tad->thd_data - from);
 		tad->thd_old_data = to + (tad->thd_old_data - from);
-		for (u32 p = 0; p < sizeof(tad->render_passes) / sizeof(tad->render_passes[0]); p++)
+		for (p = 0; p < sizeof(tad->render_passes) / sizeof(tad->render_passes[0]); p++)
 			if (tad->render_passes[p] >= from && tad->render_passes[p] <= from + ctx->data_size)
 				tad->render_passes[p] = to + (tad->render_passes[p] - from);
 		tad->thd_root = to;
@@ -280,8 +525,9 @@ static void tactx_rebase(TA_context *ctx, u8 *to)
 void tactx_gpu_pool_detach(void)
 {
 	const int n = retro_atomic_load_acquire_int(&gpu_pool_count);
+	int i;
 	retro_atomic_store_release_int(&gpu_pool_count, 0);
-	for (int i = 0; i < n; i++)
+	for (i = 0; i < n; i++)
 	{
 		TA_context *ctx = gpu_pool[i];
 		gpu_pool[i] = NULL;
@@ -297,34 +543,33 @@ void tactx_gpu_pool_detach(void)
 				ctx->gpu_serial = 0;
 				continue;
 			}
-			// no memory: what it had is lost, and it is empty
+			/* no memory: what it had is lost, and it is empty */
 			WARN_LOG(PVR, "Out of memory for a tile accelerator frame: its lists are dropped\n");
 			ctx->pool = -1;
-			ctx->tad.Reset((u8 *)OS_aligned_malloc(32, ctx->data_size));
+			tad_reset(&ctx->tad, (u8 *)OS_aligned_malloc(32, ctx->data_size));
 			if (ctx == ta_ctx)
 				ta_tad = ctx->tad;
 			continue;
 		}
-		ctx->Free();
-		delete ctx;
+		tactx_delete(ctx);
 	}
 }
 
 TA_context* tactx_Alloc(void)
 {
 	TA_context* rv = gpu_pool_take();
+	bool pooled;
 	if (rv != NULL)
 		return rv;
-	const bool pooled = retro_atomic_load_acquire_int(&gpu_pool_count) != 0;
+	pooled = retro_atomic_load_acquire_int(&gpu_pool_count) != 0;
 	if (pooled)
 		retro_atomic_inc_int(&gpu_pool_short);
-	rv = ctx_pool.Take();
+	rv = ctx_pool_take();
 
 	if (rv && rv->data_size != ta_data_size())
 	{
-		// kept from a machine whose frames are another size
-		rv->Free();
-		delete rv;
+		/* kept from a machine whose frames are another size */
+		tactx_delete(rv);
 		rv = NULL;
 	}
 	if (!rv)
@@ -334,13 +579,9 @@ TA_context* tactx_Alloc(void)
        * comes to; counted, and said once) */
       if (pooled && retro_atomic_fetch_add_int(&gpu_pool_allocated, 1) == 0)
          WARN_LOG(PVR, "TA processing: every frame of the GPU pool and the spare are in use: one is allocated\n");
-      rv = new TA_context();
-      if (!rv->Alloc())
-      {
+      rv = tactx_new(NULL, -1);
+      if (rv == NULL)
          WARN_LOG(PVR, "Out of memory for a tile accelerator frame: its lists are dropped\n");
-         delete rv;
-         rv = NULL;
-      }
    }
 
    return rv;
@@ -348,37 +589,35 @@ TA_context* tactx_Alloc(void)
 
 void tactx_Recycle(TA_context* poped_ctx)
 {
-   poped_ctx->Reset();
+   tactx_reset_lists(poped_ctx);
    if (poped_ctx->pool >= 0)
    {
       retro_atomic_store_release_int(&gpu_pool_state[poped_ctx->pool],
             poped_ctx->gpu_serial != 0 ? POOL_RETIRED : POOL_FREE);
       return;
    }
-   if (!ctx_pool.Put(poped_ctx))
-   {
-      poped_ctx->Free();
-      delete poped_ctx;
-   }
+   if (!ctx_pool_put(poped_ctx))
+      tactx_delete(poped_ctx);
 }
 
 TA_context* tactx_Find(u32 addr, bool allocnew)
 {
    TA_context *old_ctx = 0;
+   unsigned i;
 
-   for (unsigned i=0; i<ctx_count; i++)
+   for (i=0; i<ctx_count; i++)
    {
       if (ctx_list[i]->Address==addr)
       {
          ctx_list[i]->lastFrameUsed = tactx_frames;
          if (ctx_list[i]->data_size != ta_data_size())
          {
-            // left by a machine whose frames are another size
+            /* left by a machine whose frames are another size */
             TA_context *ctx = ctx_list[i];
-            ctx->Free();
-            if (!ctx->Alloc())
+            tactx_free_lists(ctx);
+            if (!tactx_alloc_lists(ctx, NULL, -1))
             {
-               delete ctx;
+               free(ctx);
                ctx_count--;
                memmove(&ctx_list[i], &ctx_list[i + 1], (ctx_count - i) * sizeof(*ctx_list));
                return 0;
@@ -396,8 +635,8 @@ TA_context* tactx_Find(u32 addr, bool allocnew)
       TA_context *rv;
       if (old_ctx)
       {
-         // what the game sent to it long ago and never drew is dropped
-         old_ctx->Reset();
+         /* what the game sent to it long ago and never drew is dropped */
+         tactx_reset_lists(old_ctx);
          old_ctx->Address = addr;
          old_ctx->lastFrameUsed = tactx_frames;
          return old_ctx;
@@ -419,7 +658,8 @@ TA_context* tactx_Find(u32 addr, bool allocnew)
 
 void tactx_walk_forget(void)
 {
-	for (unsigned i = 0; i < ctx_count; i++)
+	unsigned i;
+	for (i = 0; i < ctx_count; i++)
 	{
 		ctx_list[i]->walk_count = TA_WALK_INVALID;
 		ctx_list[i]->walk_restart = false;
@@ -428,20 +668,21 @@ void tactx_walk_forget(void)
 
 void tactx_Drawn(TA_context* ctx)
 {
-	// (one left in the list is still the list's)
+	/* (one left in the list is still the list's) */
 	if (!ctx->rend.keep)
 		tactx_Recycle(ctx);
 }
 
 TA_context* tactx_Get(u32 addr)
 {
-	// (called once for each render the game starts)
+	unsigned i;
+	/* (called once for each render the game starts) */
 	tactx_frames++;
-	for (unsigned i = 0; i < ctx_count; i++)
+	for (i = 0; i < ctx_count; i++)
 		if (ctx_list[i]->Address == addr)
 		{
 			TA_context *ctx = ctx_list[i];
-			// (the one being written has its pointers out, in ta_tad)
+			/* (the one being written has its pointers out, in ta_tad) */
 			if (ctx == ta_ctx)
 				ctx->tad = ta_tad;
 			return ctx;
@@ -451,7 +692,8 @@ TA_context* tactx_Get(u32 addr)
 
 void tactx_Remove(TA_context* ctx)
 {
-	for (unsigned i = 0; i < ctx_count; i++)
+	unsigned i;
+	for (i = 0; i < ctx_count; i++)
 		if (ctx_list[i] == ctx)
 		{
 			if (ta_ctx == ctx)
@@ -464,14 +706,15 @@ void tactx_Remove(TA_context* ctx)
 
 void tactx_Restart(TA_context* ctx)
 {
-	for (unsigned i = 0; i < ctx_count; i++)
+	unsigned i;
+	for (i = 0; i < ctx_count; i++)
 		if (ctx_list[i] == ctx)
 		{
 			memmove(&ctx_list[i], &ctx_list[i + 1], (ctx_count - 1 - i) * sizeof(*ctx_list));
 			ctx_list[ctx_count - 1] = ctx;
 			break;
 		}
-	ta_tad.Clear();
+	tad_clear(&ta_tad);
 	ctx->walk_count = TA_WALK_INVALID;
 	ctx->walk_restart = false;
 	ctx->drawn = false;
@@ -488,7 +731,7 @@ void tactx_Reset(void)
 		tactx_Recycle(ctx_list[--ctx_count]);
 }
 
-const u32 NULL_CONTEXT = ~0u;
+#define NULL_CONTEXT (~0u)
 
 /* Past @size bytes of a state that there is nowhere to put. */
 static void skip_state_bytes(void **data, unsigned int *total_size, u32 size)
@@ -528,17 +771,19 @@ void SerializeTAContext(void **data, unsigned int *total_size)
 	}
 	if (ta_ctx == NULL)
 	{
-		LIBRETRO_S(NULL_CONTEXT);
+		const u32 null_context = NULL_CONTEXT;
+		LIBRETRO_S(null_context);
 		return;
 	}
 	LIBRETRO_S(ta_ctx->Address);
-	LIBRETRO_S(none);		// bytes of data
-	LIBRETRO_S(none);		// lists continued
+	LIBRETRO_S(none);		/* bytes of data */
+	LIBRETRO_S(none);		/* lists continued */
 }
 
 void UnserializeTAContext(void **data, unsigned int *total_size, serialize_version_enum version)
 {
 	u32 address;
+	u32 size;
 	LIBRETRO_US(address);
 	old_state_addr = address;
 	if (address == NULL_CONTEXT)
@@ -548,11 +793,10 @@ void UnserializeTAContext(void **data, unsigned int *total_size, serialize_versi
 	address &= 0xF00000;
 	old_state_addr = address;
 	SetCurrentTARC(address);
-	u32 size;
 	LIBRETRO_US(size);
 	if (ta_ctx == NULL)
 	{
-		// (no memory for the frame: what the state has of it is passed over)
+		/* (no memory for the frame: what the state has of it is passed over) */
 		skip_state_bytes(data, total_size, size);
 		if (version >= V12)
 		{
@@ -570,10 +814,10 @@ void UnserializeTAContext(void **data, unsigned int *total_size, serialize_versi
 	if (size > ta_ctx->data_size)
 		size = ta_ctx->data_size;
 	LIBRETRO_USA(ta_ctx->tad.thd_root, size);
-	// (data is in 32-byte blocks, and is copied to where this points as aligned ones)
+	/* (data is in 32-byte blocks, and is copied to where this points as aligned ones) */
 	size &= ~31u;
 	ta_ctx->tad.thd_data = ta_ctx->tad.thd_root + size;
-	ta_ctx->walk_count = TA_WALK_INVALID;	// (the data is not what was walked)
+	ta_ctx->walk_count = TA_WALK_INVALID;	/* (the data is not what was walked) */
    if (version >= V12)
 	{
 		/* render_passes is a fixed [10] array of which the last is never
@@ -583,11 +827,12 @@ void UnserializeTAContext(void **data, unsigned int *total_size, serialize_versi
 		const u32 max_passes = (u32)(sizeof(ta_ctx->tad.render_passes)
 			/ sizeof(ta_ctx->tad.render_passes[0])) - 1;
 		u32 count;
+		u32 i;
 		LIBRETRO_US(count);
 		if (count > max_passes + 1)
 			count = max_passes + 1;
 		ta_ctx->tad.render_pass_count = count > max_passes ? max_passes : count;
-		for (u32 i = 0; i < count; i++)
+		for (i = 0; i < count; i++)
 		{
 			u32 offset;
 			LIBRETRO_US(offset);
@@ -671,20 +916,21 @@ void pvr_serialize_v21(void **data, unsigned int *total_size)
 	u8 current = 0xFF;
 	u32 room = TA_STATE_MAX;
 	unsigned i;
+	const TA_context *saved[TA_STATE_CONTEXTS];
+	u8 writing;
 
 	spg_gun_serialize(data, total_size);
 	LIBRETRO_S(yuv_index);
 
 	if (*data == NULL)
 	{
-		// how much room a state needs: as much as one ever does
+		/* how much room a state needs: as much as one ever does */
 		*total_size += 2 + TA_STATE_CONTEXTS * (1 + 4 + 1 + 4 * TA_STATE_PASSES) + TA_STATE_MAX;
 		return;
 	}
 
 	/* The frames being written, then the ones drawn and kept, which come
 	 * back as they were if they fit */
-	const TA_context *saved[TA_STATE_CONTEXTS];
 	for (i = 0; i < ctx_count && count < TA_STATE_CONTEXTS; i++)
 	{
 		if (ctx_list[i]->drawn)
@@ -693,13 +939,14 @@ void pvr_serialize_v21(void **data, unsigned int *total_size)
 			current = count;
 		saved[count++] = ctx_list[i];
 	}
-	const u8 writing = count;
+	writing = count;
 	for (i = 0; i < ctx_count && count < TA_STATE_CONTEXTS; i++)
 	{
 		const TA_context *ctx = ctx_list[i];
+		u32 size;
 		if (!ctx->drawn)
 			continue;
-		const u32 size = (u32)(ctx->tad.thd_data - ctx->tad.thd_root) & ~31u;
+		size = (u32)(ctx->tad.thd_data - ctx->tad.thd_root) & ~31u;
 		if (size > ctx->data_size)
 			continue;
 		saved[count++] = ctx;
@@ -711,9 +958,9 @@ void pvr_serialize_v21(void **data, unsigned int *total_size)
 		for (n = 0; n < writing; n++)
 		{
 			const TA_context *ctx = saved[n];
-			const tad_context& tad = ctx == ta_ctx ? ta_tad : ctx->tad;
-			const bool restarted = tad.thd_data == tad.thd_root;
-			const u32 size = (u32)((restarted ? tad.thd_old_data : tad.thd_data) - tad.thd_root) & ~31u;
+			const tad_context *tad = ctx == ta_ctx ? &ta_tad : &ctx->tad;
+			const bool restarted = tad->thd_data == tad->thd_root;
+			const u32 size = (u32)((restarted ? tad->thd_old_data : tad->thd_data) - tad->thd_root) & ~31u;
 			if (size <= left && size <= ctx->data_size)
 				left -= size;
 		}
@@ -733,13 +980,14 @@ void pvr_serialize_v21(void **data, unsigned int *total_size)
 	{
 		const TA_context *ctx = saved[i];
 		const bool drawn = i >= writing;
-		// (the one being written to has its pointers out, in ta_tad)
-		const tad_context& tad = ctx == ta_ctx ? ta_tad : ctx->tad;
-		const bool restarted = !drawn && tad.thd_data == tad.thd_root;
+		/* (the one being written to has its pointers out, in ta_tad) */
+		const tad_context *tad = ctx == ta_ctx ? &ta_tad : &ctx->tad;
+		const bool restarted = !drawn && tad->thd_data == tad->thd_root;
 		u8 key = (u8)(ctx->Address >> 20);
-		u32 size = (u32)((restarted ? tad.thd_old_data : tad.thd_data) - tad.thd_root) & ~31u;
-		u8 passes = tad.render_pass_count > TA_STATE_PASSES ? TA_STATE_PASSES : (u8)tad.render_pass_count;
+		u32 size = (u32)((restarted ? tad->thd_old_data : tad->thd_data) - tad->thd_root) & ~31u;
+		u8 passes = tad->render_pass_count > TA_STATE_PASSES ? TA_STATE_PASSES : (u8)tad->render_pass_count;
 		u32 word;
+		u32 pass;
 
 		if (size > room || size > ctx->data_size)
 		{
@@ -752,12 +1000,12 @@ void pvr_serialize_v21(void **data, unsigned int *total_size)
 		LIBRETRO_S(key);
 		LIBRETRO_S(word);
 		LIBRETRO_S(passes);
-		for (u32 pass = 0; pass < passes; pass++)
+		for (pass = 0; pass < passes; pass++)
 		{
-			u32 offset = (u32)(tad.render_passes[pass] - tad.thd_root);
+			u32 offset = (u32)(tad->render_passes[pass] - tad->thd_root);
 			LIBRETRO_S(offset);
 		}
-		LIBRETRO_SA(tad.thd_root, size);
+		LIBRETRO_SA(tad->thd_root, size);
 	}
 }
 
@@ -769,29 +1017,32 @@ bool pvr_unserialize_v21(void **data, unsigned int *total_size)
 	u8 count;
 	u8 current;
 	u32 current_addr = TACTX_NONE;
+	u32 i;
 
 	spg_gun_unserialize(data, total_size);
 	LIBRETRO_US(yuv_index);
-	// a macroblock is 384 bytes, received 32 at a time
+	/* a macroblock is 384 bytes, received 32 at a time */
 	YUV_index = yuv_index < 384 ? yuv_index & ~31u : 0;
 
 	LIBRETRO_US(count);
 	LIBRETRO_US(current);
 
-	// the frames of before the load are not the state's
+	/* the frames of before the load are not the state's */
 	tactx_Reset();
 	old_state_addr = NULL_CONTEXT;
 
 	if (count > TA_STATE_CONTEXTS)
 		return false;
 
-	for (u32 i = 0; i < count; i++)
+	for (i = 0; i < count; i++)
 	{
 		u8 key;
 		u32 word;
 		u8 passes;
 		u32 size;
 		TA_context *ctx;
+		tad_context *tad;
+		u32 pass;
 
 		LIBRETRO_US(key);
 		LIBRETRO_US(word);
@@ -803,16 +1054,16 @@ bool pvr_unserialize_v21(void **data, unsigned int *total_size)
 			return false;
 		if (ctx == NULL)
 		{
-			// (no memory for the frame: it is passed over, and not written to)
+			/* (no memory for the frame: it is passed over, and not written to) */
 			skip_state_bytes(data, total_size, passes * 4 + size);
 			continue;
 		}
 		if (size > ctx->data_size)
 			return false;
 
-		tad_context& tad = ctx->tad;
-		tad.render_pass_count = passes > TA_STATE_PASSES ? TA_STATE_PASSES : passes;
-		for (u32 pass = 0; pass < passes; pass++)
+		tad = &ctx->tad;
+		tad->render_pass_count = passes > TA_STATE_PASSES ? TA_STATE_PASSES : passes;
+		for (pass = 0; pass < passes; pass++)
 		{
 			u32 offset;
 			LIBRETRO_US(offset);
@@ -821,26 +1072,26 @@ bool pvr_unserialize_v21(void **data, unsigned int *total_size)
 			offset &= ~31u;
 			if (offset > size)
 				offset = size;
-			tad.render_passes[pass] = tad.thd_root + offset;
+			tad->render_passes[pass] = tad->thd_root + offset;
 		}
-		LIBRETRO_USA(tad.thd_root, size);
+		LIBRETRO_USA(tad->thd_root, size);
 		if (word & 1)
 		{
-			tad.thd_data     = tad.thd_root;
-			tad.thd_old_data = tad.thd_root + size;
+			tad->thd_data     = tad->thd_root;
+			tad->thd_old_data = tad->thd_root + size;
 		}
 		else
 		{
-			tad.thd_data     = tad.thd_root + size;
-			tad.thd_old_data = tad.thd_root;
+			tad->thd_data     = tad->thd_root + size;
+			tad->thd_old_data = tad->thd_root;
 		}
 
-		// the control-word walk's table of the data, which the state does not have
+		/* the control-word walk's table of the data, which the state does not have */
 		ta_walk_rebuild(ctx);
 
 		if (word & 2)
 		{
-			// drawn and kept: there for another render, not written to
+			/* drawn and kept: there for another render, not written to */
 			ctx->drawn = true;
 			ctx->rend.keep = true;
 			continue;
@@ -895,10 +1146,11 @@ void pvr_state_before_v21(void)
 void pvr_serialize_v28(void **data, unsigned int *total_size)
 {
 	u8 ages[TA_STATE_CONTEXTS];
+	unsigned i;
 
 	spg_gun_serialize_v28(data, total_size);
 	memset(ages, 0, sizeof(ages));
-	for (unsigned i = 0; i < ctx_count; i++)
+	for (i = 0; i < ctx_count; i++)
 	{
 		const u32 age = tactx_frames - ctx_list[i]->lastFrameUsed;
 		ages[(ctx_list[i]->Address >> 20) & 15] = age > TA_CONTEXT_MAX_AGE ? TA_CONTEXT_MAX_AGE + 1 : (u8)age;
@@ -909,10 +1161,11 @@ void pvr_serialize_v28(void **data, unsigned int *total_size)
 bool pvr_unserialize_v28(void **data, unsigned int *total_size)
 {
 	u8 ages[TA_STATE_CONTEXTS];
+	unsigned i;
 
 	spg_gun_unserialize_v28(data, total_size);
 	LIBRETRO_USA(ages, TA_STATE_CONTEXTS);
-	for (unsigned i = 0; i < ctx_count; i++)
+	for (i = 0; i < ctx_count; i++)
 	{
 		u32 age = ages[(ctx_list[i]->Address >> 20) & 15];
 		if (age > TA_CONTEXT_MAX_AGE)
@@ -926,7 +1179,8 @@ bool pvr_unserialize_v28(void **data, unsigned int *total_size)
  * transfer under way is reported at the next vertical blank out. */
 void pvr_state_before_v28(void)
 {
+	unsigned i;
 	spg_gun_before_v28();
-	for (unsigned i = 0; i < ctx_count; i++)
+	for (i = 0; i < ctx_count; i++)
 		ctx_list[i]->lastFrameUsed = tactx_frames;
 }
