@@ -1160,7 +1160,7 @@ int naomi_cart_GetSystemType(const char* file)
 
    if (Games[gameid].cart_type == AW)
 	  return DC_PLATFORM_ATOMISWAVE;
-   /* a System SP runs as a NAOMI, with its own ROM board (systemsp.h) */
+   /* a System SP runs as a NAOMI, with its own ROM board (systemsp.c) */
    if (Games[gameid].bios != NULL && !strcmp(Games[gameid].bios, "segasp"))
 	  naomi_cart_systemsp = true;
    /* a NAOMI 2 game is one whose BIOS is the NAOMI 2's */

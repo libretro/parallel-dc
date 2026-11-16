@@ -49,6 +49,9 @@ name: Headless
 # flat images and lists of pieces (tools/naomi/loader_run.sh),
 # and the NAOMI's board, its serial EEPROMs, cartridge transfer,
 # AtomisWave registers and devices (tools/naomi/board_run.sh),
+# and the System SP's ROM board, its CompactFlash card and the game's
+# header on it, its I/O ports, EEPROM, flash and network board
+# (tools/naomi/systemsp_run.sh),
 # and the paths the core writes to, a
 # content's name of any length included (tools/paths/paths_run.sh), and the
 # HLE BIOS's GD-ROM transfers stopped at a fault and made again
@@ -274,6 +277,10 @@ jobs:
         run: |
           sh tools/naomi/board_run.sh
           sh tools/naomi/board_run.sh -fsanitize=address,undefined -fno-sanitize-recover=all
+      - name: The System SP's ROM board, its CompactFlash card read and decrypted, the game's header on it or in ROM, each cabinet's I/O ports, the serial EEPROM, the flash's commands, the network board and its part of a state (and with the sanitizers)
+        run: |
+          sh tools/naomi/systemsp_run.sh
+          sh tools/naomi/systemsp_run.sh -fsanitize=address,undefined -fno-sanitize-recover=all
       - name: The paths the core writes to, a content's name of any length (and with the sanitizers)
         run: |
           sh tools/paths/paths_run.sh

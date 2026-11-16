@@ -404,7 +404,7 @@ void mcfg_CreateDevices()
    else if (SYSTEM_IS_NAOMI() && naomi_cart_systemsp)
    {
       /* A System SP has no I/O board on its maple bus, nor anything else:
-       * its ROM board has the inputs (systemsp.cpp). */
+       * its ROM board has the inputs (systemsp.c). */
    }
    else if (SYSTEM_IS_NAOMI())
    {

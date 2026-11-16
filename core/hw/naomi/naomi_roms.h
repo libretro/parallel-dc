@@ -305,7 +305,7 @@ BIOS[] =
 	}
 };
 
-/* Sega System SP: the buttons (systemsp.cpp reads them from these switches) */
+/* Sega System SP: the buttons (systemsp.c reads them from these switches) */
 InputDescriptors sp_dinok_inputs = {
 	  {
 			{ NAOMI_BTN0_KEY, "ROCK" },
@@ -8497,7 +8497,7 @@ Games[] =
         NULL,
         drbyocwc_eeprom_dump
     },
-	/* Sega System SP games (the region is the game's own: see systemsp.cpp) */
+	/* Sega System SP games (the region is the game's own: see systemsp.c) */
 	{
 		/* Brick People / Block PeePoo (Ver 1.002) */
 		"brickppl",

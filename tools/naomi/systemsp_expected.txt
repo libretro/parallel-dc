@@ -1,0 +1,4473 @@
+ r2 10000 = ffff
+ r4 10000 = ffffffff
+ r1 10000 = ff
+ w2 10000 1
+ state none 0 811c9dc5
+open dinokich cf dinoki
+  sram 131072
+  sram load /saves/dinokich.zip.nvmem
+  chd open /roms/dinokich.set/cf.chd
+  hunk 0
+  hunk 1
+  open /saves/dinokich.zip.flash 1
+  close
+  dinokich dinokich /saves/dinokich.zip-jp.rfid1 /saves/dinokich.zip-jp.rfid2
+  dinokich reset
+  sched 0 -1
+ init 1 131072
+ id 'THE TITLE' region 0
+  open /saves/dinokich.zip-jp.eeprom 1
+  close
+eeprom
+ eeprom 0 = 3130
+ eeprom 5 = 6261
+ eeprom 5 = beef
+ eeprom 6 = ffff
+ eeprom release
+  save /saves/dinokich.zip-jp.eeprom 128 b75f49ee
+ eeprom 1 = ffff
+ eeprom 7 = 1234
+ eeprom 45 = 4545
+ eeprom 13 = 1234
+  save /saves/dinokich.zip-jp.eeprom 128 e6053395
+ eeprom 7 = 1234
+ eeprom 9 = 1234
+ eeprom release
+sram
+ w2 10000 3901
+ r1 10 = 3b
+ r1 11 = ff
+ r2 10 = ff3b
+ r4 10 = ff42ff3b
+ w4 20 a1b2c3d4
+ w1 31 77
+ w1 30 66
+ w2 40 1234
+ r4 20 = ffb2ffd4
+ r2 30 = ff66
+ r1 40 = 34
+ r2 10000 = 3901
+ r4 10000 = 3901
+ata 1
+ w2 10000 3a00
+ r1 1c = 50
+ r1 1c = 40
+ w2 4 1ff
+ w2 8 102
+ w1 c ff
+ w4 10 3412
+ w1 14 0
+ w1 18 0
+ r1 8 = 2
+ r2 c = ff
+ r1 10 = 12
+ r4 14 = 0
+ r1 18 = a0
+ r1 4 = 0
+ r2 20 = ffff
+ w1 20 55
+ w1 10 0
+ w1 c 7
+ w1 1c 20
+  sched 0 2000
+  hunk 0
+ r1 1c = 88
+ ata ready
+  raise 103
+ r1 1c = 48
+  cancel 103
+ r1 10080 = 10
+ w2 10000 7a00
+ data 255 843d ed616c54
+  hunk 1
+  raise 103
+ data 256 93a 1e52ac2a
+ data 510 3c2d 436ad03a
+ data 511 2184 df5a8e1a
+ data 512 ee74 0945cd2a
+ data 513 452d 9f752305
+ data 514 3937 37583cb6
+ data 515 ff6b fdbc54e7
+ data 516 ff5 81835d56
+ data 517 2bf5 84f3c299
+ data 518 ce02 e59cd801
+ data 519 412a a0851eb1
+ w2 10000 3a00
+  cancel 103
+ r4 10080 = 10
+ r1 c = 8
+ w1 8 1
+ w1 c 5
+ w1 18 e0
+ w1 1c 20
+  sched 0 2000
+  hunk 0
+ r1 0 = e5
+ r4 0 = 45
+ r1 0 = 4c
+ w1 18 1
+ w1 1c 20
+  sched 0 2000
+ r1 0 = 0
+ w1 18 0
+ w1 10 0
+ w1 14 0
+ w1 c 10
+ w1 1c 20
+  sched 0 2000
+  hunk 2
+ r1 0 = 7
+ w1 c 18
+ w1 1c 20
+  sched 0 2000
+  hunk 3
+ r1 0 = 7
+ w1 8 2
+ w1 c ff
+ w1 10 ff
+ w1 14 ff
+ w1 18 2
+ w1 1c 20
+  sched 0 2000
+  raise 103
+ r1 18 = a3
+ r1 10 = 0
+ r1 14 = 0
+ r1 c = 0
+ w1 8 1
+ w1 c ff
+ w1 10 0
+ w1 14 0
+ w1 18 1
+ w1 1c 20
+  sched 0 2000
+ r1 18 = a1
+ r1 10 = 0
+ w1 8 2
+ w1 c ff
+ w1 1c 20
+  sched 0 2000
+  raise 103
+ r1 18 = a1
+ r1 10 = 1
+ r1 c = 0
+ w1 c 5
+ w1 10 0
+ w1 18 8
+ w1 1c 20
+  sched 0 2000
+ r1 0 = 0
+ r1 0 = 0
+ w1 1c e1
+  sched 0 2000
+ r1 1c = 88
+ w1 1c 99
+ w1 24 1
+ r1 24 = ff
+ w2 10000 3b00
+ r1 18 = 88
+ r1 10 = 0
+ w1 18 ff
+ w1 18 2
+ w1 10 0
+ ata ready
+  cancel 103
+ w2 10000 3a00
+ r1 0 = 0
+  cancel 103
+ r1 10080 = 10
+ w2 10000 3b00
+ w1 18 0
+ ata ready
+  raise 103
+  cancel 103
+ r1 10080 = 10
+ata 0
+ w2 10000 3a00
+ r1 1c = 40
+ r1 1c = 40
+ w2 4 1ff
+ w2 8 102
+ w1 c ff
+ w4 10 3412
+ w1 14 0
+ w1 18 0
+ r1 8 = 2
+ r2 c = ff
+ r1 10 = 12
+ r4 14 = 0
+ r1 18 = a0
+ r1 4 = 0
+ r2 20 = ffff
+ w1 20 55
+ w1 10 0
+ w1 c 7
+ w1 1c 20
+  sched 0 2000
+  hunk 0
+ r1 1c = 88
+ ata ready
+  raise 103
+ r1 1c = 48
+  cancel 103
+ r1 10080 = 10
+ data 255 aa8b b336fefb
+  hunk 1
+  raise 103
+ data 256 e8c9 5024f0b6
+ data 510 b3f0 08ac6a78
+ data 511 6b51 cfc5d38b
+ data 512 634e d935461f
+ data 513 0 0ddd62cd
+ data 514 0 a08288b7
+ data 515 0 647d3815
+ data 516 0 461f490f
+ data 517 0 7240029d
+ data 518 0 77c41d27
+ data 519 0 b0b9e465
+ w2 10000 3a00
+  cancel 103
+ r4 10080 = 10
+ r1 c = 8
+ w1 8 1
+ w1 c 5
+ w1 18 e0
+ w1 1c 20
+  sched 0 2000
+  hunk 0
+ r1 0 = e5
+ r4 0 = 45
+ r1 0 = 4c
+ w1 18 1
+ w1 1c 20
+  sched 0 2000
+ r1 0 = 0
+ w1 18 0
+ w1 10 0
+ w1 14 0
+ w1 c 10
+ w1 1c 20
+  sched 0 2000
+  hunk 2
+ r1 0 = 7
+ w1 c 18
+ w1 1c 20
+  sched 0 2000
+  hunk 3
+ r1 0 = 7
+ w1 8 2
+ w1 c ff
+ w1 10 ff
+ w1 14 ff
+ w1 18 2
+ w1 1c 20
+  sched 0 2000
+  raise 103
+ r1 18 = a3
+ r1 10 = 0
+ r1 14 = 0
+ r1 c = 0
+ w1 8 1
+ w1 c ff
+ w1 10 0
+ w1 14 0
+ w1 18 1
+ w1 1c 20
+  sched 0 2000
+ r1 18 = a1
+ r1 10 = 0
+ w1 8 2
+ w1 c ff
+ w1 1c 20
+  sched 0 2000
+  raise 103
+ r1 18 = a1
+ r1 10 = 1
+ r1 c = 0
+ w1 c 5
+ w1 10 0
+ w1 18 8
+ w1 1c 20
+  sched 0 2000
+ r1 0 = 0
+ r1 0 = 0
+ w1 1c e1
+  sched 0 2000
+ r1 1c = 88
+ w1 1c 99
+ w1 24 1
+ r1 24 = ff
+ w2 10000 3b00
+ r1 18 = 88
+ r1 10 = 0
+ w1 18 ff
+ w1 18 2
+ w1 10 0
+ ata ready
+  cancel 103
+ w2 10000 3a00
+ r1 0 = 0
+  cancel 103
+ r1 10080 = 10
+ w2 10000 3b00
+ w1 18 0
+ ata ready
+  raise 103
+  cancel 103
+ r1 10080 = 10
+banks
+ w2 10000 3d00
+ r4 100 = ffffffff
+ w4 100 1
+ w2 10000 3f00
+ r1 0 = 0
+ w1 0 1
+ w2 10000 2
+ r2 0 = ffff
+ r1 2 = ff
+ r4 4 = ffffffff
+ w2 6 99
+ r2 210006 = 0
+ w2 10000 3e00
+ r2 0 = ffff
+ r1 10030 = 0
+ r1 10084 = 0
+ r2 100f0 = 0
+ w1 10084 3
+ w1 10010 3
+ r1 10124 = 0
+ r1 10118 = f7
+ r1 10114 = 0
+ w1 10124 3
+ w1 10108 3
+ r2 10150 = 3
+ r1 10160 = ff
+ w1 10160 1
+ r1 10180 = 1
+ r1 10184 = 0
+ r1 10188 = 1
+ r1 10198 = 8
+ r1 101b0 = 0
+ r1 101c0 = 0
+ r1 101c8 = 0
+ r1 101d8 = 0
+ r4 101f0 = ffffffff
+ w1 10180 41
+  dinokich <- 41
+ w1 101a8 41
+ w1 101b0 41
+ w1 101c0 42
+ w1 101e8 42
+ w4 101f0 43
+ r1 10180 = ee
+ r1 101c0 = 0
+ r1 101c0 = 0
+ r1 10188 = 0
+  cancel 103
+ r1 10080 = 0
+  raise 103
+  cancel 103
+ r1 10080 = 1
+ w2 10000 b901
+ r2 10000 = b901
+ w1 10000 3a9901
+ r2 10000 = 1
+ w2 10000 12345678
+ r4 10000 = 5678
+flash
+ 45 23 ff
+ state write buffer 35146 9778576e
+ c4af2161
+ c4af2161
+ d79c9dc5
+ d79c9dc5
+ read ffffffff
+ read ffffffff
+ state pio 35146 b63bde8f
+ d79c9dc5
+dimm
+ status 8102
+ status 8002
+  cancel 103
+  raise 103
+ cmd 1: 80010035 0 0 0 0 10035 40000000
+  raise 103
+ cmd 100: 80010034 5 0 0 0 1000034 40000000
+  raise 103
+ cmd 101: 80010035 125 0 0 0 1010035 40000000
+  raise 103
+ cmd 104: 80010038 5 0 641ea8c0 ffffff 1040038 40000000
+  raise 103
+ cmd 401: 80000035 0 0 641ea8c0 ffffff 4010035 40000000
+  raise 103
+ cmd 402: 80010036 0 0 641ea8c0 ffffff 4020036 40000000
+  raise 103
+ cmd 404: 80010038 0 0 641ea8c0 ffffff 4040038 40000000
+  raise 103
+ cmd 408: 8001003c 0 0 641ea8c0 ffffff 408003c 40000000
+  raise 103
+ cmd 409: 8001003d 0 0 641ea8c0 ffffff 409003d 40000000
+  raise 103
+ cmd 40e: 80010042 0 0 641ea8c0 ffffff 40e0042 40000000
+  raise 103
+ cmd 410: 80010044 0 0 641ea8c0 ffffff 4100044 40000000
+  raise 103
+ cmd 411: 80010045 6f 0 641ea8c0 ffffff 4110045 40000000
+  raise 103
+ cmd 414: 80010048 1 0 641ea8c0 ffffff 4140048 40000000
+  raise 103
+ cmd 415: 80010049 0 0 641ea8c0 ffffff 4150049 40000000
+  raise 103
+ cmd 999: 800000cd 0 0 641ea8c0 ffffff 99900cd 40000000
+  raise 103
+ cmd 204: 80010038 0 0 a00a8c0 ffff 2040038 40000000
+  raise 103
+ cmd 104: 80010038 5 0 a00a8c0 ffff 1040038 40000000
+  raise 103
+ cmd 301: 80010035 1 0 a00a8c0 ffff 3010035 40000000
+ ram 2081620c
+  raise 103
+ cmd 301: 80010035 1 0 a00a8c0 ffff 3010035 40000000
+ ram 2081620c
+  raise 103
+ cmd 301: 80010035 1 0 a00a8c0 ffff 3010035 40000000
+ ram 2081620c
+  raise 103
+  raise 103
+ socket 0: 8001 1
+  raise 103
+  raise 103
+  raise 103
+  raise 103
+  raise 103
+  raise 103
+  raise 103
+  raise 103
+  raise 103
+  raise 103
+  raise 103
+  raise 103
+  raise 103
+  raise 103
+  raise 103
+  raise 103
+  raise 103
+  raise 103
+  raise 103
+  raise 103
+  raise 103
+  raise 103
+  raise 103
+  raise 103
+  raise 103
+  raise 103
+  raise 103
+  raise 103
+  raise 103
+  raise 103
+  raise 103
+  raise 103
+ socket 16: 8001 21
+  raise 103
+  raise 103
+  raise 103
+  raise 103
+  raise 103
+  raise 103
+  raise 103
+  raise 103
+  raise 103
+  raise 103
+  raise 103
+  raise 103
+  raise 103
+  raise 103
+  raise 103
+  raise 103
+  raise 103
+  raise 103
+  raise 103
+  raise 103
+  raise 103
+  raise 103
+  raise 103
+  raise 103
+  raise 103
+  raise 103
+  raise 103
+  raise 103
+  raise 103
+  raise 103
+  raise 103
+  raise 103
+ socket 32: 8000 0
+  raise 103
+  raise 103
+  raise 103
+  raise 103
+  raise 103
+  raise 103
+  raise 103
+  raise 103
+  raise 103
+  raise 103
+  raise 103
+  raise 103
+  raise 103
+  raise 103
+  raise 103
+  raise 103
+  raise 103
+  raise 103
+  raise 103
+  raise 103
+  raise 103
+  raise 103
+  raise 103
+  raise 103
+  raise 103
+  raise 103
+  raise 103
+  raise 103
+  raise 103
+  raise 103
+  raise 103
+  raise 103
+ socket 48: 8000 0
+  raise 103
+  raise 103
+  raise 103
+  raise 103
+  raise 103
+  raise 103
+  raise 103
+  raise 103
+  raise 103
+  raise 103
+  raise 103
+  raise 103
+  raise 103
+  raise 103
+  raise 103
+  raise 103
+  raise 103
+  raise 103
+  raise 103
+  raise 103
+  raise 103
+  raise 103
+  raise 103
+  raise 103
+  raise 103
+  raise 103
+  raise 103
+  raise 103
+ socket 62: 8000 0
+  raise 103
+  raise 103
+ socket 63: 8000 0
+  raise 103
+  raise 103
+ socket 64: 8000 0
+  raise 103
+ cmd 403: 80010037 0 0 a00a8c0 ffff 4030037 40000000
+  raise 103
+ cmd 403: 80000037 0 0 a00a8c0 ffff 4030037 40000000
+  raise 103
+ cmd 403: 80000037 0 0 a00a8c0 ffff 4030037 40000000
+  raise 103
+ cmd 403: 80000037 0 0 a00a8c0 ffff 4030037 40000000
+  raise 103
+ cmd 40b: 8001003f 5 0 a00a8c0 ffff 40b003f 40000000
+  raise 103
+ cmd 406: 8001003a 1401a8c0 0 a00a8c0 ffff 406003a 40000000
+  '192.168.1.20'
+  raise 103
+ cmd 406: 8001003a 100000a 0 a00a8c0 ffff 406003a 40000000
+  '10.0.0.1'
+  raise 103
+ cmd 406: 8001003a ffffffff 0 a00a8c0 ffff 406003a 40000000
+  '1.2.3'
+  raise 103
+ cmd 406: 8001003a ffffffff 0 a00a8c0 ffff 406003a 40000000
+  '1.2.3.4.5'
+  raise 103
+ cmd 406: 8001003a ffffffff 0 a00a8c0 ffff 406003a 40000000
+  '256.1.1.1'
+  raise 103
+ cmd 406: 8001003a ffffffff 0 a00a8c0 ffff 406003a 40000000
+  '1..2.3'
+  raise 103
+ cmd 406: 8001003a ffffffff 0 a00a8c0 ffff 406003a 40000000
+  '1.2.3.a'
+  raise 103
+ cmd 406: 8001003a ffffffff 0 a00a8c0 ffff 406003a 40000000
+  ''
+  raise 103
+ cmd 406: 8001003a 0 0 a00a8c0 ffff 406003a 40000000
+  '0.0.0.0'
+  raise 103
+ cmd 406: 8001003a ffffffff 0 a00a8c0 ffff 406003a 40000000
+  '255.255.255.255'
+  raise 103
+ cmd 406: 8001003a ffffffff 0 a00a8c0 ffff 406003a 40000000
+  raise 103
+ cmd 406: 8001003a ffffffff 0 a00a8c0 ffff 406003a 40000000
+  raise 103
+ cmd 40a: 8001003e 777 0 a00a8c0 ffff 40a003e 40000000
+ 56ef003e 56ef
+ 89abcdef 89ab cd 89abcdef
+ 8922cdef 3344
+ 88
+ present ffff0001
+ present 1
+  cancel 103
+  raise 103
+io card reader
+ p1 key 8000:  poll
+ fe ff ff fb 00 f7 00
+ p1 key 400:  poll
+ fb ff ff fb 00 f7 00
+ p1 key 800:  poll
+ ef ff ff fb 00 f7 00
+ p1 key 2000:  poll
+ bf ff ff fb 00 f7 00
+ p1 key 1000:  poll
+ ff ff fe fb 00 f7 00
+ p1 key 200:  poll
+ ff ff fb fb 00 f7 00
+ p1 key 100:  poll
+ ff ff ef fb 00 f7 00
+ p1 key 80:  poll
+ ff ff bf fb 00 f7 00
+ p1 key 40:  poll
+ ff ff ff fb 00 f7 00
+ p1 key 20:  poll
+ ff ff ff fb 00 f7 00
+ p1 key 10:  poll
+ ff ff ff fb 00 f7 00
+ p1 key 8:  poll
+ ff ff ff fb 00 f7 00
+ p1 key 4:  poll
+ ff ff ff fb 00 f7 00
+ p1 key 4000:  poll
+ ff fe ff fb 00 f7 00
+ p1 key 2:  poll
+ ff fb ff fb 00 f7 00
+ p1 key 1:  poll
+ ff ef ff fb 01 f7 00
+ p2 key 8000:  poll
+ fd ff ff fb 00 f7 00
+ p2 key 400:  poll
+ f7 ff ff fb 00 f7 00
+ p2 key 800:  poll
+ df ff ff fb 00 f7 00
+ p2 key 2000:  poll
+ 7f ff ff fb 00 f7 00
+ p2 key 1000:  poll
+ ff ff fd fb 00 f7 00
+ p2 key 200:  poll
+ ff ff f7 fb 00 f7 00
+ p2 key 100:  poll
+ ff ff df fb 00 f7 00
+ p2 key 80:  poll
+ ff ff 7f fb 00 f7 00
+ p2 key 40:  poll
+ ff ff ff fb 00 f7 00
+ p2 key 20:  poll
+ ff ff ff fb 00 f7 00
+ p2 key 10:  poll
+ ff ff ff fb 00 f7 00
+ p2 key 8:  poll
+ ff ff ff fb 00 f7 00
+ p2 key 4:  poll
+ ff ff ff fb 00 f7 00
+ p2 key 4000:  poll
+ ff ff ff fb 00 f7 00
+ p2 key 2:  poll
+ ff ff ff fb 00 f7 00
+ p2 key 1:  poll
+ ff df ff fb 02 f7 00
+  poll
+ remap: fe ff db fb 00
+  poll
+ remap: ff df ef fb 00
+  poll
+ remap: fd ff f7 fb 00
+  poll
+ remap: 3f ff ff fb 00
+  poll
+ remap: ff ff bf fb 00
+ state dinokich 35146 da1b9945
+  dinokich reset
+  sched 0 -1
+ state reset 35146 6d11a8a2
+  event 0 2000 5000
+  dinokich state ff
+  dinokich v25 d1d1
+ load dinokich 1 35146
+ state loaded 35146 da1b9945
+bad state
+ state good 35146 da1b9945
+  event 0 2000 5000
+  dinokich state ff
+  dinokich v25 d1d1
+ load bad 1 35146
+ state after bad 35146 43039e9c
+ prog ffffffff
+  event 0 2000 5000
+  dinokich state ff
+  dinokich v25 d1d1
+ load half 1 35146
+ state after half 35146 4e898849
+ r1 10084 = 5a
+  event 0 2000 5000
+  dinokich state ff
+  dinokich v25 d1d1
+ load bits 1 35146
+ state after bits 35146 43039e9c
+  event 0 2000 5000
+  dinokich state ff
+  dinokich v25 d1d1
+ load all bits 1 35146
+ state after all bits 35146 35228ac7
+ not sp 0 1
+ not a naomi 0 1
+  dinokich before v25
+close
+  sched 0 -1
+  open /saves/dinokich.zip.flash 2
+  write 8388608 d79c9dc5
+  close
+  drain
+  chd close
+  dinokich close
+open loveber3 cf loveber
+  chd open /roms/loveber3/cf.chd
+  chd open /roms/loveber/cf.chd
+  hunk 0
+  hunk 1
+  open /saves/loveber3.7z.flash 1
+  close
+  rfid 1 loveber3 1 /saves/loveber3.7z-us.rfid1
+  rfid 2 loveber3 1 /saves/loveber3.7z-us.rfid2
+  rfid1 reset
+  rfid2 reset
+  sched 1 -1
+ init 1 0
+ id 'FIRST TITLE' region 1
+ flash 6a5c9dc5
+  open /saves/loveber3.7z-us.eeprom 1
+ eeprom 3 = 5a5a
+io card reader
+ p1 key 8000:  poll
+ fe ff ff fb 00 f7 00
+ p1 key 400:  poll
+ fb ff ff fb 00 f7 00
+ p1 key 800:  poll
+ ef ff ff fb 00 f7 00
+ p1 key 2000:  poll
+ bf ff ff fb 00 f7 00
+ p1 key 1000:  poll
+ ff ff fe fb 00 f7 00
+ p1 key 200:  poll
+ ff ff fb fb 00 f7 00
+ p1 key 100:  poll
+ ff ff ef fb 00 f7 00
+ p1 key 80:  poll
+ ff ff bf fb 00 f7 00
+ p1 key 40:  poll
+ ff ff ff fb 00 f7 00
+ p1 key 20:  poll
+ ff ff ff fb 00 f7 00
+ p1 key 10:  poll
+ ff ff ff fb 00 f7 00
+ p1 key 8:  poll
+ ff ff ff fb 00 f7 00
+ p1 key 4:  poll
+ ff ff ff fb 00 f7 00
+ p1 key 4000:  poll
+ ff fe ff fb 00 f7 00
+ p1 key 2:  poll
+ ff fb ff fb 00 f7 00
+ p1 key 1:  poll
+ ff ef ff fb 01 f7 00
+ p2 key 8000:  poll
+ fd ff ff fb 00 f7 00
+ p2 key 400:  poll
+ f7 ff ff fb 00 f7 00
+ p2 key 800:  poll
+ df ff ff fb 00 f7 00
+ p2 key 2000:  poll
+ 7f ff ff fb 00 f7 00
+ p2 key 1000:  poll
+ ff ff fd fb 00 f7 00
+ p2 key 200:  poll
+ ff ff f7 fb 00 f7 00
+ p2 key 100:  poll
+ ff ff df fb 00 f7 00
+ p2 key 80:  poll
+ ff ff 7f fb 00 f7 00
+ p2 key 40:  poll
+ ff ff ff fb 00 f7 00
+ p2 key 20:  poll
+ ff ff ff fb 00 f7 00
+ p2 key 10:  poll
+ ff ff ff fb 00 f7 00
+ p2 key 8:  poll
+ ff ff ff fb 00 f7 00
+ p2 key 4:  poll
+ ff ff ff fb 00 f7 00
+ p2 key 4000:  poll
+ ff ff ff fb 00 f7 00
+ p2 key 2:  poll
+ ff ff ff fb 00 f7 00
+ p2 key 1:  poll
+ ff df ff fb 02 f7 00
+  poll
+ remap: fe ff db fb 00
+  poll
+ remap: ff df ef fb 00
+  poll
+ remap: fd ff f7 fb 00
+  poll
+ remap: 3f ff ff fb 00
+  poll
+ remap: ff ff bf fb 00
+ r1 10180 = 11
+ r1 101c0 = 21
+  raise 103
+  cancel 103
+ r1 10080 = 2
+  raise 103
+  cancel 103
+ r1 10080 = 1
+ state loveber3 35142 a80694a0
+  event 1 2000 5001
+  rfid1 state a4
+  rfid2 state 48
+ load loveber3 1 35142
+flash
+ 45 23 10
+ state write buffer 35142 8dedfc6a
+ b2a70b41
+ 3ca00b41
+ d79c9dc5
+ d79c9dc5
+ read ffffffff
+ read ffffffff
+ state pio 35142 31b8feb3
+ d79c9dc5
+close
+  sched 1 -1
+  open /saves/loveber3.7z.flash 2
+  save /saves/loveber3.7z-us.eeprom 128 e0f00115
+  drain
+  chd close
+  rfid2 close
+  rfid1 close
+open loveber3 cf loveber
+  chd open /roms/loveber3/cf.chd
+  chd open /roms/loveber/cf.chd
+  hunk 0
+  hunk 1
+  open /saves/loveber3.7z.flash 1
+  close
+  rfid 1 loveber3 1 /saves/loveber3.7z-us.rfid1
+  rfid 2 loveber3 1 /saves/loveber3.7z-us.rfid2
+  rfid1 reset
+  rfid2 reset
+  sched 2 -1
+ init 1 0
+ flash d79c9dc5
+close
+  sched 2 -1
+  drain
+  chd close
+  rfid2 close
+  rfid1 close
+open loveber2 cf -
+  chd open /roms/loveber3/cf.chd
+ init 0 0
+close
+  sched 3 -1
+  drain
+open loveber3 cf -
+  chd open /roms/loveber3/cf.chd
+  chd close
+ init 0 0
+close
+  sched 4 -1
+  drain
+card a name of 128
+open loveber3 cf -
+  chd open /roms/loveber3/cf.chd
+  hunk 0
+  hunk 1
+  open /saves/loveber3.7z.flash 1
+  close
+  rfid 1 loveber3 0 /saves/loveber3.7z-jp.rfid1
+  rfid 2 loveber3 0 /saves/loveber3.7z-jp.rfid2
+  rfid1 reset
+  rfid2 reset
+  sched 5 -1
+ init 1 0
+ id 'T' region 0
+close
+  sched 5 -1
+  drain
+  chd close
+  rfid2 close
+  rfid1 close
+card plain
+open loveber3 cf -
+  chd open /roms/loveber3/cf.chd
+  hunk 0
+  hunk 1
+  open /saves/loveber3.7z.flash 1
+  close
+  rfid 1 loveber3 0 /saves/loveber3.7z-jp.rfid1
+  rfid 2 loveber3 0 /saves/loveber3.7z-jp.rfid2
+  rfid1 reset
+  rfid2 reset
+  sched 6 -1
+ init 1 0
+ id 'T' region 0
+close
+  sched 6 -1
+  drain
+  chd close
+  rfid2 close
+  rfid1 close
+card a name without its last letter
+open loveber3 cf -
+  chd open /roms/loveber3/cf.chd
+  hunk 0
+  open /saves/loveber3.7z.flash 1
+  close
+  rfid 1 loveber3 0 /saves/loveber3.7z-jp.rfid1
+  rfid 2 loveber3 0 /saves/loveber3.7z-jp.rfid2
+  rfid1 reset
+  rfid2 reset
+  sched 7 -1
+ init 1 0
+ id 'loveber3' region 0
+close
+  sched 7 -1
+  drain
+  chd close
+  rfid2 close
+  rfid1 close
+card no name
+open loveber3 cf -
+  chd open /roms/loveber3/cf.chd
+  hunk 0
+  hunk 1
+  open /saves/loveber3.7z.flash 1
+  close
+  rfid 1 loveber3 0 /saves/loveber3.7z-jp.rfid1
+  rfid 2 loveber3 0 /saves/loveber3.7z-jp.rfid2
+  rfid1 reset
+  rfid2 reset
+  sched 8 -1
+ init 1 0
+ id 'T' region 0
+close
+  sched 8 -1
+  drain
+  chd close
+  rfid2 close
+  rfid1 close
+card the directory's end
+open loveber3 cf -
+  chd open /roms/loveber3/cf.chd
+  hunk 0
+  open /saves/loveber3.7z.flash 1
+  close
+  rfid 1 loveber3 0 /saves/loveber3.7z-jp.rfid1
+  rfid 2 loveber3 0 /saves/loveber3.7z-jp.rfid2
+  rfid1 reset
+  rfid2 reset
+  sched 9 -1
+ init 1 0
+ id 'loveber3' region 0
+close
+  sched 9 -1
+  drain
+  chd close
+  rfid2 close
+  rfid1 close
+card cluster 1
+open loveber3 cf -
+  chd open /roms/loveber3/cf.chd
+  hunk 0
+  open /saves/loveber3.7z.flash 1
+  close
+  rfid 1 loveber3 0 /saves/loveber3.7z-jp.rfid1
+  rfid 2 loveber3 0 /saves/loveber3.7z-jp.rfid2
+  rfid1 reset
+  rfid2 reset
+  sched 10 -1
+ init 1 0
+ id 'loveber3' region 0
+close
+  sched 10 -1
+  drain
+  chd close
+  rfid2 close
+  rfid1 close
+card FAT32
+open loveber3 cf -
+  chd open /roms/loveber3/cf.chd
+  hunk 0
+  open /saves/loveber3.7z.flash 1
+  close
+  rfid 1 loveber3 0 /saves/loveber3.7z-jp.rfid1
+  rfid 2 loveber3 0 /saves/loveber3.7z-jp.rfid2
+  rfid1 reset
+  rfid2 reset
+  sched 11 -1
+ init 1 0
+ id 'loveber3' region 0
+close
+  sched 11 -1
+  drain
+  chd close
+  rfid2 close
+  rfid1 close
+card 1STREAD.BIN short
+open loveber3 cf -
+  chd open /roms/loveber3/cf.chd
+  hunk 0
+  open /saves/loveber3.7z.flash 1
+  close
+  rfid 1 loveber3 0 /saves/loveber3.7z-jp.rfid1
+  rfid 2 loveber3 0 /saves/loveber3.7z-jp.rfid2
+  rfid1 reset
+  rfid2 reset
+  sched 12 -1
+ init 1 0
+ id 'loveber3' region 0
+close
+  sched 12 -1
+  drain
+  chd close
+  rfid2 close
+  rfid1 close
+card signature
+open loveber3 cf -
+  chd open /roms/loveber3/cf.chd
+  hunk 0
+  open /saves/loveber3.7z.flash 1
+  close
+  rfid 1 loveber3 0 /saves/loveber3.7z-jp.rfid1
+  rfid 2 loveber3 0 /saves/loveber3.7z-jp.rfid2
+  rfid1 reset
+  rfid2 reset
+  sched 13 -1
+ init 1 0
+ id 'loveber3' region 0
+close
+  sched 13 -1
+  drain
+  chd close
+  rfid2 close
+  rfid1 close
+card image short
+open loveber3 cf -
+  chd open /roms/loveber3/cf.chd
+  hunk 0
+  open /saves/loveber3.7z.flash 1
+  close
+  rfid 1 loveber3 0 /saves/loveber3.7z-jp.rfid1
+  rfid 2 loveber3 0 /saves/loveber3.7z-jp.rfid2
+  rfid1 reset
+  rfid2 reset
+  sched 14 -1
+ init 1 0
+ id 'loveber3' region 0
+close
+  sched 14 -1
+  drain
+  chd close
+  rfid2 close
+  rfid1 close
+card no boot record
+open loveber3 cf -
+  chd open /roms/loveber3/cf.chd
+  hunk 0
+  open /saves/loveber3.7z.flash 1
+  close
+  rfid 1 loveber3 0 /saves/loveber3.7z-jp.rfid1
+  rfid 2 loveber3 0 /saves/loveber3.7z-jp.rfid2
+  rfid1 reset
+  rfid2 reset
+  sched 15 -1
+ init 1 0
+ id 'loveber3' region 0
+close
+  sched 15 -1
+  drain
+  chd close
+  rfid2 close
+  rfid1 close
+open puyomedal - -
+  sched 16 -1
+ init 1 0
+ id 'ROM GAME' region 1
+  open /saves/loveber3.7z-us.eeprom 1
+ state init 35142 6062341b
+close
+  sched 16 -1
+  drain
+open unomedal - -
+  sched 17 -1
+ init 1 0
+ id 'ROM GAME' region 0
+  open /saves/loveber3.7z-jp.eeprom 1
+ state init 35142 8e27469c
+close
+  sched 17 -1
+  drain
+open ochaken - -
+  sched 18 -1
+ init 1 0
+ id 'ROM GAME' region 2
+  open /saves/loveber3.7z-exp.eeprom 1
+ state init 35142 f45c68a1
+close
+  sched 18 -1
+  drain
+open magicpop - -
+  sched 19 -1
+ init 1 0
+ id 'ROM GAME' region 2
+  open /saves/loveber3.7z-exp.eeprom 1
+ state init 35142 f532a4da
+close
+  sched 19 -1
+  drain
+open dinoki2 - -
+  rfid 1 dinoki2 1 /saves/loveber3.7z-us.rfid1
+  rfid 2 dinoki2 1 /saves/loveber3.7z-us.rfid2
+  rfid1 reset
+  rfid2 reset
+  sched 20 -1
+ init 1 0
+ id 'ROM GAME' region 1
+  open /saves/loveber3.7z-us.eeprom 1
+ state init 35142 ba1457c3
+close
+  sched 20 -1
+  drain
+  rfid2 close
+  rfid1 close
+open dinoki3 - -
+  rfid 1 dinoki3 1 /saves/loveber3.7z-us.rfid1
+  rfid 2 dinoki3 1 /saves/loveber3.7z-us.rfid2
+  rfid1 reset
+  rfid2 reset
+  sched 21 -1
+ init 1 0
+ id 'ROM GAME' region 1
+  open /saves/loveber3.7z-us.eeprom 1
+ state init 35142 fab4a798
+close
+  sched 21 -1
+  drain
+  rfid2 close
+  rfid1 close
+open tetgiano - -
+  sched 22 -1
+ init 1 0
+ id '\xcd\xe0\x1e$\xa5\xb4\x02\x9d/;\x9d\xfe\xdd\xdd' region 1
+close
+  sched 22 -1
+  drain
+open tetgiano - -
+  sched 23 -1
+ init 1 0
+io default
+ p1 key 8000:  poll
+ fe ff ff ff 00 f7 00
+ p1 key 400:  poll
+ fb ff ff ff 00 f7 00
+ p1 key 800:  poll
+ ef ff ff ff 00 f7 00
+ p1 key 2000:  poll
+ bf ff ff ff 00 f7 00
+ p1 key 1000:  poll
+ ff ff fe ff 00 f7 00
+ p1 key 200:  poll
+ ff ff fb ff 00 f7 00
+ p1 key 100:  poll
+ ff ff ef ff 00 f7 00
+ p1 key 80:  poll
+ ff ff bf ff 00 f7 00
+ p1 key 40:  poll
+ ff ff ff ff 00 f7 00
+ p1 key 20:  poll
+ ff ff ff ff 00 f7 00
+ p1 key 10:  poll
+ ff ff ff ff 00 f7 00
+ p1 key 8:  poll
+ ff ff ff ff 00 f7 00
+ p1 key 4:  poll
+ ff ff ff ff 00 f7 00
+ p1 key 4000:  poll
+ ff fe ff ff 00 f7 00
+ p1 key 2:  poll
+ ff fb ff ff 00 f7 00
+ p1 key 1:  poll
+ ff ef ff ff 01 f7 00
+ p2 key 8000:  poll
+ fd ff ff ff 00 f7 00
+ p2 key 400:  poll
+ f7 ff ff ff 00 f7 00
+ p2 key 800:  poll
+ df ff ff ff 00 f7 00
+ p2 key 2000:  poll
+ 7f ff ff ff 00 f7 00
+ p2 key 1000:  poll
+ ff ff fd ff 00 f7 00
+ p2 key 200:  poll
+ ff ff f7 ff 00 f7 00
+ p2 key 100:  poll
+ ff ff df ff 00 f7 00
+ p2 key 80:  poll
+ ff ff 7f ff 00 f7 00
+ p2 key 40:  poll
+ ff ff ff ff 00 f7 00
+ p2 key 20:  poll
+ ff ff ff ff 00 f7 00
+ p2 key 10:  poll
+ ff ff ff ff 00 f7 00
+ p2 key 8:  poll
+ ff ff ff ff 00 f7 00
+ p2 key 4:  poll
+ ff ff ff ff 00 f7 00
+ p2 key 4000:  poll
+ ff ff ff ff 00 f7 00
+ p2 key 2:  poll
+ ff ff ff ff 00 f7 00
+ p2 key 1:  poll
+ ff df ff ff 02 f7 00
+  poll
+ remap: fe ff db ff 00
+  poll
+ remap: ff df ef ff 00
+  poll
+ remap: fd ff f7 ff 00
+  poll
+ remap: 3f ff ff ff 00
+  poll
+ remap: ff ff bf ff 00
+ r1 10180 = 0
+ state tetgiano 35142 62f652c8
+  event 23 2000 5017
+ load tetgiano 1 35142
+  sched 23 -1
+ state reset 35142 62f652c8
+close
+  sched 23 -1
+  drain
+open dinoki4 - -
+  sched 24 -1
+ init 1 0
+io card reader
+ p1 key 8000:  poll
+ fe ff ff fb 00 f7 00
+ p1 key 400:  poll
+ fb ff ff fb 00 f7 00
+ p1 key 800:  poll
+ ef ff ff fb 00 f7 00
+ p1 key 2000:  poll
+ bf ff ff fb 00 f7 00
+ p1 key 1000:  poll
+ ff ff fe fb 00 f7 00
+ p1 key 200:  poll
+ ff ff fb fb 00 f7 00
+ p1 key 100:  poll
+ ff ff ef fb 00 f7 00
+ p1 key 80:  poll
+ ff ff bf fb 00 f7 00
+ p1 key 40:  poll
+ ff ff ff fb 00 f7 00
+ p1 key 20:  poll
+ ff ff ff fb 00 f7 00
+ p1 key 10:  poll
+ ff ff ff fb 00 f7 00
+ p1 key 8:  poll
+ ff ff ff fb 00 f7 00
+ p1 key 4:  poll
+ ff ff ff fb 00 f7 00
+ p1 key 4000:  poll
+ ff fe ff fb 00 f7 00
+ p1 key 2:  poll
+ ff fb ff fb 00 f7 00
+ p1 key 1:  poll
+ ff ef ff fb 01 f7 00
+ p2 key 8000:  poll
+ fd ff ff fb 00 f7 00
+ p2 key 400:  poll
+ f7 ff ff fb 00 f7 00
+ p2 key 800:  poll
+ df ff ff fb 00 f7 00
+ p2 key 2000:  poll
+ 7f ff ff fb 00 f7 00
+ p2 key 1000:  poll
+ ff ff fd fb 00 f7 00
+ p2 key 200:  poll
+ ff ff f7 fb 00 f7 00
+ p2 key 100:  poll
+ ff ff df fb 00 f7 00
+ p2 key 80:  poll
+ ff ff 7f fb 00 f7 00
+ p2 key 40:  poll
+ ff ff ff fb 00 f7 00
+ p2 key 20:  poll
+ ff ff ff fb 00 f7 00
+ p2 key 10:  poll
+ ff ff ff fb 00 f7 00
+ p2 key 8:  poll
+ ff ff ff fb 00 f7 00
+ p2 key 4:  poll
+ ff ff ff fb 00 f7 00
+ p2 key 4000:  poll
+ ff ff ff fb 00 f7 00
+ p2 key 2:  poll
+ ff ff ff fb 00 f7 00
+ p2 key 1:  poll
+ ff df ff fb 02 f7 00
+  poll
+ remap: fe ff db fb 00
+  poll
+ remap: ff df ef fb 00
+  poll
+ remap: fd ff f7 fb 00
+  poll
+ remap: 3f ff ff fb 00
+  poll
+ remap: ff ff bf fb 00
+ r1 10180 = 0
+ state dinoki4 35142 b81c4971
+  event 24 2000 5018
+ load dinoki4 1 35142
+  sched 24 -1
+ state reset 35142 b81c4971
+close
+  sched 24 -1
+  drain
+open isshoni - -
+  touchscreen
+  touch reset
+  sched 25 -1
+ init 1 0
+io isshoni
+ p1 key 8000:  poll
+ ff ff ff fb 00 f7 00
+ p1 key 400:  poll
+ ff ff ff fb 00 f7 00
+ p1 key 800:  poll
+ ff ff ff fb 00 f7 00
+ p1 key 2000:  poll
+ ff ff ff fb 00 f7 00
+ p1 key 1000:  poll
+ ff ff ff fb 00 f7 00
+ p1 key 200:  poll
+ ff ff ff fb 00 f7 00
+ p1 key 100:  poll
+ ff ff ff fb 00 f7 00
+ p1 key 80:  poll
+ ff ff ff fb 00 f7 00
+ p1 key 40:  poll
+ ff ff ff fb 00 f7 00
+ p1 key 20:  poll
+ ff ff ff fb 00 f7 00
+ p1 key 10:  poll
+ ff ff ff fb 00 f7 00
+ p1 key 8:  poll
+ ff ff ff fb 00 f7 00
+ p1 key 4:  poll
+ ff ff ff fb 00 f7 00
+ p1 key 4000:  poll
+ ff fe ff fb 00 f7 00
+ p1 key 2:  poll
+ ff fb ff fb 00 f7 00
+ p1 key 1:  poll
+ ff ef ff fb 01 f7 00
+ p2 key 8000:  poll
+ ff ff ff fb 00 f7 00
+ p2 key 400:  poll
+ ff ff ff fb 00 f7 00
+ p2 key 800:  poll
+ ff ff ff fb 00 f7 00
+ p2 key 2000:  poll
+ ff ff ff fb 00 f7 00
+ p2 key 1000:  poll
+ ff ff ff fb 00 f7 00
+ p2 key 200:  poll
+ ff ff ff fb 00 f7 00
+ p2 key 100:  poll
+ ff ff ff fb 00 f7 00
+ p2 key 80:  poll
+ ff ff ff fb 00 f7 00
+ p2 key 40:  poll
+ ff ff ff fb 00 f7 00
+ p2 key 20:  poll
+ ff ff ff fb 00 f7 00
+ p2 key 10:  poll
+ ff ff ff fb 00 f7 00
+ p2 key 8:  poll
+ ff ff ff fb 00 f7 00
+ p2 key 4:  poll
+ ff ff ff fb 00 f7 00
+ p2 key 4000:  poll
+ ff ff ff fb 00 f7 00
+ p2 key 2:  poll
+ ff ff ff fb 00 f7 00
+ p2 key 1:  poll
+ ff df ff fb 02 f7 00
+  poll
+ remap: ff ff ff fb 00
+  poll
+ remap: ff df ff fb 00
+  poll
+ remap: ff ff ff fb 00
+  poll
+ remap: ff ff ff fb 00
+  poll
+ remap: ff ff ff fb 00
+ r1 10180 = 11
+ state isshoni 35142 3f7fd7de
+  event 25 2000 5019
+  touch state 00
+ load isshoni 1 35142
+  touch reset
+  sched 25 -1
+ state reset 35142 3f7fd7de
+close
+  sched 25 -1
+  drain
+  touch close
+open btlracer - -
+  sched 26 -1
+ init 1 0
+io battle racer
+ p1 key 8000:  poll
+ 0f ff ff fb 00 f7 00
+ p1 key 400:  poll
+ 0f ff ff fb 00 f7 00
+ p1 key 800:  poll
+ 0f ff ff fb 00 f7 00
+ p1 key 2000:  poll
+ 0f ff ff fb 00 f7 00
+ p1 key 1000:  poll
+ 0f ff fe fb 00 f7 00
+ p1 key 200:  poll
+ 0f ff fb fa 00 f7 00
+ p1 key 100:  poll
+ 0f ff ef fb 00 f7 00
+ p1 key 80:  poll
+ 0f ff bf fb 00 f7 00
+ p1 key 40:  poll
+ 0f ff ff fb 00 f7 00
+ p1 key 20:  poll
+ 0f ff ff fb 00 f7 00
+ p1 key 10:  poll
+ 0f ff ff fb 00 f7 00
+ p1 key 8:  poll
+ 0f ff ff fb 00 f7 00
+ p1 key 4:  poll
+ 0f ff ff fb 00 f7 00
+ p1 key 4000:  poll
+ 0f fe ff fb 00 f7 00
+ p1 key 2:  poll
+ 0f fb ff fb 00 f7 00
+ p1 key 1:  poll
+ 0f ef ff fb 01 f7 00
+ p2 key 8000:  poll
+ 0f ff ff fb 00 f7 00
+ p2 key 400:  poll
+ 0f ff ff fb 00 f7 00
+ p2 key 800:  poll
+ 0f ff ff fb 00 f7 00
+ p2 key 2000:  poll
+ 0f ff ff fb 00 f7 00
+ p2 key 1000:  poll
+ 0f ff fd fb 00 f7 00
+ p2 key 200:  poll
+ 0f ff f7 f9 00 f7 00
+ p2 key 100:  poll
+ 0f ff df fb 00 f7 00
+ p2 key 80:  poll
+ 0f ff 7f fb 00 f7 00
+ p2 key 40:  poll
+ 0f ff ff fb 00 f7 00
+ p2 key 20:  poll
+ 0f ff ff fb 00 f7 00
+ p2 key 10:  poll
+ 0f ff ff fb 00 f7 00
+ p2 key 8:  poll
+ 0f ff ff fb 00 f7 00
+ p2 key 4:  poll
+ 0f ff ff fb 00 f7 00
+ p2 key 4000:  poll
+ 0f ff ff fb 00 f7 00
+ p2 key 2:  poll
+ 0f ff ff fb 00 f7 00
+ p2 key 1:  poll
+ 0f df ff fb 02 f7 00
+  poll
+ wheel -128: ff
+  poll
+ wheel -64: 5a
+  poll
+ wheel -7: 5a
+  poll
+ wheel -6: 5a
+  poll
+ wheel 0: 0f
+  poll
+ wheel 6: 0f
+  poll
+ wheel 7: a5
+  poll
+ wheel 63: a5
+  poll
+ wheel 64: a5
+  poll
+ wheel 127: ff
+  poll
+ remap: 0f ff db fa 00
+  poll
+ remap: 0f df ef fb 00
+  poll
+ remap: 0f ff f7 f9 00
+  poll
+ remap: 0f ff ff fb 00
+  poll
+ remap: 0f ff bf fb 00
+ r1 10180 = 0
+ state btlracer 35142 edbfc027
+  event 26 2000 501a
+ load btlracer 1 35142
+  sched 26 -1
+ state reset 35142 edbfc027
+close
+  sched 26 -1
+  drain
+open kingyo2 - -
+  sched 27 -1
+ init 1 0
+io kingyo
+ p1 key 8000:  poll
+ ff bf ff ff 00 f7 00
+ p1 key 400:  poll
+ fd bf ff ff 00 f7 00
+ p1 key 800:  poll
+ fe bf ff ff 00 f7 00
+ p1 key 2000:  poll
+ f7 bf ff ff 00 f7 00
+ p1 key 1000:  poll
+ fb bf fe ff 00 f7 00
+ p1 key 200:  poll
+ ef bf fb ff 00 f7 00
+ p1 key 100:  poll
+ ff bf ef ff 00 f7 00
+ p1 key 80:  poll
+ ff bf bf ff 00 f7 00
+ p1 key 40:  poll
+ ff bf ff ff 00 f7 00
+ p1 key 20:  poll
+ ff bf ff ff 00 f7 00
+ p1 key 10:  poll
+ ff bf ff ff 00 f7 00
+ p1 key 8:  poll
+ ff bf ff ff 00 f7 00
+ p1 key 4:  poll
+ ff bf ff ff 00 f7 00
+ p1 key 4000:  poll
+ ff be ff ff 00 f7 00
+ p1 key 2:  poll
+ ff bb ff ff 00 f7 00
+ p1 key 1:  poll
+ ff af ff ff 01 f7 00
+ p2 key 8000:  poll
+ ff bf ff ff 00 f7 00
+ p2 key 400:  poll
+ ff bf ff ff 00 f7 00
+ p2 key 800:  poll
+ ff bf ff ff 00 f7 00
+ p2 key 2000:  poll
+ ff bf ff ff 00 f7 00
+ p2 key 1000:  poll
+ ff bf fd ff 00 f7 00
+ p2 key 200:  poll
+ ff bf f7 ff 00 f7 00
+ p2 key 100:  poll
+ ff bf df ff 00 f7 00
+ p2 key 80:  poll
+ ff bf 7f ff 00 f7 00
+ p2 key 40:  poll
+ ff bf ff ff 00 f7 00
+ p2 key 20:  poll
+ ff bf ff ff 00 f7 00
+ p2 key 10:  poll
+ ff bf ff ff 00 f7 00
+ p2 key 8:  poll
+ ff bf ff ff 00 f7 00
+ p2 key 4:  poll
+ ff bf ff ff 00 f7 00
+ p2 key 4000:  poll
+ ff bf ff ff 00 f7 00
+ p2 key 2:  poll
+ ff bf ff ff 00 f7 00
+ p2 key 1:  poll
+ ff 9f ff ff 02 f7 00
+ w1 10114 0
+ w1 1010c ff
+ w1 10110 0
+  poll
+ t0: ff bf 00
+  poll
+ t1: ff bf 00
+  poll
+ t2: ff bf 00
+  poll
+ t3: ff bf 00
+  poll
+ t4: ff bf 00
+  poll
+ t5: ff 8f 00
+  poll
+ t6: ff 8f 00
+  poll
+ t7: ff 8f 00
+  poll
+ t8: ff 8f 00
+  poll
+ t9: ff bf 00
+  poll
+ t10: ff bf 00
+  poll
+ t11: ff bf 00
+ w1 10114 0
+ w1 1010c 0
+ w1 10110 10
+  poll
+ t0: ff bf 00
+  poll
+ t1: ff bf 00
+  poll
+ t2: ff bf 00
+  poll
+ t3: ff ff 00
+  poll
+ t4: ff bf 00
+  poll
+ t5: ff 8f 00
+  poll
+ t6: ff 8f 00
+  poll
+ t7: ff 8f 00
+  poll
+ t8: ff cf 00
+  poll
+ t9: ff bf 00
+  poll
+ t10: ff bf 00
+  poll
+ t11: ff bf 00
+ w1 10114 2
+ w1 1010c f7
+ w1 10110 0
+  poll
+ t0: ff bf 00
+  poll
+ t1: ff bf 00
+  poll
+ t2: ff bf 00
+  poll
+ t3: ff bf 00
+  poll
+ t4: ff bf 00
+  poll
+ t5: ff 8f 00
+  poll
+ t6: ff 8f 00
+  poll
+ t7: ff 8f 00
+  poll
+ t8: ff 8f 00
+  poll
+ t9: ff bf 00
+  poll
+ t10: ff bf 00
+  poll
+ t11: ff bf 00
+ w1 10114 2
+ w1 1010c ef
+ w1 10110 10
+  poll
+ t0: ff bf 00
+  poll
+ t1: ff bf 00
+  poll
+ t2: ff ff 00
+  poll
+ t3: ff bf 00
+  poll
+ t4: ff bf 00
+  poll
+ t5: ff 8f 00
+  poll
+ t6: ff 8f 00
+  poll
+ t7: ff cf 00
+  poll
+ t8: ff 8f 00
+  poll
+ t9: ff bf 00
+  poll
+ t10: ff bf 00
+  poll
+ t11: ff bf 00
+ w1 10114 0
+ w1 1010c df
+ w1 10110 0
+  poll
+ t0: ff bf 00
+  poll
+ t1: ff bf 00
+  poll
+ t2: ff bf 00
+  poll
+ t3: ff bf 00
+  poll
+ t4: ff bf 00
+  poll
+ t5: ff 8f 00
+  poll
+ t6: ff 8f 00
+  poll
+ t7: ff 8f 00
+  poll
+ t8: ff bf 00
+  poll
+ t9: ff bf 00
+  poll
+ t10: ff bf 00
+  poll
+ t11: ff bf 00
+ w1 10114 0
+ w1 1010c bf
+ w1 10110 10
+  poll
+ t0: ff bf 00
+  poll
+ t1: ff ff 00
+  poll
+ t2: ff bf 00
+  poll
+ t3: ff bf 00
+  poll
+ t4: ff bf 00
+  poll
+ t5: ff 8f 00
+  poll
+ t6: ff cf 00
+  poll
+ t7: ff 8f 00
+  poll
+ t8: ff bf 00
+  poll
+ t9: ff bf 00
+  poll
+ t10: ff bf 00
+  poll
+ t11: ff ff 00
+ w1 10114 2
+ w1 1010c 7f
+ w1 10110 0
+  poll
+ t0: ff bf 00
+  poll
+ t1: ff bf 00
+  poll
+ t2: ff bf 00
+  poll
+ t3: ff bf 00
+  poll
+ t4: ff bf 00
+  poll
+ t5: ff 8f 00
+  poll
+ t6: ff 8f 00
+  poll
+ t7: ff 8f 00
+  poll
+ t8: ff bf 00
+  poll
+ t9: ff bf 00
+  poll
+ t10: ff bf 00
+  poll
+ t11: ff bf 00
+ w1 1010c 0
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+ long 49: 1980dd51
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+ long 99: a8868f1d
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+ long 149: 1307b229
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+ long 199: 46865075
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+ long 249: 6e442401
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+ long 299: 7e62d8cd
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+ long 349: 232d28d9
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+ long 399: e144eea5
+  poll
+ remap: ef bf db ff 00
+  poll
+ remap: ff 9f ef ff 00
+  poll
+ remap: ff bf f7 ff 00
+  poll
+ remap: f7 bf ff ff 00
+  poll
+ remap: ff bf bf ff 00
+ r1 10180 = 0
+ state kingyo2 35142 dfad93f5
+  event 27 2000 501b
+ load kingyo2 1 35142
+  sched 27 -1
+ state reset 35142 633afde4
+close
+  sched 27 -1
+  drain
+open manpuku - -
+  sched 28 -1
+ init 1 0
+io manpuku
+ p1 key 8000:  poll
+ ff bf ff ff 00 f7 00
+ p1 key 400:  poll
+ bf bf ff ff 00 f7 00
+ p1 key 800:  poll
+ ef bf ff ff 00 f7 00
+ p1 key 2000:  poll
+ ff bf ff ff 00 f7 00
+ p1 key 1000:  poll
+ df bf fe ff 00 f7 00
+ p1 key 200:  poll
+ ff bf fb ff 00 f7 00
+ p1 key 100:  poll
+ ff bf ef ff 00 f7 00
+ p1 key 80:  poll
+ ff bf bf ff 00 f7 00
+ p1 key 40:  poll
+ ff bf ff ff 00 f7 00
+ p1 key 20:  poll
+ ff bf ff ff 00 f7 00
+ p1 key 10:  poll
+ ff bf ff ff 00 f7 00
+ p1 key 8:  poll
+ ff bf ff ff 00 f7 00
+ p1 key 4:  poll
+ ff bf ff ff 00 f7 00
+ p1 key 4000:  poll
+ ff be ff ff 00 f7 00
+ p1 key 2:  poll
+ ff bb ff ff 00 f7 00
+ p1 key 1:  poll
+ ff af ff ff 01 f7 00
+ p2 key 8000:  poll
+ ff bf ff ff 00 f7 00
+ p2 key 400:  poll
+ ff bf ff ff 00 f7 00
+ p2 key 800:  poll
+ ff bf ff ff 00 f7 00
+ p2 key 2000:  poll
+ ff bf ff ff 00 f7 00
+ p2 key 1000:  poll
+ ff bf fd ff 00 f7 00
+ p2 key 200:  poll
+ ff bf f7 ff 00 f7 00
+ p2 key 100:  poll
+ ff bf df ff 00 f7 00
+ p2 key 80:  poll
+ ff bf 7f ff 00 f7 00
+ p2 key 40:  poll
+ ff bf ff ff 00 f7 00
+ p2 key 20:  poll
+ ff bf ff ff 00 f7 00
+ p2 key 10:  poll
+ ff bf ff ff 00 f7 00
+ p2 key 8:  poll
+ ff bf ff ff 00 f7 00
+ p2 key 4:  poll
+ ff bf ff ff 00 f7 00
+ p2 key 4000:  poll
+ ff bf ff ff 00 f7 00
+ p2 key 2:  poll
+ ff bf ff ff 00 f7 00
+ p2 key 1:  poll
+ ff 9f ff ff 02 f7 00
+ w1 10114 0
+ w1 1010c ff
+ w1 10110 0
+  poll
+ t0: ff bf 00
+  poll
+ t1: ff bf 00
+  poll
+ t2: ff bf 00
+  poll
+ t3: ff bf 00
+  poll
+ t4: ff bf 00
+  poll
+ t5: ff 8f 00
+  poll
+ t6: ff 8f 00
+  poll
+ t7: ff 8f 00
+  poll
+ t8: ff 8f 00
+  poll
+ t9: ff bf 00
+  poll
+ t10: ff bf 00
+  poll
+ t11: ff bf 00
+ w1 10114 0
+ w1 1010c 0
+ w1 10110 10
+  poll
+ t0: ff bf 00
+  poll
+ t1: ff bf 00
+  poll
+ t2: ff bf 00
+  poll
+ t3: ff ff 00
+  poll
+ t4: ff bf 00
+  poll
+ t5: ff 8f 00
+  poll
+ t6: ff 8f 00
+  poll
+ t7: ff 8f 00
+  poll
+ t8: ff cf 00
+  poll
+ t9: ff bf 00
+  poll
+ t10: ff bf 00
+  poll
+ t11: ff bf 00
+ w1 10114 2
+ w1 1010c f7
+ w1 10110 0
+  poll
+ t0: ff bf 00
+  poll
+ t1: ff bf 00
+  poll
+ t2: ff bf 00
+  poll
+ t3: ff bf 00
+  poll
+ t4: ff bf 00
+  poll
+ t5: ff 8f 00
+  poll
+ t6: ff 8f 00
+  poll
+ t7: ff 8f 00
+  poll
+ t8: ff 8f 00
+  poll
+ t9: ff bf 00
+  poll
+ t10: ff bf 00
+  poll
+ t11: ff bf 00
+ w1 10114 2
+ w1 1010c ef
+ w1 10110 10
+  poll
+ t0: ff bf 00
+  poll
+ t1: ff bf 00
+  poll
+ t2: ff ff 00
+  poll
+ t3: ff bf 00
+  poll
+ t4: ff bf 00
+  poll
+ t5: ff 8f 00
+  poll
+ t6: ff 8f 00
+  poll
+ t7: ff cf 00
+  poll
+ t8: ff 8f 00
+  poll
+ t9: ff bf 00
+  poll
+ t10: ff bf 00
+  poll
+ t11: ff bf 00
+ w1 10114 0
+ w1 1010c df
+ w1 10110 0
+  poll
+ t0: ff bf 00
+  poll
+ t1: ff bf 00
+  poll
+ t2: ff bf 00
+  poll
+ t3: ff bf 00
+  poll
+ t4: ff bf 00
+  poll
+ t5: ff 8f 00
+  poll
+ t6: ff 8f 00
+  poll
+ t7: ff 8f 00
+  poll
+ t8: ff bf 00
+  poll
+ t9: ff bf 00
+  poll
+ t10: ff bf 00
+  poll
+ t11: ff bf 00
+ w1 10114 0
+ w1 1010c bf
+ w1 10110 10
+  poll
+ t0: ff bf 00
+  poll
+ t1: ff ff 00
+  poll
+ t2: ff bf 00
+  poll
+ t3: ff bf 00
+  poll
+ t4: ff bf 00
+  poll
+ t5: ff 8f 00
+  poll
+ t6: ff cf 00
+  poll
+ t7: ff 8f 00
+  poll
+ t8: ff bf 00
+  poll
+ t9: ff bf 00
+  poll
+ t10: ff bf 00
+  poll
+ t11: ff ff 00
+ w1 10114 2
+ w1 1010c 7f
+ w1 10110 0
+  poll
+ t0: ff bf 00
+  poll
+ t1: ff bf 00
+  poll
+ t2: ff bf 00
+  poll
+ t3: ff bf 00
+  poll
+ t4: ff bf 00
+  poll
+ t5: ff 8f 00
+  poll
+ t6: ff 8f 00
+  poll
+ t7: ff 8f 00
+  poll
+ t8: ff bf 00
+  poll
+ t9: ff bf 00
+  poll
+ t10: ff bf 00
+  poll
+ t11: ff bf 00
+ w1 1010c 0
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+ long 49: 1980dd51
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+ long 99: a8868f1d
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+ long 149: 1307b229
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+ long 199: 46865075
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+ long 249: 6e442401
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+ long 299: 7e62d8cd
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+ long 349: 232d28d9
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+ long 399: e144eea5
+  poll
+ remap: ff bf db ff 00
+  poll
+ remap: ff 9f ef ff 00
+  poll
+ remap: ff bf f7 ff 00
+  poll
+ remap: ff bf ff ff 00
+  poll
+ remap: ff bf bf ff 00
+ r1 10180 = 0
+ state manpuku 35142 11785a57
+  event 28 2000 501c
+ load manpuku 1 35142
+  sched 28 -1
+ state reset 35142 a87b397d
+close
+  sched 28 -1
+  drain
+open shateki - -
+  sched 29 -1
+ init 1 0
+io kingyo
+ p1 key 8000:  poll
+ ff bf ff ff 00 f7 00
+ p1 key 400:  poll
+ fd bf ff ff 00 f7 00
+ p1 key 800:  poll
+ fe bf ff ff 00 f7 00
+ p1 key 2000:  poll
+ f7 bf ff ff 00 f7 00
+ p1 key 1000:  poll
+ fb bf fe ff 00 f7 00
+ p1 key 200:  poll
+ ef bf fb ff 00 f7 00
+ p1 key 100:  poll
+ ff bf ef ff 00 f7 00
+ p1 key 80:  poll
+ ff bf bf ff 00 f7 00
+ p1 key 40:  poll
+ ff bf ff ff 00 f7 00
+ p1 key 20:  poll
+ ff bf ff ff 00 f7 00
+ p1 key 10:  poll
+ ff bf ff ff 00 f7 00
+ p1 key 8:  poll
+ ff bf ff ff 00 f7 00
+ p1 key 4:  poll
+ ff bf ff ff 00 f7 00
+ p1 key 4000:  poll
+ ff be ff ff 00 f7 00
+ p1 key 2:  poll
+ ff bb ff ff 00 f7 00
+ p1 key 1:  poll
+ ff af ff ff 01 f7 00
+ p2 key 8000:  poll
+ ff bf ff ff 00 f7 00
+ p2 key 400:  poll
+ ff bf ff ff 00 f7 00
+ p2 key 800:  poll
+ ff bf ff ff 00 f7 00
+ p2 key 2000:  poll
+ ff bf ff ff 00 f7 00
+ p2 key 1000:  poll
+ ff bf fd ff 00 f7 00
+ p2 key 200:  poll
+ ff bf f7 ff 00 f7 00
+ p2 key 100:  poll
+ ff bf df ff 00 f7 00
+ p2 key 80:  poll
+ ff bf 7f ff 00 f7 00
+ p2 key 40:  poll
+ ff bf ff ff 00 f7 00
+ p2 key 20:  poll
+ ff bf ff ff 00 f7 00
+ p2 key 10:  poll
+ ff bf ff ff 00 f7 00
+ p2 key 8:  poll
+ ff bf ff ff 00 f7 00
+ p2 key 4:  poll
+ ff bf ff ff 00 f7 00
+ p2 key 4000:  poll
+ ff bf ff ff 00 f7 00
+ p2 key 2:  poll
+ ff bf ff ff 00 f7 00
+ p2 key 1:  poll
+ ff 9f ff ff 02 f7 00
+ w1 10114 0
+ w1 1010c ff
+ w1 10110 0
+  poll
+ t0: ff bf 00
+  poll
+ t1: ff bf 00
+  poll
+ t2: ff bf 00
+  poll
+ t3: ff bf 00
+  poll
+ t4: ff bf 00
+  poll
+ t5: ff 8f 00
+  poll
+ t6: ff 8f 00
+  poll
+ t7: ff 8f 00
+  poll
+ t8: ff 8f 00
+  poll
+ t9: ff bf 00
+  poll
+ t10: ff bf 00
+  poll
+ t11: ff bf 00
+ w1 10114 0
+ w1 1010c 0
+ w1 10110 10
+  poll
+ t0: ff bf 00
+  poll
+ t1: ff bf 00
+  poll
+ t2: ff bf 00
+  poll
+ t3: ff ff 00
+  poll
+ t4: ff bf 00
+  poll
+ t5: ff 8f 00
+  poll
+ t6: ff 8f 00
+  poll
+ t7: ff 8f 00
+  poll
+ t8: ff cf 00
+  poll
+ t9: ff bf 00
+  poll
+ t10: ff bf 00
+  poll
+ t11: ff bf 00
+ w1 10114 2
+ w1 1010c f7
+ w1 10110 0
+  poll
+ t0: ff bf 00
+  poll
+ t1: ff bf 00
+  poll
+ t2: ff bf 00
+  poll
+ t3: ff bf 00
+  poll
+ t4: ff bf 00
+  poll
+ t5: ff 8f 00
+  poll
+ t6: ff 8f 00
+  poll
+ t7: ff 8f 00
+  poll
+ t8: ff 8f 00
+  poll
+ t9: ff bf 00
+  poll
+ t10: ff bf 00
+  poll
+ t11: ff bf 00
+ w1 10114 2
+ w1 1010c ef
+ w1 10110 10
+  poll
+ t0: ff bf 00
+  poll
+ t1: ff bf 00
+  poll
+ t2: ff ff 00
+  poll
+ t3: ff bf 00
+  poll
+ t4: ff bf 00
+  poll
+ t5: ff 8f 00
+  poll
+ t6: ff 8f 00
+  poll
+ t7: ff cf 00
+  poll
+ t8: ff 8f 00
+  poll
+ t9: ff bf 00
+  poll
+ t10: ff bf 00
+  poll
+ t11: ff bf 00
+ w1 10114 0
+ w1 1010c df
+ w1 10110 0
+  poll
+ t0: ff bf 00
+  poll
+ t1: ff bf 00
+  poll
+ t2: ff bf 00
+  poll
+ t3: ff bf 00
+  poll
+ t4: ff bf 00
+  poll
+ t5: ff 8f 00
+  poll
+ t6: ff 8f 00
+  poll
+ t7: ff 8f 00
+  poll
+ t8: ff bf 00
+  poll
+ t9: ff bf 00
+  poll
+ t10: ff bf 00
+  poll
+ t11: ff bf 00
+ w1 10114 0
+ w1 1010c bf
+ w1 10110 10
+  poll
+ t0: ff bf 00
+  poll
+ t1: ff ff 00
+  poll
+ t2: ff bf 00
+  poll
+ t3: ff bf 00
+  poll
+ t4: ff bf 00
+  poll
+ t5: ff 8f 00
+  poll
+ t6: ff cf 00
+  poll
+ t7: ff 8f 00
+  poll
+ t8: ff bf 00
+  poll
+ t9: ff bf 00
+  poll
+ t10: ff bf 00
+  poll
+ t11: ff ff 00
+ w1 10114 2
+ w1 1010c 7f
+ w1 10110 0
+  poll
+ t0: ff bf 00
+  poll
+ t1: ff bf 00
+  poll
+ t2: ff bf 00
+  poll
+ t3: ff bf 00
+  poll
+ t4: ff bf 00
+  poll
+ t5: ff 8f 00
+  poll
+ t6: ff 8f 00
+  poll
+ t7: ff 8f 00
+  poll
+ t8: ff bf 00
+  poll
+ t9: ff bf 00
+  poll
+ t10: ff bf 00
+  poll
+ t11: ff bf 00
+ w1 1010c 0
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+ long 49: 1980dd51
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+ long 99: a8868f1d
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+ long 149: 1307b229
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+ long 199: 46865075
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+ long 249: 6e442401
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+ long 299: 7e62d8cd
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+ long 349: 232d28d9
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+ long 399: e144eea5
+  poll
+ remap: ef bf db ff 00
+  poll
+ remap: ff 9f ef ff 00
+  poll
+ remap: ff bf f7 ff 00
+  poll
+ remap: f7 bf ff ff 00
+  poll
+ remap: ff bf bf ff 00
+ r1 10180 = 0
+ state shateki 35142 a2457b2a
+  event 29 2000 501d
+ load shateki 1 35142
+  sched 29 -1
+ state reset 35142 2d6c861a
+close
+  sched 29 -1
+  drain
+open westdrmg - -
+  sched 30 -1
+ init 1 0
+io medal
+ p1 key 8000:  poll
+ d1 2f 00 ff 00 f7 21
+ p1 key 400:  poll
+ 51 0f 00 ff 00 f7 01
+ p1 key 800:  poll
+ 51 2d 00 ff 00 f7 01
+ p1 key 2000:  poll
+ 51 2f 00 ff 00 f7 01
+ p1 key 1000:  poll
+ 51 27 00 ff 00 f7 01
+ p1 key 200:  poll
+ 51 2f 01 ff 00 f7 11
+ p1 key 100:  poll
+ 51 2f 02 ff 00 f7 11
+ p1 key 80:  poll
+ 51 2f 04 ff 00 f7 11
+ p1 key 40:  poll
+ 51 2f 08 ff 00 f7 11
+ p1 key 20:  poll
+ 51 2f 10 ff 00 f7 11
+ p1 key 10:  poll
+ 51 2f 20 ff 00 f7 11
+ p1 key 8:  poll
+ 51 2f 40 ff 00 f7 21
+ p1 key 4:  poll
+ 51 2f 80 ff 00 f7 21
+ p1 key 4000:  poll
+ 51 2e 00 ff 00 f7 01
+ p1 key 2:  poll
+ 51 2b 00 ff 00 f7 01
+ p1 key 1:  poll
+ 51 2f 00 ff 01 f7 01
+ p2 key 8000:  poll
+ 51 2f 00 ff 00 f7 01
+ p2 key 400:  poll
+ 51 2f 00 ff 00 f7 01
+ p2 key 800:  poll
+ 51 2f 00 ff 00 f7 01
+ p2 key 2000:  poll
+ 51 2f 00 ff 00 f7 01
+ p2 key 1000:  poll
+ 51 2f 00 ff 00 f7 01
+ p2 key 200:  poll
+ 51 2f 00 ff 00 f7 01
+ p2 key 100:  poll
+ 51 2f 00 ff 00 f7 01
+ p2 key 80:  poll
+ 51 2f 00 ff 00 f7 01
+ p2 key 40:  poll
+ 51 2f 00 ff 00 f7 01
+ p2 key 20:  poll
+ 51 2f 00 ff 00 f7 01
+ p2 key 10:  poll
+ 51 2f 00 ff 00 f7 01
+ p2 key 8:  poll
+ 51 2f 00 ff 00 f7 01
+ p2 key 4:  poll
+ 51 2f 00 ff 00 f7 01
+ p2 key 4000:  poll
+ 51 2f 00 ff 00 f7 01
+ p2 key 2:  poll
+ 51 2f 00 ff 00 f7 01
+ p2 key 1:  poll
+ 51 2f 00 ff 02 f7 01
+ w1 10114 0
+ w1 1010c ff
+ w1 10110 0
+  poll
+ t0: 51 2f 01
+  poll
+ t1: 51 2f 01
+  poll
+ t2: 51 2f 01
+  poll
+ t3: 51 2f 01
+  poll
+ t4: 51 2f 01
+  poll
+ t5: 51 2f 01
+  poll
+ t6: 51 2f 01
+  poll
+ t7: 51 2f 01
+  poll
+ t8: 51 2f 01
+  poll
+ t9: 51 2f 01
+  poll
+ t10: 51 2f 01
+  poll
+ t11: 51 2f 01
+ w1 10114 0
+ w1 1010c 0
+ w1 10110 10
+  poll
+ t0: 52 2f 04
+  poll
+ t1: 52 2f 04
+  poll
+ t2: 52 2f 04
+  poll
+ t3: 52 2f 04
+  poll
+ t4: 52 2f 04
+  poll
+ t5: 52 2f 04
+  poll
+ t6: 42 2f 04
+  poll
+ t7: 42 2f 04
+  poll
+ t8: 52 2f 04
+  poll
+ t9: 52 2f 04
+  poll
+ t10: 52 2f 04
+  poll
+ t11: 52 2f 04
+ w1 10114 2
+ w1 1010c f7
+ w1 10110 0
+  poll
+ t0: 51 2f 84
+  poll
+ t1: 51 2f 84
+  poll
+ t2: 51 2f 84
+  poll
+ t3: 51 2f 84
+  poll
+ t4: 51 2f 84
+  poll
+ t5: 51 2f 84
+  poll
+ t6: 51 2f 84
+  poll
+ t7: 51 2f 84
+  poll
+ t8: 51 2f 84
+  poll
+ t9: 51 2f 84
+  poll
+ t10: 51 2f 84
+  poll
+ t11: 51 2f 84
+ w1 10114 2
+ w1 1010c ef
+ w1 10110 10
+  poll
+ t0: 55 2f 81
+  poll
+ t1: 55 2f 81
+  poll
+ t2: 55 2f 81
+  poll
+ t3: 51 2f 81
+  poll
+ t4: 51 2f 81
+  poll
+ t5: 51 2f 81
+  poll
+ t6: 51 2f 81
+  poll
+ t7: 51 2f 81
+  poll
+ t8: 51 2f 81
+  poll
+ t9: 51 2f 81
+  poll
+ t10: 51 2f 81
+  poll
+ t11: 51 2f 81
+ w1 10114 0
+ w1 1010c df
+ w1 10110 0
+  poll
+ t0: 51 2f 01
+  poll
+ t1: 51 2f 01
+  poll
+ t2: 51 2f 01
+  poll
+ t3: 41 2f 01
+  poll
+ t4: 41 2f 01
+  poll
+ t5: 51 2f 01
+  poll
+ t6: 51 2f 01
+  poll
+ t7: 51 2f 01
+  poll
+ t8: 51 2f 01
+  poll
+ t9: 51 2f 01
+  poll
+ t10: 41 2f 01
+  poll
+ t11: 41 2f 01
+ w1 10114 0
+ w1 1010c bf
+ w1 10110 10
+  poll
+ t0: 41 2f 01
+  poll
+ t1: 41 2f 01
+  poll
+ t2: 41 2f 01
+  poll
+ t3: 41 2f 01
+  poll
+ t4: 41 2f 01
+  poll
+ t5: 41 2f 01
+  poll
+ t6: 41 2f 01
+  poll
+ t7: 41 2f 01
+  poll
+ t8: 41 2f 01
+  poll
+ t9: 41 2f 01
+  poll
+ t10: 41 2f 01
+  poll
+ t11: 41 2f 01
+ w1 10114 2
+ w1 1010c 7f
+ w1 10110 0
+  poll
+ t0: 42 2f 81
+  poll
+ t1: 42 2f 81
+  poll
+ t2: 42 2f 81
+  poll
+ t3: 42 2f 81
+  poll
+ t4: 42 2f 81
+  poll
+ t5: 42 2f 81
+  poll
+ t6: 42 2f 81
+  poll
+ t7: 42 2f 81
+  poll
+ t8: 42 2f 81
+  poll
+ t9: 42 2f 81
+  poll
+ t10: 42 2f 81
+  poll
+ t11: 42 2f 81
+ w1 1010c 0
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+ long 49: 8917270d
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+ long 99: 65b3d6d9
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+ long 149: 0cac5385
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+ long 199: 33187561
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+ long 249: 25a08e8d
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+ long 299: 01ef98e9
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+ long 349: 3b067019
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+  poll
+ long 399: 927b4929
+  poll
+ remap: c2 2f 01 ff b4
+  poll
+ remap: 42 2f 02 ff 94
+  poll
+ remap: 42 2f 00 ff 84
+  poll
+ remap: 42 2f 08 ff 94
+  poll
+ remap: 42 2f 04 ff 94
+ r1 10180 = 0
+ state westdrmg 35142 a989d13a
+  event 30 2000 501e
+ load westdrmg 1 35142
+  sched 30 -1
+ state reset 35142 726f8b53
+close
+  sched 30 -1
+  drain
+open lovebox - -
+  sched 31 -1
+ init 1 0
+io default
+ p1 key 8000:  poll
+ fe ff ff ff 00 f7 00
+ p1 key 400:  poll
+ fb ff ff ff 00 f7 00
+ p1 key 800:  poll
+ ef ff ff ff 00 f7 00
+ p1 key 2000:  poll
+ bf ff ff ff 00 f7 00
+ p1 key 1000:  poll
+ ff ff fe ff 00 f7 00
+ p1 key 200:  poll
+ ff ff fb ff 00 f7 00
+ p1 key 100:  poll
+ ff ff ef ff 00 f7 00
+ p1 key 80:  poll
+ ff ff bf ff 00 f7 00
+ p1 key 40:  poll
+ ff ff ff ff 00 f7 00
+ p1 key 20:  poll
+ ff ff ff ff 00 f7 00
+ p1 key 10:  poll
+ ff ff ff ff 00 f7 00
+ p1 key 8:  poll
+ ff ff ff ff 00 f7 00
+ p1 key 4:  poll
+ ff ff ff ff 00 f7 00
+ p1 key 4000:  poll
+ ff fe ff ff 00 f7 00
+ p1 key 2:  poll
+ ff fb ff ff 00 f7 00
+ p1 key 1:  poll
+ ff ef ff ff 01 f7 00
+ p2 key 8000:  poll
+ fd ff ff ff 00 f7 00
+ p2 key 400:  poll
+ f7 ff ff ff 00 f7 00
+ p2 key 800:  poll
+ df ff ff ff 00 f7 00
+ p2 key 2000:  poll
+ 7f ff ff ff 00 f7 00
+ p2 key 1000:  poll
+ ff ff fd ff 00 f7 00
+ p2 key 200:  poll
+ ff ff f7 ff 00 f7 00
+ p2 key 100:  poll
+ ff ff df ff 00 f7 00
+ p2 key 80:  poll
+ ff ff 7f ff 00 f7 00
+ p2 key 40:  poll
+ ff ff ff ff 00 f7 00
+ p2 key 20:  poll
+ ff ff ff ff 00 f7 00
+ p2 key 10:  poll
+ ff ff ff ff 00 f7 00
+ p2 key 8:  poll
+ ff ff ff ff 00 f7 00
+ p2 key 4:  poll
+ ff ff ff ff 00 f7 00
+ p2 key 4000:  poll
+ ff ff ff ff 00 f7 00
+ p2 key 2:  poll
+ ff ff ff ff 00 f7 00
+ p2 key 1:  poll
+ ff df ff ff 02 f7 00
+  poll
+ remap: fe ff db ff 00
+  poll
+ remap: ff df ef ff 00
+  poll
+ remap: fd ff f7 ff 00
+  poll
+ remap: 3f ff ff ff 00
+  poll
+ remap: ff ff bf ff 00
+ r1 10180 = 0
+ state lovebox 35142 5c3be8b0
+  event 31 2000 501f
+ load lovebox 1 35142
+  sched 31 -1
+ state reset 35142 5c3be8b0
+close
+  sched 31 -1
+  drain
+open kingyx - -
+  sched 32 -1
+ init 1 0
+io default
+ p1 key 8000:  poll
+ fe ff ff ff 00 f7 00
+ p1 key 400:  poll
+ fb ff ff ff 00 f7 00
+ p1 key 800:  poll
+ ef ff ff ff 00 f7 00
+ p1 key 2000:  poll
+ bf ff ff ff 00 f7 00
+ p1 key 1000:  poll
+ ff ff fe ff 00 f7 00
+ p1 key 200:  poll
+ ff ff fb ff 00 f7 00
+ p1 key 100:  poll
+ ff ff ef ff 00 f7 00
+ p1 key 80:  poll
+ ff ff bf ff 00 f7 00
+ p1 key 40:  poll
+ ff ff ff ff 00 f7 00
+ p1 key 20:  poll
+ ff ff ff ff 00 f7 00
+ p1 key 10:  poll
+ ff ff ff ff 00 f7 00
+ p1 key 8:  poll
+ ff ff ff ff 00 f7 00
+ p1 key 4:  poll
+ ff ff ff ff 00 f7 00
+ p1 key 4000:  poll
+ ff fe ff ff 00 f7 00
+ p1 key 2:  poll
+ ff fb ff ff 00 f7 00
+ p1 key 1:  poll
+ ff ef ff ff 01 f7 00
+ p2 key 8000:  poll
+ fd ff ff ff 00 f7 00
+ p2 key 400:  poll
+ f7 ff ff ff 00 f7 00
+ p2 key 800:  poll
+ df ff ff ff 00 f7 00
+ p2 key 2000:  poll
+ 7f ff ff ff 00 f7 00
+ p2 key 1000:  poll
+ ff ff fd ff 00 f7 00
+ p2 key 200:  poll
+ ff ff f7 ff 00 f7 00
+ p2 key 100:  poll
+ ff ff df ff 00 f7 00
+ p2 key 80:  poll
+ ff ff 7f ff 00 f7 00
+ p2 key 40:  poll
+ ff ff ff ff 00 f7 00
+ p2 key 20:  poll
+ ff ff ff ff 00 f7 00
+ p2 key 10:  poll
+ ff ff ff ff 00 f7 00
+ p2 key 8:  poll
+ ff ff ff ff 00 f7 00
+ p2 key 4:  poll
+ ff ff ff ff 00 f7 00
+ p2 key 4000:  poll
+ ff ff ff ff 00 f7 00
+ p2 key 2:  poll
+ ff ff ff ff 00 f7 00
+ p2 key 1:  poll
+ ff df ff ff 02 f7 00
+  poll
+ remap: fe ff db ff 00
+  poll
+ remap: ff df ef ff 00
+  poll
+ remap: fd ff f7 ff 00
+  poll
+ remap: 3f ff ff ff 00
+  poll
+ remap: ff ff bf ff 00
+ r1 10180 = 0
+ state kingyx 35142 b8f07579
+  event 32 2000 5020
+ load kingyx 1 35142
+  sched 32 -1
+ state reset 35142 b8f07579
+close
+  sched 32 -1
+  drain

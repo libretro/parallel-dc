@@ -19,7 +19,7 @@ extern "C" {
 #endif
 
 /* An M4 board: ROMs read through its stream cipher, and a flash's CFI
- * table. (The System SP's ROM board is one, and more: systemsp.cpp.) */
+ * table. (The System SP's ROM board is one, and more: systemsp.c.) */
 typedef struct m4_cart
 {
 	cartridge base;

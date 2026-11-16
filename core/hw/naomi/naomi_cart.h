@@ -57,7 +57,7 @@ extern InputDescriptors deathcox_inputs;
 extern char naomi_game_id[];
 /* A BIOS file was loaded (a NAOMI runs no game without one) */
 extern bool bios_loaded;
-/* The System SP's ROM board's part of the G2 area: @sz bytes (systemsp.cpp) */
+/* The System SP's ROM board's part of the G2 area: @sz bytes (systemsp.c) */
 u32 systemsp_read_area0(u32 addr, u32 sz);
 void systemsp_write_area0(u32 addr, u32 data, u32 sz);
 /* The romset of the content, loaded (false: none that runs) */
@@ -165,13 +165,21 @@ cartridge *decrypted_cart_open(u8 *rom_ptr, u32 size);
  * memory: the cartridge closes the archive) */
 cartridge *archived_cart_open(const u8 *rom_ptr, u32 size, struct archive *archive);
 
-/* The System SP's ROM board (systemsp.cpp): one for the set @game_name,
+/* The System SP's ROM board (systemsp.c): one for the set @game_name,
  * whose game is on the CompactFlash card @media_name (NULL: in ROM), or
  * its parent's @parent_name; the region the game is started in (known
  * once it is initialized), and its EEPROM, for that region */
 cartridge *systemsp_cart_open(u32 size, const char *game_name, const char *media_name, const char *parent_name);
 int systemsp_cart_region(void);
 void systemsp_cart_load_eeprom(void);
+/* Its state, from V24 (nothing when the machine is not one); and the
+ * dinokich and loveber3cn IC card reader's, from V25 */
+void systemsp_serialize_v24(void **data, unsigned int *total_size);
+bool systemsp_unserialize_v24(void **data, unsigned int *total_size);
+void systemsp_state_before_v24(void);
+void systemsp_serialize_v25(void **data, unsigned int *total_size);
+bool systemsp_unserialize_v25(void **data, unsigned int *total_size);
+void systemsp_state_before_v25(void);
 /* The game's header, @size bytes of it (naomi_cart.c): false if what is
  * there is not this game's */
 bool naomi_cart_GetBootHeader(u8 *header, u32 size);

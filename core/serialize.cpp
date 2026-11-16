@@ -165,11 +165,11 @@ void lr_state_before_v23(void);
 /* and since V24: the network device in use and what the modem or the
  * Broadband Adapter holds (netstate.cpp), the VMU's beep (vmu_beep.cpp),
  * the NAOMI's serial port and the card readers, touchscreen and hopper on
- * it (naomi_periph.h), and a System SP's own hardware (systemsp.cpp) */
+ * it (naomi_periph.h), and a System SP's own hardware (systemsp.c) */
 void systemsp_serialize_v24(void **data, unsigned int *total_size);
 bool systemsp_unserialize_v24(void **data, unsigned int *total_size);
 void systemsp_state_before_v24(void);
-/* and since V25: the dinokich IC card reader of a System SP (systemsp.cpp),
+/* and since V25: the dinokich IC card reader of a System SP (systemsp.c),
  * what a Mushiking I/O board holds back (maple_devs.cpp), and the DIMM
  * board of a NAOMI GD-ROM game (gdcartridge.h) */
 void systemsp_serialize_v25(void **data, unsigned int *total_size);
