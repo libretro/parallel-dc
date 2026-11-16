@@ -20,6 +20,10 @@ typedef struct sort_pair
    unsigned index;   /* what is sorted: kept with its key */
 } sort_pair_t;
 
+/* The room sort_pairs() takes of @tmp for @n pairs: as many again, and
+ * the radix sort's table of counts (kept there, not on the stack) */
+#define SORT_PAIRS_TMP(n) ((size_t)(n) * sizeof(sort_pair_t) + 2048 * sizeof(unsigned))
+
 /* (fewer than this, by insertion; than SORT_PAIRS_MERGE, merged) */
 #define SORT_PAIRS_FEW 64
 #define SORT_PAIRS_MERGE 512
@@ -53,16 +57,17 @@ static INLINE sort_pair_t *sort_pairs(sort_pair_t *pairs, unsigned n, grow_buf_t
 {
    sort_pair_t *from, *to, *t;
    unsigned shift, i, b, at, c;
-   unsigned counts[2048];
+   unsigned *counts;
 
    if (n < SORT_PAIRS_FEW)
    {
       sort_pairs_insert(pairs, 0, n);
       return pairs;
    }
-   to = (sort_pair_t *)grow_buf_reserve(tmp, (size_t)n * sizeof(sort_pair_t));
+   to = (sort_pair_t *)grow_buf_reserve(tmp, SORT_PAIRS_TMP(n));
    if (to == NULL)
       return NULL;
+   counts = (unsigned *)(to + n);
    from = pairs;
    if (n < SORT_PAIRS_MERGE)
    {
@@ -92,7 +97,7 @@ static INLINE sort_pair_t *sort_pairs(sort_pair_t *pairs, unsigned n, grow_buf_t
    }
    for (shift = 0; shift < 32; shift += 11)
    {
-      memset(counts, 0, sizeof(counts));
+      memset(counts, 0, 2048 * sizeof(unsigned));
       for (i = 0; i < n; i++)
          counts[(from[i].key >> shift) & 2047]++;
       /* (all of one digit: already in order by it) */

@@ -1,8 +1,8 @@
 #pragma once
 #include "types.h"
 
-//bits that affect drawing (for caching params)
-#define PCW_DRAW_MASK (0x000000CE)
+/* (each field's place in its word, for C: and PCW_DRAW_MASK) */
+#include "ta_words.h"
 
 #pragma pack(push, 1)   // n = 1
 //	Global Param/misc structs

@@ -2,10 +2,16 @@
 #include "types.h"
 #include "emulator.h"
 
-#ifdef __cplusplus
 #include "ta_ctx.h"
+
+#ifdef __cplusplus
 extern "C" {
 #endif
+
+/* The frame being drawn (its rend_context: pvrrc) */
+extern TA_context* _pvrrc;
+
+#define pvrrc (_pvrrc->rend)
 
 extern u32 VertexCount;
 extern u32 FrameCount;
@@ -58,11 +64,6 @@ void custom_texture_terminate(void);
 
 #ifdef __cplusplus
 }
-
-
-extern TA_context* _pvrrc;
-
-#define pvrrc (_pvrrc->rend)
 
 struct Renderer
 {

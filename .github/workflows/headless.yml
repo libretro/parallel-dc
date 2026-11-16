@@ -58,6 +58,9 @@ name: Headless
 # and the tile accelerator's front and its frames, blocks sent every way,
 # frames found, drawn, kept, aged and recycled, the GPU pool's slices and
 # states of every version (tools/pvr/ta_run.sh),
+# and the translucent polygons sorted, by strip and by triangle, and their
+# depth prepasses, and the control words' fields as C has them
+# (tools/rend/sorter_run.sh),
 # and the paths the core writes to, a
 # content's name of any length included (tools/paths/paths_run.sh), and the
 # HLE BIOS's GD-ROM transfers stopped at a fault and made again
@@ -84,6 +87,8 @@ on:
       - 'tools/pvr/ta_run.sh'
       - 'tools/pvr/ta_test.c'
       - 'tools/pvr/ta_expected.txt'
+      - 'tools/pvr/ta_words_test.cpp'
+      - 'tools/rend/sorter_*'
       - 'tools/sh4/reglist_test.*'
       - 'tools/sh4/node_pool_test.*'
       - 'tools/rend/band_pool_test.*'
@@ -122,6 +127,8 @@ on:
       - 'tools/pvr/ta_run.sh'
       - 'tools/pvr/ta_test.c'
       - 'tools/pvr/ta_expected.txt'
+      - 'tools/pvr/ta_words_test.cpp'
+      - 'tools/rend/sorter_*'
       - 'tools/sh4/reglist_test.*'
       - 'tools/sh4/node_pool_test.*'
       - 'tools/rend/band_pool_test.*'
@@ -297,6 +304,10 @@ jobs:
         run: |
           sh tools/pvr/ta_run.sh
           sh tools/pvr/ta_run.sh -fsanitize=address,undefined -fno-sanitize-recover=all
+      - name: The translucent polygons sorted, by strip and by triangle, and their depth prepasses, with and without them and both provoking vertices, each polygon as the prepass sees it, and the control words' fields as C has them against the unions (and with the sanitizers)
+        run: |
+          sh tools/rend/sorter_run.sh
+          sh tools/rend/sorter_run.sh -fsanitize=address,undefined -fno-sanitize-recover=all
       - name: The paths the core writes to, a content's name of any length (and with the sanitizers)
         run: |
           sh tools/paths/paths_run.sh

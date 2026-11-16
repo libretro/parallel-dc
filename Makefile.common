@@ -27,7 +27,6 @@ SOURCES_CXX := \
 					$(CORE_DIR)/core/hw/pvr/Renderer_if.cpp \
 					$(CORE_DIR)/core/hw/pvr/ta_vtx.cpp \
 					$(CORE_DIR)/core/rend/CustomTexture.cpp \
-					$(CORE_DIR)/core/rend/sorter.cpp \
 					$(CORE_DIR)/core/rend/upscaler.cpp \
 					$(CORE_DIR)/core/rend/TexCache.cpp \
 					$(CORE_DIR)/core/rend/rtt_watch.cpp \
@@ -114,6 +113,8 @@ SOURCES_C += $(CORE_DIR)/core/hw/naomi/naomi_dimm.c
 # The lists a frame's parse appends to (List<T>'s, typed: helper_classes.h)
 SOURCES_C += $(CORE_DIR)/core/hw/pvr/ta_list.c
 SOURCES_C += $(CORE_DIR)/core/hw/pvr/ta.c $(CORE_DIR)/core/hw/pvr/ta_ctx.c
+# ...the translucent polygons sorted
+SOURCES_C += $(CORE_DIR)/core/rend/sorter.c
 # ...and a strip's indices (make_index()'s)
 SOURCES_C += $(CORE_DIR)/core/hw/pvr/ta_index.c
 # ...and what C++ has become C, MSVC C89 (AGENTS.md: gradually)

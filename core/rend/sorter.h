@@ -14,22 +14,31 @@
 	 You should have received a copy of the GNU General Public License
 	 along with reicast.  If not, see <https://www.gnu.org/licenses/>.
  */
-#pragma once
+#ifndef SORTER_H
+#define SORTER_H
+/* The translucent polygons sorted (sorter.c). C89, for C and C++ alike. */
 #include "types.h"
 #include "hw/pvr/Renderer_if.h"
+#include "hw/pvr/ta_words.h"
 #include "grow_buf.h"
+
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 /* Whether two polygons are drawn the same way, so that GenSortedTo() makes
  * one draw of triangles of both that come one after the other */
-static inline bool SortSameDraw(const PolyParam *pp0, const PolyParam *pp1)
+static INLINE bool SortSameDraw(const PolyParam *pp0, const PolyParam *pp1)
 {
-	return (pp0->pcw.full & PCW_DRAW_MASK) == (pp1->pcw.full & PCW_DRAW_MASK) && pp0->isp.full == pp1->isp.full
-			&& pp0->tcw.full == pp1->tcw.full && pp0->tsp.full == pp1->tsp.full && pp0->tileclip == pp1->tileclip;
+	return (TAW_FULL(pp0->pcw) & PCW_DRAW_MASK) == (TAW_FULL(pp1->pcw) & PCW_DRAW_MASK)
+			&& TAW_FULL(pp0->isp) == TAW_FULL(pp1->isp) && TAW_FULL(pp0->tcw) == TAW_FULL(pp1->tcw)
+			&& TAW_FULL(pp0->tsp) == TAW_FULL(pp1->tsp) && pp0->tileclip == pp1->tileclip;
 }
 
-//Sort based on min-z of each strip
+/* Sort based on min-z of each strip */
 void SortPParams(int first, int count);
 
+/* (typedef'd in ta_ctx.h) */
 struct SortTrigDrawParam
 {
 	const PolyParam* ppid;
@@ -39,6 +48,7 @@ struct SortTrigDrawParam
 
 /* A list kept from one frame to the next, in memory only ever grown
  * (grow_buf.h): of draws, @count of them. Zeroed, it is an empty one. */
+typedef struct SortList SortList;
 struct SortList
 {
 	grow_buf_t buf;
@@ -115,43 +125,49 @@ u32 GenSortedTo(int first, int count, SortList *draws, u32 *out, bool firstProvo
  * What a polygon is drawn with in the prepass: everything that goes into
  * its alpha, its culling and its clipping. Two polygons that agree on all
  * of it are drawn in one draw. */
+typedef struct PrepassKey PrepassKey;
 struct PrepassKey
 {
 	u64 texid;
-	u32 tsp;	// the TSP word without the source factor, fog reduced to whether it is the alpha's (3)
+	u32 tsp;	/* the TSP word without the source factor, fog reduced to whether it is the alpha's (3) */
 	u32 tcw;
 	u32 pcw;
-	u32 isp;	// the culling
+	u32 isp;	/* the culling */
 	u32 tileclip;
-
-	bool operator==(const PrepassKey& o) const {
-		return texid == o.texid && tsp == o.tsp && tcw == o.tcw && pcw == o.pcw && isp == o.isp && tileclip == o.tileclip;
-	}
-	bool operator<(const PrepassKey& o) const {
-		if (texid != o.texid) return texid < o.texid;
-		if (tsp != o.tsp) return tsp < o.tsp;
-		if (tcw != o.tcw) return tcw < o.tcw;
-		if (pcw != o.pcw) return pcw < o.pcw;
-		if (isp != o.isp) return isp < o.isp;
-		return tileclip < o.tileclip;
-	}
 };
+
+static INLINE bool PrepassKeyEq(const PrepassKey *a, const PrepassKey *b)
+{
+	return a->texid == b->texid && a->tsp == b->tsp && a->tcw == b->tcw && a->pcw == b->pcw
+			&& a->isp == b->isp && a->tileclip == b->tileclip;
+}
+
+/* (in the order of its fields) */
+static INLINE bool PrepassKeyLess(const PrepassKey *a, const PrepassKey *b)
+{
+	if (a->texid != b->texid) return a->texid < b->texid;
+	if (a->tsp != b->tsp) return a->tsp < b->tsp;
+	if (a->tcw != b->tcw) return a->tcw < b->tcw;
+	if (a->pcw != b->pcw) return a->pcw < b->pcw;
+	if (a->isp != b->isp) return a->isp < b->isp;
+	return a->tileclip < b->tileclip;
+}
 
 /* Whether a render pass's sorted translucent list gets a prepass: always
  * in the last render pass; in one before it only where the depth of the
  * sorted polygons is written after them anyway for the next pass
  * (TranslucentPolygonDepthMask), and then only for the polygons whose depth
  * that writes - so a later pass never sees a depth it did not see before. */
-static inline bool PrepassWanted(bool lastPass)
+static INLINE bool PrepassWanted(bool lastPass)
 {
 	return lastPass || settings.rend.TranslucentPolygonDepthMask;
 }
 
 /* Whether the prepass discards no pixel of the polygon: blended with a
  * destination factor of zero, every pixel hides what is behind it */
-static inline bool PrepassAlwaysHides(const PolyParam *pp)
+static INLINE bool PrepassAlwaysHides(const PolyParam *pp)
 {
-	return pp->tsp.DstInstr == 0;
+	return TAW_GET(TAW_FULL(pp->tsp), TSP_DstInstr) == 0;
 }
 
 /* Whether a polygon of the list can have pixels that hide what is behind
@@ -160,17 +176,20 @@ static inline bool PrepassAlwaysHides(const PolyParam *pp)
  * alpha where the alpha can reach 1 (not a trilinear pass that scales it
  * down); in a render pass before the last, only one whose depth is
  * written for the next pass (see PrepassWanted()) */
-static inline bool PrepassCandidate(const PolyParam *pp, bool lastPass)
+static INLINE bool PrepassCandidate(const PolyParam *pp, bool lastPass)
 {
-	if (pp->count <= 2 || pp->tsp.SrcSelect || pp->tsp.DstSelect || (!lastPass && pp->isp.ZWriteDis))
+	const u32 tsp = TAW_FULL(pp->tsp);
+	if (pp->count <= 2 || TAW_GET(tsp, TSP_SrcSelect) || TAW_GET(tsp, TSP_DstSelect)
+			|| (!lastPass && TAW_GET(TAW_FULL(pp->isp), ISP_TSP_ZWriteDis)))
 		return false;
-	if (pp->tsp.DstInstr == 0)
+	if (TAW_GET(tsp, TSP_DstInstr) == 0)
 		return true;
-	if (pp->tsp.DstInstr != 5)
+	if (TAW_GET(tsp, TSP_DstInstr) != 5)
 		return false;
-	// (pass A's alpha is 1 - D / 4, pass B's D / 4 with D at most 3)
-	if (pp->pcw.Texture && pp->tsp.FilterMode > 1 && pp->tcw.MipMapped
-			&& (pp->tsp.FilterMode != 2 || (pp->tsp.MipMapD & 3) != 0))
+	/* (pass A's alpha is 1 - D / 4, pass B's D / 4 with D at most 3) */
+	if (TAW_GET(TAW_FULL(pp->pcw), PCW_Texture) && TAW_GET(tsp, TSP_FilterMode) > 1
+			&& TAW_GET(TAW_FULL(pp->tcw), TCW_MipMapped)
+			&& (TAW_GET(tsp, TSP_FilterMode) != 2 || (TAW_GET(tsp, TSP_MipMapD) & 3) != 0))
 		return false;
 	return true;
 }
@@ -179,22 +198,26 @@ static inline bool PrepassCandidate(const PolyParam *pp, bool lastPass)
  * texture's): then it can reach 1 only where a vertex has 255. Not with
  * fog in the alpha, or a clamp that may raise it. (A destination factor of
  * zero needs no alpha.) */
-static inline bool PrepassAlphaFromVertices(const PolyParam *pp)
+static INLINE bool PrepassAlphaFromVertices(const PolyParam *pp)
 {
-	return !(pp->tsp.DstInstr == 0 || pp->tsp.FogCtrl == 3 || pp->tsp.ColorClamp || !pp->tsp.UseAlpha
-			|| (pp->pcw.Texture && pp->tsp.ShadInstr < 2));
+	const u32 tsp = TAW_FULL(pp->tsp);
+	return !(TAW_GET(tsp, TSP_DstInstr) == 0 || TAW_GET(tsp, TSP_FogCtrl) == 3 || TAW_GET(tsp, TSP_ColorClamp)
+			|| !TAW_GET(tsp, TSP_UseAlpha)
+			|| (TAW_GET(TAW_FULL(pp->pcw), PCW_Texture) && TAW_GET(tsp, TSP_ShadInstr) < 2));
 }
 
-static inline PrepassKey PrepassMakeKey(const PolyParam *pp, u64 texid)
+static INLINE PrepassKey PrepassMakeKey(const PolyParam *pp, u64 texid)
 {
-	TSP tsp = pp->tsp;
-	tsp.SrcInstr = 0;
-	if (tsp.FogCtrl != 3)
-		tsp.FogCtrl = 0;
-	ISP_TSP isp;
-	isp.full = 0;
-	isp.CullMode = pp->isp.CullMode;
-	const PrepassKey key = { pp->pcw.Texture ? texid : 0, tsp.full, pp->tcw.full, pp->pcw.full, isp.full, pp->tileclip };
+	PrepassKey key;
+	u32 tsp = TAW_SET(TAW_FULL(pp->tsp), TSP_SrcInstr, 0);
+	if (TAW_GET(tsp, TSP_FogCtrl) != 3)
+		tsp = TAW_SET(tsp, TSP_FogCtrl, 0);
+	key.texid = TAW_GET(TAW_FULL(pp->pcw), PCW_Texture) ? texid : 0;
+	key.tsp = tsp;
+	key.tcw = TAW_FULL(pp->tcw);
+	key.pcw = TAW_FULL(pp->pcw);
+	key.isp = TAW_SET(0, ISP_TSP_CullMode, TAW_GET(TAW_FULL(pp->isp), ISP_TSP_CullMode));
+	key.tileclip = pp->tileclip;
 	return key;
 }
 
@@ -209,3 +232,12 @@ u32 GenPrepassTo(int first, int count, bool lastPass, SortList *draws, u32 *out,
 		bool firstProvoking);
 /* (the alpha the prepass compares against: 254.5 / 255, the least that writes as 255) */
 #define PREPASS_ALPHA_MIN 0.998039216f
+
+#ifdef __cplusplus
+}
+
+static inline bool operator==(const PrepassKey& a, const PrepassKey& b) { return PrepassKeyEq(&a, &b); }
+static inline bool operator<(const PrepassKey& a, const PrepassKey& b) { return PrepassKeyLess(&a, &b); }
+#endif
+
+#endif

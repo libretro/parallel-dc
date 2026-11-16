@@ -22,6 +22,9 @@ extern "C" {
 #else
 #define TA_LIST(T) struct { ta_list_t l; }
 #endif
+/* ...its first element, and how many it has (List<T>'s head(), used()) */
+#define TA_LIST_HEAD(list, T) ((T *)(list).l.base)
+#define TA_LIST_USED(list, T) ((int)((T *)(list).l.cur - (T *)(list).l.base))
 
 /* Vertex storage types */
 typedef struct Vertex Vertex;
