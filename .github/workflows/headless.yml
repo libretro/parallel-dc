@@ -72,7 +72,9 @@ name: Headless
 # And the threads a texture scaled up is shared out to, and the core needing
 # no OpenMP runtime (tools/rend/band_pool_test.sh). And custom textures'
 # pictures, read as stb_image read them and dumped
-# (tools/rend/custom_image_test.sh),
+# (tools/rend/custom_image_test.sh), the texture converters with NEON
+# (AArch64) and in plain C (RISC-V 64), under qemu, against upstream's
+# (tools/rend/texconv_cross.sh),
 # the textures' hashes as XXH32 made them (tools/rend/texhash_test.sh), and
 # the modem's UPnP against a gateway on the runner (tools/threads/upnp_test.sh).
 
@@ -94,6 +96,7 @@ on:
       - 'tools/rend/band_pool_test.*'
       - 'tools/rend/custom_image*'
       - 'tools/rend/texhash_test.*'
+      - 'tools/rend/texconv_*'
       - 'tools/threads/upnp_*'
       - 'tools/threads/**'
       - 'tools/unused_sources.py'
@@ -134,6 +137,7 @@ on:
       - 'tools/rend/band_pool_test.*'
       - 'tools/rend/custom_image*'
       - 'tools/rend/texhash_test.*'
+      - 'tools/rend/texconv_*'
       - 'tools/threads/upnp_*'
       - 'tools/threads/**'
       - 'tools/unused_sources.py'
@@ -171,7 +175,7 @@ jobs:
       - name: Install the compiler and OpenGL headers
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends build-essential libgl1-mesa-dev python3 gcc-aarch64-linux-gnu libc6-dev-arm64-cross qemu-user-static
+          sudo apt-get install -y --no-install-recommends build-essential libgl1-mesa-dev python3 gcc-aarch64-linux-gnu g++-aarch64-linux-gnu libc6-dev-arm64-cross qemu-user-static
       - name: Build the core
         run: make -j"$(nproc)"
       - name: Nothing built that the core does not use, and no libretro-common it does not
@@ -197,6 +201,8 @@ jobs:
         run: |
           sh tools/rend/custom_image_test.sh
           CC="aarch64-linux-gnu-gcc -static" RUN=qemu-aarch64-static sh tools/rend/custom_image_test.sh
+      - name: The texture converters with NEON (AArch64, under qemu), against upstream's
+        run: sh tools/rend/texconv_cross.sh aarch64-linux-gnu qemu-aarch64-static
       - name: The textures' hashes (custom textures' names) as XXH32 made them
         run: sh tools/rend/texhash_test.sh
       - name: The modem's UPnP against a gateway on the runner (found, TCP and UDP mapped and deleted; none found without)
@@ -366,3 +372,5 @@ jobs:
           sudo apt-get install -y --no-install-recommends g++-riscv64-linux-gnu gcc-riscv64-linux-gnu libc6-dev-riscv64-cross qemu-user-static python3 libgl1-mesa-dev
       - name: A processor with no recompiler (RISC-V 64, under qemu) - built as make ARCH=riscv64 has it, every symbol there, and the disc run on it
         run: sh tools/threads/generic_cpu.sh
+      - name: The texture converters in plain C (RISC-V 64, under qemu), against upstream's
+        run: sh tools/rend/texconv_cross.sh riscv64-linux-gnu qemu-riscv64-static

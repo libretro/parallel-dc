@@ -33,6 +33,10 @@ PAL8PT_TW       8x8    e8aa2ed9  first 0a ec b0 77
 565_PLVQ32      8x8    66f6508d  first ff211cb5 ff9c0cef ff52d752 ff5a1073
 4444_PLVQ32     8x8    4114624b  first bb44ee00 ee337788 55aaaa66 77bb8800
 YUV_PLVQ        8x8    6eb75be4  first ffff979f ffffcfd7 ff9e4065 ffb85a7f
+1555_PL         8x8    8f8feac3  first 6e15 53d9 2ffe a55d
+565_PL          8x8    e8b11c87  first b70a a9ec 17ff d2ae
+4444_PL         8x8    97beed98  first 70ab 9eca 7ff1 2aed
+BMP_PL          8x8    97beed98  first 70ab 9eca 7ff1 2aed
 1555_TW        32x32   b5770fd0  first 6e15 2ffe a62e f1a4
 1555_VQ        32x32   05f74395  first 61c9 ad54 7e26 c828
 565_TW         32x32   663d93f6  first b70a 17ff 5317 78d2
@@ -67,6 +71,10 @@ PAL8PT_TW      32x32   775277bf  first 0a ec b0 77
 565_PLVQ32     32x32   d33c8dd7  first ff211cb5 ff9c0cef ff52d752 ff5a1073
 4444_PLVQ32    32x32   ae16028c  first bb44ee00 ee337788 55aaaa66 77bb8800
 YUV_PLVQ       32x32   ed31df12  first ffff979f ffffcfd7 ff9e4065 ffb85a7f
+1555_PL        32x32   0c29bef0  first 6e15 53d9 2ffe a55d
+565_PL         32x32   8c4161c6  first b70a a9ec 17ff d2ae
+4444_PL        32x32   b11a3f7d  first 70ab 9eca 7ff1 2aed
+BMP_PL         32x32   b11a3f7d  first 70ab 9eca 7ff1 2aed
 1555_TW        64x16   427aa8a4  first 6e15 2ffe a62e f1a4
 1555_VQ        64x16   677d8115  first 61c9 ad54 7e26 c828
 565_TW         64x16   c68bb4a6  first b70a 17ff 5317 78d2
@@ -101,6 +109,10 @@ PAL8PT_TW      64x16   81a7dd0f  first 0a ec b0 77
 565_PLVQ32     64x16   d33c8dd7  first ff211cb5 ff9c0cef ff52d752 ff5a1073
 4444_PLVQ32    64x16   ae16028c  first bb44ee00 ee337788 55aaaa66 77bb8800
 YUV_PLVQ       64x16   ed31df12  first ffff979f ffffcfd7 ff9e4065 ffb85a7f
+1555_PL        64x16   0c29bef0  first 6e15 53d9 2ffe a55d
+565_PL         64x16   8c4161c6  first b70a a9ec 17ff d2ae
+4444_PL        64x16   b11a3f7d  first 70ab 9eca 7ff1 2aed
+BMP_PL         64x16   b11a3f7d  first 70ab 9eca 7ff1 2aed
 1555_TW        16x64   a7361d1c  first 6e15 2ffe a62e f1a4
 1555_VQ        16x64   bd1f4999  first 61c9 ad54 7e26 c828
 565_TW         16x64   1c5cc2b6  first b70a 17ff 5317 78d2
@@ -135,6 +147,10 @@ PAL8PT_TW      16x64   0dcd6c03  first 0a ec b0 77
 565_PLVQ32     16x64   d33c8dd7  first ff211cb5 ff9c0cef ff52d752 ff5a1073
 4444_PLVQ32    16x64   ae16028c  first bb44ee00 ee337788 55aaaa66 77bb8800
 YUV_PLVQ       16x64   ed31df12  first ffff979f ffffcfd7 ff9e4065 ffb85a7f
+1555_PL        16x64   0c29bef0  first 6e15 53d9 2ffe a55d
+565_PL         16x64   8c4161c6  first b70a a9ec 17ff d2ae
+4444_PL        16x64   b11a3f7d  first 70ab 9eca 7ff1 2aed
+BMP_PL         16x64   b11a3f7d  first 70ab 9eca 7ff1 2aed
 1555_TW       256x256  2e7aba69  first 6e15 2ffe a62e f1a4
 1555_VQ       256x256  779c50bc  first 61c9 ad54 7e26 c828
 565_TW        256x256  0d36f092  first b70a 17ff 5317 78d2
@@ -169,6 +185,10 @@ PAL8PT_TW     256x256  67dd2e7e  first 0a ec b0 77
 565_PLVQ32    256x256  e0396595  first ff211cb5 ff9c0cef ff52d752 ff5a1073
 4444_PLVQ32   256x256  64dd04f4  first bb44ee00 ee337788 55aaaa66 77bb8800
 YUV_PLVQ      256x256  9161293c  first ffff979f ffffcfd7 ff9e4065 ffb85a7f
+1555_PL       256x256  5ea50639  first 6e15 53d9 2ffe a55d
+565_PL        256x256  66cabfde  first b70a a9ec 17ff d2ae
+4444_PL       256x256  bfa4f265  first 70ab 9eca 7ff1 2aed
+BMP_PL        256x256  bfa4f265  first 70ab 9eca 7ff1 2aed
 # ramp
 1555_TW         8x8    2c1949c5  first 0800 0804 0810 0814
 1555_VQ         8x8    de3f84c5  first 0000 0004 0008 000c
@@ -204,6 +224,10 @@ PAL8PT_TW       8x8    44b285b5  first 00 01 04 05
 565_PLVQ32      8x8    556a6145  first ff000000 ff080000 ff100000 ff180000
 4444_PLVQ32     8x8    93633cd5  first 00000000 00110000 00220000 00330000
 YUV_PLVQ        8x8    997faee5  first ff008300 ff008300 ff008100 ff008100
+1555_PL         8x8    973b20c5  first 0800 0802 0804 0806
+565_PL          8x8    c7ba69c5  first 0400 0401 0402 0403
+4444_PL         8x8    8110a345  first 4000 4010 4020 4030
+BMP_PL          8x8    8110a345  first 4000 4010 4020 4030
 1555_TW        32x32   f2981ac5  first 0800 0804 0810 0814
 1555_VQ        32x32   10c540c5  first 0000 0004 0008 000c
 565_TW         32x32   9efbcdc5  first 0400 0402 0408 040a
@@ -238,6 +262,10 @@ PAL8PT_TW      32x32   dc5523c5  first 00 01 04 05
 565_PLVQ32     32x32   a85cb245  first ff000000 ff080000 ff100000 ff180000
 4444_PLVQ32    32x32   e9642fc5  first 00000000 00110000 00220000 00330000
 YUV_PLVQ       32x32   70a93265  first ff008300 ff008300 ff008100 ff008100
+1555_PL        32x32   519f66c5  first 0800 0802 0804 0806
+565_PL         32x32   688b4cc5  first 0400 0401 0402 0403
+4444_PL        32x32   d9d94ec5  first 4000 4010 4020 4030
+BMP_PL         32x32   d9d94ec5  first 4000 4010 4020 4030
 1555_TW        64x16   0bb9bbc5  first 0800 0804 0810 0814
 1555_VQ        64x16   00e6c0c5  first 0000 0004 0008 000c
 565_TW         64x16   7d6f8cc5  first 0400 0402 0408 040a
@@ -272,6 +300,10 @@ PAL8PT_TW      64x16   ee3a8dc5  first 00 01 04 05
 565_PLVQ32     64x16   a85cb245  first ff000000 ff080000 ff100000 ff180000
 4444_PLVQ32    64x16   e9642fc5  first 00000000 00110000 00220000 00330000
 YUV_PLVQ       64x16   70a93265  first ff008300 ff008300 ff008100 ff008100
+1555_PL        64x16   519f66c5  first 0800 0802 0804 0806
+565_PL         64x16   688b4cc5  first 0400 0401 0402 0403
+4444_PL        64x16   d9d94ec5  first 4000 4010 4020 4030
+BMP_PL         64x16   d9d94ec5  first 4000 4010 4020 4030
 1555_TW        16x64   7c1d87c5  first 0800 0804 0810 0814
 1555_VQ        16x64   bbbdf0c5  first 0000 0004 0008 000c
 565_TW         16x64   5a4285c5  first 0400 0402 0408 040a
@@ -306,6 +338,10 @@ PAL8PT_TW      16x64   65569ac5  first 00 01 04 05
 565_PLVQ32     16x64   a85cb245  first ff000000 ff080000 ff100000 ff180000
 4444_PLVQ32    16x64   e9642fc5  first 00000000 00110000 00220000 00330000
 YUV_PLVQ       16x64   70a93265  first ff008300 ff008300 ff008100 ff008100
+1555_PL        16x64   519f66c5  first 0800 0802 0804 0806
+565_PL         16x64   688b4cc5  first 0400 0401 0402 0403
+4444_PL        16x64   d9d94ec5  first 4000 4010 4020 4030
+BMP_PL         16x64   d9d94ec5  first 4000 4010 4020 4030
 1555_TW       256x256  b89addc5  first 0800 0804 0810 0814
 1555_VQ       256x256  c3f49dc5  first 0000 0004 0008 000c
 565_TW        256x256  0144adc5  first 0400 0402 0408 040a
@@ -340,3 +376,7 @@ PAL8PT_TW     256x256  96a20dc5  first 00 01 04 05
 565_PLVQ32    256x256  2171eec5  first ff000000 ff080000 ff100000 ff180000
 4444_PLVQ32   256x256  cab60dc5  first 00000000 00110000 00220000 00330000
 YUV_PLVQ      256x256  885bbe05  first ff008300 ff008300 ff008100 ff008100
+1555_PL       256x256  cd4bd9c5  first 0800 0802 0804 0806
+565_PL        256x256  7c55b9c5  first 0400 0401 0402 0403
+4444_PL       256x256  883f5bc5  first 4000 4010 4020 4030
+BMP_PL        256x256  883f5bc5  first 4000 4010 4020 4030

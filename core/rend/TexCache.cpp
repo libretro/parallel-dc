@@ -27,14 +27,7 @@
 static band_pool_t *xbrz_pool;
 #endif
 
-u8* vq_codebook;
-u32 palette_index;
 bool KillTex=false;
-u32 palette16_ram[1024];
-u32 palette32_ram[1024];
-u32 pal_hash_256[4];
-u32 pal_hash_16[64];
-bool palette_updated;
 
 // Rough approximation of LoD bias from D adjust param, only used to increase LoD
 const std::array<f32, 16> D_Adjust_LoD_Bias = {
@@ -42,120 +35,8 @@ const std::array<f32, 16> D_Adjust_LoD_Bias = {
 };
 static void rend_text_invl(vram_block* bl);
 
-u32 detwiddle[2][11][1024];
-//input : address in the yyyyyxxxxx format
-//output : address in the xyxyxyxy format
-//U : x resolution , V : y resolution
-//twiddle works on 64b words
-
-
-static u32 twiddle_slow(u32 x,u32 y,u32 x_sz,u32 y_sz)
-{
-	u32 rv=0;//low 2 bits are directly passed  -> needs some misc stuff to work.However
-			 //Pvr internally maps the 64b banks "as if" they were twiddled :p
-
-	u32 sh=0;
-	x_sz>>=1;
-	y_sz>>=1;
-	while(x_sz!=0 || y_sz!=0)
-	{
-		if (y_sz)
-		{
-			u32 temp=y&1;
-			rv|=temp<<sh;
-
-			y_sz>>=1;
-			y>>=1;
-			sh++;
-		}
-		if (x_sz)
-		{
-			u32 temp=x&1;
-			rv|=temp<<sh;
-
-			x_sz>>=1;
-			x>>=1;
-			sh++;
-		}
-	}	
-	return rv;
-}
-
-static void BuildTwiddleTables()
-{
-	for (u32 s = 0; s < 11; s++)
-	{
-		u32 x_sz = 1024;
-		u32 y_sz = 1 << s;
-		for (u32 i = 0; i < x_sz; i++)
-		{
-			detwiddle[0][s][i] = twiddle_slow(i, 0, x_sz, y_sz);
-			detwiddle[1][s][i] = twiddle_slow(0, i, y_sz, x_sz);
-		}
-	}
-}
-
-static OnLoad btt(&BuildTwiddleTables);
-
-/* Converts the palette for the renderer when it is not the one converted
- * last. Called by the renderer for each frame, with the registers that
- * frame is drawn with.
- *
- * This used to be driven by a flag the register writes set, and was run
- * by the emulation thread when the game started a render. With Threaded
- * Rendering the frame before could still be drawing then, reading the very
- * tables this rewrites. Now the tables belong to the thread that draws, and
- * whether they are stale is seen from the palette itself: 4 KB to compare. */
-void palette_update()
-{
-	static u32 converted[1024];
-	static u32 converted_ctrl = 0xFFFFFFFF;
-	const u32 ctrl = PAL_RAM_CTRL & 3;
-
-	if (ctrl == converted_ctrl && !memcmp(converted, PALETTE_RAM, sizeof(converted)))
-		return;
-	converted_ctrl = ctrl;
-	memcpy(converted, PALETTE_RAM, sizeof(converted));
-	palette_updated = true;
-	switch (ctrl)
-	{
-	case 0:
-		for (int i=0;i<1024;i++)
-		{
-			palette16_ram[i] = ARGB1555(PALETTE_RAM[i]);
-			palette32_ram[i] = ARGB1555_32(PALETTE_RAM[i]);
-		}
-		break;
-
-	case 1:
-		for (int i=0;i<1024;i++)
-		{
-			palette16_ram[i] = ARGB565(PALETTE_RAM[i]);
-			palette32_ram[i] = ARGB565_32(PALETTE_RAM[i]);
-		}
-		break;
-
-	case 2:
-		for (int i=0;i<1024;i++)
-		{
-			palette16_ram[i] = ARGB4444(PALETTE_RAM[i]);
-			palette32_ram[i] = ARGB4444_32(PALETTE_RAM[i]);
-		}
-		break;
-
-	case 3:
-		for (int i=0;i<1024;i++)
-		{
-			palette16_ram[i] = ARGB8888(PALETTE_RAM[i]);
-			palette32_ram[i] = ARGB8888_32(PALETTE_RAM[i]);
-		}
-		break;
-	}
-	for (int i = 0; i < 64; i++)
-		pal_hash_16[i] = xxh32(&PALETTE_RAM[i << 4], 16 * 4, 7);
-	for (int i = 0; i < 4; i++)
-		pal_hash_256[i] = xxh32(&PALETTE_RAM[i << 8], 256 * 4, 7);
-}
+/* (texconv.c) */
+static OnLoad btt(&texconv_init);
 
 /* The locks on each page of video memory: a list, the page being
  * protected while it has any. A lock is on each page of the texture's, as
@@ -1566,19 +1447,19 @@ static void part_convert(const BaseTextureCacheData *t, u32 out, void *dst, u32 
 	{
 		PixelBuffer<u32> pb;
 		pb.init(pitch, height, false, dst);
-		t->texconv32(&pb, src, width, height);
+		t->texconv32(pb.raw(), src, width, height);
 	}
 	else if (out == TEXD_OUT8)
 	{
 		PixelBuffer<u8> pb;
 		pb.init(pitch, height, false, dst);
-		t->texconv8(&pb, src, width, height);
+		t->texconv8(pb.raw(), src, width, height);
 	}
 	else
 	{
 		PixelBuffer<u16> pb;
 		pb.init(pitch, height, false, dst);
-		t->texconv(&pb, src, width, height);
+		t->texconv(pb.raw(), src, width, height);
 	}
 }
 
@@ -1914,7 +1795,7 @@ void BaseTextureCacheData::Update()
 						 * Baseball 2K2 - and the 2x2 level's is used. */
 						if (tcw.PixelFmt == PixelYUV)
 							vram_addr = sa_tex + VQMipPoint[1];
-						texconv32(&pb0, (u8*)&vram[vram_addr], 2, 2);
+						texconv32(pb0.raw(), (u8*)&vram[vram_addr], 2, 2);
 						*pb32.data() = *pb0.data(1, 1);
 						continue;
 					}
@@ -1923,16 +1804,16 @@ void BaseTextureCacheData::Update()
 					vram_addr = sa_tex + OtherMipPoint[i] * tex->bpp / 8;
 				if (tcw.PixelFmt == PixelYUV && i == 0)
 					// Special case for YUV at 1x1 LoD
-					format[Pixel565].TW32(&pb32, &vram[vram_addr], 1, 1);
+					format[Pixel565].TW32(pb32.raw(), &vram[vram_addr], 1, 1);
 				else
-					texconv32(&pb32, &vram[vram_addr], 1 << i, 1 << i);
+					texconv32(pb32.raw(), &vram[vram_addr], 1 << i, 1 << i);
 			}
 			pb32.set_mipmap(0);
 		}
 		else
 		{
 			pb32.init(w, h, false, ConvertInto(w, h, PixelBuffer<u32>::bytes(w, h, false) + stride_over * sizeof(u32), 4, false, direct));
-			texconv32(&pb32, (u8*)&vram[sa], stride, rows);
+			texconv32(pb32.raw(), (u8*)&vram[sa], stride, rows);
 			if (rows < h)
 				memset((u32 *)pb32.data() + rows * w, 0, (size_t)(h - rows) * w * sizeof(u32));
 			if (stride < w)
@@ -1968,14 +1849,14 @@ void BaseTextureCacheData::Update()
 			{
 				pb8.set_mipmap(i);
 				u32 vram_addr = sa_tex + OtherMipPoint[i] * tex->bpp / 8;
-				texconv8(&pb8, &vram[vram_addr], 1 << i, 1 << i);
+				texconv8(pb8.raw(), &vram[vram_addr], 1 << i, 1 << i);
 			}
 			pb8.set_mipmap(0);
 		}
 		else
 		{
 			pb8.init(w, h, false, ConvertInto(w, h, PixelBuffer<u8>::bytes(w, h, false), 1, false, direct));
-			texconv8(&pb8, &vram[sa], stride, rows);
+			texconv8(pb8.raw(), &vram[sa], stride, rows);
 			if (rows < h)
 				memset((u8 *)pb8.data() + rows * w, 0, (size_t)(h - rows) * w);
 		}
@@ -1998,21 +1879,21 @@ void BaseTextureCacheData::Update()
 						u16 corner[16];	// (as above)
 						PixelBuffer<u16> pb0;
 						pb0.init(2, 2, false, corner);
-						texconv(&pb0, (u8*)&vram[vram_addr], 2, 2);
+						texconv(pb0.raw(), (u8*)&vram[vram_addr], 2, 2);
 						*pb16.data() = *pb0.data(1, 1);
 						continue;
 					}
 				}
 				else
 					vram_addr = sa_tex + OtherMipPoint[i] * tex->bpp / 8;
-				texconv(&pb16, (u8*)&vram[vram_addr], 1 << i, 1 << i);
+				texconv(pb16.raw(), (u8*)&vram[vram_addr], 1 << i, 1 << i);
 			}
 			pb16.set_mipmap(0);
 		}
 		else
 		{
 			pb16.init(w, h, false, ConvertInto(w, h, PixelBuffer<u16>::bytes(w, h, false) + stride_over * sizeof(u16), 2, false, direct));
-			texconv(&pb16,(u8*)&vram[sa],stride,rows);
+			texconv(pb16.raw(),(u8*)&vram[sa],stride,rows);
 			if (rows < h)
 				memset((u16 *)pb16.data() + rows * w, 0, (size_t)(h - rows) * w * sizeof(u16));
 			if (stride < w)

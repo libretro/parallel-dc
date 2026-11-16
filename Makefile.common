@@ -115,6 +115,8 @@ SOURCES_C += $(CORE_DIR)/core/hw/pvr/ta_list.c
 SOURCES_C += $(CORE_DIR)/core/hw/pvr/ta.c $(CORE_DIR)/core/hw/pvr/ta_ctx.c
 # ...the translucent polygons sorted
 SOURCES_C += $(CORE_DIR)/core/rend/sorter.c
+# ...and the texture converters
+SOURCES_C += $(CORE_DIR)/core/rend/texconv.c
 # ...and a strip's indices (make_index()'s)
 SOURCES_C += $(CORE_DIR)/core/hw/pvr/ta_index.c
 # ...and what C++ has become C, MSVC C89 (AGENTS.md: gradually)

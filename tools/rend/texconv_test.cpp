@@ -37,7 +37,11 @@ template<typename P, typename F> static void run(const char *name, F fn, u32 w, 
 	PixelBuffer<P> pb;
 	pb.init(w, h);
 	memset(pb.data(), 0xEE, (size_t)w * h * sizeof(P));
+#ifdef TEXCONV_H
+	fn(pb.raw(), buf + 2048 + off, w, h);	/* (C's converters: texconv.h) */
+#else
 	fn(&pb, buf + 2048 + off, w, h);
+#endif
 	const u8 *d = (const u8 *)pb.data();
 	u32 hash = 2166136261u;
 	for (size_t i = 0; i < (size_t)w * h * sizeof(P); i++) hash = (hash ^ d[i]) * 16777619u;
@@ -696,6 +700,9 @@ int main(int argc, char **argv)
 	if (argc > 1 && !strcmp(argv[1], "part"))
 		return part_test();
 #endif
+#ifdef TEXCONV_H
+	texconv_init();	/* (the twiddle tables, made again: the same) */
+#endif
 	buf = (u8 *)malloc(4 * 1024 * 1024);
 	if (argc > 1 && !strcmp(argv[1], "ramp"))
 		for (u32 i = 0; i < 4 * 1024 * 1024; i += 2) { buf[i] = (i / 2) & 0xFF; buf[i + 1] = ((i / 2) >> 8) & 0xFF; }
@@ -739,6 +746,9 @@ int main(int argc, char **argv)
 		run<u8>("PAL4PT_TW", &texPAL4PT_TW, w, h);  run<u8>("PAL8PT_TW", &texPAL8PT_TW, w, h);
 		run<u32>("1555_PLVQ32", &tex1555_PLVQ32, w, h); run<u32>("565_PLVQ32", &tex565_PLVQ32, w, h);
 		run<u32>("4444_PLVQ32", &tex4444_PLVQ32, w, h); run<u32>("YUV_PLVQ", &texYUV422_PLVQ, w, h);
+		/* (planar to 16 bits, as this tree has always made them: not upstream's) */
+		run<u16>("1555_PL", &tex1555_PL, w, h);   run<u16>("565_PL", &tex565_PL, w, h);
+		run<u16>("4444_PL", &tex4444_PL, w, h);   run<u16>("BMP_PL", &texBMP_PL, w, h);
 #endif
 	}
 	return 0;
