@@ -1,4 +1,4 @@
-/* What rend/rtt_watch.cpp asks of the renderer that has a picture rendered
+/* What rend/rtt_watch.c asks of the renderer that has a picture rendered
  * to a texture, with the renderer and the memory map stood in for:
  *
  *  - video memory written whole by a DMA (rtt_watch_overwrite()) over a
@@ -23,7 +23,7 @@
 #include <cstring>
 #include <vector>
 
-/* what rtt_watch.cpp links against, stood in for */
+/* what rtt_watch.c links against, stood in for */
 unsigned VRAM_SIZE = 8 * 1024 * 1024;
 VArray2 vram;
 settings_t settings;

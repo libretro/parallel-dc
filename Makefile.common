@@ -29,7 +29,6 @@ SOURCES_CXX := \
 					$(CORE_DIR)/core/rend/CustomTexture.cpp \
 					$(CORE_DIR)/core/rend/upscaler.cpp \
 					$(CORE_DIR)/core/rend/TexCache.cpp \
-					$(CORE_DIR)/core/rend/rtt_watch.cpp \
 					$(CORE_DIR)/core/rend/tile/compute_frame.cpp \
 					\
 					\
@@ -119,6 +118,7 @@ SOURCES_C += $(CORE_DIR)/core/rend/sorter.c
 # ...and the texture converters
 SOURCES_C += $(CORE_DIR)/core/rend/texconv.c
 SOURCES_C += $(CORE_DIR)/core/rend/vram_lock.c
+SOURCES_C += $(CORE_DIR)/core/rend/rtt_watch.c
 # ...and a strip's indices (make_index()'s)
 SOURCES_C += $(CORE_DIR)/core/hw/pvr/ta_index.c
 # ...and what C++ has become C, MSVC C89 (AGENTS.md: gradually)
@@ -500,6 +500,7 @@ endif
 
 ifeq ($(NO_THREADS), 1)
 else
+SOURCES_C += $(CORE_DIR)/core/libretro/emu_baton.c
 ifneq ($(STATIC_LINKING), 1)
 	SOURCES_C += $(LIBRETRO_COMM_DIR)/rthreads/rthreads.c \
 					$(LIBRETRO_COMM_DIR)/rthreads/retro_eventcount.c \

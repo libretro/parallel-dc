@@ -307,14 +307,19 @@ static void test_mpsc_list(void)
 	CHECK(handled == (long)MPSC_PRODUCERS * MPSC_REQUESTS);
 }
 
-/* ---- EmuBaton -------------------------------------------------------- */
+/* ---- emu_baton ------------------------------------------------------- */
 
 #define BATON_FRAMES 30000
 
-static EmuBaton baton;
+static emu_baton_t baton;
 static long machine;		/* plain: whoever has the machine */
 static long video_memory;	/* plain: the guest's, read by the renderer before it acks */
 static long frames_made, renders_made, renders_seen;
+static long drawing;		/* plain: the renderer's, between its ack and work_done */
+/* The emulation thread is past its hand_over(): the renderer waits for
+ * that before its work_done, so an ack that wakes nobody hangs here */
+static retro_atomic_int_t emu_past;
+static cEventCount emu_past_ec;
 
 struct fake_render { long snapshot; };
 
@@ -325,25 +330,30 @@ static void baton_emu_thread(void *)
 	static fake_render render;
 	unsigned seed = 7;
 
-	while (baton.WaitForFrame())
+	while (emu_baton_wait_for_frame(&baton))
 	{
 		int renders = rng_next(&seed) % 4;
 
 		machine++;
+		CHECK(emu_baton_frame_running(&baton));
 		for (int i = 0; i < renders; i++)
 		{
 			video_memory++;
-			baton.WaitWorkDone();
+			emu_baton_wait_work_done(&baton);
+			/* the last render is drawn: two never overlap */
+			CHECK(drawing == 0);
 			render.snapshot = video_memory;
 			renders_made++;
-			baton.HandOver(&render);
+			emu_baton_hand_over(&baton, &render);
+			retro_atomic_store_release_int(&emu_past, 1);
+			emu_past_ec.Notify();
 			/* The renderer has read video memory; writing it again is
 			 * safe while it draws. */
 			video_memory++;
 			machine++;
 		}
 		frames_made++;
-		baton.EndFrame();
+		emu_baton_end_frame(&baton);
 	}
 	machine++;	/* shutting down: still the thread's machine */
 }
@@ -356,10 +366,10 @@ static void baton_saver(void *)
 {
 	while (!retro_atomic_load_acquire_int(&baton_saver_stop))
 	{
-		baton.Hold();
+		emu_baton_hold(&baton);
 		machine++;
 		baton_saves++;
-		baton.Release();
+		emu_baton_release(&baton);
 	}
 }
 
@@ -368,10 +378,12 @@ static void test_emu_baton(void)
 	sthread_t *emu, *saver;
 	void *w;
 
+	CHECK(emu_baton_init(&baton));
+	retro_atomic_int_init(&emu_past, 0);
 	/* No frame being made: taking the machine never waits. */
-	baton.Hold();
+	emu_baton_hold(&baton);
 	machine++;
-	baton.Release();
+	emu_baton_release(&baton);
 
 	emu = sthread_create(baton_emu_thread, NULL);
 	retro_atomic_int_init(&baton_saver_stop, 0);
@@ -380,39 +392,55 @@ static void test_emu_baton(void)
 	/* retro_run, over and over. */
 	for (int frame = 0; frame < BATON_FRAMES; frame++)
 	{
-		baton.Hold();
+		emu_baton_hold(&baton);
 		machine++;
-		baton.StartFrame();
-		while ((w = baton.WaitWork()) != NULL)
+		emu_baton_start_frame(&baton);
+		while ((w = emu_baton_wait_work(&baton)) != NULL)
 		{
 			fake_render *r = (fake_render *)w;
 			/* What the emulation thread wrote before handing over is
 			 * what is there until the ack. */
 			CHECK(r->snapshot == video_memory);
-			baton.AckWork();
+			drawing = 1;
+			emu_baton_ack_work(&baton);
 			renders_seen++;
-			baton.WorkDone();
+			for (;;)
+			{
+				int key;
+				if (retro_atomic_load_acquire_int(&emu_past))
+					break;
+				key = emu_past_ec.Prepare();
+				if (retro_atomic_load_acquire_int(&emu_past))
+					emu_past_ec.Cancel();
+				else
+					emu_past_ec.Commit(key);
+			}
+			retro_atomic_store_release_int(&emu_past, 0);
+			drawing = 0;
+			emu_baton_work_done(&baton);
 		}
 		/* The frame is over: the machine is this thread's again. */
+		CHECK(!emu_baton_frame_running(&baton));
 		machine++;
 		CHECK(frames_made == frame + 1);
-		baton.Release();
+		emu_baton_release(&baton);
 	}
 
 	retro_atomic_store_release_int(&baton_saver_stop, 1);
 	sthread_join(saver);
 
 	/* Unload. */
-	baton.Hold();
-	baton.TellThreadToExit();
+	emu_baton_hold(&baton);
+	emu_baton_tell_thread_to_exit(&baton);
 	sthread_join(emu);
-	baton.ThreadGone();
+	emu_baton_thread_gone(&baton);
 
-	baton.Hold();
-	baton.Release();
+	emu_baton_hold(&baton);
+	emu_baton_release(&baton);
 	/* Every render handed over was drawn, none twice. */
 	CHECK(renders_seen == renders_made);
 	CHECK(baton_saves > 0);
+	emu_baton_free(&baton);
 }
 
 /* ---- InputLatch ------------------------------------------------------ */
@@ -573,7 +601,7 @@ int main(void)
 		{ "cSlotCache",    test_slot_cache },
 		{ "cTripleBuffer", test_triple_buffer },
 		{ "cMpscList",     test_mpsc_list },
-		{ "EmuBaton",      test_emu_baton },
+		{ "emu_baton",     test_emu_baton },
 		{ "InputLatch",    test_input_latch },
 		{ "cMarkSet",      test_mark_set },
 	};

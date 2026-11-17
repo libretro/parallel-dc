@@ -3,13 +3,12 @@
 #include "hw/mem/_vmem.h"
 #include "hw/pvr/pvr_mem.h"
 #include "hw/sh4/modules/mmu.h"
-#include "rend/TexCache.h"
-#include <cstdlib>
-#include <cstring>
+#include "rend/vram_lock.h"
+#include <stdlib.h>
+#include <string.h>
 #if !defined(TARGET_NO_THREADS)
 #include <rthreads/rthreads.h>
 #include "libretro/emu_baton.h"
-extern EmuBaton emu_baton;
 #endif
 
 #define RTT_WATCH_SLOTS 16
@@ -28,32 +27,34 @@ static u32 next_serial;
 static uintptr_t render_thread, emu_thread_id;
 #endif
 
-static inline u32 first_page(const RttWatch& s) { return s.addr / PAGE_SIZE; }
-static inline u32 last_page(const RttWatch& s) { return (s.addr + s.bytes - 1) / PAGE_SIZE; }
+static INLINE u32 first_page(const RttWatch *s) { return s->addr / PAGE_SIZE; }
+static INLINE u32 last_page(const RttWatch *s) { return (s->addr + s->bytes - 1) / PAGE_SIZE; }
 
 static bool page_wanted(u32 page, const RttWatch *but)
 {
-	for (const RttWatch& s : slots)
-		if (s.used && &s != but && page >= first_page(s) && page <= last_page(s))
+	const RttWatch *s;
+	for (s = slots; s < slots + RTT_WATCH_SLOTS; s++)
+		if (s->used && s != but && page >= first_page(s) && page <= last_page(s))
 			return true;
 	return false;
 }
 
 /* The slot is done with: its pages go back to what they were, except
  * where another slot has them too. */
-static void close_slot(RttWatch& s, bool opened)
+static void close_slot(RttWatch *s, bool opened)
 {
 	const u32 last = last_page(s);
+	u32 page;
 
-	s.used = false;
+	s->used = false;
 	/* runs of pages that get the same, in one call each: a page costs a
 	 * system call for every mapping of it */
-	for (u32 page = first_page(s); page <= last; )
+	for (page = first_page(s); page <= last; )
 	{
-		const bool wanted = page_wanted(page, &s);
+		const bool wanted = page_wanted(page, s);
 		u32 end = page + 1;
 
-		while (end <= last && page_wanted(end, &s) == wanted)
+		while (end <= last && page_wanted(end, s) == wanted)
 			end++;
 		if (!wanted)
 			_vmem_unwatch_vram(page * PAGE_SIZE, (end - page) * PAGE_SIZE);
@@ -81,47 +82,48 @@ static const u8 dither_pattern[4][4] = {
 	{ 10,  2,  8,  0 },
 };
 
-static inline u32 dithered(u32 colour, u32 add)
+static INLINE u32 dithered(u32 colour, u32 add)
 {
 	colour += add;
 	return colour > 255 ? 255 : colour;
 }
 
-static void pack_dithered(const RttWatch& s, const u8 *rgba, size_t pitch, u16 *dst)
+static void pack_dithered(const RttWatch *s, const u8 *rgba, size_t pitch, u16 *dst)
 {
-	const u32 skip = (s.stride - s.w * 2) / 2;
+	const u32 skip = (s->stride - s->w * 2) / 2;
+	u32 l, c;
 
-	for (u32 l = 0; l < s.h; l++, dst += skip, rgba += pitch)
+	for (l = 0; l < s->h; l++, dst += skip, rgba += pitch)
 	{
 		const u8 *p = rgba;
-		// (the pattern goes by the pixel's place in the frame)
-		const u8 *row = dither_pattern[(l + s.y0) & 3];
+		/* (the pattern goes by the pixel's place in the frame) */
+		const u8 *row = dither_pattern[(l + s->y0) & 3];
 
-		switch (s.packmode)
+		switch (s->packmode)
 		{
 		case 1:
-			for (u32 c = 0; c < s.w; c++, p += 4)
+			for (c = 0; c < s->w; c++, p += 4)
 			{
-				const u32 d = row[(c + s.x0) & 3];
+				const u32 d = row[(c + s->x0) & 3];
 				*dst++ = (u16)(((dithered(p[0], d >> 1) >> 3) << 11) | ((dithered(p[1], d >> 2) >> 2) << 5)
 						| (dithered(p[2], d >> 1) >> 3));
 			}
 			break;
 		case 2:
 			/* (alpha is not a colour: its low bits are dropped) */
-			for (u32 c = 0; c < s.w; c++, p += 4)
+			for (c = 0; c < s->w; c++, p += 4)
 			{
-				const u32 d = row[(c + s.x0) & 3];
+				const u32 d = row[(c + s->x0) & 3];
 				*dst++ = (u16)(((dithered(p[0], d) >> 4) << 8) | ((dithered(p[1], d) >> 4) << 4) | (dithered(p[2], d) >> 4)
 						| ((p[3] >> 4) << 12));
 			}
 			break;
 		default:
-			for (u32 c = 0; c < s.w; c++, p += 4)
+			for (c = 0; c < s->w; c++, p += 4)
 			{
-				const u32 d = row[(c + s.x0) & 3] >> 1;
+				const u32 d = row[(c + s->x0) & 3] >> 1;
 				*dst++ = (u16)(((dithered(p[0], d) >> 3) << 10) | ((dithered(p[1], d) >> 3) << 5) | (dithered(p[2], d) >> 3)
-						| (s.packmode == 0 ? s.kval_bit : p[3] >= s.alpha_threshold ? 0x8000 : 0));
+						| (s->packmode == 0 ? s->kval_bit : p[3] >= s->alpha_threshold ? 0x8000 : 0));
 			}
 			break;
 		}
@@ -129,36 +131,37 @@ static void pack_dithered(const RttWatch& s, const u8 *rgba, size_t pitch, u16 *
 }
 
 /* As the console packs a pixel into the framebuffer it renders to. */
-static void pack(const RttWatch& s, const u8 *rgba, size_t pitch, u16 *dst)
+static void pack(const RttWatch *s, const u8 *rgba, size_t pitch, u16 *dst)
 {
-	const u32 skip = (s.stride - s.w * 2) / 2;
+	const u32 skip = (s->stride - s->w * 2) / 2;
+	u32 l, c;
 
-	if (s.dither)
+	if (s->dither)
 	{
 		pack_dithered(s, rgba, pitch, dst);
 		return;
 	}
-	for (u32 l = 0; l < s.h; l++, dst += skip, rgba += pitch)
+	for (l = 0; l < s->h; l++, dst += skip, rgba += pitch)
 	{
 		const u8 *p = rgba;
-		switch (s.packmode)
+		switch (s->packmode)
 		{
 		case 0:
-			for (u32 c = 0; c < s.w; c++, p += 4)
-				*dst++ = (u16)(((p[0] >> 3) << 10) | ((p[1] >> 3) << 5) | (p[2] >> 3) | s.kval_bit);
+			for (c = 0; c < s->w; c++, p += 4)
+				*dst++ = (u16)(((p[0] >> 3) << 10) | ((p[1] >> 3) << 5) | (p[2] >> 3) | s->kval_bit);
 			break;
 		case 1:
-			for (u32 c = 0; c < s.w; c++, p += 4)
+			for (c = 0; c < s->w; c++, p += 4)
 				*dst++ = (u16)(((p[0] >> 3) << 11) | ((p[1] >> 2) << 5) | (p[2] >> 3));
 			break;
 		case 2:
-			for (u32 c = 0; c < s.w; c++, p += 4)
+			for (c = 0; c < s->w; c++, p += 4)
 				*dst++ = (u16)(((p[0] >> 4) << 8) | ((p[1] >> 4) << 4) | (p[2] >> 4) | ((p[3] >> 4) << 12));
 			break;
 		default:
-			for (u32 c = 0; c < s.w; c++, p += 4)
+			for (c = 0; c < s->w; c++, p += 4)
 				*dst++ = (u16)(((p[0] >> 3) << 10) | ((p[1] >> 3) << 5) | (p[2] >> 3)
-						| (p[3] >= s.alpha_threshold ? 0x8000 : 0));
+						| (p[3] >= s->alpha_threshold ? 0x8000 : 0));
 			break;
 		}
 	}
@@ -171,64 +174,66 @@ static bool take_opens;          /* the watch's pages are opened first (fill()) 
  * video memory. (None: what the console would have found, nothing.) */
 static void take(const RttWatch *watch, const u8 *rgba, size_t pitch)
 {
-	const RttWatch& s = *watch;
+	const RttWatch *s = watch;
 
 	if (rgba == NULL)
 	{
-		memset(pixels, 0, (size_t)s.w * s.h * 4);
+		memset(pixels, 0, (size_t)s->w * s->h * 4);
 		rgba = pixels;
-		pitch = (size_t)s.w * 4;
+		pitch = (size_t)s->w * 4;
 	}
 	if (take_opens)
 	{
 		_vmem_open_watched_vram(first_page(s) * PAGE_SIZE, (last_page(s) - first_page(s) + 1) * PAGE_SIZE);
 		take_opens = false;
 	}
-	pack(s, rgba, pitch, (u16 *)&vram[s.addr]);
+	pack(s, rgba, pitch, (u16 *)&vram.data[s->addr]);
 }
 
 /* Render thread, and the machine is not running: the picture goes into
  * video memory. */
-static void fill(RttWatch& s)
+static void fill(RttWatch *s)
 {
 	take_opens = true;
-	backend.read(&s, pixels, take);
-	// (a read that handed nothing over leaves what a failed one does)
+	backend.read(s, pixels, take);
+	/* (a read that handed nothing over leaves what a failed one does) */
 	if (take_opens)
-		take(&s, NULL, 0);
+		take(s, NULL, 0);
 	close_slot(s, true);
-	if (s.owned)
-		backend.release(s.tex);
+	if (s->owned)
+		backend.release(s->tex);
 }
 
-static void drop(RttWatch& s)
+static void drop(RttWatch *s)
 {
 	close_slot(s, false);
-	if (s.owned)
-		garbage[garbage_count++] = s.tex;
+	if (s->owned)
+		garbage[garbage_count++] = s->tex;
 }
 
 /* Several at once: their copies off the card begun together first, so
  * that the card is waited for once, not once each. */
 static void fill_many(RttWatch **list, unsigned count)
 {
+	unsigned i;
 	if (count > 1 && backend.prefetch != NULL)
 	{
 		const RttWatch *watches[RTT_WATCH_SLOTS];
 
-		for (unsigned i = 0; i < count; i++)
+		for (i = 0; i < count; i++)
 			watches[i] = list[i];
 		backend.prefetch(watches, count);
 	}
-	for (unsigned i = 0; i < count; i++)
+	for (i = 0; i < count; i++)
 		if (list[i]->used)
-			fill(*list[i]);
+			fill(list[i]);
 }
 
 /* never leave a page that faults with nothing behind it */
 static void unwatch_unwanted(u32 first, u32 last)
 {
-	for (u32 page = first; page <= last; page++)
+	u32 page;
+	for (page = first; page <= last; page++)
 		if (_vmem_vram_page_watched(page) && !page_wanted(page, NULL))
 			_vmem_unwatch_vram(page * PAGE_SIZE, PAGE_SIZE);
 }
@@ -238,10 +243,11 @@ static void fill_range(u32 offset, u32 size)
 	const u32 first = offset / PAGE_SIZE, last = (offset + size - 1) / PAGE_SIZE;
 	RttWatch *list[RTT_WATCH_SLOTS];
 	unsigned count = 0;
+	RttWatch *s;
 
-	for (RttWatch& s : slots)
-		if (s.used && first_page(s) <= last && last_page(s) >= first)
-			list[count++] = &s;
+	for (s = slots; s < slots + RTT_WATCH_SLOTS; s++)
+		if (s->used && first_page(s) <= last && last_page(s) >= first)
+			list[count++] = s;
 	fill_many(list, count);
 	unwatch_unwanted(first, last);
 }
@@ -254,15 +260,16 @@ static void overwrite_range(u32 offset, u32 size)
 	const u32 first = offset / PAGE_SIZE, last = (offset + size - 1) / PAGE_SIZE;
 	RttWatch *list[RTT_WATCH_SLOTS];
 	unsigned count = 0;
+	RttWatch *s;
 
-	for (RttWatch& s : slots)
+	for (s = slots; s < slots + RTT_WATCH_SLOTS; s++)
 	{
-		if (!s.used || first_page(s) > last || last_page(s) < first)
+		if (!s->used || first_page(s) > last || last_page(s) < first)
 			continue;
-		if (s.addr >= offset && s.addr + s.bytes <= offset + size)
+		if (s->addr >= offset && s->addr + s->bytes <= offset + size)
 			drop(s);
 		else
-			list[count++] = &s;
+			list[count++] = s;
 	}
 	fill_many(list, count);
 	unwatch_unwanted(first, last);
@@ -271,29 +278,31 @@ static void overwrite_range(u32 offset, u32 size)
 static void drop_range(u32 offset, u32 size)
 {
 	const u32 first = offset / PAGE_SIZE, last = (offset + size - 1) / PAGE_SIZE;
+	RttWatch *s;
 
-	for (RttWatch& s : slots)
-		if (s.used && first_page(s) <= last && last_page(s) >= first)
+	for (s = slots; s < slots + RTT_WATCH_SLOTS; s++)
+		if (s->used && first_page(s) <= last && last_page(s) >= first)
 			drop(s);
 	unwatch_unwanted(first, last);
 }
 
 void rtt_watch_supersede(u32 addr, u32 bytes)
 {
-	for (RttWatch& s : slots)
+	RttWatch *s;
+	for (s = slots; s < slots + RTT_WATCH_SLOTS; s++)
 	{
-		if (!s.used || s.addr >= addr + bytes || s.addr + s.bytes <= addr)
+		if (!s->used || s->addr >= addr + bytes || s->addr + s->bytes <= addr)
 			continue;
-		if (s.addr >= addr && s.addr + s.bytes <= addr + bytes)
+		if (s->addr >= addr && s->addr + s->bytes <= addr + bytes)
 		{
 			/* Its pages stay as they are: the render that covers it is
 			 * about to have them watched, and a game that renders to the
 			 * same texture every frame pays for no system call here. (Were
 			 * that not to follow, the first touch finds nothing waiting
 			 * and opens them.) */
-			s.used = false;
-			if (s.owned)
-				backend.release(s.tex);
+			s->used = false;
+			if (s->owned)
+				backend.release(s->tex);
 		}
 		else
 			fill(s);
@@ -302,8 +311,9 @@ void rtt_watch_supersede(u32 addr, u32 bytes)
 
 void rtt_watch_add(const RttWatch *watch, const RttWatchBackend *b)
 {
-	RttWatch *slot = NULL;
+	RttWatch *slot = NULL, *s;
 	const size_t need = (size_t)watch->w * watch->h * 4;
+	bool can_watch;
 
 	backend = *b;
 #if !defined(TARGET_NO_THREADS)
@@ -320,11 +330,11 @@ void rtt_watch_add(const RttWatch *watch, const RttWatchBackend *b)
 	}
 
 #if defined(TARGET_NO_EXCEPTIONS)
-	const bool can_watch = false;
+	can_watch = false;
 #else
 	/* With the MMU on, the game's own mappings of video memory come and go
 	 * outside the ones closed here. */
-	const bool can_watch = !mmu_enabled();
+	can_watch = !mmu_enabled();
 #endif
 	if (!can_watch || watch->bytes == 0 || watch->addr + watch->bytes > VRAM_SIZE)
 	{
@@ -339,20 +349,20 @@ void rtt_watch_add(const RttWatch *watch, const RttWatchBackend *b)
 		return;
 	}
 
-	for (RttWatch& s : slots)
-		if (!s.used)
+	for (s = slots; s < slots + RTT_WATCH_SLOTS; s++)
+		if (!s->used)
 		{
-			slot = &s;
+			slot = s;
 			break;
 		}
 	if (slot == NULL)
 	{
 		/* the one that has waited longest: the likeliest not to be wanted */
 		slot = &slots[0];
-		for (RttWatch& s : slots)
-			if (s.age > slot->age)
-				slot = &s;
-		fill(*slot);
+		for (s = slots; s < slots + RTT_WATCH_SLOTS; s++)
+			if (s->age > slot->age)
+				slot = s;
+		fill(slot);
 	}
 	*slot = *watch;
 	slot->used = true;
@@ -360,15 +370,16 @@ void rtt_watch_add(const RttWatch *watch, const RttWatchBackend *b)
 	if (++next_serial == 0)
 		next_serial = 1;
 	slot->serial = next_serial;
-	_vmem_watch_vram(first_page(*slot) * PAGE_SIZE, (last_page(*slot) - first_page(*slot) + 1) * PAGE_SIZE);
+	_vmem_watch_vram(first_page(slot) * PAGE_SIZE, (last_page(slot) - first_page(slot) + 1) * PAGE_SIZE);
 }
 
 bool rtt_watch_take(uintptr_t tex)
 {
-	for (RttWatch& s : slots)
-		if (s.used && s.tex == tex && !s.owned)
+	RttWatch *s;
+	for (s = slots; s < slots + RTT_WATCH_SLOTS; s++)
+		if (s->used && s->tex == tex && !s->owned)
 		{
-			s.owned = true;
+			s->owned = true;
 			return true;
 		}
 	return false;
@@ -379,29 +390,33 @@ bool rtt_watch_take(uintptr_t tex)
 static void watched_access(u32 offset, u32 size, bool overwrite)
 {
 	bool any = false;
+	u32 page;
+#if !defined(TARGET_NO_THREADS)
+	uintptr_t self;
+#endif
 
 	if (size == 0 || offset >= VRAM_SIZE)
 		return;
 	if (size > VRAM_SIZE - offset)
 		size = VRAM_SIZE - offset;
-	for (u32 page = offset / PAGE_SIZE; page <= (offset + size - 1) / PAGE_SIZE && !any; page++)
+	for (page = offset / PAGE_SIZE; page <= (offset + size - 1) / PAGE_SIZE && !any; page++)
 		any = _vmem_vram_page_watched(page);
 	if (!any)
 		return;
 
 #if !defined(TARGET_NO_THREADS)
-	const uintptr_t self = sthread_get_current_thread_id();
+	self = sthread_get_current_thread_id();
 	if (self != render_thread)
 	{
-		if (self == emu_thread_id && emu_baton.FrameRunning())
+		if (self == emu_thread_id && emu_baton_frame_running(&emu_baton))
 		{
 			/* The thread that renders is in retro_run, taking what this one
 			 * hands over: it fetches the picture while this one sleeps. */
 			request_offset = offset;
 			request_size = size;
 			request_overwrite = overwrite;
-			emu_baton.WaitWorkDone();
-			emu_baton.HandOver(&rtt_watch_request);
+			emu_baton_wait_work_done(&emu_baton);
+			emu_baton_hand_over(&emu_baton, &rtt_watch_request);
 			return;
 		}
 		/* Some other thread, with the machine standing still and nobody
@@ -450,14 +465,14 @@ void rtt_watch_serve(void)
 
 bool rtt_watch_pending(u32 offset, u32 size, RttWatch *watch)
 {
-	const RttWatch *found = NULL;
+	const RttWatch *found = NULL, *s;
 
-	for (const RttWatch& s : slots)
-		if (s.used && s.addr < offset + size && s.addr + s.bytes > offset)
+	for (s = slots; s < slots + RTT_WATCH_SLOTS; s++)
+		if (s->used && s->addr < offset + size && s->addr + s->bytes > offset)
 		{
 			if (found != NULL)
 				return false;
-			found = &s;
+			found = s;
 		}
 	if (found == NULL)
 		return false;
@@ -469,12 +484,13 @@ void rtt_watch_flush(void)
 {
 	RttWatch *list[RTT_WATCH_SLOTS];
 	unsigned count = 0;
+	RttWatch *s;
 
 	if (backend.read == NULL)
 		return;
-	for (RttWatch& s : slots)
-		if (s.used)
-			list[count++] = &s;
+	for (s = slots; s < slots + RTT_WATCH_SLOTS; s++)
+		if (s->used)
+			list[count++] = s;
 	fill_many(list, count);
 }
 
@@ -485,17 +501,18 @@ void rtt_watch_frame(void)
 	const RttWatch *early[RTT_WATCH_SLOTS];
 	RttWatch *settled[RTT_WATCH_SLOTS];
 	unsigned n_early = 0, n_settled = 0;
+	RttWatch *s;
 
 	if (backend.read == NULL)
 		return;
-	for (RttWatch& s : slots)
+	for (s = slots; s < slots + RTT_WATCH_SLOTS; s++)
 	{
-		if (!s.used)
+		if (!s->used)
 			continue;
-		if (++s.age >= RTT_WATCH_SETTLED)
-			settled[n_settled++] = &s;
-		else if (s.age == RTT_WATCH_SETTLED - 1)
-			early[n_early++] = &s;
+		if (++s->age >= RTT_WATCH_SETTLED)
+			settled[n_settled++] = s;
+		else if (s->age == RTT_WATCH_SETTLED - 1)
+			early[n_early++] = s;
 	}
 	/* the copies of the ones that settle next frame, begun now: by then the
 	 * card is done with them, and their fill() waits for nothing. (Begun
@@ -507,14 +524,15 @@ void rtt_watch_frame(void)
 
 void rtt_watch_forget(void)
 {
-	for (RttWatch& s : slots)
-		if (s.used)
+	RttWatch *s;
+	for (s = slots; s < slots + RTT_WATCH_SLOTS; s++)
+		if (s->used)
 		{
 			/* A texture that shows this picture shows what video memory
 			 * never had and now never will: it is made again, from what
 			 * is there. (Before textures were kept through the loading of
 			 * a state, they all were.) */
-			VramLockedWriteRange(s.addr, s.bytes);
+			VramLockedWriteRange(s->addr, s->bytes);
 			drop(s);
 		}
 }
@@ -532,8 +550,9 @@ void rtt_watch_reserve(void)
 
 void rtt_watch_term(void)
 {
-	for (RttWatch& s : slots)
-		if (s.used)
+	RttWatch *s;
+	for (s = slots; s < slots + RTT_WATCH_SLOTS; s++)
+		if (s->used)
 			drop(s);
 	if (backend.release != NULL)
 		release_garbage();

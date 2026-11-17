@@ -35,10 +35,12 @@ for san in thread address,undefined; do
       -c $L/rthreads/rthreads.c -o "$WORK/rthreads.o"
    $CC -O1 -g -fsanitize=$san -fno-sanitize-recover=undefined $INC \
       -c $L/rthreads/retro_eventcount.c -o "$WORK/retro_eventcount.o"
+   $CC -O1 -g $DEFS -fsanitize=$san -fno-sanitize-recover=undefined $INC \
+      -c core/libretro/emu_baton.c -o "$WORK/emu_baton.o"
    $CXX -std=c++11 -fpermissive -O1 -g $DEFS \
       -fsanitize=$san -fno-sanitize-recover=undefined $INC \
       -o "$WORK/threads_test" tools/threads/threads_test.cpp \
-      "$WORK/rthreads.o" "$WORK/retro_eventcount.o" -lpthread
+      "$WORK/emu_baton.o" "$WORK/rthreads.o" "$WORK/retro_eventcount.o" -lpthread
    # The NAOMI link board: the core's own naomi_m3comm.c against a
    # stand-in for the network.
    $CC -O1 -g -fsanitize=$san -fno-sanitize-recover=undefined $INC \

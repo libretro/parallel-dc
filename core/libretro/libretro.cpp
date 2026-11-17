@@ -332,9 +332,6 @@ static int threading_pending;
 static void apply_threading(void);
 static cThread emu_thread(&emu_thread_func, 0);
 static bool emu_thread_started = false;   /* libretro thread only */
-/* Who has the machine, and the frame-by-frame handshake between retro_run
- * and the emulation thread: see emu_baton.h. */
-EmuBaton emu_baton;
 #endif
 static bool gl_ctx_resetting = false;
 retro_atomic_int_t reset_requested;
@@ -358,7 +355,7 @@ static bool game_loaded = false;
 static void *emu_thread_func(void *)
 {
    rtt_watch_emu_thread();
-   while (emu_baton.WaitForFrame())
+   while (emu_baton_wait_for_frame(&emu_baton))
    {
       if (retro_atomic_load_acquire_int(&reset_requested))
       {
@@ -366,7 +363,7 @@ static void *emu_thread_func(void *)
          retro_atomic_store_release_int(&reset_requested, 0);
       }
       dc_run();
-      emu_baton.EndFrame();
+      emu_baton_end_frame(&emu_baton);
    }
 
    /* Told to go because the game is closed: the machine goes with it. Told
@@ -380,12 +377,12 @@ static void *emu_thread_func(void *)
 
 static void emu_hold(void)
 {
-   emu_baton.Hold();
+   emu_baton_hold(&emu_baton);
 }
 
 static void emu_release(void)
 {
-   emu_baton.Release();
+   emu_baton_release(&emu_baton);
 }
 #endif
 
@@ -406,10 +403,10 @@ static void apply_threading(void)
    {
       emu_hold();
       retro_atomic_store_release_int(&emu_thread_leaves_machine, 1);
-      emu_baton.TellThreadToExit();
+      emu_baton_tell_thread_to_exit(&emu_baton);
       emu_thread.WaitToEnd();
       emu_thread_started = false;
-      emu_baton.ThreadGone();
+      emu_baton_thread_gone(&emu_baton);
       retro_atomic_store_release_int(&emu_thread_leaves_machine, 0);
       /* (a reset the thread was to make at its next frame) */
       if (retro_atomic_load_acquire_int(&reset_requested))
@@ -582,6 +579,12 @@ void retro_init(void)
       libretro_supports_bitmasks = true;
 
    init_disk_control_interface();
+#if !defined(TARGET_NO_THREADS)
+   /* Who has the machine, and the frame-by-frame handshake between
+    * retro_run and the emulation thread (emu_baton.h) */
+   if (!emu_baton_init(&emu_baton))
+      abort();
+#endif
 }
 
 void retro_deinit(void)
@@ -594,6 +597,7 @@ void retro_deinit(void)
 #if !defined(TARGET_NO_THREADS)
    emu_hold();
    emu_release();
+   emu_baton_free(&emu_baton);
 #endif
 
    libretro_supports_bitmasks = false;
@@ -1790,10 +1794,10 @@ void retro_run (void)
       if (settings.pvr.rend == 0 || settings.pvr.rend == 3)
          glsm_ctl(GLSM_CTL_STATE_BIND, NULL);
 
-      emu_baton.StartFrame();
+      emu_baton_start_frame(&emu_baton);
       for (;;)
       {
-         void *work = emu_baton.WaitWork();
+         void *work = emu_baton_wait_work(&emu_baton);
          if (work == NULL)
             break;
          if (work == (void *)&rtt_watch_request)
@@ -1801,11 +1805,11 @@ void retro_run (void)
             /* the game touched video memory that a render to a texture has
              * not reached yet: it sleeps until this has put it there */
             rtt_watch_serve();
-            emu_baton.AckWork();
+            emu_baton_ack_work(&emu_baton);
          }
          else
             rend_single_frame();
-         emu_baton.WorkDone();
+         emu_baton_work_done(&emu_baton);
       }
       /* The frame is made and the emulation thread is asleep again; is_dupe
        * was set at vblank (os_DoEvents). */
@@ -3338,10 +3342,10 @@ void retro_unload_game(void)
 	    * let the thread shut it down. */
 	   DEBUG_LOG(COMMON, "Waiting for emu thread to end...\n");
 	   emu_hold();
-	   emu_baton.TellThreadToExit();
+	   emu_baton_tell_thread_to_exit(&emu_baton);
 	   emu_thread.WaitToEnd();
 	   emu_thread_started = false;
-	   emu_baton.ThreadGone();
+	   emu_baton_thread_gone(&emu_baton);
 	   DEBUG_LOG(COMMON, "...Done\n");
    }
    else

@@ -1,5 +1,5 @@
 /* The core's uses of retro_atomic.h's C++11 backend, in their shape:
- * EmuBaton's unnamed enumerators and PsoState through init and the
+ * a class's unnamed enumerators and PsoState through init and the
  * stores, counters through the fetch macros.  tools/threads/old_stl.sh
  * parses this against old_stl/atomic, the <atomic> of libstdc++ 8,
  * whose free functions deduce the value parameter too; a macro that

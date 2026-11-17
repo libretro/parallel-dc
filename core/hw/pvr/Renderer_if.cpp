@@ -85,7 +85,6 @@ static bool renderer_failed = false;
 
 #if !defined(TARGET_NO_THREADS)
 #include "libretro/emu_baton.h"
-extern EmuBaton emu_baton;
 #endif
 u32 fb_w_cur = 1;
 bool rend_compute_wanted = false;	// rend/rend_method.h
@@ -268,7 +267,7 @@ bool rend_frame(TA_context* ctx, bool draw_osd)
        * as a frame that draws nothing lets it) */
 #if !defined(TARGET_NO_THREADS)
       if (settings.rend.ThreadedRendering)
-         emu_baton.AckWork();
+         emu_baton_ack_work(&emu_baton);
 #endif
       return false;
    }
@@ -293,7 +292,7 @@ bool rend_frame(TA_context* ctx, bool draw_osd)
     * finished. */
    const bool hold = proc && ctx->rend.isRTT;
    if (settings.rend.ThreadedRendering && !hold)
-      emu_baton.AckWork();
+      emu_baton_ack_work(&emu_baton);
 #endif
 
    bool do_swp = proc && renderer->Render();
@@ -304,7 +303,7 @@ bool rend_frame(TA_context* ctx, bool draw_osd)
 
 #if !defined(TARGET_NO_THREADS)
    if (settings.rend.ThreadedRendering && hold)
-      emu_baton.AckWork();
+      emu_baton_ack_work(&emu_baton);
 #endif
 
    return do_swp;
@@ -348,7 +347,7 @@ void rend_start_render(void)
    /* One render at a time: the libretro thread may still be drawing the
     * last one. Nothing is ever dropped to make room. */
    if (settings.rend.ThreadedRendering)
-      emu_baton.WaitWorkDone();
+      emu_baton_wait_work_done(&emu_baton);
 #endif
    render_called = true;
    pend_rend = false;
@@ -437,7 +436,7 @@ void rend_start_render(void)
                 * as they are now, and sleep until it has read what it needs
                 * of the game's memory. */
                memcpy(ctx->regs, pvr_regs, pvr_RendRegSize);
-               emu_baton.HandOver(ctx);
+               emu_baton_hand_over(&emu_baton, ctx);
             }
             else
 #endif

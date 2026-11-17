@@ -900,7 +900,7 @@ void UnserializeTAContext(void **data, unsigned int *total_size, serialize_versi
  * but for one a render draws some render passes of (rend.keep), which
  * stays: it is read, not written, while it is drawn. And
  * a state is saved or loaded only by whoever holds the machine
- * (EmuBaton::Hold()), which is to be had only between two frames: the
+ * (emu_baton_hold()), which is to be had only between two frames: the
  * emulation thread is asleep, and every render it handed over has been
  * drawn and given back, since the frame is not over before that. So
  * nothing is being drawn either while the frames are replaced, and the

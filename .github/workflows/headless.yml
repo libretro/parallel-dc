@@ -62,7 +62,9 @@ name: Headless
 # depth prepasses, and the control words' fields as C has them
 # (tools/rend/sorter_run.sh),
 # and the locks on video memory, taken and dropped by every kind of write
-# (tools/rend/vram_lock_run.sh),
+# (tools/rend/vram_lock_run.sh), and the pictures rendered to textures
+# waiting in video memory, fetched, dropped and packed
+# (tools/rend/rtt_watch_run.sh),
 # and the paths the core writes to, a
 # content's name of any length included (tools/paths/paths_run.sh), and the
 # HLE BIOS's GD-ROM transfers stopped at a fault and made again
@@ -94,6 +96,7 @@ on:
       - 'tools/pvr/ta_words_test.cpp'
       - 'tools/rend/sorter_*'
       - 'tools/rend/vram_lock_*'
+      - 'tools/rend/rtt_watch_*'
       - 'tools/sh4/reglist_test.*'
       - 'tools/sh4/node_pool_test.*'
       - 'tools/rend/band_pool_test.*'
@@ -136,6 +139,7 @@ on:
       - 'tools/pvr/ta_words_test.cpp'
       - 'tools/rend/sorter_*'
       - 'tools/rend/vram_lock_*'
+      - 'tools/rend/rtt_watch_*'
       - 'tools/sh4/reglist_test.*'
       - 'tools/sh4/node_pool_test.*'
       - 'tools/rend/band_pool_test.*'
@@ -322,6 +326,10 @@ jobs:
         run: |
           sh tools/rend/vram_lock_run.sh
           sh tools/rend/vram_lock_run.sh -fsanitize=address,undefined -fno-sanitize-recover=all
+      - name: The pictures rendered to textures, waiting in video memory - watched, fetched when touched, faulted on or written in part, dropped when written whole, superseded, settled, forgotten, packed into every pixel format dithered and not, from a thread that neither renders nor runs the machine too - with the threads and without (and with the sanitizers)
+        run: |
+          sh tools/rend/rtt_watch_run.sh
+          sh tools/rend/rtt_watch_run.sh -fsanitize=address,undefined -fno-sanitize-recover=all
       - name: The paths the core writes to, a content's name of any length (and with the sanitizers)
         run: |
           sh tools/paths/paths_run.sh

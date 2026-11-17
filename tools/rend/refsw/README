@@ -177,7 +177,7 @@ What the walk takes from the parse, and the known departures
   the lines above and below by Y_COEFF's coefficients. Then the pixel
   clip (FB_X_CLIP/FB_Y_CLIP), in the framebuffer's pixels. With a
   framebuffer of 16 bits a pixel (FB_W_CTRL) the picture is packed to it,
-  dithered where FB_W_CTRL says (rend/rtt_watch.cpp's pattern), and read
+  dithered where FB_W_CTRL says (rend/rtt_watch.c's pattern), and read
   back as the video output reads it, FB_R_CTRL's fb_concat in the low
   bits. Not applied: the Y scaler's choice of lines (the picture keeps
   every line drawn, as the renderers present it; at 0x401 that is the
