@@ -22,6 +22,7 @@
 #include "types.h"
 
 #include <vulkan/vulkan_symbol_wrapper.h>
+#include "vulkan_nvx_symbols.h"
 
 extern PFN_vkGetInstanceProcAddr vulkan_symbol_wrapper_vkGetInstanceProcAddr;
 #define vkGetInstanceProcAddr vulkan_symbol_wrapper_vkGetInstanceProcAddr

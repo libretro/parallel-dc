@@ -258,7 +258,8 @@ ifeq ($(HAVE_VULKAN), 1)
 	SOURCES_C += $(LIBRETRO_COMM_DIR)/vulkan/vulkan_symbol_wrapper.c \
 					$(CORE_DIR)/core/rend/vulkan/vk_heap.c \
 					$(CORE_DIR)/core/rend/vulkan/parse_arena_vk.c \
-					$(CORE_DIR)/core/rend/vulkan/hdr_encode_vk.c
+					$(CORE_DIR)/core/rend/vulkan/hdr_encode_vk.c \
+					$(CORE_DIR)/core/rend/vulkan/vulkan_nvx_symbols.c
 	SOURCES_CXX += \
 					$(CORE_DIR)/core/rend/vulkan/vulkan_context.cpp \
 					$(CORE_DIR)/core/rend/vulkan/heap.cpp \

@@ -49,6 +49,9 @@ static bool createDevice(retro_vulkan_context* context, VkInstance instance, VkP
 	vulkan_symbol_wrapper_init(get_instance_proc_addr);
 	vulkan_symbol_wrapper_load_global_symbols();
 	vulkan_symbol_wrapper_load_core_symbols(instance);
+	/* Vulkan 1.1 and the extensions vulkan.hpp names: those the driver
+	 * has, from the instance; the device's once it exists */
+	vulkan_symbol_wrapper_load_extended_symbols(instance, VK_NULL_HANDLE);
 	VULKAN_SYMBOL_WRAPPER_LOAD_INSTANCE_EXTENSION_SYMBOL(instance, vkGetPhysicalDeviceSurfaceSupportKHR);
 
 	vk::PhysicalDevice physicalDevice(gpu);
@@ -334,6 +337,7 @@ static bool createDevice(retro_vulkan_context* context, VkInstance instance, VkP
 		device = physicalDevice.createDevice(deviceCreateInfo);
 	context->device = (VkDevice)device;
 	vulkan_symbol_wrapper_load_core_device_symbols(context->device);
+	vulkan_symbol_wrapper_load_extended_symbols(instance, context->device);
 
 	// Queues
 	context->queue = (VkQueue)device.getQueue(context->queue_family_index, 0);

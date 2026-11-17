@@ -1,0 +1,18 @@
+/* See vulkan_nvx_symbols.h: declared for vulkan.hpp, never loaded. */
+#include "vulkan_nvx_symbols.h"
+
+#if defined(VK_NVX_device_generated_commands) && defined(VK_NVX_DEVICE_GENERATED_COMMANDS_SPEC_VERSION) \
+   && (VK_NVX_DEVICE_GENERATED_COMMANDS_SPEC_VERSION < 4)
+PFN_vkCmdProcessCommandsNVX parallel_dc_vkCmdProcessCommandsNVX;
+PFN_vkCmdReserveSpaceForCommandsNVX parallel_dc_vkCmdReserveSpaceForCommandsNVX;
+PFN_vkCreateIndirectCommandsLayoutNVX parallel_dc_vkCreateIndirectCommandsLayoutNVX;
+PFN_vkDestroyIndirectCommandsLayoutNVX parallel_dc_vkDestroyIndirectCommandsLayoutNVX;
+PFN_vkCreateObjectTableNVX parallel_dc_vkCreateObjectTableNVX;
+PFN_vkDestroyObjectTableNVX parallel_dc_vkDestroyObjectTableNVX;
+PFN_vkRegisterObjectsNVX parallel_dc_vkRegisterObjectsNVX;
+PFN_vkUnregisterObjectsNVX parallel_dc_vkUnregisterObjectsNVX;
+PFN_vkGetPhysicalDeviceGeneratedCommandsPropertiesNVX parallel_dc_vkGetPhysicalDeviceGeneratedCommandsPropertiesNVX;
+#else
+/* ISO C wants a translation unit to declare something */
+typedef int vulkan_nvx_symbols_unused;
+#endif

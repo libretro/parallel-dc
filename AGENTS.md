@@ -258,9 +258,3 @@ ever edited in this core.
   header, every call site includes the new one. A clean build of the
   core has no implicit-declaration warning: GCC 14 makes it an error, and
   older compilers cut the returned pointer to an int.
-
-The one file pair that differs today is
-`vulkan/vulkan_symbol_wrapper.c` and its header: this core's copy has
-the Vulkan 1.1 and extension entry points it uses, which RetroArch's
-lacks. They go into RetroArch's copy, and the next resync makes the two
-the same; until then a resync leaves that pair alone.
