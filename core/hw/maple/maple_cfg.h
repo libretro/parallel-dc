@@ -1,5 +1,6 @@
 #ifndef MAPLE_CFG_H
 #define MAPLE_CFG_H
+#include <math.h>
 #include "types.h"
 #include "maple_devs.h"
 #include "maple_if.h"
@@ -56,6 +57,27 @@ static INLINE void pjs_init(PlainJoystickState *pjs)
 	pjs->kcode = 0xFFFFFFFF;
 	pjs->joy[0] = pjs->joy[1] = pjs->joy[2] = pjs->joy[3] = 0x80;
 	pjs->trigger[0] = pjs->trigger[1] = 0;
+}
+
+/* A stick kept inside a circle of @magnitude (a Dreamcast's: 128),
+ * rounded half away from zero as lroundf() does */
+static INLINE long maple_round_away(float v)
+{
+	const double d = v;
+	return d >= 0 ? (long)floor(d + 0.5) : -(long)floor(-d + 0.5);
+}
+
+static INLINE void maple_limit_stick(s8 *joyx, s8 *joyy, int magnitude)
+{
+	const int xaxis = (u8)*joyx - 128;
+	const int yaxis = (u8)*joyy - 128;
+	float mag = (float)(xaxis * xaxis + yaxis * yaxis);
+	if (mag > (float)magnitude * magnitude)
+	{
+		mag = (float)sqrt(mag) / (float)magnitude;
+		*joyx = (s8)(u32)(maple_round_away((float)xaxis / mag) + 128);
+		*joyy = (s8)(u32)(maple_round_away((float)yaxis / mag) + 128);
+	}
 }
 
 /* Where a device gets its inputs and puts its outputs: the player's, by

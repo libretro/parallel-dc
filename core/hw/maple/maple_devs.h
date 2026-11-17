@@ -127,19 +127,6 @@ int get_mic_data(u8* buffer); //implemented in Android.cpp
 int push_vmu_screen(u8* buffer); //implemented in Android.cpp
 
 
-template<int Magnitude>
-void limit_joystick_magnitude(s8& joyx, s8& joyy)
-{
-	int xaxis = (u8)joyx - 128;
-	int yaxis = (u8)joyy - 128;
-	float mag = xaxis * xaxis + yaxis * yaxis;
-	if (mag > (float)Magnitude * Magnitude)
-	{
-		mag = sqrtf(mag) / (float)Magnitude;
-		joyx = (u32)lroundf(xaxis / mag) + 128;
-		joyy = (u32)lroundf(yaxis / mag) + 128;
-	}
-}
 
 
 /* What C sees of the devices */

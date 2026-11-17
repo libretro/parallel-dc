@@ -68,7 +68,8 @@ name: Headless
 # strips from frame to frame (tools/rend/upscaler_run.sh), and the custom
 # textures' loader (tools/rend/custom_texture_run.sh), and the renderer
 # interface (tools/pvr/renderer_if_run.sh), and what is plugged into the
-# maple bus (tools/maple/maple_cfg_run.sh), and the compute renderer's
+# maple bus (tools/maple/maple_cfg_run.sh), and the NAOMI's JVS I/O boards
+# (tools/maple/jvs_board_run.sh), and the compute renderer's
 # frame words (tools/rend/compute_frame_run.sh),
 # and the paths the core writes to, a
 # content's name of any length included (tools/paths/paths_run.sh), and the
@@ -366,6 +367,10 @@ jobs:
         run: |
           sh tools/maple/maple_cfg_run.sh
           sh tools/maple/maple_cfg_run.sh -fsanitize=address,undefined -fno-sanitize-recover=all
+      - name: The NAOMI's JVS I/O boards - every cabinet's boards, their answers to every kind of request, cut short, too long and unknown, coins, switches remapped by the game, sticks, light guns, encoders turned by the game's own rules, the drive boards and their force feedback, the printer, their parts of states written and read back changed - against what they always did (and with the sanitizers)
+        run: |
+          sh tools/maple/jvs_board_run.sh
+          sh tools/maple/jvs_board_run.sh -fsanitize=address,undefined -fno-sanitize-recover=all
       - name: The paths the core writes to, a content's name of any length (and with the sanitizers)
         run: |
           sh tools/paths/paths_run.sh

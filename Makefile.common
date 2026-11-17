@@ -121,6 +121,7 @@ SOURCES_C += $(CORE_DIR)/core/rend/tile/compute_frame.c
 SOURCES_C += $(CORE_DIR)/core/serialize.c
 SOURCES_C += $(CORE_DIR)/core/hw/pvr/Renderer_if.c
 SOURCES_C += $(CORE_DIR)/core/hw/maple/maple_cfg.c
+SOURCES_C += $(CORE_DIR)/core/hw/maple/jvs_board.c
 # ...and a strip's indices (make_index()'s)
 SOURCES_C += $(CORE_DIR)/core/hw/pvr/ta_index.c
 # ...and what C++ has become C, MSVC C89 (AGENTS.md: gradually)

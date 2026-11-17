@@ -182,26 +182,6 @@ static u8 GetBtFromSgn(s8 val)
 	return val+128;
 }
 
-/* lroundf()'s: half away from zero */
-static long round_away(float v)
-{
-	const double d = v;
-	return d >= 0 ? (long)floor(d + 0.5) : -(long)floor(-d + 0.5);
-}
-
-/* A Dreamcast's stick kept inside its circle */
-static void limit_joystick_magnitude(s8 *joyx, s8 *joyy)
-{
-	const int xaxis = (u8)*joyx - 128;
-	const int yaxis = (u8)*joyy - 128;
-	float mag = (float)(xaxis * xaxis + yaxis * yaxis);
-	if (mag > 128.f * 128.f)
-	{
-		mag = (float)sqrt(mag) / 128.f;
-		*joyx = (s8)(u32)(round_away((float)xaxis / mag) + 128);
-		*joyy = (s8)(u32)(round_away((float)yaxis / mag) + 128);
-	}
-}
 
 /* Each slot's: the device there and whose player's it is */
 static mcfg_map_t mcfg_maps[MAPLE_PORTS][6];
@@ -261,7 +241,7 @@ void mcfg_get_input(const mcfg_map_t *map, PlainJoystickState *pjs)
 	 * Block Pong-Pong but only the x axis. Driving games use the first two
 	 * axes for totally separate things. So only do this for dreamcast */
 	if (settings.System == DC_PLATFORM_DREAMCAST)
-		limit_joystick_magnitude((s8 *)&pjs->joy[PJAI_X1], (s8 *)&pjs->joy[PJAI_Y1]);
+		maple_limit_stick((s8 *)&pjs->joy[PJAI_X1], (s8 *)&pjs->joy[PJAI_Y1], 128);
 }
 
 void mcfg_set_image(const mcfg_map_t *map, void *img)
