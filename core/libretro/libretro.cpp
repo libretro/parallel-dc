@@ -93,7 +93,7 @@ void texcache_scratch_largest(void);
 #include "../imgread/common.h"
 #include "../hw/aica/dsp.h"
 #include "cheats.h"
-#include "rend/CustomTexture.h"
+#include "rend/custom_texture.h"
 #include "network/netservice.h"
 
 #if defined(_XBOX) || defined(_WIN32)

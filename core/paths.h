@@ -29,6 +29,8 @@ extern unsigned per_content_vmus;
 size_t writable_data_path(char *out, size_t size, const char *filename);
 /* The file of the memory card in @logical_port ("A1"...) */
 size_t writable_vmu_path(char *out, size_t size, const char *logical_port);
+/* The frontend's system directory ("." if it has none) */
+const char *retro_get_system_directory(void);
 
 #ifdef __cplusplus
 }

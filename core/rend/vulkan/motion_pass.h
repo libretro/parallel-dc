@@ -30,7 +30,7 @@
  * the screen drawers: a render pass of its own after the frame's, over
  * the depth the frame left (loaded, tested, not written, kept for the
  * upscaler), into the vectors' image, which the upscaler reads as the
- * colour. The vectors are of the strips rend/upscaler.cpp matched with
+ * colour. The vectors are of the strips rend/upscaler.c matched with
  * the frame before's. The pipelines are made with the drawer's layout,
  * whose per-frame descriptor set (the vertex uniforms) is bound when
  * Record() is called. Its three pipelines are asked of the pipeline

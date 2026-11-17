@@ -3,7 +3,6 @@
 #define PVR_REGS_FOR_RENDERER
 #include "TexCache.h"
 #include "lockfree.h"
-#include "CustomTexture.h"
 #ifdef HAVE_TEXUPSCALE
 #include "deps/xbrz/xbrz.h"
 #endif
@@ -430,12 +429,12 @@ bool BaseTextureCacheData::HashChanged()
 
 void texcache_stop_custom_loads()
 {
-	custom_texture.Terminate();
+	custom_texture_terminate();
 }
 
 bool BaseTextureCacheData::Delete()
 {
-	if (retro_atomic_load_acquire_int(&custom_load_in_progress) > 0)
+	if (retro_atomic_load_acquire_int(&custom.in_progress) > 0)
 		return false;
 
 	if (lock_block)
@@ -445,7 +444,7 @@ bool BaseTextureCacheData::Delete()
 	pieces_free(piece_hash, pieces);
 	piece_hash = NULL;
 	pieces = 0;
-	free(custom_image_data);
+	free(custom.image_data);
 
 	return true;
 }
@@ -463,11 +462,7 @@ void BaseTextureCacheData::Create()
 	made_type = 0;
 	made_mips = false;
 	changed_pieces = false;
-	custom_image_data = nullptr;
-	retro_atomic_store_release_int(&custom_load_in_progress, 0);
-	retro_atomic_int_init(&custom_request_hash, 0);
-	retro_atomic_int_init(&custom_request_old_hash, 0);
-	retro_atomic_int_init(&custom_request_old_vqhash, 0);
+	custom_request_init(&custom);
 
 	//decode info from tsp/tcw into the texture struct
 	tex = &format[tcw.PixelFmt == PixelReserved ? Pixel1555 : tcw.PixelFmt];	//texture format table entry
@@ -1308,8 +1303,13 @@ void BaseTextureCacheData::Update()
 		PrintTextureName();
 		return;
 	}
-	if (settings.rend.CustomTextures)
-		custom_texture.LoadCustomTextureAsync(this);
+	/* (its names worked out here and now: the renderer is updating the
+	 * texture, and the game is held while it does) */
+	if (settings.rend.CustomTextures && custom_texture_available())
+	{
+		ComputeHash();
+		custom_texture_request(&custom, texture_hash, old_vqtexture_hash, old_texture_hash);
+	}
 
 	/* Watched by its hashes from now on: of what is converted, before it
 	 * is (NeedsUpdate()'s, if it has just hashed it) */
@@ -1573,7 +1573,21 @@ void BaseTextureCacheData::Update()
 	if (settings.rend.DumpTextures)
 	{
 		ComputeHash();
-		custom_texture.DumpTexture(texture_hash, upscaled_w, upscaled_h, tex_type, temp_tex_buffer);
+		enum custom_image_texels texels = CUSTOM_IMAGE_8888;
+		bool known = true;
+		switch (tex_type)
+		{
+		case TextureType::_4444: texels = CUSTOM_IMAGE_4444; break;
+		case TextureType::_565:  texels = CUSTOM_IMAGE_565;  break;
+		case TextureType::_5551: texels = CUSTOM_IMAGE_5551; break;
+		case TextureType::_8888: texels = CUSTOM_IMAGE_8888; break;
+		default:
+			WARN_LOG(RENDERER, "dumpTexture: unsupported picture format %x\n", (u32)tex_type);
+			known = false;
+			break;
+		}
+		if (known)
+			custom_texture_dump(texture_hash, upscaled_w, upscaled_h, texels, temp_tex_buffer);
 		NOTICE_LOG(RENDERER, "Dumped texture %x.png. Old hash %x\n", texture_hash, old_texture_hash);
 	}
 	PrintTextureName();
@@ -1585,9 +1599,9 @@ void BaseTextureCacheData::CheckCustomTexture()
 	{
 		made_type = 0;
 		tex_type = TextureType::_8888;
-		UploadToGPU(custom_width, custom_height, custom_image_data, IsMipmapped(), false);
-		free(custom_image_data);
-		custom_image_data = NULL;
+		UploadToGPU(custom.width, custom.height, custom.image_data, IsMipmapped(), false);
+		free(custom.image_data);
+		custom.image_data = NULL;
 	}
 }
 

@@ -275,7 +275,7 @@ bool MotionVectorPass::Begin(int image)
 	if (!buffer || buffer->bufferSize < bytes)
 		buffer = std::unique_ptr<BufferData>(new BufferData(bytes, vk::BufferUsageFlagBits::eVertexBuffer));
 	/* (written where the pass reads them: the buffer, mapped) */
-	upscaler_match(pvrrc, (float *)buffer->MapMemory());
+	upscaler_match(&pvrrc, (float *)buffer->MapMemory());
 	recorded = true;
 	return true;
 }
@@ -329,6 +329,6 @@ void MotionVectorPass::Submit(int image, vk::Image depthImage, vk::ImageView dep
 	depth.width   = size.width;
 	depth.height  = size.height;
 	// (the depth is 1/w: nearer is greater)
-	upscaler_submit(motion, depth, RETRO_HW_UPSCALER_DEPTH_INVERTED);
+	upscaler_submit(&motion, &depth, RETRO_HW_UPSCALER_DEPTH_INVERTED);
 	recorded = false;
 }

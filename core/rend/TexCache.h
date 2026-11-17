@@ -11,6 +11,7 @@
 #include "rend/tex_map.h"
 #include "rend/texconv.h"
 #include "rend/vram_lock.h"
+#include "rend/custom_texture.h"
 
 /* A converter's texels, as C++ has them: the picture or mipmapped
  * texture of tex_buf_t (texconv.h) for texels of pixel_type */
@@ -195,20 +196,7 @@ public:
 	u32 texture_hash;			// xxhash of texture data, used for custom textures
 	u32 old_texture_hash;		// legacy hash
 	u32 old_vqtexture_hash;		// the name a compressed texture had while only part of it was hashed; 0 if not compressed
-	u8* custom_image_data;		// loaded custom image data
-	u32 custom_width;
-	u32 custom_height;
-	retro_atomic_int_t custom_load_in_progress;
-	BaseTextureCacheData *custom_load_next;	// link in the custom texture loader's work list
-	/* What the loader is asked to look for: the three names above as they
-	 * were when the renderer asked, which is when it had the texture and
-	 * video memory to itself. Written by the renderer before it counts the
-	 * request in custom_load_in_progress; read by the loader after it has
-	 * read that count - so a request that changes them under the loader is
-	 * one more for it to answer, and what it found is thrown away. */
-	retro_atomic_int_t custom_request_hash;
-	retro_atomic_int_t custom_request_old_hash;
-	retro_atomic_int_t custom_request_old_vqhash;
+	custom_request_t custom;	/* its custom picture, asked for and loaded (custom_texture.h) */
 	/* What a whole update made the image last, tex_type and all; 0 if
 	 * something else has been in it since (a custom texture, a render) */
 	u8 made_type;
@@ -249,7 +237,7 @@ public:
 
 	bool IsCustomTextureAvailable()
 	{
-		return retro_atomic_load_acquire_int(&custom_load_in_progress) == 0 && custom_image_data != NULL;
+		return retro_atomic_load_acquire_int(&custom.in_progress) == 0 && custom.image_data != NULL;
 	}
 
 	void Create();
@@ -413,7 +401,7 @@ public:
 		 * it back there is the last thing the loader does to a texture. */
 		bool loading = false;
 		cache.Each([&](u64, Texture& texture) {
-			loading = retro_atomic_load_acquire_int(&texture.custom_load_in_progress) > 0;
+			loading = retro_atomic_load_acquire_int(&texture.custom.in_progress) > 0;
 			return !loading;
 		});
 		if (loading)

@@ -1,4 +1,4 @@
-/* rend/upscaler.cpp on frames made here: the strips of a frame matched
+/* rend/upscaler.c on frames made here: the strips of a frame matched
  * with the frame before's by header and order, their vertices given where
  * they were; a strip with no match, or one that jumped, standing still;
  * a reset forgetting the frame before; the request's size and the
@@ -14,7 +14,7 @@
 
 static int failures;
 
-// (the lists log when they overrun, which these do not)
+/* (the lists log when they overrun, which these do not) */
 /* (no log) */
 retro_log_printf_t log_cb;
 #define CHECK(cond) \
@@ -141,13 +141,13 @@ int main()
    strip(ctx.global_param_op, 0x11, 0x100, 4, 100.f, 300.f);   /* the same header again */
    strip(ctx.global_param_pt, 0x33, 0x300, 3, 500.f, 300.f);
    prev.resize((size_t)ctx.verts.used() * 2);
-   upscaler_match(ctx, prev.data());
+   upscaler_match(&ctx, prev.data());
    CHECK(prev.size() == (size_t)ctx.verts.used() * 2);
    for (int i = 0; i < ctx.verts.used(); i++)
       CHECK(prev[i * 2] == ctx.verts.head()[i].x && prev[i * 2 + 1] == ctx.verts.head()[i].y);
    upscaler_jitter(&jx, &jy);
    CHECK(jx >= -0.5f && jx <= 0.5f && jy >= -0.5f && jy <= 0.5f);
-   upscaler_submit(mv, depth, RETRO_HW_UPSCALER_DEPTH_INVERTED);
+   upscaler_submit(&mv, &depth, RETRO_HW_UPSCALER_DEPTH_INVERTED);
    CHECK(got_count == 1);
    CHECK((got.flags & RETRO_HW_UPSCALER_RESET) && (got.flags & RETRO_HW_UPSCALER_DEPTH_INVERTED));
    CHECK(got.motion_vectors.image == 1 && got.depth.image == 2);
@@ -164,7 +164,7 @@ int main()
    strip(ctx.global_param_op, 0x44, 0x400, 4, 400.f, 400.f);
    strip(ctx.global_param_pt, 0x33, 0x300, 3, 100.f, 100.f);
    prev.resize((size_t)ctx.verts.used() * 2);
-   upscaler_match(ctx, prev.data());
+   upscaler_match(&ctx, prev.data());
    {
       const PolyParam *op = ctx.global_param_op.head();
       const PolyParam *pt = ctx.global_param_pt.head();
@@ -180,7 +180,7 @@ int main()
          CHECK(prev_x(prev, pt[0], v) == 100.f + 10.f * v);   /* too far: still */
    }
    upscaler_jitter(&jx, &jy);
-   upscaler_submit(mv, depth, 0);
+   upscaler_submit(&mv, &depth, 0);
    CHECK(got_count == 2 && !(got.flags & RETRO_HW_UPSCALER_RESET));
    CHECK(got.jitter_x == jx && got.jitter_y == jy);
    /* (the jitter moves on each frame) */
@@ -194,30 +194,30 @@ int main()
    frame_begin();
    strip(ctx.global_param_op, 0x11, 0x100, 5, 110.f, 110.f);
    prev.resize((size_t)ctx.verts.used() * 2);
-   upscaler_match(ctx, prev.data());
+   upscaler_match(&ctx, prev.data());
    CHECK(prev_x(prev, ctx.global_param_op.head()[0], 0) == 110.f);
-   upscaler_submit(mv, depth, 0);
+   upscaler_submit(&mv, &depth, 0);
 
    /* A reset: the frame after it matches nothing, and says so */
    frame_begin();
    strip(ctx.global_param_op, 0x11, 0x100, 5, 120.f, 110.f);
    upscaler_reset();
    prev.resize((size_t)ctx.verts.used() * 2);
-   upscaler_match(ctx, prev.data());
+   upscaler_match(&ctx, prev.data());
    CHECK(prev_x(prev, ctx.global_param_op.head()[0], 0) == 120.f);
-   upscaler_submit(mv, depth, 0);
+   upscaler_submit(&mv, &depth, 0);
    CHECK(got_count == 4 && (got.flags & RETRO_HW_UPSCALER_RESET));
    frame_begin();
    strip(ctx.global_param_op, 0x11, 0x100, 5, 125.f, 110.f);
    prev.resize((size_t)ctx.verts.used() * 2);
-   upscaler_match(ctx, prev.data());
+   upscaler_match(&ctx, prev.data());
    CHECK(prev_x(prev, ctx.global_param_op.head()[0], 0) == 120.f);
-   upscaler_submit(mv, depth, 0);
+   upscaler_submit(&mv, &depth, 0);
    CHECK(got_count == 5 && !(got.flags & RETRO_HW_UPSCALER_RESET));
 
    /* Without a request, nothing is handed over */
    upscaler_set_interface(NULL);
-   upscaler_submit(mv, depth, 0);
+   upscaler_submit(&mv, &depth, 0);
    CHECK(got_count == 5);
 
    if (failures)

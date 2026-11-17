@@ -1358,7 +1358,7 @@ bool DX12Renderer::UpscalerMatch()
 	if (!context->Upload(bytes, 16, upload))
 		return false;
 	/* (written where the GPU reads them: the upload ring) */
-	upscaler_match(pvrrc, (float *)upload.cpu);
+	upscaler_match(&pvrrc, (float *)upload.cpu);
 	prevXyView.BufferLocation = upload.gpu;
 	prevXyView.SizeInBytes = bytes;
 	prevXyView.StrideInBytes = 2 * sizeof(float);
@@ -1501,7 +1501,7 @@ void DX12Renderer::SubmitUpscaler(bool hdr)
 	depth.width   = screenWidth;
 	depth.height  = screenHeight;
 	// (the depth is 1/w: nearer is greater)
-	upscaler_submit(motion, depth, RETRO_HW_UPSCALER_DEPTH_INVERTED | (hdr ? RETRO_HW_UPSCALER_HDR : 0));
+	upscaler_submit(&motion, &depth, RETRO_HW_UPSCALER_DEPTH_INVERTED | (hdr ? RETRO_HW_UPSCALER_HDR : 0));
 	upscaled = false;
 }
 

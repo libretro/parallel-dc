@@ -29,10 +29,13 @@
     You should have received a copy of the GNU General Public License
     along with Flycast.  If not, see <https://www.gnu.org/licenses/>.
 */
-#pragma once
-#include <vector>
+#ifndef REND_UPSCALER_H
+#define REND_UPSCALER_H
 #include "types.h"
 #include <libretro.h>
+#include <retro_common_api.h>
+
+RETRO_BEGIN_DECLS
 
 struct rend_context;
 
@@ -47,7 +50,7 @@ void upscaler_set_interface(const struct retro_hw_render_upscaler_interface *ifa
  * (upscaler_render_size()). */
 bool upscaler_poll(bool wanted);
 /* ...and whether a request stands: frames are drawn for the upscaler */
-bool upscaler_active();
+bool upscaler_active(void);
 /* The render size the request asks for, 0 x 0 without one */
 void upscaler_render_size(int *width, int *height);
 
@@ -63,7 +66,7 @@ void upscaler_jitter(float *x, float *y);
  * from, as often as not, for they are written there in order and then
  * again where a strip matched. A vertex with no match is where it is now.
  * Remembers this frame's strips for the next. */
-void upscaler_match(const rend_context& ctx, float *prev_xy);
+void upscaler_match(const struct rend_context *ctx, float *prev_xy);
 
 /* The frame's inputs, after its picture was handed over: the motion
  * vectors (two floats a pixel, in pixels of the render size, from each
@@ -71,9 +74,13 @@ void upscaler_match(const rend_context& ctx, float *prev_xy);
  * size, in the API's handles (retro_hw_upscaler_image). @flags are
  * RETRO_HW_UPSCALER_*; the frame's jitter and the reset of a frame that
  * does not follow the one before are added here. Advances the jitter. */
-void upscaler_submit(const struct retro_hw_upscaler_image& motion_vectors,
-		const struct retro_hw_upscaler_image& depth, unsigned flags);
+void upscaler_submit(const struct retro_hw_upscaler_image *motion_vectors,
+		const struct retro_hw_upscaler_image *depth, unsigned flags);
 
 /* The next frame does not follow this one (a new context, a size
  * change): the upscaler starts over */
-void upscaler_reset();
+void upscaler_reset(void);
+
+RETRO_END_DECLS
+
+#endif

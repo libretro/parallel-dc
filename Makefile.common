@@ -26,8 +26,6 @@ SOURCES_CXX := \
 					\
 					$(CORE_DIR)/core/hw/pvr/Renderer_if.cpp \
 					$(CORE_DIR)/core/hw/pvr/ta_vtx.cpp \
-					$(CORE_DIR)/core/rend/CustomTexture.cpp \
-					$(CORE_DIR)/core/rend/upscaler.cpp \
 					$(CORE_DIR)/core/rend/TexCache.cpp \
 					$(CORE_DIR)/core/rend/tile/compute_frame.cpp \
 					\
@@ -119,6 +117,8 @@ SOURCES_C += $(CORE_DIR)/core/rend/sorter.c
 SOURCES_C += $(CORE_DIR)/core/rend/texconv.c
 SOURCES_C += $(CORE_DIR)/core/rend/vram_lock.c
 SOURCES_C += $(CORE_DIR)/core/rend/rtt_watch.c
+SOURCES_C += $(CORE_DIR)/core/rend/upscaler.c
+SOURCES_C += $(CORE_DIR)/core/rend/custom_texture.c
 # ...and a strip's indices (make_index()'s)
 SOURCES_C += $(CORE_DIR)/core/hw/pvr/ta_index.c
 # ...and what C++ has become C, MSVC C89 (AGENTS.md: gradually)

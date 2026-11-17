@@ -59,7 +59,7 @@ extern bool renderer_changed;
 extern bool KillTex;
 /* The tile accelerator's contexts emptied (ta_ctx.c) */
 void tactx_Reset(void);
-/* The custom textures' loader stopped (CustomTexture.cpp) */
+/* The custom textures' loader stopped (custom_texture.c) */
 void custom_texture_terminate(void);
 
 #ifdef __cplusplus

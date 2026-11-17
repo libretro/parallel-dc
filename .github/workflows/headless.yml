@@ -64,7 +64,9 @@ name: Headless
 # and the locks on video memory, taken and dropped by every kind of write
 # (tools/rend/vram_lock_run.sh), and the pictures rendered to textures
 # waiting in video memory, fetched, dropped and packed
-# (tools/rend/rtt_watch_run.sh),
+# (tools/rend/rtt_watch_run.sh), the temporal upscaler's matching of
+# strips from frame to frame (tools/rend/upscaler_run.sh), and the custom
+# textures' loader (tools/rend/custom_texture_run.sh),
 # and the paths the core writes to, a
 # content's name of any length included (tools/paths/paths_run.sh), and the
 # HLE BIOS's GD-ROM transfers stopped at a fault and made again
@@ -97,6 +99,8 @@ on:
       - 'tools/rend/sorter_*'
       - 'tools/rend/vram_lock_*'
       - 'tools/rend/rtt_watch_*'
+      - 'tools/rend/upscaler_*'
+      - 'tools/rend/custom_texture_*'
       - 'tools/sh4/reglist_test.*'
       - 'tools/sh4/node_pool_test.*'
       - 'tools/rend/band_pool_test.*'
@@ -140,6 +144,8 @@ on:
       - 'tools/rend/sorter_*'
       - 'tools/rend/vram_lock_*'
       - 'tools/rend/rtt_watch_*'
+      - 'tools/rend/upscaler_*'
+      - 'tools/rend/custom_texture_*'
       - 'tools/sh4/reglist_test.*'
       - 'tools/sh4/node_pool_test.*'
       - 'tools/rend/band_pool_test.*'
@@ -330,6 +336,15 @@ jobs:
         run: |
           sh tools/rend/rtt_watch_run.sh
           sh tools/rend/rtt_watch_run.sh -fsanitize=address,undefined -fno-sanitize-recover=all
+      - name: The temporal upscaler's side - strips matched from frame to frame by header and order, jumps standing still, the request coming, changing and refused, the jitter and the inputs handed over - against what it always did (and with the sanitizers)
+        run: |
+          sh tools/rend/upscaler_run.sh
+          sh tools/rend/upscaler_run.sh -fsanitize=address,undefined -fno-sanitize-recover=all
+      - name: Custom textures - the game's directory, its pictures by hash, a texture's loaded under its names old and new while asked for again and again, the loader stopped with work waiting, the next game, the dumps (and with TSan and the sanitizers)
+        run: |
+          sh tools/rend/custom_texture_run.sh
+          sh tools/rend/custom_texture_run.sh -fsanitize=thread
+          sh tools/rend/custom_texture_run.sh -fsanitize=address,undefined -fno-sanitize-recover=all
       - name: The paths the core writes to, a content's name of any length (and with the sanitizers)
         run: |
           sh tools/paths/paths_run.sh
