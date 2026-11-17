@@ -1,6 +1,6 @@
 #!/bin/sh
 # The OpenGL renderers compiled as the builds that reach OpenGL through
-# libretro-common's glsm (HAVE_GLSYM_PRIVATE) have them, on Linux, with no
+# the core's glsm (core/deps/glsm, HAVE_GLSYM_PRIVATE) have them, on Linux, with no
 # SDK of theirs: glsm's functions are its own (glFenceSync returns a void *)
 # and it has only those it wraps (no glFlush, say).
 #

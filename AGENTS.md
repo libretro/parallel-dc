@@ -258,3 +258,6 @@ ever edited in this core.
   header, every call site includes the new one. A clean build of the
   core has no implicit-declaration warning: GCC 14 makes it an error, and
   older compilers cut the returned pointer to an int.
+
+glsm, the GL state tracker RetroArch no longer ships, is this core's
+own: it lives in `core/deps/glsm/`, not in libretro-common.

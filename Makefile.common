@@ -243,7 +243,7 @@ ifeq ($(HAVE_GL), 1)
 		SOURCES_C += $(CORE_DIR)/core/rend/gles/parse_arena_gl.c
 	endif
 	SOURCES_C += $(LIBRETRO_COMM_DIR)/glsym/rglgen.c \
-						$(LIBRETRO_COMM_DIR)/glsm/glsm.c
+						$(DEPS_DIR)/glsm/glsm.c
 	ifeq ($(GLES), 1)
 		SOURCES_C += $(LIBRETRO_COMM_DIR)/glsym/glsym_es2.c
 	else
