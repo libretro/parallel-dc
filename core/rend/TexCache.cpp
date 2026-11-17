@@ -620,7 +620,7 @@ static void *texcache_upscaled(size_t size)
 	return tex_upscaled;
 }
 
-void texcache_scratch_free()
+void texcache_scratch_free(void)
 {
 	free(tex_scratch);
 	tex_scratch = NULL;

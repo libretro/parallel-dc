@@ -64,7 +64,6 @@ public:
 	tex_buf_t *raw() { return &b; }
 };
 
-void texcache_scratch_free();
 // Stops the custom texture loader, which then has no texture: see BaseTextureCache::Clear()
 void texcache_stop_custom_loads();
 /* Room for the locks on video memory of @textures textures, made now, so

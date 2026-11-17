@@ -126,7 +126,7 @@ static u32 spg_next_line(void);
  * to the next, and a transfer waiting for the next run is one that has
  * been started with nothing scheduled to end it (maple_if.c); whether
  * the game has started a render since the last vertical blank, which a
- * run ending at line 0 never had, is in the state too (Renderer_if.cpp's
+ * run ending at line 0 never had, is in the state too (Renderer_if.c's
  * pvr_serialize_v22()), and no run ends with the window open (the
  * backstop closes it: spg_frame_cut()). So a state - saved between two
  * runs - says it all, and the same frames come out of it however it was

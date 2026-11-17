@@ -311,7 +311,6 @@ static bool arcade_input_read;
  * ports the game has asked a mouse on, and those of them read from the
  * frontend since the last frame ended. */
 static u32 mouse_ports, mouse_ports_read;
-bool rend_single_frame();
 
 static void refresh_devices(bool first_startup);
 static void init_disk_control_interface(void);

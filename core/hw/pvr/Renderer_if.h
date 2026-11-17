@@ -54,6 +54,9 @@ bool rend_present_kept_picture(void);
 void rend_resize(int width, int height);
 
 extern bool renderer_changed;
+/* The most each list of a frame has had (for the log) and the frames
+ * thrown away for overrunning */
+extern int max_idx, max_mvo, max_op, max_pt, max_tr, max_vtx, max_modt, ovrn;
 /* A render asked for and not yet drawn, and the framebuffer it was to be
  * shown in (their part of a state) */
 extern bool pend_rend;
@@ -65,6 +68,27 @@ extern bool KillTex;
 void tactx_Reset(void);
 /* The custom textures' loader stopped (custom_texture.c) */
 void custom_texture_terminate(void);
+/* The texture cache's room for converting and scaling up given back
+ * (TexCache.cpp) */
+void texcache_scratch_free(void);
+
+/* The renderer in use, behind its C++ class (renderer_dispatch.cpp) */
+/* The one the settings choose made, and the one to fall back to, if any */
+void renderer_create(void);
+/* Set up on the frontend's context, or the one to fall back to; false
+ * and none if neither can be */
+bool renderer_init(void);
+/* Taken down, and the one to fall back to with it */
+void renderer_destroy(void);
+bool renderer_exists(void);
+void renderer_keep_picture(void);
+bool renderer_present_kept_picture(void);
+void renderer_resize(int width, int height);
+bool renderer_process(TA_context *ctx);
+bool renderer_render(void);
+void renderer_present(void);
+/* Draw the render that is queued (libretro.cpp, rend_start_render()) */
+bool rend_single_frame(void);
 
 #ifdef __cplusplus
 }

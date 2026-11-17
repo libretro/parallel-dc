@@ -66,7 +66,8 @@ name: Headless
 # waiting in video memory, fetched, dropped and packed
 # (tools/rend/rtt_watch_run.sh), the temporal upscaler's matching of
 # strips from frame to frame (tools/rend/upscaler_run.sh), and the custom
-# textures' loader (tools/rend/custom_texture_run.sh),
+# textures' loader (tools/rend/custom_texture_run.sh), and the renderer
+# interface (tools/pvr/renderer_if_run.sh),
 # and the paths the core writes to, a
 # content's name of any length included (tools/paths/paths_run.sh), and the
 # HLE BIOS's GD-ROM transfers stopped at a fault and made again
@@ -96,6 +97,7 @@ on:
       - 'tools/pvr/ta_test.c'
       - 'tools/pvr/ta_expected.txt'
       - 'tools/pvr/ta_words_test.cpp'
+      - 'tools/pvr/renderer_if_*'
       - 'tools/rend/sorter_*'
       - 'tools/rend/vram_lock_*'
       - 'tools/rend/rtt_watch_*'
@@ -141,6 +143,7 @@ on:
       - 'tools/pvr/ta_test.c'
       - 'tools/pvr/ta_expected.txt'
       - 'tools/pvr/ta_words_test.cpp'
+      - 'tools/pvr/renderer_if_*'
       - 'tools/rend/sorter_*'
       - 'tools/rend/vram_lock_*'
       - 'tools/rend/rtt_watch_*'
@@ -345,6 +348,10 @@ jobs:
           sh tools/rend/custom_texture_run.sh
           sh tools/rend/custom_texture_run.sh -fsanitize=thread
           sh tools/rend/custom_texture_run.sh -fsanitize=address,undefined -fno-sanitize-recover=all
+      - name: The renderer interface - renders started to the screen, to textures, of the framebuffer the game wrote, kept, overrun, skipped, drawn where they start or handed to the libretro thread, vblanks, renderers made, failing and falling back, kept pictures, its part of a state - against what it always did (and with the sanitizers)
+        run: |
+          sh tools/pvr/renderer_if_run.sh
+          sh tools/pvr/renderer_if_run.sh -fsanitize=address,undefined -fno-sanitize-recover=all
       - name: The paths the core writes to, a content's name of any length (and with the sanitizers)
         run: |
           sh tools/paths/paths_run.sh

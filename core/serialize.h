@@ -28,7 +28,7 @@ V21_PART(pvr);
 #undef V21_PART
 /* and since V22: which way the MMU is done, and the translations Windows
  * CE's way of it keeps (fastmmu.cpp), and whether the game has written to
- * the framebuffer since it was last shown (Renderer_if.cpp) */
+ * the framebuffer since it was last shown (Renderer_if.c) */
 void pvr_serialize_v22(void **data, unsigned int *total_size);
 void pvr_unserialize_v22(void **data, unsigned int *total_size);
 void pvr_state_before_v22(void);

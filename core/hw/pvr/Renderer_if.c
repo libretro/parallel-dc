@@ -3,14 +3,15 @@
 #include "rend/last_picture.h"
 #include "ta.h"
 #include "hw/pvr/pvr_mem.h"
-#include "rend/TexCache.h"
+#include "rend/texconv.h"
 #include "rend/sorter.h"
 #include "rend/rtt_watch.h"
 #include "hw/mem/_vmem.h"
 #include "cheats.h"
 #include "spg.h"
+#include "rend/rend_method.h"
 
-// (hw/sh4/sh4_core.h, which has a name for every register of the SH4)
+/* (hw/sh4/sh4_core.h, which has a name for every register of the SH4) */
 #include "hw/sh4/sh4_if.h"	/* (RestoreHostRoundingMode, HostFloatModeBack) */
 
 /*
@@ -70,15 +71,10 @@
 	- wait and block for parse/texcache. Render is async
 */
 
-extern int screen_width;
-extern int screen_height;
-
 u32 VertexCount=0;
 u32 FrameCount=1;
 
-Renderer* renderer;
-static Renderer* fallback_renderer;
-bool renderer_changed = false;	// Signals the renderer interface to switch renderer
+bool renderer_changed = false;	/* Signals the renderer interface to switch renderer */
 /* No renderer could be set up on the frontend's context (its device was
  * refused, say): the frames run and none is drawn, until the context is
  * made again (renderer_changed). Not tried again each frame. */
@@ -88,7 +84,7 @@ static bool renderer_failed = false;
 #include "libretro/emu_baton.h"
 #endif
 u32 fb_w_cur = 1;
-bool rend_compute_wanted = false;	// rend/rend_method.h
+bool rend_compute_wanted = false;	/* rend/rend_method.h */
 
 int max_idx,max_mvo,max_op,max_pt,max_tr,max_vtx,max_modt, ovrn;
 bool pend_rend = false;
@@ -104,61 +100,9 @@ bool fb_dirty;
 
 TA_context* _pvrrc;
 
-void rend_create_renderer()
+void rend_create_renderer(void)
 {
-	switch (settings.pvr.rend)
-	{
-	default:
-	case 0:
-		NOTICE_LOG(PVR, "Creating Open GL per-triangle/strip renderer\n");
-		renderer = rend_GLES2();
-		break;
-#if defined(HAVE_GL4)
-	case 3:
-		NOTICE_LOG(PVR, "Creating Open GL per-pixel renderer\n");
-		renderer = rend_GL4();
-		fallback_renderer = rend_GLES2();
-		break;
-#endif
-#ifdef HAVE_VULKAN
-	case 4:
-		NOTICE_LOG(PVR, "Creating Vulkan per-triangle/strip renderer\n");
-		renderer = rend_Vulkan();
-		break;
-	case 5:
-		NOTICE_LOG(PVR, "Creating Vulkan per-pixel renderer\n");
-		renderer = rend_OITVulkan();
-		break;
-#endif
-#ifdef HAVE_D3D11
-	case 6:
-		NOTICE_LOG(PVR, "Creating Direct3D 11 per-triangle/strip renderer\n");
-		renderer = rend_D3D11();
-		break;
-	case 7:
-		NOTICE_LOG(PVR, "Creating Direct3D 11 per-pixel renderer\n");
-		renderer = rend_OITD3D11();
-		fallback_renderer = rend_D3D11();
-		break;
-#endif
-#ifdef HAVE_D3D9
-	case 8:
-		NOTICE_LOG(PVR, "Creating Direct3D 9 per-triangle/strip renderer\n");
-		renderer = rend_D3D9();
-		break;
-#endif
-#ifdef HAVE_D3D12
-	case 9:
-		NOTICE_LOG(PVR, "Creating Direct3D 12 per-triangle/strip renderer\n");
-		renderer = rend_D3D12();
-		break;
-	case 10:
-		NOTICE_LOG(PVR, "Creating Direct3D 12 per-pixel renderer\n");
-		renderer = rend_OITD3D12();
-		fallback_renderer = rend_D3D12();
-		break;
-#endif
-	}
+	renderer_create();
 }
 
 /* The last two framebuffers the game rendered to. A game flips between two
@@ -171,57 +115,44 @@ void rend_create_renderer()
  * the picture in San Francisco Rush 2049.) */
 static u32 fb_addr_history[2] = { 1, 1 };
 
-void rend_init_renderer()
+void rend_init_renderer(void)
 {
 	/* (the translucent sort's room, and a render's read back, before the
 	 * first frame) */
 	SortReserve();
 	rtt_watch_reserve();
-	if (!renderer->Init())
-    {
-		delete renderer;
-		renderer = NULL;
-    	if (fallback_renderer == NULL || !fallback_renderer->Init())
-    	{
-			/* (not the frontend taken down with the core: no frame is drawn
-			 * until there is a context a renderer can be set up on) */
-			delete fallback_renderer;
-			fallback_renderer = NULL;
-			renderer_failed = true;
-			ERROR_LOG(PVR, "Renderer initialization failed: no frame is drawn until the video context is made again\n");
-			return;
-    	}
-    	INFO_LOG(PVR, "Selected renderer initialization failed. Falling back to default renderer.\n");
-    	renderer  = fallback_renderer;
-    	fallback_renderer = NULL;	// avoid double-free
-    }
+	if (!renderer_init())
+	{
+		/* (not the frontend taken down with the core: no frame is drawn
+		 * until there is a context a renderer can be set up on) */
+		renderer_failed = true;
+		ERROR_LOG(PVR, "Renderer initialization failed: no frame is drawn until the video context is made again\n");
+	}
 }
 
 /* The context is going (libretro thread, the machine standing still). */
-void rend_keep_picture()
+void rend_keep_picture(void)
 {
-	if (renderer != NULL)
-		renderer->KeepPicture();
 	int w, h;
+	renderer_keep_picture();
 	if (last_picture(&w, &h) != NULL)
 		NOTICE_LOG(RENDERER, "%d x %d picture kept for the next context\n", w, h);
 }
 
-bool rend_present_kept_picture()
+bool rend_present_kept_picture(void)
 {
 	if (!kept_picture_due)
 		return false;
 	kept_picture_due = false;
-	return renderer != NULL && renderer->PresentKeptPicture();
+	return renderer_present_kept_picture();
 }
 
 void rend_resize(int width, int height)
 {
-	if (renderer != NULL)
-		renderer->Resize(width, height);
+	renderer_resize(width, height);
 }
 
-void rend_term_renderer()
+void rend_term_renderer(void)
 {
 	/* A new renderer has no picture, and the first render to each
 	 * framebuffer starts from an empty one - unless the last picture was
@@ -229,27 +160,17 @@ void rend_term_renderer()
 	int w, h;
 	if (last_picture(&w, &h) == NULL)
 		fb_addr_history[0] = fb_addr_history[1] = 1;
-	if (renderer != NULL)
-	{
-		renderer->Term();
-		delete renderer;
-		renderer = NULL;
-	}
-	if (fallback_renderer != NULL)
-	{
-		delete fallback_renderer;
-		fallback_renderer = NULL;
-	}
+	renderer_destroy();
 	texcache_scratch_free();
 }
 
-void rend_prepare_renderer()
+void rend_prepare_renderer(void)
 {
-   if (renderer_changed || (renderer == NULL && !renderer_failed))
+   if (renderer_changed || (!renderer_exists() && !renderer_failed))
    {
 	  renderer_changed = false;
 	  renderer_failed = false;
-	  if (renderer != NULL)
+	  if (renderer_exists())
 	  {
 		 rend_term_renderer();
 		 kept_picture_due = true;
@@ -259,10 +180,15 @@ void rend_prepare_renderer()
    }
 }
 
-bool rend_frame(TA_context* ctx, bool draw_osd)
+static bool rend_frame(TA_context* ctx, bool draw_osd)
 {
+   bool proc, do_swp;
+#if !defined(TARGET_NO_THREADS)
+   bool hold;
+#endif
+   (void)draw_osd;
    rend_prepare_renderer();
-   if (renderer == NULL)
+   if (!renderer_exists())
    {
       /* (none could be set up: nothing drawn, and the emulation let go on
        * as a frame that draws nothing lets it) */
@@ -282,7 +208,7 @@ bool rend_frame(TA_context* ctx, bool draw_osd)
     * that draws, from the registers the frame is drawn with. */
    palette_update();
 
-   bool proc = renderer->Process(ctx);
+   proc = renderer_process(ctx);
 #if !defined(TARGET_NO_THREADS)
    /* Process() has read everything the frame takes from the game's memory:
     * the display lists, the textures, the framebuffer. The emulation thread
@@ -291,12 +217,12 @@ bool rend_frame(TA_context* ctx, bool draw_osd)
     * while the frame is drawn. A render to a texture ends up back in the
     * game's memory, so that one keeps the emulation asleep until it is
     * finished. */
-   const bool hold = proc && ctx->rend.isRTT;
+   hold = proc && ctx->rend.isRTT;
    if (settings.rend.ThreadedRendering && !hold)
       emu_baton_ack_work(&emu_baton);
 #endif
 
-   bool do_swp = proc && renderer->Render();
+   do_swp = proc && renderer_render();
    /* a picture kept across a context is for the first render to the screen
     * after it, and that has now been made */
    if (!ctx->rend.isRTT)
@@ -316,8 +242,9 @@ bool rend_frame(TA_context* ctx, bool draw_osd)
  * it is the same code doing the same thing to the same data. */
 bool rend_single_frame(void)
 {
-	while (true)
+	for (;;)
 	{
+		bool do_swp;
 		if (_pvrrc == NULL)
 		{
 			_pvrrc = DequeueRender();
@@ -325,11 +252,11 @@ bool rend_single_frame(void)
 				return false;
 		}
 
-		bool do_swp = rend_frame(_pvrrc, true);
+		do_swp = rend_frame(_pvrrc, true);
 
-		//clear up & free data ..
+		/* clear up & free data .. */
 		FinishRender(_pvrrc);
-		_pvrrc=0;
+		_pvrrc = NULL;
 		rend_pvr_regs = pvr_regs;
 
 		if (do_swp)
@@ -342,8 +269,14 @@ void rend_skip_screen(bool skip)
    skip_screen = skip;
 }
 
+static int most(int a, int b)
+{
+   return a > b ? a : b;
+}
+
 void rend_start_render(void)
 {
+   TA_context* ctx;
 #if !defined(TARGET_NO_THREADS)
    /* One render at a time: the libretro thread may still be drawing the
     * last one. Nothing is ever dropped to make room. */
@@ -352,7 +285,7 @@ void rend_start_render(void)
 #endif
    render_called = true;
    pend_rend = false;
-   TA_context* ctx = tactx_Get(CORE_CURRENT_CTX);
+   ctx = tactx_Get(CORE_CURRENT_CTX);
 
    /* No end of render interrupt when rendering the framebuffer. (A frame
     * drawn and kept is drawn again, but the machine's timing is as for a
@@ -363,7 +296,7 @@ void rend_start_render(void)
 
    if (ctx)
    {
-      bool is_rtt=(FB_W_SOF1& 0x1000000)!=0 && !ctx->rend.isRenderFramebuffer;
+      const bool is_rtt=(FB_W_SOF1& 0x1000000)!=0 && !ctx->rend.isRenderFramebuffer;
 
       /* A render to the screen may be where this run ends (hw/pvr/spg.cpp):
        * the picture is shown once it is drawn, below. Whether or not it is
@@ -382,7 +315,7 @@ void rend_start_render(void)
          tactx_Remove(ctx);
       else
       {
-         // (no longer the frame being written, as one taken out is not)
+         /* (no longer the frame being written, as one taken out is not) */
          if (ta_ctx == ctx)
             SetCurrentTARC(TACTX_NONE);
          ctx->drawn = true;
@@ -390,7 +323,6 @@ void rend_start_render(void)
 
       if (!ctx->rend.Overrun)
       {
-         //printf("REP: %.2f ms\n",render_end_pending_cycles/200000.0);
          if (!ctx->rend.isRenderFramebuffer)
             FillBGP(ctx);
 
@@ -419,14 +351,14 @@ void rend_start_render(void)
          ctx->rend.fog_clamp_min = FOG_CLAMP_MIN;
 			ctx->rend.fog_clamp_max = FOG_CLAMP_MAX;
 
-         max_idx              = std::max(max_idx,  ctx->rend.idx.used());
-         max_vtx              = std::max(max_vtx,  ctx->rend.verts.used());
-         max_op               = std::max(max_op,   ctx->rend.global_param_op.used());
-         max_pt               = std::max(max_pt,   ctx->rend.global_param_pt.used());
-         max_tr               = std::max(max_tr,   ctx->rend.global_param_tr.used());
+         max_idx              = most(max_idx,  TA_LIST_USED(ctx->rend.idx, u32));
+         max_vtx              = most(max_vtx,  TA_LIST_USED(ctx->rend.verts, Vertex));
+         max_op               = most(max_op,   TA_LIST_USED(ctx->rend.global_param_op, PolyParam));
+         max_pt               = most(max_pt,   TA_LIST_USED(ctx->rend.global_param_pt, PolyParam));
+         max_tr               = most(max_tr,   TA_LIST_USED(ctx->rend.global_param_tr, PolyParam));
 
-         max_mvo              = std::max(max_mvo,  ctx->rend.global_param_mvo.used());
-         max_modt             = std::max(max_modt, ctx->rend.modtrig.used());
+         max_mvo              = most(max_mvo,  TA_LIST_USED(ctx->rend.global_param_mvo, ModifierVolumeParam));
+         max_modt             = most(max_modt, TA_LIST_USED(ctx->rend.modtrig, ModTriangle));
 
          if (QueueRender(ctx))
          {
@@ -471,11 +403,11 @@ void rend_end_render(void)
 {
    /* Non-threaded only: in threaded rendering this is the emulation thread,
     * which leaves the renderer alone. */
-   if (pend_rend && !settings.rend.ThreadedRendering && renderer != NULL)
+   if (pend_rend && !settings.rend.ThreadedRendering && renderer_exists())
    {
-      // (the SH4's thread, as in rend_start_render())
+      /* (the SH4's thread, as in rend_start_render()) */
       HostFloatModeBack();
-      renderer->Present();
+      renderer_present();
       RestoreHostRoundingMode();
    }
 }
@@ -484,27 +416,29 @@ void rend_term(void)
 {
 }
 
-void rend_vblank()
+void rend_vblank(void)
 {
    /* A framebuffer the game wrote itself, with no render since the last
     * vblank, is shown: it is made a render here. */
    if (!render_called && fb_dirty && FB_R_CTRL.fb_enable)
 	{
+		u32 saved_ctx_addr;
+		u32 current_ctx;
 		DEBUG_LOG(PVR, "Direct framebuffer write detected\n");
-		u32 saved_ctx_addr = PARAM_BASE;
+		saved_ctx_addr = PARAM_BASE;
 		/* The frame the game is sending lists to, which this borrows the
 		 * place of: it is the one to go back to. (What was gone back to
 		 * was the frame PARAM_BASE names - the one the game last had
 		 * drawn, another one. A game in the middle of sending a frame's
 		 * lists had the rest of them go there, and that frame drawn
 		 * without them.) */
-		const u32 current_ctx = ta_ctx != NULL ? ta_ctx->Address : TACTX_NONE;
+		current_ctx = ta_ctx != NULL ? ta_ctx->Address : TACTX_NONE;
 		PARAM_BASE = 0xF00000;
 		SetCurrentTARC(CORE_CURRENT_CTX);
-		// (NULL: there was not the memory for it, and nothing is shown)
+		/* (NULL: there was not the memory for it, and nothing is shown) */
 		if (ta_ctx != NULL)
 		{
-			ta_ctx->Reset();
+			tactx_reset_lists(ta_ctx);
 			ta_ctx->rend.isRenderFramebuffer = true;
 			ta_ctx->rend.isRTT = false;
 			rend_start_render();
@@ -576,7 +510,7 @@ void pvr_state_before_v22(void)
 	check_framebuffer_write();
 }
 
-void check_framebuffer_write()
+void check_framebuffer_write(void)
 {
    u32 fb_size = (FB_R_SIZE.fb_y_size + 1) * (FB_R_SIZE.fb_x_size + FB_R_SIZE.fb_modulus) * 4;
 	fb_watch_addr_start = (SPG_CONTROL.interlace ? FB_R_SOF2 : FB_R_SOF1) & VRAM_MASK;
