@@ -69,7 +69,8 @@ name: Headless
 # textures' loader (tools/rend/custom_texture_run.sh), and the renderer
 # interface (tools/pvr/renderer_if_run.sh), and what is plugged into the
 # maple bus (tools/maple/maple_cfg_run.sh), and the NAOMI's JVS I/O boards
-# (tools/maple/jvs_board_run.sh), and the compute renderer's
+# (tools/maple/jvs_board_run.sh) and the bridge they are on
+# (tools/maple/jvs_bridge_run.sh), and the compute renderer's
 # frame words (tools/rend/compute_frame_run.sh),
 # and the paths the core writes to, a
 # content's name of any length included (tools/paths/paths_run.sh), and the
@@ -371,6 +372,10 @@ jobs:
         run: |
           sh tools/maple/jvs_board_run.sh
           sh tools/maple/jvs_board_run.sh -fsanitize=address,undefined -fno-sanitize-recover=all
+      - name: The NAOMI's I/O board bridge - every maple command and JVS sub-command, cut short and too long, requests stored and sent on to the boards, answers waiting on the channels, the program read another way, the EEPROM read from its file, set up for the cabinet, written and read, the program for its processor, the RS-422 port, its part of a state written and read back changed - against what it always did (and with the sanitizers)
+        run: |
+          sh tools/maple/jvs_bridge_run.sh
+          sh tools/maple/jvs_bridge_run.sh -fsanitize=address,undefined -fno-sanitize-recover=all
       - name: The paths the core writes to, a content's name of any length (and with the sanitizers)
         run: |
           sh tools/paths/paths_run.sh

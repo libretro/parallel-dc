@@ -79,6 +79,52 @@ enum AWAVE_KEYS
 	AWAVE_TRIGGER_KEY    = 1 << 12
 };
 
+/* The maple bus's commands and answers */
+enum MapleDeviceCommand
+{
+	MDC_DeviceRequest   = 0x01, /* 7 words.Note : Initialises device */
+	MDC_AllStatusReq    = 0x02, /* 7 words + device dependent ( seems to be 8 words) */
+	MDC_DeviceReset     = 0x03, /* 0 words */
+	MDC_DeviceKill      = 0x04, /* 0 words */
+	MDC_DeviceStatus    = 0x05, /* Same as MDC_DeviceRequest ? */
+	MDC_DeviceAllStatus = 0x06, /* Same as MDC_AllStatusReq ? */
+
+	/* Various Functions */
+	MDCF_GetCondition   = 0x09, /* FT */
+	MDCF_GetMediaInfo   = 0x0A, /* FT,PT,3 pad */
+	MDCF_BlockRead      = 0x0B, /* FT,PT,Phase,Block # */
+	MDCF_BlockWrite     = 0x0C, /* FT,PT,Phase,Block #,data ... */
+	MDCF_GetLastError   = 0x0D, /* FT,PT,Phase,Block # */
+	MDCF_SetCondition   = 0x0E, /* FT,data ... */
+	MDCF_MICControl     = 0x0F, /* FT,MIC data ... */
+	MDCF_ARGunControl   = 0x10, /* FT,AR-Gun data ... */
+
+	MDC_JVSUploadFirmware = 0x80, /* JVS bridge firmware */
+	MDC_JVSGetId		 = 0x82,
+	MDC_JVSSelfTest		 = 0x84, /* JVS Self Test */
+	MDC_JVSCommand		 = 0x86  /* JVS I/O */
+};
+
+enum MapleDeviceRV
+{
+	MDRS_JVSNone		 = 0x00, /* No reply, used for multiple JVS I/O boards */
+
+	MDRS_DeviceStatus    = 0x05, /* 28 words */
+	MDRS_DeviceStatusAll = 0x06, /* 28 words + device dependent data */
+	MDRS_DeviceReply     = 0x07, /* 0 words */
+	MDRS_DataTransfer    = 0x08, /* FT,depends on the command */
+
+	MDRE_UnknownFunction = 0xFE, /* 0 words */
+	MDRE_UnknownCmd      = 0xFD, /* 0 words */
+	MDRE_TransmitAgain   = 0xFC, /* 0 words */
+	MDRE_FileError       = 0xFB, /* 1 word, bitfield */
+	MDRE_LCDError        = 0xFA, /* 1 word, bitfield */
+	MDRE_ARGunError      = 0xF9, /* 1 word, bitfield */
+
+	MDRS_JVSSelfTestReply= 0x85, /* JVS I/O SelfTest */
+	MDRS_JVSReply		 = 0x87  /* JVS I/O */
+};
+
 #define MAPLE_PORTS 4
 #ifdef __cplusplus
 extern "C" {

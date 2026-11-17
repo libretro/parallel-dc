@@ -5,7 +5,7 @@
 #include "maple_helper.h"
 #include "maple_devs.h"
 #include "maple_cfg.h"
-#include "jvs_board.h"
+#include "jvs_bridge.h"
 #include "libretro/pad_state.h"
 #include "hw/pvr/spg.h"
 #include "hw/naomi/naomi.h"
@@ -21,9 +21,7 @@
 #include "paths.h"
 
 #include <encodings/deflate.h>
-#include <encodings/xxh32.h>
 
-#define LOGJVS(...) DEBUG_LOG(JVS, __VA_ARGS__)
 
 const char* maple_sega_controller_name = "Dreamcast Controller";
 const char* maple_sega_twinstick_name = "Twin Stick";
@@ -44,64 +42,21 @@ bool naomi_bios_multiregion = false;
 
 enum MapleFunctionID
 {
-	MFID_0_Input       = 0x01000000, //DC Controller, Lightgun buttons, arcade stick .. stuff like that
-	MFID_1_Storage     = 0x02000000, //VMU , VMS
-	MFID_2_LCD         = 0x04000000, //VMU
-	MFID_3_Clock       = 0x08000000, //VMU
-	MFID_4_Mic         = 0x10000000, //DC Mic (, dreameye too ?)
-	MFID_5_ARGun       = 0x20000000, //Artificial Retina gun ? seems like this one was never developed or smth -- I only remember of lightguns
-	MFID_6_Keyboard    = 0x40000000, //DC Keyboard
-	MFID_7_LightGun    = 0x80000000, //DC Lightgun
-	MFID_8_Vibration   = 0x00010000, //Puru Puru Puur~~~
-	MFID_9_Mouse       = 0x00020000, //DC Mouse
-	MFID_10_StorageExt = 0x00040000, //Storage ? probably never used
-	MFID_11_Camera     = 0x00080000, //DreamEye
+	MFID_0_Input       = 0x01000000, /* DC Controller, Lightgun buttons, arcade stick .. stuff like that */
+	MFID_1_Storage     = 0x02000000, /* VMU , VMS */
+	MFID_2_LCD         = 0x04000000, /* VMU */
+	MFID_3_Clock       = 0x08000000, /* VMU */
+	MFID_4_Mic         = 0x10000000, /* DC Mic (, dreameye too ?) */
+	MFID_5_ARGun       = 0x20000000, /* Artificial Retina gun ? seems like this one was never developed or smth -- I only remember of lightguns */
+	MFID_6_Keyboard    = 0x40000000, /* DC Keyboard */
+	MFID_7_LightGun    = 0x80000000, /* DC Lightgun */
+	MFID_8_Vibration   = 0x00010000, /* Puru Puru Puur~~~ */
+	MFID_9_Mouse       = 0x00020000, /* DC Mouse */
+	MFID_10_StorageExt = 0x00040000, /* Storage ? probably never used */
+	MFID_11_Camera     = 0x00080000, /* DreamEye */
 };
 
-enum MapleDeviceCommand
-{
-	MDC_DeviceRequest   = 0x01, //7 words.Note : Initialises device
-	MDC_AllStatusReq    = 0x02, //7 words + device dependent ( seems to be 8 words)
-	MDC_DeviceReset     = 0x03, //0 words
-	MDC_DeviceKill      = 0x04, //0 words
-	MDC_DeviceStatus    = 0x05, //Same as MDC_DeviceRequest ?
-	MDC_DeviceAllStatus = 0x06, //Same as MDC_AllStatusReq ?
 
-	//Various Functions
-	MDCF_GetCondition   = 0x09, //FT
-	MDCF_GetMediaInfo   = 0x0A, //FT,PT,3 pad
-	MDCF_BlockRead      = 0x0B, //FT,PT,Phase,Block #
-	MDCF_BlockWrite     = 0x0C, //FT,PT,Phase,Block #,data ...
-	MDCF_GetLastError   = 0x0D, //FT,PT,Phase,Block #
-	MDCF_SetCondition   = 0x0E, //FT,data ...
-	MDCF_MICControl     = 0x0F, //FT,MIC data ...
-	MDCF_ARGunControl   = 0x10, //FT,AR-Gun data ...
-
-	MDC_JVSUploadFirmware = 0x80, // JVS bridge firmware
-	MDC_JVSGetId		 = 0x82,
-	MDC_JVSSelfTest		 = 0x84, // JVS Self Test
-	MDC_JVSCommand		 = 0x86, // JVS I/O
-};
-
-enum MapleDeviceRV
-{
-	MDRS_JVSNone		 = 0x00, // No reply, used for multiple JVS I/O boards
-
-	MDRS_DeviceStatus    = 0x05, //28 words
-	MDRS_DeviceStatusAll = 0x06, //28 words + device dependent data
-	MDRS_DeviceReply     = 0x07, //0 words
-	MDRS_DataTransfer    = 0x08, //FT,depends on the command
-
-	MDRE_UnknownFunction = 0xFE, //0 words
-	MDRE_UnknownCmd      = 0xFD, //0 words
-	MDRE_TransmitAgain   = 0xFC, //0 words
-	MDRE_FileError       = 0xFB, //1 word, bitfield
-	MDRE_LCDError        = 0xFA, //1 word, bitfield
-	MDRE_ARGunError      = 0xF9, //1 word, bitfield
-
-	MDRS_JVSSelfTestReply= 0x85, // JVS I/O SelfTest
-	MDRS_JVSReply		 = 0x87, // JVS I/O
-};
 
 
 
@@ -1447,99 +1402,6 @@ struct maple_sega_purupuru : maple_base
    }
 };
 
-char EEPROM[0x100];
-bool EEPROM_loaded = false;
-
-
-/* The EEPROM's first record, the BIOS's settings: bytes 2 to 17, their
- * CRC in bytes 0 and 1, and all of it again in bytes 18 to 35. Byte 8 is
- * the cabinet: bit 0 the coin chutes (individual), bits 4-5 the players
- * less one. */
-static u16 naomi_eeprom_crc(const u8 *buf, int size)
-{
-	u32 n = 0xdebdeb00;
-
-	for (int i = 0; i <= size; i++)
-	{
-		// (and a zero byte after the last)
-		n = (n & 0xffffff00) + (i < size ? buf[i] : 0);
-		for (int c = 0; c < 8; c++)
-			n = (n & 0x80000000) ? (n << 1) + 0x10210000 : n << 1;
-	}
-	return n >> 16;
-}
-
-static void naomi_eeprom_bios_set(u32 offset, u8 value)
-{
-	u8 *eeprom = (u8 *)EEPROM;
-	eeprom[offset] = value;
-	eeprom[offset + 18] = value;
-	const u16 crc = naomi_eeprom_crc(eeprom + 2, 16);
-	eeprom[0] = eeprom[18] = (u8)crc;
-	eeprom[1] = eeprom[19] = (u8)(crc >> 8);
-}
-
-/* A cabinet of these games is set for four players when the EEPROM has
- * not been set up for the game (its file is not there, or is another
- * game's): the BIOS's settings are then what the BIOS would make from the
- * game's header, with the four-player cabinet. One that has been is left
- * as it is, unless its number of players is one the header says the game
- * cannot have. */
-static void naomi_eeprom_dual_cabinet(void)
-{
-	u8 header[0x500];
-	const u8 *eeprom = (const u8 *)EEPROM;
-
-	if (!jvs_dual_reversed_game() || !naomi_cart_GetBootHeader(header, sizeof(header)))
-		return;
-	const u8 *game_id = &header[0x134];
-	const u8 *coin = &header[0x1e0];		// the first region's coin settings
-	const u8 cabinet = header[0x429];		// the numbers of players the game can have, a bit each
-	const u8 vertical = header[0x42b];
-
-	if (memcmp(game_id, eeprom + 3, 4))
-	{
-		for (int i = 0; i < 4; i++)
-			naomi_eeprom_bios_set(3 + i, game_id[i]);
-		naomi_eeprom_bios_set(7, 9);
-		naomi_eeprom_bios_set(8, cabinet == 0 || (cabinet & 8) ? 0x30
-				: (cabinet & 4) ? 0x20 : (cabinet & 2) ? 0x10 : 0);
-		if (coin[0] == 1)
-		{
-			// the game's own
-			naomi_eeprom_bios_set(2, (coin[1] & 1) | 0x10);
-			if (coin[2] == 1)
-				naomi_eeprom_bios_set(8, eeprom[8] | 1);
-			naomi_eeprom_bios_set(9, coin[3] - 1);
-			naomi_eeprom_bios_set(10, std::max(coin[6], (u8)1));
-			naomi_eeprom_bios_set(11, std::max(coin[4], (u8)1));
-			naomi_eeprom_bios_set(12, std::max(coin[5], (u8)1));
-			naomi_eeprom_bios_set(13, coin[7]);
-			for (int i = 0; i < 4; i++)
-				naomi_eeprom_bios_set(14 + i, coin[8 + i * 2] | (coin[9 + i * 2] << 4));
-		}
-		else
-		{
-			// the BIOS's
-			naomi_eeprom_bios_set(2, (vertical & 2) ? 0x11 : 0x10);
-			naomi_eeprom_bios_set(9, 0);
-			naomi_eeprom_bios_set(10, 1);
-			naomi_eeprom_bios_set(11, 1);
-			naomi_eeprom_bios_set(12, 1);
-			naomi_eeprom_bios_set(13, 0);
-			for (int i = 0; i < 4; i++)
-				naomi_eeprom_bios_set(14 + i, 0x11);
-		}
-		NOTICE_LOG(MAPLE, "EEPROM: set up for game %s, %d-player cabinet\n", naomi_game_id, (eeprom[8] >> 4) + 1);
-	}
-	if (cabinet != 0 && cabinet < 0x10 && !(cabinet & (1 << (eeprom[8] >> 4))))
-	{
-		const u8 players = (cabinet & 8) ? 0x30 : (cabinet & 4) ? 0x20 : (cabinet & 2) ? 0x10 : 0;
-		NOTICE_LOG(MAPLE, "EEPROM: %d-player cabinet\n", (players >> 4) + 1);
-		naomi_eeprom_bios_set(8, players | (eeprom[8] & 1));
-	}
-}
-
 u8 kb_shift; 		// shift keys pressed (bitmask)
 u8 kb_led; 			// leds currently lit
 u8 kb_key[6]={0};	// normal keys pressed
@@ -1824,50 +1686,17 @@ struct atomiswave_lightgun : maple_lightgun
 
 
 /*
-   Sega JVS I/O boards: jvs_board.c
+   The NAOMI's I/O board bridge and its JVS I/O boards: jvs_bridge.c and
+   jvs_board.c
 */
-
-/* The program a game sends to the I/O board's processor, a piece at a time
- * over many frames: which program it is decides how the board's requests
- * are read (crazy_mode). All zeroes when none is being sent. In a save
- * state from V23: a state loaded while one is on its way goes on with what
- * had been sent by then. */
-static u8 jvs_firmware[0x10000];
-
-/* What is on the I/O board bridge's RS-422 port: Derby Owners Club's card
- * reader, through a converter board. Not the bridge's own: the bridge is
- * made anew by a state load. */
-static serial_pipe *mie_pipe;
-
-void naomi_mie_set_pipe(serial_pipe *pipe)
-{
-	mie_pipe = pipe;
-}
-
 struct maple_naomi_jamma : maple_sega_controller
 {
-	const u8 ALL_NODES = 0xff;
-
-	/* (on the bridge's bus, in it: made as it is) */
-	jvs_boards boards = {};
-	bool crazy_mode = false;
-	// The firmware is The House of the Dead 2 prototype's. A state does not
-	// have this: on a load it is worked out from the game's name.
-	bool hotd2p = false;
-
-	u8 jvs_repeat_request[32][256];
-	u8 jvs_receive_buffer[32][258];
-	u32 jvs_receive_length[32] = { 0 };
-	bool eeprom_dirty = false;
+	jvs_bridge bridge;
 	MapleSaveState save_state;
 
 	maple_naomi_jamma()
 	{
-		/* The boards are there from the start, as they are on a cabinet:
-		 * made only when the game first spoke to them, a state saved
-		 * before that was smaller than one saved after, and a frontend
-		 * asks the size once. */
-		create_io_boards();
+		jvs_bridge_init(&bridge);
 	}
 	virtual ~maple_naomi_jamma()
 	{
@@ -1885,31 +1714,6 @@ struct maple_naomi_jamma : maple_sega_controller
 		EEPROM_loaded = false;
 	}
 
-	/* The EEPROM is read from its file once, when the machine starts
-	 * (maple_naomi_eeprom_load()), and is in memory from then on. (It was
-	 * read again each time the game asked. What the game writes goes to the
-	 * file later, from the writer's thread: asked for before that, the file
-	 * was still the old one, and the old one was then what got written.)
-	 * The game asking for it reads it here only after a state saved before
-	 * it had been read. */
-	void load_eeprom()
-	{
-		if (EEPROM_loaded)
-			return;
-		EEPROM_loaded = true;
-		memset(EEPROM, 0, sizeof(EEPROM));
-		RFILE* f = filestream_open(eeprom_file, RETRO_VFS_FILE_ACCESS_READ, RETRO_VFS_FILE_ACCESS_HINT_NONE);
-		if (f)
-		{
-			filestream_read(f, EEPROM, 0x80);
-			filestream_close(f);
-			DEBUG_LOG(MAPLE, "Loaded EEPROM from %s\n", eeprom_file);
-		}
-		else if (naomi_default_eeprom != NULL)
-			memcpy(EEPROM, naomi_default_eeprom, 0x80);
-		naomi_eeprom_dual_cabinet();
-	}
-
 	/* The EEPROM, when the game has written to it, to its file: made
 	 * anew each time, by the writer's thread (savewriter.h). Tried again
 	 * later if that fails, as a memory card's is. */
@@ -1919,17 +1723,12 @@ struct maple_naomi_jamma : maple_sega_controller
 		{
 			if (failed == 1)
 				WARN_LOG(MAPLE, "Cannot save EEPROM to file %s. It will be tried again\n", eeprom_file);
-			eeprom_dirty = true;
+			bridge.eeprom_dirty = true;
 		}
-		if (!eeprom_dirty || save_state.Waiting())
+		if (!bridge.eeprom_dirty || save_state.Waiting())
 			return;
 		if (save_writer_put_file(eeprom_file, EEPROM, 0x80, &save_state.failed))
-			eeprom_dirty = false;
-	}
-
-	void create_io_boards()
-	{
-	   jvs_boards_create(&boards);
+			bridge.eeprom_dirty = false;
 	}
 
 	virtual MapleDeviceType get_device_type()
@@ -1937,762 +1736,30 @@ struct maple_naomi_jamma : maple_sega_controller
 		return MDT_NaomiJamma;
 	}
 
-	u8 sense_line(u32 node_id)
-	{
-		bool last_node = node_id == boards.count;
-		return last_node ? 0x8E : 0x8F;
-	}
-
-	void send_jvs_message(u32 node_id, u32 channel, u32 length, u8 *data)
-	{
-		if (node_id - 1 < boards.count)
-		{
-			if (boards.cabinet_order)
-				jvs_boards_order(&boards);
-			u8 temp_buffer[256];
-			u32 out_len = jvs_board_message(&boards, node_id - 1, config, data, length, temp_buffer);
-			if (out_len > 0)
-			{
-				u8 *pbuf = &jvs_receive_buffer[channel][jvs_receive_length[channel]];
-				if (jvs_receive_length[channel] + out_len + 3 <= sizeof(jvs_receive_buffer[0]))
-				{
-					if (crazy_mode)
-					{
-						pbuf[0] = 0x00;		// ? 0: ok, 2: timeout, 3: dest node !=0, 4: checksum failed
-						pbuf[1] = out_len;
-						memcpy(&pbuf[2], temp_buffer, out_len);
-						jvs_receive_length[channel] += out_len + 2;
-					}
-					else
-					{
-						pbuf[0] = node_id;
-						pbuf[1] = 0x00;		// 0: ok, 2: timeout, 3: dest node !=0, 4: checksum failed
-						pbuf[2] = out_len;
-						memcpy(&pbuf[3], temp_buffer, out_len);
-						jvs_receive_length[channel] += out_len + 3;
-					}
-				}
-			}
-		}
-	}
-
-	void send_jvs_messages(u32 node_id, u32 channel, bool use_repeat, u32 length, u8 *data, bool repeat_first)
-	{
-		/* A request is 255 bytes at the most. The four more are zeroes put
-		 * after it: a request that stops short of what its code needs is read
-		 * by a board that far past its end, and no further. */
-		u8 temp_buffer[256 + 4];
-		if (data)
-		{
-			memcpy(temp_buffer, data, length);
-		}
-		if (node_id == ALL_NODES)
-		{
-			memset(temp_buffer + length, 0, 4);
-			for (u32 i = 0; i < boards.count; i++)
-				send_jvs_message(i + 1, channel, length, temp_buffer);
-		}
-		else if (node_id >= 1 && node_id <= 32)
-		{
-			u32 repeat_len = jvs_repeat_request[node_id - 1][0];
-			// (a stored request is left out if it and this one together are longer than a request can be)
-			if (use_repeat && repeat_len > 0 && length + repeat_len <= 256)
-			{
-				if (repeat_first)
-				{
-				   memmove(temp_buffer + repeat_len, temp_buffer, length);
-				   memcpy(temp_buffer, &jvs_repeat_request[node_id - 1][1], repeat_len);
-				}
-				else
-				{
-				   memcpy(temp_buffer + length, &jvs_repeat_request[node_id - 1][1], repeat_len);
-				}
-				length += repeat_len;
-			}
-			memset(temp_buffer + length, 0, 4);
-			send_jvs_message(node_id, channel, length, temp_buffer);
-		}
-	}
-
-	void receive_jvs_messages(u32 channel)
-	{
-	   if (dma_count_in == 0)
-	   {
-		  w8(MDRS_JVSReply);
-		  w8(0);
-		  w8(0x20);
-		  w8(0x00);
-
-		  return;
-	   }
-	   u32 dword_length = (jvs_receive_length[channel] + 0x10 + 3 - 1) / 4 + 1;
-
-	   w8(MDRS_JVSReply);
-	   w8(0x00);
-	   w8(0x20);
-	   if (jvs_receive_length[channel] == 0)
-	   {
-		  w8(0x05);
-		  w8(0x32);
-	   }
-	   else
-	   {
-		  w8(dword_length);
-		  w8(0x16);
-	   }
-	   w8(0xff);
-	   w8(0xff);
-	   w8(0xff);
-	   w32(0xffffff00);
-	   w32(0);
-	   w32(0);
-
-	   if (jvs_receive_length[channel] == 0)
-	   {
-		  w32(0);
-		  return;
-	   }
-
-	   w8(0);
-	   w8(channel);
-	   if (crazy_mode)
-		  w8(0x8E);
-	   else
-		  w8(sense_line(jvs_receive_buffer[channel][0]));	// bit 0 is sense line level. If set during F1 <n>, more I/O boards need addressing
-
-	   memcpy(dma_buffer_out, jvs_receive_buffer[channel], jvs_receive_length[channel]);
-	   /* The reply is made up to whole words, and what is past the message
-	    * is zeroes: it was whatever the buffer had there (upstream
-	    * 58f05f74c, an SH4 crash while a NAOMI started). */
-	   memset(dma_buffer_out + jvs_receive_length[channel], 0,
-			 dword_length * 4 - 0x10 - 3 - jvs_receive_length[channel]);
-	   dma_buffer_out += dword_length * 4 - 0x10 - 3;
-	   *dma_count_out += dword_length * 4 - 0x10 - 3;
-	   jvs_receive_length[channel] = 0;
-	}
-
-	void handle_86_subcommand()
-	{
-	   if (dma_count_in == 0)
-	   {
-		  w8(MDRS_JVSReply);
-		  w8(0);
-		  w8(0x20);
-		  w8(0x00);
-		  return;
-	   }
-	   u32 subcode = dma_buffer_in[0];
-
-		// CT fw uses 13 as a 17, and 17 as 13 and also uses 19
-		if (crazy_mode)
-		{
-			switch (subcode)
-			{
-			case 0x13:
-				subcode = 0x17;
-				break;
-			case 0x17:
-				subcode = 0x13;
-				break;
-			}
-		}
-		u8 node_id = 0;
-		u8 *cmd = NULL;
-		u32 len = 0;
-		u8 channel = 0;
-		if (dma_count_in >= 3)
-		{
-			// every request but "store" has its channel, node and length further on, if it is long enough
-			if (subcode != 0x13 && dma_count_in >= 8)
-			{
-				node_id = dma_buffer_in[6];
-				len = dma_buffer_in[7];
-				cmd = &dma_buffer_in[8];
-				channel = dma_buffer_in[5] & 0x1f;
-			}
-			else
-			{
-				node_id = dma_buffer_in[1];
-				len = dma_buffer_in[2];
-				cmd = &dma_buffer_in[3];
-			}
-			// (the length is the game's: no more than the frame has after it)
-			if (len > (u32)(dma_buffer_in + dma_count_in - cmd))
-				len = dma_buffer_in + dma_count_in - cmd;
-		}
-
-		switch (subcode)
-		{
-			case 0x13:	// Store repeated request
-				if (len > 0 && node_id > 0 && node_id <= 0x1f)
-				{
-					INFO_LOG(MAPLE, "JVS node %d: Storing %d cmd bytes\n", node_id, len);
-					jvs_repeat_request[node_id - 1][0] = len;
-					memcpy(&jvs_repeat_request[node_id - 1][1], cmd, len);
-				}
-				w8(MDRS_JVSReply);
-				w8(0);
-				w8(0x20);
-				w8(0x01);
-				w8(dma_buffer_in[0] + 1);	// subcommand + 1
-				w8(0);
-				w8(len + 1);
-				w8(0);
-				break;
-
-			case 0x15:	// Receive JVS data
-				// (there are 32 channels)
-				receive_jvs_messages(dma_buffer_in[1] & 0x1f);
-				if (hotd2p)
-				{
-					// this firmware sends its next request along with it
-					send_jvs_messages(node_id, channel, true, len, cmd, false);
-					w8(MDRS_JVSReply);
-					w8(0);
-					w8(0x20);
-					w8(0x01);
-					w8(0x18);	// always
-					w8(channel);
-					w8(sense_line(node_id));
-					w8(0);
-				}
-				break;
-
-			case 0x17:	// Transmit without repeat
-				jvs_receive_length[channel] = 0;
-				send_jvs_messages(node_id, channel, false, len, cmd, false);
-				w8(MDRS_JVSReply);
-				w8(0);
-				w8(0x20);
-				w8(0x01);
-				w8(0x18);	// always
-				w8(channel);
-				w8(0x8E);	//sense_line(node_id));
-				w8(0);
-				break;
-
-			case 0x19:	// Transmit with repeat
-				jvs_receive_length[channel] = 0;
-				send_jvs_messages(node_id, channel, true, len, cmd, true);
-				w8(MDRS_JVSReply);
-				w8(0);
-				w8(0x20);
-				w8(0x01);
-				w8(0x18);	// always
-				w8(channel);
-				w8(sense_line(node_id));
-				w8(0);
-				break;
-
-			case 0x21:	// Transmit with repeat
-			   jvs_receive_length[channel] = 0;
-			   send_jvs_messages(node_id, channel, true, len, cmd, false);
-			   w8(MDRS_JVSReply);
-			   w8(0);
-			   w8(0x20);
-			   w8(0x01);
-			   w8(0x18);	// always
-			   w8(channel);
-			   w8(sense_line(node_id));
-			   w8(0);
-			   break;
-
-			case 0x35:	// Receive then transmit with repeat (15 then 27)
-				receive_jvs_messages(channel);
-				// FALLTHROUGH
-
-			case 0x27:	// Transmit with repeat
-				{
-					jvs_receive_length[channel] = 0;
-
-					/* How many requests, and how long each is, are the game's
-					 * to say: no more than the frame has is read. */
-					u32 cmd_count = dma_count_in >= 8 ? dma_buffer_in[6] : 0;
-					u32 idx = 7;
-					for (int i = 0; i < cmd_count && idx + 2 <= dma_count_in; i++)
-					{
-						node_id = dma_buffer_in[idx];
-						len = dma_buffer_in[idx + 1];
-						cmd = &dma_buffer_in[idx + 2];
-						if (len > dma_count_in - idx - 2)
-							len = dma_count_in - idx - 2;
-						idx += len + 2;
-
-						send_jvs_messages(node_id, channel, true, len, cmd, false);
-					}
-
-					w8(MDRS_JVSReply);
-					w8(0);
-					w8(0x20);
-					w8(0x01);
-					w8(0x26);
-					w8(channel);
-					w8(sense_line(node_id));
-					w8(0);
-				}
-				break;
-
-			case 0x33:	// Receive then transmit with repeat (15 then 21)
-				receive_jvs_messages(channel);
-				send_jvs_messages(node_id, channel, true, len, cmd, false);
-				w8(MDRS_JVSReply);
-				w8(0);
-				w8(0x20);
-				w8(0x01);
-				w8(0x18);	// always
-				w8(channel);
-				w8(sense_line(node_id));
-				w8(0);
-				break;
-
-			case 0x0B:	//EEPROM write
-			{
-				int address = dma_buffer_in[1];
-				int size = dma_buffer_in[2];
-				DEBUG_LOG(MAPLE, "EEprom write %08X %08X\n", address, size);
-				//printState(Command,buffer_in,buffer_in_len);
-				load_eeprom();
-				// (the chip has 0x80 bytes; the game's address and size went unchecked)
-				address &= 0x7f;
-				if (size > 0x80 - address)
-					size = 0x80 - address;
-				// (nor more than the frame has)
-				if (size > (int)dma_count_in - 4)
-					size = (int)dma_count_in - 4;
-				memcpy(EEPROM + address, dma_buffer_in + 4, size);
-				eeprom_dirty = true;
-
-				w8(MDRS_JVSReply);
-				w8(0x00);
-				w8(0x20);
-				w8(0x01);
-				memcpy(dma_buffer_out, EEPROM, 4);
-				dma_buffer_out += 4;
-				*dma_count_out += 4;
-			}
-			break;
-
-			case 0x3:	//EEPROM read
-			{
-				load_eeprom();
-
-				//printf("EEprom READ\n");
-				// (0x80 bytes from an address below 0x80 are inside the array, which has 0x100)
-				int address = dma_buffer_in[1] & 0x7f;
-				//printState(Command,buffer_in,buffer_in_len);
-				w8(MDRS_JVSReply);
-				w8(0x00);
-				w8(0x20);
-				w8(0x20);
-				memcpy(dma_buffer_out, EEPROM + address, 0x80);
-				dma_buffer_out += 0x80;
-				*dma_count_out += 0x80;
-			}
-			break;
-
-			case 0x31:	// DIP switches
-			{
-				w8(MDRS_JVSReply);
-				w8(0x00);
-				w8(0x20);
-				w8(0x05);
-
-				w8(0x32);
-				w8(0xff);		// in(0)
-				w8(0xff);		// in(1)
-				w8(0xff);		// in(2)
-
-				w8(0x00);
-				w8(0xff);		// in(4)
-				{
-					// in(5) bit0: 1=VGA, 0=NTSCi
-					u8 dip = enable_naomi_15khz_dipswitch ? 0x00 : 0xff;
-					/* Switches 2 to 4 say the region to the multi-region
-					 * BIOS: Korea is 2 and 3 on, 4 off (other BIOSes have their own). */
-					if (naomi_bios_multiregion)
-						dip = (dip & ~0x0e) | 0x08;
-					w8(dip);
-				}
-				w8(0xff);		// in(6)
-
-				w32(0x00);
-				w32(0x00);
-				w32(0x00);
-			}
-			break;
-
-			//case 0x3:
-			//	break;
-
-			case 0x1:
-				w8(MDRS_JVSReply);
-				w8(0x00);
-				w8(0x20);
-				w8(0x01);
-
-				w8(0x2);
-				w8(0x0);
-				w8(0x0);
-				w8(0x0);
-				break;
-
-			/* The RS-422 port, with a device on it (it is not answered
-			 * at all then). Without one the bridge says it knows none of
-			 * these, as it always has here. */
-			case 0x41: // reset?
-				if (mie_pipe == NULL)
-					goto unknown;
-				DEBUG_LOG(MAPLE, "JVS: RS422 reset\n");
-				while (mie_pipe->ops->available(mie_pipe) > 0)
-					mie_pipe->ops->read(mie_pipe);
-				break;
-
-			case 0x47: // send data
-				if (mie_pipe == NULL)
-					goto unknown;
-				DEBUG_LOG(MAPLE, "JVS: RS422 send %02x\n", dma_buffer_in[4]);
-				if (dma_count_in >= 5)
-					mie_pipe->ops->write(mie_pipe, dma_buffer_in[4]);
-				break;
-
-			case 0x4d: // receive data
-				{
-					if (mie_pipe == NULL)
-						goto unknown;
-					const int avail = std::min(mie_pipe->ops->available(mie_pipe), 0xfe);
-					DEBUG_LOG(MAPLE, "JVS: RS422 receive %d bytes\n", avail);
-					w8(MDRS_JVSReply);
-					w8(0x00);
-					w8(0x20);
-					w8(1 + (avail + 3) / 4);
-					w8(0);
-					w8(0);
-					w8(0);
-					w8(avail == 0 ? 0xff : avail); // 0xff => no data, else byte count
-
-					for (int i = 0; i < ((avail + 3) / 4) * 4; i++)
-						w8(i >= avail ? 0 : mie_pipe->ops->read(mie_pipe));
-					break;
-				}
-
-			case 0x49: // I?
-			case 0x4b: // K?
-			case 0x4f: // O?
-				if (mie_pipe == NULL)
-					goto unknown;
-				break;
-
-			default:
-			unknown:
-				INFO_LOG(MAPLE, "JVS: Unknown 0x86 sub-command %x\n", subcode);
-				w8(MDRE_UnknownCmd);
-				w8(0x00);
-				w8(0x20);
-				w8(0x00);
-				break;
-		}
-	}
-
 	virtual u32 RawDma(u32* buffer_in, u32 buffer_in_len, u32* buffer_out)
 	{
-#ifdef DUMP_JVS
-	   printf("JVS IN: ");
-	   u8 *p = (u8*)buffer_in;
-	   for (int i = 0; i < buffer_in_len; i++) printf("%02x ", *p++);
-	   printf("\n");
-#endif
-	   create_io_boards();
-	   // the card reader and hopper buttons, read as the board's inputs are
-	   naomi_periph_poll();
-
-		u32 out_len = 0;
-		dma_buffer_out = (u8 *)buffer_out;
-		dma_count_out = &out_len;
-
-		dma_buffer_in = (u8 *)buffer_in + 4;
-		dma_count_in = buffer_in_len - 4;
-
-		u32 cmd = *(u8*)buffer_in;
-		switch (cmd)
-		{
-			case MDC_JVSSelfTest:
-				w8(MDRS_JVSSelfTestReply);
-				w8(0x00);
-				w8(0x20);
-				w8(0x01);
-				w8(0x00);
-				break;
-
-			case MDC_JVSCommand:
-				handle_86_subcommand();
-				break;
-
-			case MDC_JVSUploadFirmware:
-			{
-				u8 *ram = jvs_firmware;
-
-				if (dma_count_in < 4)
-				{
-					// (not long enough to say where its bytes go)
-					w8(MDRE_UnknownCmd);
-					w8(0x00);
-					w8(0x00);
-					w8(0x00);
-					break;
-				}
-
-				if (dma_buffer_in[1] == 0xff)
-				{
-					u32 hash = xxh32(ram, 0x10000, 0);
-					LOGJVS("JVS Firmware hash %08x\n", hash);
-					hotd2p = hash == 0xa6784e26;
-					if (hash == 0xa7c50459			// CT
-						  || hash == 0xae841e36	// HOTD2
-						  || hotd2p)
-						crazy_mode = true;
-					else
-						crazy_mode = false;
-#ifdef DUMP_JVS_FW
-					RFILE *fw_dump;
-					char filename[128];
-					for (int i = 0; ; i++)
-					{
-						sprintf(filename, "z80_fw_%d.bin", i);
-						fw_dump = filestream_open(filename, RETRO_VFS_FILE_ACCESS_READ, RETRO_VFS_FILE_ACCESS_HINT_NONE);
-						if (fw_dump == NULL)
-						{
-							fw_dump = filestream_open(filename, RETRO_VFS_FILE_ACCESS_WRITE, RETRO_VFS_FILE_ACCESS_HINT_NONE);
-							INFO_LOG(MAPLE, "Saving JVS firmware to %s\n", filename);
-							break;
-						}
-					}
-					if (fw_dump)
-					{
-						filestream_write(fw_dump, ram, 0x10000);
-						filestream_close(fw_dump);
-					}
-#endif
-					// (empty for the next one)
-					memset(ram, 0, 0x10000);
-					for (int i = 0; i < 32; i++)
-						jvs_repeat_request[i][0] = 0;
-
-					// (the reply was never written: its code was returned as the length of one)
-					w8(MDRS_DeviceReply);
-					w8(0x00);
-					w8(0x20);
-					w8(0x00);
-					break;
-				}
-				int xfer_bytes;
-				if (dma_buffer_in[0] == 0xff)
-					xfer_bytes = 0x1C;
-				else
-					xfer_bytes = 0x18;
-				u16 addr = (dma_buffer_in[2] << 8) + dma_buffer_in[3];
-				// (where the bytes go is the game's to say: what is past the end of the 64 KB is left out)
-				if (xfer_bytes > 0x10000 - addr)
-					xfer_bytes = 0x10000 - addr;
-				// (nor what is past the end of the frame, which may be the end of RAM)
-				if (xfer_bytes > (int)dma_count_in - 4)
-					xfer_bytes = (int)dma_count_in - 4;
-				memcpy(ram + addr, &dma_buffer_in[4], xfer_bytes);
-				u8 sum = 0;
-				for (u32 i = 0; i < 0x1C && i < dma_count_in; i++)
-					sum += dma_buffer_in[i];
-
-				w8(0x80);	// or 0x81 on bootrom?
-				w8(0);
-				w8(0x20);
-				w8(0x01);
-				w8(sum);
-				w8(0);
-				w8(0);
-				w8(0);
-
-				w8(MDRS_DeviceReply);
-				w8(0x00);
-				w8(0x20);
-				w8(0x00);
-			}
-			break;
-
-		case MDC_JVSGetId:
-			{
-				const char ID1[] = "315-6149    COPYRIGHT SEGA E";
-				const char ID2[] = "NTERPRISES CO,LTD.  1998    ";
-				w8(0x83);
-				w8(0x00);
-				w8(0x20);
-				w8(0x07);
-				wstr(ID1, 28);
-
-				w8(0x83);
-				w8(0x00);
-				w8(0x20);
-				w8(0x05);
-				wstr(ID2, 28);
-			}
-			break;
-
-		case MDC_DeviceRequest:
-			w8(MDRS_DeviceStatus);
-			w8(0x00);
-			w8(0x20);
-			w8(0x00);
-			break;
-
-		case MDC_AllStatusReq:
-			w8(MDRS_DeviceStatusAll);
-			w8(0x00);
-			w8(0x20);
-			w8(0x00);
-			// (it went on into the next answer, and both were sent)
-			break;
-
-		case MDC_DeviceReset:
-		case MDC_DeviceKill:
-			w8(MDRS_DeviceReply);
-			w8(0x00);
-			w8(0x20);
-			w8(0x00);
-			break;
-
-		case MDCF_GetCondition:
-			w8(MDRE_UnknownCmd);
-			w8(0x00);
-			w8(0x00);
-			w8(0x00);
-
-			break;
-
-		default:
-			INFO_LOG(MAPLE, "Unknown Maple command %x\n", cmd);
-			w8(MDRE_UnknownCmd);
-			w8(0x00);
-			w8(0x00);
-			w8(0x00);
-
-			break;
-		}
-
-#ifdef DUMP_JVS
-		printf("JVS OUT: ");
-		p = (u8 *)buffer_out;
-		for (int i = 0; i < out_len; i++) printf("%02x ", p[i]);
-		printf("\n");
-#endif
-
-		return out_len;
+		return jvs_bridge_dma(&bridge, config, buffer_in, buffer_in_len, buffer_out);
 	}
 
 	virtual bool maple_serialize(void **data, unsigned int *total_size)
 	{
-	   LIBRETRO_S(crazy_mode);
-	   LIBRETRO_S(jvs_repeat_request);
-	   LIBRETRO_S(jvs_receive_length);
-	   LIBRETRO_S(jvs_receive_buffer);
-	   size_t board_count = boards.count;
-	   LIBRETRO_S(board_count);
-	   for (u32 i = 0; i < boards.count; i++)
-		  jvs_board_serialize(&boards.board[i], data, total_size);
-
-	   return true ;
+		return jvs_bridge_serialize(&bridge, data, total_size);
 	}
 
 	virtual bool maple_unserialize(void **data, unsigned int *total_size)
 	{
-	   LIBRETRO_US(crazy_mode);
-	   LIBRETRO_US(jvs_repeat_request);
-	   LIBRETRO_US(jvs_receive_length);
-	   LIBRETRO_US(jvs_receive_buffer);
-	   // (a state cannot have more waiting on a channel than a channel holds)
-	   for (int i = 0; i < 32; i++)
-		  if (jvs_receive_length[i] > sizeof(jvs_receive_buffer[0]))
-			 jvs_receive_length[i] = 0;
-	   // (the prototype's own firmware is one of those that set crazy_mode; the BIOS's, before it, is not)
-	   hotd2p = crazy_mode && !strcmp(naomi_game_id, "hotd2p");
-	   create_io_boards();
-	   /* How many boards there are is written as the build's own size_t:
-	    * eight bytes by a 64-bit build, four by a 32-bit one. The four
-	    * more are zeroes. Where a 32-bit build's state goes straight on,
-	    * the next byte is the first board's address on the bus or, with no
-	    * board, the device on the next port: never 0. So a state of either
-	    * build is read by both. (Each took the other's for its own: the
-	    * boards and every device after them were read four bytes out.) */
-	   u32 board_count = 0;
-	   u32 count_high = 0;
-	   LIBRETRO_US(board_count);
-	   if (LIBRETRO_US(count_high) && count_high != 0)
-	   {
-		  *data = (u8 *)*data - sizeof(count_high);
-		  *total_size -= sizeof(count_high);
-	   }
-	   /* The boards are this cabinet's, how many the state has is the
-	    * state's to say: one it has and the cabinet has not is read past
-	    * (what a board keeps: jvs_board_serialize()), and there
-	    * are 31 addresses on the bus. */
-	   for (u32 i = 0; i < board_count && i < 31; i++)
-	   {
-		  if (i < boards.count)
-			 jvs_board_unserialize(&boards.board[i], data, total_size);
-		  else
-		  {
-			 u8 skipped[sizeof(u8) + sizeof(bool)];
-			 LIBRETRO_US(skipped);
-		  }
-	   }
-
-	   return true;
+		return jvs_bridge_unserialize(&bridge, data, total_size);
 	}
 };
 
-/* The I/O board's program on its way, for naomi_serialize_v23(). */
-void naomi_jvs_serialize_v23(void **data, unsigned int *total_size)
-{
-	LIBRETRO_SA(jvs_firmware, sizeof(jvs_firmware));
-}
-
-bool naomi_jvs_unserialize_v23(void **data, unsigned int *total_size)
-{
-	return LIBRETRO_USA(jvs_firmware, sizeof(jvs_firmware));
-}
-
-/* A reset: a program that was on its way to the board is sent again from
- * its start, and what had come of it is not to be taken for part of it. */
-void maple_jvs_firmware_reset(void)
-{
-	memset(jvs_firmware, 0, sizeof(jvs_firmware));
-}
-
-// The NAOMI's I/O board device, if the machine has one: it is the first port's, and its boards are the ones in the state
-static maple_naomi_jamma *jvs_state_device()
+// The NAOMI's I/O board bridge, if the machine has one: it is the first port's, and it is the one in the state
+jvs_bridge *maple_jvs_bridge(void)
 {
    maple_device *dev = MapleDevices[0][5];
 
    if (dev != NULL && dev->get_device_type() == MDT_NaomiJamma)
-	  return (maple_naomi_jamma *)dev;
+	  return &((maple_naomi_jamma *)dev)->bridge;
    return NULL;
-}
-
-/* The EEPROM read from its file as the machine starts, before a state can
- * be saved: a state has it then, and not word that it is yet to be read.
- * Read only when the game first asked, a state saved before that was loaded
- * into a machine whose file the game had written to since - which run-ahead
- * does every frame - and the game found what it had not yet written. */
-void maple_naomi_eeprom_load(void)
-{
-   maple_naomi_jamma *jamma = jvs_state_device();
-
-   if (jamma != NULL)
-	  jamma->load_eeprom();
-}
-
-jvs_boards *maple_jvs_boards(void)
-{
-   maple_naomi_jamma *jamma = jvs_state_device();
-
-   return jamma != NULL ? &jamma->boards : NULL;
 }
 
 /*
