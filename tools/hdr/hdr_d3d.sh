@@ -20,7 +20,7 @@ CC_WIN=${CC_WIN:-x86_64-w64-mingw32-gcc}
 DISPLAY_NO=${HDR_D3D_DISPLAY:-:93}
 Xvfb $DISPLAY_NO -screen 0 640x480x24 >/dev/null 2>&1 &
 XVFB=$!
-trap 'kill $XVFB 2>/dev/null; rm -rf "$WORK"' EXIT
+trap 'kill $XVFB 2>/dev/null || true; rm -rf "$WORK"' EXIT
 LRC=core/libretro-common
 $CC_WIN -O2 -Wall -I$LRC/include -Icore/deps/khronos -o "$WORK/hdr_d3d.exe" tools/hdr/hdr_d3d.c \
    core/rend/hdr/hdr_encode_d3d11.c core/rend/hdr/hdr_encode_d3d12.c core/rend/hdr/hdr_output.c \

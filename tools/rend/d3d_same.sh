@@ -31,7 +31,7 @@ mkdir -p "$WORK"
 DISPLAY_NO=${D3D_SAME_DISPLAY:-:93}
 Xvfb $DISPLAY_NO -screen 0 640x480x24 >/dev/null 2>&1 &
 XVFB=$!
-if [ -n "${KEEP:-}" ]; then trap 'kill $XVFB 2>/dev/null' EXIT; else trap 'kill $XVFB 2>/dev/null; rm -rf "$WORK"' EXIT; fi
+if [ -n "${KEEP:-}" ]; then trap 'kill $XVFB 2>/dev/null || true' EXIT; else trap 'kill $XVFB 2>/dev/null || true; rm -rf "$WORK"' EXIT; fi
 CC_WIN=${CC_WIN:-x86_64-w64-mingw32-gcc}
 $CC_WIN -std=c89 -O1 -Wall -I./core/libretro-common/include -o "$WORK/d3d9_frames.exe" tools/rend/d3d9_frames.c -ld3d9
 OVERRIDES="winedbg.exe=d"

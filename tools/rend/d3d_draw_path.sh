@@ -39,7 +39,7 @@ mkdir -p "$WORK"
 DISPLAY_NO=${D3D_DRAW_PATH_DISPLAY:-:97}
 Xvfb $DISPLAY_NO -screen 0 640x480x24 >/dev/null 2>&1 &
 XVFB=$!
-trap 'kill $XVFB 2>/dev/null; [ -n "${KEEP:-}" ] || rm -rf "$WORK"' EXIT
+trap 'kill $XVFB 2>/dev/null || true; [ -n "${KEEP:-}" ] || rm -rf "$WORK"' EXIT
 OVERRIDES="winedbg.exe=d"
 if [ -n "${D3DCOMPILER:-}" ]; then
    cp "$D3DCOMPILER" "$WORK/d3dcompiler_47.dll"
