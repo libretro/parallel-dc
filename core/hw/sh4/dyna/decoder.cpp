@@ -15,6 +15,10 @@
 #include "hw/sh4/sh4_core.h"
 #include "hw/sh4/sh4_mem.h"
 #include "decoder_opcodes.h"
+#include "dyna_state.h"
+
+/* (for states before V9, which hold one) */
+const unsigned dec_state_size = sizeof(state_t);
 
 #define BLOCK_MAX_SH_OPS_SOFT 500
 #define BLOCK_MAX_SH_OPS_HARD 511

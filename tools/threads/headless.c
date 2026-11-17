@@ -22,6 +22,7 @@
  *   HEADLESS_SAVE    frame to save a state before
  *   HEADLESS_LOAD    frame to load that state back before
  *   HEADLESS_DUMP    "frame:file": a state saved before that frame, written to the file
+ *   HEADLESS_DUMP2   the same, for a second state at another frame
  *   HEADLESS_AHEAD   frame from which the frames are run as a frontend's
  *                    run-ahead of one frame runs them: the frame with its
  *                    sound thrown away, a state saved, the frame after it
@@ -467,17 +468,25 @@ int main(int argc, char **argv)
             }
             change_options("HEADLESS_OPTION", 0, i);
             change_options("HEADLESS_OPTION2", 1, i);
-            if (getenv("HEADLESS_DUMP") && i == atoi(getenv("HEADLESS_DUMP")) && strchr(getenv("HEADLESS_DUMP"), ':'))
             {
-               size_t dump_size = retro_serialize_size();
-               void *dump = malloc(dump_size);
-               FILE *out = fopen(strchr(getenv("HEADLESS_DUMP"), ':') + 1, "wb");
+               static const char *const dumps[2] = { "HEADLESS_DUMP", "HEADLESS_DUMP2" };
+               int d;
+               for (d = 0; d < 2; d++)
+               {
+                  const char *at = getenv(dumps[d]);
+                  if (at && i == atoi(at) && strchr(at, ':'))
+                  {
+                     size_t dump_size = retro_serialize_size();
+                     void *dump = malloc(dump_size);
+                     FILE *out = fopen(strchr(at, ':') + 1, "wb");
 
-               if (dump && out && retro_serialize(dump, dump_size))
-                  fwrite(dump, 1, dump_size, out);
-               if (out)
-                  fclose(out);
-               free(dump);
+                     if (dump && out && retro_serialize(dump, dump_size))
+                        fwrite(dump, 1, dump_size, out);
+                     if (out)
+                        fclose(out);
+                     free(dump);
+                  }
+               }
             }
             if (getenv("HEADLESS_UNDUMP") && i == atoi(getenv("HEADLESS_UNDUMP")) && strchr(getenv("HEADLESS_UNDUMP"), ':'))
             {

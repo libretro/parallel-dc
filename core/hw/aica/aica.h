@@ -358,7 +358,7 @@ extern AicaTimer timers[3];
 /* The samples of the tick on its way the sound output holds back (aica.c) */
 u32 libAICA_SamplesIntoTick(void);
 /* What a V21 save state has of the sound chip that the ones before it
- * have not (see serialize.cpp) */
+ * have not (see serialize.c) */
 void aica_serialize_v21(void **data, unsigned int *total_size);
 bool aica_unserialize_v21(void **data, unsigned int *total_size);
 void aica_state_before_v21(void);

@@ -1,4 +1,5 @@
 #include "Renderer_if.h"
+#include "serialize.h"
 #include "rend/last_picture.h"
 #include "ta.h"
 #include "hw/pvr/pvr_mem.h"

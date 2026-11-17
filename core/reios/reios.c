@@ -1919,7 +1919,7 @@ static void reios_boot_naomi()
  * loaded in between - loaded, the restart was made on a machine that
  * never asked for it. The other is what a game finds in the boot ROM,
  * which is written when the machine starts: a state loaded before that
- * found none of it. serialize.cpp calls these. */
+ * found none of it. serialize.c calls these. */
 
 static void nbios_rom_after_load(void)
 {

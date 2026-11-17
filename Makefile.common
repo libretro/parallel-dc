@@ -30,7 +30,6 @@ SOURCES_CXX := \
 					$(CORE_DIR)/core/rend/tile/compute_frame.cpp \
 					\
 					\
-					$(CORE_DIR)/core/serialize.cpp \
 					\
 					\
 					\
@@ -119,6 +118,7 @@ SOURCES_C += $(CORE_DIR)/core/rend/vram_lock.c
 SOURCES_C += $(CORE_DIR)/core/rend/rtt_watch.c
 SOURCES_C += $(CORE_DIR)/core/rend/upscaler.c
 SOURCES_C += $(CORE_DIR)/core/rend/custom_texture.c
+SOURCES_C += $(CORE_DIR)/core/serialize.c
 # ...and a strip's indices (make_index()'s)
 SOURCES_C += $(CORE_DIR)/core/hw/pvr/ta_index.c
 # ...and what C++ has become C, MSVC C89 (AGENTS.md: gradually)

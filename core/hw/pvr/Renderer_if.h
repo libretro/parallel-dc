@@ -54,6 +54,10 @@ bool rend_present_kept_picture(void);
 void rend_resize(int width, int height);
 
 extern bool renderer_changed;
+/* A render asked for and not yet drawn, and the framebuffer it was to be
+ * shown in (their part of a state) */
+extern bool pend_rend;
+extern u32 fb_w_cur;
 
 /* Every texture made again before it is next used (TexCache.cpp) */
 extern bool KillTex;

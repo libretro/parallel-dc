@@ -84,7 +84,7 @@ else
    case "$GLLIB" in *GLES*) DET_GLES=1; export DET_GLES;; esac
 fi
 
-# where the core keeps the table of its state's parts (core/serialize.cpp)
+# where the core keeps the table of its state's parts (core/serialize.c)
 sym() { "${NM:-nm}" "$CORE" | awk -v n="$1" '$3 == n { print $1; exit }'; }
 DET_SYMS="base=$(sym retro_init) parts=$(sym dc_state_parts) at=$(sym dc_state_part_at) name=$(sym dc_state_part_name)"
 export DET_SYMS

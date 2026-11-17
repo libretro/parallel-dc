@@ -80,6 +80,7 @@ u32* ngen_readm_fail_v2(u32* ptr, u32* regs, u32 saddr);
 #include <memory>
 #include <map>
 #include "decoder.h"
+#include "dyna_state.h"
 #include "node_pool.h"
 typedef std::shared_ptr<RuntimeBlockInfo> RuntimeBlockInfoPtr;
 
@@ -194,8 +195,6 @@ RuntimeBlockInfoPtr DYNACALL bm_GetBlock(u32 addr);
 
 void bm_AddBlock(RuntimeBlockInfo* blk);
 void bm_DiscardBlock(RuntimeBlockInfo* block);
-void bm_Reset();
-void bm_LoadRam(const u8 *from);
 // @nothing_since: no block has been compiled since the last time
 void bm_ResetCache(bool nothing_since = false);
 void bm_ResetTempCache(bool full);

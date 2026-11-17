@@ -590,6 +590,20 @@ static int mcfg_PlayerNum(MapleDeviceType type, int bus)
 	}
 }
 
+void mcfg_UnserializeDevicesV1(void **data, unsigned int *total_size)
+{
+	int i, j;
+	for (i = 0; i < 4; i++)
+		for (j = 0; j < 6; j++)
+			if (MapleDevices[i][j] != NULL)
+			{
+				const MapleDeviceType devtype = MapleDevices[i][j]->get_device_type();
+				mcfg_DestroyDevice(i, j);
+				mcfg_Create(devtype, i, j);
+				MapleDevices[i][j]->maple_unserialize(data, total_size);
+			}
+}
+
 void mcfg_UnserializeDevices(void **data, unsigned int *total_size)
 {
 	/* A NAOMI's I/O board, when it goes, forgets that the EEPROM has been

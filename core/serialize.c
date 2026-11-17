@@ -1,4 +1,4 @@
-// serialize.cpp : save states
+/* serialize.c: save states */
 
 #include "types.h"
 #include "hw/aica/dsp.h"
@@ -12,10 +12,9 @@
 #include "hw/gdrom/gdromv3.h"
 #include "hw/maple/vmu_beep.h"
 #include "hw/maple/maple_devs.h"
-#include "hw/maple/maple_cfg.h"
+#include "hw/maple/maple_state.h"
 #include "hw/pvr/spg.h"
 #include "hw/pvr/Renderer_if.h"
-#include "hw/pvr/ta_structs.h"
 #include "hw/sh4/sh4_interrupts.h"
 #include "hw/sh4/sh4_sched.h"
 #include "hw/sh4/sh4_mmr.h"
@@ -34,10 +33,8 @@
 #include "hw/arm7/arm_mem.h"
 #include "reios/reios.h"
 #include "reios/gdrom_hle.h"
-#include <map>
-#include "rend/gles/gles.h"
-#include "hw/sh4/dyna/blockmanager.h"
-#include "hw/sh4/dyna/ngen.h"
+#include "hw/sh4/dyna/dyna_state.h"
+#include "rend/vram_lock.h"
 #include "hw/naomi/naomi.h"
 #include "hw/naomi/naomi_cart.h"
 #include "hw/naomi/gdcartridge.h"
@@ -55,143 +52,74 @@
 
 
 
-//./core/hw/aica/dsp.o
+/* ./core/hw/aica/dsp.o */
 
-//./core/hw/aica/aica.o
+/* ./core/hw/aica/aica.o */
 
-//./core/hw/aica/aica_if.o
+/* ./core/hw/aica/aica_if.o */
 
-//./core/hw/aica/aica_mem.o
+/* ./core/hw/aica/aica_mem.o */
 
-//./core/hw/holly/sb.o
+/* ./core/hw/holly/sb.o */
 
-//./core/hw/holly/sb_mem.o
+/* ./core/hw/holly/sb_mem.o */
 
-//./core/hw/pvr/elan_host.o
+/* ./core/hw/pvr/elan_host.o */
 #include "hw/pvr/elan.h"
 #include "hw/pvr/elan_host.h"
 #include "hw/holly/holly_intc.h"
 
-//./core/hw/gdrom/gdromv3.o: hw/gdrom/gdromv3.h
+/* ./core/hw/gdrom/gdromv3.o: hw/gdrom/gdromv3.h */
 
-//./core/hw/maple/maple_devs.o
-extern char EEPROM[0x100];
-extern bool EEPROM_loaded;
+/* ./core/hw/maple/maple_devs.o */
 
-//./core/hw/maple/maple_if.o
-//needs special handler
+/* ./core/hw/maple/maple_if.o */
+/* needs special handler */
 #include "hw/maple/maple_if.h"
 
 #ifdef ENABLE_MODEM
-//./core/hw/modem/modem.c
+/* ./core/hw/modem/modem.c */
 #include "hw/modem/modem.h"
 #endif
 
 
-//./core/hw/pvr/Renderer_if.o
-extern bool pend_rend;
-extern u32 fb_w_cur;
+/* ./core/hw/pvr/Renderer_if.o */
 
-//./core/hw/pvr/pvr_mem.o
+/* ./core/hw/pvr/pvr_mem.o */
 
-//./core/hw/pvr/pvr_regs.o
+/* ./core/hw/pvr/pvr_regs.o */
 
-//./core/hw/pvr/spg.o
+/* ./core/hw/pvr/spg.o */
 
-//./core/hw/pvr/ta.o: ta_fsm, ta_fsm_cl (ta.h)
+/* ./core/hw/pvr/ta.o: ta_fsm, ta_fsm_cl (ta.h) */
 
-//./core/hw/pvr/ta_vtx.o
+/* ./core/hw/pvr/ta_vtx.o */
 
-//./core/rend/vram_lock.o: vram (pvr_mem.h)
+/* ./core/rend/vram_lock.o: vram (pvr_mem.h) */
 
-//./core/hw/sh4/sh4_mmr.o
+/* ./core/hw/sh4/sh4_mmr.o */
 
-//./core/hw/sh4/sh4_mem.o
+/* ./core/hw/sh4/sh4_mem.o */
 
-//./core/hw/sh4/sh4_interrupts.o
+/* ./core/hw/sh4/sh4_interrupts.o */
 
-//./core/hw/sh4/sh4_core_regs.o
+/* ./core/hw/sh4/sh4_core_regs.o */
 
-//./core/hw/sh4/sh4_sched.o
+/* ./core/hw/sh4/sh4_sched.o */
 
-//./core/hw/sh4/interpr/sh4_interpreter.o
+/* ./core/hw/sh4/interpr/sh4_interpreter.o */
 
-//./core/hw/sh4/modules/bsc.o
+/* ./core/hw/sh4/modules/bsc.o */
 
-//./core/hw/sh4/modules/tmu.o
+/* ./core/hw/sh4/modules/tmu.o */
 
-//./core/hw/sh4/modules/ccn.o
+/* ./core/hw/sh4/modules/ccn.o */
 
-//./core/imgread/common.o
+/* ./core/imgread/common.o */
 
-//./core/hw/naomi/naomi.o: the old serial number's variables (naomi.h)
+/* ./core/hw/naomi/naomi.o: the old serial number's variables (naomi.h) */
 
-/* What each part of the machine has had in a state since V21, in a block of
- * its own at the end: written by X_serialize_v21(), read by
- * X_unserialize_v21() - which answers false if the rest of the state cannot
- * be found after what it read - and, for a state from before V21, set to
- * what such a state implies by X_state_before_v21(). */
-#define V21_PART(x) \
-	void x##_serialize_v21(void **data, unsigned int *total_size); \
-	bool x##_unserialize_v21(void **data, unsigned int *total_size); \
-	void x##_state_before_v21(void)
-V21_PART(aica);
-V21_PART(gdrom);
-V21_PART(maple);
-V21_PART(modem);
-V21_PART(reios);
-V21_PART(gdhle);
-V21_PART(nbios);
-V21_PART(pvr);
-#undef V21_PART
-// and since V22: which way the MMU is done, and the translations Windows CE's way of it keeps (fastmmu.cpp)
-// and whether the game has written to the framebuffer since it was last shown (Renderer_if.cpp)
-void pvr_serialize_v22(void **data, unsigned int *total_size);
-void pvr_unserialize_v22(void **data, unsigned int *total_size);
-void pvr_state_before_v22(void);
-/* and since V23: the NAOMI 2 geometry processor's clipping planes
- * (elan_host.c), the NAOMI's communication board and the I/O board's
- * program on its way (naomi.h), and the libretro layer's mouse motion
- * not yet read and sound not yet sent (libretro.cpp) */
-void pvr_serialize_v23(void **data, unsigned int *total_size);
-bool pvr_unserialize_v23(void **data, unsigned int *total_size);
-void pvr_state_before_v23(void);
-void lr_serialize_v23(void **data, unsigned int *total_size);
-bool lr_unserialize_v23(void **data, unsigned int *total_size);
-void lr_state_before_v23(void);
-/* and since V24: the network device in use and what the modem or the
- * Broadband Adapter holds (netstate.cpp), the VMU's beep (vmu_beep.cpp),
- * the NAOMI's serial port and the card readers, touchscreen and hopper on
- * it (naomi_periph.h), and a System SP's own hardware (systemsp.c) */
-void systemsp_serialize_v24(void **data, unsigned int *total_size);
-bool systemsp_unserialize_v24(void **data, unsigned int *total_size);
-void systemsp_state_before_v24(void);
-/* and since V25: the dinokich IC card reader of a System SP (systemsp.c),
- * what a Mushiking I/O board holds back (maple_devs.cpp), and the DIMM
- * board of a NAOMI GD-ROM game (gdcartridge.h) */
-void systemsp_serialize_v25(void **data, unsigned int *total_size);
-bool systemsp_unserialize_v25(void **data, unsigned int *total_size);
-void systemsp_state_before_v25(void);
-/* and since V26: the NAOMI's two X76F100 serial flash chips, the main
- * board's and the ROM board's (naomi.c) */
-void naomi_serial_serialize_v26(void **data, unsigned int *total_size);
-bool naomi_serial_unserialize_v26(void **data, unsigned int *total_size);
-void naomi_serial_state_before_v26(void);
-/* and since V27: what the racing and other I/O boards keep (maple_devs.cpp),
- * the MIDI force feedback board of the driving games (midiffb.cpp: its
- * header), and F355's printer status (sb_mem.c) */
-/* and since V28: a light gun's transfer owed its end at vblank-out
- * (spg.cpp) and how many renders ago each TA context was last used
- * (ta_ctx.c) */
-void pvr_serialize_v28(void **data, unsigned int *total_size);
-bool pvr_unserialize_v28(void **data, unsigned int *total_size);
-void pvr_state_before_v28(void);
-/* and since V29: SB_ADST, the AICA DMA's start register, which is read
- * through a function and so is not in the register block (aica_if.cpp) */
-/* and since V30: the cards the NAOMI's card readers and IC card readers
- * keep out of the reader, as the game last wrote them (card_reader.h) */
-/* and since V31: the network DIMM board of a NAOMI GD-ROM game
- * (gdcartridge.h) */
+#include "serialize.h"
 
 /* The modem's part is this long on a Dreamcast (modem_serialize_v21() in
  * modem.c: 33 registers, the DSP's 4096 bytes, and 36 more), and a build
@@ -204,9 +132,9 @@ void pvr_state_before_v28(void);
  * which on an arcade board is some other device's event: that one's times
  * were written here, and read back over it.) */
 static sched_list no_event = { NULL, 0, -1, -1 };
-#define GDROM_EVENT (gdrom_sched >= 0 ? sch_list[gdrom_sched] : no_event)
-// (and the modem's, the same way)
-#define MODEM_EVENT (modem_sched >= 0 ? sch_list[modem_sched] : no_event)
+#define GDROM_EVENT (*(gdrom_sched >= 0 ? &sch_list[gdrom_sched] : &no_event))
+/* (and the modem's, the same way) */
+#define MODEM_EVENT (*(modem_sched >= 0 ? &sch_list[modem_sched] : &no_event))
 
 /*
  * Deserialization input-buffer bounds tracking.
@@ -287,10 +215,11 @@ bool ra_unserialize(void *src, unsigned int src_size, void **dest, unsigned int 
 /* Whether the state being read has @size more bytes at @data. */
 bool ra_unserialize_has(const void *data, size_t size)
 {
+	size_t offset;
 	if (data == NULL || unserialize_base == NULL)
 		return false;
 
-	const size_t offset = (size_t)((const u8 *)data - unserialize_base);
+	offset = (size_t)((const u8 *)data - unserialize_base);
 
 	return offset <= unserialize_limit && size <= unserialize_limit - offset;
 }
@@ -309,7 +238,7 @@ static void unserialize_ram(void **data, unsigned int *total_size)
 		*total_size += mem_b.size;
 		return;
 	}
-	// (no telling what is in memory now: everything is unlocked, and the caller empties the code cache when a load fails)
+	/* (no telling what is in memory now: everything is unlocked, and the caller empties the code cache when a load fails) */
 	bm_Reset();
 #endif
 	LIBRETRO_USA(mem_b.data, mem_b.size);
@@ -338,7 +267,7 @@ static void unserialize_vram(void **data, unsigned int *total_size)
 		*total_size += vram.size;
 		return;
 	}
-	// (not all of it is there: the textures are made again from whatever this leaves)
+	/* (not all of it is there: the textures are made again from whatever this leaves) */
 	KillTex = true;
 	LIBRETRO_USA(vram.data, vram.size);
 }
@@ -394,13 +323,11 @@ static bool register_unserialize(RegisterStruct *regs, u32 count, void **data, u
  * the part two states that should be the same differ in. Two stores a part,
  * a few hundred parts. */
 #define STATE_PARTS_MAX 384
-extern "C" {
 u32 dc_state_parts;
 u32 dc_state_part_at[STATE_PARTS_MAX];
 const char *dc_state_part_name[STATE_PARTS_MAX];
-}
 
-static inline int state_part(const char *name, unsigned int at)
+static INLINE int state_part(const char *name, unsigned int at)
 {
 	if (dc_state_parts < STATE_PARTS_MAX)
 	{
@@ -423,13 +350,12 @@ static inline int state_part(const char *name, unsigned int at)
 bool dc_serialize(void **data, unsigned int *total_size)
 {
 	int i = 0;
-	int j = 0;
 	serialize_version_enum version = VCUR_LIBRETRO;
 
 	*total_size = 0 ;
 	dc_state_parts = 0;
 
-	//dc not initialized yet
+	/* dc not initialized yet */
 	if ( p_sh4rcb == NULL )
 		return false ;
 
@@ -570,7 +496,7 @@ bool dc_serialize(void **data, unsigned int *total_size)
 	LIBRETRO_S(decoded_srimask);
 
 
-	//default to nommu_full
+	/* default to nommu_full */
 	i = 3 ;
 	if ( do_sqw_nommu == &do_sqw_nommu_area_3)
 		i = 0 ;
@@ -585,9 +511,9 @@ bool dc_serialize(void **data, unsigned int *total_size)
 
 	LIBRETRO_SA((*p_sh4rcb).sq_buffer,64/8);
 
-	//store these before unserializing and then restore after
-	//void *getptr = &((*p_sh4rcb).cntx.sr.GetFull) ;
-	//void *setptr = &((*p_sh4rcb).cntx.sr.SetFull) ;
+	/* store these before unserializing and then restore after */
+	/* void *getptr = &((*p_sh4rcb).cntx.sr.GetFull) ; */
+	/* void *setptr = &((*p_sh4rcb).cntx.sr.SetFull) ; */
 	LIBRETRO_S((*p_sh4rcb).cntx);
 
 
@@ -613,7 +539,7 @@ bool dc_serialize(void **data, unsigned int *total_size)
 	LIBRETRO_S(sch_list[dma_sched_id].start) ;
 	LIBRETRO_S(sch_list[dma_sched_id].end) ;
 
-	for (int i = 0; i < 3; i++)
+	for (i = 0; i < 3; i++)
 	{
 	   LIBRETRO_S(sch_list[tmu_sched[i]].tag) ;
 	   LIBRETRO_S(sch_list[tmu_sched[i]].start) ;
@@ -701,7 +627,7 @@ bool dc_serialize(void **data, unsigned int *total_size)
 	LIBRETRO_S(reg_dimm_parameterl);
 	LIBRETRO_S(reg_dimm_parameterh);
 	LIBRETRO_S(reg_dimm_status);
-	LIBRETRO_SKIP(1); // NaomiDataRead
+	LIBRETRO_SKIP(1); /* NaomiDataRead */
 
 	LIBRETRO_S(settings.dreamcast.broadcast);
 	LIBRETRO_S(settings.dreamcast.cable);
@@ -768,35 +694,35 @@ bool dc_serialize(void **data, unsigned int *total_size)
 	STATE_PART("gdhle_serialize_v21"), gdhle_serialize_v21(data, total_size);
 	STATE_PART("nbios_serialize_v21"), nbios_serialize_v21(data, total_size);
 	STATE_PART("pvr_serialize_v21"), pvr_serialize_v21(data, total_size);
-	// V22
+	/* V22 */
 	STATE_PART("pvr_serialize_v22"), pvr_serialize_v22(data, total_size);
 	STATE_PART("mmu_serialize_v22"), mmu_serialize_v22(data, total_size);
-	// V23
+	/* V23 */
 	STATE_PART("pvr_serialize_v23"), pvr_serialize_v23(data, total_size);
 	STATE_PART("naomi_serialize_v23"), naomi_serialize_v23(data, total_size);
 	STATE_PART("lr_serialize_v23"), lr_serialize_v23(data, total_size);
-	// V24
+	/* V24 */
 	STATE_PART("net_serialize_v24"), net_serialize_v24(data, total_size);
 	STATE_PART("vmu_beep_serialize_v24"), vmu_beep_serialize_v24(data, total_size);
 	STATE_PART("naomi_periph_serialize_v24"), naomi_periph_serialize_v24(data, total_size);
 	STATE_PART("systemsp_serialize_v24"), systemsp_serialize_v24(data, total_size);
-	// V25
+	/* V25 */
 	STATE_PART("systemsp_serialize_v25"), systemsp_serialize_v25(data, total_size);
 	STATE_PART("maple_jvs_serialize_v25"), maple_jvs_serialize_v25(data, total_size);
 	STATE_PART("naomi_gd_serialize_v25"), naomi_gd_serialize_v25(data, total_size);
-	// V26
+	/* V26 */
 	STATE_PART("naomi_serial_serialize_v26"), naomi_serial_serialize_v26(data, total_size);
-	// V27
+	/* V27 */
 	STATE_PART("maple_jvs_serialize_v27"), maple_jvs_serialize_v27(data, total_size);
 	STATE_PART("midiffb_serialize_v27"), midiffb_serialize_v27(data, total_size);
 	STATE_PART("naomi_printer_serialize_v27"), naomi_printer_serialize_v27(data, total_size);
-	// V28
+	/* V28 */
 	STATE_PART("pvr_serialize_v28"), pvr_serialize_v28(data, total_size);
-	// V29
+	/* V29 */
 	STATE_PART("aica_sb_serialize_v29"), aica_sb_serialize_v29(data, total_size);
-	// V30
+	/* V30 */
 	STATE_PART("naomi_cards_serialize_v30"), naomi_cards_serialize_v30(data, total_size);
-	// V31
+	/* V31 */
 	STATE_PART("naomi_gd_serialize_v31"), naomi_gd_serialize_v31(data, total_size);
 
 	return true ;
@@ -818,28 +744,29 @@ bool dc_serialize(void **data, unsigned int *total_size)
 static void sched_events_loaded(void)
 {
 	const u32 now = sh4_sched_now();
+	size_t i;
 
-	for (size_t i = 0; i < sch_count; i++)
+	for (i = 0; i < sch_count; i++)
 	{
-		sched_list &ev = sch_list[i];
+		sched_list *ev = &sch_list[i];
+		u32 asked, gone;
 
-		if (ev.end == -1)
+		if (ev->end == -1)
 			continue;
-		const u32 asked = (u32)ev.end - (u32)ev.start;
-		const u32 gone = now - (u32)ev.start;
+		asked = (u32)ev->end - (u32)ev->start;
+		gone = now - (u32)ev->start;
 		if (asked <= SH4_MAIN_CLOCK && gone <= asked)
 			continue;
-		ev.start = (int)now;
-		ev.end = (int)now;
-		if (ev.end == -1)
-			ev.end++;
+		ev->start = (int)now;
+		ev->end = (int)now;
+		if (ev->end == -1)
+			ev->end++;
 	}
 }
 
 bool dc_unserialize(void **data, unsigned int *total_size, size_t actual_data_size)
 {
 	int i = 0;
-	int j = 0;
 	u8 dummy ;
 	int dummy_int ;
 	serialize_version_enum version = V1 ;
@@ -862,8 +789,8 @@ bool dc_unserialize(void **data, unsigned int *total_size, size_t actual_data_si
 
 	LIBRETRO_US(version) ;
 
-	//This normally isn't necessary - but we need some way to differentiate between save states
-	//that were created after the format change and before the new format had a new version saved in it
+	/* This normally isn't necessary - but we need some way to differentiate between save states */
+	/* that were created after the format change and before the new format had a new version saved in it */
 	if (version == V1 && actual_data_size != 48324799 && actual_data_size != 48855967)
 	   version = V2 ;
 	/* A state of a version this build has not heard of - a later build's -
@@ -882,7 +809,7 @@ bool dc_unserialize(void **data, unsigned int *total_size, size_t actual_data_si
 	LIBRETRO_US(e68k_reg_M) ;
 
 	LIBRETRO_USA(arm_Reg,RN_ARM_REG_COUNT);
-	// (the sound CPU fetches whole words: an address that is not one's is never in its pc)
+	/* (the sound CPU fetches whole words: an address that is not one's is never in its pc) */
 	arm_Reg[R15_ARM_NEXT].I &= ~3;
 	LIBRETRO_US(armIrqEnable);
 	LIBRETRO_US(armFiqEnable);
@@ -890,10 +817,10 @@ bool dc_unserialize(void **data, unsigned int *total_size, size_t actual_data_si
 	LIBRETRO_US(Arm7Enabled);
 	if (version < V9)
 	{
-		LIBRETRO_SKIP(256); // cpuBitsSet
-		LIBRETRO_SKIP(1); // intState
-		LIBRETRO_SKIP(1); // stopState
-		LIBRETRO_SKIP(1); // holdState
+		LIBRETRO_SKIP(256); /* cpuBitsSet */
+		LIBRETRO_SKIP(1); /* intState */
+		LIBRETRO_SKIP(1); /* stopState */
+		LIBRETRO_SKIP(1); /* holdState */
 	}
 
 	/* The first thing in it is the code a DSP recompiler makes where it
@@ -916,7 +843,7 @@ bool dc_unserialize(void **data, unsigned int *total_size, size_t actual_data_si
 	LIBRETRO_US(ARMRST);
 	LIBRETRO_US(rtc_EN);
 	if (version < V3)
-	   LIBRETRO_US(dummy_int);	//dma_sched_id
+	   LIBRETRO_US(dummy_int);	/* dma_sched_id */
 
 	LIBRETRO_USA(aica_reg,0x8000);
 	/* A timer counts down from its prescaler's step, 1 << md, to 1: none
@@ -931,12 +858,12 @@ bool dc_unserialize(void **data, unsigned int *total_size, size_t actual_data_si
 
 	if (version < V7)
 	{
-		LIBRETRO_SKIP(4 * 16); 			// volume_lut
-		LIBRETRO_SKIP(4 * 256 + 768);	// tl_lut. Due to a previous bug this is not 4 * (256 + 768)
-		LIBRETRO_SKIP(4 * 64);			// AEG_ATT_SPS
-		LIBRETRO_SKIP(4 * 64);			// AEG_DSR_SPS
-		LIBRETRO_SKIP(2);					// pl
-		LIBRETRO_SKIP(2);					// pr
+		LIBRETRO_SKIP(4 * 16); 			/* volume_lut */
+		LIBRETRO_SKIP(4 * 256 + 768);	/* tl_lut. Due to a previous bug this is not 4 * (256 + 768) */
+		LIBRETRO_SKIP(4 * 64);			/* AEG_ATT_SPS */
+		LIBRETRO_SKIP(4 * 64);			/* AEG_DSR_SPS */
+		LIBRETRO_SKIP(2);					/* pl */
+		LIBRETRO_SKIP(2);					/* pr */
 	}
 	channel_unserialize(data, total_size, version);
 
@@ -945,8 +872,8 @@ bool dc_unserialize(void **data, unsigned int *total_size, size_t actual_data_si
 	LIBRETRO_US(cdda_index);
 	if (version < V9)
 	{
-		LIBRETRO_SKIP(4 * 64); 	// mxlr
-		LIBRETRO_SKIP(4);			// samples_gen
+		LIBRETRO_SKIP(4 * 64); 	/* mxlr */
+		LIBRETRO_SKIP(4);			/* samples_gen */
 	}
 
 	register_unserialize(sb_regs, ARRAY_SIZE(sb_regs), data, total_size, 0) ;
@@ -960,21 +887,21 @@ bool dc_unserialize(void **data, unsigned int *total_size, size_t actual_data_si
 	 * so a corrupt state whose size exceeds the buffer can't overflow data[]
 	 * (and can't clobber the live size/mask either). */
 	{
-		u32 stored_size, stored_mask;
+		u32 stored_size, stored_mask, copy;
 		LIBRETRO_US(stored_size);
 		LIBRETRO_US(stored_mask);
-		u32 copy = stored_size < sys_nvmem_sram.size ? stored_size : sys_nvmem_sram.size;
+		copy = stored_size < sys_nvmem_sram.size ? stored_size : sys_nvmem_sram.size;
 		LIBRETRO_USA(sys_nvmem_sram.data, copy);
 		if (stored_size > copy)
 			LIBRETRO_SKIP(stored_size - copy);
 	}
 
 	{
-		u32 stored_size, stored_mask;
+		u32 stored_size, stored_mask, copy;
 		LIBRETRO_US(stored_size);
 		LIBRETRO_US(stored_mask);
 		LIBRETRO_US(sys_nvmem_flash.state);
-		u32 copy = stored_size < sys_nvmem_flash.size ? stored_size : sys_nvmem_flash.size;
+		copy = stored_size < sys_nvmem_flash.size ? stored_size : sys_nvmem_flash.size;
 		LIBRETRO_USA(sys_nvmem_flash.data, copy);
 		if (stored_size > copy)
 			LIBRETRO_SKIP(stored_size - copy);
@@ -984,7 +911,7 @@ bool dc_unserialize(void **data, unsigned int *total_size, size_t actual_data_si
 	LIBRETRO_US(GD_HardwareInfo) ;
 
 	if (version < V3)
-	   LIBRETRO_US(dummy_int);	//gdrom_sched
+	   LIBRETRO_US(dummy_int);	/* gdrom_sched */
 	LIBRETRO_US(sns_asc);
 	LIBRETRO_US(sns_ascq);
 	LIBRETRO_US(sns_key);
@@ -993,7 +920,7 @@ bool dc_unserialize(void **data, unsigned int *total_size, size_t actual_data_si
 	LIBRETRO_US(set_mode_offset);
 	LIBRETRO_US(read_params);
 	LIBRETRO_US(packet_cmd);
-	// read_buff
+	/* read_buff */
 	read_buff.cache_size = 0;
 	if (version < V9)
 		LIBRETRO_SKIP(4 + 4 + 2352 * 8192);
@@ -1008,7 +935,7 @@ bool dc_unserialize(void **data, unsigned int *total_size, size_t actual_data_si
 	 * play. */
 	if ((u32)cdda.status > (u32)CDDA_TERMINATED)
 		cdda.status = ((u32)cdda.status & 0xFF) ? CDDA_PLAYING : CDDA_NOINFO;
-	// the drive keeps four bits of repeat count (15: for ever)
+	/* the drive keeps four bits of repeat count (15: for ever) */
 	cdda.repeats &= 0xF;
 	LIBRETRO_US(gd_state);
 	LIBRETRO_US(gd_disk_type);
@@ -1027,7 +954,7 @@ bool dc_unserialize(void **data, unsigned int *total_size, size_t actual_data_si
 
 	LIBRETRO_USA(EEPROM,0x100);
 	{
-		// (a flag is 0 or 1, whatever byte the state has for it)
+		/* (a flag is 0 or 1, whatever byte the state has for it) */
 		u8 flag = 0;
 		LIBRETRO_US(flag);
 		EEPROM_loaded = flag != 0;
@@ -1035,7 +962,7 @@ bool dc_unserialize(void **data, unsigned int *total_size, size_t actual_data_si
 
 	if ( version == V1 )
 	{
-		//V1 saved NaomiState which was a struct of 3 u8 variables
+		/* V1 saved NaomiState which was a struct of 3 u8 variables */
 		LIBRETRO_US(dummy);
 		LIBRETRO_US(dummy);
 		LIBRETRO_US(dummy);
@@ -1048,24 +975,14 @@ bool dc_unserialize(void **data, unsigned int *total_size, size_t actual_data_si
 	}
 
 	if ( version == V1 )
-	{
-		for (i = 0 ; i < 4 ; i++)
-			for (j = 0 ; j < 6 ; j++)
-				if ( MapleDevices[i][j] != 0 )
-				{
-					MapleDeviceType devtype = MapleDevices[i][j]->get_device_type() ;
-					mcfg_DestroyDevice(i,j) ;
-					mcfg_Create(devtype, i, j);
-					MapleDevices[i][j]->maple_unserialize(data, total_size) ;
-				}
-	}
+		mcfg_UnserializeDevicesV1(data, total_size);
 	else
 		mcfg_UnserializeDevices(data, total_size);
 
 	if (version < V9)
 	{
-		LIBRETRO_SKIP(4);	// FrameCOunt
-		LIBRETRO_SKIP(1); // pend_rend
+		LIBRETRO_SKIP(4);	/* FrameCOunt */
+		LIBRETRO_SKIP(1); /* pend_rend */
 	}
 	pend_rend = false;
 
@@ -1080,7 +997,7 @@ bool dc_unserialize(void **data, unsigned int *total_size, size_t actual_data_si
 
 
 	if (version < V9)
-		LIBRETRO_SKIP(1); // fog_needs_update
+		LIBRETRO_SKIP(1); /* fog_needs_update */
 	LIBRETRO_USA(pvr_regs,pvr_RegSize);
 
 
@@ -1093,29 +1010,29 @@ bool dc_unserialize(void **data, unsigned int *total_size, size_t actual_data_si
 		LIBRETRO_US(pvr_cur_scanline);
 	else
 		pvr_cur_scanline = 0;
-	// (the line counter has ten bits; lines are counted up to this one from wherever the beam is)
+	/* (the line counter has ten bits; lines are counted up to this one from wherever the beam is) */
 	if (pvr_cur_scanline > 1023)
 		pvr_cur_scanline = 0;
    fb_w_cur = 1;
 	if (version < V9)
 	{
-		LIBRETRO_US(i); 			// pvr_numscanlines
-		LIBRETRO_US(i); 			// prv_cur_scanline
-		LIBRETRO_US(i); 			// vblk_cnt
-		LIBRETRO_US(i); 			// Line_Cycles
-		LIBRETRO_US(i); 			// Frame_Cycles
+		LIBRETRO_US(i); 			/* pvr_numscanlines */
+		LIBRETRO_US(i); 			/* prv_cur_scanline */
+		LIBRETRO_US(i); 			/* vblk_cnt */
+		LIBRETRO_US(i); 			/* Line_Cycles */
+		LIBRETRO_US(i); 			/* Frame_Cycles */
 		if (version < V3)
 		{
-			LIBRETRO_US(dummy_int);	//render_end_schid
-			LIBRETRO_US(dummy_int);	//vblank_schid
-			LIBRETRO_US(dummy_int);	//time_sync
+			LIBRETRO_US(dummy_int);	/* render_end_schid */
+			LIBRETRO_US(dummy_int);	/* vblank_schid */
+			LIBRETRO_US(dummy_int);	/* time_sync */
 		}
-		LIBRETRO_SKIP(8); 		// speed_load_mspdf
-		LIBRETRO_US(dummy_int); // mips_counter
-		LIBRETRO_SKIP(8); 		// full_rps
+		LIBRETRO_SKIP(8); 		/* speed_load_mspdf */
+		LIBRETRO_US(dummy_int); /* mips_counter */
+		LIBRETRO_SKIP(8); 		/* full_rps */
 
-		LIBRETRO_SKIP(4 * 256); // ta_type_lut
-		LIBRETRO_SKIP(2048); // ta_fsm
+		LIBRETRO_SKIP(4 * 256); /* ta_type_lut */
+		LIBRETRO_SKIP(2048); /* ta_fsm */
 	}
    if (version >= V12)
 		LIBRETRO_US(fb_w_cur);
@@ -1123,7 +1040,7 @@ bool dc_unserialize(void **data, unsigned int *total_size, size_t actual_data_si
 		fb_w_cur = 1;
 	LIBRETRO_US(ta_fsm[2048]);
 	LIBRETRO_US(ta_fsm_cl);
-	// (the state the list is in is one of eight, and it is an index into the table of what follows each)
+	/* (the state the list is in is one of eight, and it is an index into the table of what follows each) */
 	if (ta_fsm[2048] > 7)
 		ta_fsm[2048] = 0;
 	if (ta_fsm_cl > 7)
@@ -1131,28 +1048,28 @@ bool dc_unserialize(void **data, unsigned int *total_size, size_t actual_data_si
 
 	if (version < V9)
 	{
-		LIBRETRO_SKIP(1); // pal_needs_update
-		LIBRETRO_SKIP(4 * 4); // _pal_rev_256
-		LIBRETRO_SKIP(4 * 64); // _pal_rev_16
-		LIBRETRO_SKIP(4 * 4); // pal_rev_256
-		LIBRETRO_SKIP(4 * 64); // pal_rev_16
-		LIBRETRO_SKIP(4 * 65536 * 3); // decoded_colors
-		LIBRETRO_US(i); // tileclip_val
-		LIBRETRO_SKIP(65536); // f32_su8_tbl
-		LIBRETRO_US(i); // FaceBaseColor
-		LIBRETRO_US(i); // FaceOffsColor
-		LIBRETRO_US(i); // SFaceBaseColor
-		LIBRETRO_US(i); // SFaceOffsColor
+		LIBRETRO_SKIP(1); /* pal_needs_update */
+		LIBRETRO_SKIP(4 * 4); /* _pal_rev_256 */
+		LIBRETRO_SKIP(4 * 64); /* _pal_rev_16 */
+		LIBRETRO_SKIP(4 * 4); /* pal_rev_256 */
+		LIBRETRO_SKIP(4 * 64); /* pal_rev_16 */
+		LIBRETRO_SKIP(4 * 65536 * 3); /* decoded_colors */
+		LIBRETRO_US(i); /* tileclip_val */
+		LIBRETRO_SKIP(65536); /* f32_su8_tbl */
+		LIBRETRO_US(i); /* FaceBaseColor */
+		LIBRETRO_US(i); /* FaceOffsColor */
+		LIBRETRO_US(i); /* SFaceBaseColor */
+		LIBRETRO_US(i); /* SFaceOffsColor */
 
 
-		LIBRETRO_US(i); // palette_index
-		LIBRETRO_US(dummy); // KillTex
-		LIBRETRO_SKIP(4 * 1024); // palette16_ram
-		LIBRETRO_SKIP(4 * 1024); // palette32_ram
-		LIBRETRO_SKIP(4 * 1024 * 8 * 2); // detwiddle
+		LIBRETRO_US(i); /* palette_index */
+		LIBRETRO_US(dummy); /* KillTex */
+		LIBRETRO_SKIP(4 * 1024); /* palette16_ram */
+		LIBRETRO_SKIP(4 * 1024); /* palette32_ram */
+		LIBRETRO_SKIP(4 * 1024 * 8 * 2); /* detwiddle */
 	}
 	if (version >= V10)
-		UnserializeTAContext(data, total_size, version);	// (the state's version, not this build's: a state of before V12 has no render passes to read)
+		UnserializeTAContext(data, total_size, version);	/* (the state's version, not this build's: a state of before V12 has no render passes to read) */
 
 	unserialize_vram(data, total_size);
 
@@ -1182,7 +1099,7 @@ bool dc_unserialize(void **data, unsigned int *total_size, size_t actual_data_si
 	if (version < V9)
 	{
 		u16 dum16;
-		LIBRETRO_US(dum16); // IRLPriority
+		LIBRETRO_US(dum16); /* IRLPriority */
 	}
 	LIBRETRO_USA(InterruptEnvId,32);
 	LIBRETRO_USA(InterruptBit,32);
@@ -1207,61 +1124,61 @@ bool dc_unserialize(void **data, unsigned int *total_size, size_t actual_data_si
 
 	if (version < V9)
 	{
-		LIBRETRO_US(dummy_int); // old_rm
-		LIBRETRO_US(dummy_int); // old_dn
+		LIBRETRO_US(dummy_int); /* old_rm */
+		LIBRETRO_US(dummy_int); /* old_dn */
 	}
 
 	LIBRETRO_US(sh4_sched_ffb);
 	if (version < V9)
 	{
-		LIBRETRO_SKIP(4); // sh4_sched_intr
+		LIBRETRO_SKIP(4); /* sh4_sched_intr */
 		if (version < V3)
-		   LIBRETRO_US(dummy_int);	// sh4_sched_next_id
+		   LIBRETRO_US(dummy_int);	/* sh4_sched_next_id */
 	}
 
-	LIBRETRO_US(dummy_int) ;	// the tag: what the device registered with, not state
+	LIBRETRO_US(dummy_int) ;	/* the tag: what the device registered with, not state */
 	LIBRETRO_US(sch_list[aica_schid].start) ;
 	LIBRETRO_US(sch_list[aica_schid].end) ;
 
-	LIBRETRO_US(dummy_int) ;	// the tag: what the device registered with, not state
+	LIBRETRO_US(dummy_int) ;	/* the tag: what the device registered with, not state */
 	LIBRETRO_US(sch_list[rtc_schid].start) ;
 	LIBRETRO_US(sch_list[rtc_schid].end) ;
 
-	LIBRETRO_US(dummy_int) ;	// the tag: what the device registered with, not state
+	LIBRETRO_US(dummy_int) ;	/* the tag: what the device registered with, not state */
 	LIBRETRO_US(GDROM_EVENT.start) ;
 	LIBRETRO_US(GDROM_EVENT.end) ;
 	no_event.tag = 0;
 	no_event.start = no_event.end = -1;
 
-	LIBRETRO_US(dummy_int) ;	// the tag: what the device registered with, not state
+	LIBRETRO_US(dummy_int) ;	/* the tag: what the device registered with, not state */
 	LIBRETRO_US(sch_list[maple_sched].start) ;
 	LIBRETRO_US(sch_list[maple_sched].end) ;
 
-	LIBRETRO_US(dummy_int) ;	// the tag: what the device registered with, not state
+	LIBRETRO_US(dummy_int) ;	/* the tag: what the device registered with, not state */
 	LIBRETRO_US(sch_list[dma_sched_id].start) ;
 	LIBRETRO_US(sch_list[dma_sched_id].end) ;
 
-	for (int i = 0; i < 3; i++)
+	for (i = 0; i < 3; i++)
 	{
-	   LIBRETRO_US(dummy_int) ;	// the tag: what the device registered with, not state
+	   LIBRETRO_US(dummy_int) ;	/* the tag: what the device registered with, not state */
 	   LIBRETRO_US(sch_list[tmu_sched[i]].start) ;
 	   LIBRETRO_US(sch_list[tmu_sched[i]].end) ;
 	}
 
-	LIBRETRO_US(dummy_int) ;	// the tag: what the device registered with, not state
+	LIBRETRO_US(dummy_int) ;	/* the tag: what the device registered with, not state */
 	LIBRETRO_US(sch_list[render_end_schid].start) ;
 	LIBRETRO_US(sch_list[render_end_schid].end) ;
 
-	LIBRETRO_US(dummy_int) ;	// the tag: what the device registered with, not state
+	LIBRETRO_US(dummy_int) ;	/* the tag: what the device registered with, not state */
 	LIBRETRO_US(sch_list[vblank_schid].start) ;
 	LIBRETRO_US(sch_list[vblank_schid].end) ;
 	spg_beam_forget();
 
 	if (version < V9)
 	{
-		LIBRETRO_US(dummy_int); // sch_list[time_sync].tag
-		LIBRETRO_US(dummy_int); // sch_list[time_sync].start
-		LIBRETRO_US(dummy_int); // sch_list[time_sync].end
+		LIBRETRO_US(dummy_int); /* sch_list[time_sync].tag */
+		LIBRETRO_US(dummy_int); /* sch_list[time_sync].start */
+		LIBRETRO_US(dummy_int); /* sch_list[time_sync].end */
 	}
 
 	{
@@ -1284,7 +1201,7 @@ bool dc_unserialize(void **data, unsigned int *total_size, size_t actual_data_si
 	if ( version >= V2 )
 	{
 #ifdef ENABLE_MODEM
-      LIBRETRO_US(dummy_int) ;	// the tag: what the device registered with, not state
+      LIBRETRO_US(dummy_int) ;	/* the tag: what the device registered with, not state */
       LIBRETRO_US(MODEM_EVENT.start) ;
       LIBRETRO_US(MODEM_EVENT.end) ;
       no_event.tag = 0;
@@ -1298,15 +1215,15 @@ bool dc_unserialize(void **data, unsigned int *total_size, size_t actual_data_si
 
 	if (version < V3)
 	{
-	   LIBRETRO_US(dummy_int);	//aica_sched
-	   LIBRETRO_US(dummy_int);	//rtc_sched
+	   LIBRETRO_US(dummy_int);	/* aica_sched */
+	   LIBRETRO_US(dummy_int);	/* rtc_sched */
 	}
 
 	LIBRETRO_US(SCIF_SCFSR2);
 	if (version < V9)
 	{
-		LIBRETRO_SKIP(1); // SCIF_SCFRDR2
-		LIBRETRO_US(dummy_int); // SCIF_SCFDR2
+		LIBRETRO_SKIP(1); /* SCIF_SCFRDR2 */
+		LIBRETRO_US(dummy_int); /* SCIF_SCFDR2 */
 	}
 	else if (version >= V11)
 		LIBRETRO_US(SCIF_SCSCR2);
@@ -1318,7 +1235,7 @@ bool dc_unserialize(void **data, unsigned int *total_size, size_t actual_data_si
 	LIBRETRO_USA(old_mode,3);
 	if (version < V3)
 	{
-	   //tmu_sched*3
+	   /* tmu_sched*3 */
 	   LIBRETRO_US(dummy_int);
 	   LIBRETRO_US(dummy_int);
 	   LIBRETRO_US(dummy_int);
@@ -1327,17 +1244,17 @@ bool dc_unserialize(void **data, unsigned int *total_size, size_t actual_data_si
 	LIBRETRO_USA(tmu_ch_base64,3);
 
 	LIBRETRO_USA(CCN_QACR_TR,2);
-	// not the routine the state names, which may be from before each queue went by its own register
+	/* not the routine the state names, which may be from before each queue went by its own register */
 	CCN_QACR_select();
 
 	if (version < V6)
 	{
-		for (int i = 0; i < 64; i++)
+		for (i = 0; i < 64; i++)
 		{
 			LIBRETRO_US(UTLB[i].Address);
 			LIBRETRO_US(UTLB[i].Data);
 		}
-		for (int i = 0; i < 4; i++)
+		for (i = 0; i < 4; i++)
 		{
 			LIBRETRO_US(ITLB[i].Address);
 			LIBRETRO_US(ITLB[i].Data);
@@ -1381,14 +1298,14 @@ bool dc_unserialize(void **data, unsigned int *total_size, size_t actual_data_si
 
 	if (version < V9)
 	{
-		LIBRETRO_US(dummy_int); // naomi_updates
+		LIBRETRO_US(dummy_int); /* naomi_updates */
 		if (version < V4)
 		{
-		   LIBRETRO_US(dummy_int);			// RomPioOffset
-		   LIBRETRO_US(dummy_int);			// DmaOffset
-		   LIBRETRO_US(dummy_int);			// DmaCount
+		   LIBRETRO_US(dummy_int);			/* RomPioOffset */
+		   LIBRETRO_US(dummy_int);			/* DmaOffset */
+		   LIBRETRO_US(dummy_int);			/* DmaCount */
 		}
-		LIBRETRO_US(dummy_int);		// BoardID
+		LIBRETRO_US(dummy_int);		/* BoardID */
 	}
 	LIBRETRO_US(GSerialBuffer);
 	LIBRETRO_US(BSerialBuffer);
@@ -1413,59 +1330,59 @@ bool dc_unserialize(void **data, unsigned int *total_size, size_t actual_data_si
 	LIBRETRO_US(reg_dimm_parameterl);
 	LIBRETRO_US(reg_dimm_parameterh);
 	LIBRETRO_US(reg_dimm_status);
-	LIBRETRO_SKIP(1); // NaomiDataRead
+	LIBRETRO_SKIP(1); /* NaomiDataRead */
 	if (version < V4)
 	{
-	   LIBRETRO_US(dummy_int);		// NAOMI_ROM_OFFSETH
-	   LIBRETRO_US(dummy_int);		// NAOMI_ROM_OFFSETL
-	   LIBRETRO_US(dummy_int);		// NAOMI_ROM_DATA
-	   LIBRETRO_US(dummy_int);		// NAOMI_DMA_OFFSETH
-	   LIBRETRO_US(dummy_int);		// NAOMI_DMA_OFFSETL
-	   LIBRETRO_US(dummy_int);		// NAOMI_DMA_COUNT
-	   LIBRETRO_US(dummy_int);		// NAOMI_BOARDID_WRITE
-	   LIBRETRO_US(dummy_int);		// NAOMI_BOARDID_READ
-	   LIBRETRO_US(dummy_int);		// NAOMI_COMM_OFFSET
-	   LIBRETRO_US(dummy_int);		// NAOMI_COMM_DATA
+	   LIBRETRO_US(dummy_int);		/* NAOMI_ROM_OFFSETH */
+	   LIBRETRO_US(dummy_int);		/* NAOMI_ROM_OFFSETL */
+	   LIBRETRO_US(dummy_int);		/* NAOMI_ROM_DATA */
+	   LIBRETRO_US(dummy_int);		/* NAOMI_DMA_OFFSETH */
+	   LIBRETRO_US(dummy_int);		/* NAOMI_DMA_OFFSETL */
+	   LIBRETRO_US(dummy_int);		/* NAOMI_DMA_COUNT */
+	   LIBRETRO_US(dummy_int);		/* NAOMI_BOARDID_WRITE */
+	   LIBRETRO_US(dummy_int);		/* NAOMI_BOARDID_READ */
+	   LIBRETRO_US(dummy_int);		/* NAOMI_COMM_OFFSET */
+	   LIBRETRO_US(dummy_int);		/* NAOMI_COMM_DATA */
 	}
 
 	if (version < V9)
 	{
-		LIBRETRO_US(dummy_int);	// cycle_counter
-		LIBRETRO_US(dummy_int);	// idxnxx
+		LIBRETRO_US(dummy_int);	/* cycle_counter */
+		LIBRETRO_US(dummy_int);	/* idxnxx */
 
 #if FEAT_SHREC != DYNAREC_NONE
-		LIBRETRO_SKIP(sizeof(state_t)); // state
-		LIBRETRO_US(dummy_int); // div_som_reg1
-		LIBRETRO_US(dummy_int); // div_som_reg2
-		LIBRETRO_US(dummy_int); // div_som_reg3
+		LIBRETRO_SKIP(dec_state_size); /* state */
+		LIBRETRO_US(dummy_int); /* div_som_reg1 */
+		LIBRETRO_US(dummy_int); /* div_som_reg2 */
+		LIBRETRO_US(dummy_int); /* div_som_reg3 */
 
-		LIBRETRO_US(dummy_int);	// LastAddr
-		LIBRETRO_US(dummy_int);	// LastAddr_min
-		LIBRETRO_SKIP(1024); // block_hash
+		LIBRETRO_US(dummy_int);	/* LastAddr */
+		LIBRETRO_US(dummy_int);	/* LastAddr_min */
+		LIBRETRO_SKIP(1024); /* block_hash */
 #endif
 
-		// RegisterRead, RegisterWrite
-		for (int i = 0; i < sh4_reg_count; i++)
+		/* RegisterRead, RegisterWrite */
+		for (i = 0; i < sh4_reg_count; i++)
 		{
 			LIBRETRO_US(dummy_int);
 			LIBRETRO_US(dummy_int);
 		}
-		LIBRETRO_US(dummy_int); // fallback_blocks
-		LIBRETRO_US(dummy_int); // total_blocks
-		LIBRETRO_US(dummy_int); // REMOVED_OPS
+		LIBRETRO_US(dummy_int); /* fallback_blocks */
+		LIBRETRO_US(dummy_int); /* total_blocks */
+		LIBRETRO_US(dummy_int); /* REMOVED_OPS */
 
 		if (version < V5)
 		{
-			LIBRETRO_US(dummy_int);	// u16 kcode[4]
+			LIBRETRO_US(dummy_int);	/* u16 kcode[4] */
 			LIBRETRO_US(dummy_int);
-			LIBRETRO_US(dummy_int);	// u8 rt[4]
-			LIBRETRO_US(dummy_int);	// u8 lt[4]
-			LIBRETRO_US(dummy_int);	// u32 vks[4]
+			LIBRETRO_US(dummy_int);	/* u8 rt[4] */
+			LIBRETRO_US(dummy_int);	/* u8 lt[4] */
+			LIBRETRO_US(dummy_int);	/* u32 vks[4] */
 			LIBRETRO_US(dummy_int);
 			LIBRETRO_US(dummy_int);
 			LIBRETRO_US(dummy_int);
-			LIBRETRO_US(dummy_int);	// s8 joyx[4]
-			LIBRETRO_US(dummy_int);	// s8 joyy[4]
+			LIBRETRO_US(dummy_int);	/* s8 joyx[4] */
+			LIBRETRO_US(dummy_int);	/* s8 joyy[4] */
 		}
 	}
 	if (version >= V3)
@@ -1496,7 +1413,7 @@ bool dc_unserialize(void **data, unsigned int *total_size, size_t actual_data_si
 			maple_out_used = 0;
 	}
 
-	// Before V19 a disc put in was ready at once: there is never a look under way
+	/* Before V19 a disc put in was ready at once: there is never a look under way */
 	{
 		/* (on a machine with no drive there is no such event, its id is
 		 * -1, and this was written before the start of the list) */

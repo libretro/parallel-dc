@@ -535,11 +535,44 @@ HEADLESS_DIR=$WORK/dir HEADLESS_UNDUMP=40:$WORK/naomi.state \
    tail -n 20 "$WORK/other.log" >&2
    exit 1
 }
-unset LD_PRELOAD
 tr -d '\r' < "$WORK/other.out" | grep -q "^state refused\$" || {
    echo "FAIL: a NAOMI's state was not refused by a Dreamcast: $(cat "$WORK/other.out")" >&2
    exit 1
 }
+
+# And a state loaded into a machine just started is the machine it was: a
+# frame on from it, the state is what the machine that saved it had a frame
+# on, byte for byte. A part a load does not put back is the new machine's,
+# not the saved one's (run-ahead loads into the machine that saved, where
+# such a part is already right, and does not see it).
+echo "== headless: a state loaded into a machine just started"
+for CONTENT in test.gdi naomi-test.bin; do
+   rm -f "$WORK/fresh.state" "$WORK/fresh1.state" "$WORK/fresh2.state"
+   # (both from one run: two machines started at two times are not the
+   # same machine - the clock is the host's)
+   HEADLESS_DIR=$WORK/dir HEADLESS_DUMP=120:$WORK/fresh.state HEADLESS_DUMP2=121:$WORK/fresh1.state \
+      $RUN "$WORK/$FRONTEND" "$CORE" "$WORK/$CONTENT" 122 \
+      reicast_use_real_bios=disabled reicast_threaded_rendering=disabled $EXTRA \
+      > "$WORK/fresh.out" 2> "$WORK/fresh.log" && [ -s "$WORK/fresh.state" ] && [ -s "$WORK/fresh1.state" ] || {
+      echo "FAIL: $CONTENT: the states were not saved" >&2
+      tail -n 20 "$WORK/fresh.log" >&2
+      exit 1
+   }
+   HEADLESS_DIR=$WORK/dir HEADLESS_UNDUMP=2:$WORK/fresh.state HEADLESS_DUMP=3:$WORK/fresh2.state \
+      $RUN "$WORK/$FRONTEND" "$CORE" "$WORK/$CONTENT" 4 \
+      reicast_use_real_bios=disabled reicast_threaded_rendering=disabled $EXTRA \
+      > "$WORK/fresh.out" 2> "$WORK/fresh.log" || {
+      echo "FAIL: $CONTENT: the run ended badly" >&2
+      tail -n 20 "$WORK/fresh.log" >&2
+      exit 1
+   }
+   cmp -s "$WORK/fresh1.state" "$WORK/fresh2.state" || {
+      echo "FAIL: $CONTENT: a state loaded into a machine just started, a frame on, is not the machine it was a frame on:" >&2
+      cmp -l "$WORK/fresh1.state" "$WORK/fresh2.state" | head -n 8 >&2
+      exit 1
+   }
+done
+unset LD_PRELOAD
 
 # And romsets (naomi_cart.py --merged): a merged set - a game and its
 # clones in one archive, the clones' own ROMs in folders - has to start the

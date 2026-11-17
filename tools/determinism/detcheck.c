@@ -101,7 +101,7 @@ static uint64_t hash_bytes(const void *data, size_t size, uint64_t h)
 /* ---- the state's parts ----
  *
  * dc_serialize() keeps where each part began in the state it wrote last
- * (core/serialize.cpp). Each part is cut into units of at most 64 KB, and
+ * (core/serialize.c). Each part is cut into units of at most 64 KB, and
  * the trace has a hash of each unit: a difference in main memory is then
  * found to the 64 KB it is in, from the traces alone. */
 

@@ -2,6 +2,7 @@
 #include "types.h"
 #include "maple_devs.h"
 #include "maple_if.h"
+#include "maple_state.h"
 
 enum PlainJoystickButtonId
 {
@@ -79,5 +80,3 @@ static inline bool maple_HasSlots(MapleDeviceType type)
 
 void mcfg_Create(MapleDeviceType type,u32 bus,u32 port, int player_num = -1);
 void mcfg_DestroyDevice(int i, int j);
-void mcfg_SerializeDevices(void **data, unsigned int *total_size);
-void mcfg_UnserializeDevices(void **data, unsigned int *total_size);

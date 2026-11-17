@@ -1,6 +1,7 @@
 #if defined(HAVE_VULKAN) || defined(HAVE_D3D11) || defined(HAVE_D3D12)
 /* (the renderers that have the HDR output: Color Format) */
 #define HAVE_HDR_OUTPUT
+#include "serialize.h"
 #include "rend/hdr/hdr_libretro.h"
 #include "rend/hdr/hdr_output.h"
 #endif
