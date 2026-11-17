@@ -68,7 +68,8 @@ name: Headless
 # strips from frame to frame (tools/rend/upscaler_run.sh), and the custom
 # textures' loader (tools/rend/custom_texture_run.sh), and the renderer
 # interface (tools/pvr/renderer_if_run.sh), and what is plugged into the
-# maple bus (tools/maple/maple_cfg_run.sh),
+# maple bus (tools/maple/maple_cfg_run.sh), and the compute renderer's
+# frame words (tools/rend/compute_frame_run.sh),
 # and the paths the core writes to, a
 # content's name of any length included (tools/paths/paths_run.sh), and the
 # HLE BIOS's GD-ROM transfers stopped at a fault and made again
@@ -105,6 +106,7 @@ on:
       - 'tools/rend/rtt_watch_*'
       - 'tools/rend/upscaler_*'
       - 'tools/rend/custom_texture_*'
+      - 'tools/rend/compute_frame_*'
       - 'tools/sh4/reglist_test.*'
       - 'tools/sh4/node_pool_test.*'
       - 'tools/rend/band_pool_test.*'
@@ -152,6 +154,7 @@ on:
       - 'tools/rend/rtt_watch_*'
       - 'tools/rend/upscaler_*'
       - 'tools/rend/custom_texture_*'
+      - 'tools/rend/compute_frame_*'
       - 'tools/sh4/reglist_test.*'
       - 'tools/sh4/node_pool_test.*'
       - 'tools/rend/band_pool_test.*'
@@ -351,6 +354,10 @@ jobs:
           sh tools/rend/custom_texture_run.sh
           sh tools/rend/custom_texture_run.sh -fsanitize=thread
           sh tools/rend/custom_texture_run.sh -fsanitize=address,undefined -fno-sanitize-recover=all
+      - name: The compute renderer's frame words - frames, registers, settings and renderers made at random, the polygons' flags, slots, clip rectangles and lists, the volumes closed, the passes numbered, the GPU's decode's frames, renders to textures, the scalers, frames refused for passes, room and textures - against what it always did (and with the sanitizers)
+        run: |
+          sh tools/rend/compute_frame_run.sh
+          sh tools/rend/compute_frame_run.sh -fsanitize=address,undefined -fno-sanitize-recover=all
       - name: The renderer interface - renders started to the screen, to textures, of the framebuffer the game wrote, kept, overrun, skipped, drawn where they start or handed to the libretro thread, vblanks, renderers made, failing and falling back, kept pictures, its part of a state - against what it always did (and with the sanitizers)
         run: |
           sh tools/pvr/renderer_if_run.sh

@@ -23,7 +23,7 @@ bool DX11WriteOut::Init(ID3D11Device *device, ID3D11DeviceContext *ctx, DX11Shad
 		tried = true;
 		Make(device, ctx, shaders);
 	}
-	return shader && !ComputeFrame::ScalersOff;
+	return shader && !compute_frame_scalers_off;
 }
 
 bool DX11WriteOut::Make(ID3D11Device *device, ID3D11DeviceContext *ctx, DX11Shaders *shaders)

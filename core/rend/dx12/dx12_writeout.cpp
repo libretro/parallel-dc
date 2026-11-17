@@ -11,7 +11,7 @@ static_assert(PVRC_F_FLAGS < SlotWords && PVRC_F_WIDTH < SlotWords && PVRC_F_HEI
 
 bool DX12WriteOut::Wanted()
 {
-	return !ComputeFrame::ScalersOff;
+	return !compute_frame_scalers_off;
 }
 
 void DX12WriteOut::Term()

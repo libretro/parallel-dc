@@ -296,23 +296,7 @@ public:
 	virtual ~BaseTextureCacheData() {}
 	static bool IsGpuHandledPaletted(TSP tsp, TCW tcw, int area = 0)
 	{
-		// Some palette textures are handled on the GPU
-		// This is currently limited to textures using nearest filtering and not mipmapped.
-		// Enabling texture upscaling or dumping also disables this mode.
-		// So do custom textures: a replacement is colours, not indices to look up.
-		/* And to a polygon's first texture. The shaders have one palette
-		 * position to look colours up from, the first texture's: a second
-		 * volume's texture left as indices was looked up with that, or, with
-		 * a first texture that has no palette, shown as its indices. It is
-		 * made colours here, like any texture. */
-		return (tcw.PixelFmt == PixelPal4 || tcw.PixelFmt == PixelPal8)
-				&& settings.rend.TextureUpscale == 1
-				&& !settings.rend.DumpTextures
-				&& !settings.rend.CustomTextures
-				&& tsp.FilterMode == 0
-				&& !tcw.MipMapped
-				&& !tcw.VQ_Comp
-				&& area == 0;
+		return tex_gpu_paletted(tsp.full, tcw.full, area);
 	}
 };
 
@@ -443,11 +427,6 @@ void ReadFramebuffer(PixelBuffer<u32>& pb, int& width, int& height);
 
 static inline void MakeFogTexture(u8 *tex_data)
 {
-	u8 *fog_table = (u8 *)FOG_TABLE;
-	for (int i = 0; i < 128; i++)
-	{
-		tex_data[i] = fog_table[i * 4];
-		tex_data[i + 128] = fog_table[i * 4 + 1];
-	}
+	make_fog_texture(tex_data);
 }
 extern const std::array<f32, 16> D_Adjust_LoD_Bias;

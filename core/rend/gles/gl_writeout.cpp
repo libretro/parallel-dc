@@ -95,7 +95,7 @@ void gl_writeout_term()
 
 void gl_writeout_init(int width, int height, bool picture)
 {
-	const bool wanted = !ComputeFrame::ScalersOff && !gl.is_gles && glDispatchCompute != nullptr
+	const bool wanted = !compute_frame_scalers_off && !gl.is_gles && glDispatchCompute != nullptr
 			&& (gl.gl_major > 4 || (gl.gl_major == 4 && gl.gl_minor >= 3)) && width > 0 && height > 0;
 	if (!wanted)
 	{

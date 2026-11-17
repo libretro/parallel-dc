@@ -7,7 +7,11 @@
  * tables and the palette converted for the renderer. C89, for C and C++
  * alike; TexCache.h has PixelBuffer, C++'s face of tex_buf_t. */
 #include <stddef.h>
+#include <retro_inline.h>
 #include "types.h"
+#include "hw/pvr/pvr_regs.h"
+#include "hw/pvr/ta.h"
+#include "hw/pvr/ta_words.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -127,6 +131,38 @@ static INLINE u32 YUV422(s32 Y, s32 Yu, s32 Yv)
 	G = G > 255 ? 255 : G;
 	B = B > 255 ? 255 : B;
 	return (u32)R | ((u32)G << 8) | ((u32)B << 16) | 0xFF000000u;
+}
+
+/* Whether a texture is left as palette indices, looked up on the GPU:
+ * nearest filtering, not mipmapped nor compressed, a polygon's first
+ * texture (@area 0), with no texture upscaling, dumping or custom textures
+ * (a replacement is colours, not indices). The shaders have one palette
+ * position, the first texture's: a second volume's texture is made colours
+ * here, like any texture. */
+static INLINE bool tex_gpu_paletted(u32 tsp, u32 tcw, int area)
+{
+	const u32 fmt = TAW_GET(tcw, TCW_PixelFmt);
+	return (fmt == TA_PIXEL_4BPP || fmt == TA_PIXEL_8BPP)
+			&& settings.rend.TextureUpscale == 1
+			&& !settings.rend.DumpTextures
+			&& !settings.rend.CustomTextures
+			&& TAW_GET(tsp, TSP_FilterMode) == 0
+			&& !TAW_GET(tcw, TCW_MipMapped)
+			&& !TAW_GET(tcw, TCW_VQ_Comp)
+			&& area == 0;
+}
+
+/* The fog table (FOG_TABLE) as a texture: 128 bytes of each entry's low
+ * byte, then 128 of its high byte */
+static INLINE void make_fog_texture(u8 *tex_data)
+{
+	const u8 *fog_table = (const u8 *)FOG_TABLE;
+	int i;
+	for (i = 0; i < 128; i++)
+	{
+		tex_data[i] = fog_table[i * 4];
+		tex_data[i + 128] = fog_table[i * 4 + 1];
+	}
 }
 
 #ifdef __cplusplus

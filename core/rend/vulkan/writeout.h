@@ -27,7 +27,7 @@ class VulkanWriteOut : public PsoBuilder
 public:
 	VulkanWriteOut();
 	// whether the pictures are to be made for it (vk::ImageUsageFlagBits::eStorage)
-	static bool Wanted() { return !ComputeFrame::ScalersOff; }
+	static bool Wanted() { return !compute_frame_scalers_off; }
 	// the pictures @views, @extent: a set, a slot of words and a framebuffer of the overlay's for each
 	void Init(const std::vector<vk::ImageView>& views, vk::Extent2D extent);
 	// everything, the pipeline too (the renderer's end)

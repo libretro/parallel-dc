@@ -134,4 +134,11 @@
 #define TCW_PalSelect_S 21
 #define TCW_PalSelect_B 6
 
+/* What the words hold, for C (ta_structs.h's ListType_ and ParamType_;
+ * ta.h has the pixel formats) */
+#define TA_LIST_OPAQUE        0
+#define TA_LIST_TRANSLUCENT   2
+#define TA_LIST_PUNCH_THROUGH 4
+#define TA_PARAM_SPRITE       5
+
 #endif

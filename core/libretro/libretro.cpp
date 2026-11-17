@@ -1185,9 +1185,9 @@ static void update_variables(bool first_startup)
    {
       const bool off = !(environ_cb(RETRO_ENVIRONMENT_GET_VARIABLE, &var) && var.value
             && !strcmp("enabled", var.value));
-      if (!first_startup && off != ComputeFrame::ScalersOff)
+      if (!first_startup && off != compute_frame_scalers_off)
          resize_pending = true;
-      ComputeFrame::ScalersOff = off;
+      compute_frame_scalers_off = off;
    }
 
    /* Takes effect with the next texture made: one made either way is the

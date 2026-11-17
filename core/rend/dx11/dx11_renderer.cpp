@@ -242,7 +242,7 @@ void DX11Renderer::Resize(int w, int h)
 {
 	/* (a change of the write-out option is one of size: the pictures are
 	 * made again, for it to write or not) */
-	if (device != nullptr && writeOutPictures != !ComputeFrame::ScalersOff)
+	if (device != nullptr && writeOutPictures != !compute_frame_scalers_off)
 	{
 		DX11Lock lock;
 		writeOutPictures = writeOut.Init(device, deviceContext, shaders);
