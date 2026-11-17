@@ -52,7 +52,7 @@ $CC -O1 -g $VDEFS -fsanitize=address,undefined \
    tools/chd/chd_image_test.c core/imgread/chd_image.c \
    core/deps/coreio/coreio.c core/archive/archive.c \
    $L/formats/chd/rchd.c $L/encodings/encoding_huffman.c \
-   $L/encodings/encoding_rzstd.c $L/encodings/encoding_deflate.c \
+   $L/encodings/encoding_rzstd.c $L/encodings/encoding_xxh64.c $L/encodings/encoding_deflate.c \
    $L/encodings/encoding_crc32.c $L/formats/7z/r7z_lzma.c \
    $L/formats/7z/r7z_archive.c $L/encodings/encoding_rbzip2.c $L/formats/7z/r7z_lzma2.c \
    $L/formats/7z/r7z_lzma_stream.c $L/formats/7z/r7z_bcj2.c \
@@ -71,7 +71,7 @@ done
 CXX=${CXX:-c++}
 STREAM_SRC="core/imgread/chd_image.c core/imgread/chd.c core/imgread/disc.c core/deps/coreio/coreio.c
    core/archive/archive.c $L/formats/chd/rchd.c
-   $L/encodings/encoding_huffman.c $L/encodings/encoding_rzstd.c
+   $L/encodings/encoding_huffman.c $L/encodings/encoding_rzstd.c $L/encodings/encoding_xxh64.c
    $L/encodings/encoding_deflate.c $L/encodings/encoding_crc32.c
    $L/formats/7z/r7z_lzma.c $L/formats/7z/r7z_archive.c $L/encodings/encoding_rbzip2.c
    $L/formats/7z/r7z_lzma2.c $L/formats/7z/r7z_lzma_stream.c

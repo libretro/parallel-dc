@@ -47,6 +47,7 @@ CHD_SOURCES_C = \
 					$(LIBRETRO_COMM_DIR)/formats/chd/rchd.c \
 					$(LIBRETRO_COMM_DIR)/encodings/encoding_huffman.c \
 					$(LIBRETRO_COMM_DIR)/encodings/encoding_rzstd.c \
+					$(LIBRETRO_COMM_DIR)/encodings/encoding_xxh64.c \
 					$(LIBRETRO_COMM_DIR)/formats/flac/rflac.c
 
 # zip and 7z archives: rzip_archive over encoding_deflate.c, r7z_archive
