@@ -32,7 +32,7 @@ for s in tools/imgread/disc_test.c core/imgread/*.c core/deps/chdpsr/cdipsr.c; d
       -O1 -g $DEFS $SAN $INC -isystem $L/include -c "$s" -o "$WORK/o/$(echo "$s" | tr / _).o"
 done
 for s in core/deps/coreio/coreio.c core/archive/archive.c \
-   $L/formats/chd/rchd.c $L/encodings/encoding_huffman.c $L/encodings/encoding_rzstd.c \
+   $L/formats/chd/rchd.c $L/encodings/encoding_huffman.c $L/encodings/encoding_rzstd.c $L/encodings/encoding_xxh64.c \
    $L/encodings/encoding_deflate.c $L/encodings/encoding_crc32.c $L/formats/7z/r7z_lzma.c \
    $L/formats/7z/r7z_archive.c $L/encodings/encoding_rbzip2.c $L/formats/7z/r7z_lzma2.c \
    $L/formats/7z/r7z_lzma_stream.c $L/formats/7z/r7z_bcj2.c $L/formats/7z/r7z_filters.c \
@@ -54,4 +54,21 @@ if ! diff -u tools/imgread/expected.txt "$WORK/got.txt" > "$WORK/diff.txt"; then
    echo "disc_test: FAIL - the images read differently (above: expected, then got)"
    exit 1
 fi
+# The same behind a frontend VFS: v7 maps the images, v3 is never asked
+for v in 7 3; do
+   # the test's own status, not grep's
+   if ! (cd "$WORK" && DISC_TEST_FRONTEND=$v ./disc_test $(cat list.txt) \
+         > "raw$v.txt" 2> "fe$v.txt"); then
+      tail -3 "$WORK/fe$v.txt"
+      echo "disc_test: FAIL - frontend v$v"
+      exit 1
+   fi
+   grep 'frontend v' "$WORK/fe$v.txt"
+   grep -E '^(==| |type |not opened)' "$WORK/raw$v.txt" > "$WORK/got$v.txt"
+   if ! diff -u tools/imgread/expected.txt "$WORK/got$v.txt" > "$WORK/diff.txt"; then
+      head -40 "$WORK/diff.txt"
+      echo "disc_test: FAIL - behind a v$v frontend the images read differently"
+      exit 1
+   fi
+done
 echo "disc_test: PASS ($(grep -c '^==' "$WORK/got.txt") images, $(grep -c '^not opened' "$WORK/got.txt") of them not opened)"

@@ -40,6 +40,11 @@ void core_fprefetch(core_file* fc, uint64_t offset, size_t len);
  * file refers to it any more. */
 void core_archive_release(void);
 
+/* Whether the frontend's VFS can map files (VFS API v7 or later): then
+ * a plain path is opened through it first and mapped by it. Set once,
+ * from retro_set_environment, before any file is opened. */
+void core_io_frontend_maps(int on);
+
 RETRO_END_DECLS
 
 #endif

@@ -139,27 +139,49 @@ static core_file_impl *core_file_alloc(void)
    return cf;
 }
 
-/* A file by its path: mapped by this core's own copy of the file layer
- * if that can open it, read through the frontend's (filestream) if not.
+/* Set from retro_set_environment: the frontend's VFS is v7 or later */
+static int core_frontend_maps;
+
+void core_io_frontend_maps(int on)
+{
+   core_frontend_maps = on;
+}
+
+/* A file by its path.
  *
- * The order is a choice. A frontend's file layer is asked second, so a
- * frontend that means to serve other bytes for a path that also opens
- * locally is not heard: the local file is mapped. The file layer the
- * frontend hands over (the VFS interface) has no way to ask for a
- * mapping, so going through it first would mean no file is ever mapped
- * under a frontend that supplies one - RetroArch always does - and a
- * disc image would be read and copied where it is now borrowed from the
- * page cache. Every path RetroArch's layer treats specially (cdrom://,
- * smb://, a content URI on Android, a path under UWP) is one this
- * core's copy cannot open, and so goes to the frontend's anyway.
+ * Under a frontend whose VFS maps files (v7 on), the frontend is asked
+ * first: it maps what it means the path to be, and the core reads in
+ * place from that mapping; where it can't map the file (cdrom://, a
+ * network path), the core reads through the same handle. The core's own
+ * copy of the file layer is not asked at all.
  *
- * What would settle it is a mapping call in the VFS interface: the
- * frontend maps what it means the path to be, and this asks it first.
- * Until there is one, comparing a few bytes of the two would only look
- * like an answer - a patch in the middle of a file would get past it. */
+ * Under an older frontend the VFS has no mapping to give, so the order
+ * is the other way round: mapped by this core's own copy of the file
+ * layer if that can open it, read through the frontend's (filestream)
+ * if not. A frontend that means to serve other bytes for a path that
+ * also opens locally is not heard there; every path RetroArch's layer
+ * treats specially (cdrom://, smb://, a content URI on Android, a path
+ * under UWP) is one this core's copy cannot open, and so goes to the
+ * frontend's anyway. Without a frontend VFS both are the same layer. */
 static int core_file_open_path(core_file_impl *cf, const char *path)
 {
    int64_t len = 0;
+
+   if (core_frontend_maps)
+   {
+      int64_t mapped_len = 0;
+      cf->f = filestream_open(path, RETRO_VFS_FILE_ACCESS_READ,
+            RETRO_VFS_FILE_ACCESS_HINT_FREQUENT_ACCESS);
+      if (!cf->f)
+         return 0;
+      len      = filestream_get_size(cf->f);
+      cf->size = len > 0 ? (size_t)len : 0;
+      cf->mem  = filestream_get_mapped_ptr(cf->f, &mapped_len);
+      /* All of it, or none: a short mapping is read */
+      if (cf->mem && (len <= 0 || mapped_len != len))
+         cf->mem = NULL;
+      return 1;
+   }
 
    cf->lf = retro_vfs_file_open_impl(path, RETRO_VFS_FILE_ACCESS_READ,
          RETRO_VFS_FILE_ACCESS_HINT_FREQUENT_ACCESS);

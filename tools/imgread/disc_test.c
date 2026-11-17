@@ -15,6 +15,10 @@
 #include <string.h>
 
 #include <encodings/crc32.h>
+#include <libretro.h>
+#include <streams/file_stream.h>
+#include <vfs/vfs_implementation.h>
+#include "deps/coreio/coreio.h"
 
 #include "types.h"
 #include "imgread/common.h"
@@ -120,11 +124,101 @@ static void dump(const char *path)
 	disc_free(d);
 }
 
+/* DISC_TEST_FRONTEND=<version>: the files behind a frontend VFS of that
+ * version, made of libretro-common's own functions as RetroArch hands
+ * them out. What the core sees has to be the same; from v7 the frontend
+ * maps the images and nothing is read through it. */
+typedef libretro_vfs_implementation_file fe_file;
+
+static long    fe_maps;
+static int64_t fe_read_bytes;
+
+static const char *fe_get_path(struct retro_vfs_file_handle *s)
+{ return retro_vfs_file_get_path_impl((fe_file *)s); }
+static struct retro_vfs_file_handle *fe_open(const char *p, unsigned m, unsigned h)
+{ return (struct retro_vfs_file_handle *)retro_vfs_file_open_impl(p, m, h); }
+static int fe_close(struct retro_vfs_file_handle *s)
+{ return retro_vfs_file_close_impl((fe_file *)s); }
+static int64_t fe_size(struct retro_vfs_file_handle *s)
+{ return retro_vfs_file_size_impl((fe_file *)s); }
+static int64_t fe_tell(struct retro_vfs_file_handle *s)
+{ return retro_vfs_file_tell_impl((fe_file *)s); }
+static int64_t fe_seek(struct retro_vfs_file_handle *s, int64_t o, int w)
+{ return retro_vfs_file_seek_impl((fe_file *)s, o, w); }
+static int64_t fe_read(struct retro_vfs_file_handle *s, void *d, uint64_t l)
+{
+	int64_t got = retro_vfs_file_read_impl((fe_file *)s, d, l);
+	if (got > 0)
+		fe_read_bytes += got;
+	return got;
+}
+static int64_t fe_write(struct retro_vfs_file_handle *s, const void *d, uint64_t l)
+{ return retro_vfs_file_write_impl((fe_file *)s, d, l); }
+static int fe_flush(struct retro_vfs_file_handle *s)
+{ return retro_vfs_file_flush_impl((fe_file *)s); }
+static int fe_remove(const char *p) { return retro_vfs_file_remove_impl(p); }
+static int fe_rename(const char *a, const char *b)
+{ return retro_vfs_file_rename_impl(a, b); }
+static int64_t fe_truncate(struct retro_vfs_file_handle *s, int64_t l)
+{ return retro_vfs_file_truncate_impl((fe_file *)s, l); }
+static const uint8_t *fe_map(struct retro_vfs_file_handle *s, int64_t *l)
+{
+	const uint8_t *p = retro_vfs_file_map_impl((fe_file *)s, l);
+	if (p)
+		fe_maps++;
+	return p;
+}
+
+static struct retro_vfs_interface fe_iface;
+
+static void frontend(unsigned version)
+{
+	struct retro_vfs_interface_info info;
+	memset(&fe_iface, 0, sizeof(fe_iface));
+	fe_iface.get_path = fe_get_path;
+	fe_iface.open     = fe_open;
+	fe_iface.close    = fe_close;
+	fe_iface.size     = fe_size;
+	fe_iface.tell     = fe_tell;
+	fe_iface.seek     = fe_seek;
+	fe_iface.read     = fe_read;
+	fe_iface.write    = fe_write;
+	fe_iface.flush    = fe_flush;
+	fe_iface.remove   = fe_remove;
+	fe_iface.rename   = fe_rename;
+	fe_iface.truncate = fe_truncate;
+	/* filled whatever the version: past it, never to be called */
+	fe_iface.map      = fe_map;
+	info.required_interface_version = version;
+	info.iface                      = &fe_iface;
+	filestream_vfs_init(&info);
+	/* as retro_set_environment says it */
+	core_io_frontend_maps(version >= 7);
+}
+
 int main(int argc, char **argv)
 {
 	int a;
+	unsigned version = 0;
+	const char *fe = getenv("DISC_TEST_FRONTEND");
 
+	if (fe && *fe)
+	{
+		version = (unsigned)atoi(fe);
+		frontend(version);
+	}
 	for (a = 1; a < argc; a++)
 		dump(argv[a]);
+	if (version)
+	{
+		/* v7 maps every image it opens and reads none of it through the
+		 * frontend; an older one is never asked to map */
+		int ok = version >= 7 ? (fe_maps > 0 && fe_read_bytes == 0)
+			: (fe_maps == 0);
+		fprintf(stderr, "frontend v%u: %ld mapping(s), %ld bytes read%s\n",
+				version, fe_maps, (long)fe_read_bytes, ok ? "" : " - FAIL");
+		if (!ok)
+			return 1;
+	}
 	return 0;
 }

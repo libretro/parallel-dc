@@ -37,6 +37,7 @@ char* strdup(const char *str)
 #include <sys/stat.h>
 #include <file/file_path.h>
 #include <streams/file_stream.h>
+#include "deps/coreio/coreio.h"
 
 #include <libretro.h>
 
@@ -516,7 +517,13 @@ void retro_set_environment(retro_environment_t cb)
    vfs_iface_info.required_interface_version = 1;
    vfs_iface_info.iface = NULL;
    if (cb(RETRO_ENVIRONMENT_GET_VFS_INTERFACE, &vfs_iface_info))
+   {
       filestream_vfs_init(&vfs_iface_info);
+      /* The frontend says which version it has: from v7 it maps content
+       * files itself, and coreio reads them in place from its mapping */
+      core_io_frontend_maps(vfs_iface_info.iface
+            && vfs_iface_info.required_interface_version >= 7);
+   }
 
    libretro_set_core_options(environ_cb, &categoriesSupported);
 
