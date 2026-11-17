@@ -2,8 +2,9 @@
  * static dispatcher names in the Vulkan headers this core carries.
  * Khronos withdrew the extension, so the symbol wrapper in
  * libretro-common, which goes by current headers, has no place for them:
- * they are declared here, and stay NULL - no driver offers them and the
- * core never calls them. */
+ * they are declared here for the headers to compile, and defined nowhere -
+ * no driver offers them, the core never calls them, and nothing that is
+ * not called is linked to them. */
 #ifndef VULKAN_NVX_SYMBOLS_H
 #define VULKAN_NVX_SYMBOLS_H
 
