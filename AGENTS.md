@@ -170,8 +170,8 @@ code it touches closer, and never adds C++ that was not there.
 - **Threads are lock-free.** retro_atomic, SPSC rings and eventcount park
   and wake; no mutexes, no sleeps or polling with a wall clock.
 - **libretro-common is a plain copy** of RetroArch's
-  `libretro-common/`. No core-specific edits there: adaptations go in
-  the core's own files.
+  `libretro-common/`, changed in RetroArch first: see "libretro-common:
+  RetroArch first".
 
 ## Zero-copy and borrowed lends
 
@@ -233,3 +233,34 @@ reason a reader can see.
   Makefile.
 - **No game names or disc images** in files, comments or messages. The
   test discs are generated (`tools/threads/live_disc.py`).
+
+## libretro-common: RetroArch first
+
+`core/libretro-common/` is a copy of RetroArch's `libretro-common/`
+(https://github.com/libretro/RetroArch), file for file. No file there is
+ever edited in this core.
+
+- **Upstream first.** Anything the core needs changed in libretro-common
+  (a fix, a new function, a new mode of an existing one) is made in
+  RetroArch's `libretro-common/` first, as a patch against RetroArch,
+  with its test under `libretro-common/samples/`. Once RetroArch has it,
+  the core takes it by a resync. A core adaptation that is not a
+  libretro-common change goes in the core's own files.
+- **A resync is a copy, never a merge.** Every file here that RetroArch
+  has is replaced by RetroArch's, so a change made only here is deleted
+  by the next resync. Before one, compare the two: anything this copy has
+  that RetroArch's lacks goes upstream first.
+- **Bring in what the new files need.** A synced file that now needs
+  another (a new source, a new header) brings it along, and the new
+  source is added to every build that lists its neighbour: the
+  Makefiles, the Android and CMake builds, the test scripts.
+- **Follow moved declarations.** Where a function moved to another
+  header, every call site includes the new one. A clean build of the
+  core has no implicit-declaration warning: GCC 14 makes it an error, and
+  older compilers cut the returned pointer to an int.
+
+The one file pair that differs today is
+`vulkan/vulkan_symbol_wrapper.c` and its header: this core's copy has
+the Vulkan 1.1 and extension entry points it uses, which RetroArch's
+lacks. They go into RetroArch's copy, and the next resync makes the two
+the same; until then a resync leaves that pair alone.
