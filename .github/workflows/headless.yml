@@ -67,7 +67,8 @@ name: Headless
 # (tools/rend/rtt_watch_run.sh), the temporal upscaler's matching of
 # strips from frame to frame (tools/rend/upscaler_run.sh), and the custom
 # textures' loader (tools/rend/custom_texture_run.sh), and the renderer
-# interface (tools/pvr/renderer_if_run.sh),
+# interface (tools/pvr/renderer_if_run.sh), and what is plugged into the
+# maple bus (tools/maple/maple_cfg_run.sh),
 # and the paths the core writes to, a
 # content's name of any length included (tools/paths/paths_run.sh), and the
 # HLE BIOS's GD-ROM transfers stopped at a fault and made again
@@ -98,6 +99,7 @@ on:
       - 'tools/pvr/ta_expected.txt'
       - 'tools/pvr/ta_words_test.cpp'
       - 'tools/pvr/renderer_if_*'
+      - 'tools/maple/**'
       - 'tools/rend/sorter_*'
       - 'tools/rend/vram_lock_*'
       - 'tools/rend/rtt_watch_*'
@@ -144,6 +146,7 @@ on:
       - 'tools/pvr/ta_expected.txt'
       - 'tools/pvr/ta_words_test.cpp'
       - 'tools/pvr/renderer_if_*'
+      - 'tools/maple/**'
       - 'tools/rend/sorter_*'
       - 'tools/rend/vram_lock_*'
       - 'tools/rend/rtt_watch_*'
@@ -352,6 +355,10 @@ jobs:
         run: |
           sh tools/pvr/renderer_if_run.sh
           sh tools/pvr/renderer_if_run.sh -fsanitize=address,undefined -fno-sanitize-recover=all
+      - name: What is plugged into the maple bus - each machine's devices and each cabinet's, the settings changed and the devices made to match, cards whose file changed, states of every kind loaded, V1's too, and what the devices ask for, threaded and not, the sticks kept in their circle - against what it always did (and with the sanitizers)
+        run: |
+          sh tools/maple/maple_cfg_run.sh
+          sh tools/maple/maple_cfg_run.sh -fsanitize=address,undefined -fno-sanitize-recover=all
       - name: The paths the core writes to, a content's name of any length (and with the sanitizers)
         run: |
           sh tools/paths/paths_run.sh

@@ -117,7 +117,6 @@ void maple_device::Setup(u32 prt)
 }
 maple_device::~maple_device()
 {
-   delete config;
 }
 
 /*
@@ -296,8 +295,9 @@ struct maple_sega_controller: maple_base
 		case MDCF_GetCondition:
 			{
 				PlainJoystickState pjs;
+				pjs_init(&pjs);
 				if (!SYSTEM_IS_NAOMI())
-					config->GetInput(&pjs);
+					mcfg_get_input(config, &pjs);
 
 				//caps
 				//4
@@ -1073,7 +1073,7 @@ struct maple_sega_vmu: maple_base
 								}
 							}
 						}
-						config->SetImage(lcd_data_decoded);
+						mcfg_set_image(config, lcd_data_decoded);
 						push_vmu_screen(lcd_data_decoded);
 						return  MDRS_DeviceReply;//just ko
 					}
@@ -1428,7 +1428,7 @@ struct maple_sega_purupuru : maple_base
             {
                VIBSET = *(u32*)&dma_buffer_in[4];
                //Do the rumble thing!
-               config->SetVibration(VIBSET, AST_ms);
+               mcfg_set_vibration(config, VIBSET, AST_ms);
             }
 
             return MDRS_DeviceReply;
@@ -1688,7 +1688,7 @@ struct maple_mouse : maple_base
 		    {
 		       u32 buttons;
 		       f32 delta_x, delta_y, delta_wheel;
-			   config->GetMouse(&buttons, &delta_x, &delta_y, &delta_wheel);
+			   mcfg_get_mouse(config, &buttons, &delta_x, &delta_y, &delta_wheel);
 
 			   w32(MFID_9_Mouse);
 			   //struct data
@@ -1782,7 +1782,8 @@ struct maple_lightgun : maple_base
 	  case MDCF_GetCondition:
 	  {
 		 PlainJoystickState pjs;
-		 config->GetInput(&pjs);
+		 pjs_init(&pjs);
+		 mcfg_get_input(config, &pjs);
 
 		 //caps
 		 //4
@@ -1819,7 +1820,7 @@ struct maple_lightgun : maple_base
    virtual bool get_lightgun_pos()
    {
 	  f32 x, y;
-	  config->GetAbsolutePosition(&x, &y);
+	  mcfg_get_absolute_position(config, &x, &y);
 	  read_lightgun_position(x + 0.5f, y + 0.5f);
      return true;
    }
@@ -3852,7 +3853,8 @@ u32 jvs_io_board::handle_jvs_message(u8 *buffer_in, u32 length_in, u8 *buffer_ou
 		{
 			LOGJVS("JVS Node %d: \n", node_id);
 			PlainJoystickState pjs;
-			parent->config->GetInput(&pjs);
+			pjs_init(&pjs);
+			mcfg_get_input(parent->config, &pjs);
 
 			JVS_STATUS1();	// status
 			for (int cmdi = 0; cmdi < length_in; )
@@ -4921,4 +4923,52 @@ void maple_dev_flush_save(maple_device *dev)
 maple_device* maple_Create(MapleDeviceType type)
 {
 	return maple_CreateAt(type, NULL);
+}
+
+maple_device *maple_dev_create(MapleDeviceType type)
+{
+	return maple_Create(type);
+}
+
+void maple_dev_delete(maple_device *dev)
+{
+	delete dev;
+}
+
+void *maple_dev_destruct(maple_device *dev)
+{
+	dev->~maple_device();
+	return dev;
+}
+
+maple_device *maple_dev_create_at(MapleDeviceType type, void *at)
+{
+	return maple_CreateAt(type, at);
+}
+
+void maple_dev_setup(maple_device *dev, u32 addr, struct mcfg_map *config)
+{
+	dev->Setup(addr);
+	dev->config = config;
+	dev->OnSetup();
+}
+
+MapleDeviceType maple_dev_type(maple_device *dev)
+{
+	return dev->get_device_type();
+}
+
+u32 maple_dev_bus_id(const maple_device *dev)
+{
+	return dev->bus_id;
+}
+
+bool maple_dev_serialize(maple_device *dev, void **data, unsigned int *total_size)
+{
+	return dev->maple_serialize(data, total_size);
+}
+
+bool maple_dev_unserialize(maple_device *dev, void **data, unsigned int *total_size)
+{
+	return dev->maple_unserialize(data, total_size);
 }

@@ -1038,7 +1038,7 @@ struct rgb_t {
 	u8 b ;
 };
 
-/* (made as VMU_SCREEN_PARAMS_INIT has them: maple_cfg.cpp) */
+/* (made as VMU_SCREEN_PARAMS_INIT has them: maple_cfg.c) */
 typedef struct vmu_screen_params_t vmu_screen_params_t;
 struct vmu_screen_params_t {
 	u8* vmu_lcd_screen;
@@ -1066,7 +1066,7 @@ extern vmu_screen_params_t vmu_screen_params[4] ;
  * drawing on another thread, so the renderer does not read the device's
  * buffer. The emulation thread publishes a whole picture each time the
  * game changes it; the renderer takes the latest, and only ever sees a
- * whole one. Nothing is locked: the two exchange buffers (cTripleBuffer). */
+ * whole one. Nothing is locked: the two exchange buffers (tribuf). */
 void vmu_lcd_publish(int screen, const u8 *pixels);	/* emulation thread */
 bool vmu_lcd_refresh(int screen);			/* renderer: take the latest; true if it is a new one */
 const u8 *vmu_lcd_pixels(int screen);			/* renderer: the picture last taken, NULL before the first */

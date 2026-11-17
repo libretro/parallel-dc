@@ -79,8 +79,23 @@ enum AWAVE_KEYS
 	AWAVE_TRIGGER_KEY    = 1 << 12
 };
 
+#define MAPLE_PORTS 4
 #ifdef __cplusplus
-struct IMapleConfigMap;
+extern "C" {
+#endif
+/* Maple device configuration for mcfg_CreateDevices() */
+extern MapleDeviceType maple_devices[MAPLE_PORTS];
+
+extern bool enable_naomi_15khz_dipswitch;
+/* The BIOS is the multi-region one, which takes the region from the DIP
+ * switches (libretro.cpp) */
+extern bool naomi_bios_multiregion;
+#ifdef __cplusplus
+}
+#endif
+
+#ifdef __cplusplus
+struct mcfg_map;
 
 struct maple_device
 {
@@ -88,7 +103,7 @@ struct maple_device
 	u8 bus_port;            //0 .. 5
 	u8 bus_id;              //0 .. 3
 	char logical_port[3];  //A0, etc
-	IMapleConfigMap* config;
+	struct mcfg_map* config;	/* its slot's (maple_cfg.c) */
 
 	//fill in the info
 	void Setup(u32 prt);
@@ -107,17 +122,10 @@ struct maple_device
 
 maple_device* maple_Create(MapleDeviceType type);
 maple_device* maple_CreateAt(MapleDeviceType type, void *at);
-void maple_naomi_eeprom_load(void);
 #define SIZE_OF_MIC_DATA	480 //ALSO DEFINED IN SipEmulator.java
 int get_mic_data(u8* buffer); //implemented in Android.cpp
 int push_vmu_screen(u8* buffer); //implemented in Android.cpp
 
-#define MAPLE_PORTS 4
-extern MapleDeviceType maple_devices[MAPLE_PORTS];	// Maple device configuration for mcfg_CreateDevices()
-
-extern bool enable_naomi_15khz_dipswitch;
-// The BIOS is the multi-region one, which takes the region from the DIP switches (libretro.cpp)
-extern bool naomi_bios_multiregion;
 
 template<int Magnitude>
 void limit_joystick_magnitude(s8& joyx, s8& joyy)

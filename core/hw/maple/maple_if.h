@@ -1,9 +1,8 @@
 #pragma once
 #include "types.h"
-
-#ifdef __cplusplus
 #include "maple_devs.h"
 
+#ifdef __cplusplus
 extern "C" {
 #else
 struct maple_device;
@@ -51,8 +50,25 @@ bool maple_dev_has_slots(maple_device *dev);
 /* It is a gun with the bus occupied for its position */
 bool maple_dev_lightgun_pos(maple_device *dev);
 void maple_dev_flush_save(maple_device *dev);
+struct mcfg_map;
+/* Made, of @type (NULL for none such), and gone */
+maple_device *maple_dev_create(MapleDeviceType type);
+void maple_dev_delete(maple_device *dev);
+/* Gone, its memory kept for one made again in it: nothing allocated */
+void *maple_dev_destruct(maple_device *dev);
+maple_device *maple_dev_create_at(MapleDeviceType type, void *at);
+/* Put at the maple address @addr, with where its inputs come from */
+void maple_dev_setup(maple_device *dev, u32 addr, struct mcfg_map *config);
+MapleDeviceType maple_dev_type(maple_device *dev);
+u32 maple_dev_bus_id(const maple_device *dev);
+bool maple_dev_serialize(maple_device *dev, void **data, unsigned int *total_size);
+bool maple_dev_unserialize(maple_device *dev, void **data, unsigned int *total_size);
+/* A memory card that would now be read from another file */
+bool maple_vmu_file_changed(maple_device *dev);
+/* The NAOMI's I/O board's EEPROM read from its file, if it is not yet */
+void maple_naomi_eeprom_load(void);
 
-/* What is plugged in, as the settings say (maple_cfg.cpp) */
+/* What is plugged in, as the settings say (maple_cfg.c) */
 void mcfg_CreateDevices(void);
 void mcfg_DestroyDevices(void);
 void mcfg_ReconcileDevices(bool plug_in);

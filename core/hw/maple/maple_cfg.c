@@ -1,5 +1,8 @@
+/* What is plugged into the maple bus, where each device gets its inputs,
+ * and the devices' part of a state */
+#include <string.h>
+#include <math.h>
 #include "types.h"
-#include <new>
 #include "maple_if.h"
 #include "maple_helper.h"
 #include "maple_devs.h"
@@ -7,21 +10,25 @@
 #include "libretro/input_latch.h"
 #include "hw/naomi/naomi_periph.h"
 #include "hw/naomi/naomi_cart.h"
-
+#include "libretro/pad_state.h"
 #include "lockfree.h"
 
-static cTripleBuffer vmu_lcd_exchange[4];
+static tribuf vmu_lcd_exchange[4];
 static u8 vmu_lcd_buffers[4][3][VMU_SCREEN_WIDTH * VMU_SCREEN_HEIGHT];
 /* 1 once a picture has been published, 2 once the renderer has one */
 static retro_atomic_int_t vmu_lcd_state[4];
+/* (the exchanges set up: by the first vmu_lcd_reset(), or the first picture) */
+static bool vmu_lcd_made;
 
 void vmu_lcd_publish(int screen, const u8 *pixels)
 {
 	if (screen < 0 || screen >= 4 || pixels == NULL)
 		return;
-	memcpy(vmu_lcd_buffers[screen][vmu_lcd_exchange[screen].Back()], pixels,
+	if (!vmu_lcd_made)
+		vmu_lcd_reset();
+	memcpy(vmu_lcd_buffers[screen][tribuf_back(&vmu_lcd_exchange[screen])], pixels,
 			VMU_SCREEN_WIDTH * VMU_SCREEN_HEIGHT);
-	vmu_lcd_exchange[screen].Publish();
+	tribuf_publish(&vmu_lcd_exchange[screen]);
 	if (retro_atomic_load_acquire_int(&vmu_lcd_state[screen]) == 0)
 		retro_atomic_store_release_int(&vmu_lcd_state[screen], 1);
 }
@@ -30,7 +37,7 @@ bool vmu_lcd_refresh(int screen)
 {
 	if (screen < 0 || screen >= 4 || retro_atomic_load_acquire_int(&vmu_lcd_state[screen]) == 0)
 		return false;
-	if (!vmu_lcd_exchange[screen].Take())
+	if (!tribuf_take(&vmu_lcd_exchange[screen]))
 		return false;
 	retro_atomic_store_release_int(&vmu_lcd_state[screen], 2);
 	return true;
@@ -40,16 +47,18 @@ const u8 *vmu_lcd_pixels(int screen)
 {
 	if (screen < 0 || screen >= 4 || retro_atomic_load_acquire_int(&vmu_lcd_state[screen]) != 2)
 		return NULL;
-	return vmu_lcd_buffers[screen][vmu_lcd_exchange[screen].Front()];
+	return vmu_lcd_buffers[screen][tribuf_front(&vmu_lcd_exchange[screen])];
 }
 
 void vmu_lcd_reset(void)
 {
-	for (int screen = 0; screen < 4; screen++)
+	int screen;
+	for (screen = 0; screen < 4; screen++)
 	{
 		retro_atomic_store_release_int(&vmu_lcd_state[screen], 0);
-		vmu_lcd_exchange[screen].Reset();
+		tribuf_reset(&vmu_lcd_exchange[screen]);
 	}
+	vmu_lcd_made = true;
 }
 
 #define HAS_VMU
@@ -68,19 +77,6 @@ Plugins:
 		InputUpdate(&fmt);
 		ImageUpdate(data);
 */
-void UpdateInputState(u32 port);
-void UpdateInputStateArcade(void);
-void UpdateInputStateMouse(u32 port);
-extern InputLatch input_latch;
-void UpdateVibration(u32 port, u32 value, u32 max_duration);
-
-#include "libretro/pad_state.h"
-extern bool enable_purupuru;
-extern u32 mo_buttons[4];
-extern f32 mo_x_delta[4];
-extern f32 mo_y_delta[4];
-extern f32 mo_wheel_delta[4];
-extern bool EEPROM_loaded;
 
 const char* VMU_SCREEN_COLOR_NAMES[VMU_NUM_COLORS] = {
 		"DEFAULT_ON",
@@ -169,11 +165,11 @@ u8 lightgun_img_crosshair[LIGHTGUN_CROSSHAIR_SIZE*LIGHTGUN_CROSSHAIR_SIZE] =
 
 u8 lightgun_palette[LIGHTGUN_COLORS_COUNT*3] =
 {
-	0xff,0xff,0xff, // LIGHTGUN_COLOR_OFF
-	0xff,0xff,0xff, // LIGHTGUN_COLOR_WHITE
-	0xff,0x10,0x10, // LIGHTGUN_COLOR_RED
-	0x10,0xff,0x10, // LIGHTGUN_COLOR_GREEN
-	0x10,0x10,0xff, // LIGHTGUN_COLOR_BLUE
+	0xff,0xff,0xff, /* LIGHTGUN_COLOR_OFF */
+	0xff,0xff,0xff, /* LIGHTGUN_COLOR_WHITE */
+	0xff,0x10,0x10, /* LIGHTGUN_COLOR_RED */
+	0x10,0xff,0x10, /* LIGHTGUN_COLOR_GREEN */
+	0x10,0x10,0xff, /* LIGHTGUN_COLOR_BLUE */
 };
 
 lightgun_params_t lightgun_params[4] ;
@@ -181,107 +177,127 @@ lightgun_params_t lightgun_params[4] ;
 MapleDeviceType maple_devices[MAPLE_PORTS] =
    { MDT_SegaController, MDT_SegaController, MDT_SegaController, MDT_SegaController };
 
-u8 GetBtFromSgn(s8 val)
+static u8 GetBtFromSgn(s8 val)
 {
 	return val+128;
 }
 
-struct MapleConfigMap : IMapleConfigMap
+/* lroundf()'s: half away from zero */
+static long round_away(float v)
 {
-	maple_device* dev;
-	int player_num;
+	const double d = v;
+	return d >= 0 ? (long)floor(d + 0.5) : -(long)floor(-d + 0.5);
+}
 
-	MapleConfigMap(maple_device* dev, int player_num = -1)
+/* A Dreamcast's stick kept inside its circle */
+static void limit_joystick_magnitude(s8 *joyx, s8 *joyy)
+{
+	const int xaxis = (u8)*joyx - 128;
+	const int yaxis = (u8)*joyy - 128;
+	float mag = (float)(xaxis * xaxis + yaxis * yaxis);
+	if (mag > 128.f * 128.f)
 	{
-		this->dev=dev;
-		this->player_num = player_num;
+		mag = (float)sqrt(mag) / 128.f;
+		*joyx = (s8)(u32)(round_away((float)xaxis / mag) + 128);
+		*joyy = (s8)(u32)(round_away((float)yaxis / mag) + 128);
 	}
+}
 
-   void SetVibration(u32 value, u32 max_duration)
-   {
-      UpdateVibration(player_num == -1 ? dev->bus_id : player_num, value, max_duration);
-   }
+/* Each slot's: the device there and whose player's it is */
+static mcfg_map_t mcfg_maps[MAPLE_PORTS][6];
 
-	void GetInput(PlainJoystickState* pjs)
+static int map_player(const mcfg_map_t *map)
+{
+	return map->player_num == -1 ? (int)maple_dev_bus_id(map->dev) : map->player_num;
+}
+
+void mcfg_set_vibration(const mcfg_map_t *map, u32 value, u32 max_duration)
+{
+	UpdateVibration((u32)map_player(map), value, max_duration);
+}
+
+void mcfg_get_input(const mcfg_map_t *map, PlainJoystickState *pjs)
+{
+	const int pnum = map_player(map);
+	s8 x1, y1;
+
+	if (settings.rend.ThreadedRendering)
 	{
-	   int pnum = player_num == -1 ? dev->bus_id : player_num;
-	   s8 x1, y1;
+		/* Sampled on the libretro thread by CaptureInput(). */
+		const input_latch_port *in = input_latch_read(&input_latch, (u32)pnum);
 
-	   if (settings.rend.ThreadedRendering)
-	   {
-	      /* Sampled on the libretro thread by CaptureInput(). */
-	      const InputLatch::Port& in = input_latch.Read(pnum);
-
-	      pjs->kcode=in.kcode;
-	      x1=in.joyx;
-	      y1=in.joyy;
-	      pjs->joy[PJAI_X2]=GetBtFromSgn(in.joyrx);
-	      pjs->joy[PJAI_Y2]=GetBtFromSgn(in.joyry);
-	      pjs->trigger[PJTI_R]=in.rt;
-	      pjs->trigger[PJTI_L]=in.lt;
-	   }
-	   else
-	   {
-	      /* A NAOMI's I/O board is one device, on the first port, and
-	       * answers for every player; an Atomiswave's coins are read for
-	       * all four. An arcade machine's ports are read all together,
-	       * once a frame, whichever device asks first. (A NAOMI's were all
-	       * read each time a board was asked for its inputs, twice a frame
-	       * where there are two boards.) */
-	      if (settings.System == DC_PLATFORM_DREAMCAST)
-	         UpdateInputState(pnum);
-	      else
-	         UpdateInputStateArcade();
-
-	      pjs->kcode=kcode[pnum];
-	      x1=joyx[pnum];
-	      y1=joyy[pnum];
-	      pjs->joy[PJAI_X2]=GetBtFromSgn(joyrx[pnum]);
-	      pjs->joy[PJAI_Y2]=GetBtFromSgn(joyry[pnum]);
-	      pjs->trigger[PJTI_R]=rt[pnum];
-	      pjs->trigger[PJTI_L]=lt[pnum];
-	   }
-	   pjs->joy[PJAI_X1]=GetBtFromSgn(x1);
-	   pjs->joy[PJAI_Y1]=GetBtFromSgn(y1);
-	   // I think the only Atomiswave game that uses an analog joystick is Block Pong-Pong but only the x axis.
-	   // Driving games use the first two axes for totally separate things.
-	   // So only do this for dreamcast
-	   if (settings.System == DC_PLATFORM_DREAMCAST)
-	   	limit_joystick_magnitude<128>((s8&)pjs->joy[PJAI_X1], (s8&)pjs->joy[PJAI_Y1]);
+		pjs->kcode=in->kcode;
+		x1=in->joyx;
+		y1=in->joyy;
+		pjs->joy[PJAI_X2]=GetBtFromSgn(in->joyrx);
+		pjs->joy[PJAI_Y2]=GetBtFromSgn(in->joyry);
+		pjs->trigger[PJTI_R]=in->rt;
+		pjs->trigger[PJTI_L]=in->lt;
 	}
-	void SetImage(void* img)
+	else
 	{
-		vmu_lcd_publish(player_num == -1 ? dev->bus_id : player_num, (const u8 *)img);
-	}
-	void GetAbsolutePosition(f32 *px, f32 *py)
-	{
-	   int pnum = player_num == -1 ? dev->bus_id : player_num;
-	   *px = mo_x_abs[pnum];
-	   *py = mo_y_abs[pnum];
-	}
-	void GetMouse(u32 *buttons, f32 *delta_x, f32 *delta_y, f32 *delta_wheel)
-	{
-	   int pnum = player_num == -1 ? dev->bus_id : player_num;
+		/* A NAOMI's I/O board is one device, on the first port, and
+		 * answers for every player; an Atomiswave's coins are read for
+		 * all four. An arcade machine's ports are read all together,
+		 * once a frame, whichever device asks first. (A NAOMI's were all
+		 * read each time a board was asked for its inputs, twice a frame
+		 * where there are two boards.) */
+		if (settings.System == DC_PLATFORM_DREAMCAST)
+			UpdateInputState((u32)pnum);
+		else
+			UpdateInputStateArcade();
 
-	   if (settings.rend.ThreadedRendering)
-	   {
-	      input_latch.ReadMouse(pnum, buttons, delta_x, delta_y, delta_wheel);
-	      return;
-	   }
-	   if (settings.System == DC_PLATFORM_DREAMCAST)
-	      UpdateInputStateMouse(pnum);
-	   else
-	      UpdateInputStateArcade();
-	   *buttons = mo_buttons[pnum];
-	   *delta_x = mo_x_delta[pnum];
-	   *delta_y = mo_y_delta[pnum];
-	   *delta_wheel = mo_wheel_delta[pnum];
-
-	   mo_x_delta[pnum] = 0;
-	   mo_y_delta[pnum] = 0;
-	   mo_wheel_delta[pnum] = 0;
+		pjs->kcode=kcode[pnum];
+		x1=joyx[pnum];
+		y1=joyy[pnum];
+		pjs->joy[PJAI_X2]=GetBtFromSgn(joyrx[pnum]);
+		pjs->joy[PJAI_Y2]=GetBtFromSgn(joyry[pnum]);
+		pjs->trigger[PJTI_R]=rt[pnum];
+		pjs->trigger[PJTI_L]=lt[pnum];
 	}
-};
+	pjs->joy[PJAI_X1]=GetBtFromSgn(x1);
+	pjs->joy[PJAI_Y1]=GetBtFromSgn(y1);
+	/* I think the only Atomiswave game that uses an analog joystick is
+	 * Block Pong-Pong but only the x axis. Driving games use the first two
+	 * axes for totally separate things. So only do this for dreamcast */
+	if (settings.System == DC_PLATFORM_DREAMCAST)
+		limit_joystick_magnitude((s8 *)&pjs->joy[PJAI_X1], (s8 *)&pjs->joy[PJAI_Y1]);
+}
+
+void mcfg_set_image(const mcfg_map_t *map, void *img)
+{
+	vmu_lcd_publish(map_player(map), (const u8 *)img);
+}
+
+void mcfg_get_absolute_position(const mcfg_map_t *map, f32 *px, f32 *py)
+{
+	const int pnum = map_player(map);
+	*px = mo_x_abs[pnum];
+	*py = mo_y_abs[pnum];
+}
+
+void mcfg_get_mouse(const mcfg_map_t *map, u32 *buttons, f32 *delta_x, f32 *delta_y, f32 *delta_wheel)
+{
+	const int pnum = map_player(map);
+
+	if (settings.rend.ThreadedRendering)
+	{
+		input_latch_read_mouse(&input_latch, (u32)pnum, buttons, delta_x, delta_y, delta_wheel);
+		return;
+	}
+	if (settings.System == DC_PLATFORM_DREAMCAST)
+		UpdateInputStateMouse((u32)pnum);
+	else
+		UpdateInputStateArcade();
+	*buttons = mo_buttons[pnum];
+	*delta_x = mo_x_delta[pnum];
+	*delta_y = mo_y_delta[pnum];
+	*delta_wheel = mo_wheel_delta[pnum];
+
+	mo_x_delta[pnum] = 0;
+	mo_y_delta[pnum] = 0;
+	mo_wheel_delta[pnum] = 0;
+}
 
 /* An arcade game's player's buttons (active low), read as the I/O board
  * reads them, for the devices that are not on the maple bus: a card
@@ -289,12 +305,12 @@ struct MapleConfigMap : IMapleConfigMap
 u32 mcfg_ArcadeKcode(int port)
 {
 	if (settings.rend.ThreadedRendering)
-		return input_latch.Read(port).kcode;
+		return input_latch_read(&input_latch, (u32)port)->kcode;
 	UpdateInputStateArcade();
 	return kcode[port];
 }
 
-// Where a player points, on the 640x480 screen
+/* Where a player points, on the 640x480 screen */
 void mcfg_ArcadeAbsPos(int port, f32 *x, f32 *y)
 {
 	*x = mo_x_abs[port];
@@ -307,29 +323,25 @@ void mcfg_ArcadeAbsPos(int port, f32 *x, f32 *y)
 static void mcfg_Remake(u32 bus, u32 port, MapleDeviceType type, int player_num)
 {
 	maple_device *dev = MapleDevices[bus][port];
-	IMapleConfigMap *map = dev->config;
 	const bool eeprom_loaded = EEPROM_loaded;
+	void *at = maple_dev_destruct(dev);
 
-	dev->config = NULL;
-	dev->~maple_device();
-	if (map != NULL)
-		map->~IMapleConfigMap();
 	/* (the board, as it went, forgot the EEPROM: the one made remembers) */
 	EEPROM_loaded = eeprom_loaded;
-	dev = maple_CreateAt(type, dev);
-	dev->Setup(maple_GetAddress(bus, port));
-	dev->config = map != NULL ? new (map) MapleConfigMap(dev, player_num) : new MapleConfigMap(dev, player_num);
-	dev->OnSetup();
+	dev = maple_dev_create_at(type, at);
+	mcfg_maps[bus][port].dev = dev;
+	mcfg_maps[bus][port].player_num = player_num;
+	maple_dev_setup(dev, maple_GetAddress(bus, port), &mcfg_maps[bus][port]);
 	MapleDevices[bus][port] = dev;
 }
 
-void mcfg_Create(MapleDeviceType type,u32 bus,u32 port, int player_num /* = -1 */)
+void mcfg_Create(MapleDeviceType type, u32 bus, u32 port, int player_num)
 {
-	maple_device* dev=maple_Create(type);
-	dev->Setup(maple_GetAddress(bus,port));
-	dev->config = new MapleConfigMap(dev, player_num);
-	dev->OnSetup();
-	MapleDevices[bus][port]=dev;
+	maple_device *dev = maple_dev_create(type);
+	mcfg_maps[bus][port].dev = dev;
+	mcfg_maps[bus][port].player_num = player_num;
+	maple_dev_setup(dev, maple_GetAddress(bus, port), &mcfg_maps[bus][port]);
+	MapleDevices[bus][port] = dev;
 }
 
 /* What a Dreamcast is to have on a bus, as the settings say: at port 5 the
@@ -374,8 +386,9 @@ static MapleDeviceType mcfg_DreamcastDevice(int bus, int port)
 	return MDT_None;
 }
 
-void mcfg_CreateDevices()
+void mcfg_CreateDevices(void)
 {
+	int port, i;
    int bus ;
 
    for ( bus = 0 ; bus < MAPLE_PORTS; bus++)
@@ -391,13 +404,13 @@ void mcfg_CreateDevices()
 			WARN_LOG(MAPLE, "Invalid device type %d for port %d\n", maple_devices[bus], bus);
 		 if (mcfg_DreamcastDevice(bus, 5) == MDT_None)
 			continue;
-		 // the device, then what is in its slots
-		 mcfg_Create(mcfg_DreamcastDevice(bus, 5), bus, 5);
-		 for (int port = 0; port < 5; port++)
+		 /* the device, then what is in its slots */
+		 mcfg_Create(mcfg_DreamcastDevice(bus, 5), bus, 5, -1);
+		 for (port = 0; port < 5; port++)
 		 {
 			const MapleDeviceType type = mcfg_DreamcastDevice(bus, port);
 			if (type != MDT_None)
-			   mcfg_Create(type, bus, port);
+			   mcfg_Create(type, bus, port, -1);
 		 }
 	  }
    }
@@ -409,28 +422,28 @@ void mcfg_CreateDevices()
    else if (SYSTEM_IS_NAOMI())
    {
       bus = 0;
-      mcfg_Create(MDT_NaomiJamma, bus++, 5);
+      mcfg_Create(MDT_NaomiJamma, bus++, 5, -1);
       maple_naomi_eeprom_load();
       if (naomi_periph_rfid_game())
       {
-         // an IC card reader for each player, and nothing else
+         /* an IC card reader for each player, and nothing else */
          mcfg_Create(MDT_RFIDReaderWriter, 1, 5, 0);
          mcfg_Create(MDT_RFIDReaderWriter, 2, 5, 1);
          return;
       }
-      for (int i = 0; i < MAPLE_PORTS; i++)
+      for (i = 0; i < MAPLE_PORTS; i++)
       {
       	switch (maple_devices[i])
       	{
       	case MDT_Keyboard:
-      		mcfg_Create(MDT_Keyboard, bus++, 5);
+			mcfg_Create(MDT_Keyboard, bus++, 5, -1);
       		break;
       	default:
       		if (i == 0)
       		{
-      			// Connect VMU B1
-      			mcfg_Create(MDT_SegaController, bus, 5);
-      			mcfg_Create(MDT_SegaVMU, bus++, 0);
+				/* Connect VMU B1 */
+				mcfg_Create(MDT_SegaController, bus, 5, -1);
+				mcfg_Create(MDT_SegaVMU, bus++, 0, -1);
       		}
       		break;
       	}
@@ -438,52 +451,52 @@ void mcfg_CreateDevices()
    }
    else if (settings.System == DC_PLATFORM_ATOMISWAVE)
    {
-	  mcfg_Create(MDT_SegaController, 0, 5);
-	  mcfg_Create(MDT_SegaController, 1, 5);
+	  mcfg_Create(MDT_SegaController, 0, 5, -1);
+	  mcfg_Create(MDT_SegaController, 1, 5, -1);
 	  switch (settings.mapping.JammaSetup)
 	  {
 	  case JVS_Analog:
-		 // 2 players with analog axes
+		 /* 2 players with analog axes */
 		 mcfg_Create(MDT_SegaController, 2, 5, 0);
 		 mcfg_Create(MDT_SegaController, 3, 5, 1);
 		 break;
 	  case JVS_LightGun:
-		 // Light guns
+		 /* Light guns */
 		 mcfg_Create(MDT_LightGun, 2, 5, 0);
 		 mcfg_Create(MDT_LightGun, 3, 5, 1);
 		 break;
 	  case JVS_RotaryEncoders:
 	  case JVS_SegaMarineFishing:
-		 // Track-ball
+		 /* Track-ball */
 		 mcfg_Create(MDT_Mouse, 2, 5, 0);
 		 break;
 	  default:
-		 // 4 players
-		 mcfg_Create(MDT_SegaController, 2, 5);
-		 mcfg_Create(MDT_SegaController, 3, 5);
+		 /* 4 players */
+		 mcfg_Create(MDT_SegaController, 2, 5, -1);
+		 mcfg_Create(MDT_SegaController, 3, 5, -1);
 		 break;
 	  }
    }
 }
 
 
-void mcfg_DestroyDevices()
+void mcfg_DestroyDevices(void)
 {
-	for (int i = 0; i < MAPLE_PORTS; i++)
-		for (int j=0;j<=5;j++)
+	int i, j;
+	for (i = 0; i < MAPLE_PORTS; i++)
+		for (j=0;j<=5;j++)
 		{
-			delete MapleDevices[i][j];
+			maple_dev_delete(MapleDevices[i][j]);
 			MapleDevices[i][j] = NULL;
 		}
 }
 
 void mcfg_DestroyDevice(int i, int j)
 {
-	delete MapleDevices[i][j];
+	maple_dev_delete(MapleDevices[i][j]);
 	MapleDevices[i][j] = NULL;
 }
 
-bool maple_vmu_file_changed(maple_device *dev);
 
 /* A Dreamcast's devices made to be what the settings say, touching nothing
  * that already is: on a bus whose device is not the one wanted, the device
@@ -497,21 +510,22 @@ bool maple_vmu_file_changed(maple_device *dev);
  * is changed is not cut off half way through a save. */
 void mcfg_ReconcileDevices(bool plug_in)
 {
-	for (int bus = 0; bus < MAPLE_PORTS; bus++)
+	int bus, port;
+	for (bus = 0; bus < MAPLE_PORTS; bus++)
 	{
 		maple_device *device = MapleDevices[bus][5];
-		if (device == NULL || device->get_device_type() != mcfg_DreamcastDevice(bus, 5))
+		if (device == NULL || maple_dev_type(device) != mcfg_DreamcastDevice(bus, 5))
 		{
-			for (int port = 0; port <= 5; port++)
+			for (port = 0; port <= 5; port++)
 				if (MapleDevices[bus][port] != NULL)
 					mcfg_DestroyDevice(bus, port);
 		}
 		else
 		{
-			for (int port = 0; port < 5; port++)
+			for (port = 0; port < 5; port++)
 			{
 				maple_device *dev = MapleDevices[bus][port];
-				if (dev != NULL && (dev->get_device_type() != mcfg_DreamcastDevice(bus, port)
+				if (dev != NULL && (maple_dev_type(dev) != mcfg_DreamcastDevice(bus, port)
 						|| maple_vmu_file_changed(dev)))
 					mcfg_DestroyDevice(bus, port);
 			}
@@ -519,12 +533,12 @@ void mcfg_ReconcileDevices(bool plug_in)
 		if (!plug_in || mcfg_DreamcastDevice(bus, 5) == MDT_None)
 			continue;
 		if (MapleDevices[bus][5] == NULL)
-			mcfg_Create(mcfg_DreamcastDevice(bus, 5), bus, 5);
-		for (int port = 0; port < 5; port++)
+			mcfg_Create(mcfg_DreamcastDevice(bus, 5), bus, 5, -1);
+		for (port = 0; port < 5; port++)
 		{
 			const MapleDeviceType type = mcfg_DreamcastDevice(bus, port);
 			if (type != MDT_None && MapleDevices[bus][port] == NULL)
-				mcfg_Create(type, bus, port);
+				mcfg_Create(type, bus, port, -1);
 		}
 	}
 }
@@ -535,11 +549,12 @@ void mcfg_ReconcileDevices(bool plug_in)
  * from them.) */
 bool mcfg_DevicesAsSettingsSay(void)
 {
-	for (int bus = 0; bus < MAPLE_PORTS; bus++)
-		for (int port = 0; port <= 5; port++)
+	int bus, port;
+	for (bus = 0; bus < MAPLE_PORTS; bus++)
+		for (port = 0; port <= 5; port++)
 		{
 			maple_device *dev = MapleDevices[bus][port];
-			const MapleDeviceType type = dev == NULL ? MDT_None : dev->get_device_type();
+			const MapleDeviceType type = dev == NULL ? MDT_None : maple_dev_type(dev);
 			if (type != mcfg_DreamcastDevice(bus, port))
 				return false;
 		}
@@ -548,18 +563,19 @@ bool mcfg_DevicesAsSettingsSay(void)
 
 void mcfg_SerializeDevices(void **data, unsigned int *total_size)
 {
-	for (int i = 0; i < MAPLE_PORTS; i++)
-		for (int j = 0; j < 6; j++)
+	int i, j;
+	for (i = 0; i < MAPLE_PORTS; i++)
+		for (j = 0; j < 6; j++)
 		{
 			u8 **p = (u8 **)data;
 			if (MapleDevices[i][j] != NULL)
 			{
 				if (*p != NULL)
 				{
-					**p = MapleDevices[i][j]->get_device_type();
+					**p = maple_dev_type(MapleDevices[i][j]);
 					*p = *p + 1;
 				}
-				MapleDevices[i][j]->maple_serialize(data, total_size);
+				maple_dev_serialize(MapleDevices[i][j], data, total_size);
 			}
 			else if (*p != NULL)
 			{
@@ -597,15 +613,16 @@ void mcfg_UnserializeDevicesV1(void **data, unsigned int *total_size)
 		for (j = 0; j < 6; j++)
 			if (MapleDevices[i][j] != NULL)
 			{
-				const MapleDeviceType devtype = MapleDevices[i][j]->get_device_type();
+				const MapleDeviceType devtype = maple_dev_type(MapleDevices[i][j]);
 				mcfg_DestroyDevice(i, j);
-				mcfg_Create(devtype, i, j);
-				MapleDevices[i][j]->maple_unserialize(data, total_size);
+				mcfg_Create(devtype, i, j, -1);
+				maple_dev_unserialize(MapleDevices[i][j], data, total_size);
 			}
 }
 
 void mcfg_UnserializeDevices(void **data, unsigned int *total_size)
 {
+	int i, j;
 	/* A NAOMI's I/O board, when it goes, forgets that the EEPROM has been
 	 * read from its file. The board made below is the same one, and the
 	 * EEPROM is what the state says: it has been read from the state by
@@ -621,34 +638,37 @@ void mcfg_UnserializeDevices(void **data, unsigned int *total_size)
 	 * and all of what it then is comes from the state. A device of the
 	 * type the state has is made anew where it is (mcfg_Remake()): nothing
 	 * allocated, with run-ahead, every frame. */
-	for (int i = 0; i < MAPLE_PORTS; i++)
-		for (int j = 0; j < 6; j++)
+	for (i = 0; i < MAPLE_PORTS; i++)
+		for (j = 0; j < 6; j++)
 		{
 			/* Which device is there is a byte of the state's: past the end
 			 * of a state that stops short there is none, and one that is no
 			 * device at all is none either. (It was made all the same, which
 			 * maple_Create() cannot do.) */
 			u8 type = MDT_None;
+			MapleDeviceType device_type, wasType;
+			int player;
+			maple_device *was;
 			if (!LIBRETRO_US(type))
 				type = MDT_None;
 			if (type >= MDT_Count)
 			{
 				WARN_LOG(MAPLE, "Invalid device type %d at %d.%d in the state\n", type, i, j);
 				type = MDT_None;
-				// (what such a device has in the state comes next, and is read as something else: the load has failed)
+				/* (what such a device has in the state comes next, and is read as something else: the load has failed) */
 				ra_unserialize_fail();
 			}
-			MapleDeviceType device_type = (MapleDeviceType)type;
-			const int player = atomiswave && i >= 2 && j == 5 ? mcfg_PlayerNum(device_type, i) : -1;
-			maple_device *was = MapleDevices[i][j];
-			const MapleDeviceType wasType = was != NULL ? was->get_device_type() : MDT_None;
+			device_type = (MapleDeviceType)type;
+			player = atomiswave && i >= 2 && j == 5 ? mcfg_PlayerNum(device_type, i) : -1;
+			was = MapleDevices[i][j];
+			wasType = was != NULL ? maple_dev_type(was) : MDT_None;
 			if (wasType == MDT_SegaVMU && device_type == MDT_SegaVMU)
-				;	// (the card stays: given the state's contents below)
+				;	/* (the card stays: given the state's contents below) */
 			else if (wasType != MDT_None && wasType == device_type)
 				mcfg_Remake(i, j, device_type, player);
 			else
 			{
-				// (none there, another, or a card where the state has something else)
+				/* (none there, another, or a card where the state has something else) */
 				if (was != NULL)
 					mcfg_DestroyDevice(i, j);
 				EEPROM_loaded = eeprom_loaded;
@@ -659,6 +679,6 @@ void mcfg_UnserializeDevices(void **data, unsigned int *total_size)
 			 * read: it has been, from the state) */
 			EEPROM_loaded = eeprom_loaded;
 			if (device_type != MDT_None)
-				MapleDevices[i][j]->maple_unserialize(data, total_size);
+				maple_dev_unserialize(MapleDevices[i][j], data, total_size);
 		}
 }

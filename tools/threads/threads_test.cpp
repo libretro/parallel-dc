@@ -448,6 +448,7 @@ static void test_emu_baton(void)
 #define LATCH_FRAMES 200000
 
 static InputLatch latch;
+static const bool latch_made = (input_latch_init(&latch), true);
 static retro_atomic_int_t latch_done;
 
 /* One frame's sample: every field of every port follows from @frame. */
@@ -455,10 +456,10 @@ static void latch_writer(void *)
 {
 	for (u32 frame = 1; frame <= LATCH_FRAMES; frame++)
 	{
-		InputLatch::State& next = latch.Next();
+		input_latch_state& next = *input_latch_next(&latch);
 		for (u32 p = 0; p < 4; p++)
 		{
-			InputLatch::Port& s = next.port[p];
+			input_latch_port& s = next.port[p];
 			s.kcode      = frame;
 			s.joyx       = (s8)(frame + p);
 			s.joyy       = (s8)(frame * 3);
@@ -471,7 +472,7 @@ static void latch_writer(void *)
 			s.mo_y       = (u32)0 - frame * 3;
 			s.mo_wheel   = frame / 16;
 		}
-		latch.Publish();
+		input_latch_publish(&latch);
 	}
 	retro_atomic_store_release_int(&latch_done, 1);
 }
@@ -484,8 +485,8 @@ static void test_input_latch(void)
 	double x = 0, y = 0, w = 0;
 
 	/* Before anything is sampled: nothing held, nothing moved. */
-	CHECK(latch.Read(2).kcode == 0xFFFFFFFF);
-	latch.ReadMouse(2, &buttons, &dx, &dy, &dw);
+	CHECK(input_latch_read(&latch, 2)->kcode == 0xFFFFFFFF);
+	input_latch_read_mouse(&latch, 2, &buttons, &dx, &dy, &dw);
 	CHECK(buttons == 0xFFFFFFFF && dx == 0 && dy == 0 && dw == 0);
 
 	retro_atomic_int_init(&latch_done, 0);
@@ -493,7 +494,7 @@ static void test_input_latch(void)
 	for (;;)
 	{
 		int done = retro_atomic_load_acquire_int(&latch_done);
-		const InputLatch::Port& a = latch.Read(0);
+		const input_latch_port& a = *input_latch_read(&latch, 0);
 		u32 frame = a.kcode;
 
 		/* One whole frame, on every port, never an older one. */
@@ -502,7 +503,7 @@ static void test_input_latch(void)
 		if (frame != 0xFFFFFFFF)
 			for (u32 p = 0; p < 4; p++)
 			{
-				const InputLatch::Port& s = latch.Read(p);
+				const input_latch_port& s = *input_latch_read(&latch, p);
 				if (s.kcode != frame)
 				{
 					/* A newer frame arrived between two ports; each
@@ -518,7 +519,7 @@ static void test_input_latch(void)
 		else
 			last = 0;
 
-		latch.ReadMouse(1, &buttons, &dx, &dy, &dw);
+		input_latch_read_mouse(&latch, 1, &buttons, &dx, &dy, &dw);
 		x += dx;
 		y += dy;
 		w += dw;
@@ -526,7 +527,7 @@ static void test_input_latch(void)
 			break;
 	}
 	sthread_join(t);
-	latch.ReadMouse(1, &buttons, &dx, &dy, &dw);
+	input_latch_read_mouse(&latch, 1, &buttons, &dx, &dy, &dw);
 	x += dx;
 	y += dy;
 	w += dw;

@@ -28,7 +28,7 @@ int maple_sched;
 /*
 	Maple host controller
 	Direct processing, async interrupt handling
-	Device code is on maple_devs.cpp/h, config&management is on maple_cfg.cpp/h
+	Device code is on maple_devs.cpp/h, config&management is on maple_cfg.c/h
 
 	This code is missing many of the hardware details, like proper trigger handling,
 	DMA continuation on suspect, etc ...

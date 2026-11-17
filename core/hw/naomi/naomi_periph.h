@@ -105,7 +105,7 @@ void periph_save_file(const char *suffix, const void *buf, size_t size, retro_at
  * later than any device asks for, or whose time has gone by, is due now. */
 void periph_sched_restore(int id, s32 start, s32 end);
 
-/* The buttons a player holds (active low) and where they point (maple_cfg.cpp) */
+/* The buttons a player holds (active low) and where they point (maple_cfg.c) */
 u32 mcfg_ArcadeKcode(int port);
 void mcfg_ArcadeAbsPos(int port, f32 *x, f32 *y);
 

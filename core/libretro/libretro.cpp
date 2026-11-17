@@ -166,11 +166,6 @@ u8 lt[4] = {0, 0, 0, 0};
 u32 vks[4];
 s8 joyx[4], joyy[4];
 s8 joyrx[4], joyry[4];
-extern u32 mo_buttons[4];
-extern f32 mo_x_delta[4];
-extern f32 mo_y_delta[4];
-extern f32 mo_wheel_delta[4];
-
 bool enable_purupuru = true;
 static u32 vib_stop_time[4];
 static double vib_strength[4];
@@ -302,8 +297,6 @@ static void rumble_stop(void)
 }
 
 void CaptureInput(void);	// sample input on the main thread, once per frame
-void UpdateInputStateArcade(void);
-void UpdateInputState(u32 port);
 /* Without threaded rendering: whether an arcade machine's ports have been
  * read from the frontend since the last frame ended. */
 static bool arcade_input_read;
@@ -4371,15 +4364,15 @@ static void UpdateInputStateNaomi(u32 port)
  * (UpdateInputStateArcade).
  */
 InputLatch input_latch;
-
-void UpdateInputState(u32 port);
+/* (once, as the program is loaded: as it was before a core was started) */
+static const bool input_latch_made = (input_latch_init(&input_latch), true);
 
 /* Mouse motion handed to the latch so far. */
 static u32 mo_x_total[MAPLE_PORTS], mo_y_total[MAPLE_PORTS], mo_wheel_total[MAPLE_PORTS];
 
 void CaptureInput(void)
 {
-   InputLatch::State& next = input_latch.Next();
+   input_latch_state *next = input_latch_next(&input_latch);
    /* An Atomiswave's trackball is a mouse on the bus whatever device the
     * player's port is set to. (Its motion went to the latch only if that
     * was "Mouse": set to anything else, the trackball never moved.) */
@@ -4387,7 +4380,7 @@ void CaptureInput(void)
 
    for (u32 port = 0; port < MAPLE_PORTS; port++)
    {
-      InputLatch::Port& s = next.port[port];
+      input_latch_port& s = next->port[port];
 
       UpdateInputState(port);
 
@@ -4416,7 +4409,7 @@ void CaptureInput(void)
       s.mo_y       = mo_y_total[port];
       s.mo_wheel   = mo_wheel_total[port];
    }
-   input_latch.Publish();
+   input_latch_publish(&input_latch);
 }
 
 /* Without threaded rendering, an arcade machine's ports are read from the
@@ -4481,7 +4474,7 @@ void lr_serialize_v23(void **data, unsigned int *total_size)
       if (settings.rend.ThreadedRendering)
       {
          u32 sx, sy, swheel;
-         input_latch.GetSeen(port, &sx, &sy, &swheel);
+         input_latch_get_seen(&input_latch, port, &sx, &sy, &swheel);
          x     += (f32)(s32)(mo_x_total[port] - sx);
          y     += (f32)(s32)(mo_y_total[port] - sy);
          wheel += (f32)(s32)(mo_wheel_total[port] - swheel);
@@ -4515,7 +4508,7 @@ bool lr_unserialize_v23(void **data, unsigned int *total_size)
       mo_x_delta[port]     = pending[port * 3];
       mo_y_delta[port]     = pending[port * 3 + 1];
       mo_wheel_delta[port] = pending[port * 3 + 2];
-      input_latch.SetSeen(port, mo_x_total[port], mo_y_total[port], mo_wheel_total[port]);
+      input_latch_set_seen(&input_latch, port, mo_x_total[port], mo_y_total[port], mo_wheel_total[port]);
    }
    mouse_ports      = asked & 0xF;
    mouse_ports_read = 0;
