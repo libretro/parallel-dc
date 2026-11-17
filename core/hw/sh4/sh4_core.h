@@ -2,6 +2,9 @@
 #include <setjmp.h>
 #include "types.h"
 #include "sh4_if.h"
+/* (in first: the registers' short names below would take the place of its
+ * own locals, of r among them, in a header included after this one) */
+#include <retro_atomic.h>
 
 #ifdef __cplusplus
 extern "C" {
