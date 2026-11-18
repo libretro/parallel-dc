@@ -5,7 +5,7 @@
 	pipe: the port hands it each byte the game sends and asks it for the
 	bytes it has to send back. The ports are the SH4's SCIF
 	(hw/sh4/modules/serial.c) and the RS-422 line of a NAOMI's I/O board
-	bridge (hw/maple/maple_devs.cpp).
+	bridge (hw/maple/jvs_bridge.c).
 
 	Everything here runs on the thread that runs the machine.
 */

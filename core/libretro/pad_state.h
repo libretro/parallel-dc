@@ -13,15 +13,20 @@ extern u8 lt[4];
 extern s8 joyx[4], joyy[4];
 extern s8 joyrx[4], joyry[4];
 /* Where each port's light gun or mouse points on the screen, 0-639 by
- * 0-479 and outside it when it is off the picture (maple_devs.cpp) */
+ * 0-479 and outside it when it is off the picture (maple_devs.c) */
 extern f32 mo_x_abs[4];
 extern f32 mo_y_abs[4];
 /* A mouse's buttons (a bit clear for each pressed) and its motion not yet
- * read by the game (maple_devs.cpp) */
+ * read by the game (maple_devs.c) */
 extern u32 mo_buttons[4];
 extern f32 mo_x_delta[4];
 extern f32 mo_y_delta[4];
 extern f32 mo_wheel_delta[4];
+/* The keyboard's shift keys pressed (a bit each), its leds lit, and up to
+ * six other keys pressed (maple_devs.c) */
+extern u8 kb_shift;
+extern u8 kb_led;
+extern u8 kb_key[6];
 /* Whether a controller has a vibration pack in its second slot (libretro.cpp) */
 extern bool enable_purupuru;
 

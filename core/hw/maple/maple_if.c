@@ -28,7 +28,7 @@ int maple_sched;
 /*
 	Maple host controller
 	Direct processing, async interrupt handling
-	Device code is on maple_devs.cpp/h, config&management is on maple_cfg.c/h
+	Device code is on maple_devs.c/h, config&management is on maple_cfg.c/h
 
 	This code is missing many of the hardware details, like proper trigger handling,
 	DMA continuation on suspect, etc ...
@@ -558,7 +558,7 @@ static void maple_devices_after_load(void)
 }
 
 /* What Maple has had in a save state since V21, after everything older:
- * the I/O boards' part (maple_devs.cpp), and when the devices that have
+ * the I/O boards' part (jvs_board.c), and when the devices that have
  * been unplugged are to be plugged in again, 0 if they are not waiting to
  * be. The size is always the same.
  *
@@ -588,7 +588,7 @@ bool maple_unserialize_v21(void **data, unsigned int *total_size)
 	return true;
 }
 
-/* A state from before V21: the boards as maple_devs.cpp says, and devices
+/* A state from before V21: the boards as jvs_board.c says, and devices
  * waiting to be plugged in again go on waiting, as they did. */
 void maple_state_before_v21(void)
 {

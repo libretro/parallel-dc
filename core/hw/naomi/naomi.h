@@ -38,7 +38,7 @@ void naomi_state_before_v21(void);
 void naomi_serialize_v23(void **data, unsigned int *total_size);
 bool naomi_unserialize_v23(void **data, unsigned int *total_size);
 void naomi_state_before_v23(void);
-/* The I/O board's program on its way (maple_devs.cpp) */
+/* The I/O board's program on its way (jvs_bridge.c) */
 void naomi_jvs_serialize_v23(void **data, unsigned int *total_size);
 bool naomi_jvs_unserialize_v23(void **data, unsigned int *total_size);
 

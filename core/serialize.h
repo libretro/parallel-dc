@@ -50,7 +50,7 @@ void systemsp_serialize_v24(void **data, unsigned int *total_size);
 bool systemsp_unserialize_v24(void **data, unsigned int *total_size);
 void systemsp_state_before_v24(void);
 /* and since V25: the dinokich IC card reader of a System SP (systemsp.c),
- * what a Mushiking I/O board holds back (maple_devs.cpp), and the DIMM
+ * what a Mushiking I/O board holds back (jvs_board.c), and the DIMM
  * board of a NAOMI GD-ROM game (gdcartridge.h) */
 void systemsp_serialize_v25(void **data, unsigned int *total_size);
 bool systemsp_unserialize_v25(void **data, unsigned int *total_size);
@@ -60,7 +60,7 @@ void systemsp_state_before_v25(void);
 void naomi_serial_serialize_v26(void **data, unsigned int *total_size);
 bool naomi_serial_unserialize_v26(void **data, unsigned int *total_size);
 void naomi_serial_state_before_v26(void);
-/* and since V27: what the racing and other I/O boards keep (maple_devs.cpp),
+/* and since V27: what the racing and other I/O boards keep (jvs_board.c),
  * the MIDI force feedback board of the driving games (midiffb.cpp: its
  * header), and F355's printer status (sb_mem.c) */
 /* and since V28: a light gun's transfer owed its end at vblank-out

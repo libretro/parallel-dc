@@ -1,4 +1,4 @@
-/* The maple devices' part of a state, and what of maple_devs.cpp the rest
+/* The maple devices' part of a state, and what of the maple devices the rest
  * of the machine's state names, for C and C++ alike. */
 #ifndef MAPLE_STATE_H
 #define MAPLE_STATE_H

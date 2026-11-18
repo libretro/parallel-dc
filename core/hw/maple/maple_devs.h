@@ -140,41 +140,28 @@ extern bool naomi_bios_multiregion;
 }
 #endif
 
-#ifdef __cplusplus
 struct mcfg_map;
 
+/* A device on the maple bus (maple_devs.c): where it is, where its inputs
+ * come from, what it is, and the frame it is answering. Each kind's own
+ * comes after it, in memory of its own: maple_dev_create(). */
 struct maple_device
 {
-	u8 maple_port;          //raw maple port
-	u8 bus_port;            //0 .. 5
-	u8 bus_id;              //0 .. 3
-	char logical_port[3];  //A0, etc
-	struct mcfg_map* config;	/* its slot's (maple_cfg.c) */
-
-	//fill in the info
-	void Setup(u32 prt);
-
-	virtual void OnSetup(){};
-	/* Write out what the game changed, off the emulation path. */
-	virtual void FlushSave(){};
-	virtual ~maple_device();
-	u32 Dma(u32 Command,u32* buffer_in,u32 buffer_in_len,u32* buffer_out,u32& buffer_out_len);
-	virtual u32 RawDma(u32* buffer_in, u32 buffer_in_len, u32* buffer_out) = 0;
-	virtual bool maple_serialize(void **data, unsigned int *total_size){return true;};
-	virtual bool maple_unserialize(void **data, unsigned int *total_size){return true;};
-	virtual MapleDeviceType get_device_type() = 0;
-	virtual bool get_lightgun_pos() { return false; };
+	u8 maple_port;		/* the raw maple address */
+	u8 bus_port;		/* 0 .. 5 */
+	u8 bus_id;		/* 0 .. 3 */
+	char logical_port[3];	/* A0, etc */
+	struct mcfg_map *config;	/* its slot's (maple_cfg.c) */
+	u8 type;		/* MapleDeviceType */
+	bool atomiswave;	/* an Atomiswave's controller or gun */
+	/* the frame being answered */
+	u8 *dma_buffer_out;
+	u32 *dma_count_out;
+	const u8 *dma_buffer_in;
+	u32 dma_count_in;
 };
 
-maple_device* maple_Create(MapleDeviceType type);
-maple_device* maple_CreateAt(MapleDeviceType type, void *at);
-#define SIZE_OF_MIC_DATA	480 //ALSO DEFINED IN SipEmulator.java
-int get_mic_data(u8* buffer); //implemented in Android.cpp
-int push_vmu_screen(u8* buffer); //implemented in Android.cpp
-
-
-
+#define SIZE_OF_MIC_DATA	480
 
 /* What C sees of the devices */
 #include "maple_if.h"
-#endif

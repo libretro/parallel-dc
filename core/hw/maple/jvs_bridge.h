@@ -1,7 +1,7 @@
 /* The NAOMI's I/O board bridge (the MIE, 315-6149): the maple device that
  * the game talks to its JVS I/O boards through, its EEPROM, the program
- * the game sends its processor and its RS-422 port. maple_devs.cpp's
- * maple_naomi_jamma is the device; this is all it does. C89, for C and C++
+ * the game sends its processor and its RS-422 port. maple_devs.c's
+ * maple_jamma is the device; this is all it does. C89, for C and C++
  * alike. */
 #ifndef JVS_BRIDGE_H
 #define JVS_BRIDGE_H
@@ -46,7 +46,7 @@ bool jvs_bridge_unserialize(jvs_bridge *br, void **data, unsigned int *total_siz
 /* The EEPROM read from its file (eeprom_file), once: see jvs_bridge.c */
 void jvs_eeprom_load(void);
 
-/* The bridge of the machine, if it has one (maple_devs.cpp: the first
+/* The bridge of the machine, if it has one (maple_devs.c: the first
  * port's): the one in a save state */
 jvs_bridge *maple_jvs_bridge(void);
 

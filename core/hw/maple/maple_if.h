@@ -41,7 +41,7 @@ void maple_FlushSaves(void);
 /* The most a device answers a frame with, its header included */
 #define MAPLE_FRAME_MAX_WORDS 256
 
-/* A device, as C sees it (maple_devs.cpp). maple_dev_dma() answers a frame
+/* A device, as C sees it (maple_devs.c). maple_dev_dma() answers a frame
  * of in_len bytes into out, MAPLE_FRAME_MAX_WORDS words at the most, and
  * says how many bytes it wrote. */
 u32 maple_dev_dma(maple_device *dev, u32 *in, u32 in_len, u32 *out);
@@ -75,7 +75,7 @@ void mcfg_ReconcileDevices(bool plug_in);
 bool mcfg_DevicesAsSettingsSay(void);
 
 /* What a NAOMI's I/O boards have had in a save state since V21, V25 and
- * V27 (maple_devs.cpp) */
+ * V27 (jvs_board.c) */
 void maple_jvs_serialize_v21(void **data, unsigned int *total_size);
 void maple_jvs_unserialize_v21(void **data, unsigned int *total_size);
 void maple_jvs_state_before_v21(void);

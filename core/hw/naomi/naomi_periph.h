@@ -1,7 +1,7 @@
 /*
 	The devices an arcade game has besides its I/O board: card readers,
 	touch panel, hopper (naomi.c, card_reader.c, touchscreen.c,
-	hopper.c, and the IC card reader in maple_devs.cpp).
+	hopper.c, and the IC card reader in maple_devs.c).
 */
 #pragma once
 #include "types.h"
@@ -100,6 +100,9 @@ bool naomi_periph_rfid_game(void);
 size_t periph_load_file(const char *suffix, void *buf, size_t size);
 /* the same, made anew from @buf; the writing is done by the save writer */
 void periph_save_file(const char *suffix, const void *buf, size_t size, retro_atomic_int_t *failed);
+/* Where what the peripherals make up starts from (a new card's number):
+ * the time */
+u32 periph_seed(void);
 
 /* An event of the scheduler as a save state has it. One that would come
  * later than any device asks for, or whose time has gone by, is due now. */
@@ -109,7 +112,7 @@ void periph_sched_restore(int id, s32 start, s32 end);
 u32 mcfg_ArcadeKcode(int port);
 void mcfg_ArcadeAbsPos(int port, f32 *x, f32 *y);
 
-/* The IC card readers (maple_devs.cpp) */
+/* The IC card readers (maple_devs.c) */
 void rfid_init(bool game, bool insert);
 void insertRfidCard(int playerNum);
 const u8 *getRfidCardData(int playerNum);
@@ -125,7 +128,7 @@ void naomi_periph_serialize_v24(void **data, unsigned int *total_size);
 bool naomi_periph_unserialize_v24(void **data, unsigned int *total_size);
 void naomi_periph_state_before_v24(void);
 
-/* The RS-422 port of the I/O board bridge, which a card reader can be on (maple_devs.cpp) */
+/* The RS-422 port of the I/O board bridge, which a card reader can be on (jvs_bridge.c) */
 void naomi_mie_set_pipe(serial_pipe *pipe);
 
 #ifdef __cplusplus

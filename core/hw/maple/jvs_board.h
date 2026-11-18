@@ -1,5 +1,5 @@
-/* The NAOMI's JVS I/O boards, as the I/O board bridge (maple_devs.cpp's
- * maple_naomi_jamma) has them on its bus: each kind of board the cabinets
+/* The NAOMI's JVS I/O boards, as the I/O board bridge (jvs_bridge.c)
+ * has them on its bus: each kind of board the cabinets
  * have, what it answers a request with, and its part of a save state. C89,
  * for C and C++ alike. */
 #ifndef JVS_BOARD_H
@@ -110,7 +110,7 @@ bool jvs_board_unserialize(jvs_board *board, void **data, unsigned int *total_si
 bool jvs_dual_reversed_game(void);
 
 /* The boards of the NAOMI's I/O board bridge, if the machine has one
- * (maple_devs.cpp): the boards in a save state */
+ * (jvs_bridge.c): the boards in a save state */
 jvs_boards *maple_jvs_boards(void);
 
 RETRO_END_DECLS

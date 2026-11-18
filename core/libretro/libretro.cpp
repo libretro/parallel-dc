@@ -215,7 +215,7 @@ retro_environment_t        frontend_clear_thread_waits_cb = NULL;
 static retro_rumble_interface rumble;
 
 /* A NAOMI wheel's force feedback (midiffb.cpp, and the drive boards of
- * maple_devs.cpp), as rumble on the first port when "NAOMI Wheel Force
+ * jvs_board.c), as rumble on the first port when "NAOMI Wheel Force
  * Feedback" is on: the force on the strong motor, a shake on the weak one
  * for as long as it lasts. The emulator says what it wants in one word,
  * which the frontend's side passes on when it changes:
@@ -4888,8 +4888,6 @@ void UpdateVibration(u32 port, u32 value, u32 max_duration)
 	  vib_delta[port] = FREQ / (1000.0 * INC * std::max(POW_POS, POW_NEG));
 }
 
-extern u8 kb_shift; 		// shift keys pressed (bitmask)
-extern u8 kb_key[6];		// normal keys pressed (up to 6)
 static int kb_used;
 
 static void release_key(unsigned dc_keycode)
@@ -4988,9 +4986,6 @@ int msgboxf(const char* text, unsigned int type, ...)
    }
    return 0;
 }
-
-int get_mic_data(u8* buffer) { return 0; }
-int push_vmu_screen(u8* buffer) { return 0; }
 
 void os_DebugBreak(void)
 {

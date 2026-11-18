@@ -214,7 +214,7 @@ BIOS[] =
 			 * ROM_SYSTEM_BIOS( 24, "bios24", "Development ROM Board" )
 			 * { 3, "zukinver0930.ic25", 0x000000, 0x200000 },
 			 * ROM_SYSTEM_BIOS( 25, "bios25", "epr-21576h (multi-region hack)" )
-			 * The region is read from the DIP switches, which say Korea (maple_devs.cpp) */
+			 * The region is read from the DIP switches, which say Korea (jvs_bridge.c) */
 			{ 3, "epr-21576h_multi.ic27", 0x000000, 0x200000, 0xcce01f1f },
 			{ 0, NULL, 0, 0 },
 		}
@@ -288,7 +288,7 @@ BIOS[] =
 	},
 	{
 		/* Mushiking's Korean sets: the multi-region BIOS, from naomi.zip,
-		 * whatever the region. The DIP switches say Korea (maple_devs.cpp). */
+		 * whatever the region. The DIP switches say Korea (jvs_bridge.c). */
 		"naomi-ko-h",
 		{
 			/* ROM_SYSTEM_BIOS( 25, "bios25", "epr-21576h (multi-region hack)" ) */

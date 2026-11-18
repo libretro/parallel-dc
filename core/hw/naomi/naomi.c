@@ -1,6 +1,7 @@
 /*
 	This file is a mix of my code, Zezu's, and duno wtf-else (most likely ElSemi's ?)
 */
+#include <time.h>
 #include "types.h"
 #include "hw/holly/sb.h"
 #include "hw/sh4/sh4_mem.h"
@@ -475,7 +476,7 @@ void naomi_state_before_v21(void)
  *   - the communication board's four registers and its two 128 KB
  *     memories (NaomiM3Comm::serialize());
  *   - the 64 KB program on its way to the I/O board's processor, all
- *     zeroes when none is (maple_devs.cpp). */
+ *     zeroes when none is (jvs_bridge.c). */
 void naomi_serialize_v23(void **data, unsigned int *total_size)
 {
 	if (!SYSTEM_IS_NAOMI())
@@ -641,6 +642,11 @@ static void periph_path(char *path, size_t size, const char *suffix)
 	/* (as much of both as there is room for) */
 	strlcpy(path, eeprom_file, len + 1 < size ? len + 1 : size);
 	strlcat(path, suffix, size);
+}
+
+u32 periph_seed(void)
+{
+	return (u32)time(0);
 }
 
 /* (the frontend's paths are shorter than this) */
