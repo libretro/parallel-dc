@@ -1,7 +1,8 @@
 /* Runs the sound chip's DSP on made-up programs and prints what each leaves
- * behind. tools/aica/run.sh builds this twice, once around the DSP's
- * compiler (core/hw/aica/dsp_x64.cpp) and once around its interpreter
- * (core/hw/aica/dsp_interp.c), runs both, and compares what they print:
+ * behind. tools/aica/run.sh builds this around the DSP's compilers
+ * (core/hw/aica/dsp_x64.c, dsp_x86.c, dsp_arm64.c) and around its
+ * interpreter (core/hw/aica/dsp_interp.c), runs each, and compares what
+ * they print:
  * the two are separate implementations of the same machine and have to
  * agree on every program, to the last bit.
  *
@@ -23,8 +24,12 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#ifdef _WIN32
+#include <windows.h>
+#else
 #include <sys/mman.h>
 #include <unistd.h>
+#endif
 
 #include "types.h"
 #include "hw/aica/aica.h"
@@ -39,7 +44,9 @@ VArray2 aica_ram;
 static u8 regs[sizeof(DSPData_struct)] __attribute__((aligned(4096)));
 static u8 ram[2 * 1024 * 1024] __attribute__((aligned(4096)));
 
-void os_DebugBreak()
+retro_log_printf_t log_cb;
+
+void os_DebugBreak(void)
 {
    fprintf(stderr, "the DSP stopped on a check of its own\n");
    abort();
@@ -47,14 +54,37 @@ void os_DebugBreak()
 
 bool vmem_platform_prepare_jit_block(void *code_area, unsigned size, void **code_area_rwx)
 {
+#ifdef _WIN32
+   const uintptr_t page = 4096;
+#else
    const uintptr_t page = (uintptr_t)sysconf(_SC_PAGESIZE);
+#endif
    const uintptr_t from = (uintptr_t)code_area & ~(page - 1);
    const uintptr_t to   = ((uintptr_t)code_area + size + page - 1) & ~(page - 1);
+#ifdef _WIN32
+   DWORD old;
 
+   if (!VirtualProtect((void*)from, to - from, PAGE_EXECUTE_READWRITE, &old))
+      return false;
+#else
    if (mprotect((void*)from, to - from, PROT_READ | PROT_WRITE | PROT_EXEC))
       return false;
+#endif
    *code_area_rwx = code_area;
    return true;
+}
+
+bool mem_region_set_exec(void *start, size_t len)
+{
+   void *rwx;
+   return vmem_platform_prepare_jit_block(start, (unsigned)len, &rwx);
+}
+
+void vmem_platform_flush_cache(void *icache_start, void *icache_end, void *dcache_start, void *dcache_end)
+{
+   (void)dcache_start;
+   (void)dcache_end;
+   __builtin___clear_cache((char *)icache_start, (char *)icache_end);
 }
 
 static u64 seed;
@@ -127,6 +157,10 @@ static void run_case(unsigned number, bool all_steps)
       DSPData->MADRS[i] = rnd() & 0xFFFF;
    dsp.RBL = (8192u << (rnd() % 4)) - 1;
    dsp.RBP = ((rnd() % 1024) * 2048) & ARAM_MASK;
+   /* (and now and then not where the register puts it: a save state's,
+    * odd or anywhere, which every one of them makes even) */
+   if (rnd() % 4 == 0)
+      dsp.RBP |= rnd() & 0x7ff;
    dsp.dyndirty = true;
    dsp_writenmem(0x3400);                  /* the program was written */
 

@@ -121,7 +121,7 @@ void AICADSP_Step(struct dsp_t *DSP)
 		if (IRA <= 0x1f)
 			INPUTS = DSP->MEMS[IRA];
 		else if (IRA <= 0x2F)
-			INPUTS = DSP->MIXS[IRA - 0x20] << 4;		/* MIXS is 20 bit */
+			INPUTS = (s32)((u32)DSP->MIXS[IRA - 0x20] << 4);		/* MIXS is 20 bit */
 		else if (IRA <= 0x31)
 			INPUTS = DSPData->EXTS[IRA - 0x30] << 8;	/* EXTS is 16 bits */
 		else
@@ -173,7 +173,7 @@ void AICADSP_Step(struct dsp_t *DSP)
 		if (SHIFT == 0 || SHIFT == 3)
 			SHIFTED = ACC;
 		else
-			SHIFTED = ACC << 1;		/* x2 scale */
+			SHIFTED = (s32)((u32)ACC << 1);		/* x2 scale */
 
 		if (SHIFT < 2)
 			SHIFTED = SHIFTED < -0x00800000 ? -0x00800000 : SHIFTED > 0x007FFFFF ? 0x007FFFFF : SHIFTED;

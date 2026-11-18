@@ -23,7 +23,7 @@ DECL_ALIGN(4096) dsp_t dsp;
 u16 DYNACALL PACK(s32 val)
 {
 	int sign = (val >> 23) & 0x1;
-	u32 temp = (val ^ (val << 1)) & 0xFFFFFF;
+	u32 temp = ((u32)val ^ ((u32)val << 1)) & 0xFFFFFF;
 	int exponent = 0;
 	int k;
 	for (k = 0; k < 12; k++)
@@ -33,10 +33,11 @@ u16 DYNACALL PACK(s32 val)
 		temp <<= 1;
 		exponent += 1;
 	}
+	/* (the shifts of a negative value made as the processor makes them) */
 	if (exponent < 12)
-		val <<= exponent;
+		val = (s32)((u32)val << exponent);
 	else
-		val <<= 11;
+		val = (s32)((u32)val << 11);
 	val = (val >> 11) & 0x7FF;	/* avoid sign extension of mantissa */
 	val |= sign << 15;
 	val |= exponent << 11;
@@ -56,7 +57,7 @@ s32 DYNACALL UNPACK(u16 val)
 	else
 		uval ^= 1 << 22;	/* reverse bit 22 for normals */
 	uval |= sign << 23;		/* actual sign bit */
-	uval <<= 8;
+	uval = (s32)((u32)uval << 8);
 	uval >>= 8;
 	uval >>= exponent;
 

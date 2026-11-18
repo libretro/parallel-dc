@@ -15,9 +15,6 @@ SOURCES_CXX := \
 					$(CORE_DIR)/core/hw/arm7/arm7_rec_x86.cpp \
 					$(CORE_DIR)/core/hw/arm7/arm7_rec_arm64.cpp \
 					\
-					$(CORE_DIR)/core/hw/aica/dsp_arm64.cpp \
-					$(CORE_DIR)/core/hw/aica/dsp_x64.cpp \
-					$(CORE_DIR)/core/hw/aica/dsp_x86.cpp \
 					\
 					\
 					\
@@ -176,6 +173,9 @@ SOURCES_C += $(CORE_DIR)/core/hw/gdrom/gdrom_response.c \
 					$(CORE_DIR)/core/hw/aica/aica_mem.c \
 					$(CORE_DIR)/core/hw/aica/dsp.c \
 					$(CORE_DIR)/core/hw/aica/dsp_interp.c \
+					$(CORE_DIR)/core/hw/aica/dsp_arm64.c \
+					$(CORE_DIR)/core/hw/aica/dsp_x64.c \
+					$(CORE_DIR)/core/hw/aica/dsp_x86.c \
 					$(CORE_DIR)/core/hw/aica/sgc_if.c \
 					$(CORE_DIR)/core/hw/pvr/spg.c \
 					$(CORE_DIR)/core/hw/pvr/pvr_mem.c \
