@@ -1,0 +1,55 @@
+name: Platforms
+
+# The builds the buildbot makes that a Linux desktop does not: Android
+# (ndk-build, 32-bit ARM and ARM64, bionic's headers), macOS on Apple's
+# processors (its SDK and the recompilers' MAP_JIT memory) and the Switch
+# (devkitPro's newlib and libnx). Each has broken where every other build
+# kept going.
+
+on:
+  push:
+    paths:
+      - 'core/**'
+      - 'jni/**'
+      - 'Makefile'
+      - 'Makefile.common'
+      - '.github/workflows/platforms.yml'
+  pull_request:
+    paths:
+      - 'core/**'
+      - 'jni/**'
+      - 'Makefile'
+      - 'Makefile.common'
+      - '.github/workflows/platforms.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  android:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build with the runner's NDK (armeabi-v7a, arm64-v8a)
+        run: |
+          "$ANDROID_NDK_LATEST_HOME/ndk-build" --no-print-directory -j"$(nproc)" -C jni \
+            APP_ABI="armeabi-v7a arm64-v8a"
+
+  macos-arm64:
+    runs-on: macos-14
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build for Apple's processors
+        run: make -j"$(sysctl -n hw.ncpu)" platform=osx arch=arm
+
+  switch:
+    runs-on: ubuntu-24.04
+    container: devkitpro/devkita64:latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build with libnx
+        run: make -j"$(nproc)" platform=libnx
