@@ -67,8 +67,8 @@ const u32 SrcBlendGL[] =
 	GL_ONE_MINUS_DST_ALPHA
 };
 
-extern int screen_width;
-extern int screen_height;
+extern "C" int screen_width;
+extern "C" int screen_height;
 
 PipelineShader* CurrentShader;
 extern u32 gcflip;

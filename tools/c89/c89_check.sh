@@ -37,7 +37,9 @@ for f in $files; do
       "$NOREC") grep -q 'FEAT_[A-Z]*REC' "$f" || continue ;;
       "$NOMMU") grep -q 'NO_MMU\|mmu\.h' "$f" || continue ;;
       esac
-      if ! out=$($CC $cflags $extra -std=c89 -pedantic -Wno-long-long -Wno-variadic-macros -Werror \
+      # (the core options' texts are longer than the 509 characters C89
+      # promises: MSVC, the C89 compiler there is, takes 2048)
+      if ! out=$($CC $cflags $extra -std=c89 -pedantic -Wno-long-long -Wno-variadic-macros -Wno-overlength-strings -Werror \
             -Wdeclaration-after-statement -Werror=implicit-function-declaration -fsyntax-only "$f" 2>&1); then
          echo "$out" | grep -m 5 "error" | sed "s#^#  #"
          case $extra in

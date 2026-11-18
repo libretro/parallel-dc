@@ -34,7 +34,7 @@ u32 pal_rev_16[64]={0};
 
 u32 decoded_colors[3][65536];
 
-extern int screen_height;
+extern "C" int screen_height;
 
 #define TACALL DYNACALL
 

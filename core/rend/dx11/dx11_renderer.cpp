@@ -26,7 +26,7 @@
 #include <algorithm>
 #include <cmath>
 
-extern int screen_width, screen_height;
+extern "C" int screen_width, screen_height;
 
 static const D3D11_INPUT_ELEMENT_DESC MainLayout[] =
 {

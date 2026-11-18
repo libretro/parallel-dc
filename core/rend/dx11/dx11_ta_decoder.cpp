@@ -22,7 +22,7 @@
 #include <algorithm>
 #include <vector>
 
-extern int screen_height;
+extern "C" int screen_height;
 
 /* The kernels, by TAG_K_*, as shader model 5.0 DXBC made from rend/ta_gpu.h
  * when the core was built: tools/rend/kernels_dx12.sh, which checks that

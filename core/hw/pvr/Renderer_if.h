@@ -13,6 +13,9 @@ extern TA_context* _pvrrc;
 
 #define pvrrc (_pvrrc->rend)
 
+/* The size the frontend shows the picture at (gles.cpp) */
+extern int screen_width, screen_height;
+
 extern u32 VertexCount;
 extern u32 FrameCount;
 

@@ -160,8 +160,8 @@ struct gl4_ctx
 
 extern gl4_ctx gl4;
 
-extern int screen_width;
-extern int screen_height;
+extern "C" int screen_width;
+extern "C" int screen_height;
 extern int max_image_width;
 extern int max_image_height;
 

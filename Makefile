@@ -57,9 +57,6 @@ CFLAGS   :=
 CXXFLAGS :=
 
 GIT_VERSION := " $(shell git rev-parse --short HEAD || echo unknown)"
-ifneq ($(GIT_VERSION)," unknown")
-	CXXFLAGS += -DGIT_VERSION=\"$(GIT_VERSION)\"
-endif
 
 UNAME=$(shell uname -a)
 
@@ -108,6 +105,10 @@ else ifneq ($(findstring MINGW,$(shell uname -a)),)
 endif
 
 CORE_DIR := .
+ifneq ($(GIT_VERSION)," unknown")
+# (the core's version: libretro.c's only)
+$(CORE_DIR)/core/libretro/libretro.o: CFLAGS += -DGIT_VERSION=\"$(GIT_VERSION)\"
+endif
 
 DYNAREC_USED = 0
 CORE_DEFINES   := -D__LIBRETRO__  -DHAVE_GLSYM_PRIVATE

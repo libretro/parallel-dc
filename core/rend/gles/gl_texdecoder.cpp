@@ -444,7 +444,7 @@ bool GLTexDecoder::MakePrograms()
 
 	/* Through the programs kept on disk (glprogram_cache.h): compiled the
 	 * first time, taken from there after, with the renderers' own */
-	programs[PROGRAM_DRAW] = glprog_make(text[2].c_str(), text[3].c_str());
+	programs[PROGRAM_DRAW] = glprog_make(text[2].c_str(), text[3].c_str(), false);
 	if (glprog_failed())
 		programs[PROGRAM_DRAW] = 0;
 	if (compute)

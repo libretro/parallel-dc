@@ -657,6 +657,6 @@ void glprog_close()
 {
 	if (!cache.open)
 		return;
-	glprog_save();
+	glprog_save(false);
 	cache = Cache();
 }

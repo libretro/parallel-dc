@@ -1066,7 +1066,7 @@ GLuint gl_CompileShader(const char* shader,GLuint type)
 // (through the programs kept: glprogram_cache.h)
 GLuint gl_CompileAndLink(const char* VertexShader, const char* FragmentShader)
 {
-	const GLuint program = glprog_make(VertexShader, FragmentShader);
+	const GLuint program = glprog_make(VertexShader, FragmentShader, false);
 	if (glprog_failed())
 		die("shader compile fail\n");
 
@@ -1935,7 +1935,7 @@ struct glesrend : Renderer
       // the polygons' programs, so that none is made in a frame (glprogram_cache.h)
       gl_make_programs();
       gl_writeout_init(screen_width, screen_height, false);
-      glprog_save();
+      glprog_save(false);
       glprog_started();
 
       return true;

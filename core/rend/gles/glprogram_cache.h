@@ -34,50 +34,58 @@
 #pragma once
 #include "types.h"
 
-// (a program is a GLuint; the header is included where there is no OpenGL too)
+#ifdef __cplusplus
+extern "C" {
+#endif
 
-// whose polygon programs a key is
-enum GlProgramList { GLPROG_GLES = 0, GLPROG_GL4 = 1, GLPROG_LISTS = 2 };
+/* (a program is a GLuint; the header is included where there is no OpenGL too) */
 
-enum GlProgramStatus { GLPROG_FAILED = -1, GLPROG_PENDING = 0, GLPROG_READY = 1 };
+/* whose polygon programs a key is */
+typedef enum GlProgramList { GLPROG_GLES = 0, GLPROG_GL4 = 1, GLPROG_LISTS = 2 } GlProgramList;
+
+typedef enum GlProgramStatus { GLPROG_FAILED = -1, GLPROG_PENDING = 0, GLPROG_READY = 1 } GlProgramStatus;
 
 /* When a renderer starts (the context bound, after findGLVersion()): what the
  * driver can do found out and the file read. Again for each renderer. */
-void glprog_open();
-// A renderer going (the context bound): what is new written, and all let go
-void glprog_close();
+void glprog_open(void);
+/* A renderer going (the context bound): what is new written, and all let go */
+void glprog_close(void);
 /* What is new written to the file now (the context bound, between frames).
  * @contextGoing: the programs are the context's and go with it; nothing
  * is asked of them after this. */
-void glprog_save(bool contextGoing = false);
+void glprog_save(bool contextGoing);
 /* The renderer's start is done: a program made after this one is made in a
  * frame, and counted as one (glprog_log()). */
-void glprog_started();
+void glprog_started(void);
 
-// whether the programs are kept on disk (binaries)
-bool glprog_binaries();
+/* whether the programs are kept on disk (binaries) */
+bool glprog_binaries(void);
 
 /* A program of a vertex and a fragment shader, its attributes bound as the
  * renderers have them (gles.h). From the file if it is there, else compiled
  * and linked. @background: not waited for (the driver's background
  * compile; glprog_poll() says when it is done). 0 if it failed (with
  * @background, only glprog_poll() knows). */
-u32 glprog_make(const char *vertex, const char *fragment, bool background = false);
+u32 glprog_make(const char *vertex, const char *fragment, bool background);
 /* Whether the last glprog_make() without @background failed, and the
  * driver said why (then it gave 0) */
-bool glprog_failed();
-// A compute shader's program from its text, @count pieces of it; 0 if it failed
+bool glprog_failed(void);
+/* A compute shader's program from its text, @count pieces of it; 0 if it failed */
 u32 glprog_make_compute(const char *const *pieces, u32 count);
-// What a program made in the background is now
+/* What a program made in the background is now */
 GlProgramStatus glprog_poll(u32 program);
-// ...waited for (at the renderer's start, never in a frame): whether it linked
+/* ...waited for (at the renderer's start, never in a frame): whether it linked */
 bool glprog_wait(u32 program);
 
-// A key of @list drawn this run, kept for the next one
+/* A key of @list drawn this run, kept for the next one */
 void glprog_note(GlProgramList list, u32 key);
-// The keys of @list from earlier runs (until glprog_close())
+/* The keys of @list from earlier runs (until glprog_close()) */
 const u32 *glprog_known(GlProgramList list, u32 *count);
-// a polygon drawn with the general program, as its own was not there yet (counted only)
-void glprog_general_used();
-// how many programs were made, from where, and when
+/* a polygon drawn with the general program, as its own was not there yet (counted only) */
+void glprog_general_used(void);
+/* how many programs were made, from where, and when */
 void glprog_log(const char *who);
+
+#ifdef __cplusplus
+}
+#endif

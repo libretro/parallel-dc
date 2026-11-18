@@ -1,3 +1,8 @@
+/* snprintf(), strcasecmp() and the timers, which a C89 compile of the C
+ * library's headers leaves out */
+#if !defined(_MSC_VER) && !defined(_DEFAULT_SOURCE)
+#define _DEFAULT_SOURCE
+#endif
 #if defined(HAVE_VULKAN) || defined(HAVE_D3D11) || defined(HAVE_D3D12)
 /* (the renderers that have the HDR output: Color Format) */
 #define HAVE_HDR_OUTPUT
@@ -5,10 +10,11 @@
 #include "rend/hdr/hdr_libretro.h"
 #include "rend/hdr/hdr_output.h"
 #endif
-#include <cstdio>
+#include <stdio.h>
+#include <limits.h>
 #include <compat/fopen_utf8.h>
 #include <compat/strl.h>
-#include <cstdarg>
+#include <stdarg.h>
 #include <math.h>
 #include "types.h"
 #ifndef _WIN32
@@ -20,8 +26,8 @@
 #include <string.h>
 #include <switch.h>
 
-// strdup seems to be missing on the dkp toolchain
-// TODO: Investigate more
+/* strdup seems to be missing on the dkp toolchain */
+/* TODO: Investigate more */
 char* strdup(const char *str)
 {
 	size_t size = strlen(str) + 1;
@@ -45,35 +51,33 @@ char* strdup(const char *str)
 #if defined(HAVE_OPENGL) || defined(HAVE_OPENGLES)
 #include <glsm/glsm.h>
 #endif
-#ifdef HAVE_D3D11
-// (before anything that has hw/pvr/pvr_regs.h's macros)
-#include "rend/dx11/dx11context_lr.h"
-#endif
-#ifdef HAVE_D3D9
-#include "rend/dx9/dx9context_lr.h"
-#endif
-#ifdef HAVE_D3D12
-#include "rend/dx12/dx12context_lr.h"
+#if defined(HAVE_D3D9) || defined(HAVE_D3D11) || defined(HAVE_D3D12)
+/* (before anything that has hw/pvr/pvr_regs.h's macros) */
+#include "rend/d3d_system.h"
+#include <libretro_d3d.h>
 #endif
 #include "rend/rend_method.h"
 #include "rend/upscaler.h"
 #ifdef HAVE_VULKAN
-#include "rend/vulkan/vulkan_context.h"
+#include <libretro_vulkan.h>
 #endif
 #include "rend/rtt_watch.h"
 /* (rend/TexCache.h) */
 void texcache_scratch_largest(void);
-#include "rend/gles/ta_decoder_gl.h"
+#include "lr_contexts.h"
 #include "rend/gles/glprogram_cache.h"
 #include "rend/last_picture.h"
 #include "rend/tile/compute_frame.h"
 #include <retro_atomic.h>
 #include <retro_timers.h>
+#include <rthreads/rthreads.h>
 #include "emulator.h"
 #include "emu_baton.h"
 #include "input_latch.h"
 #include "../rend/rend.h"
 #include "../hw/sh4/sh4_mem.h"
+#include "../hw/sh4/sh4_if.h"
+#include "../hw/sh4/modules/mmu.h"
 #include "../hw/sh4/sh4_sched.h"
 #include "../hw/sh4/dyna/blockmanager.h"
 #include "lr_input.h"
@@ -138,12 +142,10 @@ char slash = '/';
 #include "libretro_core_options.h"
 
 u32 fskip;
-extern int screen_width;
-extern int screen_height;
 char save_dir[PATH_MAX];
 char eeprom_file[PATH_MAX];
 char nvmem_file[PATH_MAX];
-char nvmem_file2[PATH_MAX];		// AtomisWave
+char nvmem_file2[PATH_MAX];		/* AtomisWave */
 bool boot_to_bios;
 
 static bool devices_need_refresh = false;
@@ -168,7 +170,7 @@ static bool first_run = true;
 struct retro_perf_callback perf_cb;
 retro_get_cpu_features_t perf_get_cpu_features_cb = NULL;
 
-// Callbacks
+/* Callbacks */
 retro_log_printf_t         log_cb = NULL;
 retro_video_refresh_t      video_cb = NULL;
 retro_input_poll_t         poll_cb = NULL;
@@ -300,7 +302,7 @@ void retro_set_video_refresh(retro_video_refresh_t cb)
 
 void retro_set_audio_sample(retro_audio_sample_t cb)
 {
-   // Nothing to do here
+   /* Nothing to do here */
 }
 
 void retro_set_audio_sample_batch(retro_audio_sample_batch_t cb)
@@ -352,26 +354,6 @@ void retro_set_input_state(retro_input_state_t cb)
 
 void retro_set_environment(retro_environment_t cb)
 {
-   environ_cb = cb;
-
-   /* Use the frontend's VFS for all file I/O when it provides one; the local
-    * vfs_implementation (UTF-8-safe everywhere) is the fallback. Every file
-    * open in the core goes through libretro-common filestream and therefore
-    * through this interface. */
-   struct retro_vfs_interface_info vfs_iface_info;
-   vfs_iface_info.required_interface_version = 1;
-   vfs_iface_info.iface = NULL;
-   if (cb(RETRO_ENVIRONMENT_GET_VFS_INTERFACE, &vfs_iface_info))
-   {
-      filestream_vfs_init(&vfs_iface_info);
-      /* The frontend says which version it has: from v7 it maps content
-       * files itself, and coreio reads them in place from its mapping */
-      core_io_frontend_maps(vfs_iface_info.iface
-            && vfs_iface_info.required_interface_version >= 7);
-   }
-
-   libretro_set_core_options(environ_cb, &categoriesSupported);
-
    static const struct retro_controller_description ports_default[] =
    {
 		 { "Controller",	RETRO_DEVICE_JOYPAD },
@@ -391,18 +373,45 @@ void retro_set_environment(retro_environment_t cb)
            { ports_default,  8 },
            { 0 },
    };
+   struct retro_vfs_interface_info vfs_iface_info;
+
+   environ_cb = cb;
+
+   /* Use the frontend's VFS for all file I/O when it provides one; the local
+    * vfs_implementation (UTF-8-safe everywhere) is the fallback. Every file
+    * open in the core goes through libretro-common filestream and therefore
+    * through this interface. */
+   vfs_iface_info.required_interface_version = 1;
+   vfs_iface_info.iface = NULL;
+   if (cb(RETRO_ENVIRONMENT_GET_VFS_INTERFACE, &vfs_iface_info))
+   {
+      filestream_vfs_init(&vfs_iface_info);
+      /* The frontend says which version it has: from v7 it maps content
+       * files itself, and coreio reads them in place from its mapping */
+      core_io_frontend_maps(vfs_iface_info.iface
+            && vfs_iface_info.required_interface_version >= 7);
+   }
+
+   libretro_set_core_options(environ_cb, &categoriesSupported);
+
    environ_cb(RETRO_ENVIRONMENT_SET_CONTROLLER_INFO, (void*)ports);
 }
 
 void retro_keyboard_event(bool down, unsigned keycode, uint32_t character, uint16_t key_modifiers);
 
-// Now comes the interesting stuff
+/* Now comes the interesting stuff */
+static void os_seconds_start(void);
+
 void retro_init(void)
 {
+   struct retro_log_callback log;
+   unsigned color_mode = RETRO_PIXEL_FORMAT_XRGB8888;
+   struct retro_keyboard_callback kb_callback;
+
+   os_seconds_start();
    screen_width  = 640;
    screen_height = 480;
-   // Logging
-   struct retro_log_callback log;
+   /* Logging */
    if (environ_cb(RETRO_ENVIRONMENT_GET_LOG_INTERFACE, &log))
       log_cb = log.log;
    else
@@ -413,14 +422,13 @@ void retro_init(void)
    else
       perf_get_cpu_features_cb = NULL;
 
-   // Set color mode
-   unsigned color_mode = RETRO_PIXEL_FORMAT_XRGB8888;
+   /* Set color mode */
    environ_cb(RETRO_ENVIRONMENT_SET_PIXEL_FORMAT, &color_mode);
 
    environ_cb(RETRO_ENVIRONMENT_GET_CLEAR_ALL_THREAD_WAITS_CB, &frontend_clear_thread_waits_cb);
 
    lr_input_init();
-   struct retro_keyboard_callback kb_callback = { &retro_keyboard_event };
+   kb_callback.callback = retro_keyboard_event;
    environ_cb(RETRO_ENVIRONMENT_SET_KEYBOARD_CALLBACK, &kb_callback);
 
    if (environ_cb(RETRO_ENVIRONMENT_GET_INPUT_BITMASKS, NULL))
@@ -440,8 +448,8 @@ void retro_deinit(void)
    first_run = true;
    last_picture_drop();
 
-   //When auto-save states are enabled this is needed to prevent the core from shutting down before
-   //any save state actions are still running - which results in partial saves
+   /* When auto-save states are enabled this is needed to prevent the core from shutting down before */
+   /* any save state actions are still running - which results in partial saves */
 #if !defined(TARGET_NO_THREADS)
    emu_hold();
    emu_release();
@@ -475,13 +483,14 @@ static int gl_ta_possible = -1;
 
 static void set_variable_visibility(void)
 {
-#ifdef HAVE_HDR_OUTPUT
-   hdr_libretro_update_display(environ_cb);
-#endif
    struct retro_core_option_display option_display;
    struct retro_variable var;
    char key[256];
    unsigned i;
+
+#ifdef HAVE_HDR_OUTPUT
+   hdr_libretro_update_display(environ_cb);
+#endif
 
    /* Show/hide NAOMI/Atomiswave options */
    option_display.visible = (SYSTEM_IS_NAOMI() ||
@@ -545,7 +554,7 @@ static void set_variable_visibility(void)
    option_display.key = CORE_OPTION_NAME "_ssaa";
    environ_cb(RETRO_ENVIRONMENT_SET_CORE_OPTIONS_DISPLAY, &option_display);
 
-   // Only if texture upscaling is enabled
+   /* Only if texture upscaling is enabled */
    option_display.visible = settings.rend.TextureUpscale > 1;
    option_display.key = CORE_OPTION_NAME "_texupscale_max_filtered_texture_size";
    environ_cb(RETRO_ENVIRONMENT_SET_CORE_OPTIONS_DISPLAY, &option_display);
@@ -561,10 +570,10 @@ static void set_variable_visibility(void)
    environ_cb(RETRO_ENVIRONMENT_SET_CORE_OPTIONS_DISPLAY, &option_display);
 #endif
 
-   // Only for Vulkan. TODO Unfortunately, at startup the graphic context hasn't been determined yet.
-   //option_display.visible = settings.pvr.rend == 4 || settings.pvr.rend == 5;
-   //option_display.key = CORE_OPTION_NAME "_anisotropic_filtering";
-   //environ_cb(RETRO_ENVIRONMENT_SET_CORE_OPTIONS_DISPLAY, &option_display);
+   /* Only for Vulkan. TODO Unfortunately, at startup the graphic context hasn't been determined yet. */
+   /* option_display.visible = settings.pvr.rend == 4 || settings.pvr.rend == 5; */
+   /* option_display.key = CORE_OPTION_NAME "_anisotropic_filtering"; */
+   /* environ_cb(RETRO_ENVIRONMENT_SET_CORE_OPTIONS_DISPLAY, &option_display); */
 
    /* Show/hide VMU screen options */
    if (settings.System == DC_PLATFORM_DREAMCAST)
@@ -630,7 +639,7 @@ static void set_variable_visibility(void)
    }
 }
 
-// (the TA header pass check: core option reicast_ta_header_check)
+/* (the TA header pass check: core option reicast_ta_header_check) */
 static bool ta_header_check;
 
 static void update_variables(bool first_startup)
@@ -638,9 +647,12 @@ static void update_variables(bool first_startup)
    struct retro_variable var;
    int i ;
    char key[256] ;
+   unsigned previous_per_content_vmus;
+   bool was_wide;
+   int previous_renderer;
 
    var.key = CORE_OPTION_NAME "_per_content_vmus";
-   unsigned previous_per_content_vmus = per_content_vmus;
+   previous_per_content_vmus = per_content_vmus;
    per_content_vmus = 0;
 
    if (environ_cb(RETRO_ENVIRONMENT_GET_VARIABLE, &var) && var.value)
@@ -654,9 +666,9 @@ static void update_variables(bool first_startup)
    if (!first_startup && per_content_vmus != previous_per_content_vmus
    		&& settings.System == DC_PLATFORM_DREAMCAST)
    {
-   	// Recreate the VMUs so that the save location is taken into account.
-   	// Don't do this at startup because we don't know the system type yet
-   	// and the VMUs haven't been created anyway
+	/* Recreate the VMUs so that the save location is taken into account. */
+	/* Don't do this at startup because we don't know the system type yet */
+	/* and the VMUs haven't been created anyway */
    	maple_ReconnectDevices();
    }
 
@@ -665,7 +677,7 @@ static void update_variables(bool first_startup)
    vmu_beep_enabled = environ_cb(RETRO_ENVIRONMENT_GET_VARIABLE, &var) && var.value
          && !strcmp("enabled", var.value);
 
-   const bool was_wide = settings.rend.WideScreen != 0;
+   was_wide = settings.rend.WideScreen != 0;
 
    var.key = CORE_OPTION_NAME "_widescreen_hack";
 
@@ -802,7 +814,7 @@ static void update_variables(bool first_startup)
    }
 
    var.key = CORE_OPTION_NAME "_alpha_sorting";
-   int previous_renderer = settings.pvr.rend;
+   previous_renderer = settings.pvr.rend;
 
    if (environ_cb(RETRO_ENVIRONMENT_GET_VARIABLE, &var) && var.value)
    {
@@ -840,7 +852,7 @@ static void update_variables(bool first_startup)
       		settings.pvr.rend = 7;
       	else if (settings.pvr.rend == 9)
       		settings.pvr.rend = 10;
-         settings.pvr.Emulation.AlphaSortMode = 0;	// Not used
+         settings.pvr.Emulation.AlphaSortMode = 0;	/* Not used */
       }
    }
    else
@@ -1473,7 +1485,7 @@ static void update_av_info_if_changed(void)
  * from the one before it (none kept: the frontend's last) and does not run
  * the machine */
 static bool rend_warming = false;
-// (how many runs it took: said when the game is unloaded)
+/* (how many runs it took: said when the game is unloaded) */
 static unsigned rend_warming_runs = 0;
 /* Whether the machine has run since the context was made: before it has,
  * a renderer made again (the size the frontend's upscaler asks for) is
@@ -1483,17 +1495,17 @@ static bool ran_since_context = false;
 
 static void rend_made_again(void)
 {
-   if (renderer == NULL || renderer->Ready())
+   if (lr_rend_ready())
       return;
    if (ran_since_context)
       rend_warming = true;
    else
    {
 #ifdef HAVE_VULKAN
-      VkPsoWorker::Instance().WaitBatch();
+      lr_vk_wait_pipelines();
 #endif
 #ifdef HAVE_D3D12
-      DX12Context::Instance()->Pipelines().WaitMade();
+      lr_dx12_wait_pipelines();
 #endif
    }
 }
@@ -1530,30 +1542,27 @@ void retro_run (void)
        * again, GPU-side TA processing made or taken down - and not in the
        * frame drawn next. (Not without a renderer: then there is no
        * context either, and the next one sets it up.) */
-      if (renderer != NULL && (settings.pvr.rend == 4 || settings.pvr.rend == 5))
+      if (lr_rend_there() && (settings.pvr.rend == 4 || settings.pvr.rend == 5))
       {
          rend_prepare_renderer();
-         if (renderer != NULL)
-            renderer->OptionsChanged();
+         lr_rend_options_changed();
       }
 #endif
 #if defined(HAVE_D3D11) || defined(HAVE_D3D12)
       /* ...and so with Direct3D 12 and 11 */
-      if (renderer != NULL && (settings.pvr.rend == 9 || settings.pvr.rend == 10 || settings.pvr.rend == 6 || settings.pvr.rend == 7))
+      if (lr_rend_there() && (settings.pvr.rend == 9 || settings.pvr.rend == 10 || settings.pvr.rend == 6 || settings.pvr.rend == 7))
       {
          rend_prepare_renderer();
-         if (renderer != NULL)
-            renderer->OptionsChanged();
+         lr_rend_options_changed();
       }
 #endif
 #ifdef HAVE_GL4
       /* ...and so with OpenGL, its state bound for it */
-      if (renderer != NULL && (settings.pvr.rend == 0 || settings.pvr.rend == 3))
+      if (lr_rend_there() && (settings.pvr.rend == 0 || settings.pvr.rend == 3))
       {
          glsm_ctl(GLSM_CTL_STATE_BIND, NULL);
          rend_prepare_renderer();
-         if (renderer != NULL)
-            renderer->OptionsChanged();
+         lr_rend_options_changed();
          glsm_ctl(GLSM_CTL_STATE_UNBIND, NULL);
       }
 #endif
@@ -1572,7 +1581,7 @@ void retro_run (void)
    {
       apply_new_size();
 #if defined(HAVE_VULKAN) || defined(HAVE_D3D12)
-      // (SSAA taken up or let go, another size: the renderer made again)
+      /* (SSAA taken up or let go, another size: the renderer made again) */
       rend_made_again();
 #endif
    }
@@ -1582,7 +1591,7 @@ void retro_run (void)
    if (devices_need_refresh)
       refresh_devices(false);
 #if defined(HAVE_VULKAN) || defined(HAVE_D3D12)
-   if (rend_warming && renderer != NULL && !renderer->Ready())
+   if (rend_warming && lr_rend_there() && !lr_rend_ready())
    {
       /* the kept picture handed over once, then repeated (none: the
        * frontend's last frame) */
@@ -1630,7 +1639,7 @@ void retro_run (void)
 
       emu_hold();
       rtt_watch_frame();
-      // On the first call, we start the emulator thread
+      /* On the first call, we start the emulator thread */
       if (first_run)
       {
          emu_thread = sthread_create(emu_thread_entry, NULL);
@@ -1698,18 +1707,18 @@ void retro_run (void)
 #ifdef HAVE_D3D11
    /* the frame is handed to the frontend as the Direct3D interface has it */
    if (!is_dupe && (settings.pvr.rend == 6 || settings.pvr.rend == 7))
-      DX11Context::Instance()->Present();
+      lr_dx11_present();
 #endif
 #ifdef HAVE_D3D9
    /* the frame handed over to the frontend, as the Direct3D 9 interface
     * has it; with none (no render to the screen) the last one is shown */
-   if (!is_dupe && settings.pvr.rend == 8 && !DX9Context::Instance()->Present())
+   if (!is_dupe && settings.pvr.rend == 8 && !lr_dx9_present())
       is_dupe = true;
 #endif
 #ifdef HAVE_D3D12
    /* the frame is handed to the frontend as the Direct3D 12 interface has it */
    if (!is_dupe && (settings.pvr.rend == 9 || settings.pvr.rend == 10))
-      DX12Context::Instance()->Present();
+      lr_dx12_present();
 #endif
 #ifdef HAVE_VULKAN
    /* (a run just after a change of renderer that drew nothing new) */
@@ -1761,7 +1770,7 @@ static void context_reset(void)
     * made with it, when that is on. The machine is not running here. */
    glsm_ctl(GLSM_CTL_STATE_BIND, NULL);
    rend_prepare_renderer();
-   gl_ta_possible = GlTaDecoder::ContextCanDo() ? 1 : 0;
+   gl_ta_possible = lr_gl_ta_context_can_do() ? 1 : 0;
    glsm_ctl(GLSM_CTL_STATE_UNBIND, NULL);
    set_variable_visibility();
 #endif
@@ -1793,12 +1802,14 @@ static void context_destroy(void)
 
 static void extract_directory(char *buf, const char *path, size_t size)
 {
+   char *base;
+
    strncpy(buf, path, size - 1);
    buf[size - 1] = '\0';
 
    /* The last separator of either kind, where there are two kinds: a path
     * that has both ("C:\roms/naomi\game.zip") was cut at its last "/". */
-   char *base = find_last_slash(buf);
+   base = find_last_slash(buf);
 
    if (base)
       *base = '\0';
@@ -1810,12 +1821,14 @@ static void extract_directory(char *buf, const char *path, size_t size)
 
 static const char *get_button_name(unsigned device, unsigned id, const char *default_name)
 {
+   uint32_t mask;
+   int i;
    if (naomi_game_inputs == NULL)
 	  return default_name;
-   uint32_t mask = map_gamepad_button(device, id);
+   mask = map_gamepad_button(device, id);
    if (mask == 0)
 	  return NULL;
-   for (int i = 0; naomi_game_inputs->buttons[i].mask != 0; i++)
+   for (i = 0; naomi_game_inputs->buttons[i].mask != 0; i++)
 	  if (naomi_game_inputs->buttons[i].mask == mask)
 		 return naomi_game_inputs->buttons[i].name;
    return NULL;
@@ -1823,127 +1836,142 @@ static const char *get_button_name(unsigned device, unsigned id, const char *def
 
 static const char *get_axis_name(unsigned index, const char *default_name)
 {
+   int i;
    if (naomi_game_inputs == NULL)
 	  return default_name;
-   for (int i = 0; naomi_game_inputs->axes[i].name != NULL; i++)
+   for (i = 0; naomi_game_inputs->axes[i].name != NULL; i++)
 	  if (naomi_game_inputs->axes[i].axis == index)
 		 return naomi_game_inputs->axes[i].name;
    return NULL;
 }
 
-static void set_input_descriptors()
+/* A port's button, stick or trigger named for the frontend */
+static void set_desc(struct retro_input_descriptor *d, unsigned port, unsigned device,
+      unsigned index, unsigned id, const char *description)
+{
+   d->port        = port;
+   d->device      = device;
+   d->index       = index;
+   d->id          = id;
+   d->description = description;
+}
+
+static void set_input_descriptors(void)
 {
    struct retro_input_descriptor desc[22 * 4 + 1];
    int descriptor_index = 0;
+   unsigned i;
    if (SYSTEM_IS_NAOMI() || settings.System == DC_PLATFORM_ATOMISWAVE)
    {
 	  const char *name;
 
-      for (unsigned i = 0; i < MAPLE_PORTS; i++)
+      for (i = 0; i < MAPLE_PORTS; i++)
       {
     	 switch (maple_devices[i])
     	 {
     	 case MDT_LightGun:
     		name = get_button_name(RETRO_DEVICE_LIGHTGUN, RETRO_DEVICE_ID_LIGHTGUN_DPAD_LEFT, "D-Pad Left");
     		if (name != NULL)
-    		   desc[descriptor_index++] = { i, RETRO_DEVICE_LIGHTGUN, 0, RETRO_DEVICE_ID_LIGHTGUN_DPAD_LEFT, name };
+		   set_desc(&desc[descriptor_index++], i, RETRO_DEVICE_LIGHTGUN, 0, RETRO_DEVICE_ID_LIGHTGUN_DPAD_LEFT, name);
     		name = get_button_name(RETRO_DEVICE_LIGHTGUN, RETRO_DEVICE_ID_LIGHTGUN_DPAD_UP, "D-Pad Up");
     		if (name != NULL)
-    		   desc[descriptor_index++] = { i, RETRO_DEVICE_LIGHTGUN, 0, RETRO_DEVICE_ID_LIGHTGUN_DPAD_UP, name };
+		   set_desc(&desc[descriptor_index++], i, RETRO_DEVICE_LIGHTGUN, 0, RETRO_DEVICE_ID_LIGHTGUN_DPAD_UP, name);
     		name = get_button_name(RETRO_DEVICE_LIGHTGUN, RETRO_DEVICE_ID_LIGHTGUN_DPAD_DOWN, "D-Pad Down");
     		if (name != NULL)
-    		   desc[descriptor_index++] = { i, RETRO_DEVICE_LIGHTGUN, 0, RETRO_DEVICE_ID_LIGHTGUN_DPAD_DOWN, name };
+		   set_desc(&desc[descriptor_index++], i, RETRO_DEVICE_LIGHTGUN, 0, RETRO_DEVICE_ID_LIGHTGUN_DPAD_DOWN, name);
     		name = get_button_name(RETRO_DEVICE_LIGHTGUN, RETRO_DEVICE_ID_LIGHTGUN_DPAD_RIGHT, "D-Pad Right") ;
     		if (name != NULL)
-    		   desc[descriptor_index++] = { i, RETRO_DEVICE_LIGHTGUN, 0, RETRO_DEVICE_ID_LIGHTGUN_DPAD_RIGHT, name };
+		   set_desc(&desc[descriptor_index++], i, RETRO_DEVICE_LIGHTGUN, 0, RETRO_DEVICE_ID_LIGHTGUN_DPAD_RIGHT, name);
     		name = get_button_name(RETRO_DEVICE_LIGHTGUN, RETRO_DEVICE_ID_LIGHTGUN_TRIGGER, "Trigger");
     		if (name != NULL)
-    		   desc[descriptor_index++] = { i, RETRO_DEVICE_LIGHTGUN, 0, RETRO_DEVICE_ID_LIGHTGUN_TRIGGER, name };
+		   set_desc(&desc[descriptor_index++], i, RETRO_DEVICE_LIGHTGUN, 0, RETRO_DEVICE_ID_LIGHTGUN_TRIGGER, name);
     		name = get_button_name(RETRO_DEVICE_LIGHTGUN, RETRO_DEVICE_ID_LIGHTGUN_AUX_A, "Button 1");
     		if (name != NULL)
-    		   desc[descriptor_index++] = { i, RETRO_DEVICE_LIGHTGUN, 0, RETRO_DEVICE_ID_LIGHTGUN_AUX_A, name };
+		   set_desc(&desc[descriptor_index++], i, RETRO_DEVICE_LIGHTGUN, 0, RETRO_DEVICE_ID_LIGHTGUN_AUX_A, name);
     		name = get_button_name(RETRO_DEVICE_LIGHTGUN, RETRO_DEVICE_ID_LIGHTGUN_AUX_B, "Button 2");
     		if (name != NULL)
-    		   desc[descriptor_index++] = { i, RETRO_DEVICE_LIGHTGUN, 0, RETRO_DEVICE_ID_LIGHTGUN_AUX_B, name };
+		   set_desc(&desc[descriptor_index++], i, RETRO_DEVICE_LIGHTGUN, 0, RETRO_DEVICE_ID_LIGHTGUN_AUX_B, name);
     		name = get_button_name(RETRO_DEVICE_LIGHTGUN, RETRO_DEVICE_ID_LIGHTGUN_AUX_C, "Button 3");
     		if (name != NULL)
-    		   desc[descriptor_index++] = { i, RETRO_DEVICE_LIGHTGUN, 0, RETRO_DEVICE_ID_LIGHTGUN_AUX_C, name };
-    		desc[descriptor_index++] = { i, RETRO_DEVICE_LIGHTGUN, 0, RETRO_DEVICE_ID_LIGHTGUN_RELOAD, "Reload" };
+		   set_desc(&desc[descriptor_index++], i, RETRO_DEVICE_LIGHTGUN, 0, RETRO_DEVICE_ID_LIGHTGUN_AUX_C, name);
+		set_desc(&desc[descriptor_index++], i, RETRO_DEVICE_LIGHTGUN, 0, RETRO_DEVICE_ID_LIGHTGUN_RELOAD, "Reload");
     		name = get_button_name(RETRO_DEVICE_LIGHTGUN, RETRO_DEVICE_ID_LIGHTGUN_SELECT, "Coin");
     		if (name != NULL)
-    		   desc[descriptor_index++] = { i, RETRO_DEVICE_LIGHTGUN, 0, RETRO_DEVICE_ID_LIGHTGUN_SELECT, name };
+		   set_desc(&desc[descriptor_index++], i, RETRO_DEVICE_LIGHTGUN, 0, RETRO_DEVICE_ID_LIGHTGUN_SELECT, name);
     		name = get_button_name(RETRO_DEVICE_LIGHTGUN, RETRO_DEVICE_ID_LIGHTGUN_START, "Start");
     		if (name != NULL)
-    		   desc[descriptor_index++] = { i, RETRO_DEVICE_LIGHTGUN, 0, RETRO_DEVICE_ID_LIGHTGUN_START, name };
+		   set_desc(&desc[descriptor_index++], i, RETRO_DEVICE_LIGHTGUN, 0, RETRO_DEVICE_ID_LIGHTGUN_START, name);
     		break;
 
     	 case MDT_SegaController:
     		name = get_button_name(RETRO_DEVICE_JOYPAD, RETRO_DEVICE_ID_JOYPAD_LEFT, "D-Pad Left");
     		if (name != NULL)
-    		   desc[descriptor_index++] = { i, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_LEFT, name };
+		   set_desc(&desc[descriptor_index++], i, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_LEFT, name);
     		name = get_button_name(RETRO_DEVICE_JOYPAD, RETRO_DEVICE_ID_JOYPAD_UP, "D-Pad Up");
     		if (name != NULL)
-    		   desc[descriptor_index++] = { i, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_UP, name };
+		   set_desc(&desc[descriptor_index++], i, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_UP, name);
     		name = get_button_name(RETRO_DEVICE_JOYPAD, RETRO_DEVICE_ID_JOYPAD_DOWN, "D-Pad Down");
     		if (name != NULL)
-    		   desc[descriptor_index++] = { i, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_DOWN,  name };
+		   set_desc(&desc[descriptor_index++], i, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_DOWN,  name);
     		name = get_button_name(RETRO_DEVICE_JOYPAD, RETRO_DEVICE_ID_JOYPAD_RIGHT, "D-Pad Right");
     		if (name != NULL)
-    		   desc[descriptor_index++] = { i, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_RIGHT, name };
+		   set_desc(&desc[descriptor_index++], i, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_RIGHT, name);
     		name = get_button_name(RETRO_DEVICE_JOYPAD, RETRO_DEVICE_ID_JOYPAD_B, "Button 1");
     		if (name != NULL)
-    		   desc[descriptor_index++] = { i, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_B, name };
+		   set_desc(&desc[descriptor_index++], i, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_B, name);
     		name = get_button_name(RETRO_DEVICE_JOYPAD, RETRO_DEVICE_ID_JOYPAD_A, "Button 2");
     		if (name != NULL)
-    		   desc[descriptor_index++] = { i, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_A, name };
+		   set_desc(&desc[descriptor_index++], i, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_A, name);
     		name = get_button_name(RETRO_DEVICE_JOYPAD, RETRO_DEVICE_ID_JOYPAD_Y, "Button 3");
     		if (name != NULL)
-    		   desc[descriptor_index++] = { i, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_Y, name };
+		   set_desc(&desc[descriptor_index++], i, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_Y, name);
     		name = get_button_name(RETRO_DEVICE_JOYPAD, RETRO_DEVICE_ID_JOYPAD_X, "Button 4");
     		if (name != NULL)
-    		   desc[descriptor_index++] = { i, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_X, name };
+		   set_desc(&desc[descriptor_index++], i, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_X, name);
     		name = get_button_name(RETRO_DEVICE_JOYPAD, RETRO_DEVICE_ID_JOYPAD_R, "Button 5");
     		if (name != NULL)
-    		   desc[descriptor_index++] = { i, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_R, name };
+		   set_desc(&desc[descriptor_index++], i, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_R, name);
 		name = naomi_card_button ? "Insert Card" : get_button_name(RETRO_DEVICE_JOYPAD, RETRO_DEVICE_ID_JOYPAD_L, "Button 6");
     		if (name != NULL)
-    		   desc[descriptor_index++] = { i, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_L, name };
+		   set_desc(&desc[descriptor_index++], i, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_L, name);
     		name = get_button_name(RETRO_DEVICE_JOYPAD, RETRO_DEVICE_ID_JOYPAD_R2, "Button 7");
     		if (name != NULL)
-    		   desc[descriptor_index++] = { i, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_R2, name };
+		   set_desc(&desc[descriptor_index++], i, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_R2, name);
     		name = get_button_name(RETRO_DEVICE_JOYPAD, RETRO_DEVICE_ID_JOYPAD_L2, "Button 8");
     		if (name != NULL)
-    		   desc[descriptor_index++] = { i, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_L2, name };
+		   set_desc(&desc[descriptor_index++], i, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_L2, name);
     		name = get_button_name(RETRO_DEVICE_JOYPAD, RETRO_DEVICE_ID_JOYPAD_START, "Start");
     		if (name != NULL)
-    		   desc[descriptor_index++] = { i, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_START, name };
+		   set_desc(&desc[descriptor_index++], i, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_START, name);
     		name = get_button_name(RETRO_DEVICE_JOYPAD, RETRO_DEVICE_ID_JOYPAD_SELECT, "Coin");
     		if (name != NULL)
-    		   desc[descriptor_index++] = { i, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_SELECT, name };
+		   set_desc(&desc[descriptor_index++], i, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_SELECT, name);
     		name = get_button_name(RETRO_DEVICE_JOYPAD, RETRO_DEVICE_ID_JOYPAD_L3, "Test");
     		if (name != NULL)
-    		   desc[descriptor_index++] = { i, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_L3, name };
+		   set_desc(&desc[descriptor_index++], i, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_L3, name);
     		name = get_button_name(RETRO_DEVICE_JOYPAD, RETRO_DEVICE_ID_JOYPAD_R3, "Service");
     		if (name != NULL)
-    		   desc[descriptor_index++] = { i, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_R3, name };
+		   set_desc(&desc[descriptor_index++], i, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_R3, name);
     		name = get_axis_name(0, "Axis 1");
     		if (name != NULL && name[0] != '\0')
-    		   desc[descriptor_index++] = { i, RETRO_DEVICE_ANALOG, RETRO_DEVICE_INDEX_ANALOG_LEFT, RETRO_DEVICE_ID_ANALOG_X, name };
+		   set_desc(&desc[descriptor_index++], i, RETRO_DEVICE_ANALOG, RETRO_DEVICE_INDEX_ANALOG_LEFT, RETRO_DEVICE_ID_ANALOG_X, name);
     		name = get_axis_name(1, "Axis 2");
     		if (name != NULL && name[0] != '\0')
-    		   desc[descriptor_index++] = { i, RETRO_DEVICE_ANALOG, RETRO_DEVICE_INDEX_ANALOG_LEFT, RETRO_DEVICE_ID_ANALOG_Y, name };
+		   set_desc(&desc[descriptor_index++], i, RETRO_DEVICE_ANALOG, RETRO_DEVICE_INDEX_ANALOG_LEFT, RETRO_DEVICE_ID_ANALOG_Y, name);
     		name = get_axis_name(2, "Axis 3");
     		if (name != NULL && name[0] != '\0')
-    		   desc[descriptor_index++] = { i, RETRO_DEVICE_ANALOG, RETRO_DEVICE_INDEX_ANALOG_RIGHT, RETRO_DEVICE_ID_ANALOG_X, name };
+		   set_desc(&desc[descriptor_index++], i, RETRO_DEVICE_ANALOG, RETRO_DEVICE_INDEX_ANALOG_RIGHT, RETRO_DEVICE_ID_ANALOG_X, name);
     		name = get_axis_name(3, "Axis 4");
     		if (name != NULL && name[0] != '\0')
-    		   desc[descriptor_index++] = { i, RETRO_DEVICE_ANALOG, RETRO_DEVICE_INDEX_ANALOG_RIGHT, RETRO_DEVICE_ID_ANALOG_Y, name };
+		   set_desc(&desc[descriptor_index++], i, RETRO_DEVICE_ANALOG, RETRO_DEVICE_INDEX_ANALOG_RIGHT, RETRO_DEVICE_ID_ANALOG_Y, name);
     		name = get_axis_name(4, NULL);
     		if (name != NULL && name[0] != '\0')
-    		   desc[descriptor_index++] = { i, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_R2, name };
+		   set_desc(&desc[descriptor_index++], i, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_R2, name);
     		name = get_axis_name(5, NULL);
     		if (name != NULL && name[0] != '\0')
-    		   desc[descriptor_index++] = { i, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_L2, name };
+		   set_desc(&desc[descriptor_index++], i, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_L2, name);
+		break;
+	 default:
     		break;
     	 }
   	 
@@ -1951,70 +1979,72 @@ static void set_input_descriptors()
    }
    else
    {
-      for (unsigned i = 0; i < MAPLE_PORTS; i++)
+      for (i = 0; i < MAPLE_PORTS; i++)
       {
     	 switch (maple_devices[i])
     	 {
     	 case MDT_SegaController:
-    		desc[descriptor_index++] = { i, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_LEFT,  "D-Pad Left" };
-    		desc[descriptor_index++] = { i, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_UP,    "D-Pad Up" };
-    		desc[descriptor_index++] = { i, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_DOWN,  "D-Pad Down" };
-    		desc[descriptor_index++] = { i, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_RIGHT, "D-Pad Right" };
-    		desc[descriptor_index++] = { i, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_B,     "A" };
-    		desc[descriptor_index++] = { i, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_A,     "B" };
-    		desc[descriptor_index++] = { i, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_X,     "Y" };
-    		desc[descriptor_index++] = { i, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_Y,     "X" };
-    		desc[descriptor_index++] = { i, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_L2,    "L Trigger" };
-    		desc[descriptor_index++] = { i, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_R2,    "R Trigger" };
-    		desc[descriptor_index++] = { i, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_START,    "Start" };
-    		desc[descriptor_index++] = { i, RETRO_DEVICE_ANALOG, RETRO_DEVICE_INDEX_ANALOG_LEFT, RETRO_DEVICE_ID_ANALOG_X, "Analog X" };
-    		desc[descriptor_index++] = { i, RETRO_DEVICE_ANALOG, RETRO_DEVICE_INDEX_ANALOG_LEFT, RETRO_DEVICE_ID_ANALOG_Y, "Analog Y" };
+		set_desc(&desc[descriptor_index++], i, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_LEFT,  "D-Pad Left");
+		set_desc(&desc[descriptor_index++], i, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_UP,    "D-Pad Up");
+		set_desc(&desc[descriptor_index++], i, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_DOWN,  "D-Pad Down");
+		set_desc(&desc[descriptor_index++], i, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_RIGHT, "D-Pad Right");
+		set_desc(&desc[descriptor_index++], i, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_B,     "A");
+		set_desc(&desc[descriptor_index++], i, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_A,     "B");
+		set_desc(&desc[descriptor_index++], i, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_X,     "Y");
+		set_desc(&desc[descriptor_index++], i, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_Y,     "X");
+		set_desc(&desc[descriptor_index++], i, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_L2,    "L Trigger");
+		set_desc(&desc[descriptor_index++], i, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_R2,    "R Trigger");
+		set_desc(&desc[descriptor_index++], i, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_START,    "Start");
+		set_desc(&desc[descriptor_index++], i, RETRO_DEVICE_ANALOG, RETRO_DEVICE_INDEX_ANALOG_LEFT, RETRO_DEVICE_ID_ANALOG_X, "Analog X");
+		set_desc(&desc[descriptor_index++], i, RETRO_DEVICE_ANALOG, RETRO_DEVICE_INDEX_ANALOG_LEFT, RETRO_DEVICE_ID_ANALOG_Y, "Analog Y");
     		break;
  
  		case MDT_TwinStick:
-    		desc[descriptor_index++] = { i, RETRO_DEVICE_TWINSTICK, 0, RETRO_DEVICE_ID_JOYPAD_LEFT,  "L-Stick Left" };
-    		desc[descriptor_index++] = { i, RETRO_DEVICE_TWINSTICK, 0, RETRO_DEVICE_ID_JOYPAD_UP,    "L-Stick Up" };
-    		desc[descriptor_index++] = { i, RETRO_DEVICE_TWINSTICK, 0, RETRO_DEVICE_ID_JOYPAD_DOWN,  "L-Stick Down" };
-    		desc[descriptor_index++] = { i, RETRO_DEVICE_TWINSTICK, 0, RETRO_DEVICE_ID_JOYPAD_RIGHT, "L-Stick Right" };
-    		desc[descriptor_index++] = { i, RETRO_DEVICE_TWINSTICK, 0, RETRO_DEVICE_ID_JOYPAD_B,     "R-Stick Down" };
-    		desc[descriptor_index++] = { i, RETRO_DEVICE_TWINSTICK, 0, RETRO_DEVICE_ID_JOYPAD_A,     "R-Stick Right" };
-    		desc[descriptor_index++] = { i, RETRO_DEVICE_TWINSTICK, 0, RETRO_DEVICE_ID_JOYPAD_X,     "R-Stick Up" };
-    		desc[descriptor_index++] = { i, RETRO_DEVICE_TWINSTICK, 0, RETRO_DEVICE_ID_JOYPAD_Y,     "R-Stick Left" };
-    		desc[descriptor_index++] = { i, RETRO_DEVICE_TWINSTICK, 0, RETRO_DEVICE_ID_JOYPAD_L,    "L Turbo" };
-    		desc[descriptor_index++] = { i, RETRO_DEVICE_TWINSTICK, 0, RETRO_DEVICE_ID_JOYPAD_R,    "R Turbo" };
-    		desc[descriptor_index++] = { i, RETRO_DEVICE_TWINSTICK, 0, RETRO_DEVICE_ID_JOYPAD_L2,    "L Trigger" };
-    		desc[descriptor_index++] = { i, RETRO_DEVICE_TWINSTICK, 0, RETRO_DEVICE_ID_JOYPAD_R2,    "R Trigger" };
-    		desc[descriptor_index++] = { i, RETRO_DEVICE_TWINSTICK, 0, RETRO_DEVICE_ID_JOYPAD_START,    "Start" };
-    		desc[descriptor_index++] = { i, RETRO_DEVICE_TWINSTICK, 0, RETRO_DEVICE_ID_JOYPAD_SELECT,    "Special" };
+		set_desc(&desc[descriptor_index++], i, RETRO_DEVICE_TWINSTICK, 0, RETRO_DEVICE_ID_JOYPAD_LEFT,  "L-Stick Left");
+		set_desc(&desc[descriptor_index++], i, RETRO_DEVICE_TWINSTICK, 0, RETRO_DEVICE_ID_JOYPAD_UP,    "L-Stick Up");
+		set_desc(&desc[descriptor_index++], i, RETRO_DEVICE_TWINSTICK, 0, RETRO_DEVICE_ID_JOYPAD_DOWN,  "L-Stick Down");
+		set_desc(&desc[descriptor_index++], i, RETRO_DEVICE_TWINSTICK, 0, RETRO_DEVICE_ID_JOYPAD_RIGHT, "L-Stick Right");
+		set_desc(&desc[descriptor_index++], i, RETRO_DEVICE_TWINSTICK, 0, RETRO_DEVICE_ID_JOYPAD_B,     "R-Stick Down");
+		set_desc(&desc[descriptor_index++], i, RETRO_DEVICE_TWINSTICK, 0, RETRO_DEVICE_ID_JOYPAD_A,     "R-Stick Right");
+		set_desc(&desc[descriptor_index++], i, RETRO_DEVICE_TWINSTICK, 0, RETRO_DEVICE_ID_JOYPAD_X,     "R-Stick Up");
+		set_desc(&desc[descriptor_index++], i, RETRO_DEVICE_TWINSTICK, 0, RETRO_DEVICE_ID_JOYPAD_Y,     "R-Stick Left");
+		set_desc(&desc[descriptor_index++], i, RETRO_DEVICE_TWINSTICK, 0, RETRO_DEVICE_ID_JOYPAD_L,    "L Turbo");
+		set_desc(&desc[descriptor_index++], i, RETRO_DEVICE_TWINSTICK, 0, RETRO_DEVICE_ID_JOYPAD_R,    "R Turbo");
+		set_desc(&desc[descriptor_index++], i, RETRO_DEVICE_TWINSTICK, 0, RETRO_DEVICE_ID_JOYPAD_L2,    "L Trigger");
+		set_desc(&desc[descriptor_index++], i, RETRO_DEVICE_TWINSTICK, 0, RETRO_DEVICE_ID_JOYPAD_R2,    "R Trigger");
+		set_desc(&desc[descriptor_index++], i, RETRO_DEVICE_TWINSTICK, 0, RETRO_DEVICE_ID_JOYPAD_START,    "Start");
+		set_desc(&desc[descriptor_index++], i, RETRO_DEVICE_TWINSTICK, 0, RETRO_DEVICE_ID_JOYPAD_SELECT,    "Special");
     		break;
  
  		case MDT_AsciiStick:
-    		desc[descriptor_index++] = { i, RETRO_DEVICE_TWINSTICK, 0, RETRO_DEVICE_ID_JOYPAD_LEFT,  "Stick Left" };
-    		desc[descriptor_index++] = { i, RETRO_DEVICE_TWINSTICK, 0, RETRO_DEVICE_ID_JOYPAD_UP,    "Stick Up" };
-    		desc[descriptor_index++] = { i, RETRO_DEVICE_TWINSTICK, 0, RETRO_DEVICE_ID_JOYPAD_DOWN,  "Stick Down" };
-    		desc[descriptor_index++] = { i, RETRO_DEVICE_TWINSTICK, 0, RETRO_DEVICE_ID_JOYPAD_RIGHT, "Stick Right" };
-    		desc[descriptor_index++] = { i, RETRO_DEVICE_TWINSTICK, 0, RETRO_DEVICE_ID_JOYPAD_B,     "A" };
-    		desc[descriptor_index++] = { i, RETRO_DEVICE_TWINSTICK, 0, RETRO_DEVICE_ID_JOYPAD_A,     "B" };
-    		desc[descriptor_index++] = { i, RETRO_DEVICE_TWINSTICK, 0, RETRO_DEVICE_ID_JOYPAD_X,     "Y" };
-    		desc[descriptor_index++] = { i, RETRO_DEVICE_TWINSTICK, 0, RETRO_DEVICE_ID_JOYPAD_Y,     "X" };
-    		desc[descriptor_index++] = { i, RETRO_DEVICE_TWINSTICK, 0, RETRO_DEVICE_ID_JOYPAD_L,    "C" };
-    		desc[descriptor_index++] = { i, RETRO_DEVICE_TWINSTICK, 0, RETRO_DEVICE_ID_JOYPAD_R,    "Z" };
-    		desc[descriptor_index++] = { i, RETRO_DEVICE_TWINSTICK, 0, RETRO_DEVICE_ID_JOYPAD_START,    "Start" };
+		set_desc(&desc[descriptor_index++], i, RETRO_DEVICE_TWINSTICK, 0, RETRO_DEVICE_ID_JOYPAD_LEFT,  "Stick Left");
+		set_desc(&desc[descriptor_index++], i, RETRO_DEVICE_TWINSTICK, 0, RETRO_DEVICE_ID_JOYPAD_UP,    "Stick Up");
+		set_desc(&desc[descriptor_index++], i, RETRO_DEVICE_TWINSTICK, 0, RETRO_DEVICE_ID_JOYPAD_DOWN,  "Stick Down");
+		set_desc(&desc[descriptor_index++], i, RETRO_DEVICE_TWINSTICK, 0, RETRO_DEVICE_ID_JOYPAD_RIGHT, "Stick Right");
+		set_desc(&desc[descriptor_index++], i, RETRO_DEVICE_TWINSTICK, 0, RETRO_DEVICE_ID_JOYPAD_B,     "A");
+		set_desc(&desc[descriptor_index++], i, RETRO_DEVICE_TWINSTICK, 0, RETRO_DEVICE_ID_JOYPAD_A,     "B");
+		set_desc(&desc[descriptor_index++], i, RETRO_DEVICE_TWINSTICK, 0, RETRO_DEVICE_ID_JOYPAD_X,     "Y");
+		set_desc(&desc[descriptor_index++], i, RETRO_DEVICE_TWINSTICK, 0, RETRO_DEVICE_ID_JOYPAD_Y,     "X");
+		set_desc(&desc[descriptor_index++], i, RETRO_DEVICE_TWINSTICK, 0, RETRO_DEVICE_ID_JOYPAD_L,    "C");
+		set_desc(&desc[descriptor_index++], i, RETRO_DEVICE_TWINSTICK, 0, RETRO_DEVICE_ID_JOYPAD_R,    "Z");
+		set_desc(&desc[descriptor_index++], i, RETRO_DEVICE_TWINSTICK, 0, RETRO_DEVICE_ID_JOYPAD_START,    "Start");
     		break;
 
     	 case MDT_LightGun:
-    		desc[descriptor_index++] = { i, RETRO_DEVICE_LIGHTGUN, 0, RETRO_DEVICE_ID_LIGHTGUN_DPAD_LEFT,  "D-Pad Left" };
-    		desc[descriptor_index++] = { i, RETRO_DEVICE_LIGHTGUN, 0, RETRO_DEVICE_ID_LIGHTGUN_DPAD_UP,    "D-Pad Up" };
-    		desc[descriptor_index++] = { i, RETRO_DEVICE_LIGHTGUN, 0, RETRO_DEVICE_ID_LIGHTGUN_DPAD_DOWN,  "D-Pad Down" };
-    		desc[descriptor_index++] = { i, RETRO_DEVICE_LIGHTGUN, 0, RETRO_DEVICE_ID_LIGHTGUN_DPAD_RIGHT, "D-Pad Right" };
-    		desc[descriptor_index++] = { i, RETRO_DEVICE_LIGHTGUN, 0, RETRO_DEVICE_ID_LIGHTGUN_TRIGGER,	   "A" };
-    		desc[descriptor_index++] = { i, RETRO_DEVICE_LIGHTGUN, 0, RETRO_DEVICE_ID_LIGHTGUN_START,      "Start" };
-    		desc[descriptor_index++] = { i, RETRO_DEVICE_LIGHTGUN, 0, RETRO_DEVICE_ID_LIGHTGUN_AUX_A,      "B" };
+		set_desc(&desc[descriptor_index++], i, RETRO_DEVICE_LIGHTGUN, 0, RETRO_DEVICE_ID_LIGHTGUN_DPAD_LEFT,  "D-Pad Left");
+		set_desc(&desc[descriptor_index++], i, RETRO_DEVICE_LIGHTGUN, 0, RETRO_DEVICE_ID_LIGHTGUN_DPAD_UP,    "D-Pad Up");
+		set_desc(&desc[descriptor_index++], i, RETRO_DEVICE_LIGHTGUN, 0, RETRO_DEVICE_ID_LIGHTGUN_DPAD_DOWN,  "D-Pad Down");
+		set_desc(&desc[descriptor_index++], i, RETRO_DEVICE_LIGHTGUN, 0, RETRO_DEVICE_ID_LIGHTGUN_DPAD_RIGHT, "D-Pad Right");
+		set_desc(&desc[descriptor_index++], i, RETRO_DEVICE_LIGHTGUN, 0, RETRO_DEVICE_ID_LIGHTGUN_TRIGGER,	   "A");
+		set_desc(&desc[descriptor_index++], i, RETRO_DEVICE_LIGHTGUN, 0, RETRO_DEVICE_ID_LIGHTGUN_START,      "Start");
+		set_desc(&desc[descriptor_index++], i, RETRO_DEVICE_LIGHTGUN, 0, RETRO_DEVICE_ID_LIGHTGUN_AUX_A,      "B");
+		break;
+	 default:
     		break;
     	 }
       }
    }
-   desc[descriptor_index++] = { 0 };
+   memset(&desc[descriptor_index++], 0, sizeof(desc[0]));
 
    environ_cb(RETRO_ENVIRONMENT_SET_INPUT_DESCRIPTORS, desc);
 }
@@ -2066,10 +2096,6 @@ static void upscaler_announce(void)
 }
 #endif
 
-#ifdef HAVE_VULKAN
-static VulkanContext theVulkanContext;
-#endif
-
 static void frame_size(unsigned *w, unsigned *h)
 {
    *w = screen_width;
@@ -2080,10 +2106,10 @@ static void frame_size(unsigned *w, unsigned *h)
     * its own size: the frontend is told that size, the image's, and reads
     * no further than it. The drawn frames are the screen's size. */
    if ((settings.pvr.rend == 4 || settings.pvr.rend == 5)
-         && theVulkanContext.PresentedWidth() != 0)
+         && lr_vk_presented_width() != 0)
    {
-      *w = theVulkanContext.PresentedWidth();
-      *h = theVulkanContext.PresentedHeight();
+      *w = lr_vk_presented_width();
+      *h = lr_vk_presented_height();
    }
 #endif
 }
@@ -2092,7 +2118,7 @@ static void frame_size(unsigned *w, unsigned *h)
 
 static void retro_vk_context_reset()
 {
-   retro_hw_render_interface* vulkan;
+   struct retro_hw_render_interface *vulkan;
    if (!environ_cb(RETRO_ENVIRONMENT_GET_HW_RENDER_INTERFACE, (void**)&vulkan) || !vulkan)
    {
    	ERROR_LOG(RENDERER, "Get Vulkan HW interface failed\n");
@@ -2100,8 +2126,8 @@ static void retro_vk_context_reset()
    }
    context_resets++;
    take_pending_size();
-   theVulkanContext.SetWindowSize(screen_width, screen_height);
-   if (!theVulkanContext.Init((retro_hw_render_interface_vulkan *)vulkan))
+   lr_vk_set_window_size(screen_width, screen_height);
+   if (!lr_vk_init(vulkan))
       return;
    /* The frontend's temporal upscaler, where it has one for this context
     * (rend/upscaler.h): the Vulkan renderers draw for it */
@@ -2125,7 +2151,7 @@ static void retro_vk_context_reset()
    rend_prepare_renderer();
    /* (and its fixed pipelines made before its first frame, which then
     * never makes or waits for one: AGENTS.md) */
-   VkPsoWorker::Instance().WaitBatch();
+   lr_vk_wait_pipelines();
    ran_since_context = false;
 }
 
@@ -2137,12 +2163,13 @@ static void retro_vk_context_destroy()
 	rend_term_renderer();
 	renderer_changed = true;
 	upscaler_set_interface(NULL);
-	theVulkanContext.Term();
+	lr_vk_term();
 }
 
-static bool set_vulkan_hw_render()
+static bool set_vulkan_hw_render(void)
 {
-	retro_hw_render_callback hw_render;
+	struct retro_hw_render_callback hw_render;
+	struct retro_hw_render_context_negotiation_interface negotiation_support;
 	/* All of it, not only the fields set below. cache_context was left as
 	 * whatever the stack held: when that was not zero the frontend took
 	 * this core for one that keeps its context across a video restart,
@@ -2163,35 +2190,16 @@ static bool set_vulkan_hw_render()
 		return false;
 	upscaler_announce();
 
-	/* Version 2 where the frontend has it: the device is then made through
-	 * the frontend, which can add what it needs (e.g. for its low-latency
-	 * modes). A frontend that predates v2 rejects any version but 1. */
-	static const struct retro_hw_render_context_negotiation_interface_vulkan negotiation_interface_v1 = {
-			RETRO_HW_RENDER_CONTEXT_NEGOTIATION_INTERFACE_VULKAN,
-			1,
-			VkGetApplicationInfo,
-			VkCreateDevice,
-			NULL,
-	};
-	static const struct retro_hw_render_context_negotiation_interface_vulkan negotiation_interface_v2 = {
-			RETRO_HW_RENDER_CONTEXT_NEGOTIATION_INTERFACE_VULKAN,
-			2,
-			VkGetApplicationInfo,
-			VkCreateDevice,
-			NULL,
-			NULL,
-			VkCreateDevice2,
-	};
-	struct retro_hw_render_context_negotiation_interface negotiation_support;
 	negotiation_support.interface_type = RETRO_HW_RENDER_CONTEXT_NEGOTIATION_INTERFACE_VULKAN;
 	negotiation_support.interface_version = 0;
 	if (!environ_cb(RETRO_ENVIRONMENT_GET_HW_RENDER_CONTEXT_NEGOTIATION_INTERFACE_SUPPORT, &negotiation_support))
 		negotiation_support.interface_version = 0;
+	/* (version 2 where the frontend has it: lr_vk_negotiation_interface()) */
 	environ_cb(RETRO_ENVIRONMENT_SET_HW_RENDER_CONTEXT_NEGOTIATION_INTERFACE,
-			(void *)(negotiation_support.interface_version >= 2 ? &negotiation_interface_v2 : &negotiation_interface_v1));
+			(void *)lr_vk_negotiation_interface(negotiation_support.interface_version));
 
 	if (settings.pvr.rend == 0)
-		settings.pvr.rend = rend_compute_wanted ? 5 : 4;	// (Compute is drawn by the per-pixel renderer)
+		settings.pvr.rend = rend_compute_wanted ? 5 : 4;	/* (Compute is drawn by the per-pixel renderer) */
 	else if (settings.pvr.rend == 3)
 		settings.pvr.rend = 5;
 	renderer_changed = true;
@@ -2208,7 +2216,7 @@ static bool set_vulkan_hw_render()
 /* Direct3D 11: the frontend's device, through its interface */
 static void dx11_context_reset(void)
 {
-	retro_hw_render_interface_d3d11 *iface = NULL;
+	struct retro_hw_render_interface_d3d11 *iface = NULL;
 	if (!environ_cb(RETRO_ENVIRONMENT_GET_HW_RENDER_INTERFACE, (void **)&iface) || iface == NULL
 			|| iface->interface_type != RETRO_HW_RENDER_INTERFACE_D3D11)
 	{
@@ -2223,7 +2231,7 @@ static void dx11_context_reset(void)
 	}
 	context_resets++;
 	take_pending_size();
-	if (!DX11Context::Instance()->Init(iface))
+	if (!lr_dx11_init(iface))
 		ERROR_LOG(RENDERER, "DX11 context initialization failed\n");
 	renderer_changed = true;
 }
@@ -2235,22 +2243,11 @@ static void dx11_context_destroy(void)
 	rend_keep_picture();
 	rend_term_renderer();
 	renderer_changed = true;
-	DX11Context::Instance()->Term();
+	lr_dx11_term();
 }
 
 static bool set_dx11_hw_render(void)
 {
-	retro_hw_render_callback hw_render;
-	memset(&hw_render, 0, sizeof(hw_render));
-	hw_render.context_type = RETRO_HW_CONTEXT_D3D11;
-	hw_render.version_major = 11;
-	hw_render.version_minor = 0;
-	hw_render.context_reset = dx11_context_reset;
-	hw_render.context_destroy = dx11_context_destroy;
-
-	if (!environ_cb(RETRO_ENVIRONMENT_SET_HW_RENDER, &hw_render))
-		return false;
-
 	/* Version 2 of the interface, where the frontend has it: the context
 	 * taken in turns with a frontend that presents from a thread of its
 	 * own, which with version 1 hands over a context that cannot read
@@ -2262,7 +2259,18 @@ static bool set_dx11_hw_render(void)
 		RETRO_HW_RENDER_CONTEXT_NEGOTIATION_INTERFACE_D3D11_VERSION,
 		RETRO_HW_RENDER_INTERFACE_D3D11_VERSION_2,
 	};
+	struct retro_hw_render_callback hw_render;
 	struct retro_hw_render_context_negotiation_interface probe;
+	memset(&hw_render, 0, sizeof(hw_render));
+	hw_render.context_type = RETRO_HW_CONTEXT_D3D11;
+	hw_render.version_major = 11;
+	hw_render.version_minor = 0;
+	hw_render.context_reset = dx11_context_reset;
+	hw_render.context_destroy = dx11_context_destroy;
+
+	if (!environ_cb(RETRO_ENVIRONMENT_SET_HW_RENDER, &hw_render))
+		return false;
+
 	memset(&probe, 0, sizeof(probe));
 	probe.interface_type = RETRO_HW_RENDER_CONTEXT_NEGOTIATION_INTERFACE_D3D11;
 	probe.interface_version = 0;
@@ -2288,7 +2296,7 @@ static bool set_dx11_hw_render(void)
 /* Direct3D 9: the frontend's device, through its interface */
 static void dx9_context_reset(void)
 {
-	retro_hw_render_interface_d3d9 *iface = NULL;
+	struct retro_hw_render_interface_d3d9 *iface = NULL;
 	if (!environ_cb(RETRO_ENVIRONMENT_GET_HW_RENDER_INTERFACE, (void **)&iface) || iface == NULL
 			|| iface->interface_type != RETRO_HW_RENDER_INTERFACE_D3D9)
 	{
@@ -2303,7 +2311,7 @@ static void dx9_context_reset(void)
 	}
 	context_resets++;
 	take_pending_size();
-	if (!DX9Context::Instance()->Init(iface))
+	if (!lr_dx9_init(iface))
 		ERROR_LOG(RENDERER, "DX9 context initialization failed\n");
 	renderer_changed = true;
 }
@@ -2317,12 +2325,12 @@ static void dx9_context_destroy(void)
 	rend_keep_picture();
 	rend_term_renderer();
 	renderer_changed = true;
-	DX9Context::Instance()->Term();
+	lr_dx9_term();
 }
 
 static bool set_dx9_hw_render(void)
 {
-	retro_hw_render_callback hw_render;
+	struct retro_hw_render_callback hw_render;
 	memset(&hw_render, 0, sizeof(hw_render));
 	hw_render.context_type = RETRO_HW_CONTEXT_D3D9;
 	hw_render.version_major = 9;
@@ -2350,7 +2358,7 @@ static bool set_dx9_hw_render(void)
 /* Direct3D 12: the frontend's device and queue, through its interface */
 static void dx12_context_reset(void)
 {
-	retro_hw_render_interface_d3d12 *iface = NULL;
+	struct retro_hw_render_interface_d3d12 *iface = NULL;
 	if (!environ_cb(RETRO_ENVIRONMENT_GET_HW_RENDER_INTERFACE, (void **)&iface) || iface == NULL
 			|| iface->interface_type != RETRO_HW_RENDER_INTERFACE_D3D12)
 	{
@@ -2366,7 +2374,7 @@ static void dx12_context_reset(void)
 	context_resets++;
 	take_pending_size();
 	renderer_changed = true;
-	if (!DX12Context::Instance()->Init(iface))
+	if (!lr_dx12_init(iface))
 	{
 		ERROR_LOG(RENDERER, "DX12 context initialization failed\n");
 		return;
@@ -2390,7 +2398,7 @@ static void dx12_context_reset(void)
 	 * before its first frame, as Vulkan's (retro_vk_context_reset()): the
 	 * machine is not running here */
 	rend_prepare_renderer();
-	DX12Context::Instance()->Pipelines().WaitMade();
+	lr_dx12_wait_pipelines();
 	ran_since_context = false;
 }
 
@@ -2402,12 +2410,23 @@ static void dx12_context_destroy(void)
 	rend_term_renderer();
 	renderer_changed = true;
 	upscaler_set_interface(NULL);
-	DX12Context::Instance()->Term();
+	lr_dx12_term();
 }
 
 static bool set_dx12_hw_render(void)
 {
-	retro_hw_render_callback hw_render;
+	/* Version 2 of the interface, where the frontend has it: the frame
+	 * handed over with the fence that says when it is drawn, and read by
+	 * the frontend where it is, with no copy, a picture for each of its
+	 * sync indexes. A frontend that does not know of it answers version 0,
+	 * and version 1 is what is given. */
+	static const struct retro_hw_render_context_negotiation_interface_d3d12 negotiation_interface = {
+		RETRO_HW_RENDER_CONTEXT_NEGOTIATION_INTERFACE_D3D12,
+		RETRO_HW_RENDER_CONTEXT_NEGOTIATION_INTERFACE_D3D12_VERSION,
+		RETRO_HW_RENDER_INTERFACE_D3D12_VERSION_2,
+	};
+	struct retro_hw_render_callback hw_render;
+	struct retro_hw_render_context_negotiation_interface probe;
 	memset(&hw_render, 0, sizeof(hw_render));
 	hw_render.context_type = RETRO_HW_CONTEXT_D3D12;
 	hw_render.version_major = 12;
@@ -2419,17 +2438,6 @@ static bool set_dx12_hw_render(void)
 		return false;
 	upscaler_announce();
 
-	/* Version 2 of the interface, where the frontend has it: the frame
-	 * handed over with the fence that says when it is drawn, and read by
-	 * the frontend where it is, with no copy, a picture for each of its
-	 * sync indexes. A frontend that does not know of it answers version 0,
-	 * and version 1 is what is given. */
-	static const struct retro_hw_render_context_negotiation_interface_d3d12 negotiation_interface = {
-		RETRO_HW_RENDER_CONTEXT_NEGOTIATION_INTERFACE_D3D12,
-		RETRO_HW_RENDER_CONTEXT_NEGOTIATION_INTERFACE_D3D12_VERSION,
-		RETRO_HW_RENDER_INTERFACE_D3D12_VERSION_2,
-	};
-	struct retro_hw_render_context_negotiation_interface probe;
 	memset(&probe, 0, sizeof(probe));
 	probe.interface_type = RETRO_HW_RENDER_CONTEXT_NEGOTIATION_INTERFACE_D3D12;
 	probe.interface_version = 0;
@@ -2438,7 +2446,7 @@ static bool set_dx12_hw_render(void)
 		environ_cb(RETRO_ENVIRONMENT_SET_HW_RENDER_CONTEXT_NEGOTIATION_INTERFACE, (void *)&negotiation_interface);
 
 	if (settings.pvr.rend == 0)
-		settings.pvr.rend = rend_compute_wanted ? 10 : 9;	// (Compute is drawn by the per-pixel renderer)
+		settings.pvr.rend = rend_compute_wanted ? 10 : 9;	/* (Compute is drawn by the per-pixel renderer) */
 	else if (settings.pvr.rend == 3)
 		settings.pvr.rend = 10;
 	renderer_changed = true;
@@ -2469,7 +2477,7 @@ static bool set_opengl_hw_render(u32 preferred)
 #ifdef HAVE_GL4
 	if (settings.pvr.rend == 3)
 	{
-		params.context_type          = (retro_hw_context_type)preferred;
+		params.context_type          = (enum retro_hw_context_type)preferred;
 		if (preferred == RETRO_HW_CONTEXT_OPENGL)
 		{
 			/* Compatibility context: request no specific version and take the
@@ -2496,12 +2504,12 @@ static bool set_opengl_hw_render(u32 preferred)
 	}
 	else
 	{
-		params.context_type          = (retro_hw_context_type)preferred;
+		params.context_type          = (enum retro_hw_context_type)preferred;
 		params.major                 = 3;
 		params.minor                 = 0;
 	}
 #elif defined(HAVE_GL3)
-	params.context_type          = (retro_hw_context_type)preferred;
+	params.context_type          = (enum retro_hw_context_type)preferred;
 	params.major                 = 3;
 	params.minor                 = 0;
 #endif
@@ -2523,7 +2531,7 @@ static bool set_opengl_hw_render(u32 preferred)
 	/* The retry version must be explicit and non-zero: glsm ignores zero
 	 * version fields and keeps the previously requested values, which would
 	 * silently re-send the request that was just rejected. */
-	params.context_type       = (retro_hw_context_type)preferred;
+	params.context_type       = (enum retro_hw_context_type)preferred;
 	params.major              = 3;
 	params.minor              = 0;
 	return glsm_ctl(GLSM_CTL_STATE_CONTEXT_INIT, &params);
@@ -2532,7 +2540,7 @@ static bool set_opengl_hw_render(u32 preferred)
 #endif
 }
 
-// Loading/unloading games
+/* Loading/unloading games */
 /* The game to start from a merged romset: a core option made for the
  * romset that is being loaded.
  *
@@ -2616,13 +2624,14 @@ static void merged_set_option(const char *content_path)
  * the one loaded is in its contents, read once as the game is loaded. */
 static void naomi_bios_detect_multiregion(void)
 {
+   uint32_t crc;
 
    naomi_bios_multiregion = false;
    if (!SYSTEM_IS_NAOMI() || !bios_loaded || sys_rom.data == NULL || sys_rom.size < 0x200000)
       return;
-   const uint32_t crc = encoding_crc32(0, sys_rom.data, 0x200000);
-   naomi_bios_multiregion = crc == 0xcce01f1f		// epr-21576h_multi.ic27
-         || crc == 0x353fdbcd;						// epr-23605c_multi.ic27
+   crc = encoding_crc32(0, sys_rom.data, 0x200000);
+   naomi_bios_multiregion = crc == 0xcce01f1f		/* epr-21576h_multi.ic27 */
+         || crc == 0x353fdbcd;						/* epr-23605c_multi.ic27 */
    if (naomi_bios_multiregion)
       NOTICE_LOG(NAOMI, "Multi-region BIOS: Korea set on the DIP switches\n");
 }
@@ -2636,6 +2645,14 @@ bool retro_load_game(const struct retro_game_info *game)
 #else
    char slash = '/';
 #endif
+   const char *content_path = game->path;
+   const char *delim = path_get_archive_delim(game->path);
+   /* (a load is on one thread: room of its own, not the stack's) */
+   static char archived[1024];
+   char *ext;
+   u32 preferred;
+   bool foundRenderApi = false;
+   int rotation;
 
    /* The disc list is this content's. A load that failed is not followed
     * by retro_unload_game(), so what it read of a playlist is still here:
@@ -2653,9 +2670,6 @@ bool retro_load_game(const struct retro_game_info *game)
     * the content: a romset when its name is a known one, else the disc
     * image inside it, which the named member stands in for unless it is
     * a disc image itself. */
-   const char *content_path = game->path;
-   const char *delim = path_get_archive_delim(game->path);
-   char archived[1024];
    if (delim)
    {
       size_t arc_len = delim - game->path;
@@ -2680,7 +2694,7 @@ bool retro_load_game(const struct retro_game_info *game)
       extract_directory(game_dir, game->path, sizeof(game_dir));
    }
 
-   // Storing rom dir for later use
+   /* Storing rom dir for later use */
    snprintf(g_roms_dir, sizeof(g_roms_dir), "%s%c", game_dir, slash);
 
    if (environ_cb(RETRO_ENVIRONMENT_GET_RUMBLE_INTERFACE, &lr_rumble) && log_cb)
@@ -2692,23 +2706,23 @@ bool retro_load_game(const struct retro_game_info *game)
    snprintf(game_dir, sizeof(game_dir), "%s%cdc%c", dir, slash, slash);
    snprintf(game_dir_no_slash, sizeof(game_dir_no_slash), "%s%cdc", dir, slash);
 
-   // Per-content VMU additions START
-   // > Get save directory
+   /* Per-content VMU additions START */
+   /* > Get save directory */
    if (!(environ_cb(RETRO_ENVIRONMENT_GET_SAVE_DIRECTORY, &vmu_dir) && vmu_dir))
       vmu_dir = game_dir;
 
    snprintf(vmu_dir_no_slash, sizeof(vmu_dir_no_slash), "%s", vmu_dir);
 
-   // > Get content name
+   /* > Get content name */
    remove_extension(content_name, g_base_name, sizeof(content_name));
 
    if (content_name[0] == '\0')
       snprintf(content_name, sizeof(content_name), "vmu_save");
-   // Per-content VMU additions END
+   /* Per-content VMU additions END */
 
    settings.dreamcast.cable = 3;
 
-   char *ext = strrchr(g_base_name, '.');
+   ext = strrchr(g_base_name, '.');
 
    /* A Dreamcast program as an ELF file, not a disc: the HLE BIOS loads it
     * into memory and starts it, with the drive empty. Said before the
@@ -2763,7 +2777,7 @@ bool retro_load_game(const struct retro_game_info *game)
              * hidden core options */
             set_variable_visibility();
          }
-         // If m3u playlist found load the paths into array
+         /* If m3u playlist found load the paths into array */
          else if (!strcmp(".m3u", ext) || !strcmp(".M3U", ext))
          {
             if (!lr_disk_read_m3u(content_path, g_roms_dir))
@@ -2793,19 +2807,16 @@ bool retro_load_game(const struct retro_game_info *game)
    }
 
    {
-      char data_dir[1024];
+      static char data_dir[1024];
 
       snprintf(data_dir, sizeof(data_dir), "%s%s", game_dir, "data");
 
-      struct stat buf;
       if (!path_is_directory(data_dir))
          path_mkdir(data_dir);
    }
 
-   u32 preferred;
    if (!environ_cb(RETRO_ENVIRONMENT_GET_PREFERRED_HW_RENDER, &preferred))
       preferred = RETRO_HW_CONTEXT_DUMMY;
-   bool foundRenderApi = false;
 
    if (preferred == RETRO_HW_CONTEXT_OPENGL || preferred == RETRO_HW_CONTEXT_OPENGL_CORE
     || preferred == RETRO_HW_CONTEXT_OPENGLES2 || preferred == RETRO_HW_CONTEXT_OPENGLES3
@@ -2833,7 +2844,7 @@ bool retro_load_game(const struct retro_game_info *game)
    }
    else
    {
-      // fallback when not supported (or auto-switching disabled), let's try all supported drivers
+      /* fallback when not supported (or auto-switching disabled), let's try all supported drivers */
       foundRenderApi = set_vulkan_hw_render();
 #if defined(HAVE_OPENGLES)
       if (!foundRenderApi)
@@ -2881,13 +2892,12 @@ bool retro_load_game(const struct retro_game_info *game)
    if (settings.System != DC_PLATFORM_DREAMCAST)
    {
       if (environ_cb(RETRO_ENVIRONMENT_GET_SAVE_DIRECTORY, &dir) && dir) {
-         char g_save_dir[PATH_MAX];
+         static char g_save_dir[PATH_MAX];
          strncpy(g_save_dir, dir, sizeof(g_save_dir));
          if(strcmp(g_save_dir,g_roms_dir) != 0)
             snprintf(save_dir, sizeof(save_dir), "%s%creicast%c", g_save_dir, slash, slash);
          else
             strncpy(save_dir, g_roms_dir, sizeof(save_dir));
-         struct stat buf;
          if (!path_is_directory(save_dir))
          {
             DEBUG_LOG(BOOT, "Creating dir: %s\n", save_dir);
@@ -2903,7 +2913,7 @@ bool retro_load_game(const struct retro_game_info *game)
    }
 
    dc_prepare_system();
-   // (again, for frames of the machine's size, now that it is known)
+   /* (again, for frames of the machine's size, now that it is known) */
    ta_set_walk_check(ta_header_check);
 
    naomi_ffb_clear();
@@ -2914,7 +2924,7 @@ bool retro_load_game(const struct retro_game_info *game)
    }
    naomi_bios_detect_multiregion();
    midiffb_init();
-   int rotation = rotate_screen ? 3 : 0;
+   rotation = rotate_screen ? 3 : 0;
    if (naomi_cart_GetRotation() == 3)
       rotation = rotate_screen ? 0 : 1;
    environ_cb(RETRO_ENVIRONMENT_SET_ROTATION, &rotation);
@@ -2927,7 +2937,7 @@ bool retro_load_game(const struct retro_game_info *game)
 
 bool retro_load_game_special(unsigned game_type, const struct retro_game_info *info, size_t num_info)
 {
-   return false; //TODO (?)
+   return false; /* TODO (?) */
 }
 
 void retro_unload_game(void)
@@ -2959,7 +2969,7 @@ void retro_unload_game(void)
 #ifdef HAVE_VULKAN
    /* The pipelines made so far kept now: a frontend may not destroy the
     * context, where they are kept too, before it quits */
-   theVulkanContext.SavePipelineCache();
+   lr_vk_save_pipeline_cache();
 #endif
    if (game_data)
       free(game_data);
@@ -2990,7 +3000,7 @@ void retro_unload_game(void)
 	   dc_stop();
 	   dc_term();
    }
-   // (its log, and its memory; the next game's options turn it on again)
+   /* (its log, and its memory; the next game's options turn it on again) */
    ta_set_walk_check(false);
    /* The next game's first frame starts its own emulation thread: a
     * frontend that loads it without retro_deinit() in between waited for
@@ -3010,19 +3020,19 @@ void retro_unload_game(void)
 }
 
 
-// Memory/Serialization
+/* Memory/Serialization */
 void *retro_get_memory_data(unsigned type)
 {
    if ( type == RETRO_MEMORY_SYSTEM_RAM )
       return mem_b.data;
-   return 0; //TODO
+   return 0; /* TODO */
 }
 
 size_t retro_get_memory_size(unsigned type)
 {
    if ( type == RETRO_MEMORY_SYSTEM_RAM )
       return mem_b.size;
-   return 0; //TODO
+   return 0; /* TODO */
 }
 
 /* A frontend asks how large a state is once and keeps the answer - for
@@ -3076,7 +3086,7 @@ bool retro_serialize(void *data, size_t size)
    }
 
    result = dc_serialize(&data_ptr, &total_size) ;
-   // (the same bytes for the same state, whatever was in the frontend's buffer)
+   /* (the same bytes for the same state, whatever was in the frontend's buffer) */
    if (total_size < size)
       memset((u8 *)data + total_size, 0, size - total_size);
    lr_disk_trailer_write((u8 *)data + total_size);
@@ -3094,6 +3104,7 @@ bool retro_unserialize(const void * data, size_t size)
    void *data_ptr = (void*)data ;
    bool result = false ;
    int i ;
+   bool mmu_was, strict_was;
 
 #if !defined(TARGET_NO_THREADS)
    emu_hold();
@@ -3115,8 +3126,8 @@ bool retro_unserialize(const void * data, size_t size)
      * neither one thing nor the other, and when the MMU is on in one of
      * the two and off in the other, or on in another way: code is
      * compiled for the way it is. */
-    const bool mmu_was = mmu_enabled();
-    const bool strict_was = mmu_strict;
+    mmu_was = mmu_enabled();
+    strict_was = mmu_strict;
 #ifndef NO_MMU
     mmu_flush_table();
 #endif
@@ -3159,18 +3170,18 @@ bool retro_unserialize(const void * data, size_t size)
     return result ;
 }
 
-// Cheats
+/* Cheats */
 void retro_cheat_reset(void)
 {
-   // Nothing to do here
+   /* Nothing to do here */
 }
 void retro_cheat_set(unsigned unused, bool unused1, const char* unused2)
 {
-   // Nothing to do here
+   /* Nothing to do here */
 }
 
 
-// Get info
+/* Get info */
 const char* retro_get_system_directory(void)
 {
    const char* dir;
@@ -3207,7 +3218,7 @@ static void set_geometry(struct retro_game_geometry *geometry, int *width, int *
       geometry->aspect_ratio = 16.0 / 9.0;
    else if (settings.rend.WideScreen)
    {
-      *width                 = (int)lround(*width * 4.0 / 3.0);
+      *width                 = (int)floor(*width * 4.0 / 3.0 + 0.5);
       geometry->aspect_ratio = 16.0 / 9.0;
    }
    else
@@ -3289,7 +3300,7 @@ static void apply_new_size(void)
     * Vulkan the image it is in is used as it is. */
 #ifdef HAVE_VULKAN
    if (settings.pvr.rend == 4 || settings.pvr.rend == 5)
-      theVulkanContext.SetWindowSize(pending_width, pending_height);
+      lr_vk_set_window_size(pending_width, pending_height);
 #endif
    rend_resize(pending_width, pending_height);
    take_pending_size();
@@ -3338,7 +3349,7 @@ unsigned retro_get_region (void)
    return RETRO_REGION_NTSC;
 }
 
-// Controller
+/* Controller */
 void retro_set_controller_port_device(unsigned in_port, unsigned device)
 {
 	/* (the port is checked first: a frontend may ask for more ports than there are) */
@@ -3365,7 +3376,7 @@ void retro_set_controller_port_device(unsigned in_port, unsigned device)
 				maple_devices[in_port] = MDT_Mouse;
 				break;
 			case RETRO_DEVICE_LIGHTGUN:
-			// a touchscreen or a mouse pointing: a light gun to the game
+			/* a touchscreen or a mouse pointing: a light gun to the game */
 			case RETRO_DEVICE_POINTER:
 				maple_devices[in_port] = MDT_LightGun;
 				break;
@@ -3395,13 +3406,13 @@ static void refresh_devices(bool first_startup)
    }
 }
 
-// API version (to detect version mismatch)
+/* API version (to detect version mismatch) */
 unsigned retro_api_version(void)
 {
    return RETRO_API_VERSION;
 }
 
-//Reicast stuff
+/* Reicast stuff */
 /* The end of a frame - of a run, a retro_run's worth: at line 0, or where
  * the game renders or reads its pads after its vertical blank in
  * interrupt (hw/pvr/spg.cpp) - on whichever thread runs the machine. */
@@ -3430,7 +3441,8 @@ void os_DoEvents(void)
 		{
 			/* So has a Dreamcast's mouse the game did not ask this frame. (A
 			 * port that has stopped being a mouse is forgotten.) */
-			for (u32 port = 0; port < MAPLE_PORTS; port++)
+			u32 port;
+			for (port = 0; port < MAPLE_PORTS; port++)
 				if (((mouse_ports & ~mouse_ports_read) >> port) & 1)
 				{
 					if (maple_devices[port] == MDT_Mouse)
@@ -3456,8 +3468,8 @@ void os_DoEvents(void)
 }
 
 
-double os_GetSeconds()
-{
+/* The clock's time, and where it started: when the core was first set up
+ * (os_seconds_start(), from retro_init()) */
 #ifdef _WIN32
 #if defined(_MSC_VER) || defined(_MSC_EXTENSIONS)
   #define DELTA_EPOCH_IN_MICROSECS  11644473600000000Ui64
@@ -3465,6 +3477,8 @@ double os_GetSeconds()
   #define DELTA_EPOCH_IN_MICROSECS  11644473600000000ULL
 #endif
 
+static u64 os_seconds_now(void)
+{
    FILETIME ft;
    unsigned __int64 tmpres = 0;
 
@@ -3477,15 +3491,37 @@ double os_GetSeconds()
    tmpres /= 10;  /*convert into microseconds*/
    /*converting file time to unix epoch*/
    tmpres -= DELTA_EPOCH_IN_MICROSECS;
+   return tmpres;
+}
+#endif
 
-   static u64 time_base = tmpres;
+static u64 os_seconds_base;
 
-   return (double)(tmpres - time_base) / 1000000.0;	// microsecond -> second
+static void os_seconds_start(void)
+{
+   static bool started;
+#ifndef _WIN32
+   struct timeval t;
+#endif
+   if (started)
+      return;
+   started = true;
+#ifdef _WIN32
+   os_seconds_base = os_seconds_now();
+#else
+   gettimeofday(&t, NULL);
+   os_seconds_base = t.tv_sec;
+#endif
+}
+
+double os_GetSeconds(void)
+{
+#ifdef _WIN32
+   return (double)(os_seconds_now() - os_seconds_base) / 1000000.0;	/* microsecond -> second */
 #else
    struct timeval t;
    gettimeofday(&t, NULL);
-	static u64 tvs_base = t.tv_sec;
-	return t.tv_sec - tvs_base + t.tv_usec / 1000000.0;
+   return t.tv_sec - os_seconds_base + t.tv_usec / 1000000.0;
 #endif
 }
 
@@ -3515,7 +3551,7 @@ int msgboxf(const char* text, unsigned int type, ...)
 void os_DebugBreak(void)
 {
 	ERROR_LOG(COMMON, "DEBUGBREAK!\n");
-   //exit(-1);
+   /* exit(-1); */
 #ifdef HAVE_LIBNX
    svcExitProcess();
 #else

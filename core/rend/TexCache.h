@@ -74,7 +74,7 @@ void texcache_reserve(u32 textures);
  * renderer has none of its own for it, as large as the largest: made when
  * the cache's room is with GPU Texture Decoding off, and when that is
  * turned off */
-void texcache_scratch_largest(void);
+extern "C" void texcache_scratch_largest(void);	/* (libretro.c's too) */
 /* How many times textures are scaled up (xBRZ), 1 for not: for the pools'
  * plans (TexPoolBook::Plan()) */
 static inline u32 texcache_upscale_factor(void)

@@ -20,7 +20,7 @@
 #include "rend/ta_gpu.h"
 #include <algorithm>
 
-extern int screen_height;
+extern "C" int screen_height;
 
 /* The kernels, by TAG_K_*, as DXBC made from rend/ta_gpu.h when the core
  * was built: tools/rend/kernels_dx12.sh, which checks that they still are

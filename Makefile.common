@@ -461,7 +461,8 @@ SOURCES_CXX += $(CORE_DIR)/core/hw/sh4/dyna/decoder.cpp \
 					$(CORE_DIR)/core/hw/sh4/dyna/ssa.cpp 
 endif
 
-SOURCES_CXX += $(CORE_DIR)/core/libretro/libretro.cpp
+SOURCES_C += $(CORE_DIR)/core/libretro/libretro.c
+SOURCES_CXX += $(CORE_DIR)/core/libretro/lr_contexts.cpp
 
 SOURCES_C += $(CORE_DIR)/core/libretro/common.c
 SOURCES_C += $(CORE_DIR)/core/libretro/lr_input.c

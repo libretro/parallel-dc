@@ -28,7 +28,7 @@
 #include "pso.h"
 #include "hdr_encode_vk.h"
 
-extern int screen_width, screen_height;
+extern "C" int screen_width, screen_height;
 
 class CommandPool;
 

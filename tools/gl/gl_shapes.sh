@@ -26,11 +26,10 @@ FLAGS="-I./core/libretro -I./core -I./core/deps -I./core/libretro-common/include
    -fno-operator-names -fsyntax-only"
 GL="$FLAGS -DHAVE_OPENGL"
 GLES="$FLAGS -DHAVE_OPENGLES -DHAVE_OPENGLES2 -DHAVE_GL3"
-# the renderers' sources, and what else draws with OpenGL (libretro.cpp
-# wants the platform's own headers, and is built by the other lanes)
+# the renderers' sources, and what else draws with OpenGL
 FILES=$( (ls core/rend/gles/*.cpp core/rend/gl4/*.cpp
           grep -rlE '#include.*(gles\.h|gl4\.h|glcache\.h)' core --include=*.cpp) \
-   | grep -v -E '^core/(deps|libretro-common)/|^core/libretro/libretro\.cpp$' | sort -u)
+   | grep -v -E '^core/(deps|libretro-common)/' | sort -u)
 fails=0
 
 for f in $FILES; do

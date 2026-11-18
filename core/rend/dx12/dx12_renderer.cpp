@@ -26,7 +26,7 @@
 #include <algorithm>
 #include <cmath>
 
-extern int screen_width, screen_height;
+extern "C" int screen_width, screen_height;
 
 /* An image of the renderer's own: a committed texture, with its place in
  * the bindless table (at @srv if given, one taken otherwise) and a render

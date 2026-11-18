@@ -26,7 +26,7 @@
 #include <cmath>
 #include "rend/modvol_clip.h"
 
-extern int screen_width, screen_height;
+extern "C" int screen_width, screen_height;
 
 /* (the vertices' colours are R G B A bytes; D3DCOLOR has them the other
  * way round, which the vertex shader undoes) */

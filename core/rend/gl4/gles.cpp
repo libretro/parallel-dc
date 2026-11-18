@@ -1107,7 +1107,7 @@ struct gl4rend : Renderer
 		// the polygons' programs, so that none is made in a frame (glprogram_cache.h)
 		gl4MakePrograms();
 		gl_writeout_init(screen_width, screen_height, true);
-		glprog_save();
+		glprog_save(false);
 		glprog_started();
 
 		return true;
