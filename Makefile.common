@@ -464,6 +464,7 @@ endif
 SOURCES_CXX += $(CORE_DIR)/core/libretro/libretro.cpp
 
 SOURCES_C += $(CORE_DIR)/core/libretro/common.c
+SOURCES_C += $(CORE_DIR)/core/libretro/lr_input.c
 
 SOURCES_C += $(CORE_DIR)/core/libretro/vmem_utils.c
 SOURCES_C += $(DEPS_DIR)/coreio/coreio.c

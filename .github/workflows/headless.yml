@@ -71,7 +71,8 @@ name: Headless
 # maple bus (tools/maple/maple_cfg_run.sh), and the NAOMI's JVS I/O boards
 # (tools/maple/jvs_board_run.sh) and the bridge they are on
 # (tools/maple/jvs_bridge_run.sh), and every maple device
-# (tools/maple/maple_devs_run.sh), and the compute renderer's
+# (tools/maple/maple_devs_run.sh), and the frontend's input as the
+# machine has it (tools/libretro/lr_input_run.sh), and the compute renderer's
 # frame words (tools/rend/compute_frame_run.sh),
 # and the paths the core writes to, a
 # content's name of any length included (tools/paths/paths_run.sh), and the
@@ -381,6 +382,10 @@ jobs:
         run: |
           sh tools/maple/maple_devs_run.sh
           sh tools/maple/maple_devs_run.sh -fsanitize=address,undefined -fno-sanitize-recover=all
+      - name: The frontend's input as the machine has it - every device on every port of a Dreamcast, an Atomiswave and a NAOMI read from a frontend that answers at random, the latch of the threaded renderer, the vibration packs and the wheel's force feedback on its rumble, the keyboard, the input's part of a state written and read back changed - against what it always did (and with the sanitizers)
+        run: |
+          sh tools/libretro/lr_input_run.sh
+          sh tools/libretro/lr_input_run.sh -fsanitize=address,undefined -fno-sanitize-recover=all
       - name: The paths the core writes to, a content's name of any length (and with the sanitizers)
         run: |
           sh tools/paths/paths_run.sh
