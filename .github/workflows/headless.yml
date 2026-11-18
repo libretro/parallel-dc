@@ -72,7 +72,8 @@ name: Headless
 # (tools/maple/jvs_board_run.sh) and the bridge they are on
 # (tools/maple/jvs_bridge_run.sh), and every maple device
 # (tools/maple/maple_devs_run.sh), and the frontend's input as the
-# machine has it (tools/libretro/lr_input_run.sh), and the compute renderer's
+# machine has it (tools/libretro/lr_input_run.sh), and the content's discs
+# (tools/libretro/lr_disk_run.sh), and the compute renderer's
 # frame words (tools/rend/compute_frame_run.sh),
 # and the paths the core writes to, a
 # content's name of any length included (tools/paths/paths_run.sh), and the
@@ -386,6 +387,10 @@ jobs:
         run: |
           sh tools/libretro/lr_input_run.sh
           sh tools/libretro/lr_input_run.sh -fsanitize=address,undefined -fno-sanitize-recover=all
+      - name: The content's discs - playlists of every shape read, the frontend's disc control asked everything in any order before and after a game is loaded, discs added, filled and taken out, the lid opened and shut, the disc's words in a state written and read back changed - against what they always did (and with the sanitizers)
+        run: |
+          sh tools/libretro/lr_disk_run.sh
+          sh tools/libretro/lr_disk_run.sh -fsanitize=address,undefined -fno-sanitize-recover=all
       - name: The paths the core writes to, a content's name of any length (and with the sanitizers)
         run: |
           sh tools/paths/paths_run.sh

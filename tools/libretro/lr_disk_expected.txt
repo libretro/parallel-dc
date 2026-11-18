@@ -1,0 +1,20 @@
+round 200 4a8b8ede
+round 400 a9aba55a
+round 600 7e1e93c0
+round 800 85066967
+round 1000 edb20391
+round 1200 2b2c9464
+round 1400 52b936fa
+round 1600 7033a241
+round 1800 a546be45
+round 2000 d4473199
+round 2200 2e88f544
+round 2400 7c49ef8c
+round 2600 67f687ac
+round 2800 496b5ed0
+round 3000 22e7c068
+round 3200 aebb8381
+round 3400 7abe39ae
+round 3600 1474e528
+round 3800 779b287f
+done bc5e16af

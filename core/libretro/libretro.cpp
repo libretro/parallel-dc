@@ -77,6 +77,7 @@ void texcache_scratch_largest(void);
 #include "../hw/sh4/sh4_sched.h"
 #include "../hw/sh4/dyna/blockmanager.h"
 #include "lr_input.h"
+#include "lr_disk.h"
 #include "hw/maple/maple_cfg.h"
 #include "hw/maple/maple_if.h"
 #include "hw/maple/vmu_beep.h"
@@ -178,9 +179,6 @@ retro_environment_t        frontend_clear_thread_waits_cb = NULL;
 
 
 static void refresh_devices(bool first_startup);
-static void init_disk_control_interface(void);
-static bool read_m3u(const char *file);
-static bool disk_select_image(void);
 
 char *game_data;
 char g_base_name[128];
@@ -195,29 +193,20 @@ static retro_atomic_int_t emu_thread_leaves_machine;
 /* The Threaded Rendering option changed while the game runs: +1 on, -1 off (libretro thread only) */
 static int threading_pending;
 static void apply_threading(void);
-static cThread emu_thread(&emu_thread_func, 0);
+static sthread_t *emu_thread;
 static bool emu_thread_started = false;   /* libretro thread only */
 #endif
 retro_atomic_int_t reset_requested;
 
-// Disk swapping
-static struct retro_disk_control_callback retro_disk_control_cb;
-static struct retro_disk_control_ext_callback retro_disk_control_ext_cb;
-static unsigned disk_initial_index = 0;
-static std::string disk_initial_path;
-static unsigned disk_index = 0;
-static std::vector<std::string> disk_paths;
-static std::vector<std::string> disk_labels;
-static bool disc_tray_open = false;
-/* retro_load_game() went through, and retro_unload_game() has a machine to stop */
-static bool game_loaded = false;
+bool game_loaded = false;
 
 #if !defined(TARGET_NO_THREADS)
 /* Threaded rendering: the machine runs here, one frame for each retro_run.
  * dc_run() comes back at the end of a frame (os_DoEvents) exactly as it does in
  * retro_run when rendering is not threaded. */
-static void *emu_thread_func(void *)
+static void *emu_thread_func(void *param)
 {
+   (void)param;
    rtt_watch_emu_thread();
    while (emu_baton_wait_for_frame(&emu_baton))
    {
@@ -237,6 +226,21 @@ static void *emu_thread_func(void *)
       dc_term();
 
    return NULL;
+}
+
+static void emu_thread_entry(void *param)
+{
+   emu_thread_func(param);
+}
+
+/* The emulation thread waited for, once it has been told to go */
+static void emu_thread_join(void)
+{
+   if (emu_thread != NULL)
+   {
+      sthread_join(emu_thread);
+      emu_thread = NULL;
+   }
 }
 
 static void emu_hold(void)
@@ -268,7 +272,7 @@ static void apply_threading(void)
       emu_hold();
       retro_atomic_store_release_int(&emu_thread_leaves_machine, 1);
       emu_baton_tell_thread_to_exit(&emu_baton);
-      emu_thread.WaitToEnd();
+      emu_thread_join();
       emu_thread_started = false;
       emu_baton_thread_gone(&emu_baton);
       retro_atomic_store_release_int(&emu_thread_leaves_machine, 0);
@@ -346,14 +350,6 @@ void retro_set_input_state(retro_input_state_t cb)
 }
 
 
-/* Replacement for libretro-common's removed fill_short_pathname_representation:
- * the file's base name without its extension. */
-static void short_pathname_representation(char *out, const char *path, size_t size)
-{
-   fill_pathname_base(out, path, size);
-   path_remove_extension(out);
-}
-
 void retro_set_environment(retro_environment_t cb)
 {
    environ_cb = cb;
@@ -430,7 +426,7 @@ void retro_init(void)
    if (environ_cb(RETRO_ENVIRONMENT_GET_INPUT_BITMASKS, NULL))
       libretro_supports_bitmasks = true;
 
-   init_disk_control_interface();
+   lr_disk_init_interface(environ_cb);
 #if !defined(TARGET_NO_THREADS)
    /* Who has the machine, and the frame-by-frame handshake between
     * retro_run and the emulation thread (emu_baton.h) */
@@ -1032,7 +1028,7 @@ static void update_variables(bool first_startup)
       if (!strcmp("off", var.value))
       	settings.rend.AnisotropicFiltering = 1;
       else
-      	settings.rend.AnisotropicFiltering = std::max(1, std::min(16, atoi(var.value)));
+         settings.rend.AnisotropicFiltering = MAX(1, MIN(16, atoi(var.value)));
    }
 
    /* The compute renderer's next frame takes it: a frame word (no kernel
@@ -1164,7 +1160,7 @@ static void update_variables(bool first_startup)
 	   if (!strcmp("disabled", var.value))
 		   settings.pvr.ta_skip = 0;
 	   else {
-		   settings.pvr.ta_skip = std::max(0, std::min(6, var.value[0] - '0'));
+		   settings.pvr.ta_skip = MAX(0, MIN(6, var.value[0] - '0'));
 	   }
    }
    else
@@ -1637,7 +1633,7 @@ void retro_run (void)
       // On the first call, we start the emulator thread
       if (first_run)
       {
-         emu_thread.Start();
+         emu_thread = sthread_create(emu_thread_entry, NULL);
          emu_thread_started = true;
          first_run = false;
       }
@@ -2175,15 +2171,15 @@ static bool set_vulkan_hw_render()
 			1,
 			VkGetApplicationInfo,
 			VkCreateDevice,
-			nullptr,
+			NULL,
 	};
 	static const struct retro_hw_render_context_negotiation_interface_vulkan negotiation_interface_v2 = {
 			RETRO_HW_RENDER_CONTEXT_NEGOTIATION_INTERFACE_VULKAN,
 			2,
 			VkGetApplicationInfo,
 			VkCreateDevice,
-			nullptr,
-			nullptr,
+			NULL,
+			NULL,
 			VkCreateDevice2,
 	};
 	struct retro_hw_render_context_negotiation_interface negotiation_support;
@@ -2644,9 +2640,7 @@ bool retro_load_game(const struct retro_game_info *game)
    /* The disc list is this content's. A load that failed is not followed
     * by retro_unload_game(), so what it read of a playlist is still here:
     * the next content would start from that playlist's first disc. */
-   disk_paths.clear();
-   disk_labels.clear();
-   disk_index     = 0;
+   lr_disk_clear();
    disc_tray_open = false;
    /* (the drive starts on this content's disc, not on the last one an
     * earlier content's disc control put in) */
@@ -2772,7 +2766,7 @@ bool retro_load_game(const struct retro_game_info *game)
          // If m3u playlist found load the paths into array
          else if (!strcmp(".m3u", ext) || !strcmp(".M3U", ext))
          {
-            if (!read_m3u(content_path))
+            if (!lr_disk_read_m3u(content_path, g_roms_dir))
             {
                if (log_cb)
                   log_cb(RETRO_LOG_ERROR, "%s\n", "[libretro]: failed to read m3u file ...\n");
@@ -2794,32 +2788,8 @@ bool retro_load_game(const struct retro_game_info *game)
 
    if (!boot_to_bios && (settings.reios.ElfFile[0] == 0))
    {
-      // if an m3u file was loaded, disk_paths will already be populated so load the game from there
-      if (disk_paths.size() > 0)
-      {
-         disk_index = 0;
-
-         /* Attempt to set initial disk index */
-         if ((disk_paths.size() > 1) &&
-             (disk_initial_index > 0) &&
-             (disk_initial_index < disk_paths.size()))
-            if (disk_paths[disk_initial_index].compare(disk_initial_path) == 0)
-               disk_index = disk_initial_index;
-
-         game_data = strdup(disk_paths[disk_index].c_str());
-      }
-      else
-      {
-         char disk_label[PATH_MAX];
-         disk_label[0] = '\0';
-
-         disk_paths.push_back(content_path);
-
-         short_pathname_representation(disk_label, content_path, sizeof(disk_label));
-         disk_labels.push_back(disk_label);
-
-         game_data = strdup(content_path);
-      } 
+      /* (a playlist read gives the discs, or the content is the one disc) */
+      game_data = lr_disk_start(content_path);
    }
 
    {
@@ -2971,9 +2941,7 @@ void retro_unload_game(void)
       if (game_data)
          free(game_data);
       game_data = NULL;
-      disk_paths.clear();
-      disk_labels.clear();
-      disk_index = 0;
+      lr_disk_clear();
       return;
    }
 #if defined(HAVE_VULKAN) || defined(HAVE_D3D12)
@@ -2998,9 +2966,7 @@ void retro_unload_game(void)
    game_data = NULL;
    settings.reios.ElfFile[0] = 0;
    /* The disc list belongs to this content: the next load starts its own */
-   disk_paths.clear();
-   disk_labels.clear();
-   disk_index = 0;
+   lr_disk_clear();
    /* (an open tray is this machine's: the next game starts with it shut) */
    disc_tray_open = false;
 
@@ -3013,7 +2979,7 @@ void retro_unload_game(void)
 	   DEBUG_LOG(COMMON, "Waiting for emu thread to end...\n");
 	   emu_hold();
 	   emu_baton_tell_thread_to_exit(&emu_baton);
-	   emu_thread.WaitToEnd();
+	   emu_thread_join();
 	   emu_thread_started = false;
 	   emu_baton_thread_gone(&emu_baton);
 	   DEBUG_LOG(COMMON, "...Done\n");
@@ -3071,62 +3037,6 @@ size_t retro_get_memory_size(unsigned type)
  * before that, and is left. */
 #define STATE_HEADROOM 4096
 
-/* Which of the content's discs was in the drive, and whether its lid was
- * open, follows the machine's state in the room above: without it a state
- * made with the second disc in was loaded with the first in the drive and
- * read from it. Words of 0 (an older state) leave the drive as it is, and
- * an older core does not read past the machine's state. */
-#define DISC_TRAILER_MAGIC 0x43534944   /* "DISC" */
-#define DISC_TRAILER_SIZE  16
-#define DISC_TRAILER_OPEN  1
-#define DISC_TRAILER_IN    2
-
-static void disc_trailer_write(u8 *at)
-{
-   u32 words[4] = { 0, 0, 0, 0 };
-
-   if (settings.System == DC_PLATFORM_DREAMCAST && !disk_paths.empty())
-   {
-      words[0] = DISC_TRAILER_MAGIC;
-      words[1] = 1;
-      words[2] = disk_index;
-      words[3] = (disc_tray_open ? DISC_TRAILER_OPEN : 0)
-         | (libGDR_DiscPresent() ? DISC_TRAILER_IN : 0);
-   }
-   memcpy(at, words, sizeof(words));
-}
-
-static void disc_trailer_read(const u8 *at)
-{
-   u32 words[4];
-   bool in, open;
-
-   memcpy(words, at, sizeof(words));
-   if (words[0] != DISC_TRAILER_MAGIC || words[1] != 1
-         || settings.System != DC_PLATFORM_DREAMCAST)
-      return;
-   open = (words[3] & DISC_TRAILER_OPEN) != 0;
-   in   = (words[3] & DISC_TRAILER_IN) != 0;
-   if (words[2] > disk_paths.size() || (in && (words[2] == disk_paths.size()
-               || disk_paths[words[2]].empty())))
-      return;
-   /* Nothing to do when the same disc is in, which with run-ahead and
-    * rewind is every load but those across a disc change. */
-   if (in == libGDR_DiscPresent() && words[2] == disk_index && open == disc_tray_open)
-      return;
-   disk_index     = words[2];
-   disc_tray_open = open;
-   if (in)
-      in = disk_select_image() && DiscPutBack(settings.imgread.DefaultImage);
-   else
-   {
-      disk_select_image();
-      TermDrive();
-   }
-   if (!in && (words[3] & DISC_TRAILER_IN))
-      WARN_LOG(GDROM, "The state's disc \"%s\" could not be opened\n", settings.imgread.DefaultImage);
-}
-
 size_t retro_serialize_size (void)
 {
    unsigned int total_size = 0 ;
@@ -3156,7 +3066,7 @@ bool retro_serialize(void *data, size_t size)
       void *nowhere = NULL;
 
       dc_serialize(&nowhere, &needed);
-      if (needed + DISC_TRAILER_SIZE > size)
+      if (needed + LR_DISK_TRAILER_SIZE > size)
       {
 #if !defined(TARGET_NO_THREADS)
          emu_release();
@@ -3169,7 +3079,7 @@ bool retro_serialize(void *data, size_t size)
    // (the same bytes for the same state, whatever was in the frontend's buffer)
    if (total_size < size)
       memset((u8 *)data + total_size, 0, size - total_size);
-   disc_trailer_write((u8 *)data + total_size);
+   lr_disk_trailer_write((u8 *)data + total_size);
 
 #if !defined(TARGET_NO_THREADS)
    emu_release();
@@ -3216,8 +3126,8 @@ bool retro_unserialize(const void * data, size_t size)
     {
        /* (where the machine's state ends in this state, of whichever version) */
        const size_t end = (size_t)((const u8 *)data_ptr - (const u8 *)data);
-       if (end + DISC_TRAILER_SIZE <= size)
-          disc_trailer_read((const u8 *)data + end);
+       if (end + LR_DISK_TRAILER_SIZE <= size)
+          lr_disk_trailer_read((const u8 *)data + end);
     }
 
     mmu_set_state();
@@ -3611,312 +3521,4 @@ void os_DebugBreak(void)
 #else
    __builtin_trap();
 #endif
-}
-
-/* The disc the drive is to read when its lid shuts: the one at disk_index,
- * or none past the end of the list (or at an index added and not filled). */
-static bool disk_select_image(void)
-{
-   settings.imgread.LoadDefaultImage = true;
-   if (disk_index >= disk_paths.size() || disk_paths[disk_index].empty())
-   {
-      settings.imgread.DefaultImage[0] = '\0';
-      return false;
-   }
-   strncpy(settings.imgread.DefaultImage, disk_paths[disk_index].c_str(), sizeof(settings.imgread.DefaultImage));
-   settings.imgread.DefaultImage[sizeof(settings.imgread.DefaultImage) - 1] = '\0';
-   return true;
-}
-
-/* The lid shut on the disc at disk_index. Only a Dreamcast has a drive. */
-static bool disk_close_lid(void)
-{
-   bool ok = true;
-
-#if !defined(TARGET_NO_THREADS)
-   /* (a state may be being saved on the frontend's other thread) */
-   emu_hold();
-#endif
-   if (disk_select_image())
-      ok = DiscSwap(0);
-   else
-      DiscCloseEmpty();
-#if !defined(TARGET_NO_THREADS)
-   emu_release();
-#endif
-   return ok;
-}
-
-static bool retro_set_eject_state(bool ejected)
-{
-   if (!game_loaded || settings.System != DC_PLATFORM_DREAMCAST)
-      return false;
-   if (ejected == disc_tray_open)
-      return true;
-   disc_tray_open = ejected;
-   if (ejected)
-   {
-#if !defined(TARGET_NO_THREADS)
-      emu_hold();
-#endif
-      DiscOpenLid();
-#if !defined(TARGET_NO_THREADS)
-      emu_release();
-#endif
-      return true;
-   }
-   else
-   {
-      return disk_close_lid();
-   }
-}
-
-static bool retro_get_eject_state()
-{
-   return disc_tray_open;
-}
-
-static unsigned retro_get_image_index()
-{
-   return disk_index;
-}
-
-static bool retro_set_image_index(unsigned index)
-{
-   if (index > disk_paths.size())
-      return false;
-   if (game_loaded && settings.System != DC_PLATFORM_DREAMCAST)
-      return false;
-   disk_index = index;
-   if (!game_loaded)
-      return true;
-   if (disc_tray_open)
-   {
-      disk_select_image();
-      return true;
-   }
-   return disk_close_lid();
-}
-
-static unsigned retro_get_num_images()
-{
-   return disk_paths.size();
-}
-
-static bool retro_add_image_index()
-{
-   disk_paths.push_back("");
-   disk_labels.push_back("");
-
-   return true;
-}
-
-static bool retro_replace_image_index(unsigned index, const struct retro_game_info *info)
-{
-   if ((index >= disk_paths.size()) ||
-       (index >= disk_labels.size()))
-      return false;
-
-   if (info == nullptr)
-   {
-      disk_paths.erase(disk_paths.begin() + index);
-      disk_labels.erase(disk_labels.begin() + index);
-
-      if ((disk_index >= index) && (disk_index > 0))
-         disk_index--;
-   }
-   else
-   {
-      char disk_label[PATH_MAX];
-      disk_label[0] = '\0';
-
-      disk_paths[index] = info->path;
-
-      short_pathname_representation(disk_label, info->path, sizeof(disk_label));
-      disk_labels[index] = disk_label;
-   }
-
-   return true;
-}
-
-static bool retro_set_initial_image(unsigned index, const char *path)
-{
-   if (!path || (*path == '\0'))
-      return false;
-
-   disk_initial_index = index;
-   disk_initial_path  = path;
-
-   return true;
-}
-
-static bool retro_get_image_path(unsigned index, char *path, size_t len)
-{
-   if (len < 1)
-      return false;
-
-   if (index >= disk_paths.size())
-      return false;
-
-   if (disk_paths[index].empty())
-      return false;
-
-   strncpy(path, disk_paths[index].c_str(), len - 1);
-   path[len - 1] = '\0';
-
-   return true;
-}
-
-static bool retro_get_image_label(unsigned index, char *label, size_t len)
-{
-   if (len < 1)
-      return false;
-
-   if ((index >= disk_paths.size()) ||
-       (index >= disk_labels.size()))
-      return false;
-
-   if (disk_labels[index].empty())
-      return false;
-
-   strncpy(label, disk_labels[index].c_str(), len - 1);
-   label[len - 1] = '\0';
-
-   return true;
-}
-
-static void init_disk_control_interface(void)
-{
-   unsigned dci_version = 0;
-
-   retro_disk_control_cb.set_eject_state     = retro_set_eject_state;
-   retro_disk_control_cb.get_eject_state     = retro_get_eject_state;
-   retro_disk_control_cb.set_image_index     = retro_set_image_index;
-   retro_disk_control_cb.get_image_index     = retro_get_image_index;
-   retro_disk_control_cb.get_num_images      = retro_get_num_images;
-   retro_disk_control_cb.add_image_index     = retro_add_image_index;
-   retro_disk_control_cb.replace_image_index = retro_replace_image_index;
-
-   retro_disk_control_ext_cb.set_eject_state     = retro_set_eject_state;
-   retro_disk_control_ext_cb.get_eject_state     = retro_get_eject_state;
-   retro_disk_control_ext_cb.set_image_index     = retro_set_image_index;
-   retro_disk_control_ext_cb.get_image_index     = retro_get_image_index;
-   retro_disk_control_ext_cb.get_num_images      = retro_get_num_images;
-   retro_disk_control_ext_cb.add_image_index     = retro_add_image_index;
-   retro_disk_control_ext_cb.replace_image_index = retro_replace_image_index;
-   retro_disk_control_ext_cb.set_initial_image   = retro_set_initial_image;
-   retro_disk_control_ext_cb.get_image_path      = retro_get_image_path;
-   retro_disk_control_ext_cb.get_image_label     = retro_get_image_label;
-
-   disk_initial_index = 0;
-   disk_initial_path.clear();
-   if (environ_cb(RETRO_ENVIRONMENT_GET_DISK_CONTROL_INTERFACE_VERSION, &dci_version) && (dci_version >= 1))
-      environ_cb(RETRO_ENVIRONMENT_SET_DISK_CONTROL_EXT_INTERFACE, &retro_disk_control_ext_cb);
-   else
-      environ_cb(RETRO_ENVIRONMENT_SET_DISK_CONTROL_INTERFACE, &retro_disk_control_cb);
-}
-
-/* (a line's leading and trailing blanks, and its end of line, taken off) */
-static char *m3u_trim(char *s)
-{
-   size_t len;
-
-   while (*s == ' ' || *s == '\t')
-      s++;
-   len = strlen(s);
-   while (len > 0 && (s[len - 1] == '\r' || s[len - 1] == '\n'
-            || s[len - 1] == ' ' || s[len - 1] == '\t'))
-      s[--len] = '\0';
-   return s;
-}
-
-/* An m3u as RetroArch writes and reads one: a disc's path on each line,
- * relative to the playlist or absolute, quoted or not, with its label
- * after a '|' or on an "#EXTINF:<runtime>,<label>" or "#LABEL:<label>"
- * line before it; other lines starting with '#' and blank lines are
- * skipped, and so is a UTF-8 byte order mark. */
-static bool read_m3u(const char *file)
-{
-   char line[PATH_MAX];
-   char name[PATH_MAX];
-   char next_label[PATH_MAX];
-   RFILE *f = filestream_open(file, RETRO_VFS_FILE_ACCESS_READ, RETRO_VFS_FILE_ACCESS_HINT_NONE);
-
-   if (!f)
-   {
-      log_cb(RETRO_LOG_ERROR, "Could not read file\n");
-      return false;
-   }
-
-   /* The discs read from this file: the disc in the drive (disk_index) is
-    * chosen once they are all read. */
-   unsigned count = 0;
-   bool first = true;
-
-   next_label[0] = '\0';
-   while (filestream_gets(f, line, sizeof(line)))
-   {
-      char *entry = line;
-
-      if (first && (u8)entry[0] == 0xEF && (u8)entry[1] == 0xBB && (u8)entry[2] == 0xBF)
-         entry += 3;
-      first = false;
-      entry = m3u_trim(entry);
-
-      if (entry[0] == '#')
-      {
-         const char *label = NULL;
-
-         if (!strncmp(entry, "#EXTINF:", 8))
-         {
-            label = strchr(entry + 8, ',');
-            if (label)
-               label++;
-         }
-         else if (!strncmp(entry, "#LABEL:", 7))
-            label = entry + 7;
-         if (label)
-            snprintf(next_label, sizeof(next_label), "%s", m3u_trim((char *)label));
-         continue;
-      }
-
-      char *bar = strchr(entry, '|');
-      if (bar)
-      {
-         *bar = '\0';
-         snprintf(next_label, sizeof(next_label), "%s", m3u_trim(bar + 1));
-         entry = m3u_trim(entry);
-      }
-
-      // Remove any beginning and ending quotes as these can cause issues when feeding the paths into command line later
-      size_t len = strlen(entry);
-      if (len >= 2 && entry[0] == '"' && entry[len - 1] == '"')
-      {
-         entry[len - 1] = '\0';
-         entry = m3u_trim(entry + 1);
-      }
-
-      if (entry[0] != '\0')
-      {
-         char disk_label[PATH_MAX];
-
-         if (path_is_absolute(entry))
-         	snprintf(name, sizeof(name), "%s", entry);
-         else
-         	snprintf(name, sizeof(name), "%s%s", g_roms_dir, entry);
-         disk_paths.push_back(name);
-
-         if (next_label[0] != '\0')
-            snprintf(disk_label, sizeof(disk_label), "%s", next_label);
-         else
-            short_pathname_representation(disk_label, name, sizeof(disk_label));
-         disk_labels.push_back(disk_label);
-         next_label[0] = '\0';
-
-         count++;
-      }
-   }
-
-   filestream_close(f);
-   return (count != 0);
 }
