@@ -107,14 +107,6 @@ __asm__(
 #endif
 static void generate_mainloop();
 
-struct DynaRBI : RuntimeBlockInfo
-{
-	virtual u32 Relink() override;
-
-	virtual void Relocate(void* dst) override {
-		verify(false);
-	}
-};
 
 static jmp_buf jmp_env;
 
@@ -516,7 +508,7 @@ public:
 			Str(w0, MemOperand(x1));
 		}
 
-		for (size_t i = 0; i < block->oplist.size(); i++)
+		for (size_t i = 0; i < block->op_count; i++)
 		{
 			shil_opcode& op  = block->oplist[i];
 			regalloc.OpBegin(&op, i);
@@ -2802,20 +2794,14 @@ static void generate_mainloop()
 	vmem_jit_write_end();
 }
 
-RuntimeBlockInfo* ngen_AllocateBlock()
-{
-	generate_mainloop();
-	return new DynaRBI();
-}
 
 void ngen_HandleException()
 {
 	longjmp(jmp_env, 1);
 }
 
-u32 DynaRBI::Relink()
+u32 RuntimeBlockInfo::Relink()
 {
-	//printf("DynaRBI::Relink %08x\n", this->addr);
 	vmem_jit_write_begin();
 	Arm64Assembler *compiler = new Arm64Assembler((u8 *)this->code + this->relink_offset);
 

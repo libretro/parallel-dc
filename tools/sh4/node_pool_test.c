@@ -2,19 +2,28 @@
  * given back at random, each filled with its own byte and checked before
  * it goes - none overlaps another, each is aligned to 16; a piece given
  * back is the next of its size taken; room that runs out has more made,
- * said once; a piece too large for a class is the heap's; and a standard
- * container on its allocator; with ASan, what is not handed out poisoned.
+ * said once; a piece too large for a class is the heap's; with ASan, what
+ * is not handed out poisoned.
  * tools/sh4/node_pool_test.sh builds it, with
  * ASan and UBSan. */
 #include <stdio.h>
 #include <string.h>
-#include <map>
-#include <vector>
 
 #include "node_pool.h"
 
+#if defined(__SANITIZE_ADDRESS__)
+#define NODE_POOL_ASAN 1
+#elif defined(__has_feature)
+#if __has_feature(address_sanitizer)
+#define NODE_POOL_ASAN 1
+#endif
+#endif
+#ifdef NODE_POOL_ASAN
+#include <sanitizer/asan_interface.h>
+#endif
+
 static int said;
-static void ran_out(size_t) { said++; }
+static void ran_out(size_t made) { (void)made; said++; }
 
 #define N 4000
 static unsigned char *piece[N];
@@ -47,25 +56,25 @@ static void check_piece(int i)
 		}
 }
 
-int main()
+int main(void)
 {
 	int round, i;
-	node_pool::The().ran_out = ran_out;
-	node_pool::Reserve(1 << 20);
-	CHECK(node_pool::The().made >= (1u << 20), "the room reserved");
+	node_pool_set_ran_out(ran_out);
+	node_pool_reserve(1 << 20);
+	CHECK(node_pool_made() >= (1u << 20), "the room reserved");
 	for (round = 0; round < 60000; round++)
 	{
 		i = (int)(rnd() % N);
 		if (piece[i] != NULL)
 		{
 			check_piece(i);
-			node_pool::Free(piece[i], piece_n[i]);
+			node_pool_free(piece[i], piece_n[i]);
 			piece[i] = NULL;
 		}
 		else
 		{
 			piece_n[i] = size_of();
-			piece[i] = (unsigned char *)node_pool::Alloc(piece_n[i]);
+			piece[i] = (unsigned char *)node_pool_alloc(piece_n[i]);
 			CHECK(piece[i] != NULL, "a piece");
 			CHECK(((size_t)piece[i] & 15) == 0, "aligned to 16");
 			memset(piece[i], (unsigned char)i, piece_n[i]);
@@ -75,29 +84,22 @@ int main()
 		if (piece[i] != NULL)
 		{
 			check_piece(i);
-			node_pool::Free(piece[i], piece_n[i]);
+			node_pool_free(piece[i], piece_n[i]);
 			piece[i] = NULL;
 		}
 	CHECK(said == 1, "room run out: more made, said once");
 	{
-		void *a = node_pool::Alloc(100), *b;
+		void *a = node_pool_alloc(100), *b;
 #ifdef NODE_POOL_ASAN
 		CHECK(__asan_address_is_poisoned((char *)a + 100), "past what was asked for: poisoned");
 #endif
-		node_pool::Free(a, 100);
+		node_pool_free(a, 100);
 #ifdef NODE_POOL_ASAN
 		CHECK(__asan_address_is_poisoned((char *)a + 40), "a piece given back: poisoned");
 #endif
-		b = node_pool::Alloc(112);
+		b = node_pool_alloc(112);
 		CHECK(a == b, "a piece given back the next of its size");
-		node_pool::Free(b, 112);
-	}
-	{
-		std::map<int, std::vector<int, node_pool::Allocator<int> >, std::less<int>,
-				node_pool::Allocator<std::pair<const int, std::vector<int, node_pool::Allocator<int> > > > > m;
-		for (i = 0; i < 5000; i++)
-			m[i % 777].push_back(i);
-		CHECK(m.size() == 777 && m[5].size() == 7, "a map of vectors on the allocator");
+		node_pool_free(b, 112);
 	}
 	if (failures)
 	{

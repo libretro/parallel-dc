@@ -171,7 +171,7 @@ public:
 		{
 			//INFO_LOG(DYNAREC, "AFTER %08x\n", block->vaddr);
 			//PrintBlock();
-			INFO_LOG(DYNAREC, "STATS: %08x ops %zd constants %d constops replaced %d dead code %d dead regs %d dyn2stat blks %d waw %d shifts %d\n", block->vaddr, block->oplist.size(),
+			INFO_LOG(DYNAREC, "STATS: %08x ops %zd constants %d constops replaced %d dead code %d dead regs %d dyn2stat blks %d waw %d shifts %d\n", block->vaddr, block->op_count,
 					stats.prop_constants, stats.constant_ops_replaced,
 					stats.dead_code_ops, stats.dead_registers, stats.dyn_to_stat_blocks, stats.waw_blocks, stats.combined_shifts);
 		}
@@ -182,7 +182,7 @@ public:
 	{
 		memset(reg_versions, 0, sizeof(reg_versions));
 
-		for (shil_opcode& op : block->oplist)
+		for (shil_opcode& op : bm_Ops(block))
 		{
 			AddVersionToOperand(op.rs1, false);
 			AddVersionToOperand(op.rs2, false);
@@ -215,7 +215,7 @@ private:
 
 	void PrintBlock()
 	{
-		for (const shil_opcode& op : block->oplist)
+		for (const shil_opcode& op : bm_Ops(block))
 		{
 			INFO_LOG(DYNAREC, "%08x  %s\n", block->vaddr + op.guest_offs, op.dissasm().c_str());
 		}
@@ -275,7 +275,7 @@ private:
 
 	void ConstPropPass()
 	{
-		for (opnum = 0; opnum < (int)block->oplist.size(); opnum++)
+		for (opnum = 0; opnum < (int)block->op_count; opnum++)
 		{
 			shil_opcode& op = block->oplist[opnum];
 
@@ -445,7 +445,7 @@ private:
 		RegValueMap uses;	/* (a set: the values unused) */
 
 		memset(last_versions, -1, sizeof(last_versions));
-		for (int opnum = block->oplist.size() - 1; opnum >= 0; opnum--)
+		for (int opnum = block->op_count - 1; opnum >= 0; opnum--)
 		{
 			shil_opcode& op = block->oplist[opnum];
 			bool dead_code = false;
@@ -537,7 +537,7 @@ private:
 			if (dead_code && op.op != shop_readm)	// memory read on registers can have side effects
 			{
 				//printf("%08x DEAD %s\n", block->vaddr + op.guest_offs, op.dissasm().c_str());
-				block->oplist.erase(block->oplist.begin() + opnum);
+				bm_OpErase(block, opnum);
 				stats.dead_code_ops++;
 			}
 			else
@@ -563,7 +563,7 @@ private:
 
 	void SimplifyExpressionPass()
 	{
-		for (int opnum = 0; opnum < block->oplist.size(); opnum++)
+		for (int opnum = 0; opnum < block->op_count; opnum++)
 		{
 			shil_opcode& op = block->oplist[opnum];
 			if (op.rs2.is_imm())
@@ -680,7 +680,7 @@ private:
 		RegValueMap aliases;		// (dest reg, version) -> (source reg, version), as keys
 
 		// Find aliases
-		for (shil_opcode& op : block->oplist)
+		for (shil_opcode& op : bm_Ops(block))
 		{
 			// ignore moves from/to int regs to/from fpu regs
 			if (op.op == shop_mov32 && op.rs1.is_reg() && op.rd.is_r32i() == op.rs1.is_r32i())
@@ -711,7 +711,7 @@ private:
 			size_t defnum = -1;
 			size_t usenum = -1;
 			size_t aliasdef = -1;
-			for (int opnum = 0; opnum < block->oplist.size(); opnum++)
+			for (int opnum = 0; opnum < block->op_count; opnum++)
 			{
 				shil_opcode* op = &block->oplist[opnum];
 				// find def
@@ -784,7 +784,7 @@ private:
 			}
 			stats.dead_registers++;
 			//printf("%08x DREG %s\n", block->vaddr + block->oplist[defnum].guest_offs, block->oplist[defnum].dissasm().c_str());
-			block->oplist.erase(block->oplist.begin() + defnum);
+			bm_OpErase(block, defnum);
 		}
 	}
 
@@ -792,13 +792,13 @@ private:
 	{
 		// This pass creates holes in reg versions and should be run last
 		// The versioning pass must be re-run if needed
-		for (int opnum = 0; opnum < block->oplist.size(); opnum++)
+		for (int opnum = 0; opnum < block->op_count; opnum++)
 		{
 			shil_opcode& op = block->oplist[opnum];
 			if (op.op == shop_mov32 && op.rs1.is_reg() && op.rd._reg == op.rs1._reg)
 			{
 				//printf("%08x DIDN %s\n", block->vaddr + op.guest_offs, op.dissasm().c_str());
-				block->oplist.erase(block->oplist.begin() + opnum);
+				bm_OpErase(block, opnum);
 				opnum--;
 				stats.dead_code_ops++;
 			}
@@ -807,7 +807,7 @@ private:
 
 	void CombineShiftsPass()
 	{
-		for (int opnum = 0; opnum < (int)block->oplist.size() - 1; opnum++)
+		for (int opnum = 0; opnum < (int)block->op_count - 1; opnum++)
 		{
 			shil_opcode& op = block->oplist[opnum];
 			shil_opcode& next_op = block->oplist[opnum + 1];
@@ -826,7 +826,7 @@ private:
 
 	void WriteAfterWritePass()
 	{
-		for (int opnum = 0; opnum < (int)block->oplist.size() - 1; opnum++)
+		for (int opnum = 0; opnum < (int)block->op_count - 1; opnum++)
 		{
 			shil_opcode& op = block->oplist[opnum];
 			shil_opcode& next_op = block->oplist[opnum + 1];
@@ -840,7 +840,7 @@ private:
 					&& op.rs2.count() == next_op.rs2.count())
 			{
 				//printf("%08x DEAD %s\n", block->vaddr + op.guest_offs, op.dissasm().c_str());
-				block->oplist.erase(block->oplist.begin() + opnum);
+				bm_OpErase(block, opnum);
 				opnum--;
 				stats.dead_code_ops++;
 				stats.waw_blocks++;

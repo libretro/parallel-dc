@@ -130,8 +130,6 @@ void ngen_CC_Param(shil_opcode* op,shil_param* par,CanonicalParamType tp);
 void ngen_CC_Call(shil_opcode* op,void* function);
 void ngen_CC_Finish(shil_opcode* op);
 
-RuntimeBlockInfo* ngen_AllocateBlock();
-
 #ifdef __cplusplus
 }
 #endif

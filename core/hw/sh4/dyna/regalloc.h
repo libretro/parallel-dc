@@ -415,7 +415,7 @@ struct RegAlloc
 
 	bool IsFlushOp(RuntimeBlockInfo* block, int opid)
 	{
-		verify(opid>=0 && opid<block->oplist.size());
+		verify(opid>=0 && opid<block->op_count);
 		shil_opcode* op=&block->oplist[opid];
 
 		return op->op == shop_sync_fpscr || op->op == shop_sync_sr || op->op == shop_ifb;
@@ -477,7 +477,7 @@ struct RegAlloc
 	{
 		Cleanup();
 		shil_opcode* op;
-		for (size_t opid=0;opid<block->oplist.size();opid++)
+		for (size_t opid=0;opid<block->op_count;opid++)
 		{
 			op=&block->oplist[opid];
 
@@ -750,7 +750,7 @@ struct RegAlloc
 
 		
 		//Trim span count to max reg count
-		for (size_t opid=0;opid<block->oplist.size();opid++)
+		for (size_t opid=0;opid<block->op_count;opid++)
 		{
 			u32 cc_g=0;
 			u32 cc_f=0;
@@ -784,7 +784,7 @@ struct RegAlloc
 		}
 
 		//Allocate the registers to the spans !
-		for (size_t opid=0;opid<block->oplist.size();opid++)
+		for (size_t opid=0;opid<block->op_count;opid++)
 		{
 			for (RegSpan *span : all_spans)
 			{
@@ -896,7 +896,7 @@ struct RegAlloc
 
 	//move spans later for post-saving !
 #if 1
-		u32 blk_last=block->oplist.size()-1;
+		u32 blk_last=block->op_count-1;
 
 		for (u32 sid=0;sid<all_spans.size();sid++)
 		{

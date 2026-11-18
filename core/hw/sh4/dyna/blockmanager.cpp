@@ -3,8 +3,7 @@
 	Its based on a simple hashed-lists idea
 */
 
-#include <algorithm>
-#include <map>
+#include <stdlib.h>
 #include "blockmanager.h"
 #include "wait_site.h"
 #include "ngen.h"
@@ -22,14 +21,126 @@ op_agent_t          oprofHandle;
 #if FEAT_SHREC != DYNAREC_NONE
 
 
-typedef std::vector<RuntimeBlockInfoPtr> bm_List;
-typedef std::map<void*, RuntimeBlockInfoPtr, std::less<void *>,
-		node_pool::Allocator<std::pair<void * const, RuntimeBlockInfoPtr> > > bm_Map;
+/* The blocks there are, by where their code is: one table for the main
+ * cache and one for the temporary cache, each in the order its blocks
+ * were made, which is the order of their code, for each cache is filled
+ * from its start to its end and only ever emptied whole. A block that
+ * goes leaves its place (block NULL), until the cache is emptied. Each
+ * holds its blocks. */
+struct BlockMapEntry
+{
+	void *code;
+	RuntimeBlockInfo *block;
+};
+struct BlockMap
+{
+	BlockMapEntry *entries;
+	size_t count;
+	size_t room;
+};
+/* [0]: the main cache's, [1]: the temporary cache's */
+static BlockMap blkmap[2];
 
 /* The temporary cache's blocks (blkmap has them as well), through their
  * own links: put in and taken out with nothing allocated */
 static RuntimeBlockInfo *temp_blocks;
-static bm_List del_blocks;
+
+/* The blocks discarded lately, held until bm_CleanupDeletedBlocks() */
+static RuntimeBlockInfo **del_blocks;
+static size_t del_block_count;
+static size_t del_block_room;
+
+/* @room places in @*array of @size bytes each, where there are fewer
+ * (false: no memory). Made when the recompiler starts, and grown in the
+ * rare case it comes to more. */
+static bool bm_grow(void **array, size_t *have, size_t room, size_t size)
+{
+	void *grown;
+	if (*have >= room)
+		return true;
+	grown = realloc(*array, room * size);
+	if (grown == NULL)
+		return false;
+	*array = grown;
+	*have = room;
+	return true;
+}
+
+static void del_blocks_push(RuntimeBlockInfo *block)
+{
+	if (del_block_count == del_block_room
+			&& !bm_grow((void **)&del_blocks, &del_block_room, del_block_room * 2 + 1024, sizeof(*del_blocks)))
+		die("out of memory");
+	del_blocks[del_block_count++] = block;
+}
+
+/* The last place in @map whose code is at @code or before (-1: none) */
+static ptrdiff_t blkmap_find(const BlockMap *map, const void *code)
+{
+	size_t lo = 0, hi = map->count;
+	while (lo < hi)
+	{
+		const size_t mid = lo + (hi - lo) / 2;
+		if ((const u8 *)map->entries[mid].code <= (const u8 *)code)
+			lo = mid + 1;
+		else
+			hi = mid;
+	}
+	return (ptrdiff_t)lo - 1;
+}
+
+/* (the hold its maker had is the table's now) */
+static void blkmap_add(RuntimeBlockInfo *block)
+{
+	BlockMap *map = &blkmap[block->temp_block ? 1 : 0];
+	if (map->count != 0 && (u8 *)map->entries[map->count - 1].code >= (u8 *)block->code)
+	{
+		INFO_LOG(DYNAREC, "DUP: %p %08X %p\n", map->entries[map->count - 1].code, block->addr, block->code);
+		verify(false);
+	}
+	if (map->count == map->room
+			&& !bm_grow((void **)&map->entries, &map->room, map->room * 2 + 1024, sizeof(*map->entries)))
+		die("out of memory");
+	map->entries[map->count].code = (void *)block->code;
+	map->entries[map->count].block = block;
+	map->count++;
+}
+
+/* The block taken out (it was there): its place left, and the table's
+ * hold on it the caller's */
+static void blkmap_remove(RuntimeBlockInfo *block)
+{
+	BlockMap *map = &blkmap[block->temp_block ? 1 : 0];
+	const ptrdiff_t i = blkmap_find(map, (void *)block->code);
+	verify(i >= 0 && map->entries[i].block == block);
+	map->entries[i].block = NULL;
+}
+
+/* Every block there is to @f, in the order of their code (the two tables
+ * merged), and the tables emptied: their holds @f's */
+static void blkmap_take_all(void (*f)(RuntimeBlockInfo *block))
+{
+	size_t at[2] = { 0, 0 };
+	for (;;)
+	{
+		int which;
+		while (at[0] < blkmap[0].count && blkmap[0].entries[at[0]].block == NULL)
+			at[0]++;
+		while (at[1] < blkmap[1].count && blkmap[1].entries[at[1]].block == NULL)
+			at[1]++;
+		if (at[0] == blkmap[0].count && at[1] == blkmap[1].count)
+			break;
+		if (at[0] == blkmap[0].count)
+			which = 1;
+		else if (at[1] == blkmap[1].count)
+			which = 0;
+		else
+			which = (u8 *)blkmap[1].entries[at[1]].code < (u8 *)blkmap[0].entries[at[0]].code ? 1 : 0;
+		f(blkmap[which].entries[at[which]++].block);
+	}
+	blkmap[0].count = 0;
+	blkmap[1].count = 0;
+}
 
 static bool unprotected_pages[RAM_SIZE_MAX/PAGE_SIZE];
 /* The pages of main memory that are locked against writing now: those code
@@ -83,7 +194,6 @@ static void lists_clear(void)
 		temp_list_remove(temp_blocks);
 }
 
-static bm_Map blkmap;
 // Stats
 u32 protected_blocks;
 u32 unprotected_blocks;
@@ -231,22 +341,23 @@ RuntimeBlockInfoPtr DYNACALL bm_GetBlock(u32 addr)
 // This takes a RX address and returns the info block ptr (RW space)
 RuntimeBlockInfoPtr bm_GetBlock2(void* dynarec_code)
 {
-	if (blkmap.empty())
-		return NULL;
-
 	void *dynarecrw = CC_RX2RW(dynarec_code);
-	// Returns a block who's code addr is bigger than dynarec_code (or end)
-	auto iter = blkmap.upper_bound(dynarecrw);
-	if (iter == blkmap.begin())
-		return NULL;
-	iter--;  // Need to go back to find the potential candidate
+	int m;
 
-	// However it might be out of bounds, check for that
-	if ((u8*)iter->second->code + iter->second->host_code_size < (u8*)dynarecrw)
-		return NULL;
-
-	verify(iter->second->contains_code((u8*)dynarecrw));
-	return iter->second;
+	for (m = 0; m < 2; m++)
+	{
+		const ptrdiff_t i = blkmap_find(&blkmap[m], dynarecrw);
+		RuntimeBlockInfo *block;
+		if (i < 0)
+			continue;
+		// the block whose code starts there or before: it may not reach
+		block = blkmap[m].entries[i].block;
+		if (block == NULL || (u8*)block->code + block->host_code_size < (u8*)dynarecrw)
+			continue;
+		verify(block->contains_code((u8*)dynarecrw));
+		return block;
+	}
+	return NULL;
 }
 
 /* Which of the blocks in del_blocks still have their code to themselves,
@@ -266,7 +377,10 @@ static size_t temp_reset_end;
 
 static void bm_CleanupDeletedBlocks()
 {
-	del_blocks.clear();
+	size_t i;
+	for (i = 0; i < del_block_count; i++)
+		bm_BlockUnref(del_blocks[i]);
+	del_block_count = 0;
 	reset_batch = (size_t)-1;
 	reset_end = 0;
 	temp_reset_end = 0;
@@ -275,33 +389,22 @@ static void bm_CleanupDeletedBlocks()
 // Takes RX pointer and returns a RW pointer
 RuntimeBlockInfoPtr bm_GetStaleBlock(void* dynarec_code)
 {
-   void *dynarecrw = CC_RX2RW(dynarec_code);
-	if (del_blocks.empty())
-		return NULL;
+	void *dynarecrw = CC_RX2RW(dynarec_code);
+	size_t i;
 	// Start from the end to get the youngest one
-	auto it = del_blocks.end();
-	do
-	{
-		it--;
-		if ((*it)->contains_code((u8*)dynarecrw))
-			return *it;
-	} while (it != del_blocks.begin());
+	for (i = del_block_count; i-- > 0; )
+		if (del_blocks[i]->contains_code((u8*)dynarecrw))
+			return del_blocks[i];
 
 	return NULL;
 }
 
-void bm_AddBlock(RuntimeBlockInfo* blk)
+/* (the hold its maker had is the table's now) */
+void bm_AddBlock(RuntimeBlockInfo* block)
 {
-	/* (its count, as the block, in the recompiler's pool) */
-	RuntimeBlockInfoPtr block(blk, std::default_delete<RuntimeBlockInfo>(), node_pool::Allocator<RuntimeBlockInfo>());
 	if (block->temp_block)
-		temp_list_add(blk);
-	auto iter = blkmap.find((void*)blk->code);
-	if (iter != blkmap.end()) {
-		INFO_LOG(DYNAREC, "DUP: %08X %p %08X %p\n", iter->second->addr, iter->second->code, block->addr, block->code);
-		verify(false);
-	}
-	blkmap[(void*)block->code] = block;
+		temp_list_add(block);
+	blkmap_add(block);
 
 	verify((void*)bm_GetCode(block->addr) == (void*)ngen_FailedToFindBlock);
 	FPCA(block->addr) = (DynarecCodeEntryPtr)CC_RW2RX(block->code);
@@ -325,12 +428,10 @@ void bm_AddBlock(RuntimeBlockInfo* blk)
 
 void bm_DiscardBlock(RuntimeBlockInfo* block)
 {
-	// Remove from block map
-	auto it = blkmap.find((void*)block->code);
-	verify(it != blkmap.end());
-	RuntimeBlockInfoPtr block_ptr = it->second;
+	RuntimeBlockInfo *const block_ptr = block;
 
-	blkmap.erase(it);
+	// Remove from block map (its hold, del_blocks' below)
+	blkmap_remove(block);
 
 	/* It jumps to its neighbours no longer, and they are told: a block
 	 * that goes has those that are linked to it linked again (Discard(),
@@ -355,9 +456,9 @@ void bm_DiscardBlock(RuntimeBlockInfo* block)
 	bm_ForgetVaddrs();
 
 	if (block_ptr->temp_block)
-		temp_list_remove(block_ptr.get());
+		temp_list_remove(block_ptr);
 
-	del_blocks.push_back(block_ptr);
+	del_blocks_push(block_ptr);
 	block_ptr->Discard();
 }
 
@@ -456,6 +557,19 @@ static void bm_UnlockPage(u32 addr)
 	bm_ProtectPage(addr, false);
 }
 
+/* (a block of the tables, for bm_ResetCache(): its hold del_blocks') */
+static void reset_one(RuntimeBlockInfo *block)
+{
+	block->relink_data = 0;
+	block->pNextBlock = 0;
+	block->pBranchBlock = 0;
+	// needed for the transition to full mmu. Could perhaps limit it to the current block.
+	block->Relink();
+	// Avoid circular references
+	block->Discard();
+	del_blocks_push(block);
+}
+
 void bm_ResetCache(bool nothing_since)
 {
 	bm_ForgetVaddrs();
@@ -477,11 +591,11 @@ void bm_ResetCache(bool nothing_since)
 	 * last time and may be running still: one that wrote to the page its
 	 * own code is in - a variable next to it will do - and then did what
 	 * brings this about. */
-	const bool again = nothing_since && reset_batch <= del_blocks.size();
+	const bool again = nothing_since && reset_batch <= del_block_count;
 
-	for (size_t i = again ? reset_batch : reset_end; i < del_blocks.size(); i++)
+	for (size_t i = again ? reset_batch : reset_end; i < del_block_count; i++)
 	{
-		RuntimeBlockInfo *block = del_blocks[i].get();
+		RuntimeBlockInfo *block = del_blocks[i];
 
 		if (!again && block->temp_block && i < temp_reset_end)
 			continue;
@@ -491,25 +605,13 @@ void bm_ResetCache(bool nothing_since)
 		block->Relink();
 	}
 	if (!again)
-		reset_batch = del_blocks.size();
+		reset_batch = del_block_count;
 
-	for (const auto& it : blkmap)
-	{
-		RuntimeBlockInfoPtr block = it.second;
-		block->relink_data = 0;
-		block->pNextBlock = 0;
-		block->pBranchBlock = 0;
-		// needed for the transition to full mmu. Could perhaps limit it to the current block.
-		block->Relink();
-		// Avoid circular references
-		block->Discard();
-		del_blocks.push_back(block);
-	}
-
-	reset_end = del_blocks.size();
-
-	blkmap.clear();
 	// blkmap includes temp blocks as well
+	blkmap_take_all(reset_one);
+
+	reset_end = del_block_count;
+
 	lists_clear();
 
 	// every page may be protected again, when next something is compiled from it
@@ -518,7 +620,7 @@ void bm_ResetCache(bool nothing_since)
 #ifdef DYNA_OPROF
 	if (oprofHandle)
 	{
-		for (int i=0;i<del_blocks.size();i++)
+		for (size_t i=0;i<del_block_count;i++)
 		{
 			if (op_unload_native_code(oprofHandle, (uint64_t)del_blocks[i]->code) != 0)
 			{
@@ -550,7 +652,7 @@ void bm_ResetTempCache(bool full)
 		while (temp_blocks != NULL)
 			bm_DiscardBlock(temp_blocks);
 	// (the temporary blocks there are now may be written over from here on)
-	temp_reset_end = del_blocks.size();
+	temp_reset_end = del_block_count;
 }
 
 static void bm_RanOut(size_t made)
@@ -562,11 +664,14 @@ void bm_Init()
 {
 	/* (a block discarded is put here, from the signal handler too: its
 	 * room made now, and kept when it is emptied) */
-	del_blocks.reserve(CODE_SIZE / 1024);
+	if (!bm_grow((void **)&del_blocks, &del_block_room, CODE_SIZE / 1024, sizeof(*del_blocks))
+			|| !bm_grow((void **)&blkmap[0].entries, &blkmap[0].room, CODE_SIZE / 1024, sizeof(*blkmap[0].entries))
+			|| !bm_grow((void **)&blkmap[1].entries, &blkmap[1].room, TEMP_CODE_SIZE / 1024, sizeof(*blkmap[1].entries)))
+		die("out of memory");
 	/* the room the blocks and what they are kept in take, made now
 	 * (node_pool.h): more is made if a game needs it, and that is said */
-	node_pool::Reserve(node_pool::CHUNK);
-	node_pool::The().ran_out = bm_RanOut;
+	node_pool_reserve(NODE_POOL_CHUNK);
+	node_pool_set_ran_out(bm_RanOut);
 
 #ifdef DYNA_OPROF
 	oprofHandle=op_open_agent();
@@ -586,24 +691,34 @@ void bm_Init()
  * long as the frontend ran - or at the process's exit. Nothing runs
  * recompiled code now, so the code is not touched: the links are cut and
  * the blocks freed as their last holder lets go. */
+static void release_refs(RuntimeBlockInfo *block)
+{
+	while (block->pre_ref_count != 0)
+		bm_BlockUnref(block->pre_refs[--block->pre_ref_count]);
+	block->pNextBlock = NULL;
+	block->pBranchBlock = NULL;
+}
+
+static void release_one(RuntimeBlockInfo *block)
+{
+	bm_BlockUnref(block);
+}
+
 static void bm_ReleaseBlocks()
 {
-	for (const auto& it : blkmap)
-	{
-		it.second->pre_refs.clear();
-		it.second->pNextBlock = NULL;
-		it.second->pBranchBlock = NULL;
-	}
-	for (const auto& block : del_blocks)
-	{
-		block->pre_refs.clear();
-		block->pNextBlock = NULL;
-		block->pBranchBlock = NULL;
-	}
+	size_t i;
+	int m;
+	for (m = 0; m < 2; m++)
+		for (i = 0; i < blkmap[m].count; i++)
+			if (blkmap[m].entries[i].block != NULL)
+				release_refs(blkmap[m].entries[i].block);
+	for (i = 0; i < del_block_count; i++)
+		release_refs(del_blocks[i]);
 	bm_ForgetVaddrs();
 	lists_clear();
-	blkmap.clear();
+	blkmap_take_all(release_one);
 }
+
 
 void bm_Term()
 {
@@ -731,34 +846,122 @@ void bm_Sort()
 }
 #endif
 
-RuntimeBlockInfo::~RuntimeBlockInfo()
+RuntimeBlockInfo *bm_NewBlock(void)
 {
-	if (sh4_code_size != 0)
+	void *room = node_pool_alloc(sizeof(RuntimeBlockInfo));
+	RuntimeBlockInfo *block;
+	if (room == NULL)
+		die("out of memory");
+	block = new (room) RuntimeBlockInfo();
+	block->refs = 1;
+	block->t_reg = -1;
+	return block;
+}
+
+/* Room for @count operations in @block's list */
+static void op_room(RuntimeBlockInfo *block, u32 count)
+{
+	shil_opcode *grown;
+	u32 room;
+	if (count <= block->op_room)
+		return;
+	room = block->op_room == 0 ? 64 : block->op_room * 2;
+	while (room < count)
+		room *= 2;
+	grown = (shil_opcode *)node_pool_alloc(room * sizeof(*grown));
+	if (grown == NULL)
+		die("out of memory");
+	if (block->op_count != 0)
+		memcpy((void *)grown, block->oplist, block->op_count * sizeof(*grown));
+	node_pool_free(block->oplist, block->op_room * sizeof(*grown));
+	block->oplist = grown;
+	block->op_room = room;
+}
+
+void bm_OpPush(RuntimeBlockInfo *block, const shil_opcode *op)
+{
+	op_room(block, block->op_count + 1);
+	memcpy((void *)&block->oplist[block->op_count++], op, sizeof(*op));
+}
+
+void bm_OpInsert(RuntimeBlockInfo *block, u32 at, const shil_opcode *op)
+{
+	op_room(block, block->op_count + 1);
+	memmove((void *)&block->oplist[at + 1], &block->oplist[at], (block->op_count - at) * sizeof(*op));
+	memcpy((void *)&block->oplist[at], op, sizeof(*op));
+	block->op_count++;
+}
+
+void bm_OpErase(RuntimeBlockInfo *block, u32 at)
+{
+	memmove((void *)&block->oplist[at], &block->oplist[at + 1], (block->op_count - at - 1) * sizeof(*block->oplist));
+	block->op_count--;
+}
+
+void bm_BlockRef(RuntimeBlockInfo *block)
+{
+	block->refs++;
+}
+
+void bm_BlockUnref(RuntimeBlockInfo *block)
+{
+	verify(block->refs != 0);
+	if (--block->refs != 0)
+		return;
+	if (block->sh4_code_size != 0)
 	{
-		if (read_only)
+		if (block->read_only)
 			protected_blocks--;
 		else
 			unprotected_blocks--;
 	}
+	while (block->pre_ref_count != 0)
+		bm_BlockUnref(block->pre_refs[--block->pre_ref_count]);
+	node_pool_free(block->pre_refs, block->pre_ref_room * sizeof(*block->pre_refs));
+	node_pool_free(block->oplist, block->op_room * sizeof(*block->oplist));
+	block->~RuntimeBlockInfo();
+	node_pool_free(block, sizeof(RuntimeBlockInfo));
 }
 
-void RuntimeBlockInfo::AddRef(const RuntimeBlockInfoPtr& other)
-{ 
-	pre_refs.push_back(other); 
+void RuntimeBlockInfo::AddRef(RuntimeBlockInfo *other)
+{
+	if (pre_ref_count == pre_ref_room)
+	{
+		const u32 room = pre_ref_room == 0 ? 4 : pre_ref_room * 2;
+		RuntimeBlockInfo **grown = (RuntimeBlockInfo **)node_pool_alloc(room * sizeof(*grown));
+		if (grown == NULL)
+			die("out of memory");
+		if (pre_ref_count != 0)
+			memcpy(grown, pre_refs, pre_ref_count * sizeof(*grown));
+		node_pool_free(pre_refs, pre_ref_room * sizeof(*pre_refs));
+		pre_refs = grown;
+		pre_ref_room = room;
+	}
+	bm_BlockRef(other);
+	pre_refs[pre_ref_count++] = other;
 }
 
-void RuntimeBlockInfo::RemRef(const RuntimeBlockInfoPtr& other)
-{ 
-	auto it = std::find(pre_refs.begin(), pre_refs.end(), other);
-	if (it != pre_refs.end())
-		pre_refs.erase(it);
+void RuntimeBlockInfo::RemRef(RuntimeBlockInfo *other)
+{
+	u32 i;
+	for (i = 0; i < pre_ref_count; i++)
+		if (pre_refs[i] == other)
+		{
+			memmove(&pre_refs[i], &pre_refs[i + 1], (pre_ref_count - i - 1) * sizeof(*pre_refs));
+			pre_ref_count--;
+			bm_BlockUnref(other);
+			return;
+		}
 }
 
 void RuntimeBlockInfo::Discard()
 {
+	u32 k;
 	// Update references
-	for (RuntimeBlockInfoPtr& ref : pre_refs)
+	for (k = 0; k < pre_ref_count; k++)
 	{
+		RuntimeBlockInfo *ref = pre_refs[k];
+
 		/* (By what it is linked to, not by the address it goes to: that
 		 * need not be the address this was compiled for - the same code
 		 * through another of memory's mirrors - and a link left standing
@@ -770,7 +973,8 @@ void RuntimeBlockInfo::Discard()
 		ref->relink_data = 0;
 		ref->Relink();
 	}
-	pre_refs.clear();
+	while (pre_ref_count != 0)
+		bm_BlockUnref(pre_refs[--pre_ref_count]);
 
 	// Remove this block from the per-page block lists
 	for (u32 i = 0; i < page_links; i++)
@@ -977,7 +1181,7 @@ void print_blocks()
 			fprintf(f,"guest_cycles: %d\n",blk->guest_cycles);
 			fprintf(f,"guest_opcodes: %d\n",blk->guest_opcodes);
 			fprintf(f,"host_opcodes: %d\n",blk->host_opcodes);
-			fprintf(f,"il_opcodes: %zd\n",blk->oplist.size());
+			fprintf(f,"il_opcodes: %zd\n",blk->op_count);
 
 			u32 hcode=0;
 			s32 gcode=-1;
@@ -986,7 +1190,7 @@ void print_blocks()
 			size_t j=0;
 			
 			fprintf(f,"{\n");
-			for (;j<blk->oplist.size();j++)
+			for (;j<blk->op_count;j++)
 			{
 				shil_opcode* op = &blk->oplist[j];
 				//fprint_hex(f,"//h:",pucode,hcode,op->host_offs);

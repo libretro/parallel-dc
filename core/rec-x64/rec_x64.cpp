@@ -52,23 +52,6 @@
  * finds the new block that is compiled in its place. A block that is
  * thrown away is unlinked the same way, since it may still be running -
  * it may be what wrote over the code - and has yet to leave. */
-struct DynaRBI : RuntimeBlockInfo
-{
-   /* Where in the block's code its link sites are, 0 where there is none:
-    * the way out to BranchBlock, and the one to NextBlock. */
-   u32 link_at[2] = { 0, 0 };
-   /* Where a block that is linked to this one comes in: past the test of
-    * the address the block is run at, if that is what it starts with. A
-    * link is only ever made for the address the block was compiled for
-    * (ngen_link()), so whoever comes by one has the answer already. */
-   u32 linked_entry = 0;
-
-   virtual u32 Relink();
-
-   virtual void Relocate(void* dst) {
-      verify(false);
-   }
-};
 
 /* What is left of the time slice. Recompiled code has it in r14, where
  * taking a block's cycles off it is one instruction on a register; it was
@@ -476,7 +459,7 @@ static void mem_stub_make(int kind, int addr, int data)
 }
 
 /* The link stub, which is in the code cache so that every block reaches
- * it with a near call: see DynaRBI. In the cache's writable mapping; a
+ * it with a near call: see RuntimeBlockInfo::link_at. In the cache's writable mapping; a
  * block is the same distance from it in the executable one. */
 static u8 *link_stub;
 
@@ -506,7 +489,7 @@ static void link_site_jump(u8 *site, const u8 *code)
 	site[6] = 0xCC;
 }
 
-u32 DynaRBI::Relink()
+u32 RuntimeBlockInfo::Relink()
 {
 	for (int i = 0; i < 2; i++)
 	{
@@ -515,7 +498,7 @@ u32 DynaRBI::Relink()
 		if (link_at[i] == 0)
 			continue;
 		if (to != NULL)
-			link_site_jump((u8 *)code + link_at[i], (const u8 *)to->code + ((const DynaRBI *)to)->linked_entry);
+			link_site_jump((u8 *)code + link_at[i], (const u8 *)to->code + to->linked_entry);
 		else
 			link_site_call_stub((u8 *)code + link_at[i]);
 	}
@@ -546,7 +529,7 @@ extern "C" __attribute__((used)) void *ngen_link(u8 *after, u32 pc)
 		 * compiled for a machine without one, has a site for anywhere it
 		 * goes and put nothing in the context: the main loop, sent there
 		 * with the context as it was, ran the block a second time. */
-		if (from == NULL || !rdv_MmuSamePlace(from.get(), pc, &addr))
+		if (from == NULL || !rdv_MmuSamePlace(from, pc, &addr))
 		{
 			next_pc = pc;
 			return (void *)&ngen_block_return;
@@ -577,7 +560,7 @@ extern "C" __attribute__((used)) void *ngen_link(u8 *after, u32 pc)
 	if (from == NULL || bm_GetBlock2(site_rx) != from)
 		return (void *)code;
 
-	DynaRBI *const block = (DynaRBI *)from.get();
+	RuntimeBlockInfo *const block = from;
 	u8 *const site = (u8 *)CC_RX2RW(site_rx);
 	const u32 at = (u32)(site - (u8 *)block->code);
 	const int which = at == block->link_at[0] ? 0 : at == block->link_at[1] ? 1 : -1;
@@ -606,9 +589,9 @@ extern "C" __attribute__((used)) void *ngen_link(u8 *after, u32 pc)
 	}
 
 	if (which == 0)
-		block->pBranchBlock = to.get();
+		block->pBranchBlock = to;
 	else
-		block->pNextBlock = to.get();
+		block->pNextBlock = to;
 	to->AddRef(from);
 	block->Relink();
 	return (void *)code;
@@ -668,10 +651,6 @@ void ngen_GetFeatures(ngen_features* dst)
 	dst->OnlyDynamicEnds = false;
 }
 
-RuntimeBlockInfo* ngen_AllocateBlock(void)
-{
-   return new DynaRBI();
-}
 
 void ngen_blockcheckfail(u32 pc) {
 	//printf("X64 JIT: SMC invalidation at %08X\n", pc);
@@ -840,7 +819,7 @@ public:
 			cmp(Ctx(&next_pc), block->vaddr);
 			jne(vaddr_failed, T_NEAR);
 			vaddr_checked = true;
-			((DynaRBI *)block)->linked_entry = (u32)getSize();
+			block->linked_entry = (u32)getSize();
 		}
 		/* (No stack to set up: the block runs on the main loop's, which is
 		 * as calls want it. See ngen_mainloop.) */
@@ -882,7 +861,7 @@ public:
 		}
 		regalloc.DoAlloc(block);
 
-		for (current_opid = 0; current_opid < block->oplist.size(); current_opid++)
+		for (current_opid = 0; current_opid < block->op_count; current_opid++)
 		{
 			shil_opcode& op  = block->oplist[current_opid];
 
@@ -1896,7 +1875,7 @@ public:
 		L(over);
 	}
 
-	/* On to the block at @target: by a link site (see DynaRBI), which is
+	/* On to the block at @target: by a link site (see RuntimeBlockInfo::link_at), which is
 	 * the block's way out to its BranchBlock (@which 0) or its NextBlock
 	 * (1). A block in the temporary cache is not linked: it goes through
 	 * the target's place in the table. So does a block that goes round to
@@ -1925,7 +1904,7 @@ public:
 			jmp(qword[r15 + FpcbAt((place >> 1) & FPCB_MASK)]);
 			return;
 		}
-		((DynaRBI *)block)->link_at[which] = (u32)getSize();
+		block->link_at[which] = (u32)getSize();
 		call((const void *)link_stub);
 		db(0xCC);
 		db(0xCC);

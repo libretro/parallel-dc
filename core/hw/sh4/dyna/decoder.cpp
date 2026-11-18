@@ -87,7 +87,7 @@ static void Emit(shilop op,
 	sp.guest_offs=state.cpu.rpc-blk->vaddr;
 	sp.delay_slot = state.cpu.is_delayslot;
 
-	blk->oplist.push_back(sp);
+	bm_OpPush(blk, &sp);
 }
 
 static void dec_fallback(u32 op)
@@ -102,7 +102,7 @@ static void dec_fallback(u32 op)
 
 	opcd.guest_offs = state.cpu.rpc - blk->vaddr;
 	opcd.delay_slot = state.cpu.is_delayslot;
-	blk->oplist.push_back(opcd);
+	bm_OpPush(blk, &opcd);
 }
 
 static void dec_DynamicSet(u32 regbase,u32 offs=0)
@@ -1078,7 +1078,7 @@ static bool dec_IsIdleLoop(const RuntimeBlockInfo *block)
 	bool written[sh4_reg_count] = {};
 	bool needed[sh4_reg_count] = {};	// read before the block has written it
 
-	for (const shil_opcode& op : block->oplist)
+	for (const shil_opcode& op : bm_Ops(block))
 	{
 		switch (op.op)
 		{
@@ -1142,7 +1142,7 @@ bool dec_DecodeBlock(RuntimeBlockInfo* rbi,u32 max_cycles)
 			//there is no break here by design
 		case NDO_NextOp:
 			{
-				if ((blk->oplist.size() >= BLOCK_MAX_SH_OPS_SOFT || blk->guest_cycles >= max_cycles || state.cpu.rpc >= max_pc)
+				if ((blk->op_count >= BLOCK_MAX_SH_OPS_SOFT || blk->guest_cycles >= max_cycles || state.cpu.rpc >= max_pc)
 						&& !state.cpu.is_delayslot)
 				{
 					dec_End(state.cpu.rpc,BET_StaticJump,false);
@@ -1222,7 +1222,7 @@ _end:
 	blk->BranchBlock=state.JumpAddr;
 	blk->BlockType=state.BlockType;
 
-	verify(blk->oplist.size() <= BLOCK_MAX_SH_OPS_HARD);
+	verify(blk->op_count <= BLOCK_MAX_SH_OPS_HARD);
 	
 #if 0
 #ifdef _WIN32

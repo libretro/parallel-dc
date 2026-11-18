@@ -158,7 +158,7 @@ public:
 //		}
 
 		// Final writebacks
-		if (op >= &block->oplist.back())
+		if (op >= &block->oplist[block->op_count - 1])
 		{
 			FlushAllRegs(false);
 			final_opend = true;
@@ -256,7 +256,7 @@ public:
 	}
 
 	void Cleanup() {
-		verify(final_opend || block->oplist.empty());
+		verify(final_opend || (block->op_count == 0));
 		final_opend = false;
 		FlushAllRegs(true);
 		verify(NoneAlloced());
@@ -410,7 +410,7 @@ private:
 
 	bool NeedsWriteBack(Sh4RegType reg, u32 version)
 	{
-		for (int i = opnum + 1; i < block->oplist.size(); i++)
+		for (int i = opnum + 1; i < block->op_count; i++)
 		{
 			shil_opcode* op = &block->oplist[i];
 			// if a subsequent op needs all or some regs flushed to mem
@@ -511,7 +511,7 @@ private:
 
 			// Find the first use, but ignore vec ops
 			int first_use = -1;
-			for (int i = opnum + (source ? 0 : 1); i < block->oplist.size(); i++)
+			for (int i = opnum + (source ? 0 : 1); i < block->op_count; i++)
 			{
 				op = &block->oplist[i];
 				// Vector ops don't use reg alloc

@@ -209,7 +209,7 @@ bool RuntimeBlockInfo::Setup(u32 rpc,fpscr_t rfpu_cfg)
 		addr = vaddr;
 	fpu_cfg=rfpu_cfg;
 	
-	oplist.clear();
+	op_count = 0;
 
 #if !defined(NO_MMU)
 	sh4_catch c;
@@ -245,11 +245,11 @@ DynarecCodeEntryPtr rdv_CompilePC(u32 blockcheck_failures)
 	if (emit_FreeSpace() < CODE_MARGIN || pc==0x8c0000e0 || pc==0xac010000 || pc==0xac008300)
 		recSh4_ClearCache();
 
-	RuntimeBlockInfo* rbi = ngen_AllocateBlock();
+	RuntimeBlockInfo* rbi = bm_NewBlock();
 
 	if (!rbi->Setup(pc,fpscr))
 	{
-		delete rbi;
+		bm_BlockUnref(rbi);
 		return NULL;
 	}
 	rbi->blockcheck_failures = blockcheck_failures;
@@ -340,7 +340,7 @@ DynarecCodeEntryPtr DYNACALL rdv_BlockCheckFail(u32 addr)
 				if (inserted)
 					DEBUG_LOG(DYNAREC, "rdv_BlockCheckFail SMC hotspot @ %08x fails %d\n", addr, blockcheck_failures);
 			}
-			bm_DiscardBlock(block.get());
+			bm_DiscardBlock(block);
 		}
 	}
 	else
@@ -366,7 +366,7 @@ DynarecCodeEntryPtr DYNACALL rdv_BlockCheckFail(u32 addr)
 				if (inserted)
 					DEBUG_LOG(DYNAREC, "rdv_BlockCheckFail SMC hotspot @ %08x fails %d\n", addr, blockcheck_failures);
 			}
-			bm_DiscardBlock(block.get());
+			bm_DiscardBlock(block);
 		}
 		next_pc = addr;
 	}
@@ -486,7 +486,7 @@ void* DYNACALL rdv_LinkBlock(u8* code,u32 dpc)
 	{
 		link = false;
 		if (bcls != BET_CLS_Dynamic && rbi->mmu_go_on && next_pc == target
-				&& rdv_MmuSamePlace(rbi.get(), target, &place))
+				&& rdv_MmuSamePlace(rbi, target, &place))
 		{
 			RuntimeBlockInfoPtr nxt = bm_GetBlock(place);
 
@@ -509,13 +509,13 @@ void* DYNACALL rdv_LinkBlock(u8* code,u32 dpc)
 			}
 			else if (rbi->relink_data == 0)
 			{
-				rbi->pBranchBlock = bm_GetBlock(place).get();
+				rbi->pBranchBlock = bm_GetBlock(place);
 				rbi->pBranchBlock->AddRef(rbi);
 			}
 		}
 		else
 		{
-			RuntimeBlockInfo* nxt = bm_GetBlock(place).get();
+			RuntimeBlockInfo* nxt = bm_GetBlock(place);
 
 			if (rbi->BranchBlock == target)
 				rbi->pBranchBlock = nxt;

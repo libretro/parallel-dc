@@ -19,17 +19,6 @@
 #include <algorithm>
 #include <map>
 
-struct DynaRBI : RuntimeBlockInfo
-{
-	virtual u32 Relink() {
-		//verify(false);
-		return 0;
-	}
-
-	virtual void Relocate(void* dst) {
-		verify(false);
-	}
-};
 
 extern int mips_counter;
 int cycle_counter;
@@ -38,16 +27,18 @@ void ngen_init()
 {
 }
 
+/* (blocks are not linked here) */
+u32 RuntimeBlockInfo::Relink()
+{
+	return 0;
+}
+
 void ngen_GetFeatures(ngen_features* dst)
 {
 	dst->InterpreterFallback = false;
 	dst->OnlyDynamicEnds = false;
 }
 
-RuntimeBlockInfo* ngen_AllocateBlock()
-{
-	return new DynaRBI();
-}
 
 void ngen_blockcheckfail(u32 pc) {
 	INFO_LOG(DYNAREC, "REC CPP: SMC invalidation at %08X\n", pc);
@@ -1531,7 +1522,7 @@ public:
 	void compile(RuntimeBlockInfo* block, bool force_checks, bool reset, bool staging, bool optimise) {
 		
       //we need an extra one for the end opcode and optionally one more for block check
-      auto ptrs = fnnCtor_forreal(block->oplist.size() + 1 + (force_checks ? 1 : 0))(block->guest_cycles);
+      auto ptrs = fnnCtor_forreal(block->op_count + 1 + (force_checks ? 1 : 0))(block->guest_cycles);
 
 		ptrsg = ptrs.ptrs;
 
@@ -1565,7 +1556,7 @@ public:
 			}
 			ptrs.ptrs[i++] = op;
 		}
-		for (size_t opnum = 0; opnum < block->oplist.size(); opnum++, i++) {
+		for (size_t opnum = 0; opnum < block->op_count; opnum++, i++) {
 			opcode_index = i;
          shil_opcode& op = block->oplist[opnum];
 			switch (op.op) {

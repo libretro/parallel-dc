@@ -62,25 +62,11 @@
 using namespace Xbyak::util;
 
 /* One block goes on to the next with a jump straight to its code, as on
- * x86-64 (see DynaRBI there). A link site is six bytes here: a call to the
+ * x86-64 (see RuntimeBlockInfo::link_at). A link site is six bytes here: a call to the
  * link stub, a jump to the next block, or a jump through the table of
  * blocks (jmp dword [address]), each with what is left over filled. */
 #define LINK_SITE_SIZE 6
 
-struct DynaRBI : RuntimeBlockInfo
-{
-	/* Where in the block's code its link sites are, 0 where there is none:
-	 * the way out to BranchBlock, and the one to NextBlock. */
-	u32 link_at[2] = { 0, 0 };
-	// where a block linked to this one comes in: past its address test
-	u32 linked_entry = 0;
-
-	virtual u32 Relink();
-
-	virtual void Relocate(void* dst) {
-		verify(false);
-	}
-};
 
 /* What is left of the time slice: x86-64 has it in r14, this processor has
  * no register to spare and keeps it here. The SH4's context has another
@@ -215,7 +201,7 @@ static void link_site_jump(u8 *site, const u8 *code)
 	site[5] = 0xCC;
 }
 
-u32 DynaRBI::Relink()
+u32 RuntimeBlockInfo::Relink()
 {
 	for (int i = 0; i < 2; i++)
 	{
@@ -224,7 +210,7 @@ u32 DynaRBI::Relink()
 		if (link_at[i] == 0)
 			continue;
 		if (to != NULL)
-			link_site_jump((u8 *)code + link_at[i], (const u8 *)to->code + ((const DynaRBI *)to)->linked_entry);
+			link_site_jump((u8 *)code + link_at[i], (const u8 *)to->code + to->linked_entry);
 		else
 			link_site_call_stub((u8 *)code + link_at[i]);
 	}
@@ -243,7 +229,7 @@ extern "C" __attribute__((used)) void * DYNACALL ngen_link(u8 *after, u32 pc)
 
 	if (mmu)
 	{
-		if (from == NULL || !rdv_MmuSamePlace(from.get(), pc, &addr))
+		if (from == NULL || !rdv_MmuSamePlace(from, pc, &addr))
 		{
 			next_pc = pc;
 			return (void *)block_return;
@@ -267,7 +253,7 @@ extern "C" __attribute__((used)) void * DYNACALL ngen_link(u8 *after, u32 pc)
 	if (from == NULL || bm_GetBlock2(site) != from)
 		return (void *)code;
 
-	DynaRBI *const block = (DynaRBI *)from.get();
+	RuntimeBlockInfo *const block = from;
 	const u32 at = (u32)(site - (u8 *)block->code);
 	const int which = at == block->link_at[0] ? 0 : at == block->link_at[1] ? 1 : -1;
 	RuntimeBlockInfoPtr to = bm_GetBlock(addr);
@@ -292,9 +278,9 @@ extern "C" __attribute__((used)) void * DYNACALL ngen_link(u8 *after, u32 pc)
 	}
 
 	if (which == 0)
-		block->pBranchBlock = to.get();
+		block->pBranchBlock = to;
 	else
-		block->pNextBlock = to.get();
+		block->pNextBlock = to;
 	to->AddRef(from);
 	block->Relink();
 	return (void *)code;
@@ -429,10 +415,6 @@ void ngen_GetFeatures(ngen_features* dst)
 	dst->OnlyDynamicEnds = false;
 }
 
-RuntimeBlockInfo* ngen_AllocateBlock(void)
-{
-	return new DynaRBI();
-}
 
 static void DYNACALL ngen_blockcheckfail(u32 pc)
 {
@@ -590,7 +572,7 @@ public:
 			cmp(Ctx(&next_pc), block->vaddr);
 			jne(vaddr_failed, T_NEAR);
 			vaddr_checked = true;
-			((DynaRBI *)block)->linked_entry = (u32)getSize();
+			block->linked_entry = (u32)getSize();
 		}
 
 		if (mmu_enabled() && block->has_fpu_op)
@@ -614,7 +596,7 @@ public:
 		}
 		regalloc.DoAlloc(block);
 
-		for (current_opid = 0; current_opid < block->oplist.size(); current_opid++)
+		for (current_opid = 0; current_opid < block->op_count; current_opid++)
 		{
 			shil_opcode& op  = block->oplist[current_opid];
 
@@ -1408,7 +1390,7 @@ public:
 		L(over);
 	}
 
-	/* On to the block at @target: by a link site (see DynaRBI), which is
+	/* On to the block at @target: by a link site (see RuntimeBlockInfo::link_at), which is
 	 * the block's way out to its BranchBlock (@which 0) or its NextBlock
 	 * (1). As on x86-64. */
 	void GenGoOn(RuntimeBlockInfo *block, int which)
@@ -1428,7 +1410,7 @@ public:
 			jmp(dword[(u32)(uintptr_t)&p_sh4rcb->fpcb[(place >> 1) & FPCB_MASK]]);
 			return;
 		}
-		((DynaRBI *)block)->link_at[which] = (u32)getSize();
+		block->link_at[which] = (u32)getSize();
 		call((const void *)link_stub);
 		db(0xCC);
 	}

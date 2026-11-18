@@ -45,17 +45,6 @@
 
 */
 
-struct DynaRBI: RuntimeBlockInfo
-{
-	virtual u32 Relink();
-	virtual void Relocate(void* dst)
-	{
-	}
-	ARM::eReg T_reg;
-	// The block's tail cannot go by the flags its last instruction left:
-	// something that changes them is emitted in between (the wait check)
-	bool tail_flags_lost = false;
-};
 
 #ifdef _ANDROID
 #include <sys/syscall.h>  // for cache flushing.
@@ -433,7 +422,7 @@ static void arm_mmu_sqw(u32 addr, u32 pc)
 }
 #endif
 
-u32 DynaRBI::Relink()
+u32 RuntimeBlockInfo::Relink()
 {
 	/* The end of the block is written where the block's end is, with the
 	 * emitter pointed there for the while - and pointed back afterwards to
@@ -458,8 +447,8 @@ u32 DynaRBI::Relink()
 		//quick opt here:
 		//peek into reg alloc, store actuall sr_T register to relink_data
 #ifndef CANONICALTEST
-		bool last_op_sets_flags=!has_jcond && !tail_flags_lost && oplist.size() > 0 && 
-			oplist[oplist.size()-1].rd._reg==reg_sr_T && ccmap.count(oplist[oplist.size()-1].op);
+		bool last_op_sets_flags=!has_jcond && !tail_flags_lost && op_count > 0 &&
+			oplist[op_count-1].rd._reg==reg_sr_T && ccmap.count(oplist[op_count-1].op);
 #else
 		bool last_op_sets_flags = false;
 #endif
@@ -468,7 +457,7 @@ u32 DynaRBI::Relink()
 
 		if (last_op_sets_flags)
 		{
-			shilop op=oplist[oplist.size()-1].op;
+			shilop op=oplist[op_count-1].op;
 
 			verify(ccmap.count(op)>0);
 
@@ -481,13 +470,13 @@ u32 DynaRBI::Relink()
 		{
 			if (!has_jcond)
 			{
-				if (T_reg != (eReg)-1)
+				if (t_reg != -1)
 				{
-					MOV(r4, T_reg);
+					MOV(r4, (eReg)t_reg);
 				}
 				else
 				{
-					INFO_LOG(DYNAREC, "SLOW COND PATH %d\n", oplist.empty() ? -1 : oplist[oplist.size()-1].op);
+					INFO_LOG(DYNAREC, "SLOW COND PATH %d\n", (op_count == 0) ? -1 : oplist[op_count-1].op);
 					LoadSh4Reg_mem(r4, reg_sr_T);
 				}
 			}
@@ -2755,7 +2744,7 @@ void ngen_Compile(RuntimeBlockInfo* block,bool force_checks, bool reset, bool st
 		STR(r1,r0);
 	}
 	//pre-load the first reg alloc operations, for better efficiency ..
-	if (!block->oplist.empty())
+	if (!(block->op_count == 0))
 		reg.OpBegin(&block->oplist[0],0);
 
 #ifndef NO_MMU
@@ -2868,7 +2857,7 @@ void ngen_Compile(RuntimeBlockInfo* block,bool force_checks, bool reset, bool st
 
 	//compile the block's opcodes
 	shil_opcode* op;
-	for (size_t i=0;i<block->oplist.size();i++)
+	for (size_t i=0;i<block->op_count;i++)
 	{
 		op=&block->oplist[i];
 		
@@ -2888,11 +2877,11 @@ void ngen_Compile(RuntimeBlockInfo* block,bool force_checks, bool reset, bool st
 		const shil_param param = shil_param(reg_sr_T);
 		if (reg.IsAllocg(param))
 		{
-			((DynaRBI *)block)->T_reg = reg.mapg(param);
+			block->t_reg = (int)reg.mapg(param);
 		}
 		else
 		{
-			((DynaRBI *)block)->T_reg = (eReg)-1;
+			block->t_reg = -1;
 		}
 	}
 	reg.Cleanup();
@@ -2930,7 +2919,7 @@ void ngen_Compile(RuntimeBlockInfo* block,bool force_checks, bool reset, bool st
 	*/
 
 	
-	((DynaRBI *)block)->tail_flags_lost = false;
+	block->tail_flags_lost = false;
 	if (accurate && block->BranchBlock <= block->vaddr
 			&& (block->BlockType == BET_StaticJump || block->BlockType == BET_StaticCall
 				|| block->BlockType == BET_Cond_0 || block->BlockType == BET_Cond_1))
@@ -2949,7 +2938,7 @@ void ngen_Compile(RuntimeBlockInfo* block,bool force_checks, bool reset, bool st
 			 * be told to take T from where it is kept instead. (The
 			 * registers that can hold T, and r4 with a delayed branch's
 			 * condition in it, are ones a call leaves alone.) */
-			((DynaRBI *)block)->tail_flags_lost = true;
+			block->tail_flags_lost = true;
 			MOV32(r0, (u32)&site->skip);
 			LDR(r1, r0, 0);
 			SUB(r1, r1, 1, true);
@@ -3117,8 +3106,4 @@ void ngen_GetFeatures(ngen_features* dst)
 	dst->OnlyDynamicEnds     = false;
 }
 
-RuntimeBlockInfo* ngen_AllocateBlock()
-{
-	return new DynaRBI();
-};
 #endif

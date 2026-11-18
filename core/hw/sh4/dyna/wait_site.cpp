@@ -31,14 +31,14 @@ static bool never_found_waiting(const RuntimeBlockInfo *block)
 		return true;
 	if (block->BranchBlock != block->vaddr)
 		return false;
-	for (const shil_opcode& op : block->oplist)
+	for (const shil_opcode& op : bm_Ops(block))
 		if (op.op == shop_sync_sr || op.op == shop_sync_fpscr)
 			return false;		// can change registers no parameter names
 	for (u32 reg = reg_r0; reg <= reg_r15; reg++)
 	{
 		u32 step = 0;
 		bool only_steps = true;
-		for (const shil_opcode& op : block->oplist)
+		for (const shil_opcode& op : bm_Ops(block))
 		{
 			const bool rd = op.rd.is_reg() && op.rd._reg == reg;
 			const bool rd2 = op.rd2.is_reg() && op.rd2._reg == reg;
@@ -82,7 +82,7 @@ void sh4_wait_sites_reset()
 
 bool sh4_block_writes(const RuntimeBlockInfo *block)
 {
-	for (const shil_opcode& op : block->oplist)
+	for (const shil_opcode& op : bm_Ops(block))
 		if (op.op == shop_writem || op.op == shop_ifb || op.op == shop_pref)
 			return true;
 	return false;

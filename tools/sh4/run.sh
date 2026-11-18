@@ -23,6 +23,8 @@ mkdir -p "$WORK"
 trap 'rm -rf "$WORK"' EXIT
 # -ffp-contract=off: the reference must not be given a fused multiply-add
 # by a compiler that has one to give
+# (the assembler's labels are in the recompilers' pool, node_pool.c)
+${CC:-cc} -O2 -I"$ROOT/core" -c -o "$WORK/node_pool.o" "$ROOT/core/node_pool.c"
 ${CXX:-c++} -O2 -std=c++11 -ffp-contract=off -DXBYAK_NO_OP_NAMES -I"$ROOT/core" -I"$ROOT/core/deps" \
-   -o "$WORK/vector_test" "$ROOT/tools/sh4/vector_test.cpp"
+   -o "$WORK/vector_test" "$ROOT/tools/sh4/vector_test.cpp" "$WORK/node_pool.o"
 "$WORK/vector_test" "$@"

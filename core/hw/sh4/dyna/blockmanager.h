@@ -77,12 +77,15 @@ u32* ngen_readm_fail_v2(u32* ptr, u32* regs, u32 saddr);
 #ifdef __cplusplus
 }
 
-#include <memory>
-#include <map>
 #include "decoder.h"
 #include "dyna_state.h"
 #include "node_pool.h"
-typedef std::shared_ptr<RuntimeBlockInfo> RuntimeBlockInfoPtr;
+
+/* A block, as it is handed about: by its address. It is the block
+ * manager's for as long as it is in its tables, or among the blocks
+ * discarded lately (a second at most), and those that jump to it hold
+ * it as well (pre_refs): it goes when the last lets go (bm_BlockUnref()). */
+typedef RuntimeBlockInfo *RuntimeBlockInfoPtr;
 
 struct RuntimeBlockInfo_Core
 {
@@ -108,6 +111,8 @@ struct BlockPageLink
 struct RuntimeBlockInfo: RuntimeBlockInfo_Core
 {
 	bool Setup(u32 pc,fpscr_t fpu_cfg);
+	/* who holds it (see RuntimeBlockInfoPtr) */
+	u32 refs;
 	const char* hash();
 
 	u32 vaddr;
@@ -145,40 +150,47 @@ struct RuntimeBlockInfo: RuntimeBlockInfo_Core
 	/* (it, its lists and the lists blocks are kept in take their room from
 	 * the recompiler's pool, node_pool.h: compiling a block allocates
 	 * nothing once the pool is large enough) */
-   std::vector<shil_opcode, node_pool::Allocator<shil_opcode> > oplist;
+	/* Its operations: op_count of them, in room for op_room, in the
+	 * recompiler's pool (bm_OpPush(), bm_OpInsert(), bm_OpErase()) */
+	shil_opcode *oplist;
+	u32 op_count;
+	u32 op_room;
 
 	bool contains_code(const u8* ptr)
 	{
 		return ((size_t)(ptr-(u8*)code)) < host_code_size;
 	}
 
-	virtual ~RuntimeBlockInfo();
-	static void *operator new(size_t n)
-	{
-		void *p = node_pool::Alloc(n);
-		if (p == NULL)
-			throw std::bad_alloc();
-		return p;
-	}
-	static void operator delete(void *p, size_t n) { node_pool::Free(p, n); }
+	/* The recompiler's: its links made again, for pNextBlock and
+	 * pBranchBlock as they are now (none: back to the main loop); the
+	 * bytes of code that come to */
+	u32 Relink();
 
-	virtual u32 Relink()=0;
-	virtual void Relocate(void* dst)=0;
-	
-	//predecessors references
-   std::vector<RuntimeBlockInfoPtr, node_pool::Allocator<RuntimeBlockInfoPtr> > pre_refs;
+	/* The blocks that jump to this one, each held (see RuntimeBlockInfoPtr):
+	 * told when it goes, to jump elsewhere. In the recompiler's pool. */
+	RuntimeBlockInfo **pre_refs;
+	u32 pre_ref_count;
+	u32 pre_ref_room;
 
-   void AddRef(const RuntimeBlockInfoPtr& other);
-	void RemRef(const RuntimeBlockInfoPtr& other);
+	void AddRef(RuntimeBlockInfo *other);
+	void RemRef(RuntimeBlockInfo *other);
 
 	void Discard();
-	void UpdateRefs();
 	void SetProtectedFlags();
 
-	u32 memops;
-	u32 linkedmemops;
-	std::map<void*, u32> memory_accesses;	// key is host pc when access is made, value is opcode id
 	bool read_only;
+
+	/* What the recompiler keeps of the block. x86-64 and x86: where in
+	 * its code the link sites are, 0 where there is none - the way out to
+	 * BranchBlock, and the one to NextBlock - and where a block linked to
+	 * this one comes in (past the test of the address it is run at). */
+	u32 link_at[2];
+	u32 linked_entry;
+	/* 32-bit ARM: the host register T is in at the end (-1: none), and
+	 * whether the tail cannot go by the flags the last instruction left
+	 * (something that changes them is emitted in between) */
+	int t_reg;
+	bool tail_flags_lost;
 
 	/* in the lists of the pages its code is in (read-only blocks), and in
 	 * the temporary blocks' (temp_block): links of their own, nothing
@@ -188,6 +200,31 @@ struct RuntimeBlockInfo: RuntimeBlockInfo_Core
 	RuntimeBlockInfo *temp_prev, *temp_next;
 	bool temp_listed;
 };
+
+/* An operation added at the end of @block's, put in at @at, taken out
+ * from @at */
+void bm_OpPush(RuntimeBlockInfo *block, const shil_opcode *op);
+void bm_OpInsert(RuntimeBlockInfo *block, u32 at, const shil_opcode *op);
+void bm_OpErase(RuntimeBlockInfo *block, u32 at);
+
+/* (a block's operations, for a loop over them) */
+struct BlockOps
+{
+	shil_opcode *first, *last;
+	shil_opcode *begin() const { return first; }
+	shil_opcode *end() const { return last; }
+};
+static inline BlockOps bm_Ops(RuntimeBlockInfo *block)
+{
+	BlockOps ops = { block->oplist, block->oplist + block->op_count };
+	return ops;
+}
+
+/* A new block, held once (by whoever makes it): in the recompiler's pool */
+RuntimeBlockInfo *bm_NewBlock(void);
+void bm_BlockRef(RuntimeBlockInfo *block);
+/* let go: the block goes if nothing holds it now */
+void bm_BlockUnref(RuntimeBlockInfo *block);
 
 RuntimeBlockInfoPtr bm_GetBlock2(void* dynarec_code);
 RuntimeBlockInfoPtr bm_GetStaleBlock(void* dynarec_code);

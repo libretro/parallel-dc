@@ -34,7 +34,7 @@ void SSAOptimizer::InsertMov32Op(const shil_param& rd, const shil_param& rs)
 	op2.rs2 = shil_param();
 	op2.rs3 = shil_param();
 
-	block->oplist.insert(block->oplist.begin() + opnum + 1, op2);
+	bm_OpInsert(block, opnum + 1, &op2);
 	opnum++;
 
 
@@ -236,7 +236,7 @@ bool SSAOptimizer::ExecuteConstOp(shil_opcode* op)
 				}
 				// rd (that is jdyn) won't be updated but since it's not a real register
 				// it shouldn't be a problem
-				block->oplist.erase(block->oplist.begin() + opnum);
+				bm_OpErase(block, opnum);
 				opnum--;
 				stats.dyn_to_stat_blocks++;
 
@@ -252,7 +252,7 @@ bool SSAOptimizer::ExecuteConstOp(shil_opcode* op)
 				block->NextBlock = 0xFFFFFFFF;
 				block->has_jcond = false;
 				// same remark regarding jdyn as in the previous case
-				block->oplist.erase(block->oplist.begin() + opnum);
+				bm_OpErase(block, opnum);
 				opnum--;
 				stats.dyn_to_stat_blocks++;
 
