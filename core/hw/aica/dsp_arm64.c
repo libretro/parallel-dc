@@ -25,7 +25,7 @@
 #include <stdio.h>
 #include "dsp.h"
 #include "aica_if.h"
-#include "a64_emit.h"
+#include "jit/a64_emit.h"
 #include "hw/mem/_vmem.h"
 
 /* Where the code goes: in the DSP's state, made executable - except on

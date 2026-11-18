@@ -206,7 +206,7 @@
      shift = (int)C_FLAG;\
      C_OUT = (v  & 1) ? true : false;\
      value = ((v >> 1) |\
-              (shift << 31));\
+              ((u32)shift << 31));\
    }
 #define LOGICAL_ROR_IMM \
    {\
@@ -241,13 +241,13 @@
      u32 v = reg[opcode & 0x0f].I;\
      shift = (int)C_FLAG;\
      value = ((v >> 1) |\
-              (shift << 31));\
+              ((u32)shift << 31));\
    }
 #define ARITHMETIC_ROR_IMM \
    {\
      u32 v = opcode & 0xff;\
-     value = ((v << (32 - shift)) |\
-              (v >> shift));\
+     value = shift ? ((v << (32 - shift)) |\
+              (v >> shift)) : v;\
    }
 #define ROR_IMM_MSR \
    {\
@@ -264,7 +264,7 @@
    {\
      shift = (int)C_FLAG;\
      value = ((value >> 1) |\
-              (shift << 31));\
+              ((u32)shift << 31));\
    }
 
 #define OP_TST \
@@ -6338,7 +6338,7 @@ if(cond_res) {
     {
       /* B <offset> */
       clockTicks += 3;
-      { int offset = opcode & 0x00FFFFFF;
+      { u32 offset = opcode & 0x00FFFFFF;
       if(offset & 0x00800000) {
         offset |= 0xFF000000;
       }
@@ -6352,7 +6352,7 @@ if(cond_res) {
     {
       /* BL <offset> */
       clockTicks += 3;
-      { int offset = opcode & 0x00FFFFFF;
+      { u32 offset = opcode & 0x00FFFFFF;
       if(offset & 0x00800000) {
         offset |= 0xFF000000;
       }

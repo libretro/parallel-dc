@@ -331,8 +331,8 @@ void update_armintc(void)
 }
 
 #if FEAT_AREC != DYNAREC_NONE && (HOST_CPU == CPU_X64 || HOST_CPU == CPU_X86 || HOST_CPU == CPU_ARM64)
-/* For the recompiler (arm7_rec.cpp, with arm7_rec_x64.cpp, arm7_rec_x86.cpp
- * or arm7_rec_arm64.cpp) */
+/* For the recompiler (arm7_rec.c, with arm7_rec_x64.c, arm7_rec_x86.c
+ * or arm7_rec_arm64.c) */
 
 /* A single instruction, @opcode, interpreted */
 void DYNACALL arm7_interpret(u32 opcode)

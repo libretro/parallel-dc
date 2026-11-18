@@ -1,19 +1,23 @@
 /* Runs the sound chip's ARM7 on made-up programs and prints what each
  * leaves behind. tools/arm7/run.sh builds this twice, once with the
- * recompiler (core/hw/arm7/arm7_rec.cpp, arm7_rec_x64.cpp) and once with
+ * recompiler (core/hw/arm7/arm7_rec.c and a backend) and once with
  * the interpreter (arm7.c, arm-new.h), runs both and compares what they
  * print: registers, flags and memory have to be the same from both after
  * every program.
  *
  * A program is 8 to 40 random instructions and then a branch to itself:
  * arithmetic and logic with every kind of second operand, shift and
- * condition, with and without setting flags; multiplies; loads and stores
- * of words and bytes with every addressing mode; block loads and stores;
- * reads and writes of the flags; and branches, with and without link,
- * forward only, so that every program gets to its end. It starts from
- * random registers that point into the middle of memory.
+ * condition, with and without setting flags, often in rows of the same
+ * condition; multiplies; loads and stores of words and bytes with every
+ * addressing mode; block loads and stores; reads and writes of the flags
+ * and the SPSR; and branches, with and without link, and r15 written by
+ * an add or a mov, with low bits for it to drop, forward only, so that
+ * every program gets to its end. It starts from random registers that
+ * point into the middle of memory. What it leaves is printed with the
+ * cycles left over, which the recompilers count alike and the interpreter
+ * its own way (run.sh compares them between recompilers only).
  *
- * Left out: anything that writes r15 other than a branch, changes of mode
+ * Left out: anything else that writes r15, changes of mode
  * (but with $ARM7_TEST_MODES: see below), software interrupts and undefined instructions, and the block transfers
  * and writebacks the ARM manual calls unpredictable. A program that stores
  * over its own instructions is not compared: the recompiler does not look
@@ -33,8 +37,12 @@
 #include <string.h>
 #include <stdarg.h>
 #include <setjmp.h>
+#ifdef _WIN32
+#include <windows.h>
+#else
 #include <sys/mman.h>
 #include <unistd.h>
+#endif
 
 #include "types.h"
 #include "hw/arm7/arm7.h"
@@ -46,33 +54,40 @@ settings_t settings;
 unsigned ARAM_SIZE = 2 * 1024 * 1024;
 unsigned ARAM_MASK = 2 * 1024 * 1024 - 1;
 VArray2 aica_ram;
-static u8 ram[2 * 1024 * 1024] __attribute__((aligned(4096)));
+DECL_ALIGN(4096) static u8 ram[2 * 1024 * 1024];
 
 /* A check in the ARM7 code failed. That ends the program being run, not
  * the test: a program that has stored over its own instructions goes on to
  * run whatever it stored, and that can be anything. */
 static jmp_buf stopped;
-void os_DebugBreak() { longjmp(stopped, 1); }
+void os_DebugBreak(void) { longjmp(stopped, 1); }
 /* (no log) */
 retro_log_printf_t log_cb;
-u32 libAICA_ReadReg(u32, u32) { return 0; }
-void libAICA_WriteReg(u32, u32, u32) {}
-void libAICA_TimeStep() {}
+u32 libAICA_ReadReg(u32 addr, u32 size) { (void)addr; (void)size; return 0; }
+void libAICA_WriteReg(u32 addr, u32 data, u32 size) { (void)addr; (void)data; (void)size; }
+void libAICA_TimeStep(void) {}
 
 bool vmem_platform_prepare_jit_block(void *code_area, unsigned size, void **code_area_rwx)
 {
-   const uintptr_t page = (uintptr_t)sysconf(_SC_PAGESIZE);
+   const uintptr_t page = 4096;
    const uintptr_t from = (uintptr_t)code_area & ~(page - 1);
    const uintptr_t to   = ((uintptr_t)code_area + size + page - 1) & ~(page - 1);
-
+#ifdef _WIN32
+   DWORD old;
+   if (!VirtualProtect((void*)from, to - from, PAGE_EXECUTE_READWRITE, &old))
+      return false;
+#else
    if (mprotect((void*)from, to - from, PROT_READ | PROT_WRITE | PROT_EXEC))
       return false;
+#endif
    *code_area_rwx = code_area;
    return true;
 }
 
 void vmem_platform_flush_cache(void *icache_start, void *icache_end, void *dcache_start, void *dcache_end)
 {
+   (void)dcache_start;
+   (void)dcache_end;
    __builtin___clear_cache((char *)icache_start, (char *)icache_end);
 }
 
@@ -88,11 +103,25 @@ static u32 pick(u32 n) { return rnd() % n; }
 
 #define PROGRAM 0x1000u         /* where the program is */
 
+/* The condition of the instruction before: the recompilers run a row of
+ * instructions with the same one as one, until one changes the flags */
+static u32 last_cond;
+
 static u32 cond(void)
 {
-   /* always, three times in four; else any condition but "never" */
-   return (pick(4) ? 14u : pick(14)) << 28;
+   /* the one before, one time in three; else always, three times in four,
+    * and any condition but "never" the rest */
+   if (pick(3))
+      last_cond = (pick(4) ? 14u : pick(14)) << 28;
+   return last_cond;
 }
+
+/* The second of two instructions that go together, made with the first */
+static u32 pending;
+/* Where each forward jump goes, and the mov pc, r12 of each pair: one of
+ * those that a jump lands on is not run after its add, and is taken out */
+static unsigned jump_to[64];
+static bool pair_second[64];
 
 /* a register for a value: r0-r12, now and then r15, which reads as the
  * address of the instruction plus 8 */
@@ -111,6 +140,12 @@ static u32 operand2(void)
 
 static u32 instruction(unsigned at, unsigned count)
 {
+   if (pending)
+   {
+      const u32 next = pending;
+      pending = 0;
+      return next;
+   }
    if (modes && pick(10) == 0)
    {
       /* MSR CPSR_c, #imm: interrupts off, and FIQ, IRQ, supervisor, abort,
@@ -166,17 +201,35 @@ static u32 instruction(unsigned at, unsigned count)
             | (load << 20) | (rn << 16) | list;
       }
       case 14:                                           /* the flags, read or written */
+      {
+         /* CPSR, or the SPSR of the mode it runs in (supervisor, from
+          * the reset, or one of $ARM7_TEST_MODES's, all with one) */
+         const u32 spsr = (!modes && pick(4) == 0) ? 1u << 22 : 0;
          if (pick(2))
-            return cond() | 0x010F0000 | (dst_reg() << 12);            /* MRS rd, CPSR */
+            return cond() | 0x010F0000 | spsr | (dst_reg() << 12);            /* MRS rd, PSR */
          if (pick(2))
-            return cond() | 0x0128F000 | pick(13);                     /* MSR CPSR_f, rm */
-         return cond() | 0x0328F000 | (pick(16) << 8) | pick(256);    /* MSR CPSR_f, #imm */
+            return cond() | 0x0128F000 | spsr | pick(13);                     /* MSR PSR_f, rm */
+         return cond() | 0x0328F000 | spsr | (pick(16) << 8) | pick(256);    /* MSR PSR_f, #imm */
+      }
       case 15:                                           /* a branch forward, or branch and link */
       {
          const u32 skip = pick(3);                      /* over 0 to 2 instructions */
-         if (at + 2 + skip > count)
+         const u32 low = pick(4);                       /* what the pc drops */
+         if (at + 3 + skip > count)
             return 0xE1A00000;                          /* too near the end: mov r0, r0 */
-         return cond() | (5u << 25) | (pick(2) << 24) | skip;
+         switch (pick(4))
+         {
+            case 0:                                     /* add pc, pc, #: the pc written as a result */
+               jump_to[at] = at + 2 + skip;
+               return cond() | 0x028FF000 | (skip * 4 + low);
+            case 1:                                     /* add r12, pc, #, then mov pc, r12 */
+               pending = cond() | 0x01A0F00C;
+               pair_second[at + 1] = true;
+               return 0xE28FC000 | ((skip + 1) * 4 + low);
+            default:
+               jump_to[at] = at + 2 + skip;
+               return cond() | (5u << 25) | (pick(2) << 24) | skip;
+         }
       }
    }
 }
@@ -202,10 +255,17 @@ static void run_case(unsigned number)
    unsigned count, i;
 
    seed = 0x9E3779B97F4A7C15ull * (number + 1);
+   last_cond = 14u << 28;
+   pending = 0;
    memset(ram, 0, sizeof(ram));
    count = 8 + pick(33);
+   memset(jump_to, 0, sizeof(jump_to));
+   memset(pair_second, 0, sizeof(pair_second));
    for (i = 0; i < count; i++)
       program[i] = instruction(i, count);
+   for (i = 0; i < count; i++)
+      if (jump_to[i] && pair_second[jump_to[i]])
+         program[jump_to[i]] = 0xE1A00000;             /* mov r0, r0 */
    program[count] = 0xEAFFFFFE;                         /* b . */
    if (getenv("ARM7_TEST_PROGRAM"))
    {
@@ -272,8 +332,8 @@ static void run_case(unsigned number)
    printf("%u %u", number, count);
    for (i = 0; i < 15; i++)
       printf(" %08x", arm_Reg[i].I);
-   printf(" pc %08x cpsr %08x mem %016llx\n", arm_Reg[R15_ARM_NEXT].I, arm_Reg[RN_CPSR].I,
-         (unsigned long long)fold(0xcbf29ce484222325ull, ram, sizeof(ram)));
+   printf(" pc %08x cpsr %08x mem %016llx cyc %08x\n", arm_Reg[R15_ARM_NEXT].I, arm_Reg[RN_CPSR].I,
+         (unsigned long long)fold(0xcbf29ce484222325ull, ram, sizeof(ram)), arm_Reg[CYCL_CNT].I);
 }
 
 int main(int argc, char **argv)

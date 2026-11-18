@@ -16,501 +16,268 @@
     You should have received a copy of the GNU General Public License
     along with flycast.  If not, see <https://www.gnu.org/licenses/>.
  */
-#pragma once
+/* The ARM7 recompiler's decoded instructions, their register allocation and
+ * the code buffer, shared by its decoder (arm7_rec.c) and its backends
+ * (arm7_rec_x64.c, arm7_rec_x86.c, arm7_rec_arm64.c). C89. */
+#ifndef ARM7_REC_H
+#define ARM7_REC_H
+
 #include "types.h"
 #include "arm7.h"
 
-#include <array>
-#include <vector>
+#ifdef __cplusplus
+extern "C" {
+#endif
 
-namespace aicaarm
+typedef enum ArmOpType
 {
+	ARMOP_AND, ARMOP_EOR, ARMOP_SUB, ARMOP_RSB, ARMOP_ADD, ARMOP_ADC, ARMOP_SBC, ARMOP_RSC,
+	ARMOP_TST, ARMOP_TEQ, ARMOP_CMP, ARMOP_CMN, ARMOP_ORR, ARMOP_MOV, ARMOP_BIC, ARMOP_MVN,
+	ARMOP_LDR, ARMOP_STR, ARMOP_B, ARMOP_BL, ARMOP_MSR, ARMOP_MRS, ARMOP_FALLBACK
+} ArmOpType;
 
-struct ArmOp
+typedef enum ArmCondition
 {
-	enum OpType {
-		AND, EOR, SUB, RSB, ADD, ADC, SBC, RSC,
-		TST, TEQ, CMP, CMN, ORR, MOV, BIC, MVN,
-		LDR, STR, B, BL, MSR, MRS, FALLBACK
-	};
-	enum Condition {
-		EQ,	NE, CS, CC, MI, PL, VS, VC, HI, LS, GE, LT, GT, LE, AL, UC
-	};
-	enum ShiftOp {
-		LSL, LSR, ASR, ROR, RRX = ROR,
-	};
-	static_assert(UC == 15, "UC == 15");
-	static const u32 OP_READS_FLAGS = 1;
-	static const u32 OP_SETS_FLAGS = 4;
-	static const u32 OP_SETS_PC = 8;
+	ARMCC_EQ, ARMCC_NE, ARMCC_CS, ARMCC_CC, ARMCC_MI, ARMCC_PL, ARMCC_VS, ARMCC_VC,
+	ARMCC_HI, ARMCC_LS, ARMCC_GE, ARMCC_LT, ARMCC_GT, ARMCC_LE, ARMCC_AL, ARMCC_UC
+} ArmCondition;
 
-	ArmOp() : ArmOp(FALLBACK, AL) {}
-	ArmOp(OpType type, Condition condition) : op_type(type), condition(condition) {
-		if (condition != AL)
-			flags |= OP_READS_FLAGS;
-	}
-
-	struct Register {
-		Register() : armreg((Arm7Reg)0) {}
-		Register(Arm7Reg armreg) : armreg(armreg) {}
-		Register(Arm7Reg armreg, int version) : armreg(armreg), version(version) {}
-
-		Arm7Reg armreg;
-		int version = 0;
-	};
-	struct Operand
-	{
-		Operand() : type(none) {}
-		Operand(u32 v) : type(imm), imm_value(v) {}
-		Operand(Arm7Reg r) : type(reg_), reg_value(r, 0) {}
-		bool isImmediate() const { return type == imm; }
-		bool isReg() const { return type == reg_; }
-		bool isNone() const { return type == none; }
-
-		u32 getImmediate() const { verify(isImmediate()); return imm_value; }
-		void setImmediate(u32 v) { type = imm; imm_value = v; }
-		Register& getReg() { verify(isReg()); return reg_value; }
-		const Register& getReg() const { verify(isReg()); return reg_value; }
-		void setReg(Arm7Reg armreg, int version = 0) { type = reg_; reg_value = Register(armreg, version); }
-		bool isShifted() const { return !shift_imm || shift_value != 0 || shift_type != ArmOp::LSL; }
-
-		enum { none, reg_, imm } type;
-		union {
-			u32 imm_value;
-			Register reg_value;
-		};
-
-		// For flexible operand
-		ShiftOp shift_type = LSL;
-		bool shift_imm = true;
-		union {
-			u32 shift_value = 0;
-			Register shift_reg;
-		};
-	};
-
-	OpType op_type;
-	Operand rd;
-	std::array<Operand, 3> arg;
-	// For LDR/STR
-	bool pre_index = false;
-	bool add_offset = false;
-	bool byte_xfer = false;
-	bool write_back = false;
-	// A load that takes its word from the address rounded down to a word,
-	// as a block load does, where a plain load of a word turns what it reads
-	// by the address's low two bits
-	bool aligned = false;
-	Condition condition;
-	u8 flags = 0;
-	u8 cycles = 6;
-	bool spsr = false;
-	// For MSR
-	u8 psrMask = 0;
-
-	bool isLogicalOp() const
-	{
-		return op_type == AND || op_type == EOR || op_type == TST || op_type == TEQ
-				|| (op_type >= ORR && op_type <= MVN);
-	}
-
-	bool isCompOp() const
-	{
-		return op_type >= TST &&  op_type <= CMN;
-	}
-
-	const std::string& conditionToString() const {
-		static const std::string labels[] = { "eq", "ne", "cs", "cc", "mi", "pl", "vs", "vc", "hi", "ls", "ge", "lt", "gt", "le", "", "uc" };
-		return labels[(int)condition];
-	}
-	std::string regToString(const Register &r) const {
-		return "r" + std::to_string((int)r.armreg) + ":" + std::to_string(r.version);
-	}
-	std::string shiftToString(ShiftOp type, u32 value) const {
-		switch (type) {
-		case LSL:
-			return "LSL";
-		case LSR:
-			return "LSR";
-		case ASR:
-			return "ASR";
-		case ROR:
-			return value == 0 ? "RRX" : "ROR";
-		default:
-			return "";
-		}
-	}
-
-	std::string operandToString(const Operand& op) const {
-		std::string s;
-		if (op.isImmediate())
-			s = "#" + std::to_string(op.getImmediate());
-		else if (op.isReg())
-			s = regToString(op.getReg());
-
-		if (op.shift_type != LSL || op.shift_value != 0)
-		{
-			s += ", " + shiftToString(op.shift_type, op.shift_value);
-			if (op.shift_imm)
-				s += " #" + std::to_string(op.shift_value);
-			else
-				s += " " + regToString(op.shift_reg);
-		}
-
-		return s;
-	}
-	std::string toString() const {
-		static const std::string labels[] = {
-			"and", "eor", "sub", "rsb", "add", "adc", "sbc", "rsc",
-			"tst", "teq", "cmp", "cmn", "orr", "mov", "bic", "mvn",
-			"ldr", "str", "b", "bl", "msr", "mrs", "(fallback)",
-		};
-		std::string s = labels[(int)op_type];
-		if (op_type <= MVN)
-		{
-			if (!isCompOp() && (flags & OP_SETS_FLAGS))
-				s += "s";
-			s += conditionToString();
-			if (rd.isReg())
-				s += " " + regToString(rd.getReg()) + ", ";
-			else
-				s += " ";
-			if (!arg[0].isNone())
-			{
-				s += operandToString(arg[0]);
-				if (!arg[1].isNone())
-				{
-					s += ", " + operandToString(arg[1]);
-					if (!arg[2].isNone())
-						s += ", " + operandToString(arg[2]);
-				}
-			}
-		}
-		else if (op_type <= STR)
-		{
-			if (byte_xfer)
-				s += "b";
-			s += conditionToString() + " ";
-			if (rd.isReg())
-				s += regToString(rd.getReg()) + ", ";
-			if (arg[2].isReg())
-				s += regToString(arg[2].getReg()) + ", ";
-			s += "[" + operandToString(arg[0]);
-			if (!pre_index)
-				s += "]";
-			if (!arg[1].isNone())
-				s += ", " + operandToString(arg[1]);
-			if (pre_index)
-				s += "]";
-			if (write_back)
-				s += "!";
-		}
-		else if (op_type <= BL)
-		{
-			s += conditionToString() + " " + operandToString(arg[0]);
-		}
-		else if (op_type == MSR)
-		{
-			s += conditionToString() + " CPSR, " + operandToString(arg[0]);
-		}
-		else if (op_type == MRS)
-			s += conditionToString() + " " + operandToString(rd) + ", CPSR";
-
-		return s;
-	}
-};
-
-template <int max_regs, typename T>
-class ArmRegAlloc
+typedef enum ArmShiftOp
 {
-	struct RegAlloc {
-		int host_reg = -1;
-		u16 version = 0;
-		bool dirty = false;
-		bool temporary = false;
-	};
-	std::array<RegAlloc, RN_ARM_REG_SLOTS> allocs;
-	std::vector<int> host_regs;
-	const std::vector<ArmOp>& block_ops;
+	ARMSH_LSL, ARMSH_LSR, ARMSH_ASR, ARMSH_ROR, ARMSH_RRX = ARMSH_ROR
+} ArmShiftOp;
 
-	void allocReg(const ArmOp::Register& reg, bool write, bool temporary, u32 opidx)
+#define ARMOP_READS_FLAGS 1
+#define ARMOP_SETS_FLAGS  4
+#define ARMOP_SETS_PC     8
+
+typedef struct ArmOpRegister
+{
+	Arm7Reg armreg;
+	int version;
+} ArmOpRegister;
+
+/* An operand: none, a register or a constant, and for the flexible operand
+ * the shift it goes through, by a constant or by a register */
+enum { ARMOPND_NONE, ARMOPND_REG, ARMOPND_IMM };
+typedef struct ArmOpOperand
+{
+	int type;
+	union
 	{
-		RegAlloc& alloc = allocs[(int)reg.armreg];
-		/* Another value of a register that is in a host register: the
-		 * register file has the new one (written there by the interpreter or
-		 * swapped in by a change of mode, which come after everything has
-		 * been written back). It is read into the same host register. This
-		 * used to take another host register and leave the first one with
-		 * nothing, gone for the rest of the block: on 32-bit x86, which has
-		 * four, a block could run out of them in the middle of an
-		 * instruction. */
-		if (alloc.host_reg != -1 && alloc.version != reg.version && !write)
-		{
-			alloc.version = reg.version;
-			alloc.dirty = false;
-			alloc.temporary = temporary;
-			static_cast<T*>(this)->LoadReg(alloc.host_reg, reg.armreg);
-			return;
-		}
-		if (alloc.host_reg == -1)
-		{
-			if (host_regs.empty())
-			{
-				// Need to flush a reg
-				Arm7Reg bestReg = (Arm7Reg)-1;
-				int bestRegUse = -1;
-				for (u32 i = 0; i < allocs.size(); i++)
-				{
-					auto& alloc = allocs[i];
-					if (alloc.host_reg == -1)
-						continue;
-					if (!alloc.dirty)
-					{
-						int nextUse_ = nextUse((Arm7Reg)i, alloc.version, opidx);
-						if (nextUse_ == -1)
-						{
-							host_regs.push_back(alloc.host_reg);
-							alloc.host_reg = -1;
-							break;
-						}
-						if (nextUse_ != (int)opidx && nextUse_ > bestRegUse)
-						{
-							bestRegUse = nextUse_;
-							bestReg = (Arm7Reg)i;
-						}
-					}
-				}
-				if (host_regs.empty())
-				{
-					if (bestReg == (Arm7Reg)-1)
-					{
-						for (u32 i = 0; i < allocs.size(); i++)
-						{
-							auto& alloc = allocs[i];
-							if (alloc.host_reg == -1)
-								continue;
-							int nextUse_ = nextUse((Arm7Reg)i, alloc.version, opidx);
-							if (nextUse_ == -1)
-							{
-								bestReg = (Arm7Reg)i;
-								break;
-							}
-							if (nextUse_ != (int)opidx && nextUse_ > bestRegUse)
-							{
-								bestRegUse = nextUse_;
-								bestReg = (Arm7Reg)i;
-							}
-						}
-						verify(bestReg != (Arm7Reg)-1);
-						DEBUG_LOG(AICA_ARM, "Flushing dirty register r%d\n", bestReg);
-					}
-					flushReg(allocs[bestReg]);
-				}
-				verify(!host_regs.empty());
-			}
-			alloc.host_reg = host_regs.back();
-			host_regs.pop_back();
-			alloc.version = reg.version;
-			alloc.dirty = write;
-			alloc.temporary = temporary;
-			if (!write)
-				static_cast<T*>(this)->LoadReg(alloc.host_reg, reg.armreg);
-		}
-		if (write)
-		{
-			alloc.dirty = true;
-			alloc.version = reg.version;
-			alloc.temporary = temporary;
-		}
-	}
-
-	bool needsWriteback(const ArmOp::Register& reg, u32 opidx)
+		u32 imm_value;
+		ArmOpRegister reg_value;
+	} v;
+	ArmShiftOp shift_type;
+	bool shift_imm;
+	union
 	{
-		for (auto it = block_ops.begin() + opidx; it != block_ops.end(); it++)
-		{
-			if (it->op_type == ArmOp::FALLBACK)
-				// assume the value is being used
-				return true;
-			if (it->rd.isReg() && it->rd.getReg().armreg == reg.armreg)
-			{
-				if (it->condition == ArmOp::AL)
-					// register is overwritten so it's not used
-					return false;
-				else
-					// might be overwritten but we don't know so write it back
-					return true;
-			}
-		}
-		// assume the value will be used
-		return true;
-	}
+		u32 shift_value;
+		ArmOpRegister shift_reg;
+	} s;
+} ArmOpOperand;
 
-	// Returns the index of the next op that uses the given reg version.
-	// returns -1 if not used in the remainder of the block or if a fallback is found
-	int nextUse(Arm7Reg reg, int version, u32 opidx)
-	{
-		auto get_index_or_max = [version](const ArmOp::Register& opreg, int idx) {
-			if (opreg.version == version)
-				return idx;
-			else
-				return -1;
-		};
-		for (auto it = block_ops.begin() + opidx; it != block_ops.end(); it++, opidx++)
-		{
-			if (it->op_type == ArmOp::FALLBACK)
-				return -1;
-			for (const auto& arg : it->arg)
-			{
-				if (arg.isReg() && arg.getReg().armreg == reg)
-					return get_index_or_max(arg.getReg(), opidx);
-				if (!arg.shift_imm && arg.shift_reg.armreg == reg)
-					return get_index_or_max(arg.shift_reg, opidx);
-			}
-			if (it->rd.isReg() && it->rd.getReg().armreg == reg)
-				return -1;
-		}
-		return -1;
-	}
+typedef struct ArmOp
+{
+	ArmOpType op_type;
+	ArmOpOperand rd;
+	ArmOpOperand arg[3];
+	/* For LDR/STR */
+	bool pre_index;
+	bool add_offset;
+	bool byte_xfer;
+	bool write_back;
+	/* A load that takes its word from the address rounded down to a word,
+	 * as a block load does, where a plain load of a word turns what it reads
+	 * by the address's low two bits */
+	bool aligned;
+	ArmCondition condition;
+	u8 flags;
+	u8 cycles;
+	bool spsr;
+	/* For MSR */
+	u8 psrMask;
+} ArmOp;
 
-	void flushReg(RegAlloc& alloc)
-	{
-		if (alloc.dirty)
-		{
-			static_cast<T*>(this)->StoreReg(alloc.host_reg, (Arm7Reg)(&alloc - &allocs.front()));
-			alloc.dirty = false;
-		}
-		host_regs.push_back(alloc.host_reg);
-		alloc.host_reg = -1;
-	}
-
-	void flushAllRegs()
-	{
-		for (auto& alloc : allocs)
-			if (alloc.host_reg != -1)
-				flushReg(alloc);
-	}
-
-public:
-	ArmRegAlloc(const std::vector<ArmOp>& block_ops) : block_ops(block_ops) {
-		host_regs.clear();
-		for (int i = 0; i < max_regs; i++)
-			host_regs.push_back(i);
-	}
-
-	void load(u32 opidx)
-	{
-		const ArmOp& op = block_ops[opidx];
-		if (op.op_type == ArmOp::FALLBACK)
-			flushAllRegs();
-		else
-		{
-			/* Writing the status register can change the mode, and with it
-			 * which of the banked registers r8 to r14 are: arm7_msr_cpsr() swaps
-			 * them in the register file. Every register is written back
-			 * before and read again after (block_ssa_pass() gives them all
-			 * a new version), as around the interpreter. Which values were
-			 * still in host registers used to depend on how many there are
-			 * on the host. */
-			if (op.op_type == ArmOp::MSR)
-				flushAllRegs();
-			bool conditional = op.condition != ArmOp::AL;
-			for (const auto& arg : op.arg)
-			{
-				if (arg.isReg())
-					allocReg(arg.getReg(), false, conditional, opidx);
-				if (!arg.shift_imm)
-					allocReg(arg.shift_reg, false, conditional, opidx);
-			}
-			if (op.rd.isReg())
-				allocReg(op.rd.getReg(), true, conditional, opidx);
-		}
-	}
-
-	/* Writes back every register whose latest value is only in a host
-	 * register. For the backend to call before code that may be skipped: a
-	 * conditional instruction that runs short of host registers pushes one
-	 * out, and if the one pushed out still had to be written back, the
-	 * write would be in the skipped code - written when the condition
-	 * holds and lost when it does not, with nothing to tell which. */
-	void storeDirty()
-	{
-		for (auto& alloc : allocs)
-			if (alloc.host_reg != -1 && alloc.dirty)
-			{
-				static_cast<T*>(this)->StoreReg(alloc.host_reg, (Arm7Reg)(&alloc - &allocs.front()));
-				alloc.dirty = false;
-			}
-	}
-
-	void store(u32 opidx)
-	{
-		const ArmOp& op = block_ops[opidx];
-		if (op.op_type == ArmOp::FALLBACK)
-			return;
-		if (op.condition != ArmOp::AL)
-		{
-			for (auto& alloc : allocs)
-				if (alloc.host_reg != -1 && alloc.temporary)
-					flushReg(alloc);
-		}
-		else if (op.rd.isReg() && needsWriteback(op.rd.getReg(), opidx + 1))
-		{
-			RegAlloc& alloc = allocs[(int)op.rd.getReg().armreg];
-			static_cast<T*>(this)->StoreReg(alloc.host_reg, op.rd.getReg().armreg);
-			alloc.dirty = false;
-		}
-	}
-
-protected:
-	int map(Arm7Reg r)
-	{
-		return allocs[(int)r].host_reg;
-	}
-};
-
-namespace recompiler {
-
-void init();
-void term();
-void flush();
-void compile();
-void *getMemOp(bool load, bool byte);
-
-// Where the code for each address of the ARM's memory is; the compiler's
-// own entry where there is none yet
-extern void (*EntryPoints[ARAM_SIZE_MAX / 4])();
-extern u8* icPtr;
-extern u8* ICache;
-const u32 ICacheSize = 4 * 1024 * 1024;
-
-static inline void *currentCode() {
-	return icPtr;
-}
-static inline u32 spaceLeft() {
-	return ICacheSize - (icPtr - ICache);
-}
-static inline bool empty() {
-	return icPtr == ICache;
-}
-static inline void advance(u32 size) {
-	icPtr += size;
+/* What a default operand, or one made of a constant or a register, is */
+static INLINE ArmOpOperand armop_none(void)
+{
+	ArmOpOperand o;
+	memset(&o, 0, sizeof(o));
+	o.type = ARMOPND_NONE;
+	o.shift_type = ARMSH_LSL;
+	o.shift_imm = true;
+	return o;
 }
 
-extern ptrdiff_t rx_offset;
-static inline void *writeToExec(void * addr) {
-	return (char *)addr + rx_offset;
+static INLINE ArmOpOperand armop_imm(u32 v)
+{
+	ArmOpOperand o = armop_none();
+	o.type = ARMOPND_IMM;
+	o.v.imm_value = v;
+	return o;
 }
-static inline void *execToWrite(void * addr) {
-	return (char *)addr - rx_offset;
+
+static INLINE ArmOpOperand armop_reg(Arm7Reg r)
+{
+	ArmOpOperand o = armop_none();
+	o.type = ARMOPND_REG;
+	o.v.reg_value.armreg = r;
+	o.v.reg_value.version = 0;
+	return o;
 }
 
-} // namespace recompiler
+static INLINE ArmOpRegister armop_register(Arm7Reg r)
+{
+	ArmOpRegister reg;
+	reg.armreg = r;
+	reg.version = 0;
+	return reg;
+}
 
-void arm7backend_compile(const std::vector<ArmOp>& block_ops, u32 cycles);
-void arm7backend_flush();
+static INLINE bool armop_is_imm(const ArmOpOperand *o) { return o->type == ARMOPND_IMM; }
+static INLINE bool armop_is_reg(const ArmOpOperand *o) { return o->type == ARMOPND_REG; }
+static INLINE bool armop_is_none(const ArmOpOperand *o) { return o->type == ARMOPND_NONE; }
 
-extern void (*arm_compilecode)();
-using arm_mainloop_t = void (*)(reg_pair *arm_regs, void (*entrypoints[])());
+static INLINE u32 armop_get_imm(const ArmOpOperand *o)
+{
+	verify(armop_is_imm(o));
+	return o->v.imm_value;
+}
+
+static INLINE void armop_set_imm(ArmOpOperand *o, u32 v)
+{
+	o->type = ARMOPND_IMM;
+	o->v.imm_value = v;
+}
+
+static INLINE ArmOpRegister *armop_get_reg(ArmOpOperand *o)
+{
+	verify(armop_is_reg(o));
+	return &o->v.reg_value;
+}
+
+static INLINE const ArmOpRegister *armop_reg_of(const ArmOpOperand *o)
+{
+	verify(armop_is_reg(o));
+	return &o->v.reg_value;
+}
+
+static INLINE void armop_set_reg(ArmOpOperand *o, Arm7Reg armreg, int version)
+{
+	o->type = ARMOPND_REG;
+	o->v.reg_value.armreg = armreg;
+	o->v.reg_value.version = version;
+}
+
+static INLINE bool armop_is_shifted(const ArmOpOperand *o)
+{
+	return !o->shift_imm || o->s.shift_value != 0 || o->shift_type != ARMSH_LSL;
+}
+
+/* An instruction of @type: under @condition it reads the flags */
+static INLINE ArmOp armop_make(ArmOpType type, ArmCondition condition)
+{
+	ArmOp op;
+	int i;
+	memset(&op, 0, sizeof(op));
+	op.op_type = type;
+	op.condition = condition;
+	op.rd = armop_none();
+	for (i = 0; i < 3; i++)
+		op.arg[i] = armop_none();
+	op.cycles = 6;
+	if (condition != ARMCC_AL)
+		op.flags |= ARMOP_READS_FLAGS;
+	return op;
+}
+
+static INLINE bool armop_is_logical(const ArmOp *op)
+{
+	return op->op_type == ARMOP_AND || op->op_type == ARMOP_EOR || op->op_type == ARMOP_TST
+			|| op->op_type == ARMOP_TEQ || (op->op_type >= ARMOP_ORR && op->op_type <= ARMOP_MVN);
+}
+
+static INLINE bool armop_is_comp(const ArmOp *op)
+{
+	return op->op_type >= ARMOP_TST && op->op_type <= ARMOP_CMN;
+}
+
+/* The register allocator: the ARM's registers a block's instructions use
+ * given host registers (by number, 0 to max_regs - 1, which the backend
+ * maps to its own), loaded and stored by the backend's functions */
+typedef struct ArmRegAllocSlot
+{
+	int host_reg;
+	u16 version;
+	bool dirty;
+	bool temporary;
+} ArmRegAllocSlot;
+
+typedef struct ArmRegAlloc
+{
+	ArmRegAllocSlot allocs[RN_ARM_REG_SLOTS];
+	/* the free host registers, the one given next last */
+	int host_regs[16];
+	int host_reg_count;
+	const ArmOp *block_ops;
+	u32 block_op_count;
+	void (*load_reg)(void *ctx, int host_reg, Arm7Reg armreg);
+	void (*store_reg)(void *ctx, int host_reg, Arm7Reg armreg);
+	void *ctx;
+} ArmRegAlloc;
+
+void arm_regalloc_init(ArmRegAlloc *ra, int max_regs, const ArmOp *block_ops, u32 count,
+		void (*load_reg)(void *ctx, int host_reg, Arm7Reg armreg),
+		void (*store_reg)(void *ctx, int host_reg, Arm7Reg armreg), void *ctx);
+/* The registers of instruction @opidx in host registers */
+void arm_regalloc_load(ArmRegAlloc *ra, u32 opidx);
+/* ... and what it wrote written back where it has to be */
+void arm_regalloc_store(ArmRegAlloc *ra, u32 opidx);
+/* Writes back every register whose latest value is only in a host
+ * register. For the backend to call before code that may be skipped: a
+ * conditional instruction that runs short of host registers pushes one
+ * out, and if the one pushed out still had to be written back, the
+ * write would be in the skipped code - written when the condition
+ * holds and lost when it does not, with nothing to tell which. */
+void arm_regalloc_store_dirty(ArmRegAlloc *ra);
+static INLINE int arm_regalloc_map(const ArmRegAlloc *ra, Arm7Reg r)
+{
+	return ra->allocs[(int)r].host_reg;
+}
+
+/* The code buffer */
+#define ARM7_ICACHE_SIZE (4 * 1024 * 1024)
+/* Where the code for each address of the ARM's memory is; the compiler's
+ * own entry where there is none yet */
+extern void (*arm7_entry_points[ARAM_SIZE_MAX / 4])(void);
+extern u8 *arm7_ic_ptr;
+extern u8 *arm7_icache;
+extern ptrdiff_t arm7_rx_offset;
+
+static INLINE void *arm7_current_code(void) { return arm7_ic_ptr; }
+static INLINE u32 arm7_space_left(void) { return ARM7_ICACHE_SIZE - (u32)(arm7_ic_ptr - arm7_icache); }
+static INLINE bool arm7_code_empty(void) { return arm7_ic_ptr == arm7_icache; }
+static INLINE void arm7_advance(u32 size) { arm7_ic_ptr += size; }
+static INLINE void *arm7_write_to_exec(void *addr) { return (char *)addr + arm7_rx_offset; }
+static INLINE void *arm7_exec_to_write(void *addr) { return (char *)addr - arm7_rx_offset; }
+
+/* Has the block at the ARM's program counter compiled (the code's own
+ * "compile this") */
+void arm7_rec_compile(void);
+/* The memory access a backend calls for what it does not do in line */
+void *arm7_rec_mem_op(bool load, bool byte);
+
+/* The backend's: a block's code made, and the main loop made again */
+void arm7backend_compile(const ArmOp *block_ops, u32 count, u32 cycles);
+void arm7backend_flush(void);
+
+extern void (*arm_compilecode)(void);
+typedef void (*arm_mainloop_t)(reg_pair *arm_regs, void (*entrypoints[])(void));
 extern arm_mainloop_t arm_mainloop;
 
-} // namespace aicaarm
+#ifdef __cplusplus
+}
+#endif
+
+#endif

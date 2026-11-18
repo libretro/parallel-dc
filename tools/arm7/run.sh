@@ -1,17 +1,18 @@
 #!/bin/sh
 # The sound chip's ARM7, recompiled against interpreted.
 #
-#   sh tools/arm7/run.sh [programs]
+#   sh tools/arm7/run.sh [programs [flags]]
 #
 # On x86-64, 32-bit x86 and ARM64 the ARM7 is run by a recompiler (core/hw/
-# arm7/arm7_rec.cpp, with arm7_rec_x64.cpp, arm7_rec_x86.cpp or
-# arm7_rec_arm64.cpp); everywhere the
-# recompilers do not reach, and for the instructions this one hands back, by
-# an interpreter (arm7.c with arm-new.h). arm7_test.cpp is built around each, with nothing else of the
-# core, and both are given the same made-up programs, 10000 unless a number
-# is given. The registers, the flags and all of memory have to be the same
-# from both at the end of every program. arm7_test.cpp says what the
-# programs are made of and what is left out of them.
+# arm7/arm7_rec.c, with arm7_rec_x64.c, arm7_rec_x86.c or arm7_rec_arm64.c);
+# everywhere the recompilers do not reach, and for the instructions this
+# one hands back, by an interpreter (arm7.c with arm-new.h). arm7_test.c is
+# built around each, with nothing else of the core, and all are given the
+# same made-up programs, 10000 unless a number is given. The registers, the
+# flags and all of memory have to be the same from each at the end of every
+# program, and the cycles left over the same from every recompiler (the
+# interpreter counts its own way). arm7_test.c says what the programs are made of and what is left
+# out of them.
 #
 # A program that stores over its own instructions is not compared, and
 # neither is one that stops on a check after doing so.
@@ -25,71 +26,55 @@
 # ARM7_TEST_MODES=1 has the programs change the processor's mode as well
 # (MSR CPSR_c), between the modes with banked registers: other programs.
 #
-# Needs a C++ compiler and the core's makefile for its flags, and only
-# does anything on x86-64, 32-bit x86 and ARM64: there is no recompiler to
-# compare elsewhere. For a 32-bit x86 build on an x86-64 machine:
-#
-#   ARCH=i686 MAKEARGS="platform=unix ARCH=i686 CC=i686-linux-gnu-gcc \
-#   CXX=i686-linux-gnu-g++" sh tools/arm7/run.sh
-#
-# For another processor's build, run under qemu:
-#
-#   ARCH=aarch64 MAKEARGS="platform=arm64 CC=aarch64-linux-gnu-gcc \
-#   CXX=aarch64-linux-gnu-g++" RUN="qemu-aarch64 -L /usr/aarch64-linux-gnu" \
-#      sh tools/arm7/run.sh
+# x86 is built with i686-linux-gnu-gcc (or gcc -m32), ARM64 with
+# aarch64-linux-gnu-gcc and run under qemu-aarch64-static; where one of
+# them is not there, that recompiler is left out and said to be. Flags
+# after the number of programs, such as -fsanitize=address,undefined, go
+# to the interpreter's and the x86-64 recompiler's builds; $X86_CFLAGS
+# goes to the x86 build (a header path a host's -m32 may want).
 set -e
 ROOT=$(cd "$(dirname "$0")/../.." && pwd)
 cd "$ROOT"
 PROGRAMS=${1:-10000}
-case ${ARCH:-$(uname -m)} in
-   x86_64|amd64) BACKEND=core/hw/arm7/arm7_rec_x64.cpp ;;
-   i386|i686) BACKEND=core/hw/arm7/arm7_rec_x86.cpp ;;
-   aarch64|arm64) BACKEND="core/hw/arm7/arm7_rec_arm64.cpp $(echo core/deps/vixl/*.cc core/deps/vixl/aarch64/*.cc)" ;;
-   *) echo "arm7: skipped (the recompilers under test are for x86-64, 32-bit x86 and ARM64)"; exit 0 ;;
-esac
+[ $# -gt 0 ] && shift
+EXTRA="$*"
 WORK=${TMPDIR:-/tmp}/arm7_test.$$
 mkdir -p "$WORK"
-trap 'rm -rf "$WORK"' EXIT
+[ -n "$ARM7_KEEP" ] || trap 'rm -rf "$WORK"' EXIT
 
-# the compiler and flags the core compiles this code with
-CMD=$(make -n -B $MAKEARGS core/hw/arm7/arm7_rec.o 2>/dev/null | grep 'arm7_rec\.cpp' | tail -n 1)
-[ -n "$CMD" ] || { echo "cannot get the core's compile flags from make" >&2; exit 1; }
-CMD=${CMD% -o *}
-FLAGS=$(echo "$CMD" | sed 's| [^ ]*arm7_rec\.cpp||; s/ -MMD -MP//')
-CXX=${FLAGS%% *}
-# and its C (arm7.c, arm_mem.c)
-CCMD=$(make -n -B $MAKEARGS core/hw/arm7/arm_mem.o 2>/dev/null | grep 'arm_mem\.c' | tail -n 1)
-[ -n "$CCMD" ] || { echo "cannot get the core's C compile flags from make" >&2; exit 1; }
-CCMD=${CCMD% -o *}
-CFLAGS_C=$(echo "$CCMD" | sed 's| [^ ]*arm_mem\.c||; s/ -MMD -MP//')
-
-build() {
-   # $1: name, $2: extra define, $3: more sources
-   for SRC in core/hw/arm7/arm7_rec.cpp tools/arm7/arm7_test.cpp $3; do
-      # the flags come out of make quoted for a shell
-      eval "$FLAGS $2 \"$SRC\" -o \"$WORK/$1-$(basename "$SRC" | sed 's/\.[a-z]*$//').o\""
-   done
-   eval "$CFLAGS_C $2 core/hw/arm7/arm_mem.c -o \"$WORK/$1-arm_mem.o\""
-   eval "$CFLAGS_C $2 core/hw/arm7/arm7.c -o \"$WORK/$1-arm7.o\""
-   "$CXX" -o "$WORK/arm7_test_$1" "$WORK/$1"-*.o
+# the C flags the core compiles the ARM7 with, for the make arguments given
+flags() {
+   CMD=$(make -n -B "$@" core/hw/arm7/arm7_rec.o 2>/dev/null | grep 'arm7_rec\.c' | tail -n 1)
+   [ -n "$CMD" ] || { echo "cannot get the core's C compile flags from make" >&2; exit 1; }
+   CMD=${CMD% -o *}
+   echo "$CMD" | sed 's| [^ ]*arm7_rec\.c||; s/ -MMD -MP//'
 }
 
-build rec "" "$BACKEND"
-build interp -DFEAT_AREC=DYNAREC_NONE
-$RUN "$WORK/arm7_test_rec" "$PROGRAMS" > "$WORK/rec.txt"
-$RUN "$WORK/arm7_test_interp" "$PROGRAMS" > "$WORK/interp.txt"
-ARM7_TEST_INTERPRET=1 $RUN "$WORK/arm7_test_rec" "$PROGRAMS" > "$WORK/chosen.txt"
-ARM7_TEST_SWITCH=1 $RUN "$WORK/arm7_test_rec" "$PROGRAMS" > "$WORK/switched.txt"
-# what the recompiled programs leave, for comparing one machine's with another's
-cp "$WORK/rec.txt" "${ARM7_TEST_OUT:-/dev/null}"
+build() {
+   # $1: name, $2: C flags (with the compiler), $3: extra flags, $4: link flags
+   for SRC in core/hw/arm7/arm7_rec.c core/hw/arm7/arm7_rec_x64.c core/hw/arm7/arm7_rec_x86.c \
+         core/hw/arm7/arm7_rec_arm64.c core/hw/arm7/arm_mem.c core/hw/arm7/arm7.c tools/arm7/arm7_test.c; do
+      # the flags come out of make quoted for a shell
+      eval "$2 $3 \"$SRC\" -o \"$WORK/$1-$(basename "$SRC" .c).o\""
+   done
+   CC=${2%% *}
+   $CC $3 $4 -o "$WORK/arm7_test_$1" "$WORK/$1"-*.o
+}
 
 same() {
-   # $1, $2: outputs to compare, $3 and $4: what each is
+   # $1, $2: outputs to compare, $3 and $4: what each is, $5: both recompiled
    [ "$(wc -l < "$1")" -eq "$PROGRAMS" ] && [ "$(wc -l < "$2")" -eq "$PROGRAMS" ] || {
       echo "FAIL: not every program was run to its end ($3, $4)" >&2
       exit 1
    }
-   paste -d'|' "$1" "$2" > "$WORK/both.txt"
+   # (the cycles left over only where both are recompiled)
+   if [ -n "$5" ]; then
+      paste -d'|' "$1" "$2" > "$WORK/both.txt"
+   else
+      sed 's/ cyc [0-9a-f]*$//' "$1" > "$WORK/a.txt"
+      sed 's/ cyc [0-9a-f]*$//' "$2" > "$WORK/b.txt"
+      paste -d'|' "$WORK/a.txt" "$WORK/b.txt" > "$WORK/both.txt"
+   fi
    if ! awk -F'|' -v a="$3" -v b="$4" '
       $1 ~ /wrote over/ || $2 ~ /wrote over/ { skipped++; next }
       $1 != $2 { if (bad++ < 5) { print a ": " $1; print b ": " $2 } }
@@ -99,8 +84,89 @@ same() {
    fi
 }
 
-same "$WORK/chosen.txt" "$WORK/interp.txt" "the interpreter chosen by the option" "the interpreter"
-same "$WORK/switched.txt" "$WORK/interp.txt" "changing between the two" "the interpreter"
-same "$WORK/rec.txt" "$WORK/interp.txt" "recompiled" "interpreted"
-SKIPPED=$(cut -d' ' -f1 "$WORK/count.txt")
-echo "arm7: ok ($((PROGRAMS - SKIPPED)) programs: recompiled, interpreted and changing between the two agree; $SKIPPED more wrote over themselves and were not compared)"
+# $1: name, $2: how it is run (empty, or qemu)
+check() {
+   $2 "$WORK/arm7_test_$1" "$PROGRAMS" > "$WORK/$1.txt"
+   ARM7_TEST_INTERPRET=1 $2 "$WORK/arm7_test_$1" "$PROGRAMS" > "$WORK/$1-chosen.txt"
+   ARM7_TEST_SWITCH=1 $2 "$WORK/arm7_test_$1" "$PROGRAMS" > "$WORK/$1-switched.txt"
+   same "$WORK/$1-chosen.txt" "$WORK/interp.txt" "$1: the interpreter chosen by the option" "the interpreter"
+   same "$WORK/$1-switched.txt" "$WORK/interp.txt" "$1: changing between the two" "the interpreter"
+   same "$WORK/$1.txt" "$WORK/interp.txt" "$1: recompiled" "interpreted"
+   # what the recompiled programs leave, for comparing one machine's with another's
+   [ -z "$ARM7_TEST_OUT" ] || cp "$WORK/$1.txt" "$ARM7_TEST_OUT.$1"
+   DONE="$DONE $1"
+}
+
+# which recompilers can be built here, and their builds, all at once
+NATIVE=$(flags)
+DONE=
+LEFT=
+X86FLAGS=
+ARM64FLAGS=
+ARM64RUN=
+case $(uname -m) in
+   x86_64|amd64)
+      X86CC=
+      if command -v i686-linux-gnu-gcc >/dev/null 2>&1; then
+         X86CC=i686-linux-gnu-gcc
+      elif echo 'int main(void){return 0;}' | gcc -m32 -x c - -o "$WORK/m32" >/dev/null 2>&1; then
+         X86CC=gcc
+      fi
+      if [ -n "$X86CC" ]; then
+         X86FLAGS=$(flags platform=unix ARCH=i686 CC=$X86CC)
+      else
+         LEFT="$LEFT x86"
+      fi
+      ;;
+esac
+case $(uname -m) in
+   aarch64|arm64) ;;
+   *)
+      if command -v aarch64-linux-gnu-gcc >/dev/null 2>&1 && command -v qemu-aarch64-static >/dev/null 2>&1; then
+         ARM64FLAGS=$(flags platform=unix ARCH=aarch64 CC=aarch64-linux-gnu-gcc)
+         ARM64RUN=qemu-aarch64-static
+      else
+         LEFT="$LEFT arm64"
+      fi
+      ;;
+esac
+
+PIDS=
+build interp "$NATIVE" "-DFEAT_AREC=DYNAREC_NONE $EXTRA" & PIDS="$PIDS $!"
+case $(uname -m) in
+   x86_64|amd64|aarch64|arm64) build native "$NATIVE" "$EXTRA" & PIDS="$PIDS $!" ;;
+esac
+[ -z "$X86FLAGS" ] || { build x86 "$X86FLAGS" "$X86_CFLAGS" -m32 & PIDS="$PIDS $!"; }
+[ -z "$ARM64FLAGS" ] || { build arm64 "$ARM64FLAGS" "" -static & PIDS="$PIDS $!"; }
+for P in $PIDS; do
+   wait "$P" || { echo "FAIL: a build did not finish" >&2; exit 1; }
+done
+
+"$WORK/arm7_test_interp" "$PROGRAMS" > "$WORK/interp.txt"
+case $(uname -m) in
+   x86_64|amd64)
+      mv "$WORK/arm7_test_native" "$WORK/arm7_test_x64"
+      check x64
+      ;;
+   aarch64|arm64)
+      mv "$WORK/arm7_test_native" "$WORK/arm7_test_arm64"
+      check arm64
+      ;;
+esac
+[ -z "$X86FLAGS" ] || check x86
+[ -z "$ARM64FLAGS" ] || check arm64 "$ARM64RUN"
+# the recompilers with each other, to the cycle
+FIRST=
+for A in $DONE; do
+   if [ -z "$FIRST" ]; then
+      FIRST=$A
+   else
+      same "$WORK/$A.txt" "$WORK/$FIRST.txt" "recompiled for $A" "recompiled for $FIRST" cycles
+   fi
+done
+SKIPPED=0
+if [ -n "$FIRST" ]; then
+   same "$WORK/$FIRST.txt" "$WORK/interp.txt" "recompiled" "interpreted"
+   SKIPPED=$(cut -d' ' -f1 "$WORK/count.txt")
+fi
+echo "arm7: ok ($((PROGRAMS - SKIPPED)) programs: the interpreter and the recompilers for${DONE:- none} agree, recompiled, chosen and changing between the two, and the recompilers to the cycle; $SKIPPED more wrote over themselves and were not compared${LEFT:+; no recompiler here for$LEFT})"

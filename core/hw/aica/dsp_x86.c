@@ -30,7 +30,7 @@
 
 #include "dsp.h"
 #include "aica_if.h"
-#include "x86_emit.h"
+#include "jit/x86_emit.h"
 #include "hw/mem/_vmem.h"
 
 DECL_ALIGN(4096) static u8 CodeBuffer[32 * 1024]

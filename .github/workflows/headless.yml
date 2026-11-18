@@ -18,10 +18,9 @@ name: Headless
 # register allocator's lists against the std::set they replace
 # (tools/sh4/reglist_test.sh), and the recompilers' pool, pieces taken and
 # given back at random (tools/sh4/node_pool_test.sh). And the recompilers
-# against the interpreters, each built alone with the assembler they share
-# (tools/sh4/run.sh, tools/arm7/run.sh), the sound chip's DSP compiled for
-# x86-64, x86 and ARM64 (under qemu) against interpreted
-# (tools/aica/run.sh), the
+# against the interpreters, each built alone (tools/sh4/run.sh), the sound
+# chip's ARM7 and DSP compiled for x86-64, x86 and ARM64 (under qemu)
+# against interpreted (tools/arm7/run.sh, tools/aica/run.sh), the
 # interpreter's FMAC against fmaf() (tools/sh4/fmac_test.sh), the opcode
 # table as it always was (tools/sh4/opcode_table_run.sh), the instruction
 # and operand caches as they always were (tools/sh4/sh4_cache_run.sh), the
@@ -271,10 +270,11 @@ jobs:
         run: |
           sh tools/mem/fault_run.sh
           sh tools/mem/fault_run.sh -fsanitize=address,undefined -fno-sanitize-recover=all
-      - name: The recompilers against the interpreters, built alone (the SH-4's vectors and the sound chip's ARM7 with Xbyak, its DSP for x86-64, x86 and ARM64 under qemu)
+      - name: The recompilers against the interpreters, built alone (the SH-4's vectors with Xbyak, the sound chip's ARM7 and its DSP for x86-64, x86 and ARM64 under qemu; and with the sanitizers)
         run: |
           sh tools/sh4/run.sh
           sh tools/arm7/run.sh
+          sh tools/arm7/run.sh 2000 -fsanitize=address,undefined -fno-sanitize-recover=all
           sh tools/aica/run.sh
           sh tools/aica/run.sh 300 -fsanitize=address,undefined -fno-sanitize-recover=all
       - name: The sound chip's channels, the same sound as the C++ ones they replace (and with the sanitizers)

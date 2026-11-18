@@ -1,5 +1,5 @@
 /* The sound chip's ARM7 recompiled on a 32-bit ARM host. (The other
- * processors have arm7_rec.cpp's.) */
+ * processors have arm7_rec.c's.) */
 #include "arm7_interp.h"
 #include "hw/mem/_vmem.h"
 

@@ -1,9 +1,9 @@
-/* The AArch64 instructions the sound chip's DSP recompiler makes
- * (dsp_arm64.c), and the macros it uses as VIXL's MacroAssembler expanded
- * them: a constant moved in as few instructions as it takes, an immediate
- * an instruction cannot have put in a scratch register (w16) first,
- * shifted where that saves an instruction, and a literal pool at the end
- * with its marker. C89. */
+/* The AArch64 instructions the sound chip's recompilers make (dsp_arm64.c,
+ * arm7_rec_arm64.c), and the macros they use as VIXL's MacroAssembler
+ * expanded them: a constant moved in as few instructions as it takes, an
+ * immediate an instruction cannot have put in a scratch register (w16)
+ * first, shifted where that saves an instruction, and a literal pool at
+ * the end with its marker. C89. */
 #ifndef A64_EMIT_H
 #define A64_EMIT_H
 
@@ -12,10 +12,11 @@
 
 #define A64_ZR 31	/* the zero register (and sp, where an instruction takes it) */
 #define A64_SP 31
-#define A64_IP0 16	/* the scratch register */
+#define A64_IP0 16	/* the scratch registers */
+#define A64_IP1 17
 
 /* Conditions */
-enum { A64_EQ = 0, A64_LT = 11, A64_GT = 12 };
+enum { A64_EQ = 0, A64_NE = 1, A64_HS = 2, A64_LO = 3, A64_LT = 11, A64_GT = 12, A64_LE = 13 };
 
 typedef struct a64_emit
 {
@@ -257,7 +258,7 @@ static INLINE void a64_mov_imm(a64_emit *e, bool sf, int rd, u64 imm)
 }
 
 /* Add/sub (shifted register): add 0, sub 2 (op<<30 | S<<29) */
-enum { A64_LSL = 0, A64_LSR = 1, A64_ASR = 2 };
+enum { A64_LSL = 0, A64_LSR = 1, A64_ASR = 2, A64_ROR = 3 };
 static INLINE void a64_addsub_rr(a64_emit *e, bool sf, bool sub, bool s, int rd, int rn, int rm, int shift, unsigned amount)
 {
    a64_dw(e, (sf ? 0x80000000u : 0) | (sub ? 0x40000000u : 0) | (s ? 0x20000000u : 0) | 0x0B000000u
@@ -474,6 +475,279 @@ static INLINE void a64_blr(a64_emit *e, int rn)
 static INLINE void a64_ret(a64_emit *e)
 {
    a64_dw(e, 0xD65F03C0u);
+}
+
+/* An operand of VIXL's: a constant, or a register shifted (by 0: plain) */
+typedef struct a64_operand
+{
+   bool is_imm;
+   u64 imm;
+   int reg;
+   int shift;
+   unsigned amount;
+} a64_operand;
+
+static INLINE a64_operand a64_opnd_imm(u64 imm)
+{
+   a64_operand o;
+   o.is_imm = true;
+   o.imm    = imm;
+   o.reg    = A64_ZR;
+   o.shift  = A64_LSL;
+   o.amount = 0;
+   return o;
+}
+
+static INLINE a64_operand a64_opnd_reg(int reg, int shift, unsigned amount)
+{
+   a64_operand o;
+   o.is_imm = false;
+   o.imm    = 0;
+   o.reg    = reg;
+   o.shift  = shift;
+   o.amount = amount;
+   return o;
+}
+
+/* Logical (shifted register): and 0, orr 1, eor 2, ands 3; @n inverts rm
+ * (bic, orn, eon, bics) */
+static INLINE void a64_logical_rr(a64_emit *e, bool sf, u32 opc, bool n, int rd, int rn, int rm, int shift, unsigned amount)
+{
+   a64_dw(e, (sf ? 0x80000000u : 0) | (opc << 29) | 0x0A000000u | ((u32)shift << 22) | (n ? 0x200000u : 0)
+         | ((u32)rm << 16) | (amount << 10) | ((u32)rn << 5) | (u32)rd);
+}
+
+/* A shift by a constant (32-bit): lsl, lsr, asr (ubfm, sbfm), ror (extr) */
+static INLINE void a64_shift_imm(a64_emit *e, int shift, int rd, int rn, unsigned amount)
+{
+   switch (shift)
+   {
+   case A64_LSL:
+      a64_lsl(e, rd, rn, amount);
+      break;
+   case A64_LSR:
+      a64_bfm(e, false, 2, rd, rn, amount, 31);
+      break;
+   case A64_ASR:
+      a64_bfm(e, false, 0, rd, rn, amount, 31);
+      break;
+   default:
+      a64_dw(e, 0x13800000u | ((u32)rn << 16) | (amount << 10) | ((u32)rn << 5) | (u32)rd);
+      break;
+   }
+}
+
+/* A shift by a register (32-bit): lslv, lsrv, asrv, rorv */
+static INLINE void a64_shift_reg(a64_emit *e, int shift, int rd, int rn, int rm)
+{
+   a64_dw(e, 0x1AC02000u | ((u32)shift << 10) | ((u32)rm << 16) | ((u32)rn << 5) | (u32)rd);
+}
+
+/* Mov(rd, operand): a 32-bit register is moved even to itself */
+static INLINE void a64_mov_op(a64_emit *e, bool sf, int rd, a64_operand op)
+{
+   if (op.is_imm)
+      a64_mov_imm(e, sf, rd, op.imm);
+   else if (op.amount != 0)
+      a64_shift_imm(e, op.shift, rd, op.reg, op.amount);
+   else if (rd != op.reg || !sf)
+      a64_mov_rr(e, sf, rd, op.reg);
+}
+
+/* Mvn(rd, register operand): orn rd, zr, rm */
+static INLINE void a64_mvn_op(a64_emit *e, bool sf, int rd, a64_operand op)
+{
+   if (op.is_imm)
+      a64_mov_imm(e, sf, rd, ~op.imm);
+   else
+      a64_logical_rr(e, sf, 1, true, rd, A64_ZR, op.reg, op.shift, op.amount);
+}
+
+/* And / Orr / Eor / Ands (@opc) and their inverted forms (@n): VIXL's
+ * LogicalMacro() */
+static INLINE void a64_logical(a64_emit *e, bool sf, u32 opc, bool n, int rd, int rn, a64_operand op)
+{
+   u64 imm;
+   unsigned ln, imm_s, imm_r;
+   if (!op.is_imm)
+   {
+      a64_logical_rr(e, sf, opc, n, rd, rn, op.reg, op.shift, op.amount);
+      return;
+   }
+   imm = n ? ~op.imm : op.imm;
+   if (!sf)
+      imm &= 0xffffffffull;
+   if (opc != 3)
+   {
+      if (imm == 0)
+      {
+         if (opc == 0)
+            a64_mov_imm(e, sf, rd, 0);
+         else
+            a64_mov_op(e, sf, rd, a64_opnd_reg(rn, A64_LSL, 0));
+         return;
+      }
+      if (imm == (sf ? ~(u64)0 : 0xffffffffull))
+      {
+         if (opc == 0)
+            a64_mov_op(e, sf, rd, a64_opnd_reg(rn, A64_LSL, 0));
+         else if (opc == 1)
+            a64_mov_imm(e, sf, rd, imm);
+         else
+            a64_mvn_op(e, sf, rd, a64_opnd_reg(rn, A64_LSL, 0));
+         return;
+      }
+   }
+   if (a64_logical_imm(imm, sf ? 64 : 32, &ln, &imm_s, &imm_r))
+      a64_logical_ri(e, sf, opc, rd, rn, ln, imm_s, imm_r);
+   else
+   {
+      int shift;
+      unsigned amount;
+      a64_imm_for_shifted_op(e, sf, A64_IP0, imm, &shift, &amount);
+      a64_logical_rr(e, sf, opc, false, rd, rn, A64_IP0, shift, amount);
+   }
+}
+
+/* Add / Sub / Adds / Subs(rd, rn, operand); Cmp and Cmn are Subs and Adds to zr */
+static INLINE void a64_addsub(a64_emit *e, bool sf, bool sub, bool s, int rd, int rn, a64_operand op)
+{
+   if (op.is_imm)
+      a64_addsub_imm(e, sf, sub, s, rd, rn, (s64)op.imm);
+   else if (op.shift == A64_ROR)
+   {
+      a64_mov_op(e, sf, A64_IP0, op);
+      a64_addsub_rr(e, sf, sub, s, rd, rn, A64_IP0, A64_LSL, 0);
+   }
+   else
+      a64_addsub_rr(e, sf, sub, s, rd, rn, op.reg, op.shift, op.amount);
+}
+
+/* Adc / Sbc / Adcs / Sbcs(rd, rn, operand) (32-bit) */
+static INLINE void a64_addsub_carry(a64_emit *e, bool sub, bool s, int rd, int rn, a64_operand op)
+{
+   int rm = op.reg;
+   if (op.is_imm || op.shift == A64_ROR || op.amount != 0)
+   {
+      rm = op.is_imm || op.reg != A64_IP0 ? A64_IP0 : A64_IP1;
+      a64_mov_op(e, false, rm, op);
+   }
+   a64_dw(e, (sub ? 0x40000000u : 0) | (s ? 0x20000000u : 0) | 0x1A000000u | ((u32)rm << 16) | ((u32)rn << 5) | (u32)rd);
+}
+
+/* Bfi(wd, wn, lsb, width) */
+static INLINE void a64_bfi(a64_emit *e, int rd, int rn, unsigned lsb, unsigned width)
+{
+   a64_bfm(e, false, 1, rd, rn, (32 - lsb) & 31, width - 1);
+}
+
+/* Mrs(xt, NZCV), Msr(NZCV, xt) */
+static INLINE void a64_mrs_nzcv(a64_emit *e, int rt)
+{
+   a64_dw(e, 0xD53B4200u | (u32)rt);
+}
+
+static INLINE void a64_msr_nzcv(a64_emit *e, int rt)
+{
+   a64_dw(e, 0xD51B4200u | (u32)rt);
+}
+
+/* ldr / str wt or xt (@x), [xn, #imm]: VIXL's LoadStoreMacro(), an offset
+ * the instruction cannot have put in the scratch register first */
+static INLINE void a64_ldst(a64_emit *e, bool load, bool x, int rt, int rn, s64 offset)
+{
+   unsigned size = x ? 8 : 4;
+   u32 base = x ? 0xF9000000u : 0xB9000000u;
+   if (offset >= 0 && (offset % size) == 0 && offset / size < 4096)
+      a64_dw(e, base | (load ? 0x400000u : 0) | ((u32)(offset / size) << 10) | ((u32)rn << 5) | (u32)rt);
+   else if (offset >= -256 && offset < 256)
+      a64_dw(e, (base & ~0x01000000u) | (load ? 0x400000u : 0) | (((u32)offset & 0x1ff) << 12) | ((u32)rn << 5) | (u32)rt);
+   else
+   {
+      a64_mov_imm(e, true, A64_IP0, (u64)offset);
+      a64_dw(e, (x ? 0xF8206800u : 0xB8206800u) | (load ? 0x400000u : 0) | (A64_IP0 << 16) | ((u32)rn << 5) | (u32)rt);
+   }
+}
+
+/* ldr / str / ldrb / strb (@size 1, 4 or 8) rt, [xn, xm (lsl #log2 size)] */
+static INLINE void a64_ldst_rr(a64_emit *e, bool load, unsigned size, int rt, int rn, int rm, bool shifted)
+{
+   u32 base = size == 1 ? 0x38206800u : size == 4 ? 0xB8206800u : 0xF8206800u;
+   a64_dw(e, base | (load ? 0x400000u : 0) | ((u32)rm << 16) | (shifted ? 0x1000u : 0) | ((u32)rn << 5) | (u32)rt);
+}
+
+/* ldp / stp wt1, wt2, [xn, #imm] (signed offset) */
+static INLINE void a64_ldstp_w(a64_emit *e, bool load, int rt1, int rt2, int rn, int offset)
+{
+   a64_dw(e, 0x29000000u | (load ? 0x400000u : 0) | (((u32)(offset / 4) & 0x7f) << 15)
+         | ((u32)rt2 << 10) | ((u32)rn << 5) | (u32)rt1);
+}
+
+static INLINE void a64_br(a64_emit *e, int rn)
+{
+   a64_dw(e, 0xD61F0000u | ((u32)rn << 5));
+}
+
+/* b / bl by @rel bytes: false where it does not reach */
+static INLINE bool a64_b_rel(a64_emit *e, bool link, s64 rel)
+{
+   if (rel < -128 * 1024 * 1024 || rel >= 128 * 1024 * 1024)
+      return false;
+   a64_dw(e, (link ? 0x94000000u : 0x14000000u) | ((u32)(rel / 4) & 0x3ffffff));
+   return true;
+}
+
+/* A label, and the branches to it made before it was put down */
+typedef struct a64_label
+{
+   u32 *at;
+   u32 *patch[16];
+   int patches;
+} a64_label;
+
+static INLINE void a64_label_init(a64_label *l)
+{
+   l->at = NULL;
+   l->patches = 0;
+}
+
+/* The branch's offset to @to put in it (b: 26 bits, b.cond and cbz/cbnz: 19) */
+static INLINE void a64_label_link(u32 *from, const u32 *to)
+{
+   s32 words = (s32)(to - from);
+   if ((*from & 0x7C000000u) == 0x14000000u)
+      *from = (*from & 0xFC000000u) | ((u32)words & 0x3ffffff);
+   else
+      *from = (*from & 0xFF00001Fu) | (((u32)words & 0x7ffff) << 5);
+}
+
+/* b (@cond -1), b.cond, cbnz wt (@cond -2, @rt) to a label */
+static INLINE void a64_b_label(a64_emit *e, int cond, int rt, a64_label *l)
+{
+   u32 *from = e->p;
+   if (cond == -1)
+      a64_dw(e, 0x14000000u);
+   else if (cond == -2)
+      a64_dw(e, 0x35000000u | (u32)rt);
+   else
+      a64_dw(e, 0x54000000u | (u32)cond);
+   if (e->full)
+      return;
+   if (l->at != NULL)
+      a64_label_link(from, l->at);
+   else if (l->patches == (int)(sizeof(l->patch) / sizeof(l->patch[0])))
+      e->full = true;
+   else
+      l->patch[l->patches++] = from;
+}
+
+static INLINE void a64_label_bind(a64_emit *e, a64_label *l)
+{
+   int i;
+   l->at = e->p;
+   for (i = 0; i < l->patches; i++)
+      a64_label_link(l->patch[i], l->at);
+   l->patches = 0;
 }
 
 /* ldr xt, =literal (the one literal there is) */
