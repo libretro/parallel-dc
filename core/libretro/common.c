@@ -1,7 +1,7 @@
 /* The host's faults that are the emulator's own (pages of memory it closed
  * to find out when they are written), and the rest of what the core sets
  * up of the process. */
-#if !defined(__MACH__) && !defined(_GNU_SOURCE)
+#if defined(__linux__) && !defined(_GNU_SOURCE)
 /* (sigaction(), and the registers' names in a ucontext_t) */
 #define _GNU_SOURCE
 #endif
@@ -14,6 +14,8 @@
 #ifdef __MACH__
 #define _XOPEN_SOURCE 1
 #define __USE_GNU 1
+/* (and what is Darwin's own, pthread_jit_write_protect_np() among it) */
+#define _DARWIN_C_SOURCE 1
 #endif
 
 #if !defined(TARGET_NO_EXCEPTIONS)

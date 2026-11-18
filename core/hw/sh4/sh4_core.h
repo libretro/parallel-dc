@@ -5,6 +5,10 @@
 /* (in first: the registers' short names below would take the place of its
  * own locals, of r among them, in a header included after this one) */
 #include <retro_atomic.h>
+/* (and the system's headers with registers of their own: Android's
+ * <sys/user.h>, which <time.h> and <signal.h> bring in, has an fpscr) */
+#include <signal.h>
+#include <time.h>
 
 #ifdef __cplusplus
 extern "C" {
