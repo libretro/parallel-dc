@@ -8,7 +8,6 @@ INCFLAGS    += -I$(CORE_DIR)/core/libretro \
 
 SOURCES_C   ?=
 SOURCES_CXX := \
-					$(CORE_DIR)/core/hw/arm7/arm7_rec_arm32.cpp \
 					\
 					\
 					\
@@ -136,6 +135,7 @@ SOURCES_C += $(CORE_DIR)/core/hw/gdrom/gdrom_response.c \
 					$(CORE_DIR)/core/hw/arm7/arm7_rec_x64.c \
 					$(CORE_DIR)/core/hw/arm7/arm7_rec_x86.c \
 					$(CORE_DIR)/core/hw/arm7/arm7_rec_arm64.c \
+					$(CORE_DIR)/core/hw/arm7/arm7_rec_arm32.c \
 					$(CORE_DIR)/core/hw/mem/_vmem.c \
 					$(CORE_DIR)/core/hw/sh4/modules/serial.c \
 					$(CORE_DIR)/core/hw/sh4/sh4_rom.c \
@@ -422,7 +422,7 @@ endif
 # Recompiler (ARM)
 ifeq ($(WITH_DYNAREC), arm)
 	DYNAREC_USED = 1
-	SOURCES_CXX += $(CORE_DIR)/core/rec-ARM/rec_arm.cpp
+	SOURCES_C += $(CORE_DIR)/core/rec-ARM/rec_arm.c
 	SOURCES_ASM += $(CORE_DIR)/core/rec-ARM/ngen_arm.S
 endif
 

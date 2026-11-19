@@ -121,7 +121,7 @@ void libAICA_TimeStep(void);
  * there is no recompiler, and there to be chosen where FEAT_AREC_SELECTABLE */
 void arm_Run_(u32 CycleCount);
 
-/* The recompiler (arm7_rec.c, or arm7_rec_arm32.cpp on a 32-bit ARM host):
+/* The recompiler (arm7_rec.c, or arm7_rec_arm32.c on a 32-bit ARM host):
  * made ready, its code thrown away, and whether the code it has is still
  * what @aram holds (a state's sound memory: false and it is thrown away) */
 void arm7_rec_init(void);

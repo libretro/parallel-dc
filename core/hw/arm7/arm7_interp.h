@@ -1,6 +1,6 @@
 /* The ARM7 interpreter's names, which its instructions (arm-new.h) are
  * written with: for arm7.c, and the 32-bit ARM host's recompiler
- * (arm7_rec_arm32.cpp), which runs some instructions through it. */
+ * (arm7_rec_arm32.c), which runs some instructions through it. */
 #pragma once
 #include "arm7.h"
 #include "arm_mem.h"

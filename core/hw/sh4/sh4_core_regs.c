@@ -110,23 +110,27 @@ static void setHostRoundingMode(void)
         /* Written with the instructions below, the mode was found not to
          * take on Android on 32-bit ARM (Soul Calibur, Sword of the
          * Berserk): it is set the C library's way there, which does. */
-        fenv_t fenv;
-        fegetenv(&fenv);
-        fenv &= x;
-        fenv |= y;
-        fesetenv(&fenv);
+        {
+           fenv_t fenv;
+           fegetenv(&fenv);
+           fenv &= x;
+           fenv |= y;
+           fesetenv(&fenv);
+        }
 #else
-        int raa;
+        {
+           int raa;
 
-        __asm__ __volatile__
-           (
-            "fmrx   %0, fpscr   \n\t"
-            "and    %0, %0, %1  \n\t"
-            "orr    %0, %0, %2  \n\t"
-            "fmxr   fpscr, %0   \n\t"
-            : "=r"(raa)
-            : "r"(x), "r"(y)
-           );
+           __asm__ __volatile__
+              (
+               "fmrx   %0, fpscr   \n\t"
+               "and    %0, %0, %1  \n\t"
+               "orr    %0, %0, %2  \n\t"
+               "fmxr   fpscr, %0   \n\t"
+               : "=r"(raa)
+               : "r"(x), "r"(y)
+              );
+        }
 #endif
 #elif HOST_CPU == CPU_ARM64
 		static const unsigned long off_mask = 0x04080000;
