@@ -34,40 +34,50 @@
  * sh4_wait_check() when it runs out, and the move of sh4_write_gen at the
  * top of a block that stores. Only under the accurate SH4 timing, and
  * only with the MMU off. */
-#pragma once
+#ifndef SH4_DYNA_WAIT_SITE_H
+#define SH4_DYNA_WAIT_SITE_H
+#include <stddef.h>
 #include "types.h"
 #include "hw/sh4/sh4_if.h"
 #include "blockmanager.h"
 
-struct WaitSite
+typedef struct WaitSite
 {
-	s32 skip;			// passes left before the next look; counted down by the block
-	u32 backoff;		// how many to skip after a look that found the loop busy
-	u32 gen;			// sh4_write_gen when the copy was taken
+	s32 skip;			/* passes left before the next look; counted down by the block */
+	u32 backoff;		/* how many to skip after a look that found the loop busy */
+	u32 gen;			/* sh4_write_gen when the copy was taken */
 	bool valid;
-	u64 slice;			// the time slice the copy was taken in
-	s32 cycles;			// the cycle counter when the copy was taken
-	u8 regs[offsetof(Sh4Context, CpuRunning)];	// everything from the first register to FPSCR and its shadow
-};
+	u64 slice;			/* the time slice the copy was taken in */
+	s32 cycles;			/* the cycle counter when the copy was taken */
+	u8 regs[offsetof(Sh4Context, CpuRunning)];	/* everything from the first register to FPSCR and its shadow */
+} WaitSite;
 
-// (sh4_write_gen, moved on by every block that can change something other
-// than a register, is in sh4_if.h)
+#ifdef __cplusplus
+extern "C" {
+#endif
 
-// A site for a block being compiled. NULL when there are no more, and for
-// a block whose site could never find the processor waiting: the block then
-// goes unwatched, and pays nothing.
+/* (sh4_write_gen, moved on by every block that can change something other
+ * than a register, is in sh4_if.h) */
+
+/* A site for a block being compiled. NULL when there are no more, and for
+ * a block whose site could never find the processor waiting: the block then
+ * goes unwatched, and pays nothing. */
 WaitSite *sh4_wait_site(const RuntimeBlockInfo *block);
 
-// Every block is gone, and with them whatever had a site's address
-void sh4_wait_sites_reset();
+/* Every block is gone, and with them whatever had a site's address */
+void sh4_wait_sites_reset(void);
 
-// Whether a block can change anything but registers
+/* Whether a block can change anything but registers */
 bool sh4_block_writes(const RuntimeBlockInfo *block);
 
-extern "C" {
-// Called by a block going back, when its site's count has run out, with
-// the cycle counter as the block has it there. Returns the counter to go on
-// with: less by whole passes if the processor is going round in a loop
-// that cannot end before the time slice does, else as it was.
+/* Called by a block going back, when its site's count has run out, with
+ * the cycle counter as the block has it there. Returns the counter to go on
+ * with: less by whole passes if the processor is going round in a loop
+ * that cannot end before the time slice does, else as it was. */
 s32 sh4_wait_check(WaitSite *site, s32 cycles);
+
+#ifdef __cplusplus
 }
+#endif
+
+#endif

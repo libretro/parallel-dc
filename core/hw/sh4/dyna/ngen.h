@@ -47,7 +47,7 @@
 
 /* (CC_RW2RX() and CC_RX2RW() are in blockmanager.h) */
 
-//alternative emit ptr, set to 0 to use the main buffer
+/* alternative emit ptr, set to 0 to use the main buffer */
 extern u32* emit_ptr;
 
 #ifdef __cplusplus
@@ -60,17 +60,17 @@ u32 emit_FreeSpace();
 void* emit_GetCCPtr();
 void emit_SetBaseAddr();
 
-//Called from ngen_FailedToFindBlock
+/* Called from ngen_FailedToFindBlock */
 DynarecCodeEntryPtr DYNACALL rdv_FailedToFindBlock(u32 pc);
 DynarecCodeEntryPtr DYNACALL rdv_FailedToFindBlock_pc();
-//Called when a block check failed, and the block needs to be invalidated
+/* Called when a block check failed, and the block needs to be invalidated */
 DynarecCodeEntryPtr DYNACALL rdv_BlockCheckFail(u32 addr);
-//Called to compile code @pc
+/* Called to compile code @pc */
 DynarecCodeEntryPtr rdv_CompilePC(u32 blockcheck_failures);
-//Finds or compiles code @pc
+/* Finds or compiles code @pc */
 DynarecCodeEntryPtr rdv_FindOrCompile();
 
-//code -> pointer to code of block, dpc -> if dynamic block, pc. if cond, 0 for next, 1 for branch
+/* code -> pointer to code of block, dpc -> if dynamic block, pc. if cond, 0 for next, 1 for branch */
 void* DYNACALL rdv_LinkBlock(u8* code,u32 dpc);
 
 /* With the MMU on a block does not, as a rule, go straight on into the
@@ -94,41 +94,27 @@ bool rdv_MmuSamePlace(const RuntimeBlockInfo *block, u32 target, u32 *addr);
 u32 DYNACALL rdv_DoInterrupts(void* block_cpde);
 u32 DYNACALL rdv_DoInterrupts_pc(u32 pc);
 
-//Stuff to be implemented per dynarec core
+/* Stuff to be implemented per dynarec core */
 
 void ngen_init();
 
-//Called to compile a block
+/* Called to compile a block */
 void ngen_Compile(RuntimeBlockInfo* block,bool force_checks, bool reset, bool staging,bool optimise);
 
-//Called when blocks are reseted
+/* Called when blocks are reseted */
 void ngen_ResetBlocks(void);
-//Value to be returned when the block manager failed to find a block,
-//should call rdv_FailedToFindBlock and then jump to the return value
+/* Value to be returned when the block manager failed to find a block, */
+/* should call rdv_FailedToFindBlock and then jump to the return value */
 extern void (*ngen_FailedToFindBlock)();
-//the dynarec mainloop
+/* the dynarec mainloop */
 void ngen_mainloop(void* cntx);
-//ngen features
+/* ngen features */
 
 void ngen_GetFeatures(ngen_features* dst);
 void ngen_HandleException();
 
-//Canonical callback interface
-enum CanonicalParamType
-{
-	CPT_u32,
-	CPT_u32rv,
-	CPT_u64rvL,
-	CPT_u64rvH,
-	CPT_f32,
-	CPT_f32rv,
-	CPT_ptr
-};
-
-void ngen_CC_Start(shil_opcode* op);
-void ngen_CC_Param(shil_opcode* op,shil_param* par,CanonicalParamType tp);
-void ngen_CC_Call(shil_opcode* op,void* function);
-void ngen_CC_Finish(shil_opcode* op);
+/* Canonical callback interface */
+/* (ngen_CC_*(): shil.h) */
 
 #ifdef __cplusplus
 }

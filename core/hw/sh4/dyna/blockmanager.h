@@ -1,7 +1,8 @@
 /*
 	In case you wonder, the extern "C" stuff are for the assembly code on beagleboard/pandora
 */
-#pragma once
+#ifndef SH4_DYNA_BLOCKMANAGER_H
+#define SH4_DYNA_BLOCKMANAGER_H
 #include "types.h"
 
 #ifdef __cplusplus
@@ -76,6 +77,7 @@ u32* ngen_readm_fail_v2(u32* ptr, u32* regs, u32 saddr);
 
 #ifdef __cplusplus
 }
+#endif
 
 #include "decoder.h"
 #include "dyna_state.h"
@@ -87,17 +89,9 @@ u32* ngen_readm_fail_v2(u32* ptr, u32* regs, u32 saddr);
  * it as well (pre_refs): it goes when the last lets go (bm_BlockUnref()). */
 typedef RuntimeBlockInfo *RuntimeBlockInfoPtr;
 
-struct RuntimeBlockInfo_Core
-{
-	u32 addr;
-	DynarecCodeEntryPtr code;
-	u32 lookups;
-};
-
-struct RuntimeBlockInfo;
-
 /* A block's place in the list of a page of main memory its code is in
- * (blockmanager.cpp: the page's blocks, discarded when it is written) */
+ * (blockmanager.c: the page's blocks, discarded when it is written) */
+typedef struct BlockPageLink BlockPageLink;
 struct BlockPageLink
 {
 	RuntimeBlockInfo *block;
@@ -108,12 +102,37 @@ struct BlockPageLink
  * instructions, a fraction of a page, so two; four with room */
 #define BLOCK_PAGES 4
 
-struct RuntimeBlockInfo: RuntimeBlockInfo_Core
+#ifdef __cplusplus
+extern "C" {
+#endif
+/* The block made ready to be decoded at @pc with @fpu_cfg (false: the SH4
+ * took an exception on the way) */
+bool bm_BlockSetup(RuntimeBlockInfo *block, u32 pc, fpscr_t fpu_cfg);
+/* its code's hash, for the list of idle loops */
+const char *bm_BlockHash(RuntimeBlockInfo *block);
+/* The recompiler's: the block's links made again, for its pNextBlock and
+ * pBranchBlock as they are now (none: back to the main loop); the bytes of
+ * code that come to */
+u32 ngen_Relink(RuntimeBlockInfo *block);
+/* @other, which jumps to @block, put in its pre_refs (held), taken out */
+void bm_BlockAddRef(RuntimeBlockInfo *block, RuntimeBlockInfo *other);
+void bm_BlockRemRef(RuntimeBlockInfo *block, RuntimeBlockInfo *other);
+/* the blocks that jump to it sent elsewhere, and let go */
+void bm_BlockDiscard(RuntimeBlockInfo *block);
+/* read_only, by where its code comes from */
+void bm_BlockSetProtectedFlags(RuntimeBlockInfo *block);
+#ifdef __cplusplus
+}
+#endif
+
+struct RuntimeBlockInfo
 {
-	bool Setup(u32 pc,fpscr_t fpu_cfg);
+	u32 addr;
+	DynarecCodeEntryPtr code;
+	u32 lookups;
+
 	/* who holds it (see RuntimeBlockInfoPtr) */
 	u32 refs;
-	const char* hash();
 
 	u32 vaddr;
 
@@ -130,7 +149,7 @@ struct RuntimeBlockInfo: RuntimeBlockInfo_Core
 	bool has_fpu_op;
 	u32 blockcheck_failures;
 	bool temp_block;
-	// with the MMU on: may go straight on into another block (rdv_MmuMayGoOn())
+	/* with the MMU on: may go straight on into another block (rdv_MmuMayGoOn()) */
 	bool mmu_go_on;
 
 	u32 BranchBlock; /* if not 0xFFFFFFFF then jump target */
@@ -138,7 +157,7 @@ struct RuntimeBlockInfo: RuntimeBlockInfo_Core
 
 	/* 0 if not available */
 	RuntimeBlockInfo* pBranchBlock;
-	RuntimeBlockInfo* pNextBlock; 
+	RuntimeBlockInfo* pNextBlock;
 
 	u32 relink_offset;
 	u32 relink_data;
@@ -156,27 +175,11 @@ struct RuntimeBlockInfo: RuntimeBlockInfo_Core
 	u32 op_count;
 	u32 op_room;
 
-	bool contains_code(const u8* ptr)
-	{
-		return ((size_t)(ptr-(u8*)code)) < host_code_size;
-	}
-
-	/* The recompiler's: its links made again, for pNextBlock and
-	 * pBranchBlock as they are now (none: back to the main loop); the
-	 * bytes of code that come to */
-	u32 Relink();
-
 	/* The blocks that jump to this one, each held (see RuntimeBlockInfoPtr):
 	 * told when it goes, to jump elsewhere. In the recompiler's pool. */
 	RuntimeBlockInfo **pre_refs;
 	u32 pre_ref_count;
 	u32 pre_ref_room;
-
-	void AddRef(RuntimeBlockInfo *other);
-	void RemRef(RuntimeBlockInfo *other);
-
-	void Discard();
-	void SetProtectedFlags();
 
 	bool read_only;
 
@@ -199,26 +202,37 @@ struct RuntimeBlockInfo: RuntimeBlockInfo_Core
 	u32 page_links;
 	RuntimeBlockInfo *temp_prev, *temp_next;
 	bool temp_listed;
+
+#ifdef __cplusplus
+	/* (for the recompilers in C++) */
+	bool Setup(u32 pc, fpscr_t cfg) { return bm_BlockSetup(this, pc, cfg); }
+	const char *hash() { return bm_BlockHash(this); }
+	bool contains_code(const u8* ptr) const
+	{
+		return ((size_t)(ptr-(u8*)code)) < host_code_size;
+	}
+	u32 Relink();
+	void AddRef(RuntimeBlockInfo *other) { bm_BlockAddRef(this, other); }
+	void RemRef(RuntimeBlockInfo *other) { bm_BlockRemRef(this, other); }
+	void Discard() { bm_BlockDiscard(this); }
+	void SetProtectedFlags() { bm_BlockSetProtectedFlags(this); }
+#endif
 };
 
+/* whether @ptr is in the block's code */
+static TYPES_INLINE bool bm_ContainsCode(const RuntimeBlockInfo *block, const u8 *ptr)
+{
+	return ((size_t)(ptr - (const u8 *)(uintptr_t)block->code)) < block->host_code_size;
+}
+
+#ifdef __cplusplus
+extern "C" {
+#endif
 /* An operation added at the end of @block's, put in at @at, taken out
  * from @at */
 void bm_OpPush(RuntimeBlockInfo *block, const shil_opcode *op);
 void bm_OpInsert(RuntimeBlockInfo *block, u32 at, const shil_opcode *op);
 void bm_OpErase(RuntimeBlockInfo *block, u32 at);
-
-/* (a block's operations, for a loop over them) */
-struct BlockOps
-{
-	shil_opcode *first, *last;
-	shil_opcode *begin() const { return first; }
-	shil_opcode *end() const { return last; }
-};
-static inline BlockOps bm_Ops(RuntimeBlockInfo *block)
-{
-	BlockOps ops = { block->oplist, block->oplist + block->op_count };
-	return ops;
-}
 
 /* A new block, held once (by whoever makes it): in the recompiler's pool */
 RuntimeBlockInfo *bm_NewBlock(void);
@@ -232,12 +246,29 @@ RuntimeBlockInfoPtr DYNACALL bm_GetBlock(u32 addr);
 
 void bm_AddBlock(RuntimeBlockInfo* blk);
 void bm_DiscardBlock(RuntimeBlockInfo* block);
-// @nothing_since: no block has been compiled since the last time
-void bm_ResetCache(bool nothing_since = false);
+/* @nothing_since: no block has been compiled since the last time */
+void bm_ResetCache(bool nothing_since);
 void bm_ResetTempCache(bool full);
 
-void bm_Init();
-void bm_Term();
+void bm_Init(void);
+void bm_Term(void);
 
 void bm_RamWriteAccess(u32 addr);
+#ifdef __cplusplus
+}
+
+/* (a block's operations, for a loop over them in C++) */
+struct BlockOps
+{
+	shil_opcode *first, *last;
+	shil_opcode *begin() const { return first; }
+	shil_opcode *end() const { return last; }
+};
+static inline BlockOps bm_Ops(const RuntimeBlockInfo *block)
+{
+	BlockOps ops = { block->oplist, block->oplist + block->op_count };
+	return ops;
+}
+#endif
+
 #endif

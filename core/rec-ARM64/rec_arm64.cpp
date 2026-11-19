@@ -2800,6 +2800,11 @@ void ngen_HandleException()
 	longjmp(jmp_env, 1);
 }
 
+u32 ngen_Relink(RuntimeBlockInfo *block)
+{
+	return block->Relink();
+}
+
 u32 RuntimeBlockInfo::Relink()
 {
 	vmem_jit_write_begin();

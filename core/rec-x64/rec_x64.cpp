@@ -489,6 +489,11 @@ static void link_site_jump(u8 *site, const u8 *code)
 	site[6] = 0xCC;
 }
 
+u32 ngen_Relink(RuntimeBlockInfo *block)
+{
+	return block->Relink();
+}
+
 u32 RuntimeBlockInfo::Relink()
 {
 	for (int i = 0; i < 2; i++)

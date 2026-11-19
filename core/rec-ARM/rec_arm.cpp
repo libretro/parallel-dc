@@ -422,6 +422,11 @@ static void arm_mmu_sqw(u32 addr, u32 pc)
 }
 #endif
 
+u32 ngen_Relink(RuntimeBlockInfo *block)
+{
+	return block->Relink();
+}
+
 u32 RuntimeBlockInfo::Relink()
 {
 	/* The end of the block is written where the block's end is, with the

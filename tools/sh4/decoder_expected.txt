@@ -1,0 +1,2 @@
+56968 opcodes decoded, 5000 blocks, e5483d0e
+56968 opcodes decoded, 20000 blocks, cda21b50

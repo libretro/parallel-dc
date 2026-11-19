@@ -443,12 +443,12 @@ void bm_DiscardBlock(RuntimeBlockInfo* block)
 	 * whatever block was there by then. (And the neighbour kept it from
 	 * being freed for as long as the neighbour lived.) */
 	if (block_ptr->pNextBlock != NULL)
-		block_ptr->pNextBlock->RemRef(block_ptr);
+		bm_BlockRemRef(block_ptr->pNextBlock, block_ptr);
 	if (block_ptr->pBranchBlock != NULL)
-		block_ptr->pBranchBlock->RemRef(block_ptr);
+		bm_BlockRemRef(block_ptr->pBranchBlock, block_ptr);
 	block_ptr->pNextBlock = NULL;
 	block_ptr->pBranchBlock = NULL;
-	block_ptr->Relink();
+	ngen_Relink(block_ptr);
 
 	// Remove from jump table
 	verify((void*)bm_GetCode(block_ptr->addr) == CC_RW2RX((void*)block_ptr->code));
@@ -459,7 +459,7 @@ void bm_DiscardBlock(RuntimeBlockInfo* block)
 		temp_list_remove(block_ptr);
 
 	del_blocks_push(block_ptr);
-	block_ptr->Discard();
+	bm_BlockDiscard(block_ptr);
 }
 
 void bm_Periodical_1s()
@@ -564,9 +564,9 @@ static void reset_one(RuntimeBlockInfo *block)
 	block->pNextBlock = 0;
 	block->pBranchBlock = 0;
 	// needed for the transition to full mmu. Could perhaps limit it to the current block.
-	block->Relink();
+	ngen_Relink(block);
 	// Avoid circular references
-	block->Discard();
+	bm_BlockDiscard(block);
 	del_blocks_push(block);
 }
 
@@ -602,7 +602,7 @@ void bm_ResetCache(bool nothing_since)
 		block->relink_data = 0;
 		block->pNextBlock = 0;
 		block->pBranchBlock = 0;
-		block->Relink();
+		ngen_Relink(block);
 	}
 	if (!again)
 		reset_batch = del_block_count;
@@ -923,63 +923,64 @@ void bm_BlockUnref(RuntimeBlockInfo *block)
 	node_pool_free(block, sizeof(RuntimeBlockInfo));
 }
 
-void RuntimeBlockInfo::AddRef(RuntimeBlockInfo *other)
+void bm_BlockAddRef(RuntimeBlockInfo *block, RuntimeBlockInfo *other)
 {
-	if (pre_ref_count == pre_ref_room)
+	if (block->pre_ref_count == block->pre_ref_room)
 	{
-		const u32 room = pre_ref_room == 0 ? 4 : pre_ref_room * 2;
+		const u32 room = block->pre_ref_room == 0 ? 4 : block->pre_ref_room * 2;
 		RuntimeBlockInfo **grown = (RuntimeBlockInfo **)node_pool_alloc(room * sizeof(*grown));
 		if (grown == NULL)
 			die("out of memory");
-		if (pre_ref_count != 0)
-			memcpy(grown, pre_refs, pre_ref_count * sizeof(*grown));
-		node_pool_free(pre_refs, pre_ref_room * sizeof(*pre_refs));
-		pre_refs = grown;
-		pre_ref_room = room;
+		if (block->pre_ref_count != 0)
+			memcpy(grown, block->pre_refs, block->pre_ref_count * sizeof(*grown));
+		node_pool_free(block->pre_refs, block->pre_ref_room * sizeof(*block->pre_refs));
+		block->pre_refs = grown;
+		block->pre_ref_room = room;
 	}
 	bm_BlockRef(other);
-	pre_refs[pre_ref_count++] = other;
+	block->pre_refs[block->pre_ref_count++] = other;
 }
 
-void RuntimeBlockInfo::RemRef(RuntimeBlockInfo *other)
+void bm_BlockRemRef(RuntimeBlockInfo *block, RuntimeBlockInfo *other)
 {
 	u32 i;
-	for (i = 0; i < pre_ref_count; i++)
-		if (pre_refs[i] == other)
+	for (i = 0; i < block->pre_ref_count; i++)
+		if (block->pre_refs[i] == other)
 		{
-			memmove(&pre_refs[i], &pre_refs[i + 1], (pre_ref_count - i - 1) * sizeof(*pre_refs));
-			pre_ref_count--;
+			memmove(&block->pre_refs[i], &block->pre_refs[i + 1],
+					(block->pre_ref_count - i - 1) * sizeof(*block->pre_refs));
+			block->pre_ref_count--;
 			bm_BlockUnref(other);
 			return;
 		}
 }
 
-void RuntimeBlockInfo::Discard()
+void bm_BlockDiscard(RuntimeBlockInfo *block)
 {
-	u32 k;
-	// Update references
-	for (k = 0; k < pre_ref_count; k++)
+	u32 k, i;
+	/* Update references */
+	for (k = 0; k < block->pre_ref_count; k++)
 	{
-		RuntimeBlockInfo *ref = pre_refs[k];
+		RuntimeBlockInfo *ref = block->pre_refs[k];
 
 		/* (By what it is linked to, not by the address it goes to: that
 		 * need not be the address this was compiled for - the same code
 		 * through another of memory's mirrors - and a link left standing
 		 * goes to code that is no longer anybody's.) */
-		if (ref->pNextBlock == this)
+		if (ref->pNextBlock == block)
 			ref->pNextBlock = NULL;
-		if (ref->pBranchBlock == this)
+		if (ref->pBranchBlock == block)
 			ref->pBranchBlock = NULL;
 		ref->relink_data = 0;
-		ref->Relink();
+		ngen_Relink(ref);
 	}
-	while (pre_ref_count != 0)
-		bm_BlockUnref(pre_refs[--pre_ref_count]);
+	while (block->pre_ref_count != 0)
+		bm_BlockUnref(block->pre_refs[--block->pre_ref_count]);
 
-	// Remove this block from the per-page block lists
-	for (u32 i = 0; i < page_links; i++)
+	/* Remove this block from the per-page block lists */
+	for (i = 0; i < block->page_links; i++)
 	{
-		BlockPageLink *link = &page_link[i];
+		BlockPageLink *link = &block->page_link[i];
 		if (link->prev != NULL)
 			link->prev->next = link->next;
 		else
@@ -988,40 +989,41 @@ void RuntimeBlockInfo::Discard()
 			link->next->prev = link->prev;
 		link->prev = link->next = NULL;
 	}
-	page_links = 0;
+	block->page_links = 0;
 }
 
-void RuntimeBlockInfo::SetProtectedFlags()
+void bm_BlockSetProtectedFlags(RuntimeBlockInfo *block)
 {
+	u32 addr;
 #ifndef TARGET_NO_EXCEPTIONS
-	// Don't write protect rom and BIOS/IP.BIN (Grandia II)
-	if (!IsOnRam(addr) || (addr & 0x1FFF0000) == 0x0c000000)
+	/* Don't write protect rom and BIOS/IP.BIN (Grandia II) */
+	if (!IsOnRam(block->addr) || (block->addr & 0x1FFF0000) == 0x0c000000)
 #endif
 	{
-		this->read_only = false;
+		block->read_only = false;
 		unprotected_blocks++;
 		return;
 	}
-	for (u32 addr = this->addr & ~PAGE_MASK; addr < this->addr + sh4_code_size; addr += PAGE_SIZE)
+	for (addr = block->addr & ~PAGE_MASK; addr < block->addr + block->sh4_code_size; addr += PAGE_SIZE)
 	{
 		if (unprotected_pages[(addr & RAM_MASK) / PAGE_SIZE])
 		{
-			this->read_only = false;
+			block->read_only = false;
 			unprotected_blocks++;
 			return;
 		}
 	}
-	this->read_only = true;
+	block->read_only = true;
 	protected_blocks++;
-	verify(page_links == 0);
-	for (u32 addr = this->addr & ~PAGE_MASK; addr < this->addr + sh4_code_size; addr += PAGE_SIZE)
+	verify(block->page_links == 0);
+	for (addr = block->addr & ~PAGE_MASK; addr < block->addr + block->sh4_code_size; addr += PAGE_SIZE)
 	{
 		const u32 page = (addr & RAM_MASK) / PAGE_SIZE;
-		BlockPageLink *link = &page_link[page_links++];
-		verify(page_links <= BLOCK_PAGES);
+		BlockPageLink *link = &block->page_link[block->page_links++];
+		verify(block->page_links <= BLOCK_PAGES);
 		if (blocks_per_page[page] == NULL)
 			bm_LockPage(addr);
-		link->block = this;
+		link->block = block;
 		link->page = page;
 		link->prev = NULL;
 		link->next = blocks_per_page[page];
@@ -1169,8 +1171,8 @@ void print_blocks()
 			fprintf(f,"block: %p\n",blk.get());
 			fprintf(f,"vaddr: %08X\n",blk->vaddr);
 			fprintf(f,"paddr: %08X\n",blk->addr);
-			fprintf(f,"hash: %s\n",blk->hash());
-			fprintf(f,"hash_rloc: %s\n",blk->hash());
+			fprintf(f,"hash: %s\n",bm_BlockHash(blk));
+			fprintf(f,"hash_rloc: %s\n",bm_BlockHash(blk));
 			fprintf(f,"code: %p\n",blk->code);
 			fprintf(f,"runs: %d\n",blk->runs);
 			fprintf(f,"BlockType: %d\n",blk->BlockType);

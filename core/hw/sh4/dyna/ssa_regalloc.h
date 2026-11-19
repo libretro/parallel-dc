@@ -41,8 +41,7 @@ public:
 	void DoAlloc(RuntimeBlockInfo* block, const nreg_t* regs_avail, const nregf_t* regsf_avail)
 	{
 		this->block = block;
-		SSAOptimizer optim(block);
-		optim.AddVersionPass();
+		ssa_add_versions(block);
 
 		verify(host_gregs.empty());
 		while (*regs_avail != (nreg_t)-1)

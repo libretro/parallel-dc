@@ -28,6 +28,11 @@ void ngen_init()
 }
 
 /* (blocks are not linked here) */
+u32 ngen_Relink(RuntimeBlockInfo *block)
+{
+	return block->Relink();
+}
+
 u32 RuntimeBlockInfo::Relink()
 {
 	return 0;

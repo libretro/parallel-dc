@@ -25,6 +25,15 @@ extern "C" f32 fipr_asm(float* fn, float* fm);
 
 #define fsca_impl fsca_table
 
+/* (C: a canonical function's name, and an op's compile function's; C++
+ * has the C names, declared with C linkage, with SHIL_C defined) */
+#ifndef SHIL_FN
+#define SHIL_FN_(op,name) shil_opcl_##op##_##name
+#define SHIL_FN(op,name) SHIL_FN_(op,name)
+#define SHIL_COMPILE_FN_(op) shil_compile_##op
+#define SHIL_COMPILE_FN(op) SHIL_COMPILE_FN_(op)
+#endif
+
 #if SHIL_MODE==0
 /* generate enums .. */
 	#define SHIL_START enum shilop {
@@ -33,6 +42,40 @@ extern "C" f32 fipr_asm(float* fn, float* fm);
 	#define shil_opc(name) shop_##name,
 	#define shil_opc_end()
 
+	#define shil_canonical(rv,name,args,code)
+	#define shil_compile(code)
+#elif SHIL_MODE==1 && (!defined(__cplusplus) || defined(SHIL_C))
+	/* C: functions, shil_opcl_<op>_<name>, and each op's static
+	 * shil_compile_<op>() (the op's name is SHIL_OPNAME, put in before each) */
+	#define SHIL_START
+	#define SHIL_END
+	#define shil_opc(name)
+	#define shil_opc_end()
+	#define shil_canonical(rv,name,args,code) rv SHIL_FN(SHIL_OPNAME,name) args { code }
+	#define shil_cf_arg_u32(x) ngen_CC_Param(op,&op->x,CPT_u32);
+	#define shil_cf_arg_f32(x) ngen_CC_Param(op,&op->x,CPT_f32);
+	#define shil_cf_arg_ptr(x) ngen_CC_Param(op,&op->x,CPT_ptr);
+	#define shil_cf_rv_u32(x) ngen_CC_Param(op,&op->x,CPT_u32rv);
+	#define shil_cf_rv_f32(x) ngen_CC_Param(op,&op->x,CPT_f32rv);
+	#define shil_cf_rv_u64(x) ngen_CC_Param(op,&op->rd,CPT_u64rvL); ngen_CC_Param(op,&op->rd2,CPT_u64rvH);
+	#define shil_cf_ext(x) ngen_CC_Call(op,(void*)(uintptr_t)&x);
+	#define shil_cf(x) shil_cf_ext(SHIL_FN(SHIL_OPNAME,x))
+	#define shil_compile(code) static void SHIL_COMPILE_FN(SHIL_OPNAME)(shil_opcode* op) { ngen_CC_Start(op); code ngen_CC_Finish(op); }
+#elif SHIL_MODE==2 && (!defined(__cplusplus) || defined(SHIL_C))
+	/* C: the functions' declarations */
+	#define SHIL_START
+	#define SHIL_END
+	#define shil_opc(name)
+	#define shil_opc_end()
+	#define shil_canonical(rv,name,args,code) rv SHIL_FN(SHIL_OPNAME,name) args;
+	#define shil_compile(code)
+#elif SHIL_MODE==3 && (!defined(__cplusplus) || defined(SHIL_C))
+	/* C: the table of the compile functions (after SHIL_MODE 1) */
+	#define SHIL_START \
+	shil_chfp* shil_chf[] = {
+	#define SHIL_END };
+	#define shil_opc(name) &shil_compile_##name,
+	#define shil_opc_end()
 	#define shil_canonical(rv,name,args,code)
 	#define shil_compile(code)
 #elif  SHIL_MODE==1
@@ -98,8 +141,18 @@ extern "C" f32 fipr_asm(float* fn, float* fm);
 #if SHIL_MODE==1 || SHIL_MODE==2
 /* only in structs we use the code :) */
 #include <math.h>
-#include <cmath>
 #include "types.h"
+#include "../sh4_fmac.h"
+#if !defined(__cplusplus) && !((defined(__STDC_VERSION__) && __STDC_VERSION__ >= 199901L) || defined(_MSC_VER))
+/* (C89 has the double functions alone: these are exact through them, or
+ * rounded once, as the float ones are) */
+#ifndef sqrtf
+#define sqrtf(v) ((float)sqrt((double)(v)))
+#define fabsf(v) ((float)fabs((double)(v)))
+#define sinf(v) ((float)sin((double)(v)))
+#define cosf(v) ((float)cos((double)(v)))
+#endif
+#endif
 #include "shil.h"
 #include "decoder.h"
 #include "../sh4_rom.h"
@@ -174,39 +227,55 @@ SHIL_START
 
 /* shop_mov32 */
 shil_opc(mov32)
+#undef SHIL_OPNAME
+#define SHIL_OPNAME mov32
 shil_recimp()
 shil_opc_end()
 
 /* shop_mov64 */
 shil_opc(mov64)
+#undef SHIL_OPNAME
+#define SHIL_OPNAME mov64
 shil_recimp()
 shil_opc_end()
 
 /* Special opcodes */
 shil_opc(jdyn)
+#undef SHIL_OPNAME
+#define SHIL_OPNAME jdyn
 shil_recimp()
 shil_opc_end()
 
 shil_opc(jcond)
+#undef SHIL_OPNAME
+#define SHIL_OPNAME jcond
 shil_recimp()
 shil_opc_end()
 
 /* shop_ifb */
 shil_opc(ifb)
+#undef SHIL_OPNAME
+#define SHIL_OPNAME ifb
 shil_recimp()
 shil_opc_end()
 
 /* mem io */
-shil_opc(readm)	
+shil_opc(readm)
+#undef SHIL_OPNAME
+#define SHIL_OPNAME readm
 shil_recimp()
 shil_opc_end()
 
 shil_opc(writem)
+#undef SHIL_OPNAME
+#define SHIL_OPNAME writem
 shil_recimp()
 shil_opc_end()
 
 /* Canonical impl. opcodes ! */
 shil_opc(sync_sr)
+#undef SHIL_OPNAME
+#define SHIL_OPNAME sync_sr
 shil_canonical
 (
 void, f1, (),
@@ -219,6 +288,8 @@ shil_compile
 shil_opc_end()
 
 shil_opc(sync_fpscr)
+#undef SHIL_OPNAME
+#define SHIL_OPNAME sync_fpscr
 shil_canonical
 (
 void, f1, (),
@@ -232,56 +303,78 @@ shil_opc_end()
 
 /* shop_and */
 shil_opc(and)
+#undef SHIL_OPNAME
+#define SHIL_OPNAME and
 BIN_OP_I(&)
 shil_opc_end()
 
 /* shop_or */
 shil_opc(or)
+#undef SHIL_OPNAME
+#define SHIL_OPNAME or
 BIN_OP_I(|)
 shil_opc_end()
 
 /* shop_xor */
 shil_opc(xor)
+#undef SHIL_OPNAME
+#define SHIL_OPNAME xor
 BIN_OP_I(^)
 shil_opc_end()
 
 /* shop_not */
 shil_opc(not)
+#undef SHIL_OPNAME
+#define SHIL_OPNAME not
 UN_OP_I(~)
 shil_opc_end()
 
 /* shop_add */
 shil_opc(add)
+#undef SHIL_OPNAME
+#define SHIL_OPNAME add
 BIN_OP_I(+)
 shil_opc_end()
 
 /* shop_sub */
 shil_opc(sub)
+#undef SHIL_OPNAME
+#define SHIL_OPNAME sub
 BIN_OP_I(-)
 shil_opc_end()
 
 /* shop_neg */
 shil_opc(neg)
+#undef SHIL_OPNAME
+#define SHIL_OPNAME neg
 UN_OP_I(-)
 shil_opc_end()
 
 /* shop_shl, */
 shil_opc(shl)
+#undef SHIL_OPNAME
+#define SHIL_OPNAME shl
 BIN_OP_I2(u32,<<)
 shil_opc_end()
 
 /* shop_shr */
 shil_opc(shr)
+#undef SHIL_OPNAME
+#define SHIL_OPNAME shr
 BIN_OP_I2(u32,>>)
 shil_opc_end()
 
 /* shop_sar */
 shil_opc(sar)
+#undef SHIL_OPNAME
+#define SHIL_OPNAME sar
 BIN_OP_I2(s32,>>)
 shil_opc_end()
 
 /* shop_adc: add with carry */
 shil_opc(adc)
+#undef SHIL_OPNAME
+#define SHIL_OPNAME adc
 shil_canonical
 (
 u64,f1,(u32 r1,u32 r2,u32 C),
@@ -308,6 +401,8 @@ shil_opc_end()
 
 /* shop_sbc:  substract with carry */
 shil_opc(sbc)
+#undef SHIL_OPNAME
+#define SHIL_OPNAME sbc
 shil_canonical
 (
 u64,f1,(u32 r1,u32 r2,u32 C),
@@ -335,14 +430,17 @@ shil_opc_end()
  * is kept: the register allocator and the optimizer write it back before
  * this and take it as changed after (ssa_regalloc.h, ssa.h). */
 shil_opc(div1)
+#undef SHIL_OPNAME
+#define SHIL_OPNAME div1
 shil_canonical
 (
 u64,f1,(u32 a, s32 b, u32 T),
 	bool qxm = sr.Q ^ sr.M;
+	u32 oldA;
 	sr.Q = (int)a < 0;
 	a = (a << 1) | T;
 
-	u32 oldA = a;
+	oldA = a;
 	a += qxm ? (u32)b : 0u - (u32)b;	/* b if Q != M, -b otherwise (modulo 2^32: -b overflows for b = INT_MIN) */
 	sr.Q ^= sr.M ^ (qxm ? a < oldA : a > oldA);
 	T = !(sr.Q ^ sr.M);
@@ -361,6 +459,8 @@ shil_opc_end()
 
 /* shop_negc - Negate with carry */
 shil_opc(negc)
+#undef SHIL_OPNAME
+#define SHIL_OPNAME negc
 shil_canonical
 (
 u64,f1,(u32 r1, u32 C),
@@ -384,6 +484,8 @@ shil_opc_end()
 
 /* shop_ror */
 shil_opc(ror)
+#undef SHIL_OPNAME
+#define SHIL_OPNAME ror
 shil_canonical
 (
 u32,f1,(u32 r1,u32 amt),
@@ -403,6 +505,8 @@ shil_opc_end()
 
 /* shop_rocl */
 shil_opc(rocl)
+#undef SHIL_OPNAME
+#define SHIL_OPNAME rocl
 shil_canonical
 (
 u64,f1,(u32 r1,u32 r2),
@@ -424,6 +528,8 @@ shil_opc_end()
 
 /* shop_rocr */
 shil_opc(rocr)
+#undef SHIL_OPNAME
+#define SHIL_OPNAME rocr
 shil_canonical
 (
 u64,f1,(u32 r1,u32 r2),
@@ -445,6 +551,8 @@ shil_opc_end()
 
 /* shop_swaplb -- swap low bytes */
 shil_opc(swaplb)
+#undef SHIL_OPNAME
+#define SHIL_OPNAME swaplb
 shil_canonical
 (
 u32,f1,(u32 r1),
@@ -463,6 +571,8 @@ shil_opc_end()
 
 /* shop_swap -- swap all bytes in word */
 shil_opc(swap)
+#undef SHIL_OPNAME
+#define SHIL_OPNAME swap
 shil_canonical
 (
 u32,f1,(u32 r1),
@@ -480,6 +590,8 @@ shil_opc_end()
 
 /* shop_shld */
 shil_opc(shld)
+#undef SHIL_OPNAME
+#define SHIL_OPNAME shld
 shil_canonical
 (
 u32,f1,(u32 r1,u32 r2),
@@ -505,12 +617,14 @@ shil_opc_end()
 
 /* shop_shad */
 shil_opc(shad)
+#undef SHIL_OPNAME
+#define SHIL_OPNAME shad
 shil_canonical
 (
 u32,f1,(s32 r1,u32 r2),
 	u32 sgn = r2 & 0x80000000;
 	if (sgn == 0)
-		return r1 << (r2 & 0x1F);
+		return (u32)r1 << (r2 & 0x1F);
 	else if ((r2 & 0x1F) == 0)
 	{
 		return r1>>31;
@@ -531,6 +645,8 @@ shil_opc_end()
 
 /* shop_ext_s8 */
 shil_opc(ext_s8)
+#undef SHIL_OPNAME
+#define SHIL_OPNAME ext_s8
 shil_canonical
 (
 u32,f1,(u32 r1),
@@ -549,6 +665,8 @@ shil_opc_end()
 
 /* shop_ext_s16 */
 shil_opc(ext_s16)
+#undef SHIL_OPNAME
+#define SHIL_OPNAME ext_s16
 shil_canonical
 (
 u32,f1,(u32 r1),
@@ -566,11 +684,15 @@ shil_opc_end()
 
 /* shop_mul_u16 */
 shil_opc(mul_u16)
-BIN_OP_I4(u16,*,u32,u32)
+#undef SHIL_OPNAME
+#define SHIL_OPNAME mul_u16
+BIN_OP_I4(u32,*,u32,u16)
 shil_opc_end()
 
 /* shop_mul_s16 */
 shil_opc(mul_s16)
+#undef SHIL_OPNAME
+#define SHIL_OPNAME mul_s16
 BIN_OP_I4(s16,*,u32,u32)
 shil_opc_end()
 
@@ -578,27 +700,36 @@ shil_opc_end()
 /* 32 bis are used ! */
 /* shop_mul_i32 */
 shil_opc(mul_i32)
-BIN_OP_I4(s32,*,u32,u32)
+#undef SHIL_OPNAME
+#define SHIL_OPNAME mul_i32
+BIN_OP_I4(u32,*,u32,u32)
 shil_opc_end()
 
 /* shop_mul_u64 */
 shil_opc(mul_u64)
+#undef SHIL_OPNAME
+#define SHIL_OPNAME mul_u64
 BIN_OP_I4(u64,*,u64,u32)
 shil_opc_end()
 
 /* shop_mul_s64 */
 shil_opc(mul_s64)
+#undef SHIL_OPNAME
+#define SHIL_OPNAME mul_s64
 BIN_OP_I4(s64,*,u64,s32)
 shil_opc_end()
 
 /* shop_div32u: divide 32 bits, unsigned */
 shil_opc(div32u)
+#undef SHIL_OPNAME
+#define SHIL_OPNAME div32u
 shil_canonical
 (
 u64,f1,(u32 r1, u32 r2, u32 r3),
 	u64 dividend = ((u64)r3 << 32) | r1;
    u32 quo;
    u32 rem;
+	u64 rv;
 
    if (r2)
 	{
@@ -611,7 +742,6 @@ u64,f1,(u32 r1, u32 r2, u32 r3),
 		rem = dividend;
 	}
 
-	u64 rv;
 	((u32*)&rv)[0]=quo;
 	((u32*)&rv)[1]=rem;
 	return rv;
@@ -630,24 +760,29 @@ shil_opc_end()
 
 /* shop_div32s: divide 32 bits, signed */
 shil_opc(div32s)
+#undef SHIL_OPNAME
+#define SHIL_OPNAME div32s
 shil_canonical
 (
 u64,f1,(u32 r1, s32 r2, s32 r3),
-	s64 dividend = ((s64)r3 << 32) | r1;
+	s64 dividend = (s64)(((u64)(u32)r3 << 32) | r1);
+	s32 quo;
+	s32 rem;
+	u32 negative;
+	u64 rv;
 	/* 1's complement -> 2's complement */
 	if (dividend < 0)
 		dividend++;
 
-   s32 quo = (s32)(r2 ? dividend / r2 : 0);
-	s32 rem = dividend - quo * r2;
-	u32 negative = (r3 ^ r2) & 0x80000000;
+	quo = (s32)(r2 ? dividend / r2 : 0);
+	rem = (s32)((u32)dividend - (u32)quo * (u32)r2);
+	negative = (r3 ^ r2) & 0x80000000;
 	/* 2's complement -> 1's complement */
 	if (negative)
-		quo--;
+		quo = (s32)((u32)quo - 1);
 	else if (r3 < 0)
-		rem--;
+		rem = (s32)((u32)rem - 1);
 
-	u64 rv;
 	((u32*)&rv)[0]=quo;
 	((u32*)&rv)[1]=rem;
 	return rv;
@@ -666,25 +801,29 @@ shil_opc_end()
 
 /* shop_div32p2: div32, fixup step (part 2) */
 shil_opc(div32p2)
+#undef SHIL_OPNAME
+#define SHIL_OPNAME div32p2
 shil_canonical
 (
 u32,f1,(s32 a,s32 b,u32 T),
 	/* the sign of the quotient is stored in bit 31 of T */
+	/* (wrapping round, as the SH4's registers do) */
+	u32 res = (u32)a;
 	if (!(T & 0x80000000))
 	{
 		if (!(T & 1))
-			a -= b;
+			res -= (u32)b;
 	}
 	else
 	{
 		/* 2's complement -> 1's complement */
 		if (b > 0)
-			a--;
+			res--;
 		if (T & 1)
-			a += b;
+			res += (u32)b;
 	}
 
-	return a;
+	return res;
 )
 
 shil_compile
@@ -700,6 +839,8 @@ shil_opc_end()
 
 /* debug_3 */
 shil_opc(debug_3)
+#undef SHIL_OPNAME
+#define SHIL_OPNAME debug_3
 shil_canonical
 (
 void,f1,(u32 r1,u32 r2,u32 r3),
@@ -718,6 +859,8 @@ shil_opc_end()
 
 /* debug_1 */
 shil_opc(debug_1)
+#undef SHIL_OPNAME
+#define SHIL_OPNAME debug_1
 shil_canonical
 (
 void,f1,(u32 r1),
@@ -734,6 +877,8 @@ shil_opc_end()
 
 /* shop_cvt_f2i_t: float to integer : truncate */
 shil_opc(cvt_f2i_t)
+#undef SHIL_OPNAME
+#define SHIL_OPNAME cvt_f2i_t
 
 #if HOST_CPU == CPU_X86 || HOST_CPU == CPU_X64
 shil_canonical
@@ -779,6 +924,8 @@ shil_opc_end()
 
 /* shop_cvt_i2f_n: integer to float : nearest */
 shil_opc(cvt_i2f_n)
+#undef SHIL_OPNAME
+#define SHIL_OPNAME cvt_i2f_n
 shil_canonical
 (
 f32,f1,(u32 r1),
@@ -796,6 +943,8 @@ shil_opc_end()
 
 /* shop_cvt_i2f_z: integer to float : round to zero */
 shil_opc(cvt_i2f_z)
+#undef SHIL_OPNAME
+#define SHIL_OPNAME cvt_i2f_z
 shil_canonical
 (
 f32,f1,(u32 r1),
@@ -814,6 +963,8 @@ shil_opc_end()
 
 /* pref ! */
 shil_opc(pref)
+#undef SHIL_OPNAME
+#define SHIL_OPNAME pref
 shil_canonical
 (
 void,f1,(u32 r1),
@@ -843,36 +994,50 @@ shil_opc_end()
 
 /* shop_test */
 shil_opc(test)
+#undef SHIL_OPNAME
+#define SHIL_OPNAME test
 BIN_OP_I3(&,== 0)
 shil_opc_end()
 
 /* shop_seteq: equal */
 shil_opc(seteq)
+#undef SHIL_OPNAME
+#define SHIL_OPNAME seteq
 BIN_OP_I2(s32,==)
 shil_opc_end()
 
 /* shop_setge: >=, signed (greater equal) */
 shil_opc(setge)
+#undef SHIL_OPNAME
+#define SHIL_OPNAME setge
 BIN_OP_I2(s32,>=)
 shil_opc_end()
 
 /* shop_setgt: >, signed	 (greater than) */
 shil_opc(setgt)
+#undef SHIL_OPNAME
+#define SHIL_OPNAME setgt
 BIN_OP_I2(s32,>)
 shil_opc_end()
 
 /* shop_setae: >=, unsigned (above equal) */
 shil_opc(setae)
+#undef SHIL_OPNAME
+#define SHIL_OPNAME setae
 BIN_OP_I2(u32,>=)
 shil_opc_end()
 
 /* shop_setab: >, unsigned (above) */
 shil_opc(setab)
+#undef SHIL_OPNAME
+#define SHIL_OPNAME setab
 BIN_OP_I2(u32,>)
 shil_opc_end()
 
 /* shop_setpeq: set if any pair of bytes is equal */
 shil_opc(setpeq)
+#undef SHIL_OPNAME
+#define SHIL_OPNAME setpeq
 shil_canonical
 (
 u32,f1,(u32 r1,u32 r2),
@@ -898,42 +1063,58 @@ shil_opc_end()
 
 /* shop_fadd */
 shil_opc(fadd)
+#undef SHIL_OPNAME
+#define SHIL_OPNAME fadd
 BIN_OP_F(+)
 shil_opc_end()
 
 /* shop_fsub */
 shil_opc(fsub)
+#undef SHIL_OPNAME
+#define SHIL_OPNAME fsub
 BIN_OP_F(-)
 shil_opc_end()
 
 /* shop_fmul */
 shil_opc(fmul)
+#undef SHIL_OPNAME
+#define SHIL_OPNAME fmul
 BIN_OP_F(*)
 shil_opc_end()
 
 /* shop_fdiv */
 shil_opc(fdiv)
+#undef SHIL_OPNAME
+#define SHIL_OPNAME fdiv
 BIN_OP_F(/)
 shil_opc_end()
 
 /* shop_fabs */
 shil_opc(fabs)
+#undef SHIL_OPNAME
+#define SHIL_OPNAME fabs
 UN_OP_F(fabsf)
 shil_opc_end()
 
 /* shop_fneg */
 shil_opc(fneg)
+#undef SHIL_OPNAME
+#define SHIL_OPNAME fneg
 UN_OP_F(-)
 shil_opc_end()
 
 /* shop_fsqrt */
 shil_opc(fsqrt)
+#undef SHIL_OPNAME
+#define SHIL_OPNAME fsqrt
 UN_OP_F(sqrtf)
 shil_opc_end()
 
 
 /* shop_fipr */
 shil_opc(fipr)
+#undef SHIL_OPNAME
+#define SHIL_OPNAME fipr
 
 /* The four products and their sum in doubles, on every host, as upstream
  * has had it since it stopped building with fast-math (2021). This used to
@@ -964,6 +1145,8 @@ shil_opc_end()
 
 /* shop_ftrv */
 shil_opc(ftrv)
+#undef SHIL_OPNAME
+#define SHIL_OPNAME ftrv
 
 /* As fipr above, for each of the four rows */
 shil_canonical
@@ -1007,10 +1190,12 @@ shil_opc_end()
 
 /* shop_fmac */
 shil_opc(fmac)
+#undef SHIL_OPNAME
+#define SHIL_OPNAME fmac
 shil_canonical
 (
 f32,f1,(float fn, float f0,float fm),
-   return fixNaN(std::fma(f0, fm, fn));
+   return fixNaN(sh4_fmac(f0, fm, fn, false));
 )
 shil_compile
 (
@@ -1024,12 +1209,16 @@ shil_opc_end()
 
 /* shop_fsrra */
 shil_opc(fsrra)
+#undef SHIL_OPNAME
+#define SHIL_OPNAME fsrra
 UN_OP_F(1/sqrtf)
 shil_opc_end()
 
 
 /* shop_fsca */
 shil_opc(fsca)
+#undef SHIL_OPNAME
+#define SHIL_OPNAME fsca
 
 shil_canonical
 (
@@ -1064,11 +1253,15 @@ shil_opc_end()
 
 /* shop_fseteq */
 shil_opc(fseteq)
+#undef SHIL_OPNAME
+#define SHIL_OPNAME fseteq
 BIN_OP_FU(==)
 shil_opc_end()
 
 /* shop_fsetgt */
 shil_opc(fsetgt)
+#undef SHIL_OPNAME
+#define SHIL_OPNAME fsetgt
 BIN_OP_FU(>)
 shil_opc_end()
 
@@ -1076,12 +1269,15 @@ shil_opc_end()
 
 /* shop_frswap */
 shil_opc(frswap)
+#undef SHIL_OPNAME
+#define SHIL_OPNAME frswap
 shil_canonical
 (
 void,f1,(u64* fd1, u64* fd2, const u64* fs1, const u64* fs2),
 
 	u64 temp;
-	for (int i=0;i<8;i++)
+	int i;
+	for (i=0;i<8;i++)
 	{
 		temp=fs1[i];
 		fd1[i]=fs2[i];
@@ -1100,6 +1296,8 @@ shil_opc_end()
 
 /* shop_xtrct */
 shil_opc(xtrct)
+#undef SHIL_OPNAME
+#define SHIL_OPNAME xtrct
 shil_canonical
 (
 u32,f1,(u32 r1, u32 r2),
@@ -1119,6 +1317,7 @@ SHIL_END
 
 /* undefine stuff */
 #undef SHIL_MODE
+#undef SHIL_OPNAME
 
 #undef SHIL_START
 #undef SHIL_END

@@ -22,6 +22,7 @@
 #include "blockmanager.h"
 #include "ngen.h"
 #include "decoder.h"
+#include "ssa.h"
 
 #if FEAT_SHREC != DYNAREC_NONE
 
@@ -132,90 +133,91 @@ u32 emit_FreeSpace()
 		return CODE_SIZE-LastAddr;
 }
 
-void AnalyseBlock(RuntimeBlockInfo* blk);
 
 static char block_hash[1024];
 
-const char* RuntimeBlockInfo::hash()
+const char *bm_BlockHash(RuntimeBlockInfo *block)
 {
 	u32 hash = 0;
-
-	u8* ptr = GetMemPtr(this->addr, this->sh4_code_size);
+	u8 *ptr = GetMemPtr(block->addr, block->sh4_code_size);
 
 	if (ptr)
 	{
 		/* (on the stack: nothing allocated) */
 		xxh32_state_t state_room;
 		xxh32_state_t *state = &state_room;
+		u32 i;
 		xxh32_reset(state, 7);
-			for (u32 i=0; i<this->guest_opcodes; i++)
-			{
-				u16 data=ptr[i];
-				//Do not count PC relative loads (relocated code)
-				if ((ptr[i]>>12)==0xD)
-					data=0xD000;
-
+		for (i = 0; i < block->guest_opcodes; i++)
+		{
+			u16 data = ptr[i];
+			/* Do not count PC relative loads (relocated code) */
+			if ((ptr[i] >> 12) == 0xD)
+				data = 0xD000;
 			xxh32_update(state, &data, 2);
-			}
-		hash = xxh32_digest(state);
 		}
+		hash = xxh32_digest(state);
+	}
 
-	sprintf(block_hash, ">:1:%02X:%08X", this->guest_opcodes, hash);
+	sprintf(block_hash, ">:1:%02X:%08X", block->guest_opcodes, hash);
 
 	return block_hash;
 }
 
-bool RuntimeBlockInfo::Setup(u32 rpc,fpscr_t rfpu_cfg)
+bool bm_BlockSetup(RuntimeBlockInfo *block, u32 rpc, fpscr_t rfpu_cfg)
 {
-	staging_runs=addr=lookups=runs=host_code_size=0;
-	guest_cycles=guest_opcodes=host_opcodes=0;
-	sh4_code_size = 0;
-	pBranchBlock=pNextBlock=0;
-	code=0;
-	has_jcond=false;
-	BranchBlock=NextBlock=csc_RetCache=0xFFFFFFFF;
-	BlockType=BET_SCL_Intr;
-	has_fpu_op = false;
-	temp_block = false;
-	mmu_go_on = false;
-	page_links = 0;
-	temp_prev = temp_next = NULL;
-	temp_listed = false;
-	
-	vaddr=rpc;
+#if !defined(NO_MMU)
+	sh4_catch c;
+#endif
+	block->staging_runs = 0;
+	block->addr = block->lookups = block->runs = block->host_code_size = 0;
+	block->guest_cycles = block->guest_opcodes = block->host_opcodes = 0;
+	block->sh4_code_size = 0;
+	block->pBranchBlock = block->pNextBlock = 0;
+	block->code = 0;
+	block->has_jcond = false;
+	block->BranchBlock = block->NextBlock = block->csc_RetCache = 0xFFFFFFFF;
+	block->BlockType = (BlockEndType)BET_SCL_Intr;
+	block->has_fpu_op = false;
+	block->temp_block = false;
+	block->mmu_go_on = false;
+	block->page_links = 0;
+	block->temp_prev = block->temp_next = NULL;
+	block->temp_listed = false;
+
+	block->vaddr = rpc;
 #ifndef NO_MMU
 	if (mmu_enabled())
 	{
-		u32 rv = mmu_instruction_translation(vaddr, addr);
+		u32 rv = mmu_instruction_translation_c(block->vaddr, &block->addr);
 		if (rv != MMU_ERROR_NONE)
 		{
-			DoMMUException(vaddr, rv, MMU_TT_IREAD);
+			DoMMUException(block->vaddr, rv, MMU_TT_IREAD);
 			return false;
 		}
 	}
 	else
-#endif // NO_MMU
-	if (vaddr & 1)
+#endif /* NO_MMU */
+	if (block->vaddr & 1)
 	{
 		/* An instruction is at an even address: fetching one from an odd
 		 * one is an address error, raised here as the MMU's are above -
 		 * the caller goes on from where the exception leads. (It was
 		 * compiled, from between two instructions.) */
-		CCN_TEA = vaddr;
-		Do_Exception(vaddr, 0xE0, 0x100);
+		CCN_TEA = block->vaddr;
+		Do_Exception(block->vaddr, 0xE0, 0x100);
 		return false;
 	}
 	else
-		addr = vaddr;
-	fpu_cfg=rfpu_cfg;
-	
-	op_count = 0;
+		block->addr = block->vaddr;
+	block->fpu_cfg = rfpu_cfg;
+
+	block->op_count = 0;
 
 #if !defined(NO_MMU)
-	sh4_catch c;
 	SH4_TRY(c)
 	{
-		const bool decoded = dec_DecodeBlock(this, SH4_TIMESLICE / 2);
+		const bool decoded = dec_DecodeBlock(block, SH4_TIMESLICE / 2);
 		sh4_catch_pop(&c);
 		if (!decoded)
 			return false;
@@ -226,13 +228,12 @@ bool RuntimeBlockInfo::Setup(u32 rpc,fpscr_t rfpu_cfg)
 		return false;
 	}
 #else
-	if (!dec_DecodeBlock(this, SH4_TIMESLICE / 2))
+	if (!dec_DecodeBlock(block, SH4_TIMESLICE / 2))
 		return false;
 #endif
-	SetProtectedFlags();
+	bm_BlockSetProtectedFlags(block);
 
-
-	AnalyseBlock(this);
+	AnalyseBlock(block);
 
 	return true;
 }
@@ -247,7 +248,7 @@ DynarecCodeEntryPtr rdv_CompilePC(u32 blockcheck_failures)
 
 	RuntimeBlockInfo* rbi = bm_NewBlock();
 
-	if (!rbi->Setup(pc,fpscr))
+	if (!bm_BlockSetup(rbi, pc,fpscr))
 	{
 		bm_BlockUnref(rbi);
 		return NULL;
@@ -503,14 +504,14 @@ void* DYNACALL rdv_LinkBlock(u8* code,u32 dpc)
 
 			if (rbi->pBranchBlock!= NULL)
 			{
-				rbi->pBranchBlock->RemRef(rbi);
+				bm_BlockRemRef(rbi->pBranchBlock, rbi);
 				rbi->pBranchBlock = NULL;
 				rbi->relink_data = 1;
 			}
 			else if (rbi->relink_data == 0)
 			{
 				rbi->pBranchBlock = bm_GetBlock(place);
-				rbi->pBranchBlock->AddRef(rbi);
+				bm_BlockAddRef(rbi->pBranchBlock, rbi);
 			}
 		}
 		else
@@ -522,9 +523,9 @@ void* DYNACALL rdv_LinkBlock(u8* code,u32 dpc)
 			if (rbi->NextBlock == target)
 				rbi->pNextBlock = nxt;
 
-			nxt->AddRef(rbi);
+			bm_BlockAddRef(nxt, rbi);
 		}
-		u32 ncs = rbi->relink_offset + rbi->Relink();
+		u32 ncs = rbi->relink_offset + ngen_Relink(rbi);
 		verify(rbi->host_code_size >= ncs);
 		rbi->host_code_size = ncs;
 	}
@@ -625,7 +626,7 @@ static void recSh4_Init(void)
 	vmem_jit_write_end();
 	TempCodeCache = CodeCache + CODE_SIZE;
 	ngen_init();
-	bm_ResetCache();
+	bm_ResetCache(false);
 }
 
 static void recSh4_Term(void)

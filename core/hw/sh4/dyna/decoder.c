@@ -16,6 +16,7 @@
 #include "hw/sh4/sh4_mem.h"
 #include "decoder_opcodes.h"
 #include "dyna_state.h"
+#include "hw/sh4/modules/mmu.h"
 
 /* (for states before V9, which hold one) */
 const unsigned dec_state_size = sizeof(state_t);
@@ -26,57 +27,42 @@ const unsigned dec_state_size = sizeof(state_t);
 static RuntimeBlockInfo* blk;
 
 static const char idle_hash[] =
-	//BIOS
+	/* BIOS */
        ">:1:05:13B23363"
        ">:1:04:2E23A33B"
        ">:1:04:FB498832"
        ">:1:0A:50A249F9"
 
-	//SC
+	/* SC */
        ">:1:0A:B4E90338"
        ">:1:04:11578A16"
        ">:1:04:C281CC52"
 
-	//HH
+	/* HH */
        ">:1:07:0757DC10"
        ">:1:04:1476CC5E"
 
-	//these look very suspicious, but I'm not sure about any of them
-	//cross testing w/ IKA makes them more suspects than not
+	/* these look very suspicious, but I'm not sure about any of them */
+	/* cross testing w/ IKA makes them more suspects than not */
        ">:1:0D:8C2921FF"
        ">:1:04:B806EEE4"
 
-       // Dead or Alive 2
+       /*  Dead or Alive 2 */
        ">:1:08:0A37187A";
 
-static inline shil_param mk_imm(u32 immv)
-{
-	return shil_param(FMT_IMM,immv);
-}
-
-static inline shil_param mk_reg(Sh4RegType reg)
-{
-	return shil_param(reg);
-}
-
-static inline shil_param mk_regi(int reg)
-{
-	return mk_reg((Sh4RegType)reg);
-}
+#define mk_imm(immv) shil_param_imm((u32)(immv))
+#define mk_reg(reg) shil_param_reg((u32)(reg))
+#define mk_regi(reg) shil_param_reg((u32)(reg))
+#define NOP shil_param_none()
 
 static state_t state;
 
-static void Emit(shilop op,
-      shil_param rd=shil_param(),
-      shil_param rs1=shil_param(),
-      shil_param rs2=shil_param(),
-      u32 flags=0,
-      shil_param rs3=shil_param(),
-      shil_param rd2=shil_param()
-      )
+static void Emit(shilop op, shil_param rd, shil_param rs1, shil_param rs2,
+		u32 flags, shil_param rs3, shil_param rd2)
 {
 	shil_opcode sp;
-		
+
+	memset(&sp, 0, sizeof(sp));
 	sp.flags=flags;
 	sp.op=op;
 	sp.rd=(rd);
@@ -93,32 +79,34 @@ static void Emit(shilop op,
 static void dec_fallback(u32 op)
 {
 	shil_opcode opcd;
+	memset(&opcd, 0, sizeof(opcd));
+	opcd.rd = opcd.rd2 = shil_param_none();
 	opcd.op=shop_ifb;
 
-	opcd.rs1=shil_param(FMT_IMM,OPCODE_NEEDPC(OpDesc[op]->type));
+	opcd.rs1=shil_param_imm(OPCODE_NEEDPC(OpDesc[op]->type));
 
-	opcd.rs2=shil_param(FMT_IMM,state.cpu.rpc+2);
-	opcd.rs3=shil_param(FMT_IMM,op);
+	opcd.rs2=shil_param_imm(state.cpu.rpc+2);
+	opcd.rs3=shil_param_imm(op);
 
 	opcd.guest_offs = state.cpu.rpc - blk->vaddr;
 	opcd.delay_slot = state.cpu.is_delayslot;
 	bm_OpPush(blk, &opcd);
 }
 
-static void dec_DynamicSet(u32 regbase,u32 offs=0)
+static void dec_DynamicSet(u32 regbase,u32 offs)
 {
 	if (offs==0)
-		Emit(shop_jdyn,reg_pc_dyn,mk_reg((Sh4RegType)regbase));
+		Emit(shop_jdyn, mk_reg(reg_pc_dyn), mk_reg((Sh4RegType)regbase), NOP, 0, NOP, NOP);
 	else
-		Emit(shop_jdyn,reg_pc_dyn,mk_reg((Sh4RegType)regbase),mk_imm(offs));
+		Emit(shop_jdyn, mk_reg(reg_pc_dyn), mk_reg((Sh4RegType)regbase), mk_imm(offs), 0, NOP, NOP);
 }
 
 static void dec_End(u32 dst,BlockEndType flags,bool delay)
 {
 	if (state.ngen.OnlyDynamicEnds && flags == BET_StaticJump)
 	{
-		Emit(shop_mov32,mk_reg(reg_nextpc),mk_imm(dst));
-		dec_DynamicSet(reg_nextpc);
+		Emit(shop_mov32, mk_reg(reg_nextpc), mk_imm(dst), NOP, 0, NOP, NOP);
+		dec_DynamicSet(reg_nextpc, 0);
 		dec_End(0xFFFFFFFF,BET_DynamicJump,delay);
 		return;
 	}
@@ -158,44 +146,44 @@ static u32 dec_jump_simm12(u32 op)
 static u32 dec_set_pr()
 {
 	u32 retaddr=state.cpu.rpc + 4;
-	Emit(shop_mov32,reg_pr,mk_imm(retaddr));
+	Emit(shop_mov32, mk_reg(reg_pr), mk_imm(retaddr), NOP, 0, NOP, NOP);
 	return retaddr;
 }
 static void dec_write_sr(shil_param src)
 {
-	Emit(shop_and,mk_reg(reg_sr_status),src,mk_imm(SR_STATUS_MASK));
-	Emit(shop_and,mk_reg(reg_sr_T),src,mk_imm(SR_T_MASK));
+	Emit(shop_and, mk_reg(reg_sr_status), src, mk_imm(SR_STATUS_MASK), 0, NOP, NOP);
+	Emit(shop_and, mk_reg(reg_sr_T), src, mk_imm(SR_T_MASK), 0, NOP, NOP);
 }
-//bf <bdisp8>
+/* bf <bdisp8> */
 sh4dec(i1000_1011_iiii_iiii)
 {
 	dec_End(dec_jump_simm8(op),BET_Cond_0,false);
 }
-//bf.s <bdisp8>
+/* bf.s <bdisp8> */
 sh4dec(i1000_1111_iiii_iiii)
 {
 	blk->has_jcond=true;
-	Emit(shop_jcond,reg_pc_dyn,reg_sr_T);
+	Emit(shop_jcond, mk_reg(reg_pc_dyn), mk_reg(reg_sr_T), NOP, 0, NOP, NOP);
 	dec_End(dec_jump_simm8(op),BET_Cond_0,true);
 }
-//bt <bdisp8>
+/* bt <bdisp8> */
 sh4dec(i1000_1001_iiii_iiii)
 {
 	dec_End(dec_jump_simm8(op),BET_Cond_1,false);
 }
-//bt.s <bdisp8>
+/* bt.s <bdisp8> */
 sh4dec(i1000_1101_iiii_iiii)
 {
 	blk->has_jcond=true;
-	Emit(shop_jcond,reg_pc_dyn,reg_sr_T);
+	Emit(shop_jcond, mk_reg(reg_pc_dyn), mk_reg(reg_sr_T), NOP, 0, NOP, NOP);
 	dec_End(dec_jump_simm8(op),BET_Cond_1,true);
 }
-//bra <bdisp12>
+/* bra <bdisp12> */
 sh4dec(i1010_iiii_iiii_iiii)
 {
 	dec_End(dec_jump_simm12(op),BET_StaticJump,true);
 }
-//braf <REG_N>
+/* braf <REG_N> */
 sh4dec(i0000_nnnn_0010_0011)
 {
 	u32 n = GetN(op);
@@ -203,98 +191,80 @@ sh4dec(i0000_nnnn_0010_0011)
 	dec_DynamicSet(reg_r0+n,state.cpu.rpc + 4);
 	dec_End(0xFFFFFFFF,BET_DynamicJump,true);
 }
-//jmp @<REG_N>
+/* jmp @<REG_N> */
 sh4dec(i0100_nnnn_0010_1011)
 {
 	u32 n = GetN(op);
 
-	dec_DynamicSet(reg_r0+n);
+	dec_DynamicSet(reg_r0+n, 0);
 	dec_End(0xFFFFFFFF,BET_DynamicJump,true);
 }
-//bsr <bdisp12>
+/* bsr <bdisp12> */
 sh4dec(i1011_iiii_iiii_iiii)
 {
-	//TODO: set PR
+	/* TODO: set PR */
 	dec_set_pr();
 	dec_End(dec_jump_simm12(op),BET_StaticCall,true);
 }
-//bsrf <REG_N>
+/* bsrf <REG_N> */
 sh4dec(i0000_nnnn_0000_0011)
 {
 	u32 n = GetN(op);
-	//TODO: set PR
+	/* TODO: set PR */
 	u32 retaddr=dec_set_pr();
 	dec_DynamicSet(reg_r0+n,retaddr);
 	dec_End(0xFFFFFFFF,BET_DynamicCall,true);
 }
-//jsr @<REG_N>
+/* jsr @<REG_N> */
 sh4dec(i0100_nnnn_0000_1011) 
 {
 	u32 n = GetN(op);
 
-	//TODO: Set pr
+	/* TODO: Set pr */
 	dec_set_pr();
-	dec_DynamicSet(reg_r0+n);
+	dec_DynamicSet(reg_r0+n, 0);
 	dec_End(0xFFFFFFFF,BET_DynamicCall,true);
 }
-//rts
+/* rts */
 sh4dec(i0000_0000_0000_1011)
 {
-	dec_DynamicSet(reg_pr);
+	dec_DynamicSet(reg_pr, 0);
 	dec_End(0xFFFFFFFF,BET_DynamicRet,true);
 }
-//rte
+/* rte */
 sh4dec(i0000_0000_0010_1011)
 {
-	//TODO: Write SR, Check intr
-	dec_write_sr(reg_ssr);
-	Emit(shop_sync_sr);
-	dec_DynamicSet(reg_spc);
+	/* TODO: Write SR, Check intr */
+	dec_write_sr(mk_reg(reg_ssr));
+	Emit(shop_sync_sr, NOP, NOP, NOP, 0, NOP, NOP);
+	dec_DynamicSet(reg_spc, 0);
 	dec_End(0xFFFFFFFF,BET_DynamicIntr,true);
 }
-//trapa #<imm>
+/* trapa #<imm> */
 sh4dec(i1100_0011_iiii_iiii)
 {
-	//TODO: ifb
+	/* TODO: ifb */
 	dec_fallback(op);
-	dec_DynamicSet(reg_nextpc);
+	dec_DynamicSet(reg_nextpc, 0);
 	dec_End(0xFFFFFFFF,BET_DynamicJump,false);
 }
-//sleep
+/* sleep */
 sh4dec(i0000_0000_0001_1011)
 {
-	//TODO: ifb
+	/* TODO: ifb */
 	dec_fallback(op);
-	dec_DynamicSet(reg_nextpc);
+	dec_DynamicSet(reg_nextpc, 0);
 	dec_End(0xFFFFFFFF,BET_DynamicJump,false);
 }
 
-//ldc.l @<REG_N>+,SR
-/*
-sh4dec(i0100_nnnn_0000_0111)
-{
-	u32 sr_t;
-	ReadMemU32(sr_t,r[n]);
-	if (sh4_exept_raised)
-		return;
-	sr.SetFull(sr_t);
-	r[n] += 4;
-	if (UpdateSR())
-	{
-		//FIXME only if interrupts got on .. :P
-		UpdateINTC();
-	}
-	dec_End(0xFFFFFFFF,BET_StaticIntr,false);
-}
-*/
 
-//ldc <REG_N>,SR
+/* ldc <REG_N>,SR */
 sh4dec(i0100_nnnn_0000_1110)
 {
 	u32 n = GetN(op);
 
-	dec_write_sr((Sh4RegType)(reg_r0+n));
-	Emit(shop_sync_sr);
+	dec_write_sr(mk_reg(reg_r0+n));
+	Emit(shop_sync_sr, NOP, NOP, NOP, 0, NOP, NOP);
 	/* The block ends here so that an interrupt this lets in is taken at
 	 * once - but not when this is the delay slot of a branch, whose end
 	 * of the block it would replace: the branch was then never taken, and
@@ -308,118 +278,102 @@ sh4dec(i0100_nnnn_0000_1110)
 /* The five below, and DIV1 in the opcode table, were run by the interpreter
  * from recompiled code. They are as upstream flycast decodes them. */
 
-//ldc.l @<REG_N>+,SR
+/* ldc.l @<REG_N>+,SR */
 sh4dec(i0100_nnnn_0000_0111)
 {
 	shil_param rn = mk_regi(reg_r0 + GetN(op));
 
-	Emit(shop_readm, reg_temp, rn, shil_param(), 4);
-	Emit(shop_add, rn, rn, mk_imm(4));
-	dec_write_sr(reg_temp);
-	Emit(shop_sync_sr);
-	// not in a delay slot: see LDC Rn,SR above
+	Emit(shop_readm, mk_reg(reg_temp), rn, NOP, 4, NOP, NOP);
+	Emit(shop_add, rn, rn, mk_imm(4), 0, NOP, NOP);
+	dec_write_sr(mk_reg(reg_temp));
+	Emit(shop_sync_sr, NOP, NOP, NOP, 0, NOP, NOP);
+	/*  not in a delay slot: see LDC Rn,SR above */
 	if (!state.cpu.is_delayslot)
 		dec_End(0xFFFFFFFF,BET_StaticIntr,false);
 }
 
-//stc.l SR,@-<REG_N>
+/* stc.l SR,@-<REG_N> */
 sh4dec(i0100_nnnn_0000_0011)
 {
 	shil_param rn = mk_regi(reg_r0 + GetN(op));
 
-	Emit(shop_mov32, reg_temp, reg_sr_status);
-	Emit(shop_or, reg_temp, reg_temp, reg_sr_T);
-	Emit(shop_writem, shil_param(), rn, reg_temp, 4, mk_imm(-4));
-	Emit(shop_add, rn, rn, mk_imm(-4));
+	Emit(shop_mov32, mk_reg(reg_temp), mk_reg(reg_sr_status), NOP, 0, NOP, NOP);
+	Emit(shop_or, mk_reg(reg_temp), mk_reg(reg_temp), mk_reg(reg_sr_T), 0, NOP, NOP);
+	Emit(shop_writem, NOP, rn, mk_reg(reg_temp), 4, mk_imm(-4), NOP);
+	Emit(shop_add, rn, rn, mk_imm(-4), 0, NOP, NOP);
 }
 
-//lds <REG_N>,FPSCR
+/* lds <REG_N>,FPSCR */
 sh4dec(i0100_nnnn_0110_1010)
 {
-	Emit(shop_mov32, reg_fpscr, mk_regi(reg_r0 + GetN(op)));
-	Emit(shop_sync_fpscr);
-	// what follows is compiled for the new FPSCR, in a block of its own
+	Emit(shop_mov32, mk_reg(reg_fpscr), mk_regi(reg_r0 + GetN(op)), NOP, 0, NOP, NOP);
+	Emit(shop_sync_fpscr, NOP, NOP, NOP, 0, NOP, NOP);
+	/*  what follows is compiled for the new FPSCR, in a block of its own */
 	if (!state.cpu.is_delayslot)
 		dec_End(state.cpu.rpc + 2, BET_StaticJump, false);
 }
 
-//lds.l @<REG_N>+,FPSCR
+/* lds.l @<REG_N>+,FPSCR */
 sh4dec(i0100_nnnn_0110_0110)
 {
 	shil_param rn = mk_regi(reg_r0 + GetN(op));
 
-	Emit(shop_readm, reg_fpscr, rn, shil_param(), 4);
-	Emit(shop_add, rn, rn, mk_imm(4));
-	Emit(shop_sync_fpscr);
+	Emit(shop_readm, mk_reg(reg_fpscr), rn, NOP, 4, NOP, NOP);
+	Emit(shop_add, rn, rn, mk_imm(4), 0, NOP, NOP);
+	Emit(shop_sync_fpscr, NOP, NOP, NOP, 0, NOP, NOP);
 	if (!state.cpu.is_delayslot)
 		dec_End(state.cpu.rpc + 2, BET_StaticJump, false);
 }
 
-//tas.b @<REG_N>
+/* tas.b @<REG_N> */
 sh4dec(i0100_nnnn_0001_1011)
 {
 	shil_param rn = mk_regi(reg_r0 + GetN(op));
 
-	Emit(shop_readm, reg_temp, rn, shil_param(), 1);
-	Emit(shop_seteq, reg_sr_T, reg_temp, mk_imm(0));
-	Emit(shop_or, reg_temp, reg_temp, mk_imm(0x80));
-	Emit(shop_writem, shil_param(), rn, reg_temp, 1);
+	Emit(shop_readm, mk_reg(reg_temp), rn, NOP, 1, NOP, NOP);
+	Emit(shop_seteq, mk_reg(reg_sr_T), mk_reg(reg_temp), mk_imm(0), 0, NOP, NOP);
+	Emit(shop_or, mk_reg(reg_temp), mk_reg(reg_temp), mk_imm(0x80), 0, NOP, NOP);
+	Emit(shop_writem, NOP, rn, mk_reg(reg_temp), 1, NOP, NOP);
 }
 
-//nop !
+/* nop ! */
 sh4dec(i0000_0000_0000_1001)
 {
 }
 
-//fschg
+/* fschg */
 sh4dec(i1111_0011_1111_1101)
 {
-	//fpscr.SZ is bit 20
-	Emit(shop_xor,reg_fpscr,reg_fpscr,mk_imm(1<<20));
+	/* fpscr.SZ is bit 20 */
+	Emit(shop_xor, mk_reg(reg_fpscr), mk_reg(reg_fpscr), mk_imm(1<<20), 0, NOP, NOP);
 	state.cpu.FSZ64=!state.cpu.FSZ64;
 }
 
-//frchg
+/* frchg */
 sh4dec(i1111_1011_1111_1101)
 {
-	Emit(shop_xor,reg_fpscr,reg_fpscr,mk_imm(1<<21));
-	Emit(shop_mov32,reg_old_fpscr,reg_fpscr);
-	shil_param rmn;//null param
-	Emit(shop_frswap,regv_xmtrx,regv_fmtrx,regv_xmtrx,0,rmn,regv_fmtrx);
+	Emit(shop_xor, mk_reg(reg_fpscr), mk_reg(reg_fpscr), mk_imm(1<<21), 0, NOP, NOP);
+	Emit(shop_mov32, mk_reg(reg_old_fpscr), mk_reg(reg_fpscr), NOP, 0, NOP, NOP);
+	Emit(shop_frswap, mk_reg(regv_xmtrx), mk_reg(regv_fmtrx), mk_reg(regv_xmtrx), 0, NOP, mk_reg(regv_fmtrx));
 }
 
-//not-so-elegant, but avoids extra opcodes and temporalities ..
-//rotcl
+/* not-so-elegant, but avoids extra opcodes and temporalities .. */
+/* rotcl */
 sh4dec(i0100_nnnn_0010_0100)
 {
 	u32 n = GetN(op);
-	Sh4RegType rn=(Sh4RegType)(reg_r0+n);
+	shil_param rn = mk_reg(reg_r0+n);
 	
-	Emit(shop_rocl,rn,rn,reg_sr_T,0,shil_param(),reg_sr_T);
-	/*
-	Emit(shop_ror,rn,rn,mk_imm(31));
-	Emit(shop_xor,rn,rn,reg_sr_T);              //Only affects last bit (swap part a)
-	Emit(shop_xor,reg_sr_T,reg_sr_T,rn);        //srT -> rn
-	Emit(shop_and,reg_sr_T,reg_sr_T,mk_imm(1)); //Keep only last bit
-	Emit(shop_xor,rn,rn,reg_sr_T);              //Only affects last bit (swap part b)
-	*/
+	Emit(shop_rocl, rn, rn, mk_reg(reg_sr_T), 0, NOP, mk_reg(reg_sr_T));
 }
 
-//rotcr
+/* rotcr */
 sh4dec(i0100_nnnn_0010_0101)
 {
 	u32 n = GetN(op);
-	Sh4RegType rn=(Sh4RegType)(reg_r0+n);
+	shil_param rn = mk_reg(reg_r0+n);
 
-	Emit(shop_rocr,rn,rn,reg_sr_T,0,shil_param(),reg_sr_T);
-	/*
-	Emit(shop_xor,rn,rn,reg_sr_T);              //Only affects last bit (swap part a)
-	Emit(shop_xor,reg_sr_T,reg_sr_T,rn);        //srT -> rn
-	Emit(shop_and,reg_sr_T,reg_sr_T,mk_imm(1)); //Keep only last bit
-	Emit(shop_xor,rn,rn,reg_sr_T);              //Only affects last bit (swap part b)
-
-	Emit(shop_ror,rn,rn,mk_imm(1));
-	*/
+	Emit(shop_rocr, rn, rn, mk_reg(reg_sr_T), 0, NOP, mk_reg(reg_sr_T));
 }
 
 static const Sh4RegType SREGS[] =
@@ -464,58 +418,58 @@ static const Sh4RegType CREGS[] =
 	reg_r7_Bank,
 };
 
-static void dec_param(DecParam p,shil_param& r1,shil_param& r2, u32 op)
+static void dec_param(DecParam p,shil_param *r1,shil_param *r2, u32 op)
 {
    switch(p)
    {
-      //constants
+      /* constants */
       case PRM_PC_D8_x2:
-         r1=mk_imm((state.cpu.rpc+4)+(GetImm8(op)<<1));
+         *r1=mk_imm((state.cpu.rpc+4)+(GetImm8(op)<<1));
          break;
 
       case PRM_PC_D8_x4:
-         r1=mk_imm(((state.cpu.rpc+4)&0xFFFFFFFC)+(GetImm8(op)<<2));
+         *r1=mk_imm(((state.cpu.rpc+4)&0xFFFFFFFC)+(GetImm8(op)<<2));
          break;
 
       case PRM_ZERO:
-         r1= mk_imm(0);
+         *r1=mk_imm(0);
          break;
 
       case PRM_ONE:
-         r1= mk_imm(1);
+         *r1=mk_imm(1);
          break;
 
       case PRM_TWO:
-         r1= mk_imm(2);
+         *r1=mk_imm(2);
          break;
 
       case PRM_TWO_INV:
-         r1= mk_imm(~2);
+         *r1=mk_imm(~2);
          break;
 
       case PRM_ONE_F32:
-         r1= mk_imm(0x3f800000);
+         *r1=mk_imm(0x3f800000);
          break;
 
-         //imms
+         /* imms */
       case PRM_SIMM8:
-         r1=mk_imm(GetSImm8(op));
+         *r1=mk_imm(GetSImm8(op));
          break;
       case PRM_UIMM8:
-         r1=mk_imm(GetImm8(op));
+         *r1=mk_imm(GetImm8(op));
          break;
 
-         //direct registers
+         /* direct registers */
       case PRM_R0:
-         r1=mk_reg(reg_r0);
+         *r1=mk_reg(reg_r0);
          break;
 
       case PRM_RN:
-         r1=mk_regi(reg_r0+GetN(op));
+         *r1=mk_regi(reg_r0+GetN(op));
          break;
 
       case PRM_RM:
-         r1=mk_regi(reg_r0+GetM(op));
+         *r1=mk_regi(reg_r0+GetM(op));
          break;
 
       case PRM_FRN_SZ:
@@ -527,11 +481,11 @@ static void dec_param(DecParam p,shil_param& r1,shil_param& r2, u32 op)
             else
                rx+=regv_dr_0;
 
-            r1=mk_regi(rx);
+            *r1=mk_regi(rx);
             break;
          }
       case PRM_FRN:
-         r1=mk_regi(reg_fr_0+GetN(op));
+         *r1=mk_regi(reg_fr_0+GetN(op));
          break;
 
       case PRM_FRM_SZ:
@@ -543,69 +497,69 @@ static void dec_param(DecParam p,shil_param& r1,shil_param& r2, u32 op)
             else
                rx+=regv_dr_0;
 
-            r1=mk_regi(rx);
+            *r1=mk_regi(rx);
             break;
          }
       case PRM_FRM:
-         r1=mk_regi(reg_fr_0+GetM(op));
+         *r1=mk_regi(reg_fr_0+GetM(op));
          break;
 
       case PRM_FPUL:
-         r1=mk_regi(reg_fpul);
+         *r1=mk_regi(reg_fpul);
          break;
 
-      case PRM_FPN:	//float pair, 3 bits
-         r1=mk_regi(regv_dr_0+GetN(op)/2);
+      case PRM_FPN:	/* float pair, 3 bits */
+         *r1=mk_regi(regv_dr_0+GetN(op)/2);
          break;
 
-      case PRM_FVN:	//float quad, 2 bits
-         r1=mk_regi(regv_fv_0+GetN(op)/4);
+      case PRM_FVN:	/* float quad, 2 bits */
+         *r1=mk_regi(regv_fv_0+GetN(op)/4);
          break;
 
-      case PRM_FVM:	//float quad, 2 bits
-         r1=mk_regi(regv_fv_0+(GetN(op)&0x3));
+      case PRM_FVM:	/* float quad, 2 bits */
+         *r1=mk_regi(regv_fv_0+(GetN(op)&0x3));
          break;
 
-      case PRM_XMTRX:	//float matrix, 0 bits
-         r1=mk_regi(regv_xmtrx);
+      case PRM_XMTRX:	/* float matrix, 0 bits */
+         *r1=mk_regi(regv_xmtrx);
          break;
 
       case PRM_FRM_FR0:
-         r1=mk_regi(reg_fr_0+GetM(op));
-         r2=mk_regi(reg_fr_0);
+         *r1=mk_regi(reg_fr_0+GetM(op));
+         *r2=mk_regi(reg_fr_0);
          break;
 
       case PRM_SR_T:
-         r1=mk_regi(reg_sr_T);
+         *r1=mk_regi(reg_sr_T);
          break;
 
       case PRM_SR_STATUS:
-         r1=mk_regi(reg_sr_status);
+         *r1=mk_regi(reg_sr_status);
          break;
 
-      case PRM_SREG:	//FPUL/FPSCR/MACH/MACL/PR/DBR/SGR
-         r1=mk_regi(SREGS[GetM(op)]);
+      case PRM_SREG:	/* FPUL/FPSCR/MACH/MACL/PR/DBR/SGR */
+         *r1=mk_regi(SREGS[GetM(op)]);
          break;
-      case PRM_CREG:	//SR/GBR/VBR/SSR/SPC/<RM_BANK>
-         r1=mk_regi(CREGS[GetM(op)]);
+      case PRM_CREG:	/* SR/GBR/VBR/SSR/SPC/<RM_BANK> */
+         *r1=mk_regi(CREGS[GetM(op)]);
          break;
 
-         //reg/imm reg/reg
+         /* reg/imm reg/reg */
       case PRM_RN_D4_x1:
       case PRM_RN_D4_x2:
       case PRM_RN_D4_x4:
          {
             u32 shft=p-PRM_RN_D4_x1;
-            r1=mk_regi(reg_r0+GetN(op));
-            r2=mk_imm(GetImm4(op)<<shft);
-            if (r2._imm == 0)   // no displacement: nothing for the recompilers to add
-               r2 = shil_param();
+            *r1=mk_regi(reg_r0+GetN(op));
+            *r2=mk_imm(GetImm4(op)<<shft);
+            if (r2->_imm == 0)   /*  no displacement: nothing for the recompilers to add */
+               *r2=NOP;
          }
          break;
 
       case PRM_RN_R0:
-         r1=mk_regi(reg_r0+GetN(op));
-         r2=mk_regi(reg_r0);
+         *r1=mk_regi(reg_r0+GetN(op));
+         *r2=mk_regi(reg_r0);
          break;
 
       case PRM_RM_D4_x1:
@@ -613,16 +567,16 @@ static void dec_param(DecParam p,shil_param& r1,shil_param& r2, u32 op)
       case PRM_RM_D4_x4:
          {
             u32 shft=p-PRM_RM_D4_x1;
-            r1=mk_regi(reg_r0+GetM(op));
-            r2=mk_imm(GetImm4(op)<<shft);
-            if (r2._imm == 0)   // no displacement: nothing for the recompilers to add
-               r2 = shil_param();
+            *r1=mk_regi(reg_r0+GetM(op));
+            *r2=mk_imm(GetImm4(op)<<shft);
+            if (r2->_imm == 0)   /*  no displacement: nothing for the recompilers to add */
+               *r2=NOP;
          }
          break;
 
       case PRM_RM_R0:
-         r1=mk_regi(reg_r0+GetM(op));
-         r2=mk_regi(reg_r0);
+         *r1=mk_regi(reg_r0+GetM(op));
+         *r2=mk_regi(reg_r0);
          break;
 
       case PRM_GBR_D8_x1:
@@ -630,10 +584,10 @@ static void dec_param(DecParam p,shil_param& r1,shil_param& r2, u32 op)
       case PRM_GBR_D8_x4:
          {
             u32 shft=p-PRM_GBR_D8_x1;
-            r1=mk_regi(reg_gbr);
-            r2=mk_imm(GetImm8(op)<<shft);
-            if (r2._imm == 0)   // no displacement: nothing for the recompilers to add
-               r2 = shil_param();
+            *r1=mk_regi(reg_gbr);
+            *r2=mk_imm(GetImm8(op)<<shft);
+            if (r2->_imm == 0)   /*  no displacement: nothing for the recompilers to add */
+               *r2=NOP;
          }
          break;
 
@@ -655,25 +609,26 @@ static Sh4RegType div_som_reg1;
 static Sh4RegType div_som_reg2;
 static Sh4RegType div_som_reg3;
 
-static u32 MatchDiv32(u32 pc , Sh4RegType &reg1,Sh4RegType &reg2 , Sh4RegType &reg3)
+static u32 MatchDiv32(u32 pc , Sh4RegType *reg1,Sh4RegType *reg2 , Sh4RegType *reg3)
 {
    u32 v_pc=pc;
    u32 match=1;
-   for (int i=0;i<32;i++)
+   int i;
+   for (i=0;i<32;i++)
    {
 		u16 opcode=IReadMem16(v_pc);
       v_pc+=2;
       if ((opcode&MASK_N)==ROTCL_KEY)
       {
-         if (reg1==NoReg)
-            reg1=(Sh4RegType)GetN(opcode);
-         else if (reg1!=(Sh4RegType)GetN(opcode))
+         if ((*reg1)==NoReg)
+            (*reg1)=(Sh4RegType)GetN(opcode);
+         else if ((*reg1)!=(Sh4RegType)GetN(opcode))
             break;
          match++;
       }
       else
       {
-         //printf("DIV MATCH BROKEN BY: %s\n",OpDesc[opcode]->diss);
+         /* printf("DIV MATCH BROKEN BY: %s\n",OpDesc[opcode]->diss); */
          break;
       }
 
@@ -681,20 +636,20 @@ static u32 MatchDiv32(u32 pc , Sh4RegType &reg1,Sh4RegType &reg2 , Sh4RegType &r
       v_pc+=2;
       if ((opcode&MASK_N_M)==DIV1_KEY)
       {
-         if (reg2==NoReg)
-            reg2=(Sh4RegType)GetM(opcode);
-         else if (reg2!=(Sh4RegType)GetM(opcode))
+         if ((*reg2)==NoReg)
+            (*reg2)=(Sh4RegType)GetM(opcode);
+         else if ((*reg2)!=(Sh4RegType)GetM(opcode))
             break;
 
-         if (reg2==reg1)
+         if ((*reg2)==(*reg1))
             break;
 
-         if (reg3==NoReg)
-            reg3=(Sh4RegType)GetN(opcode);
-         else if (reg3!=(Sh4RegType)GetN(opcode))
+         if ((*reg3)==NoReg)
+            (*reg3)=(Sh4RegType)GetN(opcode);
+         else if ((*reg3)!=(Sh4RegType)GetN(opcode))
             break;
 
-         if (reg3==reg1)
+         if ((*reg3)==(*reg1))
             break;
 
          match++;
@@ -708,6 +663,7 @@ static u32 MatchDiv32(u32 pc , Sh4RegType &reg1,Sh4RegType &reg2 , Sh4RegType &r
 
 static bool MatchDiv32u(u32 op,u32 pc)
 {
+	u32 match;
    if (settings.dynarec.DisableDivMatching)
 		return false;
 
@@ -715,9 +671,9 @@ static bool MatchDiv32u(u32 op,u32 pc)
 	div_som_reg2=NoReg;
 	div_som_reg3=NoReg;
 
-	u32 match=MatchDiv32(pc+2,div_som_reg1,div_som_reg2,div_som_reg3);
+	match=MatchDiv32(pc+2,&div_som_reg1,&div_som_reg2,&div_som_reg3);
 
-	//log("DIV32U matched %d%% @ 0x%X\n",match*100/65,pc);
+	/* log("DIV32U matched %d%% @ 0x%X\n",match*100/65,pc); */
 	if (match==65) /* DIV32U was perfectly matched */
 		return true;
 
@@ -726,17 +682,17 @@ static bool MatchDiv32u(u32 op,u32 pc)
 
 static bool MatchDiv32s(u32 op,u32 pc)
 {
-   if (settings.dynarec.DisableDivMatching)
-		return false;
-
    u32 n = GetN(op);
    u32 m = GetM(op);
+   u32 match;
+   if (settings.dynarec.DisableDivMatching)
+		return false;
 
    div_som_reg1=NoReg;
    div_som_reg2=(Sh4RegType)m;
    div_som_reg3=(Sh4RegType)n;
 
-   u32 match=MatchDiv32(pc+2,div_som_reg1,div_som_reg2,div_som_reg3);
+   match=MatchDiv32(pc+2,&div_som_reg1,&div_som_reg2,&div_som_reg3);
 #ifndef NDEBUG
    printf("DIV32S matched %d%% @ 0x%X\n",match*100/65,pc);
 #endif
@@ -755,10 +711,13 @@ static bool MatchDiv32s(u32 op,u32 pc)
 static bool dec_generic(u32 op)
 {
 	DecMode mode;DecParam d;DecParam s;shilop natop;u32 e;
+	u64 inf;
+	bool transfer_64=false;
+	shil_param rs1,rs2,rs3;
 	if (OpDesc[op]->decode==0)
 		return false;
 	
-	u64 inf=OpDesc[op]->decode;
+	inf=OpDesc[op]->decode;
 
 	e=(u32)(inf>>32);
 	mode=(DecMode)((inf>>24)&0xFF);
@@ -766,11 +725,10 @@ static bool dec_generic(u32 op)
 	s=(DecParam)((inf>>8)&0xFF);
 	natop=(shilop)((inf>>0)&0xFF);
 
-	bool transfer_64=false;
 	if (op>=0xF000)
 	{
 		state.info.has_fpu=true;
-		//return false;//FPU off for now
+		/* return false;//FPU off for now */
 		if (state.cpu.FPR64)
 		{
 			/* Double precision: the arithmetic is left to the interpreter.
@@ -779,9 +737,9 @@ static bool dec_generic(u32 op)
 			 * transfers through FPUL are 32 bits, and a double's sign is
 			 * in the register FNEG turns it over in - so those are
 			 * recompiled as they would be. As upstream has it. */
-			if (((op & 0xf) < 6 || (op & 0xf) > 0xc)	// FMOV
-					&& (op & 0xef) != 0x0d				// FLDS, FSTS
-					&& (op & 0xff) != 0x4d)				// FNEG
+			if (((op & 0xf) < 6 || (op & 0xf) > 0xc)	/*  FMOV */
+					&& (op & 0xef) != 0x0d				/*  FLDS, FSTS */
+					&& (op & 0xff) != 0x4d)				/*  FNEG */
 				return false;
 		}
 
@@ -789,35 +747,35 @@ static bool dec_generic(u32 op)
 			transfer_64=true;
 	}
 
-	shil_param rs1,rs2,rs3,rd;
+	rs1 = rs2 = rs3 = NOP;
 
-	dec_param(s,rs2,rs3,op);
-	dec_param(d,rs1,rs3,op);
+	dec_param(s,&rs2,&rs3,op);
+	dec_param(d,&rs1,&rs3,op);
 
 	switch(mode)
 	{
 	case DM_ReadSRF:
-		Emit(shop_mov32,rs1,reg_sr_status);
-		Emit(shop_or,rs1,rs1,reg_sr_T);
+		Emit(shop_mov32, rs1, mk_reg(reg_sr_status), NOP, 0, NOP, NOP);
+		Emit(shop_or, rs1, rs1, mk_reg(reg_sr_T), 0, NOP, NOP);
 		break;
 
 	case DM_WriteTOp:
-		Emit(natop,reg_sr_T,rs1,rs2);
+		Emit(natop, mk_reg(reg_sr_T), rs1, rs2, 0, NOP, NOP);
 		break;
 
 	case DM_DT:
 		verify(natop==shop_sub);
-		Emit(natop,rs1,rs1,rs2);
-		Emit(shop_seteq,mk_reg(reg_sr_T),rs1,mk_imm(0));
+		Emit(natop, rs1, rs1, rs2, 0, NOP, NOP);
+		Emit(shop_seteq, mk_reg(reg_sr_T), rs1, mk_imm(0), 0, NOP, NOP);
 		break;
 
 	case DM_Shift:
 		if (natop==shop_shl && e==1)
-			Emit(shop_shr,mk_reg(reg_sr_T),rs1,mk_imm(31));
+			Emit(shop_shr, mk_reg(reg_sr_T), rs1, mk_imm(31), 0, NOP, NOP);
 		else if (e==1)
-			Emit(shop_and,mk_reg(reg_sr_T),rs1,mk_imm(1));
+			Emit(shop_and, mk_reg(reg_sr_T), rs1, mk_imm(1), 0, NOP, NOP);
 
-		Emit(natop,rs1,rs1,mk_imm(e));
+		Emit(natop, rs1, rs1, mk_imm(e), 0, NOP, NOP);
 		break;
 
 	case DM_Rot:
@@ -825,29 +783,29 @@ static bool dec_generic(u32 op)
 		{
 			if ((s32)e<0)
 			{
-				//left rotate
-				Emit(shop_shr,mk_reg(reg_sr_T),rs2,mk_imm(31));
+				/* left rotate */
+				Emit(shop_shr, mk_reg(reg_sr_T), rs2, mk_imm(31), 0, NOP, NOP);
 				e=-e;
 			}
 			else
 			{
-				//right rotate
-				Emit(shop_and,mk_reg(reg_sr_T),rs2,mk_imm(1));
+				/* right rotate */
+				Emit(shop_and, mk_reg(reg_sr_T), rs2, mk_imm(1), 0, NOP, NOP);
 			}
 		}
 		e&=31;
 
-		Emit(natop,rs1,rs2,mk_imm(e));
+		Emit(natop, rs1, rs2, mk_imm(e), 0, NOP, NOP);
 		break;
 
-	case DM_BinaryOp://d=d op s
+	case DM_BinaryOp: /* d=d op s */
 		if (e&1)
-			Emit(natop,rs1,rs1,rs2,0,rs3);
+			Emit(natop, rs1, rs1, rs2, 0, rs3, NOP);
 		else
-			Emit(natop,shil_param(),rs1,rs2,0,rs3);
+			Emit(natop, NOP, rs1, rs2, 0, rs3, NOP);
 		break;
 
-	case DM_UnaryOp: //d= op s
+	case DM_UnaryOp: /* d= op s */
 		if (transfer_64 && natop==shop_mov32) 
 			natop=shop_mov64;
 
@@ -855,69 +813,69 @@ static bool dec_generic(u32 op)
 			natop=shop_cvt_i2f_z;
 
 		if (e&1)
-			Emit(natop,shil_param(),rs1);
+			Emit(natop, NOP, rs1, NOP, 0, NOP, NOP);
 		else
-			Emit(natop,rs1,rs2);
+			Emit(natop, rs1, rs2, NOP, 0, NOP, NOP);
 		break;
 
-	case DM_WriteM: //write(d,s)
+	case DM_WriteM: /* write(d,s) */
 		{
-			//0 has no effect, so get rid of it
-			if (rs3.is_imm() && rs3._imm==0)
-				rs3=shil_param();
+			bool update_after=false;
+			/* 0 has no effect, so get rid of it */
+			if (shil_is_imm(&rs3) && rs3._imm==0)
+				rs3=NOP;
 
 			state.info.has_writem=true;
 			if (transfer_64) e=(s32)e*2;
-			bool update_after=false;
 			if ((s32)e<0)
 			{
-				if (rs1._reg!=rs2._reg && !mmu_enabled()) //reg shouldn't be updated if its written
+				if (shil_reg(&rs1)!=shil_reg(&rs2) && !mmu_enabled()) /* reg shouldn't be updated if its written */
 				{
-					Emit(shop_sub,rs1,rs1,mk_imm(-e));
+					Emit(shop_sub, rs1, rs1, mk_imm(-e), 0, NOP, NOP);
 				}
 				else
 				{
-					verify(rs3.is_null());
+					verify(shil_is_null(&rs3));
 					rs3=mk_imm(e);
 					update_after=true;
 				}
 			}
 
-			Emit(shop_writem,shil_param(),rs1,rs2,(s32)e<0?-e:e,rs3);
+			Emit(shop_writem, NOP, rs1, rs2, (s32)e<0?-e:e, rs3, NOP);
 
 			if (update_after)
 			{
-				Emit(shop_sub,rs1,rs1,mk_imm(-e));
+				Emit(shop_sub, rs1, rs1, mk_imm(-e), 0, NOP, NOP);
 			}
 		}
 		break;
 
 	case DM_ReadM:
-		//0 has no effect, so get rid of it
-		if (rs3.is_imm() && rs3._imm==0)
-				rs3=shil_param();
+		/* 0 has no effect, so get rid of it */
+		if (shil_is_imm(&rs3) && rs3._imm==0)
+				rs3=NOP;
 
 		state.info.has_readm=true;
 		if (transfer_64) e=(s32)e*2;
 
-		Emit(shop_readm,rs1,rs2,shil_param(),(s32)e<0?-e:e,rs3);
+		Emit(shop_readm, rs1, rs2, NOP, (s32)e<0?-e:e, rs3, NOP);
 		if ((s32)e<0)
 		{
-			if (rs1._reg!=rs2._reg)//the reg shouldn't be updated if it was just read.
-				Emit(shop_add,rs2,rs2,mk_imm(-e));
+			if (shil_reg(&rs1)!=shil_reg(&rs2))/* the reg shouldn't be updated if it was just read. */
+				Emit(shop_add, rs2, rs2, mk_imm(-e), 0, NOP, NOP);
 		}
 		break;
 
 	case DM_fiprOp:
 		{
-			shil_param rdd=mk_regi(rs1._reg+3);
-			Emit(natop,rdd,rs1,rs2);
+			shil_param rdd=mk_regi(shil_reg(&rs1)+3);
+			Emit(natop, rdd, rs1, rs2, 0, NOP, NOP);
 		}
 		break;
 
 	case DM_EXTOP:
 		{
-			Emit(natop,rs1,rs2,mk_imm(e==1?0xFF:0xFFFF));
+			Emit(natop, rs1, rs2, mk_imm(e==1?0xFF:0xFFFF), 0, NOP, NOP);
 		}
 		break;
 	
@@ -925,7 +883,7 @@ static bool dec_generic(u32 op)
 		{
 			shilop op;
 			shil_param rd=mk_reg(reg_macl);
-			shil_param rd2=shil_param();
+			shil_param rd2=NOP;
 
 			switch((s32)e)
 			{
@@ -942,7 +900,7 @@ static bool dec_generic(u32 op)
                return false;
 			}
 
-			Emit(op,rd,rs1,rs2,0,shil_param(),rd2);
+			Emit(op, rd, rs1, rs2, 0, NOP, rd2);
 		}
 		break;
 
@@ -953,25 +911,25 @@ static bool dec_generic(u32 op)
 				if (MatchDiv32u(op,state.cpu.rpc))
 				{
 					verify(!state.cpu.is_delayslot);
-					//div32u
+					/* div32u */
 					Emit(shop_div32u, mk_reg(div_som_reg1), mk_reg(div_som_reg1), mk_reg(div_som_reg2), 0, mk_reg(div_som_reg3), mk_reg(div_som_reg3));
 					
-					Emit(shop_and, mk_reg(reg_sr_T), mk_reg(div_som_reg1), mk_imm(1));
-					Emit(shop_shr, mk_reg(div_som_reg1), mk_reg(div_som_reg1), mk_imm(1));
+					Emit(shop_and, mk_reg(reg_sr_T), mk_reg(div_som_reg1), mk_imm(1), 0, NOP, NOP);
+					Emit(shop_shr, mk_reg(div_som_reg1), mk_reg(div_som_reg1), mk_imm(1), 0, NOP, NOP);
 
-					Emit(shop_div32p2, mk_reg(div_som_reg3), mk_reg(div_som_reg3), mk_reg(div_som_reg2), 0, mk_reg(reg_sr_T));
+					Emit(shop_div32p2, mk_reg(div_som_reg3), mk_reg(div_som_reg3), mk_reg(div_som_reg2), 0, mk_reg(reg_sr_T), NOP);
 					
-					//skip the aggregated opcodes
+					/* skip the aggregated opcodes */
 					state.cpu.rpc += 128;
 					blk->guest_cycles += CPU_RATIO*64;
 				}
 				else
 				{
-					//clear QM (bits 8,9)
+					/* clear QM (bits 8,9) */
 					u32 qm=(1<<8)|(1<<9);
-					Emit(shop_and,mk_reg(reg_sr_status),mk_reg(reg_sr_status),mk_imm(~qm));
-					//clear T !
-					Emit(shop_mov32,mk_reg(reg_sr_T),mk_imm(0));
+					Emit(shop_and, mk_reg(reg_sr_status), mk_reg(reg_sr_status), mk_imm(~qm), 0, NOP, NOP);
+					/* clear T ! */
+					Emit(shop_mov32, mk_reg(reg_sr_T), mk_imm(0), NOP, 0, NOP, NOP);
 				}
 			}
 			else
@@ -979,42 +937,42 @@ static bool dec_generic(u32 op)
 				if (MatchDiv32s(op,state.cpu.rpc))
 				{
 					verify(!state.cpu.is_delayslot);
-					//div32s
-					Emit(shop_xor, mk_reg(reg_sr_T), mk_reg(div_som_reg3), mk_reg(div_som_reg2));	// get quotient sign
-					Emit(shop_and, mk_reg(reg_sr_T), mk_reg(reg_sr_T), mk_imm(1 << 31));			// isolate sign bit
+					/* div32s */
+					Emit(shop_xor, mk_reg(reg_sr_T), mk_reg(div_som_reg3), mk_reg(div_som_reg2), 0, NOP, NOP);	/*  get quotient sign */
+					Emit(shop_and, mk_reg(reg_sr_T), mk_reg(reg_sr_T), mk_imm(1u << 31), 0, NOP, NOP);			/*  isolate sign bit */
 
 					Emit(shop_div32s, mk_reg(div_som_reg1), mk_reg(div_som_reg1), mk_reg(div_som_reg2), 0, mk_reg(div_som_reg3), mk_reg(div_som_reg3));
 					
-					Emit(shop_and, mk_reg(reg_temp), mk_reg(div_som_reg1), mk_imm(1));				// set quotient lsb in temp reg
-					Emit(shop_sar, mk_reg(div_som_reg1), mk_reg(div_som_reg1), mk_imm(1));				// shift quotient right
-					Emit(shop_or, mk_reg(reg_sr_T), mk_reg(reg_sr_T), mk_reg(reg_temp));			// store quotient lsb in T
+					Emit(shop_and, mk_reg(reg_temp), mk_reg(div_som_reg1), mk_imm(1), 0, NOP, NOP);				/*  set quotient lsb in temp reg */
+					Emit(shop_sar, mk_reg(div_som_reg1), mk_reg(div_som_reg1), mk_imm(1), 0, NOP, NOP);				/*  shift quotient right */
+					Emit(shop_or, mk_reg(reg_sr_T), mk_reg(reg_sr_T), mk_reg(reg_temp), 0, NOP, NOP);			/*  store quotient lsb in T */
 
-					Emit(shop_div32p2, mk_reg(div_som_reg3), mk_reg(div_som_reg3), mk_reg(div_som_reg2), 0, mk_reg(reg_sr_T));
+					Emit(shop_div32p2, mk_reg(div_som_reg3), mk_reg(div_som_reg3), mk_reg(div_som_reg2), 0, mk_reg(reg_sr_T), NOP);
 
-					Emit(shop_and, mk_reg(reg_sr_T), mk_reg(reg_sr_T), mk_imm(1));							// clean up T
+					Emit(shop_and, mk_reg(reg_sr_T), mk_reg(reg_sr_T), mk_imm(1), 0, NOP, NOP);							/*  clean up T */
 					
-					//skip the aggregated opcodes
+					/* skip the aggregated opcodes */
 					state.cpu.rpc += 128;
 					blk->guest_cycles += CPU_RATIO * 64;
 				}
 				else
 				{
-					//Clear Q & M
-					Emit(shop_and,mk_reg(reg_sr_status),mk_reg(reg_sr_status),mk_imm(~((1<<8)|(1<<9))));
+					/* Clear Q & M */
+					Emit(shop_and, mk_reg(reg_sr_status), mk_reg(reg_sr_status), mk_imm(~((1<<8)|(1<<9))), 0, NOP, NOP);
 
-					//sr.Q=r[n]>>31;
-					Emit(shop_sar,mk_reg(reg_sr_T),rs1,mk_imm(31));
-					Emit(shop_and,mk_reg(reg_sr_T),mk_reg(reg_sr_T),mk_imm(1<<8));
-					Emit(shop_or,mk_reg(reg_sr_status),mk_reg(reg_sr_status),mk_reg(reg_sr_T));
+					/* sr.Q=r[n]>>31; */
+					Emit(shop_sar, mk_reg(reg_sr_T), rs1, mk_imm(31), 0, NOP, NOP);
+					Emit(shop_and, mk_reg(reg_sr_T), mk_reg(reg_sr_T), mk_imm(1<<8), 0, NOP, NOP);
+					Emit(shop_or, mk_reg(reg_sr_status), mk_reg(reg_sr_status), mk_reg(reg_sr_T), 0, NOP, NOP);
 
-					//sr.M=r[m]>>31;
-					Emit(shop_sar,mk_reg(reg_sr_T),rs2,mk_imm(31));
-					Emit(shop_and,mk_reg(reg_sr_T),mk_reg(reg_sr_T),mk_imm(1<<9));
-					Emit(shop_or,mk_reg(reg_sr_status),mk_reg(reg_sr_status),mk_reg(reg_sr_T));
+					/* sr.M=r[m]>>31; */
+					Emit(shop_sar, mk_reg(reg_sr_T), rs2, mk_imm(31), 0, NOP, NOP);
+					Emit(shop_and, mk_reg(reg_sr_T), mk_reg(reg_sr_T), mk_imm(1<<9), 0, NOP, NOP);
+					Emit(shop_or, mk_reg(reg_sr_status), mk_reg(reg_sr_status), mk_reg(reg_sr_T), 0, NOP, NOP);
 
-					//sr.T=sr.M^sr.Q;
-					Emit(shop_xor,mk_reg(reg_sr_T),rs1,rs2);
-					Emit(shop_shr,mk_reg(reg_sr_T),mk_reg(reg_sr_T),mk_imm(31));
+					/* sr.T=sr.M^sr.Q; */
+					Emit(shop_xor, mk_reg(reg_sr_T), rs1, rs2, 0, NOP, NOP);
+					Emit(shop_shr, mk_reg(reg_sr_T), mk_reg(reg_sr_T), mk_imm(31), 0, NOP, NOP);
 				}
 			}
 		}
@@ -1022,12 +980,12 @@ static bool dec_generic(u32 op)
 
 	case DM_ADC:
 		{
-			Emit(natop,rs1,rs1,rs2,0,mk_reg(reg_sr_T),mk_reg(reg_sr_T));
+			Emit(natop, rs1, rs1, rs2, 0, mk_reg(reg_sr_T), mk_reg(reg_sr_T));
 		}
 		break;
 
 	case DM_NEGC:
-		Emit(natop, rs1, rs2, mk_reg(reg_sr_T), 0, shil_param(), mk_reg(reg_sr_T));
+		Emit(natop, rs1, rs2, mk_reg(reg_sr_T), 0, NOP, mk_reg(reg_sr_T));
 		break;
 
 	default:
@@ -1044,8 +1002,8 @@ static void state_Setup(u32 rpc,fpscr_t fpu_cfg)
 	state.cpu.FPR64=fpu_cfg.PR;
 	state.cpu.FSZ64=fpu_cfg.SZ;
 	state.cpu.RoundToZero=fpu_cfg.RM==1;
-	//verify(fpu_cfg.RM<2);	// Happens with many wince games (set to 3)
-   //what about fp/fs ?
+	/* verify(fpu_cfg.RM<2);	// Happens with many wince games (set to 3) */
+   /* what about fp/fs ? */
 
    state.NextOp=NDO_NextOp;
    state.BlockType=BET_SCL_Intr;
@@ -1070,19 +1028,27 @@ static void state_Setup(u32 rpc,fpscr_t fpu_cfg)
  * and is not one of these. */
 static bool dec_IsIdleLoop(const RuntimeBlockInfo *block)
 {
+	bool written[sh4_reg_count];
+	bool needed[sh4_reg_count];	/* read before the block has written it */
+	u32 n;
+	int i;
+
 	if (block->BranchBlock != block->vaddr)
 		return false;
 	if (block->BlockType != BET_Cond_0 && block->BlockType != BET_Cond_1 && block->BlockType != BET_StaticJump)
 		return false;
 
-	bool written[sh4_reg_count] = {};
-	bool needed[sh4_reg_count] = {};	// read before the block has written it
-
-	for (const shil_opcode& op : bm_Ops(block))
+	memset(written, 0, sizeof(written));
+	memset(needed, 0, sizeof(needed));
+	for (n = 0; n < block->op_count; n++)
 	{
-		switch (op.op)
+		const shil_opcode *op = &block->oplist[n];
+		const shil_param *sources[3];
+		const shil_param *results[2];
+		int k;
+		switch (op->op)
 		{
-		// these write memory, or read and write registers that are not among their operands
+		/* these write memory, or read and write registers that are not among their operands */
 		case shop_ifb:
 		case shop_writem:
 		case shop_pref:
@@ -1094,43 +1060,47 @@ static bool dec_IsIdleLoop(const RuntimeBlockInfo *block)
 		default:
 			break;
 		}
-		const shil_param *sources[] = { &op.rs1, &op.rs2, &op.rs3 };
-		for (const shil_param *param : sources)
-			if (param->is_reg())
+		sources[0] = &op->rs1;
+		sources[1] = &op->rs2;
+		sources[2] = &op->rs3;
+		for (k = 0; k < 3; k++)
+			if (shil_is_reg(sources[k]))
 			{
-				if (param->count() != 1 || param->_reg >= sh4_reg_count)
+				if (shil_count(sources[k]) != 1 || sources[k]->_imm >= sh4_reg_count)
 					return false;
-				if (!written[param->_reg])
-					needed[param->_reg] = true;
+				if (!written[sources[k]->_imm])
+					needed[sources[k]->_imm] = true;
 			}
-		const shil_param *results[] = { &op.rd, &op.rd2 };
-		for (const shil_param *param : results)
-			if (param->is_reg())
+		results[0] = &op->rd;
+		results[1] = &op->rd2;
+		for (k = 0; k < 2; k++)
+			if (shil_is_reg(results[k]))
 			{
-				if (param->count() != 1 || param->_reg >= sh4_reg_count)
+				if (shil_count(results[k]) != 1 || results[k]->_imm >= sh4_reg_count)
 					return false;
-				written[param->_reg] = true;
+				written[results[k]->_imm] = true;
 			}
 	}
-	for (int i = 0; i < sh4_reg_count; i++)
+	for (i = 0; i < sh4_reg_count; i++)
 		if (needed[i] && written[i])
 			return false;
 	return true;
 }
 
-// The cycles of the block being decoded, for the accurate setting
+/*  The cycles of the block being decoded, for the accurate setting */
 static Sh4Cycles block_timing = SH4_CYCLES_INIT;
 
 bool dec_DecodeBlock(RuntimeBlockInfo* rbi,u32 max_cycles)
 {
+	u32 max_pc;
 	blk=rbi;
 	sh4_cycles_reset(&block_timing);
 	state_Setup(blk->vaddr, blk->fpu_cfg);
 	ngen_GetFeatures(&state.ngen);
 	
 	blk->guest_opcodes=0;
-	// If full MMU, don't allow the block to extend past the end of the current 4K page
-	u32 max_pc = mmu_enabled() ? ((state.cpu.rpc >> 12) + 1) << 12 : 0xFFFFFFFF;
+	/*  If full MMU, don't allow the block to extend past the end of the current 4K page */
+	max_pc = mmu_enabled() ? ((state.cpu.rpc >> 12) + 1) << 12 : 0xFFFFFFFF;
 	
 	for(;;)
 	{
@@ -1139,7 +1109,7 @@ bool dec_DecodeBlock(RuntimeBlockInfo* rbi,u32 max_cycles)
 		case NDO_Delayslot:
 			state.NextOp=state.DelayOp;
 			state.cpu.is_delayslot=true;
-			//there is no break here by design
+			/* there is no break here by design */
 		case NDO_NextOp:
 			{
 				if ((blk->op_count >= BLOCK_MAX_SH_OPS_SOFT || blk->guest_cycles >= max_cycles || state.cpu.rpc >= max_pc)
@@ -1165,14 +1135,14 @@ bool dec_DecodeBlock(RuntimeBlockInfo* rbi,u32 max_cycles)
 					}
 					else
 					{
-						blk->guest_cycles += std::max((int)OpDesc[op]->LatencyCycles, 1);
+						blk->guest_cycles += OpDesc[op]->LatencyCycles > 1 ? OpDesc[op]->LatencyCycles : 1;
 					}
 					if ((OpDesc[op]->type & UsesFPU) != 0)
 					{
 						if (sr.FD == 1)
 						{
-							// We need to know FPSCR to compile the block, so let the exception handler run first
-							// as it may change the fp registers
+							/*  We need to know FPSCR to compile the block, so let the exception handler run first */
+							/*  as it may change the fp registers */
 							Do_Exception(next_pc, 0x800, 0x100);
 							return false;
 						}
@@ -1187,7 +1157,7 @@ bool dec_DecodeBlock(RuntimeBlockInfo* rbi,u32 max_cycles)
 							dec_fallback(op);
 							if (OPCODE_SETPC(OpDesc[op]->type))
 							{
-								dec_DynamicSet(reg_nextpc);
+								dec_DynamicSet(reg_nextpc, 0);
 								dec_End(0xFFFFFFFF,BET_DynamicJump,false);
 							}
 							if (OPCODE_SETFPSCR(OpDesc[op]->type) && !state.cpu.is_delayslot)
@@ -1233,7 +1203,7 @@ _end:
       case 0x8C0BA506:
       case 0x8C0BA526:
       case 0x8C224800:
-		INFO_LOG(DYNAREC, "HASH: %08X reloc %s\n",blk->addr,blk->hash());
+		INFO_LOG(DYNAREC, "HASH: %08X reloc %s\n",blk->addr,bm_BlockHash(blk));
          break;
    }
 #endif
@@ -1256,24 +1226,24 @@ _end:
 		 * blocks known to be in one, which this core has always had: with
 		 * the block's real cycles a game on it would spin its loop three
 		 * times as often as before. */
-		else if (!mmu_enabled() && strstr(idle_hash, blk->hash()))
+		else if (!mmu_enabled() && strstr(idle_hash, bm_BlockHash(blk)))
 			blk->guest_cycles = max_cycles;
 		else
-			blk->guest_cycles = std::max(1U, blk->guest_cycles);
+			blk->guest_cycles = blk->guest_cycles > 1 ? blk->guest_cycles : 1;
 		blk=0;
 		return true;
 	}
 
-	//cycle tricks
-	//Experimental hash-id based idle skip
-	if (!mmu_enabled() && strstr(idle_hash, blk->hash()))
+	/* cycle tricks */
+	/* Experimental hash-id based idle skip */
+	if (!mmu_enabled() && strstr(idle_hash, bm_BlockHash(blk)))
 	{
-		//printf("IDLESKIP: %08X reloc match %s\n",blk->addr,blk->hash());
+		/* printf("IDLESKIP: %08X reloc match %s\n",blk->addr,bm_BlockHash(blk)); */
 		blk->guest_cycles=max_cycles*100;
 	}
 	else
 	{
-		//Small-n-simple idle loop detector :p
+		/* Small-n-simple idle loop detector :p */
 		if (state.info.has_readm && !state.info.has_writem && !state.info.has_fpu && blk->guest_opcodes<6)
 		{
 			if (blk->BlockType==BET_Cond_0 || (blk->BlockType==BET_Cond_1 && blk->BranchBlock<=blk->vaddr))
@@ -1287,31 +1257,31 @@ _end:
 			}
 		}
 
-		//if in syscalls area (ip.bin etc) skip fast :p
+		/* if in syscalls area (ip.bin etc) skip fast :p */
 		if ((blk->addr&0x1FFF0000)==0x0C000000)
 		{
 			if (blk->addr&0x8000)
 			{
-				//ip.bin (boot loader/img etc)
+				/* ip.bin (boot loader/img etc) */
 				blk->guest_cycles*=15;
 			}
 			else
 			{
-				//syscalls
+				/* syscalls */
 				blk->guest_cycles*=5;
 			}
 		}
 
-		//blk->guest_cycles=5;
+		/* blk->guest_cycles=5; */
 	}
-	// Win CE boost
+	/*  Win CE boost */
 	if (mmu_enabled())
 		blk->guest_cycles *= 1.5f;
 
-	//make sure we don't use wayy-too-many cycles
-	blk->guest_cycles = std::min(blk->guest_cycles,max_cycles);
-	//make sure we don't use wayy-too-few cycles
-	blk->guest_cycles = std::max(1U,blk->guest_cycles);
+	/* make sure we don't use wayy-too-many cycles */
+	blk->guest_cycles = blk->guest_cycles < max_cycles ? blk->guest_cycles : max_cycles;
+	/* make sure we don't use wayy-too-few cycles */
+	blk->guest_cycles = blk->guest_cycles > 1 ? blk->guest_cycles : 1;
 	blk=0;
 
 	return true;
