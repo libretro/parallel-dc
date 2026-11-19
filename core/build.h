@@ -242,8 +242,8 @@
 /* running, which the build then also has: a core option does it. (The */
 /* x86-64, 32-bit x86 and ARM64 recompilers are one, arm7_rec.c, with a */
 /* backend for each, and run a sound program the same; so does the */
-/* interpreter.) */
-#if (HOST_CPU == CPU_X64 || HOST_CPU == CPU_X86 || HOST_CPU == CPU_ARM64) && FEAT_AREC != DYNAREC_NONE
+/* interpreter, and the 32-bit ARM one, arm7_rec_arm32.c, but for time.) */
+#if (HOST_CPU == CPU_X64 || HOST_CPU == CPU_X86 || HOST_CPU == CPU_ARM64 || HOST_CPU == CPU_ARM) && FEAT_AREC != DYNAREC_NONE
 #define FEAT_AREC_SELECTABLE 1
 #endif
 

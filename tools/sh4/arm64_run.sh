@@ -64,6 +64,7 @@ $A64CC $EXTRA -static -o "$WORK/arm64_test" "$WORK"/*.o $LIBS \
 $RUN "$WORK/arm64_test" "$N" 2>"$WORK/err.txt" > "$WORK/out.txt" || true
 cat "$WORK/out.txt"
 cat "$WORK/err.txt" >&2
-[ -s "$WORK/out.txt" ] && grep -qxF "$(cat "$WORK/out.txt")" tools/sh4/arm64_expected.txt \
+# (one line, all of it the one expected: grep takes each line for a pattern)
+[ "$(wc -l < "$WORK/out.txt")" -eq 1 ] && grep -qxF "$(cat "$WORK/out.txt")" tools/sh4/arm64_expected.txt \
    || { echo "arm64_test: the recompiler does not make what it made (tools/sh4/arm64_expected.txt)"; exit 1; }
 echo "arm64_test: as before"

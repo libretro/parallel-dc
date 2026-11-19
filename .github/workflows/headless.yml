@@ -24,7 +24,8 @@ name: Headless
 # sound chip's ARM7 recompiled for 32-bit ARM (tools/arm7/arm32_run.sh).
 # And the recompilers
 # against the interpreters, each built alone (tools/sh4/run.sh), the sound
-# chip's ARM7 and DSP compiled for x86-64, x86 and ARM64 (under qemu)
+# chip's ARM7 compiled for x86-64, x86, ARM64 and 32-bit ARM and its DSP
+# for the first three (under qemu)
 # against interpreted (tools/arm7/run.sh, tools/aica/run.sh), the
 # interpreter's FMAC against fmaf() (tools/sh4/fmac_test.sh), the opcode
 # table as it always was (tools/sh4/opcode_table_run.sh), the decoder's
@@ -290,7 +291,7 @@ jobs:
         run: sh tools/sh4/arm64_run.sh
       - name: The 32-bit ARM recompiler's code, relinked and rewritten, as the C++ made it (under qemu)
         run: sh tools/sh4/arm_run.sh
-      - name: The sound chip's ARM7 recompiled for 32-bit ARM, as the C++ made it (under qemu)
+      - name: The sound chip's ARM7 recompiled for 32-bit ARM, as it was last made on purpose (under qemu)
         run: sh tools/arm7/arm32_run.sh
       - name: The recompilers' pool (blocks, their lists, the labels), pieces taken and given back
         run: sh tools/sh4/node_pool_test.sh
@@ -334,7 +335,7 @@ jobs:
         run: |
           sh tools/mem/fault_run.sh
           sh tools/mem/fault_run.sh -fsanitize=address,undefined -fno-sanitize-recover=all
-      - name: The recompilers against the interpreters, built alone (the SH-4's vectors as the x86-64 recompiler emits them, the sound chip's ARM7 and its DSP for x86-64, x86 and ARM64 under qemu; and with the sanitizers)
+      - name: The recompilers against the interpreters, built alone (the SH-4's vectors as the x86-64 recompiler emits them, the sound chip's ARM7 for x86-64, x86, ARM64 and 32-bit ARM and its DSP for the first three, under qemu; and with the sanitizers)
         run: |
           sh tools/sh4/run.sh
           sh tools/arm7/run.sh

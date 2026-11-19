@@ -1726,7 +1726,7 @@ static void ngen_compile_opcode(RuntimeBlockInfo* block, shil_opcode* op)
 			else
 			{
 				a32_shift_imm(A32_LSR, true, A32_R0, rs2, 1, AL);	/* C=rs2, rd2=0 */
-				a32_op_imm(A32_ADD, A32_R0, rs1, 1, AL);
+				a32_op_imm(A32_AND, A32_R0, rs1, 1, AL);	/* get new carry */
 			}
 			a32_shift_imm(A32_ROR, false, MAPG(&op->rd), rs1, 0, AL);	/* rrx: with the carry */
 			if (rd2 == rs1)

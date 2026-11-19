@@ -53,6 +53,7 @@ $X86CC -m32 $EXTRA -static -o "$WORK/x86_test" "$WORK"/*.o -lm
 "$WORK/x86_test" "$N" 2>"$WORK/err.txt" > "$WORK/out.txt" || true
 cat "$WORK/out.txt"
 cat "$WORK/err.txt" >&2
-[ -s "$WORK/out.txt" ] && grep -qxF "$(cat "$WORK/out.txt")" tools/sh4/x86_expected.txt \
+# (one line, all of it the one expected: grep takes each line for a pattern)
+[ "$(wc -l < "$WORK/out.txt")" -eq 1 ] && grep -qxF "$(cat "$WORK/out.txt")" tools/sh4/x86_expected.txt \
    || { echo "x86_test: the recompiler does not make what it made (tools/sh4/x86_expected.txt)"; exit 1; }
 echo "x86_test: as before"

@@ -90,6 +90,7 @@ enum OpFlags
 	OP_SETS_PC         = 1,
 	OP_READS_PC        = 32768,
 	OP_IS_COND         = 65536,
+	OP_ALIGNED         = 131072, /* a load from a whole word's address */
 	OP_MFB             = (int)0x80000000,
 
 	OP_HAS_RD_12       = 2,
@@ -452,10 +453,15 @@ static OpType DecodeOpcode(u32 *popcd, u32 *pflags)
 		/* Offset */
 		opcd |= 4;
 
+		/* Not indexed after the access and no write back: the base as it is */
+		if (!(old_opcd & ((1 << 24) | (1 << 21))))
+			opcd = (opcd | (1 << 24)) & ~0xfffu;
+
 		arm_printf("ARM: MEM TFX R %08X\n", opcd);
 
 		*popcd = opcd;
-		*pflags = flags;
+		/* a block load reads a whole word whatever the base's low bits */
+		*pflags = flags | OP_ALIGNED;
 		return VOT_Read;
 	}
 	/* STM common case */
@@ -488,6 +494,10 @@ static OpType DecodeOpcode(u32 *popcd, u32 *pflags)
 
 		/* Offset */
 		opcd |= 4;
+
+		/* Not indexed after the access and no write back: the base as it is */
+		if (!(old_opcd & ((1 << 24) | (1 << 21))))
+			opcd = (opcd | (1 << 24)) & ~0xfffu;
 
 		arm_printf("ARM: MEM TFX W %08X\n", opcd);
 
@@ -559,7 +569,8 @@ static u32 RenameReg(u32 regn, bool *didrn)
 	if (renamed_regs[regn] == 0)
 	{
 		renamed_regs[regn] = rename_reg_base;
-		rename_reg_base++;
+		/* r1-r3, then r12 (r4, r5, r8, r9 are taken) */
+		rename_reg_base = (rename_reg_base == A32_R3) ? A32_R12 : rename_reg_base + 1;
 		*didrn = true;
 	}
 	else
@@ -645,6 +656,12 @@ static void VirtualizeOpcode(u32 opcd, u32 flag, u32 pc)
 		LoadAndRename(&opcd, 16, (flag & OP_HAS_RD_READ) != 0, pc + 4);
 	}
 
+	/* Fields that should be zero are, whatever the guest put there */
+	if (!(flag & (OP_HAS_RS_16 | OP_HAS_RD_16)))
+		opcd &= ~(15u << 16);
+	if (!(flag & OP_HAS_RD_12))
+		opcd &= ~(15u << 12);
+
 	/* Opcode has been modified to use the new regs: emit it */
 	arm_printf("Arm Virtual: %08X -> %08X\n", orig, opcd);
 	armEmit32(opcd);
@@ -705,10 +722,8 @@ static void armv_intpr(u32 opcd)
 	/* Call interpreter */
 	a32_mov32(A32_R0, opcd, A32_AL);
 	a32_call((uintptr_t)arm_single_op, A32_AL);
-	/* (sub r5, r5, #0: what the C++ emitter made of SUB(r5, r5, r0, false),
-	 * which took r0 for the number 0. The cycles the interpreter counts are
-	 * not taken off.) */
-	a32_dp_imm(A32_SUB, false, A32_R5, A32_R5, 0, A32_AL);
+	/* take off the cycles it returns */
+	a32_op(A32_SUB, A32_R5, A32_R5, A32_R0, A32_AL);
 }
 
 static void armv_end(void* codestart, u32 cycl)
@@ -732,10 +747,32 @@ static void armv_end(void* codestart, u32 cycl)
 	armFlushICache(codestart, armGetEmitPtr());
 }
 
+static void FlushCache(void);
+
 /* Run a timeslice for ARMREC */
 void aicaarm_run(u32 samples)
 {
+	/* The interpreter instead, when the core option asks for it (as in
+	 * arm7_rec.c); coming back, everything compiled is thrown away */
+	static bool interpreting;
 	u32 i;
+
+	if (settings.dynarec.Arm7Interpreter)
+	{
+		interpreting = true;
+		for (i = 0; i < samples; i++)
+		{
+			arm_Run_(ARM_CYCLES_PER_SAMPLE);
+			libAICA_TimeStep();
+		}
+		return;
+	}
+	if (interpreting)
+	{
+		interpreting = false;
+		FlushCache();
+	}
+
 	for (i = 0; i < samples; i++)
 	{
 		if (Arm7Enabled)
@@ -948,6 +985,9 @@ void CompileCode(void)
 						a32_op(A32_ADD, A32_R0, A32_R0, A32_R1, A32_AL);
 					}
 				}
+
+				if (L && (op_flags & OP_ALIGNED))
+					a32_op_imm(A32_BIC, A32_R0, A32_R0, 3, A32_AL);
 
 				if (!L)
 				{

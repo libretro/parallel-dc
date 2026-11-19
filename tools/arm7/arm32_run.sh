@@ -7,9 +7,9 @@
 # arm32_test.c, built for 32-bit ARM with arm-linux-gnueabihf-gcc (or gcc
 # on such a host) and the C flags the core is built with there, as ARM code
 # with NEON as the core's ARM builds are, and run (under qemu-arm on another
-# host): it hashes the code made of random programs, which must be what the
-# C++ recompiler made of them (arm32_expected.txt holds 20000 and 5000
-# blocks). Only does anything on Linux.
+# host): it hashes the code made of random programs, which must be what it
+# made when last changed on purpose (arm32_expected.txt holds 20000 and
+# 5000 blocks; tools/arm7/run.sh runs the code). Only does anything on Linux.
 set -e
 ROOT=$(cd "$(dirname "$0")/../.." && pwd)
 cd "$ROOT"
@@ -48,6 +48,7 @@ $A32CC -marm $EXTRA -static -o "$WORK/arm32_test" "$WORK"/*.o $LIBS -lm
 $RUN "$WORK/arm32_test" "$N" 2>"$WORK/err.txt" > "$WORK/out.txt" || true
 cat "$WORK/out.txt"
 cat "$WORK/err.txt" >&2
-[ -s "$WORK/out.txt" ] && grep -qxF "$(cat "$WORK/out.txt")" tools/arm7/arm32_expected.txt \
+# (one line, all of it the one expected: grep takes each line for a pattern)
+[ "$(wc -l < "$WORK/out.txt")" -eq 1 ] && grep -qxF "$(cat "$WORK/out.txt")" tools/arm7/arm32_expected.txt \
    || { echo "arm32_test: the recompiler does not make what it made (tools/arm7/arm32_expected.txt)"; exit 1; }
 echo "arm32_test: as before"

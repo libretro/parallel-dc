@@ -1,7 +1,7 @@
 /* The sound chip's ARM7 recompiler for 32-bit ARM hosts
  * (core/hw/arm7/arm7_rec_arm32.c), on random programs: the code it makes
- * of each block, hashed, against what the C++ recompiler it replaced made
- * (tools/arm7/arm32_run.sh). Only made, not run.
+ * of each block, hashed, against what it made when last changed on
+ * purpose (tools/arm7/arm32_run.sh). Only made, not run here.
  *
  * A branch out of the code is hashed as which function it goes to, by the
  * order they are first gone to, rather than as a number, so that the hash

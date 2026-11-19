@@ -1392,6 +1392,57 @@ static void environment(void)
 	settings.dynarec.AccurateTiming = (r & 0x100) != 0;
 }
 
+#if REC_ARM
+/* movt Rn, rotcr Rn and bt, for every n: the rotate's new T is the low bit
+ * of the register it rotates (and r0, rX, #1 where that register is T's as
+ * well; it was an add). Not hashed. */
+static bool rotcr_check(RuntimeBlockInfo *a)
+{
+	u32 n, i, made = 0, bad = 0;
+
+	settings.dreamcast.FullMMU = false;
+	CCN_MMUCR.AT = 0;
+	virt_ram_base = NULL;
+	vmem_4gb_space = false;
+	code_base = 0x8C010000;
+	for (n = 0; n < 16; n++)
+	{
+		fpscr_t cfg;
+		const u32 *w;
+
+		code[0] = (u16)(0x0029 | n << 8);	/* movt Rn */
+		code[1] = (u16)(0x4025 | n << 8);	/* rotcr Rn */
+		code[2] = 0x8901;	/* bt */
+		code[3] = 0x0009;	/* nop */
+		code[4] = 0x000B;	/* rts */
+		code[5] = 0x0009;
+		cfg.full = 0;
+		setup(a, code_base, cfg);
+		if (!dec_DecodeBlock(a, SH4_TIMESLICE / 2))
+			continue;
+		copy_block(&compiled, a);
+		AnalyseBlock(&compiled);
+		compiled.addr = compiled.vaddr & 0x1FFFFFFF;
+		cache_at = cache_base;
+		ngen_Compile(&compiled, false, false, false, true);
+		w = (const u32 *)(uintptr_t)compiled.code;
+		for (i = 0; i < compiled.host_code_size / 4; i++)
+		{
+			if ((w[i] & 0xFFF0FFFFu) == 0xE2800001u)
+				bad++;
+			else if ((w[i] & 0xFFF0FFFFu) == 0xE2000001u)
+				made++;
+		}
+	}
+	if (bad || !made)
+	{
+		printf("FAIL: rotcr after movt: %u adds and %u ands for the new T\n", bad, made);
+		return false;
+	}
+	return true;
+}
+#endif
+
 int main(int argc, char **argv)
 {
 	int n = argc > 1 ? atoi(argv[1]) : 20000, t;
@@ -1487,8 +1538,12 @@ int main(int argc, char **argv)
 		AnalyseBlock(&compiled);
 		compile(&compiled);
 	}
+	printf("%d blocks, %u things reached, %08x\n", n, other_count, h);
+#if REC_ARM
+	if (!rotcr_check(&a))
+		return 1;
+#endif
 	free(a.oplist);
 	free(compiled.oplist);
-	printf("%d blocks, %u things reached, %08x\n", n, other_count, h);
 	return 0;
 }

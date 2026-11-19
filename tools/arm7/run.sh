@@ -4,14 +4,15 @@
 #   sh tools/arm7/run.sh [programs [flags]]
 #
 # On x86-64, 32-bit x86 and ARM64 the ARM7 is run by a recompiler (core/hw/
-# arm7/arm7_rec.c, with arm7_rec_x64.c, arm7_rec_x86.c or arm7_rec_arm64.c);
+# arm7/arm7_rec.c, with arm7_rec_x64.c, arm7_rec_x86.c or arm7_rec_arm64.c),
+# on 32-bit ARM by another (arm7_rec_arm32.c, with core/rec-ARM/ngen_arm.S);
 # everywhere the recompilers do not reach, and for the instructions this
 # one hands back, by an interpreter (arm7.c with arm-new.h). arm7_test.c is
 # built around each, with nothing else of the core, and all are given the
 # same made-up programs, 10000 unless a number is given. The registers, the
 # flags and all of memory have to be the same from each at the end of every
-# program, and the cycles left over the same from every recompiler (the
-# interpreter counts its own way). arm7_test.c says what the programs are made of and what is left
+# program, and the cycles left over the same from every recompiler but
+# the 32-bit ARM one (it and the interpreter count their own ways). arm7_test.c says what the programs are made of and what is left
 # out of them.
 #
 # A program that stores over its own instructions is not compared, and
@@ -27,7 +28,9 @@
 # (MSR CPSR_c), between the modes with banked registers: other programs.
 #
 # x86 is built with i686-linux-gnu-gcc (or gcc -m32), ARM64 with
-# aarch64-linux-gnu-gcc and run under qemu-aarch64-static; where one of
+# aarch64-linux-gnu-gcc and run under qemu-aarch64-static, 32-bit ARM with
+# arm-linux-gnueabihf-gcc, as ARM code with NEON as the core's ARM builds
+# are, and run under qemu-arm-static; where one of
 # them is not there, that recompiler is left out and said to be. Flags
 # after the number of programs, such as -fsanitize=address,undefined, go
 # to the interpreter's and the x86-64 recompiler's builds; $X86_CFLAGS
@@ -61,6 +64,16 @@ build() {
    $CC $3 $4 -o "$WORK/arm7_test_$1" "$WORK/$1"-*.o
 }
 
+# the 32-bit ARM recompiler's build; $1: C flags (with the compiler)
+build_arm32() {
+   for SRC in core/hw/arm7/arm7_rec_arm32.c core/hw/arm7/arm_mem.c core/hw/arm7/arm7.c \
+         tools/arm7/arm7_test.c tools/arm7/arm32_stubs.c core/rec-ARM/ngen_arm.S; do
+      eval "$1 -marm -mfpu=neon-vfpv4 \"$SRC\" -o \"$WORK/arm32-$(basename "$SRC" | sed 's/\.[cS]$//').o\""
+   done
+   CC=${1%% *}
+   $CC -marm -static -o "$WORK/arm7_test_arm32" "$WORK"/arm32-*.o -lm
+}
+
 same() {
    # $1, $2: outputs to compare, $3 and $4: what each is, $5: both recompiled
    [ "$(wc -l < "$1")" -eq "$PROGRAMS" ] && [ "$(wc -l < "$2")" -eq "$PROGRAMS" ] || {
@@ -84,16 +97,21 @@ same() {
    fi
 }
 
-# $1: name, $2: how it is run (empty, or qemu): the program in ror0.txt
-ror0() {
+# $1: name, $2: how it is run (empty, or qemu): the programs written below
+fixed() {
    CPSR=$(ARM7_TEST_PROGRAM="$WORK/ror0.txt" ARM7_TEST_CASE=0 $2 "$WORK/arm7_test_$1" | sed -n 's/.* cpsr \([0-9a-f]*\) .*/\1/p')
-   [ -n "$CPSR" ] && [ $((0x$CPSR & 0x20000000)) -ne 0 ] \
-      || { echo "FAIL: $1: ror by a register of 0 took the carry from bit 31 (cpsr ${CPSR:-none})" >&2; exit 1; }
+   [ -n "$CPSR" ] || { echo "FAIL: $1: a rotation by a register of 0 did not run to its end" >&2; exit 1; }
+   [ $((0x$CPSR & 0x20000000)) -ne 0 ] \
+      || { echo "FAIL: $1: ror by a register of 0 took the carry from bit 31 (cpsr $CPSR)" >&2; exit 1; }
+   ONE=$(ARM7_TEST_PROGRAM="$WORK/mul1.txt" ARM7_TEST_CASE=0 $2 "$WORK/arm7_test_$1" | cut -d' ' -f3)
+   TWO=$(ARM7_TEST_PROGRAM="$WORK/mul2.txt" ARM7_TEST_CASE=0 $2 "$WORK/arm7_test_$1" | cut -d' ' -f3)
+   [ -n "$ONE" ] && [ -n "$TWO" ] && [ $((0x$ONE)) -gt $((0x$TWO)) ] \
+      || { echo "FAIL: $1: an instruction handed to the interpreter took no time ($ONE and $TWO times round)" >&2; exit 1; }
 }
 
 # $1: name, $2: how it is run (empty, or qemu)
 check() {
-   ror0 "$1" "$2"
+   fixed "$1" "$2"
    $2 "$WORK/arm7_test_$1" "$PROGRAMS" > "$WORK/$1.txt"
    ARM7_TEST_INTERPRET=1 $2 "$WORK/arm7_test_$1" "$PROGRAMS" > "$WORK/$1-chosen.txt"
    ARM7_TEST_SWITCH=1 $2 "$WORK/arm7_test_$1" "$PROGRAMS" > "$WORK/$1-switched.txt"
@@ -102,12 +120,14 @@ check() {
    same "$WORK/$1.txt" "$WORK/interp.txt" "$1: recompiled" "interpreted"
    # what the recompiled programs leave, for comparing one machine's with another's
    [ -z "$ARM7_TEST_OUT" ] || cp "$WORK/$1.txt" "$ARM7_TEST_OUT.$1"
-   DONE="$DONE $1"
+   # (the 32-bit ARM one counts cycles its own way)
+   if [ "$1" = arm32 ]; then OWN="$OWN $1"; else DONE="$DONE $1"; fi
 }
 
 # which recompilers can be built here, and their builds, all at once
 NATIVE=$(flags)
 DONE=
+OWN=
 LEFT=
 X86FLAGS=
 ARM64FLAGS=
@@ -124,6 +144,19 @@ case $(uname -m) in
          X86FLAGS=$(flags platform=unix ARCH=i686 CC=$X86CC)
       else
          LEFT="$LEFT x86"
+      fi
+      ;;
+esac
+ARM32FLAGS=
+ARM32RUN=
+case $(uname -m) in
+   armv7*|armv8l) ARM32FLAGS=$NATIVE ;;
+   *)
+      if command -v arm-linux-gnueabihf-gcc >/dev/null 2>&1 && command -v qemu-arm-static >/dev/null 2>&1; then
+         ARM32FLAGS=$(flags platform=unix ARCH=arm CC=arm-linux-gnueabihf-gcc)
+         ARM32RUN=qemu-arm-static
+      else
+         LEFT="$LEFT arm32"
       fi
       ;;
 esac
@@ -146,6 +179,7 @@ case $(uname -m) in
 esac
 [ -z "$X86FLAGS" ] || { build x86 "$X86FLAGS" "$X86_CFLAGS" -m32 & PIDS="$PIDS $!"; }
 [ -z "$ARM64FLAGS" ] || { build arm64 "$ARM64FLAGS" "" -static & PIDS="$PIDS $!"; }
+[ -z "$ARM32FLAGS" ] || { build_arm32 "$ARM32FLAGS" & PIDS="$PIDS $!"; }
 for P in $PIDS; do
    wait "$P" || { echo "FAIL: a build did not finish" >&2; exit 1; }
 done
@@ -155,7 +189,13 @@ done
 # (it was taken from bit 31): mov r8, #0x100; mov r7, #0; movs r0,
 # #0x80000000 (C set); bics r11, r3, r7, ror r8; and C has to be set still
 printf 'e3a08c01 e3a07000 e3b00102 e1d3b877 eafffffe\n' > "$WORK/ror0.txt"
-ror0 interp
+# An instruction the recompilers hand to the interpreter (mul r1, r2, r3)
+# takes the time the interpreter says: mov r0, #0, then round and round
+# once or twice through it and add r0, r0, #1 for 64 samples; r0 has to
+# come out lower with two
+printf 'e3a00000 e0010392 e2800001 eafffffc\n' > "$WORK/mul1.txt"
+printf 'e3a00000 e0010392 e0010392 e2800001 eafffffb\n' > "$WORK/mul2.txt"
+fixed interp
 case $(uname -m) in
    x86_64|amd64)
       mv "$WORK/arm7_test_native" "$WORK/arm7_test_x64"
@@ -168,6 +208,7 @@ case $(uname -m) in
 esac
 [ -z "$X86FLAGS" ] || check x86
 [ -z "$ARM64FLAGS" ] || check arm64 "$ARM64RUN"
+[ -z "$ARM32FLAGS" ] || check arm32 "$ARM32RUN"
 # the recompilers with each other, to the cycle
 FIRST=
 for A in $DONE; do
@@ -182,4 +223,4 @@ if [ -n "$FIRST" ]; then
    same "$WORK/$FIRST.txt" "$WORK/interp.txt" "recompiled" "interpreted"
    SKIPPED=$(cut -d' ' -f1 "$WORK/count.txt")
 fi
-echo "arm7: ok ($((PROGRAMS - SKIPPED)) programs: the interpreter and the recompilers for${DONE:- none} agree, recompiled, chosen and changing between the two, and the recompilers to the cycle; $SKIPPED more wrote over themselves and were not compared${LEFT:+; no recompiler here for$LEFT})"
+echo "arm7: ok ($((PROGRAMS - SKIPPED)) programs: the interpreter and the recompilers for${DONE:- none}${OWN} agree, recompiled, chosen and changing between the two, and the recompilers for${DONE:- none} to the cycle; $SKIPPED more wrote over themselves and were not compared${LEFT:+; no recompiler here for$LEFT})"

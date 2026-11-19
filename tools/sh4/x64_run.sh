@@ -62,6 +62,7 @@ nm -u "$WORK/sh4_opcode_list.o" | awk '{print $2}' \
 $RUN "$EXE" "$N" 2>"$WORK/err.txt" | tr -d '\r' > "$WORK/out.txt"
 cat "$WORK/out.txt"
 [ -n "$WINDOWS" ] || cat "$WORK/err.txt" >&2
-[ -s "$WORK/out.txt" ] && grep -qxF "$(cat "$WORK/out.txt")" tools/sh4/x64_expected.txt \
+# (one line, all of it the one expected: grep takes each line for a pattern)
+[ "$(wc -l < "$WORK/out.txt")" -eq 1 ] && grep -qxF "$(cat "$WORK/out.txt")" tools/sh4/x64_expected.txt \
    || { echo "x64_test: the recompiler does not make what it made (tools/sh4/x64_expected.txt)"; exit 1; }
 echo "x64_test: as before"
