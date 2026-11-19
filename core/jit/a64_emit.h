@@ -697,28 +697,57 @@ static INLINE bool a64_b_rel(a64_emit *e, bool link, s64 rel)
    return true;
 }
 
-/* A label, and the branches to it made before it was put down */
+/* A label. The branches to it made before it is put down are a chain, each
+ * one's offset the way back to the one before it (0: none), as in VIXL:
+ * there is no end to how many there can be. */
 typedef struct a64_label
 {
    u32 *at;
-   u32 *patch[16];
-   int patches;
+   u32 *last;
 } a64_label;
 
 static INLINE void a64_label_init(a64_label *l)
 {
    l->at = NULL;
-   l->patches = 0;
+   l->last = NULL;
 }
 
-/* The branch's offset to @to put in it (b: 26 bits, b.cond and cbz/cbnz: 19) */
+/* The offset, in words, in the branch at @from (b: 26 bits, tbz/tbnz: 14,
+ * b.cond and cbz/cbnz: 19) */
+static INLINE s32 a64_label_offset(const u32 *from)
+{
+   if ((*from & 0x7C000000u) == 0x14000000u)
+      return (s32)(*from << 6) >> 6;
+   if ((*from & 0x7E000000u) == 0x36000000u)
+      return (s32)(*from << 13) >> 18;
+   return (s32)(*from << 8) >> 13;
+}
+
+/* The branch's offset to @to put in it */
 static INLINE void a64_label_link(u32 *from, const u32 *to)
 {
    s32 words = (s32)(to - from);
    if ((*from & 0x7C000000u) == 0x14000000u)
       *from = (*from & 0xFC000000u) | ((u32)words & 0x3ffffff);
+   else if ((*from & 0x7E000000u) == 0x36000000u)
+      *from = (*from & 0xFFF8001Fu) | (((u32)words & 0x3fff) << 5);
    else
       *from = (*from & 0xFF00001Fu) | (((u32)words & 0x7ffff) << 5);
+}
+
+/* The branch at @from to @l: linked now, or put on the chain */
+static INLINE void a64_label_use(a64_emit *e, u32 *from, a64_label *l)
+{
+   if (e->full)
+      return;
+   if (l->at != NULL)
+      a64_label_link(from, l->at);
+   else
+   {
+      if (l->last != NULL)
+         a64_label_link(from, l->last);
+      l->last = from;
+   }
 }
 
 /* b (@cond -1), b.cond, cbnz wt (@cond -2, @rt) to a label */
@@ -731,23 +760,21 @@ static INLINE void a64_b_label(a64_emit *e, int cond, int rt, a64_label *l)
       a64_dw(e, 0x35000000u | (u32)rt);
    else
       a64_dw(e, 0x54000000u | (u32)cond);
-   if (e->full)
-      return;
-   if (l->at != NULL)
-      a64_label_link(from, l->at);
-   else if (l->patches == (int)(sizeof(l->patch) / sizeof(l->patch[0])))
-      e->full = true;
-   else
-      l->patch[l->patches++] = from;
+   a64_label_use(e, from, l);
 }
 
 static INLINE void a64_label_bind(a64_emit *e, a64_label *l)
 {
-   int i;
+   u32 *from = l->last;
    l->at = e->p;
-   for (i = 0; i < l->patches; i++)
-      a64_label_link(l->patch[i], l->at);
-   l->patches = 0;
+   while (from != NULL)
+   {
+      const s32 back = a64_label_offset(from);
+      u32 *before = back != 0 ? from + back : NULL;
+      a64_label_link(from, l->at);
+      from = before;
+   }
+   l->last = NULL;
 }
 
 /* ldr xt, =literal (the one literal there is) */
@@ -781,6 +808,424 @@ static INLINE void a64_finish(a64_emit *e)
       int from = e->literal_loads[i];
       e->start[from] |= ((u32)(at - from) & 0x7ffff) << 5;
    }
+}
+
+
+/* ---- VIXL's MacroAssembler as the SH4's recompiler used it
+ * (rec-ARM64/rec_arm64.c): each macro expanded the way it expanded it ---- */
+
+/* A literal pool of the recompiler's own, of any number of literals, each
+ * loaded once, laid out in the order they were asked for after a marker
+ * that says how many words the pool has (VIXL's LiteralPool::Emit()) */
+#define A64_POOL_MAX 1024
+typedef struct a64_pool
+{
+   u64 value[A64_POOL_MAX];
+   u8 size[A64_POOL_MAX];
+   int load[A64_POOL_MAX];
+   int count;
+} a64_pool;
+
+/* ldr rt, =value: @kind 0x18000000 (w), 0x58000000 (x), 0x1C000000 (s) */
+static INLINE void a64m_ldr_lit(a64_emit *e, a64_pool *pool, u32 kind, int rt, u64 value)
+{
+   if (pool->count == A64_POOL_MAX || e->p >= e->end)
+   {
+      e->full = true;
+      return;
+   }
+   pool->value[pool->count] = value;
+   pool->size[pool->count] = kind == 0x58000000u ? 8 : 4;
+   pool->load[pool->count] = (int)(e->p - e->start);
+   pool->count++;
+   a64_dw(e, kind | (u32)rt);
+}
+
+/* The pool, where the code ends (FinalizeCode(): nothing to branch over) */
+static INLINE void a64m_pool_emit(a64_emit *e, a64_pool *pool)
+{
+   u32 bytes = 4;
+   int i;
+   if (pool->count == 0)
+      return;
+   for (i = 0; i < pool->count; i++)
+      bytes += pool->size[i];
+   a64_dw(e, 0x58000000u | ((bytes / 4) << 5) | A64_ZR);
+   for (i = 0; i < pool->count; i++)
+   {
+      const int at = (int)(e->p - e->start);
+      a64_dw(e, (u32)pool->value[i]);
+      if (pool->size[i] == 8)
+         a64_dw(e, (u32)(pool->value[i] >> 32));
+      if (!e->full)
+         e->start[pool->load[i]] |= ((u32)(at - pool->load[i]) & 0x7ffff) << 5;
+   }
+   pool->count = 0;
+}
+
+/* Mov(rd, rm): orr, or add #0 where one of them is sp; a W register is
+ * moved even to itself */
+static INLINE void a64m_mov(a64_emit *e, bool sf, int rd, int rm, bool rd_sp, bool rm_sp)
+{
+   if (sf && rd == rm && rd_sp == rm_sp)
+      return;
+   if (rd_sp || rm_sp)
+      a64_addsub_ri(e, sf, false, false, rd, rm, 0, false);
+   else
+      a64_mov_rr(e, sf, rd, rm);
+}
+
+/* EmitShift(rd, rn, shift, amount), 32 or 64 bits */
+static INLINE void a64m_shift_imm(a64_emit *e, bool sf, int shift, int rd, int rn, unsigned amount)
+{
+   const unsigned w = sf ? 64 : 32;
+   switch (shift)
+   {
+   case A64_LSL:
+      a64_bfm(e, sf, 2, rd, rn, (w - amount) & (w - 1), w - 1 - amount);
+      break;
+   case A64_LSR:
+      a64_bfm(e, sf, 2, rd, rn, amount, w - 1);
+      break;
+   case A64_ASR:
+      a64_bfm(e, sf, 0, rd, rn, amount, w - 1);
+      break;
+   default:
+      /* extr rd, rn, rn, #amount */
+      a64_dw(e, (sf ? 0x93C00000u : 0x13800000u) | ((u32)rn << 16) | (amount << 10) | ((u32)rn << 5) | (u32)rd);
+      break;
+   }
+}
+
+/* lslv, lsrv, asrv, rorv, 32 or 64 bits */
+static INLINE void a64m_shift_reg(a64_emit *e, bool sf, int shift, int rd, int rn, int rm)
+{
+   a64_dw(e, (sf ? 0x80000000u : 0) | 0x1AC02000u | ((u32)shift << 10) | ((u32)rm << 16) | ((u32)rn << 5) | (u32)rd);
+}
+
+/* Mov(rd, operand) */
+static INLINE void a64m_mov_op(a64_emit *e, bool sf, int rd, a64_operand op)
+{
+   if (op.is_imm)
+      a64_mov_imm(e, sf, rd, op.imm);
+   else if (op.amount != 0)
+      a64m_shift_imm(e, sf, op.shift, rd, op.reg, op.amount);
+   else
+      a64m_mov(e, sf, rd, op.reg, false, false);
+}
+
+/* add/sub (extended register): @option UXTB 0, UXTH 1, UXTW 2, UXTX 3, SXTW 6 */
+static INLINE void a64m_addsub_ext(a64_emit *e, bool sf, bool sub, bool s, int rd, int rn, int rm, unsigned option, unsigned amount)
+{
+   a64_dw(e, (sf ? 0x80000000u : 0) | (sub ? 0x40000000u : 0) | (s ? 0x20000000u : 0) | 0x0B200000u
+         | ((u32)rm << 16) | (option << 13) | (amount << 10) | ((u32)rn << 5) | (u32)rd);
+}
+
+/* Assembler::AddSub(): rd or rn sp (@sp_rd, @sp_rn) takes the extended form for a register */
+static INLINE void a64m_addsub_asm(a64_emit *e, bool sf, bool sub, bool s, int rd, int rn, a64_operand op, bool sp)
+{
+   if (op.is_imm)
+   {
+      if (op.imm < 0x1000)
+         a64_addsub_ri(e, sf, sub, s, rd, rn, (u32)op.imm, false);
+      else
+         a64_addsub_ri(e, sf, sub, s, rd, rn, (u32)(op.imm >> 12), true);
+   }
+   else if (sp)
+      a64m_addsub_ext(e, sf, sub, s, rd, rn, op.reg, sf ? 3 : 2, op.amount);
+   else
+      a64_addsub_rr(e, sf, sub, s, rd, rn, op.reg, op.shift, op.amount);
+}
+
+/* Add / Sub / Adds / Subs (Cmp and Cmn with rd zr): VIXL's Add(), Sub()
+ * and AddSubMacro(); @sp: rd or rn is sp (where 31 is not zr) */
+static INLINE void a64m_addsub(a64_emit *e, bool sf, bool sub, bool s, int rd, int rn, a64_operand op, bool sp)
+{
+   const s64 imm = (s64)op.imm;
+   if (op.is_imm && imm < 0 && a64_is_addsub_imm((u64)-imm))
+   {
+      sub = !sub;
+      op.imm = (u64)-imm;
+   }
+   /* (a nop) */
+   if (((op.is_imm && op.imm == 0) || (!op.is_imm && op.reg == A64_ZR && op.amount == 0 && !sp))
+         && rd == rn && sf && !s)
+      return;
+   if ((op.is_imm && !a64_is_addsub_imm(op.imm)) || (rn == A64_ZR && !sp && op.is_imm)
+         || (!op.is_imm && op.shift == A64_ROR && op.amount != 0))
+   {
+      if (op.is_imm)
+      {
+         int shift;
+         unsigned amount;
+         a64_imm_for_shifted_op(e, sf, A64_IP0, op.imm, &shift, &amount);
+         a64m_addsub_asm(e, sf, sub, s, rd, rn, a64_opnd_reg(A64_IP0, shift, amount), sp);
+      }
+      else
+      {
+         a64m_mov_op(e, sf, A64_IP0, op);
+         a64m_addsub_asm(e, sf, sub, s, rd, rn, a64_opnd_reg(A64_IP0, A64_LSL, 0), sp);
+      }
+   }
+   else
+      a64m_addsub_asm(e, sf, sub, s, rd, rn, op, sp);
+}
+
+/* Adc(s) / Sbc(s), 32 bits */
+static INLINE void a64m_addsub_carry(a64_emit *e, bool sub, bool s, int rd, int rn, a64_operand op)
+{
+   int rm = op.reg;
+   if (op.is_imm || (op.shift == A64_ROR && op.amount != 0))
+   {
+      rm = A64_IP0;
+      a64m_mov_op(e, false, rm, op);
+   }
+   else if (op.amount != 0)
+   {
+      rm = op.reg != A64_IP0 ? A64_IP0 : A64_IP1;
+      a64m_shift_imm(e, false, op.shift, rm, op.reg, op.amount);
+   }
+   a64_dw(e, (sub ? 0x40000000u : 0) | (s ? 0x20000000u : 0) | 0x1A000000u | ((u32)rm << 16) | ((u32)rn << 5) | (u32)rd);
+}
+
+/* csinc / csel (32 bits); Cset(rd, cond) is csinc rd, zr, zr, !cond */
+static INLINE void a64m_csinc(a64_emit *e, int rd, int rn, int rm, u32 cond)
+{
+   a64_dw(e, 0x1A800400u | ((u32)rm << 16) | (cond << 12) | ((u32)rn << 5) | (u32)rd);
+}
+
+static INLINE void a64m_cset(a64_emit *e, int rd, u32 cond)
+{
+   a64m_csinc(e, rd, A64_ZR, A64_ZR, cond ^ 1);
+}
+
+/* madd / umaddl / smaddl with zr: Mul (32 bits), Umull, Smull */
+static INLINE void a64m_mul(a64_emit *e, int rd, int rn, int rm)
+{
+   a64_dw(e, 0x1B007C00u | ((u32)rm << 16) | ((u32)rn << 5) | (u32)rd);
+}
+
+static INLINE void a64m_mull(a64_emit *e, bool sign, int rd, int rn, int rm)
+{
+   a64_dw(e, (sign ? 0x9B207C00u : 0x9BA07C00u) | ((u32)rm << 16) | ((u32)rn << 5) | (u32)rd);
+}
+
+/* rev16 (32 bits) */
+static INLINE void a64m_rev16(a64_emit *e, int rd, int rn)
+{
+   a64_dw(e, 0x5AC00400u | ((u32)rn << 5) | (u32)rd);
+}
+
+/* A memory operand of VIXL's: base and an offset, or base and a register
+ * (@ext: UXTW 2, LSL 3, SXTW 6; shifted by @amount); offset, pre- or
+ * post-indexed */
+enum { A64M_OFFSET = 0, A64M_PRE = 1, A64M_POST = 2 };
+typedef struct a64_mem
+{
+   int base;
+   int index;
+   unsigned ext;
+   unsigned amount;
+   s64 offset;
+   int mode;
+} a64_mem;
+
+static INLINE a64_mem a64_mem_off(int base, s64 offset)
+{
+   a64_mem m;
+   m.base = base;
+   m.index = -1;
+   m.ext = 3;
+   m.amount = 0;
+   m.offset = offset;
+   m.mode = A64M_OFFSET;
+   return m;
+}
+
+static INLINE a64_mem a64_mem_idx(int base, s64 offset, int mode)
+{
+   a64_mem m = a64_mem_off(base, offset);
+   m.mode = mode;
+   return m;
+}
+
+static INLINE a64_mem a64_mem_reg(int base, int index, unsigned ext, unsigned amount)
+{
+   a64_mem m = a64_mem_off(base, 0);
+   m.index = index;
+   m.ext = ext;
+   m.amount = amount;
+   return m;
+}
+
+/* Loads and stores, by the opcode of their scaled offset form */
+#define A64_STRB  0x39000000u
+#define A64_LDRB  0x39400000u
+#define A64_LDRSB 0x39C00000u
+#define A64_STRH  0x79000000u
+#define A64_LDRH  0x79400000u
+#define A64_LDRSH 0x79C00000u
+#define A64_STRW  0xB9000000u
+#define A64_LDRW  0xB9400000u
+#define A64_STRX  0xF9000000u
+#define A64_LDRX  0xF9400000u
+#define A64_STRS  0xBD000000u
+#define A64_LDRS  0xBD400000u
+#define A64_STRD  0xFD000000u
+#define A64_LDRD  0xFD400000u
+
+static INLINE bool a64_ls_unscaled(s64 offset)
+{
+   return offset >= -256 && offset < 256;
+}
+
+/* Assembler::LoadStore() */
+static INLINE void a64m_ls_asm(a64_emit *e, u32 op, int rt, a64_mem m)
+{
+   const unsigned size = op >> 30;
+   const u32 unscaled = op & ~0x01000000u;
+   if (m.index >= 0)
+      a64_dw(e, unscaled | 0x00200800u | ((u32)m.index << 16) | (m.ext << 13) | (m.amount != 0 ? 0x1000u : 0)
+            | ((u32)m.base << 5) | (u32)rt);
+   else if (m.mode == A64M_OFFSET && m.offset >= 0 && (m.offset & ((1 << size) - 1)) == 0 && (m.offset >> size) < 4096)
+      a64_dw(e, op | ((u32)(m.offset >> size) << 10) | ((u32)m.base << 5) | (u32)rt);
+   else
+      a64_dw(e, unscaled | (((u32)m.offset & 0x1ff) << 12) | (m.mode == A64M_PRE ? 0xC00u : m.mode == A64M_POST ? 0x400u : 0)
+            | ((u32)m.base << 5) | (u32)rt);
+}
+
+/* VIXL's LoadStoreMacro() */
+static INLINE void a64m_ls(a64_emit *e, u32 op, int rt, a64_mem m)
+{
+   const unsigned size = op >> 30;
+   if (m.index < 0 && m.mode == A64M_OFFSET
+         && !(m.offset >= 0 && (m.offset & ((1 << size) - 1)) == 0 && (m.offset >> size) < 4096)
+         && !a64_ls_unscaled(m.offset))
+   {
+      a64_mov_imm(e, true, A64_IP0, (u64)m.offset);
+      a64m_ls_asm(e, op, rt, a64_mem_reg(m.base, A64_IP0, 3, 0));
+   }
+   else if (m.index < 0 && m.mode == A64M_POST && !a64_ls_unscaled(m.offset))
+   {
+      a64m_ls_asm(e, op, rt, a64_mem_off(m.base, 0));
+      a64m_addsub(e, true, false, false, m.base, m.base, a64_opnd_imm((u64)m.offset), m.base == A64_SP);
+   }
+   else if (m.index < 0 && m.mode == A64M_PRE && !a64_ls_unscaled(m.offset))
+   {
+      a64m_addsub(e, true, false, false, m.base, m.base, a64_opnd_imm((u64)m.offset), m.base == A64_SP);
+      a64m_ls_asm(e, op, rt, a64_mem_off(m.base, 0));
+   }
+   else
+      a64m_ls_asm(e, op, rt, m);
+}
+
+/* Load / store pairs, by the opcode of their signed offset form */
+#define A64_STPW 0x29000000u
+#define A64_LDPW 0x29400000u
+#define A64_STPX 0xA9000000u
+#define A64_LDPX 0xA9400000u
+#define A64_STPS 0x2D000000u
+#define A64_LDPS 0x2D400000u
+
+/* A pair at [@base] */
+static INLINE void a64m_lsp_base(a64_emit *e, u32 op, int rt, int rt2, int base)
+{
+   a64_dw(e, (op & ~0x01800000u) | (2u << 23) | ((u32)rt2 << 10) | ((u32)base << 5) | (u32)rt);
+}
+
+/* VIXL's LoadStorePairMacro() (@size: log2 of a register's) */
+static INLINE void a64m_lsp(a64_emit *e, u32 op, unsigned size, int rt, int rt2, a64_mem m)
+{
+   const u32 mode = m.mode == A64M_PRE ? 3 : m.mode == A64M_POST ? 1 : 2;
+   if ((m.offset & ((1 << size) - 1)) == 0 && (m.offset >> size) >= -64 && (m.offset >> size) < 64)
+      a64_dw(e, (op & ~0x01800000u) | (mode << 23) | (((u32)(m.offset >> size) & 0x7f) << 15)
+            | ((u32)rt2 << 10) | ((u32)m.base << 5) | (u32)rt);
+   else if (m.mode == A64M_OFFSET)
+   {
+      a64m_addsub(e, true, false, false, A64_IP0, m.base, a64_opnd_imm((u64)m.offset), m.base == A64_SP);
+      a64m_lsp_base(e, op, rt, rt2, A64_IP0);
+   }
+   else if (m.mode == A64M_POST)
+   {
+      a64m_lsp_base(e, op, rt, rt2, m.base);
+      a64m_addsub(e, true, false, false, m.base, m.base, a64_opnd_imm((u64)m.offset), m.base == A64_SP);
+   }
+   else
+   {
+      a64m_addsub(e, true, false, false, m.base, m.base, a64_opnd_imm((u64)m.offset), m.base == A64_SP);
+      a64m_lsp_base(e, op, rt, rt2, m.base);
+   }
+}
+
+/* cbz / cbnz (@nz) wt or xt (@sf), tbz / tbnz rt, #bit to a label */
+static INLINE void a64m_cbz(a64_emit *e, bool nz, bool sf, int rt, a64_label *l)
+{
+   u32 *from = e->p;
+   a64_dw(e, (sf ? 0x80000000u : 0) | (nz ? 0x35000000u : 0x34000000u) | (u32)rt);
+   a64_label_use(e, from, l);
+}
+
+static INLINE void a64m_tbz(a64_emit *e, bool nz, int rt, unsigned bit, a64_label *l)
+{
+   u32 *from = e->p;
+   a64_dw(e, ((bit & 32) ? 0x80000000u : 0) | (nz ? 0x37000000u : 0x36000000u) | ((bit & 31) << 19) | (u32)rt);
+   a64_label_use(e, from, l);
+}
+
+/* Floating point */
+#define A64_FMUL_S 0x1E200800u
+#define A64_FDIV_S 0x1E201800u
+#define A64_FADD_S 0x1E202800u
+#define A64_FSUB_S 0x1E203800u
+static INLINE void a64m_fp3(a64_emit *e, u32 op, int rd, int rn, int rm)
+{
+   a64_dw(e, op | ((u32)rm << 16) | ((u32)rn << 5) | (u32)rd);
+}
+
+/* fmov sd, sn (always: it clears the rest of the register); fabs, fneg,
+ * fsqrt; fcvt sd, dn; fcmp sn, sm */
+#define A64_FMOV_S  0x1E204000u
+#define A64_FABS_S  0x1E20C000u
+#define A64_FNEG_S  0x1E214000u
+#define A64_FSQRT_S 0x1E21C000u
+#define A64_FCVT_SD 0x1E624000u
+static INLINE void a64m_fp2(a64_emit *e, u32 op, int rd, int rn)
+{
+   a64_dw(e, op | ((u32)rn << 5) | (u32)rd);
+}
+
+static INLINE void a64m_fcmp(a64_emit *e, int rn, int rm)
+{
+   a64_dw(e, 0x1E202000u | ((u32)rm << 16) | ((u32)rn << 5));
+}
+
+/* fmov sd, wn / wd, sn; fcvtzs wd, sn; scvtf sd, wn */
+static INLINE void a64m_fmov_sw(a64_emit *e, int sd, int wn) { a64_dw(e, 0x1E270000u | ((u32)wn << 5) | (u32)sd); }
+static INLINE void a64m_fmov_ws(a64_emit *e, int wd, int sn) { a64_dw(e, 0x1E260000u | ((u32)sn << 5) | (u32)wd); }
+static INLINE void a64m_fcvtzs(a64_emit *e, int wd, int sn) { a64_dw(e, 0x1E380000u | ((u32)sn << 5) | (u32)wd); }
+static INLINE void a64m_scvtf(a64_emit *e, int sd, int wn) { a64_dw(e, 0x1E220000u | ((u32)wn << 5) | (u32)sd); }
+
+/* fmadd sd, sn, sm, sa */
+static INLINE void a64m_fmadd(a64_emit *e, int rd, int rn, int rm, int ra)
+{
+   a64_dw(e, 0x1F000000u | ((u32)rm << 16) | ((u32)ra << 10) | ((u32)rn << 5) | (u32)rd);
+}
+
+/* Fmov(sd, float): one instruction where the value is one, from wzr where it
+ * is 0, from the literal pool otherwise */
+static INLINE void a64m_fmov_imm(a64_emit *e, a64_pool *pool, int sd, u32 bits)
+{
+   const u32 b_pattern = (bits >> 16) & 0x3e00;
+   if ((bits & 0x7ffff) == 0 && (b_pattern == 0 || b_pattern == 0x3e00)
+         && ((bits ^ (bits << 1)) & 0x40000000) != 0)
+   {
+      const u32 imm8 = ((bits >> 24) & 0x80) | ((bits >> 19) & 0x7f);
+      a64_dw(e, 0x1E201000u | (imm8 << 13) | (u32)sd);
+   }
+   else if (bits == 0)
+      a64m_fmov_sw(e, sd, A64_ZR);
+   else
+      a64m_ldr_lit(e, pool, 0x1C000000u, sd, bits);
 }
 
 #endif

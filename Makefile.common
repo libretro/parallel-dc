@@ -4,8 +4,7 @@ LIBRETRO_COMM_DIR = $(CORE_DIR)/core/libretro-common
 INCFLAGS    += -I$(CORE_DIR)/core/libretro \
 					-I$(CORE_DIR)/core/ \
 					-I$(DEPS_DIR) \
-					-I$(LIBRETRO_COMM_DIR)/include \
-					-I$(DEPS_DIR)/vixl
+					-I$(LIBRETRO_COMM_DIR)/include
 
 SOURCES_C   ?=
 SOURCES_CXX := \
@@ -430,24 +429,11 @@ endif
 # Recompiler (ARM64)
 ifneq ($(filter $(WITH_DYNAREC), arm64 aarch64),)
 	DYNAREC_USED = 1
-	# (for macOS, what it has is in rec_arm64.cpp, in Apple's syntax)
+	# (for macOS, what it has is in rec_arm64.c, in Apple's syntax)
 	ifeq (,$(findstring osx,$(platform)))
 	SOURCES_ASM += $(CORE_DIR)/core/rec-ARM64/ngen_arm64.S
 	endif
-	SOURCES_CXX += $(CORE_DIR)/core/rec-ARM64/rec_arm64.cpp \
-					$(DEPS_DIR)/vixl/code-buffer-vixl.cc \
-					$(DEPS_DIR)/vixl/compiler-intrinsics-vixl.cc \
-					$(DEPS_DIR)/vixl/cpu-features.cc \
-					$(DEPS_DIR)/vixl/utils-vixl.cc \
-					$(DEPS_DIR)/vixl/aarch64/assembler-aarch64.cc \
-					$(DEPS_DIR)/vixl/aarch64/decoder-aarch64.cc \
-					$(DEPS_DIR)/vixl/aarch64/disasm-aarch64.cc \
-					$(DEPS_DIR)/vixl/aarch64/instructions-aarch64.cc \
-					$(DEPS_DIR)/vixl/aarch64/logic-aarch64.cc \
-					$(DEPS_DIR)/vixl/aarch64/macro-assembler-aarch64.cc \
-					$(DEPS_DIR)/vixl/aarch64/operands-aarch64.cc \
-					$(DEPS_DIR)/vixl/aarch64/pointer-auth-aarch64.cc \
-					$(DEPS_DIR)/vixl/aarch64/simulator-aarch64.cc
+	SOURCES_C += $(CORE_DIR)/core/rec-ARM64/rec_arm64.c
 endif
 endif
 

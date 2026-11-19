@@ -1,3 +1,7 @@
+/* posix_memalign(), which a C89 compile of the C library's headers leaves out */
+#ifndef _DEFAULT_SOURCE
+#define _DEFAULT_SOURCE
+#endif
 #include <stdlib.h>
 #include <string.h>
 #include "ta_ctx.h"

@@ -11,13 +11,19 @@
  * hashed as which thing they are, and where in it, rather than as numbers,
  * so that the hash is the same in every build of this. On 32-bit x86, where
  * any constant could be taken for one, the SH4's context is put at an
- * address of its own instead, and only what can only be an address is. */
+ * address of its own instead, and only what can only be an address is.
+ *
+ * Built for AArch64 it is the AArch64 one (core/rec-ARM64/rec_arm64.c,
+ * sh tools/sh4/arm64_run.sh), which puts addresses in its code as numbers
+ * that take one to four instructions: there everything it reaches but
+ * code it calls - the SH4's context, its memory, the code cache and the
+ * functions it only takes the address of - is at an address of its own. */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <setjmp.h>
 #include "types.h"
-#if HOST_CPU == CPU_X86
+#if HOST_CPU == CPU_X86 || HOST_CPU == CPU_ARM64
 #include <sys/mman.h>
 #endif
 #include "hw/sh4/sh4_if.h"
@@ -53,7 +59,7 @@ static u32 rnd(void) { rng ^= rng << 13; rng ^= rng >> 17; rng ^= rng << 5; retu
 static u16 DYNACALL read16(u32 addr) { return code[((addr - code_base) / 2) & 0xffff]; }
 ReadMem16Func IReadMem16 = read16;
 const char *bm_BlockHash(RuntimeBlockInfo *block) { (void)block; return "-"; }
-void os_DebugBreak(void) { fprintf(stderr, "verify failed\n"); abort(); }
+void os_DebugBreak(void) { fprintf(stderr, "verify failed %p\n", __builtin_return_address(0)); abort(); }
 
 void bm_OpPush(RuntimeBlockInfo *block, const shil_opcode *op)
 {
@@ -85,7 +91,9 @@ WriteMem8Func WriteMem8 = wr8;
 WriteMem16Func WriteMem16 = wr16;
 WriteMem32Func WriteMem32 = wr32;
 WriteMem64Func WriteMem64 = wr64;
+#if HOST_CPU != CPU_ARM64
 f32_x2 sin_table[0x10000];
+#endif
 retro_log_printf_t log_cb;
 
 void bm_OpInsert(RuntimeBlockInfo *block, u32 at, const shil_opcode *op)
@@ -203,8 +211,41 @@ void DYNACALL rec_x86_do_sqw_nommu_local(u32 addr, u8 *sqb);
 void DYNACALL rec_x86_blockcheckfail(u32 pc);
 void * DYNACALL ngen_link(u8 *after, u32 pc);
 #define LINK_SITE 6
+#define REC_ARM64 0
+#elif HOST_CPU == CPU_ARM64
+#define REC_X86 0
+#define REC_ARM64 1
+static int rec_cpu;
+s32 rec_arm64_mem_load8(u32 addr);
+s32 rec_arm64_mem_load16(u32 addr);
+u32 rec_arm64_mem_load32(u32 addr);
+u64 rec_arm64_mem_load64(u32 addr);
+void rec_arm64_mem_store8(u32 addr, u32 data);
+void rec_arm64_mem_store16(u32 addr, u32 data);
+void rec_arm64_mem_store32(u32 addr, u32 data);
+void rec_arm64_mem_store64(u32 addr, u64 data);
+u8 rec_arm64_read_noex8(u32 addr, u32 unused, u32 pc);
+u16 rec_arm64_read_noex16(u32 addr, u32 unused, u32 pc);
+u32 rec_arm64_read_noex32(u32 addr, u32 unused, u32 pc);
+u64 rec_arm64_read_noex64(u32 addr, u32 unused, u32 pc);
+void rec_arm64_write_noex8(u32 addr, u8 data, u32 pc);
+void rec_arm64_write_noex16(u32 addr, u16 data, u32 pc);
+void rec_arm64_write_noex32(u32 addr, u32 data, u32 pc);
+void rec_arm64_write_noex64(u32 addr, u64 data, u32 pc);
+void rec_arm64_interpreter_fallback(u16 op, OpCallFP *oph, u32 pc);
+void rec_arm64_do_sqw_mmu_no_ex(u32 addr, u32 pc);
+void do_sqw_nommu_area_3(u32 dst, u8 *sqb);
+/* (arm64_run.sh's, at addresses of their own: never run) */
+void ngen_blockcheckfail(u32 pc);
+void ngen_LinkBlock_Generic_stub(void);
+void ngen_LinkBlock_cond_Branch_stub(void);
+void ngen_LinkBlock_cond_Next_stub(void);
+void ngen_FailedToFindBlock_mmu(void);
+void ngen_FailedToFindBlock_nommu(void);
+#define LINK_SITE 4
 #else
 #define REC_X86 0
+#define REC_ARM64 0
 #define rec_cpu rec_x64_cpu
 extern int rec_x64_cpu;
 s32 rec_x64_mem_load8(u32 addr);
@@ -235,15 +276,23 @@ void ngen_call_keep_xmm(void);
 #endif
 #define LINK_SITE 7
 #endif
+#if !REC_ARM64
 extern int cycle_counter;
+#endif
 /* (sh4_core.h's: which has macros for the registers' names) */
 bool UpdateSR(void);
 void UpdateFPSCR(void);
 
 /* the code cache */
 #define CACHE_SIZE (4 << 20)
+#if REC_ARM64
+/* (run, for the main loop: within a branch of the functions called) */
+#define CACHE_AT 0x04000000u
+static u8 *cache, *cache_at, *cache_base;
+#else
 static DECL_ALIGN(16) u8 cache[CACHE_SIZE];
 static u8 *cache_at = cache, *cache_base = cache;
+#endif
 void *emit_GetCCPtr(void) { return cache_at; }
 void emit_Skip(u32 sz) { cache_at += sz; }
 u32 emit_FreeSpace(void) { return (u32)(cache + CACHE_SIZE - cache_at); }
@@ -251,9 +300,23 @@ void emit_SetBaseAddr(void) { cache_base = cache_at; }
 void (*ngen_FailedToFindBlock)(void);
 
 /* the guest's memory, a few of its registers and the tables of pages */
-static DECL_ALIGN(16) u8 ram[0x1000000];
+#define RAM_BYTES 0x1000000
+#if REC_ARM64
+/* (the SH4's context, the wait sites, its memory, the system bus's
+ * registers, sin_table and sh4_write_gen, at addresses that are the same in
+ * every build: arm64_run.sh puts the last two there) */
+#define FIXED_AT 0x60000000u
+#define FIXED_SIZE 0x10000000u
+#define SITES_AT 0x69000000u
+#define RAM_AT 0x6A000000u
+#define AREA0_REGS ((uintptr_t)0x6B000000u)
+static u8 *const ram = (u8 *)(uintptr_t)RAM_AT;
+#else
+static DECL_ALIGN(16) u8 ram[RAM_BYTES];
+#endif
 /* where the system bus's registers are said to be */
-#if REC_X86
+#if REC_ARM64
+#elif REC_X86
 /* (the SH4's context, at an address that is the same in every build, the
  * wait sites after it; the guest's memory as the 512 MB layout says it is
  * mapped, never read) */
@@ -269,9 +332,11 @@ uintptr_t mmu_write_lut[0x100000];
 u8 *virt_ram_base;
 bool vmem_4gb_space;
 const u32 fast_reg_lut[8] = { 0, 0, 0, 0, 1, 1, 1, 1 };
+#if !REC_ARM64
 u32 sh4_write_gen;
+#endif
 static WaitSite *sites;
-#if !REC_X86
+#if !REC_X86 && !REC_ARM64
 static Sh4RCB rcb_room;
 static WaitSite sites_room[16];
 #endif
@@ -342,7 +407,19 @@ u32 mmu_data_translation_w32(u32 va, u32 *rv) { *rv = va ^ 0x1000; return MMU_ER
 u32 mmu_data_translation_w64(u32 va, u32 *rv) { *rv = va; return MMU_ERROR_NONE; }
 void mmu_lut_fill(u32 va, u32 pa, bool write) { (void)va; (void)pa; (void)write; }
 void DoMMUException(u32 addr, u32 error, u32 type) { (void)addr; (void)error; (void)type; }
+#if !REC_ARM64
 bool Do_Exception(u32 epc, u32 expEvn, u32 CallVect) { (void)epc; (void)expEvn; (void)CallVect; return true; }
+#else
+bool Do_Exception(u32 epc, u32 expEvn, u32 CallVect);
+unsigned RAM_SIZE = 16 * 1024 * 1024;
+u64 DYNACALL mmu_ReadMemNoEx_c(u32 adr, u32 size, u32 *ex) { *ex = 0; return adr + size; }
+u32 DYNACALL mmu_WriteMemNoEx_c(u32 adr, u64 data, u32 size) { sink = adr + (u32)data + size; return 0; }
+void vmem_platform_flush_cache(void *icache_start, void *icache_end, void *dcache_start, void *dcache_end)
+{
+	(void)icache_start; (void)icache_end; (void)dcache_start; (void)dcache_end;
+}
+u32 DYNACALL rdv_DoInterrupts(void *block_code) { (void)block_code; return 0; }
+#endif
 int UpdateINTC(void) { return 5; }
 bool SRdecode(void) { return false; }
 int UpdateSystem_INTC(void) { return 0; }
@@ -519,6 +596,7 @@ static void mix_imm32(u32 v)
 
 static u32 rd32le(const u8 *p) { return (u32)p[0] | (u32)p[1] << 8 | (u32)p[2] << 16 | (u32)p[3] << 24; }
 
+#if !REC_ARM64
 /* The instruction at @p: its length, 0 if it is none the recompiler
  * makes. Hashed, with what in it is an address as what that is. */
 static u32 mix_insn(const u8 *p)
@@ -698,6 +776,86 @@ static u32 mix_insn(const u8 *p)
 	return len;
 }
 
+#endif
+
+#if REC_ARM64
+/* The literals the code before has loads of, by where they are (as words
+ * from the start of what is hashed): 4 or 8 bytes, or an address */
+#define POOL_MAX 0x4000
+static u8 literal_kind[POOL_MAX];
+static intptr_t literal_words;
+
+/* The instruction at @p: 4 bytes, with a branch out of the code cache
+ * hashed as where it goes. A literal load notes what it loads. */
+static u32 mix_insn_at(const u8 *p, const u8 *start)
+{
+	const u32 insn = rd32le(p);
+	if ((insn & 0x7C000000u) == 0x14000000u)
+	{
+		const s32 words = (s32)(insn << 6) >> 6;
+		const uintptr_t to = (uintptr_t)(p + (intptr_t)words * 4);
+		if (to < (uintptr_t)cache || to >= (uintptr_t)cache + CACHE_SIZE)
+		{
+			mix(insn & 0xFC000000u);
+			mix_target(to);
+			return 4;
+		}
+	}
+	if (start != NULL && ((insn & 0xBF000000u) == 0x18000000u || (insn & 0xFF000000u) == 0x1C000000u))
+	{
+		/* ldr wt / xt / st, literal */
+		const s32 words = (s32)(insn << 8) >> 13;
+		const intptr_t at = (p - start) / 4 + words;
+		if ((insn & 31) != 31 && at >= 0 && at < literal_words)
+			literal_kind[at] = (insn & 0x40000000u) ? 8 : 4;
+	}
+	mix(insn);
+	return 4;
+}
+
+static u32 mix_insn(const u8 *p)
+{
+	return mix_insn_at(p, NULL);
+}
+
+/* (SH4_TEST_TRACE set: what is hashed, as code, on stderr) */
+static bool trace;
+
+static void mix_code(const u8 *code_at, u32 size)
+{
+	u32 at;
+	if ((size & 3) != 0 || size / 4 > POOL_MAX)
+	{
+		printf("FAIL: %u bytes of code\n", size);
+		exit(1);
+	}
+	memset(literal_kind, 0, size / 4);
+	literal_words = size / 4;
+	for (at = 0; at < size;)
+	{
+		const u32 kind = literal_kind[at / 4];
+		if (kind == 8 && at + 8 <= size)
+		{
+			/* a 64-bit literal: maybe an address */
+			mix(0x11780000u);
+			mix_imm64((u64)rd32le(code_at + at) | (u64)rd32le(code_at + at + 4) << 32);
+			at += 8;
+		}
+		else if (kind == 4)
+		{
+			mix(0x11740000u);
+			mix(rd32le(code_at + at));
+			at += 4;
+		}
+		else
+			at += mix_insn_at(code_at + at, code_at);
+		if (trace)
+			fprintf(stderr, "%08x %08x %08x\n", at, rd32le(code_at + at - 4), h);
+	}
+	if (trace)
+		fprintf(stderr, "--\n");
+}
+#else
 static void mix_code(const u8 *code_at, u32 size)
 {
 	u32 at = 0;
@@ -729,6 +887,7 @@ static void mix_code(const u8 *code_at, u32 size)
 		exit(1);
 	}
 }
+#endif
 
 static void know_all(void)
 {
@@ -746,6 +905,21 @@ static void know_all(void)
 		(const void *)(uintptr_t)&rec_x86_do_sqw_nommu_local, (const void *)(uintptr_t)&rec_x86_blockcheckfail,
 		(const void *)(uintptr_t)&ngen_link, (const void *)(uintptr_t)&bm_GetCodeByVAddr,
 		(const void *)(uintptr_t)&rdv_FailedToFindBlock, (const void *)(uintptr_t)&UpdateSystem_INTC,
+#elif REC_ARM64
+		(const void *)(uintptr_t)&rec_arm64_mem_load8, (const void *)(uintptr_t)&rec_arm64_mem_load16,
+		(const void *)(uintptr_t)&rec_arm64_mem_load32, (const void *)(uintptr_t)&rec_arm64_mem_load64,
+		(const void *)(uintptr_t)&rec_arm64_mem_store8, (const void *)(uintptr_t)&rec_arm64_mem_store16,
+		(const void *)(uintptr_t)&rec_arm64_mem_store32, (const void *)(uintptr_t)&rec_arm64_mem_store64,
+		(const void *)(uintptr_t)&rec_arm64_read_noex8, (const void *)(uintptr_t)&rec_arm64_read_noex16,
+		(const void *)(uintptr_t)&rec_arm64_read_noex32, (const void *)(uintptr_t)&rec_arm64_read_noex64,
+		(const void *)(uintptr_t)&rec_arm64_write_noex8, (const void *)(uintptr_t)&rec_arm64_write_noex16,
+		(const void *)(uintptr_t)&rec_arm64_write_noex32, (const void *)(uintptr_t)&rec_arm64_write_noex64,
+		(const void *)(uintptr_t)&rec_arm64_interpreter_fallback, (const void *)(uintptr_t)&rec_arm64_do_sqw_mmu_no_ex,
+		(const void *)(uintptr_t)&do_sqw_nommu_area_3, (const void *)(uintptr_t)&ngen_blockcheckfail,
+		(const void *)(uintptr_t)&ngen_LinkBlock_Generic_stub, (const void *)(uintptr_t)&ngen_LinkBlock_cond_Branch_stub,
+		(const void *)(uintptr_t)&ngen_LinkBlock_cond_Next_stub, (const void *)(uintptr_t)&ngen_FailedToFindBlock_mmu,
+		(const void *)(uintptr_t)&ngen_FailedToFindBlock_nommu, (const void *)(uintptr_t)&UpdateSystem,
+		(const void *)(uintptr_t)&bm_GetCodeByVAddr, (const void *)(uintptr_t)&rdv_DoInterrupts,
 #else
 		(const void *)(uintptr_t)&rec_x64_mem_load8, (const void *)(uintptr_t)&rec_x64_mem_load16,
 		(const void *)(uintptr_t)&rec_x64_mem_load32, (const void *)(uintptr_t)&rec_x64_mem_load64,
@@ -781,14 +955,16 @@ static void know_all(void)
 			know(functions[i], 1, 1 + i);
 	know(rcb, sizeof(*rcb), 100);
 	know(code, sizeof(code), 101);
-	know(ram, sizeof(ram), 102);
+	know(ram, RAM_BYTES, 102);
 	know((const void *)AREA0_REGS, 0x400, 103);
 	know(mmu_read_lut, sizeof(mmu_read_lut), 104);
 	know(mmu_write_lut, sizeof(mmu_write_lut), 105);
 	know(sites, 16 * sizeof(WaitSite), 106);
 	know(sin_table, sizeof(sin_table), 107);
 	know(&sh4_write_gen, sizeof(sh4_write_gen), 108);
+#if !REC_ARM64
 	know(&cycle_counter, sizeof(cycle_counter), 109);
+#endif
 	/* the interpreter's handlers, by the first opcode that has each */
 	for (i = 0; i < 0x10000; i++)
 	{
@@ -917,6 +1093,35 @@ static void random_kinds(void)
 
 static RuntimeBlockInfo compiled;
 
+#if REC_ARM64
+/* The block's end written again, the way RuntimeBlockInfo::Relink() has
+ * it: to the blocks it goes to, as known, and to none */
+static void links(RuntimeBlockInfo *b)
+{
+	u8 *const code_at = (u8 *)(uintptr_t)b->code;
+	const u32 size = b->host_code_size;
+	static u8 keep[0x10000];
+	int which;
+	if (size > sizeof(keep))
+		return;
+	memcpy(keep, code_at, size);
+	for (which = 0; which < 3; which++)
+	{
+		u32 n;
+		link_to.code = (DynarecCodeEntryPtr)(uintptr_t)(cache_at + 64 * (rnd() & 7));
+		b->pBranchBlock = which != 1 ? &link_to : NULL;
+		b->pNextBlock = which != 0 ? &link_to : NULL;
+		same_place = (rnd() & 1) != 0;
+		n = ngen_Relink(b);
+		mix(0x4C490000u | (u32)which);
+		mix(n);
+		/* (nothing it writes has a literal) */
+		mix_code(code_at + b->relink_offset, n);
+	}
+	b->pBranchBlock = b->pNextBlock = NULL;
+	memcpy(code_at, keep, size);
+}
+#else
 /* Every way out of the block linked and unlinked, the way ngen_link() and
  * ngen_Relink() do it */
 static void links(RuntimeBlockInfo *b)
@@ -977,14 +1182,21 @@ static void links(RuntimeBlockInfo *b)
 	}
 	link_from = NULL;
 }
+#endif
 
 /* Each fast memory access in the block rewritten as a call */
 static void rewrites(RuntimeBlockInfo *b)
 {
 	u8 *const code_at = (u8 *)(uintptr_t)b->code;
 	u32 at = 0;
+#if REC_ARM64
+	/* (the code, not the literals after it) */
+	const u32 end = b->host_opcodes * 4;
+#else
+	const u32 end = b->host_code_size;
+#endif
 	link_from = b;
-	while (at < b->host_code_size)
+	while (at < end)
 	{
 		u8 keep[16];
 		unat pc = (unat)(code_at + at);
@@ -1008,6 +1220,8 @@ static void compile(RuntimeBlockInfo *b)
 	const bool optimise = (r & 0x18) != 0;
 #if REC_X86
 	static const int cpus[4] = { 0, 2, 0, 2 };
+#elif REC_ARM64
+	static const int cpus[4] = { 0, 0, 0, 0 };
 #else
 	static const int cpus[4] = { 0, 2, 3, 7 };
 #endif
@@ -1019,6 +1233,10 @@ static void compile(RuntimeBlockInfo *b)
 	b->read_only = ((r >> 13) & 1) != 0;
 	b->link_at[0] = b->link_at[1] = 0;
 	b->linked_entry = 0;
+#if REC_ARM64
+	/* (where the block is, as against the address it runs at) */
+	b->addr = b->vaddr & 0x1FFFFFFF;
+#endif
 	b->pBranchBlock = b->pNextBlock = NULL;
 	cache_at = cache_base;
 	ngen_Compile(b, force_checks, false, false, optimise);
@@ -1067,6 +1285,22 @@ int main(int argc, char **argv)
 		rcb = (Sh4RCB *)fixed;
 		sites = (WaitSite *)(fixed + sizeof(Sh4RCB));
 	}
+#elif REC_ARM64
+	{
+		u8 *fixed = (u8 *)mmap((void *)(uintptr_t)FIXED_AT, FIXED_SIZE, PROT_READ | PROT_WRITE,
+				MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+		cache = (u8 *)mmap((void *)(uintptr_t)CACHE_AT, CACHE_SIZE, PROT_READ | PROT_WRITE | PROT_EXEC,
+				MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+		if (fixed != (u8 *)(uintptr_t)FIXED_AT || cache != (u8 *)(uintptr_t)CACHE_AT
+				|| sizeof(Sh4RCB) > SITES_AT - FIXED_AT)
+		{
+			printf("FAIL: no memory at %08x and %08x\n", FIXED_AT, CACHE_AT);
+			return 1;
+		}
+		cache_at = cache_base = cache;
+		rcb = (Sh4RCB *)fixed;
+		sites = (WaitSite *)(uintptr_t)SITES_AT;
+	}
 #else
 	rcb = &rcb_room;
 	sites = sites_room;
@@ -1084,6 +1318,19 @@ int main(int argc, char **argv)
 	know_all();
 
 	ngen_init();
+#if REC_ARM64
+	trace = getenv("SH4_TEST_TRACE") != NULL;
+	/* the main loop, made as it is run, with the MMU off and on: it comes
+	 * back at once */
+	settings.dreamcast.FullMMU = false;
+	ngen_ResetBlocks();
+	ngen_mainloop(&p_sh4rcb->cntx);
+	settings.dreamcast.FullMMU = true;
+	ngen_ResetBlocks();
+	ngen_mainloop(&p_sh4rcb->cntx);
+	settings.dreamcast.FullMMU = false;
+	emit_SetBaseAddr();
+#endif
 	mix((u32)(cache_base - cache));
 	mix_code(cache, (u32)(cache_base - cache));
 
