@@ -1222,7 +1222,7 @@ _end:
 		/* That only sees a loop that is one block. A game's wait is often
 		 * several - Soul Calibur's calls a function that does nothing on
 		 * every pass. The x86-64 recompiler tells those by watching them
-		 * run (WaitSite in rec_x64.cpp). The others still need the list of
+		 * run (WaitSite, wait_site.h). The others still need the list of
 		 * blocks known to be in one, which this core has always had: with
 		 * the block's real cycles a game on it would spin its loop three
 		 * times as often as before. */

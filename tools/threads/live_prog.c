@@ -116,7 +116,7 @@ static u32 __attribute__((noinline)) scanline(void)
  * written, until what the function reads has changed. Under the accurate
  * SH4 timing the x86-64 recompiler tells such a loop for what it is by
  * watching it and gives up the rest of each time slice (WaitSite, in
- * rec_x64.cpp); this is here so that the live test runs one. wait_vblank()
+ * wait_site.h); this is here so that the live test runs one. wait_vblank()
  * above keeps a count, and is rightly not taken for one. */
 static void __attribute__((noinline)) wait_line(u32 line)
 {

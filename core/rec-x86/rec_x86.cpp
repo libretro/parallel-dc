@@ -18,7 +18,7 @@
 */
 /* The SH4 recompiler for 32-bit x86, with xbyak.
  *
- * It does what the x86-64 one (rec-x64/rec_x64.cpp) does, the same way and
+ * It does what the x86-64 one (rec-x64/rec_x64.c) does, the same way and
  * in the same places, so that the two run a game the same to the cycle:
  * a block's cycles come off the counter where it ends, the time slice is
  * looked at in the same places, wait loops are found the same way, and the

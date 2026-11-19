@@ -6,9 +6,9 @@ name: Vulkan negotiation
 # And the host's side of the SH4's address space on Windows, under wine:
 # tools/mem/vmem_platform_run.sh; and the faults the core takes for its own
 # there: tools/mem/fault_run.sh; and the SH4 decoder, wait sites, SSA
-# optimizer, block manager, driver and register allocator:
-# tools/sh4/decoder_run.sh, wait_site_run.sh, ssa_run.sh,
-# blockmanager_run.sh, driver_run.sh, regalloc_run.sh.
+# optimizer, block manager, driver, register allocator and x86-64
+# recompiler: tools/sh4/decoder_run.sh, wait_site_run.sh, ssa_run.sh,
+# blockmanager_run.sh, driver_run.sh, regalloc_run.sh, x64_run.sh.
 # Then the HDR output (Color Format), the frames run and the pictures read
 # back: tools/vulkan/vk_hdr.sh; and its HLSL, which Direct3D 11 and 12
 # draw with, against the GLSL: tools/vulkan/hdr_hlsl.sh. And ACES 2.0
@@ -79,7 +79,9 @@ on:
       - 'tools/sh4/blockmanager_*'
       - 'tools/sh4/driver_*'
       - 'tools/sh4/regalloc_*'
+      - 'tools/sh4/x64_*'
       - 'core/rec-x64/**'
+      - 'core/jit/**'
       - 'core/deps/xbyak/**'
       - 'core/node_pool.h'
       - 'core/rend/hdr/**'
@@ -175,7 +177,9 @@ on:
       - 'tools/sh4/blockmanager_*'
       - 'tools/sh4/driver_*'
       - 'tools/sh4/regalloc_*'
+      - 'tools/sh4/x64_*'
       - 'core/rec-x64/**'
+      - 'core/jit/**'
       - 'core/deps/xbyak/**'
       - 'core/node_pool.h'
       - 'core/rend/hdr/**'
@@ -397,6 +401,8 @@ jobs:
           WINDOWS=1 sh tools/sh4/blockmanager_run.sh 20000
           WINDOWS=1 sh tools/sh4/driver_run.sh 20000
           WINDOWS=1 sh tools/sh4/regalloc_run.sh 5000
+      - name: The x86-64 recompiler's code on Windows, as the C++ made it (wine)
+        run: WINDOWS=1 sh tools/sh4/x64_run.sh 5000
       - name: The Direct3D renderers' thread ahead and their shader file (TSan, ASan/UBSan, no threads, Windows), and the band pool on Windows
         run: |
           sh tools/rend/d3d_warm_test.sh
