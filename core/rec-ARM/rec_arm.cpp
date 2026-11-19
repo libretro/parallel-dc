@@ -206,12 +206,7 @@ void StoreSh4Reg_mem(eReg Rt,u32 Sh4_Reg, eCC CC=CC_AL)
 	STR(Rt, r8, shRegOffs, Offset, CC);
 }
 
-//#define OLD_REGALLOC
-#ifdef OLD_REGALLOC
-#include "hw/sh4/dyna/regalloc.h"
-#else
 #include "hw/sh4/dyna/ssa_regalloc.h"
-#endif
 
 #ifdef __MACH__
 eReg alloc_regs[]={r5,r6,r7,r10,(eReg)-1};

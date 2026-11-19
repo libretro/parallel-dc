@@ -459,7 +459,8 @@ SOURCES_C += $(CORE_DIR)/core/node_pool.c \
 		$(CORE_DIR)/core/hw/sh4/dyna/wait_site.c \
 		$(CORE_DIR)/core/hw/sh4/dyna/ssa.c \
 		$(CORE_DIR)/core/hw/sh4/dyna/blockmanager.c \
-		$(CORE_DIR)/core/hw/sh4/dyna/driver.c
+		$(CORE_DIR)/core/hw/sh4/dyna/driver.c \
+		$(CORE_DIR)/core/hw/sh4/dyna/ssa_regalloc.c
 endif
 
 SOURCES_C += $(CORE_DIR)/core/libretro/libretro.c

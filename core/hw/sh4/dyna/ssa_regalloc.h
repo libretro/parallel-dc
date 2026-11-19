@@ -18,653 +18,144 @@
     You should have received a copy of the GNU General Public License
     along with reicast.  If not, see <https://www.gnu.org/licenses/>.
  */
-#pragma once
+#ifndef SH4_DYNA_SSA_REGALLOC_H
+#define SH4_DYNA_SSA_REGALLOC_H
 #include "types.h"
 #include "decoder.h"
 #include "hw/sh4/modules/mmu.h"
 #include "ssa.h"
 
-#define ssa_printf(...) DEBUG_LOG(DYNAREC, __VA_ARGS__)
-
-/* AllocVec2: a pair of the SH4's floating-point registers that an
+/* The register allocator: the SH4's registers a block uses are kept in
+ * host registers from where they are first read or written, written back
+ * where something after needs them in memory, spilled when there are no
+ * more host registers. The recompiler is called back to load a register
+ * into a host one and to write one back (an integer register or a
+ * floating-point one). Host registers are numbered as the recompiler has
+ * them.
+ *
+ * With alloc_vec2, a pair of the SH4's floating-point registers that an
  * instruction takes as one (DRn and XDn: FMOV with FPSCR.SZ set, FSCA) is
  * given two host registers like any other, in place of being written back
  * before the instruction and read from memory by it. Wider vectors (FVn,
  * XMTRX) are left in memory either way. */
+
+#define SH4_REGALLOC_HOST_MAX 64
+
+typedef struct sh4_regalloc sh4_regalloc;
+typedef void (*sh4_regalloc_cb)(sh4_regalloc *ra, u32 reg, u32 host_reg);
+
+typedef struct sh4_reg_alloc
+{
+	u32 host_reg;
+	u16 version;
+	bool write_back;
+	bool dirty;
+} sh4_reg_alloc;
+
+/* the host registers free, the next taken from the back (a ring: one
+ * given back goes to the front) */
+typedef struct sh4_host_regs
+{
+	u32 regs[SH4_REGALLOC_HOST_MAX];
+	u32 head, n;
+} sh4_host_regs;
+
+struct sh4_regalloc
+{
+	sh4_regalloc_cb preload, writeback, preload_fpu, writeback_fpu;
+	void *user;
+	u32 max_vec;
+	RuntimeBlockInfo *block;
+	sh4_host_regs gregs, fregs;
+	/* registers spilled for a destination, let go at the end of the op */
+	Sh4RegType pending_flushes[sh4_reg_count];
+	u32 pending_count;
+	/* the guest registers in host ones: a register's entry, and a bit each
+	 * for those that have one (in register order, as they are gone through) */
+	sh4_reg_alloc alloced[sh4_reg_count];
+	u64 alloced_bits[2];
+	int opnum;
+	bool final_opend;
+	bool fast_forwarding;
+	u32 spills;
+};
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+void sh4_regalloc_init(sh4_regalloc *ra, bool alloc_vec2, sh4_regalloc_cb preload, sh4_regalloc_cb writeback,
+		sh4_regalloc_cb preload_fpu, sh4_regalloc_cb writeback_fpu, void *user);
+/* A block to be compiled, with the host registers there are for it */
+void sh4_regalloc_begin(sh4_regalloc *ra, RuntimeBlockInfo *block, const u32 *gregs, u32 gregs_count,
+		const u32 *fregs, u32 fregs_count);
+/* Around each operation, in order (@opid its place) */
+void sh4_regalloc_op_begin(sh4_regalloc *ra, const shil_opcode *op, int opid);
+void sh4_regalloc_op_end(sh4_regalloc *ra, const shil_opcode *op);
+/* as it is at operation @num, nothing loaded or written back on the way */
+void sh4_regalloc_set_opnum(sh4_regalloc *ra, int num);
+/* whether a parameter is in host registers: any, integer, floating-point */
+bool sh4_regalloc_is_alloc_any(const sh4_regalloc *ra, const shil_param *prm);
+bool sh4_regalloc_is_allocg(const sh4_regalloc *ra, const shil_param *prm);
+bool sh4_regalloc_is_allocf(const sh4_regalloc *ra, const shil_param *prm);
+/* the host register it is in; of a pair, the @index'th */
+u32 sh4_regalloc_mapg(const sh4_regalloc *ra, const shil_param *prm);
+u32 sh4_regalloc_mapf(const sh4_regalloc *ra, const shil_param *prm, int index);
+/* whether a host register (@fpu: a floating-point one) holds a register */
+bool sh4_regalloc_reg_used(const sh4_regalloc *ra, u32 host_reg, bool fpu);
+/* The block done: everything written back, the host registers let go */
+void sh4_regalloc_cleanup(sh4_regalloc *ra);
+
+#ifdef __cplusplus
+}
+
+/* (for the recompilers in C++: the host registers of their own types, and
+ * the loads and write-backs theirs) */
 template<typename nreg_t, typename nregf_t, bool AllocVec2 = false>
 class RegAlloc
 {
 public:
-	RegAlloc() {}
+	RegAlloc()
+	{
+		sh4_regalloc_init(&ra, AllocVec2, preload_cb, writeback_cb, preload_fpu_cb, writeback_fpu_cb, this);
+	}
 	virtual ~RegAlloc() {}
 
 	void DoAlloc(RuntimeBlockInfo* block, const nreg_t* regs_avail, const nregf_t* regsf_avail)
 	{
-		this->block = block;
-		ssa_add_versions(block);
-
-		verify(host_gregs.empty());
+		u32 g[SH4_REGALLOC_HOST_MAX], f[SH4_REGALLOC_HOST_MAX], ng = 0, nf = 0;
 		while (*regs_avail != (nreg_t)-1)
-			host_gregs.push_back(*regs_avail++);
-
-		verify(host_fregs.empty());
+			g[ng++] = (u32)*regs_avail++;
 		while (*regsf_avail != (nregf_t)-1)
-			host_fregs.push_back(*regsf_avail++);
+			f[nf++] = (u32)*regsf_avail++;
+		ra.user = this;
+		sh4_regalloc_begin(&ra, block, g, ng, f, nf);
 	}
-
-	void OpBegin(shil_opcode* op, int opid)
-	{
-		opnum = opid;
-		if (op->op == shop_ifb)
-		{
-			FlushAllRegs(true);
-		}
-		else if (mmu_enabled() && (op->op == shop_readm || op->op == shop_writem || op->op == shop_pref))
-		{
-			FlushAllRegs(false);
-		}
-		else if (op->op == shop_sync_sr)
-		{
-			//FlushReg(reg_sr_T, true);
-			FlushReg(reg_sr_status, true);
-			FlushReg(reg_old_sr_status, true);
-			for (int i = reg_r0; i <= reg_r7; i++)
-				FlushReg((Sh4RegType)i, true);
-			for (int i = reg_r0_Bank; i <= reg_r7_Bank; i++)
-				FlushReg((Sh4RegType)i, true);
-		}
-		else if (op->op == shop_sync_fpscr)
-		{
-			FlushReg(reg_fpscr, true);
-			FlushReg(reg_old_fpscr, true);
-			for (int i = reg_fr_0; i <= reg_xf_15; i++)
-				FlushReg((Sh4RegType)i, true);
-		}
-		else if (op->op == shop_div1)
-		{
-			// reads and writes Q and M where the status register is kept
-			FlushReg(reg_sr_status, true);
-		}
-		// Flush regs used by vector ops
-		if (op->rs1.is_reg() && op->rs1.count() > MaxVecSize)
-		{
-			for (int i = 0; i < op->rs1.count(); i++)
-				FlushReg((Sh4RegType)(op->rs1._reg + i), false);
-		}
-		if (op->rs2.is_reg() && op->rs2.count() > MaxVecSize)
-		{
-			for (int i = 0; i < op->rs2.count(); i++)
-				FlushReg((Sh4RegType)(op->rs2._reg + i), false);
-		}
-		if (op->rs3.is_reg() && op->rs3.count() > MaxVecSize)
-		{
-			for (int i = 0; i < op->rs3.count(); i++)
-				FlushReg((Sh4RegType)(op->rs3._reg + i), false);
-		}
-		if (op->op != shop_ifb)
-		{
-			AllocSourceReg(op->rs1);
-			AllocSourceReg(op->rs2);
-			AllocSourceReg(op->rs3);
-			// Hard flush vector ops destination regs
-			// Note that this is incorrect if a reg is both src (scalar) and dest (vec). However such an op doesn't exist.
-			if (op->rd.is_reg() && op->rd.count() > MaxVecSize)
-			{
-				for (int i = 0; i < op->rd.count(); i++)
-				{
-					verify(!IsAlloced((Sh4RegType)(op->rd._reg + i)) || !alloced[op->rd._reg + i].write_back);
-					FlushReg((Sh4RegType)(op->rd._reg + i), true);
-				}
-			}
-			if (op->rd2.is_reg() && op->rd2.count() > MaxVecSize)
-			{
-				for (int i = 0; i < op->rd2.count(); i++)
-				{
-					verify(!IsAlloced((Sh4RegType)(op->rd2._reg + i)) || !alloced[op->rd2._reg + i].write_back);
-					FlushReg((Sh4RegType)(op->rd2._reg + i), true);
-				}
-			}
-			AllocDestReg(op->rd);
-			AllocDestReg(op->rd2);
-		}
-		ssa_printf("%08x  %s gregs %zd fregs %zd\n", block->vaddr + op->guest_offs, op->dissasm().c_str(), host_gregs.size(), host_fregs.size());
-	}
-
-	void OpEnd(shil_opcode* op)
-	{
-		for (u32 pi = 0; pi < pending_count; pi++)
-		{
-			const Sh4RegType reg = pending_flushes[pi];
-			verify(!alloced[reg].write_back);
-			Free(reg);
-		}
-		pending_count = 0;
-
-		// Flush normally
-		for (int reg = NextAlloced(-1); reg >= 0; reg = NextAlloced(reg))
-		{
-			FlushReg((Sh4RegType)reg, false);
-		}
-
-		// Hard flush all dirty regs. Useful for troubleshooting
-//		while (!NoneAlloced())
-//		{
-//			const Sh4RegType it = (Sh4RegType)NextAlloced(-1);
-//
-//			if (alloced[it].dirty)
-//				alloced[it].write_back = true;
-//			FlushReg(it, true);
-//		}
-
-		// Final writebacks
-		if (op >= &block->oplist[block->op_count - 1])
-		{
-			FlushAllRegs(false);
-			final_opend = true;
-		}
-	}
-
-	void SetOpnum(int num)
-	{
-		fast_forwarding = true;
-		for (int i = 0; i < num; i++)
-		{
-			shil_opcode* op = &block->oplist[i];
-			OpBegin(op, i);
-			OpEnd(op);
-		}
-		OpBegin(&block->oplist[num], num);
-		fast_forwarding = false;
-	}
-
-	bool IsAllocAny(const shil_param& prm)
-	{
-		if (prm.is_reg())
-		{
-			bool rv = IsAllocAny(prm._reg);
-			if (prm.count() != 1)
-			{
-				for (u32 i = 1;i < prm.count(); i++)
-					verify(IsAllocAny((Sh4RegType)(prm._reg + i)) == rv);
-			}
-			return rv;
-		}
-		else
-		{
-			return false;
-		}
-	}
-
-	bool IsAllocg(const shil_param& prm)
-	{
-		if (prm.is_reg())
-		{
-			if (prm.count() > MaxVecSize)
-				return false;
-			return IsAllocg(prm._reg);
-		}
-		else
-		{
-			return false;
-		}
-	}
-
-	bool IsAllocf(const shil_param& prm)
-	{
-		if (prm.is_reg())
-		{
-			if (prm.count() > MaxVecSize)
-				return false;
-			return IsAllocf(prm._reg);
-		}
-		else
-		{
-			return false;
-		}
-	}
-
-	nreg_t mapg(const shil_param& prm)
-	{
-		verify(IsAllocg(prm));
-		verify(prm.count() == 1);
-		return mapg(prm._reg);
-	}
-
-	// index: which register of a pair
-	nregf_t mapf(const shil_param& prm, int index = 0)
-	{
-		verify(IsAllocf(prm));
-		verify(index >= 0 && (u32)index < prm.count() && prm.count() <= MaxVecSize);
-		return mapf((Sh4RegType)(prm._reg + index));
-	}
-
-	bool reg_used(nreg_t host_reg)
-	{
-		for (int reg = NextAlloced(-1); reg >= 0; reg = NextAlloced(reg))
-			if ((nreg_t)alloced[reg].host_reg == host_reg && !IsFloat((Sh4RegType)reg))
-				return true;
-		return false;
-	}
-
-	bool regf_used(nregf_t host_reg)
-	{
-		for (int reg = NextAlloced(-1); reg >= 0; reg = NextAlloced(reg))
-			if ((nregf_t)alloced[reg].host_reg == host_reg && IsFloat((Sh4RegType)reg))
-				return true;
-		return false;
-	}
-
-	void Cleanup() {
-		verify(final_opend || (block->op_count == 0));
-		final_opend = false;
-		FlushAllRegs(true);
-		verify(NoneAlloced());
-		verify(pending_count == 0);
-		block = NULL;
-		host_fregs.clear();
-		host_gregs.clear();
-	}
+	void OpBegin(shil_opcode* op, int opid) { sh4_regalloc_op_begin(&ra, op, opid); }
+	void OpEnd(shil_opcode* op) { sh4_regalloc_op_end(&ra, op); }
+	void SetOpnum(int num) { sh4_regalloc_set_opnum(&ra, num); }
+	bool IsAllocAny(const shil_param& prm) { return sh4_regalloc_is_alloc_any(&ra, &prm); }
+	bool IsAllocg(const shil_param& prm) { return sh4_regalloc_is_allocg(&ra, &prm); }
+	bool IsAllocf(const shil_param& prm) { return sh4_regalloc_is_allocf(&ra, &prm); }
+	nreg_t mapg(const shil_param& prm) { return (nreg_t)sh4_regalloc_mapg(&ra, &prm); }
+	/* index: which register of a pair */
+	nregf_t mapf(const shil_param& prm, int index = 0) { return (nregf_t)sh4_regalloc_mapf(&ra, &prm, index); }
+	bool reg_used(nreg_t host_reg) { return sh4_regalloc_reg_used(&ra, (u32)host_reg, false); }
+	bool regf_used(nregf_t host_reg) { return sh4_regalloc_reg_used(&ra, (u32)host_reg, true); }
+	void Cleanup() { sh4_regalloc_cleanup(&ra); }
 
 	virtual void Preload(u32 reg, nreg_t nreg) = 0;
 	virtual void Writeback(u32 reg, nreg_t nreg) = 0;
-
 	virtual void Preload_FPU(u32 reg, nregf_t nreg) = 0;
 	virtual void Writeback_FPU(u32 reg, nregf_t nreg) = 0;
 
 private:
-	struct reg_alloc {
-		u32 host_reg;
-		u16 version;
-		bool write_back;
-		bool dirty;
-	};
-	static constexpr u32 MaxVecSize = AllocVec2 ? 2 : 1;
-
-	bool IsFloat(Sh4RegType reg)
-	{
-		return reg >= reg_fr_0 && reg <= reg_xf_15;
-	}
-
-	nreg_t mapg(Sh4RegType reg)
-	{
-		verify(IsAlloced(reg));
-		return (nreg_t)alloced[reg].host_reg;
-	}
-
-	nregf_t mapf(Sh4RegType reg)
-	{
-		verify(IsAlloced(reg));
-		return (nregf_t)alloced[reg].host_reg;
-	}
-
-	bool IsAllocf(Sh4RegType reg)
-	{
-		if (!IsFloat(reg))
-			return false;
-		return IsAlloced(reg);
-	}
-
-	bool IsAllocg(Sh4RegType reg)
-	{
-		if (IsFloat(reg))
-			return false;
-		return IsAlloced(reg);
-	}
-
-	bool IsAllocAny(Sh4RegType reg)
-	{
-		return IsAllocg(reg) || IsAllocf(reg);
-	}
-
-	void WriteBackReg(Sh4RegType reg_num, struct reg_alloc& reg_alloc)
-	{
-		if (reg_alloc.write_back)
-		{
-			if (!fast_forwarding)
-			{
-				ssa_printf("WB %s.%d <- %cx\n", name_reg(reg_num).c_str(), reg_alloc.version, 'a' + reg_alloc.host_reg);
-				if (IsFloat(reg_num))
-					Writeback_FPU(reg_num, (nregf_t)reg_alloc.host_reg);
-				else
-					Writeback(reg_num, (nreg_t)reg_alloc.host_reg);
-			}
-			reg_alloc.write_back = false;
-			reg_alloc.dirty = false;
-		}
-	}
-
-	void FlushReg(Sh4RegType reg_num, bool hard)
-	{
-		if (IsAlloced(reg_num))
-		{
-			WriteBackReg(reg_num, alloced[reg_num]);
-			if (hard)
-			{
-				u32 host_reg = alloced[reg_num].host_reg;
-				Free(reg_num);
-				if (IsFloat(reg_num))
-					host_fregs.push_front((nregf_t)host_reg);
-				else
-					host_gregs.push_front((nreg_t)host_reg);
-			}
-		}
-	}
-
-	void FlushAllRegs(bool hard)
-	{
-		if (hard)
-		{
-			while (!NoneAlloced())
-				FlushReg((Sh4RegType)NextAlloced(-1), true);
-		}
-		else
-		{
-			for (int reg = NextAlloced(-1); reg >= 0; reg = NextAlloced(reg))
-				FlushReg((Sh4RegType)reg, false);
-		}
-	}
-
-	void AllocSourceReg(const shil_param& param)
-	{
-		if (!param.is_reg() || param.count() > MaxVecSize)
-			return;
-		for (u32 i = 0; i < param.count(); i++)
-		{
-			const Sh4RegType sh4reg = (Sh4RegType)(param._reg + i);
-			if (!IsAlloced(sh4reg))
-			{
-				u32 host_reg;
-				if (param.is_r32i())
-				{
-					if (host_gregs.empty())
-					{
-						SpillReg(false, true);
-						verify(!host_gregs.empty());
-					}
-					host_reg = host_gregs.back();
-					host_gregs.pop_back();
-				}
-				else
-				{
-					if (host_fregs.empty())
-					{
-						SpillReg(true, true);
-						verify(!host_fregs.empty());
-					}
-					host_reg = host_fregs.back();
-					host_fregs.pop_back();
-				}
-				Alloc(sh4reg, { host_reg, (u16)param.version[i], false, false });
-				if (!fast_forwarding)
-				{
-					ssa_printf("PL %s.%d -> %cx\n", name_reg(sh4reg).c_str(), param.version[i], 'a' + host_reg);
-					if (IsFloat(sh4reg))
-						Preload_FPU(sh4reg, (nregf_t)host_reg);
-					else
-						Preload(sh4reg, (nreg_t)host_reg);
-				}
-			}
-		}
-	}
-
-	bool NeedsWriteBack(Sh4RegType reg, u32 version)
-	{
-		for (int i = opnum + 1; i < block->op_count; i++)
-		{
-			shil_opcode* op = &block->oplist[i];
-			// if a subsequent op needs all or some regs flushed to mem
-			// TODO we could look at the ifb op to optimize what to flush
-			if (op->op == shop_ifb || (mmu_enabled() && (op->op == shop_readm || op->op == shop_writem || op->op == shop_pref)))
-				return true;
-			if (op->op == shop_sync_sr && (/*reg == reg_sr_T ||*/ reg == reg_sr_status || reg == reg_old_sr_status || (reg >= reg_r0 && reg <= reg_r7)
-					|| (reg >= reg_r0_Bank && reg <= reg_r7_Bank)))
-				return true;
-			if (op->op == shop_sync_fpscr && (reg == reg_fpscr || reg == reg_old_fpscr || (reg >= reg_fr_0 && reg <= reg_xf_15)))
-				return true;
-			if (op->op == shop_div1 && reg == reg_sr_status)
-				return true;
-			// if reg is used by a subsequent vector op that doesn't use reg allocation
-			if (UsesReg(op, reg, version, true))
-				return true;
-			// no writeback needed if redefined
-			if (DefsReg(op, reg, true))
-				return false;
-			if (DefsReg(op, reg, false))
-				return false;
-		}
-
-		return true;
-	}
-
-	void AllocDestReg(const shil_param& param)
-	{
-		if (!param.is_reg() || param.count() > MaxVecSize)
-			return;
-		for (u32 i = 0; i < param.count(); i++)
-		{
-			const Sh4RegType sh4reg = (Sh4RegType)(param._reg + i);
-			if (!IsAlloced(sh4reg))
-			{
-				u32 host_reg;
-				if (param.is_r32i())
-				{
-					if (host_gregs.empty())
-					{
-						SpillReg(false, false);
-						verify(!host_gregs.empty());
-					}
-					host_reg = host_gregs.back();
-					host_gregs.pop_back();
-				}
-				else
-				{
-					if (host_fregs.empty())
-					{
-						SpillReg(true, false);
-						verify(!host_fregs.empty());
-					}
-					host_reg = host_fregs.back();
-					host_fregs.pop_back();
-				}
-				Alloc(sh4reg, { host_reg, (u16)param.version[i], NeedsWriteBack(sh4reg, param.version[i]), true });
-				ssa_printf("   %s.%d -> %cx %s\n", name_reg(sh4reg).c_str(), param.version[i], 'a' + host_reg, alloced[sh4reg].write_back ? "(wb)" : "");
-			}
-			else
-			{
-				reg_alloc& reg = alloced[sh4reg];
-				verify(!reg.write_back);
-				reg.write_back = NeedsWriteBack(sh4reg, param.version[i]);
-				reg.dirty = true;
-				reg.version = param.version[i];
-			}
-			verify(alloced[sh4reg].dirty);
-		}
-	}
-
-	void SpillReg(bool freg, bool source)
-	{
-		Sh4RegType spilled_reg = Sh4RegType::NoReg;
-		int latest_use = -1;
-
-		for (int ri = NextAlloced(-1); ri >= 0; ri = NextAlloced(ri))
-		{
-			const Sh4RegType reg_first = (Sh4RegType)ri;
-			const reg_alloc& reg_second = alloced[ri];
-			if (IsFloat(reg_first) != freg)
-				continue;
-			// Don't spill already spilled regs
-			bool pending = false;
-			for (u32 pi = 0; pi < pending_count; pi++)
-				if (pending_flushes[pi] == reg_first)
-				{
-					pending = true;
-					break;
-				}
-			if (pending)
-				continue;
-
-			// Don't spill current op scalar dest regs
-			shil_opcode* op = &block->oplist[opnum];
-			if (DefsReg(op, reg_first, false))
-				continue;
-
-			// Find the first use, but ignore vec ops
-			int first_use = -1;
-			for (int i = opnum + (source ? 0 : 1); i < block->op_count; i++)
-			{
-				op = &block->oplist[i];
-				// Vector ops don't use reg alloc
-				if (UsesReg(op, reg_first, reg_second.version, false))
-				{
-					first_use = i;
-					break;
-				}
-			}
-			if (first_use == -1)
-			{
-				latest_use = -1;
-				spilled_reg = reg_first;
-				break;
-			}
-			if (first_use > latest_use && first_use > opnum)
-			{
-				latest_use = first_use;
-				spilled_reg = reg_first;
-			}
-		}
-		if (latest_use != -1)
-		{
-			ssa_printf("RegAlloc: non optimal alloc? reg %s used in op %d\n", name_reg(spilled_reg).c_str(), latest_use);
-			spills++;
-			// need to write-back if dirty so reload works
-			if (alloced[spilled_reg].dirty)
-				alloced[spilled_reg].write_back = true;
-		}
-		verify(spilled_reg != Sh4RegType::NoReg);
-
-		if (source)
-			FlushReg(spilled_reg, true);
-		else
-		{
-			// Delay the eviction of spilled regs from the map due to dest register allocation.
-			// It's possible that the same host reg is allocated to a source operand
-			// and to the (future) dest operand. In this case we want to keep both mappings
-			// until the current op is done.
-			WriteBackReg(spilled_reg, alloced[spilled_reg]);
-			u32 host_reg = alloced[spilled_reg].host_reg;
-			if (IsFloat(spilled_reg))
-				host_fregs.push_front((nregf_t)host_reg);
-			else
-				host_gregs.push_front((nreg_t)host_reg);
-			verify(pending_count < sh4_reg_count);
-			pending_flushes[pending_count++] = spilled_reg;
-		}
-	}
-
-	bool IsVectorOp(shil_opcode* op)
-	{
-		return op->rs1.count() > MaxVecSize || op->rs2.count() > MaxVecSize || op->rs3.count() > MaxVecSize
-				|| op->rd.count() > MaxVecSize || op->rd2.count() > MaxVecSize;
-	}
-
-	bool UsesReg(shil_opcode* op, Sh4RegType reg, u32 version, bool vector)
-	{
-		if (op->rs1.is_reg() && reg >= op->rs1._reg && reg < (Sh4RegType)(op->rs1._reg + op->rs1.count())
-				&& version == op->rs1.version[reg - op->rs1._reg]
-				&& vector == (op->rs1.count() > MaxVecSize))
-			return true;
-		if (op->rs2.is_reg() && reg >= op->rs2._reg && reg < (Sh4RegType)(op->rs2._reg + op->rs2.count())
-				&& version == op->rs2.version[reg - op->rs2._reg]
-				&& vector == (op->rs2.count() > MaxVecSize))
-			return true;
-		if (op->rs3.is_reg() && reg >= op->rs3._reg && reg < (Sh4RegType)(op->rs3._reg + op->rs3.count())
-				&& version == op->rs3.version[reg - op->rs3._reg]
-				&& vector == (op->rs3.count() > MaxVecSize))
-			return true;
-
-		return false;
-	}
-
-	bool DefsReg(shil_opcode* op, Sh4RegType reg, bool vector)
-	{
-		if (op->rd.is_reg() && reg >= op->rd._reg && reg < (Sh4RegType)(op->rd._reg + op->rd.count())
-				&& vector == (op->rd.count() > MaxVecSize))
-			return true;
-		if (op->rd2.is_reg() && reg >= op->rd2._reg && reg < (Sh4RegType)(op->rd2._reg + op->rd2.count())
-				&& vector == (op->rd2.count() > MaxVecSize))
-			return true;
-		return false;
-	}
-
-	RuntimeBlockInfo* block = NULL;
-	/* The host registers free, the next taken from the back (a ring: one
-	 * given back goes to the front) */
-	template<typename T>
-	struct HostRegs
-	{
-		enum { Max = 64 };
-		T regs[Max];
-		u32 head = 0, n = 0;
-		bool empty() const { return n == 0; }
-		size_t size() const { return n; }
-		void clear() { head = n = 0; }
-		void push_back(T v) { verify(n < Max); regs[(head + n++) % Max] = v; }
-		void push_front(T v) { verify(n < Max); head = (head + Max - 1) % Max; regs[head] = v; n++; }
-		T back() const { return regs[(head + n - 1) % Max]; }
-		void pop_back() { n--; }
-	};
-	HostRegs<nreg_t> host_gregs;
-	HostRegs<nregf_t> host_fregs;
-	/* Registers spilled for a destination, let go at the end of the op */
-	Sh4RegType pending_flushes[sh4_reg_count];
-	u32 pending_count = 0;
-	/* The guest registers in host ones: a register's entry, and a bit each
-	 * for those that have one (in register order, as they are gone through) */
-	static_assert(sh4_reg_count <= 128, "two words of bits");
-	reg_alloc alloced[sh4_reg_count] = {};
-	u64 alloced_bits[2] = {};
-	bool IsAlloced(Sh4RegType reg) const
-	{
-		return reg >= 0 && reg < sh4_reg_count && ((alloced_bits[reg >> 6] >> (reg & 63)) & 1) != 0;
-	}
-	/* the first one with a host register after @after (-1: from the start); -1 if none */
-	int NextAlloced(int after) const
-	{
-		for (int w = (after + 1) >> 6; w < 2; w++)
-		{
-			u64 bits = alloced_bits[w];
-			if (w == (after + 1) >> 6)
-				bits &= ~0ull << ((after + 1) & 63);
-			if (bits != 0)
-			{
-				int b = 0;
-				while ((bits & 1) == 0)
-				{
-					bits >>= 1;
-					b++;
-				}
-				return w * 64 + b;
-			}
-		}
-		return -1;
-	}
-	bool NoneAlloced() const { return (alloced_bits[0] | alloced_bits[1]) == 0; }
-	void Alloc(Sh4RegType reg, const reg_alloc& a)
-	{
-		alloced[reg] = a;
-		alloced_bits[reg >> 6] |= 1ull << (reg & 63);
-	}
-	void Free(Sh4RegType reg)
-	{
-		alloced[reg] = reg_alloc();
-		alloced_bits[reg >> 6] &= ~(1ull << (reg & 63));
-	}
-	int opnum = 0;
-
-	bool final_opend = false;
-	bool fast_forwarding = false;
-public:
-	u32 spills = 0;
+	static void preload_cb(sh4_regalloc *alloc, u32 reg, u32 host) { ((RegAlloc *)alloc->user)->Preload(reg, (nreg_t)host); }
+	static void writeback_cb(sh4_regalloc *alloc, u32 reg, u32 host) { ((RegAlloc *)alloc->user)->Writeback(reg, (nreg_t)host); }
+	static void preload_fpu_cb(sh4_regalloc *alloc, u32 reg, u32 host) { ((RegAlloc *)alloc->user)->Preload_FPU(reg, (nregf_t)host); }
+	static void writeback_fpu_cb(sh4_regalloc *alloc, u32 reg, u32 host) { ((RegAlloc *)alloc->user)->Writeback_FPU(reg, (nregf_t)host); }
+	sh4_regalloc ra;
 };
+#endif
 
-#undef printf
+#endif
