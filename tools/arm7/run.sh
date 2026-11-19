@@ -84,8 +84,16 @@ same() {
    fi
 }
 
+# $1: name, $2: how it is run (empty, or qemu): the program in ror0.txt
+ror0() {
+   CPSR=$(ARM7_TEST_PROGRAM="$WORK/ror0.txt" ARM7_TEST_CASE=0 $2 "$WORK/arm7_test_$1" | sed -n 's/.* cpsr \([0-9a-f]*\) .*/\1/p')
+   [ -n "$CPSR" ] && [ $((0x$CPSR & 0x20000000)) -ne 0 ] \
+      || { echo "FAIL: $1: ror by a register of 0 took the carry from bit 31 (cpsr ${CPSR:-none})" >&2; exit 1; }
+}
+
 # $1: name, $2: how it is run (empty, or qemu)
 check() {
+   ror0 "$1" "$2"
    $2 "$WORK/arm7_test_$1" "$PROGRAMS" > "$WORK/$1.txt"
    ARM7_TEST_INTERPRET=1 $2 "$WORK/arm7_test_$1" "$PROGRAMS" > "$WORK/$1-chosen.txt"
    ARM7_TEST_SWITCH=1 $2 "$WORK/arm7_test_$1" "$PROGRAMS" > "$WORK/$1-switched.txt"
@@ -143,6 +151,11 @@ for P in $PIDS; do
 done
 
 "$WORK/arm7_test_interp" "$PROGRAMS" > "$WORK/interp.txt"
+# A rotation by a register whose low byte is 0 leaves the carry as it is
+# (it was taken from bit 31): mov r8, #0x100; mov r7, #0; movs r0,
+# #0x80000000 (C set); bics r11, r3, r7, ror r8; and C has to be set still
+printf 'e3a08c01 e3a07000 e3b00102 e1d3b877 eafffffe\n' > "$WORK/ror0.txt"
+ror0 interp
 case $(uname -m) in
    x86_64|amd64)
       mv "$WORK/arm7_test_native" "$WORK/arm7_test_x64"

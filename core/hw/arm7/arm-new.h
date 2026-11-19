@@ -627,8 +627,8 @@
           C_OUT = (value & 0x80000000 ? true : false);\
         }\
       } else {\
+        /* (a rotation by 0 leaves the carry as it is) */\
         value = reg[opcode & 0x0F].I;\
-        C_OUT = (value & 0x80000000 ? true : false);\
       }\
       if(dest == 15) {\
         OPCODE2\
@@ -946,8 +946,8 @@
           C_OUT = (value & 0x80000000 ? true : false);\
         }\
       } else {\
+        /* (a rotation by 0 leaves the carry as it is) */\
         value = reg[opcode & 0x0F].I;\
-        C_OUT = (value & 0x80000000 ? true : false);\
       }\
       if(dest == 15) {\
         OPCODE2\
