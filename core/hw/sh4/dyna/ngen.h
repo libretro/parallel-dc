@@ -47,28 +47,28 @@
 
 /* (CC_RW2RX() and CC_RX2RW() are in blockmanager.h) */
 
-/* alternative emit ptr, set to 0 to use the main buffer */
-extern u32* emit_ptr;
-
 #ifdef __cplusplus
 extern "C" {
 #endif
 
+/* alternative emit ptr, set to 0 to use the main buffer */
+extern u32* emit_ptr;
+
 void emit_Write32(u32 data);
 void emit_Skip(u32 sz);
-u32 emit_FreeSpace();
-void* emit_GetCCPtr();
-void emit_SetBaseAddr();
+u32 emit_FreeSpace(void);
+void* emit_GetCCPtr(void);
+void emit_SetBaseAddr(void);
 
 /* Called from ngen_FailedToFindBlock */
 DynarecCodeEntryPtr DYNACALL rdv_FailedToFindBlock(u32 pc);
-DynarecCodeEntryPtr DYNACALL rdv_FailedToFindBlock_pc();
+DynarecCodeEntryPtr DYNACALL rdv_FailedToFindBlock_pc(void);
 /* Called when a block check failed, and the block needs to be invalidated */
 DynarecCodeEntryPtr DYNACALL rdv_BlockCheckFail(u32 addr);
 /* Called to compile code @pc */
 DynarecCodeEntryPtr rdv_CompilePC(u32 blockcheck_failures);
 /* Finds or compiles code @pc */
-DynarecCodeEntryPtr rdv_FindOrCompile();
+DynarecCodeEntryPtr rdv_FindOrCompile(void);
 
 /* code -> pointer to code of block, dpc -> if dynamic block, pc. if cond, 0 for next, 1 for branch */
 void* DYNACALL rdv_LinkBlock(u8* code,u32 dpc);
@@ -96,7 +96,7 @@ u32 DYNACALL rdv_DoInterrupts_pc(u32 pc);
 
 /* Stuff to be implemented per dynarec core */
 
-void ngen_init();
+void ngen_init(void);
 
 /* Called to compile a block */
 void ngen_Compile(RuntimeBlockInfo* block,bool force_checks, bool reset, bool staging,bool optimise);
@@ -105,13 +105,13 @@ void ngen_Compile(RuntimeBlockInfo* block,bool force_checks, bool reset, bool st
 void ngen_ResetBlocks(void);
 /* Value to be returned when the block manager failed to find a block, */
 /* should call rdv_FailedToFindBlock and then jump to the return value */
-extern void (*ngen_FailedToFindBlock)();
+extern void (*ngen_FailedToFindBlock)(void);
 /* the dynarec mainloop */
 void ngen_mainloop(void* cntx);
 /* ngen features */
 
 void ngen_GetFeatures(ngen_features* dst);
-void ngen_HandleException();
+void ngen_HandleException(void);
 
 /* Canonical callback interface */
 /* (ngen_CC_*(): shil.h) */

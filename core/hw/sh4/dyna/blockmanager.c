@@ -11,6 +11,8 @@
 #include "../sh4_core.h"
 #include "hw/sh4/sh4_mem.h"
 #include "hw/sh4/sh4_sched.h"
+#include "hw/sh4/sh4_mmr.h"
+#include "hw/sh4/modules/mmu.h"
 
 
 #if defined(__unix__) && defined(DYNA_OPROF)
@@ -27,17 +29,17 @@ op_agent_t          oprofHandle;
  * from its start to its end and only ever emptied whole. A block that
  * goes leaves its place (block NULL), until the cache is emptied. Each
  * holds its blocks. */
-struct BlockMapEntry
+typedef struct BlockMapEntry
 {
 	void *code;
 	RuntimeBlockInfo *block;
-};
-struct BlockMap
+} BlockMapEntry;
+typedef struct BlockMap
 {
 	BlockMapEntry *entries;
 	size_t count;
 	size_t room;
-};
+} BlockMap;
 /* [0]: the main cache's, [1]: the temporary cache's */
 static BlockMap blkmap[2];
 
@@ -93,7 +95,7 @@ static ptrdiff_t blkmap_find(const BlockMap *map, const void *code)
 static void blkmap_add(RuntimeBlockInfo *block)
 {
 	BlockMap *map = &blkmap[block->temp_block ? 1 : 0];
-	if (map->count != 0 && (u8 *)map->entries[map->count - 1].code >= (u8 *)block->code)
+	if (map->count != 0 && (u8 *)map->entries[map->count - 1].code >= (u8 *)(uintptr_t)block->code)
 	{
 		INFO_LOG(DYNAREC, "DUP: %p %08X %p\n", map->entries[map->count - 1].code, block->addr, block->code);
 		verify(false);
@@ -101,7 +103,7 @@ static void blkmap_add(RuntimeBlockInfo *block)
 	if (map->count == map->room
 			&& !bm_grow((void **)&map->entries, &map->room, map->room * 2 + 1024, sizeof(*map->entries)))
 		die("out of memory");
-	map->entries[map->count].code = (void *)block->code;
+	map->entries[map->count].code = (void *)(uintptr_t)block->code;
 	map->entries[map->count].block = block;
 	map->count++;
 }
@@ -111,7 +113,7 @@ static void blkmap_add(RuntimeBlockInfo *block)
 static void blkmap_remove(RuntimeBlockInfo *block)
 {
 	BlockMap *map = &blkmap[block->temp_block ? 1 : 0];
-	const ptrdiff_t i = blkmap_find(map, (void *)block->code);
+	const ptrdiff_t i = blkmap_find(map, (void *)(uintptr_t)block->code);
 	verify(i >= 0 && map->entries[i].block == block);
 	map->entries[i].block = NULL;
 }
@@ -194,14 +196,14 @@ static void lists_clear(void)
 		temp_list_remove(temp_blocks);
 }
 
-// Stats
+/* Stats */
 u32 protected_blocks;
 u32 unprotected_blocks;
 
-#define FPCA(x) ((DynarecCodeEntryPtr&)sh4rcb.fpcb[(x>>1)&FPCB_MASK])
+#define FPCA(x) (*(DynarecCodeEntryPtr *)&sh4rcb.fpcb[((x)>>1)&FPCB_MASK])
 
-// addr must be a physical address
-// This returns an executable address
+/* addr must be a physical address */
+/* This returns an executable address */
 static DynarecCodeEntryPtr DYNACALL bm_GetCode(u32 addr)
 {
 	DynarecCodeEntryPtr rv = FPCA(addr);
@@ -222,29 +224,29 @@ static DynarecCodeEntryPtr DYNACALL bm_GetCode(u32 addr)
  * it is forgotten whenever an address may have come to mean another page -
  * the MMU says when (bm_ForgetVaddrs()) - and whenever a block is made or
  * goes. */
-struct VaddrCode
+typedef struct VaddrCode
 {
 	u32 vaddr;
-	u32 when;		// bm_vaddr_time, and the address space in the low 8 bits
+	u32 when;		/* bm_vaddr_time, and the address space in the low 8 bits */
 	DynarecCodeEntryPtr code;
-};
+} VaddrCode;
 #define VADDRS_KEPT 4096
 static VaddrCode vaddrs_kept[VADDRS_KEPT];
 static u32 bm_vaddr_time = 256;
 
-void bm_ForgetVaddrs()
+void bm_ForgetVaddrs(void)
 {
 	bm_vaddr_time += 256;
 	if (bm_vaddr_time == 0)
 	{
-		// (once in sixteen million times)
+		/* (once in sixteen million times) */
 		memset(vaddrs_kept, 0, sizeof(vaddrs_kept));
 		bm_vaddr_time = 256;
 	}
 }
 
-// addr must be a virtual address
-// This returns an executable address
+/* addr must be a virtual address */
+/* This returns an executable address */
 DynarecCodeEntryPtr DYNACALL bm_GetCodeByVAddr(u32 addr)
 {
 #ifndef NO_MMU
@@ -256,29 +258,29 @@ DynarecCodeEntryPtr DYNACALL bm_GetCodeByVAddr(u32 addr)
 	{
 		const u32 asid = CCN_PTEH.ASID;
 		const u32 when = bm_vaddr_time | asid;
-		VaddrCode& kept = vaddrs_kept[((addr >> 1) ^ (asid << 7)) & (VADDRS_KEPT - 1)];
-
-		// (an odd address is never kept: see below)
-		if (kept.vaddr == addr && kept.when == when)
-			return kept.code;
-
+		VaddrCode *kept = &vaddrs_kept[((addr >> 1) ^ (asid << 7)) & (VADDRS_KEPT - 1)];
 		const u32 kept_addr = addr;
+		u32 paddr, rv;
+		DynarecCodeEntryPtr code;
+
+		/* (an odd address is never kept: see below) */
+		if (kept->vaddr == addr && kept->when == when)
+			return kept->code;
 
 		if (addr & 1)
 		{
 			switch (addr)
 			{
 #ifdef USE_WINCE_HACK
-			case 0xfffffde7: // GetTickCount
-				// This should make this syscall faster
+			case 0xfffffde7:	/* GetTickCount */
+				/* This should make this syscall faster */
 				r[0] = sh4_sched_now64() * 1000 / SH4_MAIN_CLOCK;
 				next_pc = pr;
 				break;
 
-			case 0xfffffd05: // QueryPerformanceCounter(u64 *)
+			case 0xfffffd05:	/* QueryPerformanceCounter(u64 *) */
 				{
-					u32 paddr;
-					if (mmu_data_translation<MMU_TT_DWRITE, u64>(r[4], paddr) == MMU_ERROR_NONE)
+					if (mmu_data_translation_w64(r[4], &paddr) == MMU_ERROR_NONE)
 					{
 						_vmem_WriteMem64(paddr, sh4_sched_now64() >> 4);
 						r[0] = 1;
@@ -299,16 +301,15 @@ DynarecCodeEntryPtr DYNACALL bm_GetCodeByVAddr(u32 addr)
 			addr = next_pc;
 		}
 
-		u32 paddr;
-		u32 rv = mmu_instruction_translation(addr, paddr);
+		rv = mmu_instruction_translation_c(addr, &paddr);
 		if (rv != MMU_ERROR_NONE)
 		{
 			DoMMUException(addr, rv, MMU_TT_IREAD);
-			mmu_instruction_translation(next_pc, paddr);
+			mmu_instruction_translation_c(next_pc, &paddr);
 			return bm_GetCode(paddr);
 		}
 
-		const DynarecCodeEntryPtr code = bm_GetCode(paddr);
+		code = bm_GetCode(paddr);
 
 		/* Kept if there is code, the address is the one that was asked for
 		 * (not where a system call or an exception went instead), and - the
@@ -317,28 +318,28 @@ DynarecCodeEntryPtr DYNACALL bm_GetCodeByVAddr(u32 addr)
 		if (code != ngen_FailedToFindBlock && kept_addr == addr && bm_vaddr_time == (when & ~0xFFu)
 				&& !(mmu_strict && CCN_MMUCR.SV))
 		{
-			kept.vaddr = addr;
-			kept.when = when;
-			kept.code = code;
+			kept->vaddr = addr;
+			kept->when = when;
+			kept->code = code;
 		}
 		return code;
 	}
 #endif
 }
 
-// addr must be a physical address
-// This returns an executable address
+/* addr must be a physical address */
+/* This returns an executable address */
 RuntimeBlockInfoPtr DYNACALL bm_GetBlock(u32 addr)
 {
-	DynarecCodeEntryPtr cde = bm_GetCode(addr);  // Returns RX ptr
+	DynarecCodeEntryPtr cde = bm_GetCode(addr);	/* Returns RX ptr */
 
 	if (cde == ngen_FailedToFindBlock)
 		return NULL;
 	else
-		return bm_GetBlock2((void*)cde);  // Returns RX ptr
+		return bm_GetBlock2((void*)(uintptr_t)cde);	/* Returns RX ptr */
 }
 
-// This takes a RX address and returns the info block ptr (RW space)
+/* This takes a RX address and returns the info block ptr (RW space) */
 RuntimeBlockInfoPtr bm_GetBlock2(void* dynarec_code)
 {
 	void *dynarecrw = CC_RX2RW(dynarec_code);
@@ -350,11 +351,11 @@ RuntimeBlockInfoPtr bm_GetBlock2(void* dynarec_code)
 		RuntimeBlockInfo *block;
 		if (i < 0)
 			continue;
-		// the block whose code starts there or before: it may not reach
+		/* the block whose code starts there or before: it may not reach */
 		block = blkmap[m].entries[i].block;
-		if (block == NULL || (u8*)block->code + block->host_code_size < (u8*)dynarecrw)
+		if (block == NULL || (u8*)(uintptr_t)block->code + block->host_code_size < (u8*)dynarecrw)
 			continue;
-		verify(block->contains_code((u8*)dynarecrw));
+		verify(bm_ContainsCode(block, (u8*)dynarecrw));
 		return block;
 	}
 	return NULL;
@@ -375,7 +376,7 @@ static size_t reset_batch = (size_t)-1;
 static size_t reset_end;
 static size_t temp_reset_end;
 
-static void bm_CleanupDeletedBlocks()
+static void bm_CleanupDeletedBlocks(void)
 {
 	size_t i;
 	for (i = 0; i < del_block_count; i++)
@@ -386,14 +387,14 @@ static void bm_CleanupDeletedBlocks()
 	temp_reset_end = 0;
 }
 
-// Takes RX pointer and returns a RW pointer
+/* Takes RX pointer and returns a RW pointer */
 RuntimeBlockInfoPtr bm_GetStaleBlock(void* dynarec_code)
 {
 	void *dynarecrw = CC_RX2RW(dynarec_code);
 	size_t i;
-	// Start from the end to get the youngest one
+	/* Start from the end to get the youngest one */
 	for (i = del_block_count; i-- > 0; )
-		if (del_blocks[i]->contains_code((u8*)dynarecrw))
+		if (bm_ContainsCode(del_blocks[i], (u8*)dynarecrw))
 			return del_blocks[i];
 
 	return NULL;
@@ -406,8 +407,8 @@ void bm_AddBlock(RuntimeBlockInfo* block)
 		temp_list_add(block);
 	blkmap_add(block);
 
-	verify((void*)bm_GetCode(block->addr) == (void*)ngen_FailedToFindBlock);
-	FPCA(block->addr) = (DynarecCodeEntryPtr)CC_RW2RX(block->code);
+	verify(bm_GetCode(block->addr) == ngen_FailedToFindBlock);
+	FPCA(block->addr) = (DynarecCodeEntryPtr)(uintptr_t)CC_RW2RX((void *)(uintptr_t)block->code);
 	bm_ForgetVaddrs();
 
 #ifdef DYNA_OPROF
@@ -430,7 +431,7 @@ void bm_DiscardBlock(RuntimeBlockInfo* block)
 {
 	RuntimeBlockInfo *const block_ptr = block;
 
-	// Remove from block map (its hold, del_blocks' below)
+	/* Remove from block map (its hold, del_blocks' below) */
 	blkmap_remove(block);
 
 	/* It jumps to its neighbours no longer, and they are told: a block
@@ -450,8 +451,8 @@ void bm_DiscardBlock(RuntimeBlockInfo* block)
 	block_ptr->pBranchBlock = NULL;
 	ngen_Relink(block_ptr);
 
-	// Remove from jump table
-	verify((void*)bm_GetCode(block_ptr->addr) == CC_RW2RX((void*)block_ptr->code));
+	/* Remove from jump table */
+	verify((void*)(uintptr_t)bm_GetCode(block_ptr->addr) == CC_RW2RX((void*)(uintptr_t)block_ptr->code));
 	FPCA(block_ptr->addr) = ngen_FailedToFindBlock;
 	bm_ForgetVaddrs();
 
@@ -462,7 +463,7 @@ void bm_DiscardBlock(RuntimeBlockInfo* block)
 	bm_BlockDiscard(block_ptr);
 }
 
-void bm_Periodical_1s()
+void bm_Periodical_1s(void)
 {
 	bm_CleanupDeletedBlocks();
 }
@@ -470,14 +471,16 @@ void bm_Periodical_1s()
 
 void bm_vmem_pagefill(void** ptr, u32 size_bytes)
 {
-	for (size_t i = 0; i < size_bytes / sizeof(ptr[0]); i++)
+	size_t i;
+	for (i = 0; i < size_bytes / sizeof(ptr[0]); i++)
 	{
-		ptr[i]=(void*)ngen_FailedToFindBlock;
+		ptr[i]=(void*)(uintptr_t)ngen_FailedToFindBlock;
 	}
 }
 
 void bm_Reset(void)
 {
+	u32 i, mirror;
 	bm_CleanupDeletedBlocks();
 	protected_blocks = 0;
 	unprotected_blocks = 0;
@@ -492,13 +495,13 @@ void bm_Reset(void)
 		static const u32 regions[] = { 0x0C000000, 0x8C000000, 0xAC000000, 0xCC000000 };
 		const u32 count = _nvmem_4gb_space() ? 4 : 1;
 
-		for (u32 i = 0; i < count; i++)
-			for (u32 mirror = 0; mirror < 0x04000000; mirror += RAM_SIZE)
+		for (i = 0; i < count; i++)
+			for (mirror = 0; mirror < 0x04000000; mirror += RAM_SIZE)
 				mem_region_unlock(virt_ram_base + regions[i] + mirror, RAM_SIZE);
 	}
 	else
 	{
-		mem_region_unlock(&mem_b[0], RAM_SIZE);
+		mem_region_unlock(&mem_b.data[0], RAM_SIZE);
 	}
 }
 
@@ -512,7 +515,7 @@ void bm_Reset(void)
  * have been, and what had been compiled from it went on being run. */
 static void bm_ProtectPage(u32 addr, bool protect)
 {
-	// P0, P1, P2, P3
+	/* P0, P1, P2, P3 */
 	static const u32 regions[] = { 0x0C000000, 0x8C000000, 0xAC000000, 0xCC000000 };
 	u32 count, i, mirror;
 
@@ -521,12 +524,12 @@ static void bm_ProtectPage(u32 addr, bool protect)
 	if (!_nvmem_enabled())
 	{
 		if (protect)
-			mem_region_lock(&mem_b[addr], PAGE_SIZE);
+			mem_region_lock(&mem_b.data[addr], PAGE_SIZE);
 		else
-			mem_region_unlock(&mem_b[addr], PAGE_SIZE);
+			mem_region_unlock(&mem_b.data[addr], PAGE_SIZE);
 		return;
 	}
-	count = _nvmem_4gb_space() ? ARRAY_SIZE(regions) : 1;
+	count = _nvmem_4gb_space() ? (u32)(sizeof(regions) / sizeof(regions[0])) : 1;
 	for (i = 0; i < count; i++)
 	{
 		/* with the MMU on, P0 and P3 are what it says they are, and
@@ -563,15 +566,18 @@ static void reset_one(RuntimeBlockInfo *block)
 	block->relink_data = 0;
 	block->pNextBlock = 0;
 	block->pBranchBlock = 0;
-	// needed for the transition to full mmu. Could perhaps limit it to the current block.
+	/* needed for the transition to full mmu. Could perhaps limit it to the current block. */
 	ngen_Relink(block);
-	// Avoid circular references
+	/* Avoid circular references */
 	bm_BlockDiscard(block);
 	del_blocks_push(block);
 }
 
 void bm_ResetCache(bool nothing_since)
 {
+	bool again;
+	size_t i;
+
 	bm_ForgetVaddrs();
 	ngen_ResetBlocks();
 	sh4_wait_sites_reset();
@@ -591,9 +597,9 @@ void bm_ResetCache(bool nothing_since)
 	 * last time and may be running still: one that wrote to the page its
 	 * own code is in - a variable next to it will do - and then did what
 	 * brings this about. */
-	const bool again = nothing_since && reset_batch <= del_block_count;
+	again = nothing_since && reset_batch <= del_block_count;
 
-	for (size_t i = again ? reset_batch : reset_end; i < del_block_count; i++)
+	for (i = again ? reset_batch : reset_end; i < del_block_count; i++)
 	{
 		RuntimeBlockInfo *block = del_blocks[i];
 
@@ -607,20 +613,20 @@ void bm_ResetCache(bool nothing_since)
 	if (!again)
 		reset_batch = del_block_count;
 
-	// blkmap includes temp blocks as well
+	/* blkmap includes temp blocks as well */
 	blkmap_take_all(reset_one);
 
 	reset_end = del_block_count;
 
 	lists_clear();
 
-	// every page may be protected again, when next something is compiled from it
+	/* every page may be protected again, when next something is compiled from it */
 	memset(unprotected_pages, 0, sizeof(unprotected_pages));
 
 #ifdef DYNA_OPROF
 	if (oprofHandle)
 	{
-		for (size_t i=0;i<del_block_count;i++)
+		for (i=0;i<del_block_count;i++)
 		{
 			if (op_unload_native_code(oprofHandle, (uint64_t)del_blocks[i]->code) != 0)
 			{
@@ -649,9 +655,17 @@ void bm_ResetTempCache(bool full)
 	/* (bm_DiscardBlock() takes each out of the list; with @full,
 	 * bm_ResetCache() has let the list go already) */
 	if (!full)
+	{
 		while (temp_blocks != NULL)
 			bm_DiscardBlock(temp_blocks);
-	// (the temporary blocks there are now may be written over from here on)
+		/* Its table started again, as the cache is: every place in it is
+		 * empty now, and the next block's code is at the cache's start, in
+		 * front of where the last one's was. Put after them, the table was
+		 * out of order for being searched by halves, and blocks in it were
+		 * not found (a fault in their code, bm_GetBlock2()). */
+		blkmap[1].count = 0;
+	}
+	/* (the temporary blocks there are now may be written over from here on) */
 	temp_reset_end = del_block_count;
 }
 
@@ -660,7 +674,7 @@ static void bm_RanOut(size_t made)
 	WARN_LOG(DYNAREC, "The recompiler's room: %u MB was not enough, more made\n", (unsigned)(made >> 20));
 }
 
-void bm_Init()
+void bm_Init(void)
 {
 	/* (a block discarded is put here, from the signal handler too: its
 	 * room made now, and kept when it is emptied) */
@@ -704,7 +718,7 @@ static void release_one(RuntimeBlockInfo *block)
 	bm_BlockUnref(block);
 }
 
-static void bm_ReleaseBlocks()
+static void bm_ReleaseBlocks(void)
 {
 	size_t i;
 	int m;
@@ -720,7 +734,7 @@ static void bm_ReleaseBlocks()
 }
 
 
-void bm_Term()
+void bm_Term(void)
 {
 #ifdef DYNA_OPROF
 	if (oprofHandle) op_close_agent(oprofHandle);
@@ -731,120 +745,6 @@ void bm_Term()
 	bm_Reset();
 }
 
-#if 0
-void sh4_jitsym(FILE* out)
-{
-	for (auto& it : blkmap)
-	{
-		RuntimeBlockInfoPtr& block = it.second;
-		fprintf(out, "%p %d %08X\n", block->code, block->host_code_size, block->addr);
-	}
-}
-
-u32 GetLookup(RuntimeBlockInfo* elem)
-{
-	return elem->lookups;
-}
-
-bool UDgreater ( RuntimeBlockInfo* elem1, RuntimeBlockInfo* elem2 )
-{
-	return elem1->runs > elem2->runs;
-}
-
-bool UDgreater2 ( RuntimeBlockInfo* elem1, RuntimeBlockInfo* elem2 )
-{
-	return elem1->runs*elem1->host_opcodes > elem2->runs*elem2->host_opcodes;
-}
-
-bool UDgreater3 ( RuntimeBlockInfo* elem1, RuntimeBlockInfo* elem2 )
-{
-	return elem1->runs*elem1->host_opcodes/elem1->guest_cycles > elem2->runs*elem2->host_opcodes/elem2->guest_cycles;
-}
-
-void bm_PrintTopBlocks()
-{
-	double total_lups=0;
-	double total_runs=0;
-	double total_cycles=0;
-	double total_hops=0;
-	double total_sops=0;
-
-	for (size_t i=0;i<all_blocks.size();i++)
-	{
-		total_lups+=GetLookup(all_blocks[i]);
-		total_cycles+=all_blocks[i]->runs*all_blocks[i]->guest_cycles;
-		total_hops+=all_blocks[i]->runs*all_blocks[i]->host_opcodes;
-		total_sops+=all_blocks[i]->runs*all_blocks[i]->guest_opcodes;
-		total_runs+=all_blocks[i]->runs;
-	}
-
-	INFO_LOG(DYNAREC, "Total lookups:  %.0fKRuns, %.0fKLuops, Total cycles: %.0fMhz, Total Hops: %.0fMips, Total Sops: %.0fMips!\n",total_runs/1000,total_lups/1000,total_cycles/1000/1000,total_hops/1000/1000,total_sops/1000/1000);
-	total_hops/=100;
-	total_cycles/=100;
-	total_runs/=100;
-
-	double sel_hops=0;
-	for (size_t i=0;i<(all_blocks.size()/100);i++)
-	{
-		INFO_LOG(DYNAREC, "Block %08X: %p, r: %d (c: %d, s: %d, h: %d) (r: %.2f%%, c: %.2f%%, h: %.2f%%)\n",
-			all_blocks[i]->addr, all_blocks[i]->code,all_blocks[i]->runs,
-			all_blocks[i]->guest_cycles,all_blocks[i]->guest_opcodes,all_blocks[i]->host_opcodes,
-
-			all_blocks[i]->runs/total_runs,
-			all_blocks[i]->guest_cycles*all_blocks[i]->runs/total_cycles,
-			all_blocks[i]->host_opcodes*all_blocks[i]->runs/total_hops);
-		
-		sel_hops+=all_blocks[i]->host_opcodes*all_blocks[i]->runs;
-	}
-
-	INFO_LOG(DYNAREC, " >-< %.2f%% covered in top 1%% blocks\n",sel_hops/total_hops);
-
-	size_t i;
-	for (i=all_blocks.size()/100;sel_hops/total_hops<50;i++)
-	{
-		INFO_LOG(DYNAREC, "Block %08X: %p, r: %d (c: %d, s: %d, h: %d) (r: %.2f%%, c: %.2f%%, h: %.2f%%)\n",
-			all_blocks[i]->addr, all_blocks[i]->code,all_blocks[i]->runs,
-			all_blocks[i]->guest_cycles,all_blocks[i]->guest_opcodes,all_blocks[i]->host_opcodes,
-
-			all_blocks[i]->runs/total_runs,
-			all_blocks[i]->guest_cycles*all_blocks[i]->runs/total_cycles,
-			all_blocks[i]->host_opcodes*all_blocks[i]->runs/total_hops);
-		
-		sel_hops+=all_blocks[i]->host_opcodes*all_blocks[i]->runs;
-	}
-
-	INFO_LOG(DYNAREC, " >-< %.2f%% covered in top %.2f%% blocks\n",sel_hops/total_hops,i*100.0/all_blocks.size());
-
-}
-
-void bm_Sort()
-{
-	INFO_LOG(DYNAREC, "!!!!!!!!!!!!!!!!!!! BLK REPORT !!!!!!!!!!!!!!!!!!!!\n");
-
-	INFO_LOG(DYNAREC, "     ---- Blocks: Sorted based on Runs ! ----     \n");
-	std::sort(all_blocks.begin(),all_blocks.end(),UDgreater);
-	bm_PrintTopBlocks();
-
-	INFO_LOG(DYNAREC, "<><><><><><><><><><><><><><><><><><><><><><><><><>\n");
-
-	INFO_LOG(DYNAREC, "     ---- Blocks: Sorted based on hops ! ----     \n");
-	std::sort(all_blocks.begin(),all_blocks.end(),UDgreater2);
-	bm_PrintTopBlocks();
-
-	INFO_LOG(DYNAREC, "<><><><><><><><><><><><><><><><><><><><><><><><><>\n");
-
-	INFO_LOG(DYNAREC, "     ---- Blocks: Sorted based on wefs ! ----     \n");
-	std::sort(all_blocks.begin(),all_blocks.end(),UDgreater3);
-	bm_PrintTopBlocks();
-
-	INFO_LOG(DYNAREC, "^^^^^^^^^^^^^^^^^^^ END REPORT ^^^^^^^^^^^^^^^^^^^\n");
-
-	for (size_t i=0;i<all_blocks.size();i++)
-	{
-		all_blocks[i]->runs=0;
-	}
-}
-#endif
 
 RuntimeBlockInfo *bm_NewBlock(void)
 {
@@ -852,7 +752,8 @@ RuntimeBlockInfo *bm_NewBlock(void)
 	RuntimeBlockInfo *block;
 	if (room == NULL)
 		die("out of memory");
-	block = new (room) RuntimeBlockInfo();
+	block = (RuntimeBlockInfo *)room;
+	memset(block, 0, sizeof(*block));
 	block->refs = 1;
 	block->t_reg = -1;
 	return block;
@@ -919,7 +820,6 @@ void bm_BlockUnref(RuntimeBlockInfo *block)
 		bm_BlockUnref(block->pre_refs[--block->pre_ref_count]);
 	node_pool_free(block->pre_refs, block->pre_ref_room * sizeof(*block->pre_refs));
 	node_pool_free(block->oplist, block->op_room * sizeof(*block->oplist));
-	block->~RuntimeBlockInfo();
 	node_pool_free(block, sizeof(RuntimeBlockInfo));
 }
 
@@ -1066,10 +966,11 @@ void bm_RamWriteAccess(u32 addr)
  * that a frame runs was compiled again for every frame. */
 void bm_LoadRam(const u8 *from)
 {
-	u8 * const ram = &mem_b[0];
-	u32 run = 0;		// where the pages to be copied in one go start
+	u8 * const ram = &mem_b.data[0];
+	u32 run = 0;		/* where the pages to be copied in one go start */
+	u32 addr;
 
-	for (u32 addr = 0; addr < RAM_SIZE; addr += PAGE_SIZE)
+	for (addr = 0; addr < RAM_SIZE; addr += PAGE_SIZE)
 	{
 		if (!locked_pages[addr / PAGE_SIZE])
 			continue;
@@ -1092,6 +993,7 @@ bool bm_RamWriteFault(void *p)
 {
 	if (_nvmem_enabled())
 	{
+		u32 addr;
 		if (_nvmem_4gb_space())
 		{
 			if ((u8 *)p < virt_ram_base || (u8 *)p >= virt_ram_base + 0x100000000L)
@@ -1102,21 +1004,22 @@ bool bm_RamWriteFault(void *p)
 			if ((u8 *)p < virt_ram_base || (u8 *)p >= virt_ram_base + 0x20000000)
 				return false;
 		}
-		u32 addr = (u8*)p - virt_ram_base;
+		addr = (u32)((u8*)p - virt_ram_base);
 		if (mmu_enabled() && _nvmem_4gb_space() && ((addr & 0x80000000) == 0 || (addr >> 29) == 6))
-			// (nothing is protected there with the MMU on: bm_ProtectPage())
+			/* (nothing is protected there with the MMU on: bm_ProtectPage()) */
 			return false;
-		if (!IsOnRam(addr) || ((addr >> 29) > 0 && (addr >> 29) < 4))	// system RAM is not mapped to 20, 40 and 60 because of laziness
+		/* (system RAM is not mapped to 20, 40 and 60 because of laziness) */
+		if (!IsOnRam(addr) || ((addr >> 29) > 0 && (addr >> 29) < 4))
 			return false;
 		bm_RamWriteAccess(addr);
 	}
 	else
 	{
-		uintptr_t offset = (uintptr_t)p - (uintptr_t)&mem_b[0];
+		uintptr_t offset = (uintptr_t)p - (uintptr_t)&mem_b.data[0];
 #if defined(__aarch64__)
 		/* Memory from malloc() can have a tag in its address's top byte
 		 * (Android on ARM64), and the address of a fault comes without it. */
-		offset = ((uintptr_t)p & 0x00FFFFFFFFFFFFFFull) - ((uintptr_t)&mem_b[0] & 0x00FFFFFFFFFFFFFFull);
+		offset = ((uintptr_t)p & 0x00FFFFFFFFFFFFFFull) - ((uintptr_t)&mem_b.data[0] & 0x00FFFFFFFFFFFFFFull);
 #endif
 		if (offset >= RAM_SIZE)
 			return false;
@@ -1126,115 +1029,5 @@ bool bm_RamWriteFault(void *p)
 	return true;
 }
 
-bool print_stats;
-#if 0
-void fprint_hex(FILE* d,const char* init,u8* ptr, u32& ofs, u32 limit)
-{
-	int base=ofs;
-	int cnt=0;
-	while(ofs<limit)
-	{
-		if (cnt==32)
-		{
-			fputs("\n",d);
-			cnt=0;
-		}
-
-		if (cnt==0)
-			fprintf(d,"%s:%d:",init,ofs-base);
-
-		fprintf(d," %02X",ptr[ofs++]);
-		cnt++;
-	}
-	fputs("\n",d);
-}
-
-
-
-void print_blocks()
-{
-	FILE* f=0;
-
-	if (print_stats)
-	{
-		f=fopen(get_writable_data_path("/blkmap.lst").c_str(),"w");
-		print_stats=false;
-
-		INFO_LOG(DYNAREC, "Writing blocks to %p\n", f);
-	}
-
-	for (auto it : blkmap)
-	{
-		RuntimeBlockInfoPtr blk = it.second;
-		if (f)
-		{
-			fprintf(f,"block: %p\n",blk.get());
-			fprintf(f,"vaddr: %08X\n",blk->vaddr);
-			fprintf(f,"paddr: %08X\n",blk->addr);
-			fprintf(f,"hash: %s\n",bm_BlockHash(blk));
-			fprintf(f,"hash_rloc: %s\n",bm_BlockHash(blk));
-			fprintf(f,"code: %p\n",blk->code);
-			fprintf(f,"runs: %d\n",blk->runs);
-			fprintf(f,"BlockType: %d\n",blk->BlockType);
-			fprintf(f,"NextBlock: %08X\n",blk->NextBlock);
-			fprintf(f,"BranchBlock: %08X\n",blk->BranchBlock);
-			fprintf(f,"pNextBlock: %p\n",blk->pNextBlock);
-			fprintf(f,"pBranchBlock: %p\n",blk->pBranchBlock);
-			fprintf(f,"guest_cycles: %d\n",blk->guest_cycles);
-			fprintf(f,"guest_opcodes: %d\n",blk->guest_opcodes);
-			fprintf(f,"host_opcodes: %d\n",blk->host_opcodes);
-			fprintf(f,"il_opcodes: %zd\n",blk->op_count);
-
-			u32 hcode=0;
-			s32 gcode=-1;
-			u8* pucode=(u8*)blk->code;
-
-			size_t j=0;
-			
-			fprintf(f,"{\n");
-			for (;j<blk->op_count;j++)
-			{
-				shil_opcode* op = &blk->oplist[j];
-				//fprint_hex(f,"//h:",pucode,hcode,op->host_offs);
-
-				if (gcode!=op->guest_offs)
-				{
-					gcode=op->guest_offs;
-					u32 rpc=blk->vaddr+gcode;
-#ifndef NO_MMU
-					sh4_catch c;
-					SH4_TRY(c)
-					{
-#endif
-						u16 op=IReadMem16(rpc);
-#ifndef NO_MMU
-						sh4_catch_pop(&c);
-#endif
-						char temp[128];
-						OpDesc[op]->Disassemble(temp,rpc,op);
-
-						fprintf(f,"//g: %04X %s\n", op, temp);
-#ifndef NO_MMU
-					}
-					else
-						fprintf(f,"//g: ???? (page fault)\n");
-#endif
-				}
-
-            std::string s=op->dissasm();
-				fprintf(f,"//il:%d:%d:%s\n",op->guest_offs,op->host_offs,s.c_str());
-			}
-			
-			//fprint_hex(f,"//h:",pucode,hcode,blk->host_code_size);
-
-			fprintf(f,"}\n");
-		}
-
-		blk->runs=0;
-	}
-
-	if (f) fclose(f);
-}
-#endif
 #endif
 

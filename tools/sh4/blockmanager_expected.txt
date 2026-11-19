@@ -1,0 +1,6 @@
+20000 steps, mode 0, 3c222dd4
+20000 steps, mode 1, 5afb78e5
+20000 steps, mode 2, 0035bc58
+200000 steps, mode 0, 1bba09f8
+200000 steps, mode 1, de0998b4
+200000 steps, mode 2, 20b78cb2

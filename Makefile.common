@@ -453,13 +453,13 @@ endif
 
 # Dynarec
 ifeq ($(DYNAREC_USED), 1)
-SOURCES_CXX += $(CORE_DIR)/core/hw/sh4/dyna/driver.cpp \
-					$(CORE_DIR)/core/hw/sh4/dyna/blockmanager.cpp
 SOURCES_C += $(CORE_DIR)/core/node_pool.c \
 		$(CORE_DIR)/core/hw/sh4/dyna/shil.c \
 		$(CORE_DIR)/core/hw/sh4/dyna/decoder.c \
 		$(CORE_DIR)/core/hw/sh4/dyna/wait_site.c \
-		$(CORE_DIR)/core/hw/sh4/dyna/ssa.c
+		$(CORE_DIR)/core/hw/sh4/dyna/ssa.c \
+		$(CORE_DIR)/core/hw/sh4/dyna/blockmanager.c \
+		$(CORE_DIR)/core/hw/sh4/dyna/driver.c
 endif
 
 SOURCES_C += $(CORE_DIR)/core/libretro/libretro.c

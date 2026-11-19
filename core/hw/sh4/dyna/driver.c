@@ -1,5 +1,7 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 #include "types.h"
-#include <unordered_set>
 
 /* (the state is a complete type: hash() keeps it on the stack) */
 #include <encodings/xxh32.h>
@@ -50,10 +52,75 @@ uintptr_t cc_rx_offset;
 u32 LastAddr = 0;
 u32 LastAddr_min = 0;
 u32 TempLastAddr = 0;
-u32* emit_ptr = nullptr;
-u32* emit_ptr_limit = nullptr;
+u32* emit_ptr = NULL;
+u32* emit_ptr_limit = NULL;
 
-std::unordered_set<u32, std::hash<u32>, std::equal_to<u32>, node_pool::Allocator<u32> > smc_hotspots;
+/* The addresses of the blocks whose code keeps being rewritten: compiled
+ * into the temporary cache from then on. A set, by open addressing in a
+ * table of a power of two, made when the recompiler starts and grown in
+ * the rare case it comes to half full; emptied with the cache. */
+static u32 *smc_hotspots;		/* 0: empty (no block is compiled at 0) */
+static u32 smc_hotspot_room;
+static u32 smc_hotspot_count;
+
+static u32 smc_slot(u32 addr, u32 room)
+{
+	return (addr * 2654435761u >> 7) & (room - 1);
+}
+
+static bool smc_hotspot_find(u32 addr)
+{
+	u32 i;
+	if (smc_hotspot_count == 0)
+		return false;
+	for (i = smc_slot(addr, smc_hotspot_room); smc_hotspots[i] != 0; i = (i + 1) & (smc_hotspot_room - 1))
+		if (smc_hotspots[i] == addr)
+			return true;
+	return false;
+}
+
+static void smc_hotspots_make(u32 room)
+{
+	u32 *had = smc_hotspots, had_room = smc_hotspot_room, i;
+	smc_hotspots = (u32 *)calloc(room, sizeof(*smc_hotspots));
+	if (smc_hotspots == NULL)
+		die("out of memory");
+	smc_hotspot_room = room;
+	smc_hotspot_count = 0;
+	for (i = 0; i < had_room; i++)
+		if (had[i] != 0)
+		{
+			u32 j = smc_slot(had[i], room);
+			while (smc_hotspots[j] != 0)
+				j = (j + 1) & (room - 1);
+			smc_hotspots[j] = had[i];
+			smc_hotspot_count++;
+		}
+	free(had);
+}
+
+/* whether @addr was not there before */
+static bool smc_hotspot_insert(u32 addr)
+{
+	u32 i;
+	if (addr == 0 || smc_hotspot_find(addr))
+		return false;
+	if ((smc_hotspot_count + 1) * 2 > smc_hotspot_room)
+		smc_hotspots_make(smc_hotspot_room != 0 ? smc_hotspot_room * 2 : 1024);
+	i = smc_slot(addr, smc_hotspot_room);
+	while (smc_hotspots[i] != 0)
+		i = (i + 1) & (smc_hotspot_room - 1);
+	smc_hotspots[i] = addr;
+	smc_hotspot_count++;
+	return true;
+}
+
+static void smc_hotspots_clear(void)
+{
+	if (smc_hotspot_count != 0)
+		memset(smc_hotspots, 0, smc_hotspot_room * sizeof(*smc_hotspots));
+	smc_hotspot_count = 0;
+}
 
 
 void* emit_GetCCPtr(void)
@@ -70,19 +137,18 @@ void emit_SetBaseAddr(void)
 
 void clear_temp_cache(bool full)
 {
-	//printf("recSh4:Temp Code Cache clear at %08X\n", curr_pc);
 	TempLastAddr = 0;
 	bm_ResetTempCache(full);
 }
 
 static void recSh4_ClearCache(void)
 {
-	INFO_LOG(DYNAREC, "recSh4:Dynarec Cache clear at %08X free space %d\n", next_pc, emit_FreeSpace());
-	// (see bm_ResetCache())
+	/* (see bm_ResetCache()) */
 	const bool nothing_since = LastAddr == LastAddr_min && TempLastAddr == 0;
+	INFO_LOG(DYNAREC, "recSh4:Dynarec Cache clear at %08X free space %d\n", next_pc, emit_FreeSpace());
 	LastAddr=LastAddr_min;
 	bm_ResetCache(nothing_since);
-	smc_hotspots.clear();
+	smc_hotspots_clear();
 	clear_temp_cache(true);
 }
 
@@ -92,12 +158,11 @@ static void recSh4_Run(void)
 	HostFloatModeSave();
 	RestoreHostRoundingMode();
 
-	// (nothing left of a run that ended in the middle of one)
+	/* (nothing left of a run that ended in the middle of one) */
 	sh4_catch_top = NULL;
 	sh4_in_delay_slot = false;
 	sh4_dyna_rcb=(u8*)&Sh4cntx + sizeof(Sh4cntx);
-	INFO_LOG(DYNAREC, "cntx // fpcb offset: %td // pc offset: %td // pc %08X\n", (u8*)&sh4rcb.fpcb - sh4_dyna_rcb, (u8*)&sh4rcb.cntx.pc - sh4_dyna_rcb, sh4rcb.cntx.pc);
-	//verify(rcb_noffs(&next_pc)==-184);
+	INFO_LOG(DYNAREC, "cntx, fpcb offset: %ld, pc offset: %ld, pc %08X\n", (long)((u8*)&sh4rcb.fpcb - sh4_dyna_rcb), (long)((u8*)&sh4rcb.cntx.pc - sh4_dyna_rcb), sh4rcb.cntx.pc);
 	ngen_mainloop(sh4_dyna_rcb);
 
 	sh4_int_bCpuRun=false;
@@ -125,7 +190,7 @@ void emit_Skip(u32 sz)
 	else
 		LastAddr+=sz;
 }
-u32 emit_FreeSpace()
+u32 emit_FreeSpace(void)
 {
 	if (emit_ptr)
 		return (emit_ptr_limit - emit_ptr) * sizeof(u32);
@@ -241,12 +306,13 @@ bool bm_BlockSetup(RuntimeBlockInfo *block, u32 rpc, fpscr_t rfpu_cfg)
 DynarecCodeEntryPtr rdv_CompilePC(u32 blockcheck_failures)
 {
 	u32 pc=next_pc;
-	//printf("rdv_CompilePC next_pc %p\n", next_pc);
+	RuntimeBlockInfo* rbi;
+	bool do_opts, block_check;
 
 	if (emit_FreeSpace() < CODE_MARGIN || pc==0x8c0000e0 || pc==0xac010000 || pc==0xac008300)
 		recSh4_ClearCache();
 
-	RuntimeBlockInfo* rbi = bm_NewBlock();
+	rbi = bm_NewBlock();
 
 	if (!bm_BlockSetup(rbi, pc,fpscr))
 	{
@@ -255,7 +321,7 @@ DynarecCodeEntryPtr rdv_CompilePC(u32 blockcheck_failures)
 	}
 	rbi->blockcheck_failures = blockcheck_failures;
 	rbi->mmu_go_on = rdv_MmuMayGoOn(rbi);
-	if (smc_hotspots.find(rbi->addr) != smc_hotspots.end())
+	if (smc_hotspot_find(rbi->addr))
 	{
 		if (TEMP_CODE_SIZE - TempLastAddr < CODE_MARGIN)
 			clear_temp_cache(false);
@@ -265,13 +331,13 @@ DynarecCodeEntryPtr rdv_CompilePC(u32 blockcheck_failures)
 		if (rbi->read_only)
 			INFO_LOG(DYNAREC, "WARNING: temp block %x (%x) is protected!\n", rbi->vaddr, rbi->addr);
 	}
-		bool do_opts = !rbi->temp_block;
-		rbi->staging_runs=do_opts?100:-100;
-		bool block_check = rbi->read_only ? false : IsOnRam(rbi->addr);
-		ngen_Compile(rbi, block_check, (pc & 0xFFFFFF) == 0x08300 || (pc & 0xFFFFFF) == 0x10000, false, do_opts);
-		verify(rbi->code!=0);
+	do_opts = !rbi->temp_block;
+	rbi->staging_runs=do_opts?100:-100;
+	block_check = rbi->read_only ? false : IsOnRam(rbi->addr);
+	ngen_Compile(rbi, block_check, (pc & 0xFFFFFF) == 0x08300 || (pc & 0xFFFFFF) == 0x10000, false, do_opts);
+	verify(rbi->code!=0);
 
-		bm_AddBlock(rbi);
+	bm_AddBlock(rbi);
 
 	if (emit_ptr != NULL)
 	{
@@ -283,20 +349,20 @@ DynarecCodeEntryPtr rdv_CompilePC(u32 blockcheck_failures)
 	return rbi->code;
 }
 
-DynarecCodeEntryPtr DYNACALL rdv_FailedToFindBlock_pc()
+DynarecCodeEntryPtr DYNACALL rdv_FailedToFindBlock_pc(void)
 {
 	return rdv_FailedToFindBlock(next_pc);
 }
 
 DynarecCodeEntryPtr DYNACALL rdv_FailedToFindBlock(u32 pc)
 {
-	//printf("rdv_FailedToFindBlock ~ %08X\n",pc);
+	DynarecCodeEntryPtr code;
 	next_pc=pc;
-	DynarecCodeEntryPtr code = rdv_CompilePC(0);
+	code = rdv_CompilePC(0);
 	if (code == NULL)
 		code = bm_GetCodeByVAddr(next_pc);
 	else
-		code = (DynarecCodeEntryPtr)CC_RW2RX(code);
+		code = (DynarecCodeEntryPtr)(uintptr_t)CC_RW2RX((void *)(uintptr_t)code);
 	return code;
 }
 
@@ -307,11 +373,11 @@ u32 DYNACALL rdv_DoInterrupts_pc(u32 pc) {
 	return next_pc;
 }
 
-static void ngen_FailedToFindBlock_internal() {
+static void ngen_FailedToFindBlock_internal(void) {
 	rdv_FailedToFindBlock(Sh4cntx.pc);
 }
 
-void (*ngen_FailedToFindBlock)() = &ngen_FailedToFindBlock_internal;
+void (*ngen_FailedToFindBlock)(void) = &ngen_FailedToFindBlock_internal;
 
 u32 DYNACALL rdv_DoInterrupts(void* block_cpde)
 {
@@ -324,21 +390,20 @@ u32 DYNACALL rdv_DoInterrupts(void* block_cpde)
 	return rdv_DoInterrupts_pc(rbi ? rbi->vaddr : next_pc);
 }
 
-// addr must be the physical address of the start of the block
+/* addr must be the physical address of the start of the block */
 DynarecCodeEntryPtr DYNACALL rdv_BlockCheckFail(u32 addr)
 {
 	u32 blockcheck_failures = 0;
 	if (mmu_enabled())
 	{
 		RuntimeBlockInfoPtr block = bm_GetBlock(addr);
-		// (gone already, if what failed was run once more after it was discarded)
+		/* (gone already, if what failed was run once more after it was discarded) */
 		if (block)
 		{
 			blockcheck_failures = block->blockcheck_failures + 1;
 			if (blockcheck_failures > 5)
 			{
-				bool inserted = smc_hotspots.insert(addr).second;
-				if (inserted)
+				if (smc_hotspot_insert(addr))
 					DEBUG_LOG(DYNAREC, "rdv_BlockCheckFail SMC hotspot @ %08x fails %d\n", addr, blockcheck_failures);
 			}
 			bm_DiscardBlock(block);
@@ -363,20 +428,19 @@ DynarecCodeEntryPtr DYNACALL rdv_BlockCheckFail(u32 addr)
 			blockcheck_failures = block->blockcheck_failures + 1;
 			if (blockcheck_failures > 5)
 			{
-				bool inserted = smc_hotspots.insert(addr).second;
-				if (inserted)
+				if (smc_hotspot_insert(addr))
 					DEBUG_LOG(DYNAREC, "rdv_BlockCheckFail SMC hotspot @ %08x fails %d\n", addr, blockcheck_failures);
 			}
 			bm_DiscardBlock(block);
 		}
 		next_pc = addr;
 	}
-	return (DynarecCodeEntryPtr)CC_RW2RX(rdv_CompilePC(blockcheck_failures));
+	return (DynarecCodeEntryPtr)(uintptr_t)CC_RW2RX((void *)(uintptr_t)rdv_CompilePC(blockcheck_failures));
 }
 
-DynarecCodeEntryPtr rdv_FindOrCompile()
+DynarecCodeEntryPtr rdv_FindOrCompile(void)
 {
-	DynarecCodeEntryPtr rv = bm_GetCodeByVAddr(next_pc);  // Returns exec addr
+	DynarecCodeEntryPtr rv = bm_GetCodeByVAddr(next_pc);	/* Returns exec addr */
 	/* (Compiling can be an exception instead - an odd address is one: what
 	 * comes back is the handler's code then, and the context has its
 	 * address.) */
@@ -396,7 +460,7 @@ bool rdv_MmuMayGoOn(const RuntimeBlockInfo *block)
 		return false;
 	if ((block->vaddr >> 29) == 4 || (block->vaddr >> 29) == 5)
 		return true;
-	if (mmu_full_lookup<false>(block->vaddr, &entry, addr) != MMU_ERROR_NONE)
+	if (mmu_full_lookup_c(block->vaddr, &entry, &addr) != MMU_ERROR_NONE)
 		return false;
 	return entry->Data.SZ1 != 0 || entry->Data.SZ0 != 0;
 #else
@@ -419,9 +483,13 @@ bool rdv_MmuSamePlace(const RuntimeBlockInfo *block, u32 target, u32 *addr)
 
 void* DYNACALL rdv_LinkBlock(u8* code,u32 dpc)
 {
-	// code is the RX addr to return after, however bm_GetBlock returns RW
+	/* code is the RX addr to return after, however bm_GetBlock returns RW */
 	RuntimeBlockInfoPtr rbi=bm_GetBlock2((void*)code);
 	bool stale_block = false;
+	u32 bcls, target, place;
+	bool mmu, link;
+	DynarecCodeEntryPtr rv;
+
 	if (!rbi)
 	{
 		stale_block = true;
@@ -430,7 +498,7 @@ void* DYNACALL rdv_LinkBlock(u8* code,u32 dpc)
 	
 	verify(rbi != NULL);
 
-	u32 bcls = BET_GET_CLS(rbi->BlockType);
+	bcls = BET_GET_CLS(rbi->BlockType);
 
 	if (bcls == BET_CLS_Static)
 	{
@@ -451,14 +519,13 @@ void* DYNACALL rdv_LinkBlock(u8* code,u32 dpc)
 			next_pc=rbi->NextBlock;
 	}
 
-	const bool mmu = mmu_enabled();
-	const u32 target = next_pc;
-	// where the target is, for the block manager
-	u32 place = target;
-	DynarecCodeEntryPtr rv;
+	mmu = mmu_enabled();
+	target = next_pc;
+	/* where the target is, for the block manager */
+	place = target;
 
 	if (!mmu)
-		rv = rdv_FindOrCompile();  // Returns rx ptr
+		rv = rdv_FindOrCompile();	/* Returns rx ptr */
 	else
 	{
 		/* (Looking the address up can raise an exception, and so can
@@ -482,7 +549,7 @@ void* DYNACALL rdv_LinkBlock(u8* code,u32 dpc)
 	 * block that was compiled for that very address - not to one for
 	 * another address of the same memory, which would send it back - and
 	 * not at all if an exception was raised instead. */
-	bool link = !stale_block && next_pc == target;
+	link = !stale_block && next_pc == target;
 	if (mmu && link)
 	{
 		link = false;
@@ -492,12 +559,13 @@ void* DYNACALL rdv_LinkBlock(u8* code,u32 dpc)
 			RuntimeBlockInfoPtr nxt = bm_GetBlock(place);
 
 			link = nxt != NULL && nxt->addr == place && nxt->vaddr == target
-				&& (DynarecCodeEntryPtr)CC_RW2RX(nxt->code) == rv;
+				&& (DynarecCodeEntryPtr)(uintptr_t)CC_RW2RX((void *)(uintptr_t)nxt->code) == rv;
 		}
 	}
 
 	if (link)
 	{
+		u32 ncs;
 		if (bcls == BET_CLS_Dynamic)
 		{
 			verify(rbi->relink_data == 0 || rbi->pBranchBlock == NULL);
@@ -525,16 +593,16 @@ void* DYNACALL rdv_LinkBlock(u8* code,u32 dpc)
 
 			bm_BlockAddRef(nxt, rbi);
 		}
-		u32 ncs = rbi->relink_offset + ngen_Relink(rbi);
+		ncs = rbi->relink_offset + ngen_Relink(rbi);
 		verify(rbi->host_code_size >= ncs);
 		rbi->host_code_size = ncs;
 	}
 	else if (!mmu && stale_block)
 	{
-		INFO_LOG(DYNAREC, "null RBI: from %08X to %08X -- unlinked stale block -- code %p next %p\n", rbi->vaddr, next_pc, code, rv);
+		INFO_LOG(DYNAREC, "null RBI: from %08X to %08X -- unlinked stale block -- code %p next %p\n", rbi->vaddr, next_pc, (void *)code, (void *)(uintptr_t)rv);
 	}
 	
-	return (void*)rv;
+	return (void*)(uintptr_t)rv;
 }
 
 static void recSh4_Stop(void)
@@ -576,20 +644,24 @@ bool recSh4_HaveCodeCache(void)
 }
 #endif
 
+/* where @ptr is in the SH4's block, from its end */
+#define RCB_NOFFS(ptr) ((s32)((u8 *)(ptr) - (u8 *)p_sh4rcb - (s32)sizeof(Sh4RCB)))
+
 static void recSh4_Init(void)
 {
+#ifndef HOST_APPLE_JIT
+	void *candidate_ptr;
+#endif
 	INFO_LOG(DYNAREC, "recSh4 Init\n");
 	Sh4_int_Init();
 	bm_Init();
+	if (smc_hotspots == NULL)
+		smc_hotspots_make(1024);
 
-#if 0
-	verify(rcb_noffs(p_sh4rcb->fpcb) == FPCB_OFFSET);
-#endif
+	verify(RCB_NOFFS(p_sh4rcb->sq_buffer) == -512);
 
-	verify(rcb_noffs(p_sh4rcb->sq_buffer) == -512);
-
-	verify(rcb_noffs(&p_sh4rcb->cntx.sh4_sched_next) == -152);
-	verify(rcb_noffs(&p_sh4rcb->cntx.interrupt_pend) == -148);
+	verify(RCB_NOFFS(&p_sh4rcb->cntx.sh4_sched_next) == -152);
+	verify(RCB_NOFFS(&p_sh4rcb->cntx.interrupt_pend) == -148);
 	
 	if (_nvmem_enabled())
 	{
@@ -607,10 +679,10 @@ static void recSh4_Init(void)
 	recSh4_HaveCodeCache();
 	CodeCache = apple_code_cache;
 #else
-	// Prepare some pointer to the pre-allocated code cache:
-	void *candidate_ptr = (void*)(((unat)SH4_TCB + 4095) & ~4095);
+	/* Prepare some pointer to the pre-allocated code cache: */
+	candidate_ptr = (void*)(((unat)SH4_TCB + 4095) & ~4095);
 
-	// Call the platform-specific magic to make the pages RWX
+	/* Call the platform-specific magic to make the pages RWX */
 	CodeCache = NULL;
 	#ifdef FEAT_NO_RWX_PAGES
 	verify(vmem_platform_prepare_jit_block_rw(candidate_ptr, CODE_SIZE + TEMP_CODE_SIZE, (void**)&CodeCache, &cc_rx_offset));
@@ -618,7 +690,7 @@ static void recSh4_Init(void)
 	verify(vmem_platform_prepare_jit_block(candidate_ptr, CODE_SIZE + TEMP_CODE_SIZE, (void**)&CodeCache));
 	#endif
 #endif
-	// Ensure the pointer returned is non-null
+	/* Ensure the pointer returned is non-null */
 	verify(CodeCache != NULL);
 
 	vmem_jit_write_begin();
@@ -654,4 +726,4 @@ void Get_Sh4Recompiler(sh4_if* cpu)
 	cpu->IsCpuRunning = recSh4_IsCpuRunning;
 	cpu->ResetCache = recSh4_ClearCache;
 }
-#endif  // FEAT_SHREC != DYNAREC_NONE
+#endif	/* FEAT_SHREC != DYNAREC_NONE */

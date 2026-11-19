@@ -25,7 +25,9 @@ name: Headless
 # table as it always was (tools/sh4/opcode_table_run.sh), the decoder's
 # blocks as the C++ decoder made them (tools/sh4/decoder_run.sh), the wait
 # sites as the C++ gave them out and judged (tools/sh4/wait_site_run.sh), the
-# blocks the SSA optimizer leaves as the C++ left them (tools/sh4/ssa_run.sh), the instruction
+# blocks the SSA optimizer leaves as the C++ left them (tools/sh4/ssa_run.sh),
+# the block manager and the driver as the C++ did (tools/sh4/blockmanager_run.sh,
+# tools/sh4/driver_run.sh), the instruction
 # and operand caches as they always were (tools/sh4/sh4_cache_run.sh), the
 # SH4's address space as it always was (tools/mem/vmem_run.sh) and the host's
 # side of it, its mappings and code memory (tools/mem/vmem_platform_run.sh),
@@ -144,6 +146,8 @@ on:
       - 'tools/sh4/decoder_*'
       - 'tools/sh4/wait_site_*'
       - 'tools/sh4/ssa_*'
+      - 'tools/sh4/blockmanager_*'
+      - 'tools/sh4/driver_*'
       - 'tools/sh4/sh4_cache_*'
       - 'tools/mem/**'
       - 'Makefile*'
@@ -195,6 +199,8 @@ on:
       - 'tools/sh4/decoder_*'
       - 'tools/sh4/wait_site_*'
       - 'tools/sh4/ssa_*'
+      - 'tools/sh4/blockmanager_*'
+      - 'tools/sh4/driver_*'
       - 'tools/sh4/sh4_cache_*'
       - 'tools/mem/**'
       - 'Makefile*'
@@ -275,6 +281,12 @@ jobs:
         run: |
           sh tools/sh4/ssa_run.sh
           sh tools/sh4/ssa_run.sh 5000 -fsanitize=address,undefined -fno-sanitize-recover=all
+      - name: The block manager and the recompiler's driver, blocks made, linked, failing and written over, as the C++ had them (and with the sanitizers)
+        run: |
+          sh tools/sh4/blockmanager_run.sh
+          sh tools/sh4/blockmanager_run.sh 20000 -fsanitize=address,undefined -fno-sanitize-recover=all
+          sh tools/sh4/driver_run.sh
+          sh tools/sh4/driver_run.sh 20000 -fsanitize=address,undefined -fno-sanitize-recover=all
       - name: The SH4's instruction and operand caches, accesses, write-backs, arrays and state, as they always were (and with the sanitizers)
         run: |
           sh tools/sh4/sh4_cache_run.sh
