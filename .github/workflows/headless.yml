@@ -18,7 +18,8 @@ name: Headless
 # recompilers' pool, pieces taken and given back at random
 # (tools/sh4/node_pool_test.sh). The register allocator's choices as the
 # C++ made them (tools/sh4/regalloc_run.sh). The x86-64 recompiler's code
-# as the C++ made it (tools/sh4/x64_run.sh). And the recompilers
+# as the C++ made it (tools/sh4/x64_run.sh), and the 32-bit x86 one's
+# (tools/sh4/x86_run.sh). And the recompilers
 # against the interpreters, each built alone (tools/sh4/run.sh), the sound
 # chip's ARM7 and DSP compiled for x86-64, x86 and ARM64 (under qemu)
 # against interpreted (tools/arm7/run.sh, tools/aica/run.sh), the
@@ -121,6 +122,7 @@ on:
       - 'tools/rend/compute_frame_*'
       - 'tools/sh4/regalloc_*'
       - 'tools/sh4/x64_*'
+      - 'tools/sh4/x86_*'
       - 'tools/sh4/node_pool_test.*'
       - 'tools/rend/band_pool_test.*'
       - 'tools/rend/custom_image*'
@@ -175,6 +177,7 @@ on:
       - 'tools/rend/compute_frame_*'
       - 'tools/sh4/regalloc_*'
       - 'tools/sh4/x64_*'
+      - 'tools/sh4/x86_*'
       - 'tools/sh4/node_pool_test.*'
       - 'tools/rend/band_pool_test.*'
       - 'tools/rend/custom_image*'
@@ -270,6 +273,8 @@ jobs:
         run: |
           sh tools/sh4/x64_run.sh
           sh tools/sh4/x64_run.sh 5000 -fsanitize=address,undefined -fno-sanitize-recover=all
+      - name: The 32-bit x86 recompiler's code, linked, unlinked and rewritten, as the C++ made it
+        run: sh tools/sh4/x86_run.sh
       - name: The recompilers' pool (blocks, their lists, the labels), pieces taken and given back
         run: sh tools/sh4/node_pool_test.sh
       - name: The interpreter's FMAC, a * b + c rounded once without fmaf(), against fmaf() rounding both ways the SH4 does (and ARM64's own, under qemu)
@@ -312,7 +317,7 @@ jobs:
         run: |
           sh tools/mem/fault_run.sh
           sh tools/mem/fault_run.sh -fsanitize=address,undefined -fno-sanitize-recover=all
-      - name: The recompilers against the interpreters, built alone (the SH-4's vectors with Xbyak, the sound chip's ARM7 and its DSP for x86-64, x86 and ARM64 under qemu; and with the sanitizers)
+      - name: The recompilers against the interpreters, built alone (the SH-4's vectors as the x86-64 recompiler emits them, the sound chip's ARM7 and its DSP for x86-64, x86 and ARM64 under qemu; and with the sanitizers)
         run: |
           sh tools/sh4/run.sh
           sh tools/arm7/run.sh

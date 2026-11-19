@@ -1,20 +1,25 @@
-/* The x86-64 recompiler (core/rec-x64/rec_x64.c) over the blocks the SSA
- * optimizer leaves of the decoder's blocks of random code, with the MMU
- * on and off, the
- * guest's memory mapped every way, blocks checked and not, and each set of
- * the processor's features it looks for: the code it makes for each, its
- * link sites linked and unlinked, and every fast memory access in it
+/* The x86-64 recompiler (core/rec-x64/rec_x64.c), or built for 32-bit x86
+ * the x86 one (core/rec-x86/rec_x86.c), over the blocks the SSA optimizer
+ * leaves of the decoder's blocks of random code, with the MMU on and off,
+ * the guest's memory mapped every way, blocks checked and not, and each set
+ * of the processor's features it looks for: the code it makes for each,
+ * its link sites linked and unlinked, and every fast memory access in it
  * rewritten as a call, hashed, against what the C++ recompiler it replaced
- * made (sh tools/sh4/x64_run.sh).
+ * made (sh tools/sh4/x64_run.sh, tools/sh4/x86_run.sh).
  *
  * Addresses outside the code cache - functions called, data reached - are
  * hashed as which thing they are, and where in it, rather than as numbers,
- * so that the hash is the same in every build of this. */
+ * so that the hash is the same in every build of this. On 32-bit x86, where
+ * any constant could be taken for one, the SH4's context is put at an
+ * address of its own instead, and only what can only be an address is. */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <setjmp.h>
 #include "types.h"
+#if HOST_CPU == CPU_X86
+#include <sys/mman.h>
+#endif
 #include "hw/sh4/sh4_if.h"
 #include "hw/sh4/sh4_mmr.h"
 #include "hw/sh4/sh4_mem.h"
@@ -33,7 +38,7 @@
 
 static DECL_ALIGN(16) u16 code[0x10000];
 static u32 code_base = 0x8C010000;
-static Sh4RCB rcb;
+static Sh4RCB *rcb;
 RegisterStruct CCN[SH4_CCN_REGS];
 bool mmu_strict;
 settings_t settings;
@@ -171,7 +176,36 @@ static void random_code(void)
 
 /* ---- what the recompiler calls and reaches, as this test has it ---- */
 
-/* the recompiler's (or, for the C++ one, tools/sh4/x64_old.sh's) */
+/* the recompiler's */
+#if HOST_CPU == CPU_X86
+#define REC_X86 1
+#define rec_cpu rec_x86_cpu
+extern int rec_x86_cpu;
+u32 DYNACALL rec_x86_mem_load8(u32 addr);
+u32 DYNACALL rec_x86_mem_load16(u32 addr);
+u32 DYNACALL rec_x86_mem_load32(u32 addr);
+u64 DYNACALL rec_x86_mem_load64(u32 addr);
+void DYNACALL rec_x86_mem_store8(u32 addr, u32 data);
+void DYNACALL rec_x86_mem_store16(u32 addr, u32 data);
+void DYNACALL rec_x86_mem_store32(u32 addr, u32 data);
+void DYNACALL rec_x86_mem_store64(u32 addr, const u32 *data);
+u8 DYNACALL rec_x86_read_noex8(u32 addr, u32 pc);
+u16 DYNACALL rec_x86_read_noex16(u32 addr, u32 pc);
+u32 DYNACALL rec_x86_read_noex32(u32 addr, u32 pc);
+u64 DYNACALL rec_x86_read_noex64(u32 addr, u32 pc);
+void DYNACALL rec_x86_write_noex8(u32 addr, u32 data);
+void DYNACALL rec_x86_write_noex16(u32 addr, u32 data);
+void DYNACALL rec_x86_write_noex32(u32 addr, u32 data);
+void DYNACALL rec_x86_write_noex64(u32 addr, const u32 *data);
+void DYNACALL rec_x86_interpreter_fallback(u32 op, u32 pc);
+void DYNACALL rec_x86_do_sqw_mmu_no_ex(u32 addr, u32 pc);
+void DYNACALL rec_x86_do_sqw_nommu_local(u32 addr, u8 *sqb);
+void DYNACALL rec_x86_blockcheckfail(u32 pc);
+void * DYNACALL ngen_link(u8 *after, u32 pc);
+#define LINK_SITE 6
+#else
+#define REC_X86 0
+#define rec_cpu rec_x64_cpu
 extern int rec_x64_cpu;
 s32 rec_x64_mem_load8(u32 addr);
 s32 rec_x64_mem_load16(u32 addr);
@@ -199,6 +233,8 @@ void *ngen_link(u8 *after, u32 pc);
 #ifndef _WIN32
 void ngen_call_keep_xmm(void);
 #endif
+#define LINK_SITE 7
+#endif
 extern int cycle_counter;
 /* (sh4_core.h's: which has macros for the registers' names) */
 bool UpdateSR(void);
@@ -217,14 +253,28 @@ void (*ngen_FailedToFindBlock)(void);
 /* the guest's memory, a few of its registers and the tables of pages */
 static DECL_ALIGN(16) u8 ram[0x1000000];
 /* where the system bus's registers are said to be */
+#if REC_X86
+/* (the SH4's context, at an address that is the same in every build, the
+ * wait sites after it; the guest's memory as the 512 MB layout says it is
+ * mapped, never read) */
+#define FIXED_AT 0x60000000u
+#define FIXED_SIZE (sizeof(Sh4RCB) + 0x10000)
+#define AREA0_REGS ((uintptr_t)FIXED_AT + FIXED_SIZE - 0x1000)
+#define FAKE_RAM_BASE ((u8 *)(uintptr_t)0x48000000u)
+#else
 #define AREA0_REGS ((uintptr_t)ram + ((uintptr_t)1 << 32))
+#endif
 uintptr_t mmu_read_lut[0x100000];
 uintptr_t mmu_write_lut[0x100000];
 u8 *virt_ram_base;
 bool vmem_4gb_space;
 const u32 fast_reg_lut[8] = { 0, 0, 0, 0, 1, 1, 1, 1 };
 u32 sh4_write_gen;
-static WaitSite sites[16];
+static WaitSite *sites;
+#if !REC_X86
+static Sh4RCB rcb_room;
+static WaitSite sites_room[16];
+#endif
 
 static u32 DYNACALL hrd8(u32 a) { return a + 1; }
 static u32 DYNACALL hrd16(u32 a) { return a + 2; }
@@ -446,6 +496,27 @@ static void mix_target(uintptr_t v)
 		mix_addr(v);
 }
 
+/* A constant that may be a function's address (32-bit x86): only exactly
+ * one is taken for it */
+static void mix_imm32(u32 v)
+{
+	u32 lo = 0, hi = known_count;
+	while (lo < hi)
+	{
+		const u32 mid = (lo + hi) / 2;
+		if (knowns[mid].at <= v)
+			lo = mid + 1;
+		else
+			hi = mid;
+	}
+	if (lo > 0 && knowns[lo - 1].at == v && knowns[lo - 1].size == 1)
+	{
+		mix(0xADD00000u | knowns[lo - 1].id);
+		return;
+	}
+	mix(v);
+}
+
 static u32 rd32le(const u8 *p) { return (u32)p[0] | (u32)p[1] << 8 | (u32)p[2] << 16 | (u32)p[3] << 24; }
 
 /* The instruction at @p: its length, 0 if it is none the recompiler
@@ -455,13 +526,13 @@ static u32 mix_insn(const u8 *p)
 	const u8 *s = p;
 	u32 rex = 0, op, map = 0, modrm = 0, imm = 0, rel = 0;
 	bool has_modrm = false, pfx66 = false, vex = false;
-	const u8 *rip_disp = NULL;
+	const u8 *rip_disp = NULL, *abs_disp = NULL;
 	u8 copy[16];
 	u32 len, i;
 
 	while (*p == 0x66 || *p == 0xF2 || *p == 0xF3)
 		pfx66 |= *p++ == 0x66;
-	if ((*p & 0xF0) == 0x40)
+	if (!REC_X86 && (*p & 0xF0) == 0x40)
 		rex = *p++;
 	op = *p++;
 	if (op == 0xC4)
@@ -516,6 +587,16 @@ static u32 mix_insn(const u8 *p)
 			has_modrm = true, imm = pfx66 ? 2 : 4;
 		else if (op == 0x90 || op == 0x9C || op == 0x9F || op == 0xC3 || op == 0xCC || op == 0xF5)
 			;
+		else if (REC_X86 && (op == 0x68 || op == 0x6A))
+			imm = op == 0x68 ? 4 : 1;
+		else if (REC_X86 && op == 0xD9)
+			has_modrm = true;
+		else if (REC_X86 && (op == 0xA1 || op == 0xA3))
+		{
+			/* mov eax, [address] / [address], eax */
+			abs_disp = p;
+			p += 4;
+		}
 		else if (op == 0xA8)
 			imm = 1;
 		else if (op == 0xA9)
@@ -563,11 +644,19 @@ static u32 mix_insn(const u8 *p)
 		{
 			const u32 sib = *p++;
 			if (mod == 0 && (sib & 7) == 5)
+			{
+				/* (no base: on x86 an address, as it is) */
+				if (REC_X86)
+					abs_disp = p;
 				p += 4;
+			}
 		}
 		if (mod == 0 && rm == 5)
 		{
-			rip_disp = p;
+			if (REC_X86)
+				abs_disp = p;
+			else
+				rip_disp = p;
 			p += 4;
 		}
 		else if (mod == 1)
@@ -585,6 +674,10 @@ static u32 mix_insn(const u8 *p)
 	memcpy(copy, s, len);
 	if (rip_disp != NULL)
 		memset(copy + (rip_disp - s), 0, 4);
+	if (abs_disp != NULL)
+		memset(copy + (abs_disp - s), 0, 4);
+	if (REC_X86 && imm == 4)
+		memset(copy + len - 4, 0, 4);
 	if (imm == 8)
 		memset(copy + len - 8, 0, 8);
 	if (rel == 4)
@@ -594,6 +687,10 @@ static u32 mix_insn(const u8 *p)
 		mix(copy[i]);
 	if (rip_disp != NULL)
 		mix_target((uintptr_t)(p + (s32)rd32le(rip_disp)));
+	if (abs_disp != NULL)
+		mix_target((uintptr_t)rd32le(abs_disp));
+	if (REC_X86 && imm == 4)
+		mix_imm32(rd32le(p - 4));
 	if (imm == 8)
 		mix_imm64((u64)rd32le(p - 8) | (u64)rd32le(p - 4) << 32);
 	if (rel == 4)
@@ -636,6 +733,20 @@ static void mix_code(const u8 *code_at, u32 size)
 static void know_all(void)
 {
 	static const void *const functions[] = {
+#if REC_X86
+		(const void *)(uintptr_t)&rec_x86_mem_load8, (const void *)(uintptr_t)&rec_x86_mem_load16,
+		(const void *)(uintptr_t)&rec_x86_mem_load32, (const void *)(uintptr_t)&rec_x86_mem_load64,
+		(const void *)(uintptr_t)&rec_x86_mem_store8, (const void *)(uintptr_t)&rec_x86_mem_store16,
+		(const void *)(uintptr_t)&rec_x86_mem_store32, (const void *)(uintptr_t)&rec_x86_mem_store64,
+		(const void *)(uintptr_t)&rec_x86_read_noex8, (const void *)(uintptr_t)&rec_x86_read_noex16,
+		(const void *)(uintptr_t)&rec_x86_read_noex32, (const void *)(uintptr_t)&rec_x86_read_noex64,
+		(const void *)(uintptr_t)&rec_x86_write_noex8, (const void *)(uintptr_t)&rec_x86_write_noex16,
+		(const void *)(uintptr_t)&rec_x86_write_noex32, (const void *)(uintptr_t)&rec_x86_write_noex64,
+		(const void *)(uintptr_t)&rec_x86_interpreter_fallback, (const void *)(uintptr_t)&rec_x86_do_sqw_mmu_no_ex,
+		(const void *)(uintptr_t)&rec_x86_do_sqw_nommu_local, (const void *)(uintptr_t)&rec_x86_blockcheckfail,
+		(const void *)(uintptr_t)&ngen_link, (const void *)(uintptr_t)&bm_GetCodeByVAddr,
+		(const void *)(uintptr_t)&rdv_FailedToFindBlock, (const void *)(uintptr_t)&UpdateSystem_INTC,
+#else
 		(const void *)(uintptr_t)&rec_x64_mem_load8, (const void *)(uintptr_t)&rec_x64_mem_load16,
 		(const void *)(uintptr_t)&rec_x64_mem_load32, (const void *)(uintptr_t)&rec_x64_mem_load64,
 		(const void *)(uintptr_t)&rec_x64_mem_store8, (const void *)(uintptr_t)&rec_x64_mem_store16,
@@ -653,6 +764,7 @@ static void know_all(void)
 #else
 		NULL,
 #endif
+#endif
 		(const void *)(uintptr_t)&rd8, (const void *)(uintptr_t)&rd16, (const void *)(uintptr_t)&rd32,
 		(const void *)(uintptr_t)&rd64, (const void *)(uintptr_t)&wr8, (const void *)(uintptr_t)&wr16,
 		(const void *)(uintptr_t)&wr32, (const void *)(uintptr_t)&wr64,
@@ -667,13 +779,13 @@ static void know_all(void)
 	for (i = 0; i < sizeof(functions) / sizeof(functions[0]); i++)
 		if (functions[i] != NULL)
 			know(functions[i], 1, 1 + i);
-	know(&rcb, sizeof(rcb), 100);
+	know(rcb, sizeof(*rcb), 100);
 	know(code, sizeof(code), 101);
 	know(ram, sizeof(ram), 102);
 	know((const void *)AREA0_REGS, 0x400, 103);
 	know(mmu_read_lut, sizeof(mmu_read_lut), 104);
 	know(mmu_write_lut, sizeof(mmu_write_lut), 105);
-	know(sites, sizeof(sites), 106);
+	know(sites, 16 * sizeof(WaitSite), 106);
 	know(sin_table, sizeof(sin_table), 107);
 	know(&sh4_write_gen, sizeof(sh4_write_gen), 108);
 	know(&cycle_counter, sizeof(cycle_counter), 109);
@@ -814,13 +926,13 @@ static void links(RuntimeBlockInfo *b)
 	for (which = 0; which < 2; which++)
 	{
 		const u32 site = b->link_at[which];
-		u8 keep[7];
+		u8 keep[LINK_SITE];
 		void *to, **place;
 		u32 pc;
 		if (site == 0)
 			continue;
 		mix(0x4C490000u | (u32)which);
-		memcpy(keep, code_at + site, 7);
+		memcpy(keep, code_at + site, LINK_SITE);
 
 		/* what the block manager has */
 		link_from = (rnd() & 7) ? b : NULL;
@@ -841,7 +953,7 @@ static void links(RuntimeBlockInfo *b)
 
 		pc = rnd() & 7 ? (which == 0 ? b->BranchBlock : b->NextBlock) : rnd();
 		/* (with the MMU on the table is looked in itself, where the place is) */
-		place = &rcb.fpcb[((pc & 0x1FFFFFFF) >> 1) & FPCB_MASK];
+		place = &rcb->fpcb[((pc & 0x1FFFFFFF) >> 1) & FPCB_MASK];
 		*place = (void *)(uintptr_t)link_code;
 		to = ngen_link(code_at + site + 5, pc);
 		*place = NULL;
@@ -851,16 +963,16 @@ static void links(RuntimeBlockInfo *b)
 		mix(b->link_at[1]);
 		mix(b->pBranchBlock == &link_to);
 		mix(b->pNextBlock == &link_to);
-		mix_code(code_at + site, 7);
+		mix_code(code_at + site, LINK_SITE);
 
 		/* and unlinked again */
 		if (b->link_at[which] != 0)
 		{
 			b->pBranchBlock = b->pNextBlock = NULL;
 			ngen_Relink(b);
-			mix_code(code_at + site, 7);
+			mix_code(code_at + site, LINK_SITE);
 		}
-		memcpy(code_at + site, keep, 7);
+		memcpy(code_at + site, keep, LINK_SITE);
 		b->link_at[which] = site;
 	}
 	link_from = NULL;
@@ -894,9 +1006,13 @@ static void compile(RuntimeBlockInfo *b)
 	const u32 r = rnd();
 	const bool force_checks = (r & 7) == 0;
 	const bool optimise = (r & 0x18) != 0;
+#if REC_X86
+	static const int cpus[4] = { 0, 2, 0, 2 };
+#else
 	static const int cpus[4] = { 0, 2, 3, 7 };
+#endif
 
-	rec_x64_cpu = cpus[(r >> 5) & 3];
+	rec_cpu = cpus[(r >> 5) & 3];
 	b->temp_block = ((r >> 7) & 7) == 0;
 	b->mmu_go_on = ((r >> 10) & 1) != 0;
 	b->has_fpu_op = ((r >> 11) & 3) != 0;
@@ -906,7 +1022,7 @@ static void compile(RuntimeBlockInfo *b)
 	b->pBranchBlock = b->pNextBlock = NULL;
 	cache_at = cache_base;
 	ngen_Compile(b, force_checks, false, false, optimise);
-	mix(0x424C4B00u | force_checks | optimise << 1 | (u32)rec_x64_cpu << 2);
+	mix(0x424C4B00u | force_checks | optimise << 1 | (u32)rec_cpu << 2);
 	mix((u32)((u8 *)(uintptr_t)b->code - cache_base));
 	mix(b->host_code_size);
 	mix(b->link_at[0]);
@@ -926,7 +1042,11 @@ static void environment(void)
 	settings.dreamcast.FullMMU = (r & 3) == 0;
 	CCN_MMUCR.AT = (r & 4) != 0;
 	mmu_strict = (r & 0x38) == 0;
+#if REC_X86
+	virt_ram_base = (r & 0x40) ? FAKE_RAM_BASE : NULL;
+#else
 	virt_ram_base = (r & 0x40) ? ram - 0x0C000000 : NULL;
+#endif
 	vmem_4gb_space = virt_ram_base != NULL && (r & 0x80) != 0;
 	settings.dynarec.AccurateTiming = (r & 0x100) != 0;
 }
@@ -935,7 +1055,23 @@ int main(int argc, char **argv)
 {
 	int n = argc > 1 ? atoi(argv[1]) : 20000, t;
 	static RuntimeBlockInfo a;
-	p_sh4rcb = &rcb;
+#if REC_X86
+	{
+		u8 *fixed = (u8 *)mmap((void *)(uintptr_t)FIXED_AT, FIXED_SIZE, PROT_READ | PROT_WRITE,
+				MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+		if (fixed != (u8 *)(uintptr_t)FIXED_AT)
+		{
+			printf("FAIL: no memory at %08x for the SH4's context\n", FIXED_AT);
+			return 1;
+		}
+		rcb = (Sh4RCB *)fixed;
+		sites = (WaitSite *)(fixed + sizeof(Sh4RCB));
+	}
+#else
+	rcb = &rcb_room;
+	sites = sites_room;
+#endif
+	p_sh4rcb = rcb;
 	for (t = 0; t < 0x10000; t++)
 	{
 		sin_table[t].u[0] = rnd();

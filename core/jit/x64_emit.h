@@ -2,7 +2,8 @@
  * (rec-x64/rec_x64.c), on top of x86_emit.h: 64-bit, 16-bit and 8-bit
  * forms, SSE, and the few AVX ones, each encoded as Xbyak encoded it (the
  * mandatory prefix, then REX, then the opcode; 2-byte VEX where it will
- * do). x86-64 only. C89. */
+ * do). What takes no REX - the first eight registers, 32 bits and less -
+ * is 32-bit x86's as well (rec-x86/rec_x86.c). C89. */
 #ifndef X64_EMIT_H
 #define X64_EMIT_H
 
@@ -250,6 +251,41 @@ static INLINE void x64_sse_rm(x86_emit *e, u32 pref, bool w, u32 op, int reg, x8
 #define x64_movapd(e, dst, src)    x64_sse_rr(e, 0x66, false, 0x28, dst, src)
 #define x64_cvtpd2ps(e, dst, src)  x64_sse_rr(e, 0x66, false, 0x5A, dst, src)
 #define x64_movlhps(e, dst, src)   x64_sse_rr(e, 0, false, 0x16, dst, src)
+
+/* movq xmm, [m] / [m], xmm (the low 64 bits, the rest cleared on a load) */
+#define x64_movq_load(e, x, m)     x64_sse_rm(e, 0xF3, false, 0x7E, x, m, 0)
+#define x64_movq_store(e, m, x)    x64_sse_rm(e, 0x66, false, 0xD6, x, m, 0)
+/* punpckldq xmm, xmm */
+#define x64_punpckldq(e, dst, src) x64_sse_rr(e, 0x66, false, 0x62, dst, src)
+
+/* fstp dword [m] (32-bit x86: where a C function leaves a float) */
+static INLINE void x64_fstp_m32(x86_emit *e, x86_mem m)
+{
+   x64_op1(e, 0, false, 0xD9, -1, 3, 0, &m, 0, false, false);
+}
+
+/* No-operations to the next multiple of @align of the address, as Xbyak's
+ * align() made them */
+static INLINE void x64_align(x86_emit *e, u32 align)
+{
+   static const u8 nops[9][9] = {
+      { 0x90 }, { 0x66, 0x90 }, { 0x0F, 0x1F, 0x00 }, { 0x0F, 0x1F, 0x40, 0x00 },
+      { 0x0F, 0x1F, 0x44, 0x00, 0x00 }, { 0x66, 0x0F, 0x1F, 0x44, 0x00, 0x00 },
+      { 0x0F, 0x1F, 0x80, 0x00, 0x00, 0x00, 0x00 }, { 0x0F, 0x1F, 0x84, 0x00, 0x00, 0x00, 0x00, 0x00 },
+      { 0x66, 0x0F, 0x1F, 0x84, 0x00, 0x00, 0x00, 0x00, 0x00 }
+   };
+   u32 remain = (u32)((uintptr_t)e->p % align), size, i;
+   if (remain == 0)
+      return;
+   size = align - remain;
+   while (size > 0)
+   {
+      const u32 len = size > 9 ? 9 : size;
+      for (i = 0; i < len; i++)
+         x86_db(e, nops[len - 1][i]);
+      size -= len;
+   }
+}
 
 /* shufps / pshufd / cmpps xmm, xmm, imm8 */
 static INLINE void x64_sse_rri(x86_emit *e, u32 pref, u32 op, int dst, int src, u32 imm)
