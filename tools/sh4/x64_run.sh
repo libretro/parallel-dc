@@ -7,7 +7,7 @@
 # x64_test.c is built with the recompiler and what it compiles from (the
 # decoder, the SSA optimizer, the register allocator), with the C flags
 # the core is built with; it hashes the code made of random blocks, which
-# must be what the C++ recompiler made of them (x64_expected.txt holds
+# must be what it made when last changed on purpose (x64_expected.txt holds
 # 20000 and 5000 blocks, for Linux and macOS and for Windows, whose
 # registers are not the same). Extra flags, such as
 # -fsanitize=address,undefined, go to the compiler and the link. WINDOWS=1

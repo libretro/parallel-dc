@@ -782,7 +782,8 @@ static void dead_code_removal_pass(ssa_state *s)
 			dead_code = dest_unused(last_versions, &op->rd) || dead_code;
 		if (shil_is_reg(&op->rd2))
 			dead_code = dest_unused(last_versions, &op->rd2) && dead_code;
-		if (dead_code && op->op != shop_readm)	/* memory read on registers can have side effects */
+		/* (a memory read can have side effects; div1 changes Q as well) */
+		if (dead_code && op->op != shop_readm && op->op != shop_div1)
 		{
 			bm_OpErase(block, (u32)opnum);
 			s->stats.dead_code_ops++;
@@ -817,10 +818,19 @@ static void simplify_expression_pass(ssa_state *s)
 						|| o == shop_shl || o == shop_shr || o == shop_sar || o == shop_shad || o == shop_shld)
 					replace_by_mov32(op);
 			}
-			/* a * 1 == a */
-			else if (shil_imm_value(&op->rs2) == 1
-					&& (o == shop_mul_i32 || o == shop_mul_s16 || o == shop_mul_u16))
+			/* a * 1 == a; of 16 bits, a's low 16 bits extended */
+			else if (shil_imm_value(&op->rs2) == 1 && o == shop_mul_i32)
 				replace_by_mov32(op);
+			else if (shil_imm_value(&op->rs2) == 1 && o == shop_mul_s16)
+			{
+				op->op = shop_ext_s16;
+				op->rs2 = shil_param_none();
+			}
+			else if (shil_imm_value(&op->rs2) == 1 && o == shop_mul_u16)
+			{
+				op->op = shop_and;
+				op->rs2 = shil_param_imm(0xFFFF);
+			}
 		}
 		/* Not sure it's worth the trouble, except for the 'and' and 'xor' */
 		else if (shil_is_r32i(&op->rs1) && op->rs1._imm == op->rs2._imm)

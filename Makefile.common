@@ -400,15 +400,15 @@ SOURCES_C += $(CORE_DIR)/core/paths.c \
 			$(CORE_DIR)/core/nullDC.c \
 			$(CORE_DIR)/core/cheats.c
 
-# The SH4's recompiler: none with NO_REC=1, the interpreter alone
+# The SH4's recompiler: none with NO_REC=1, the interpreter alone; the
+# portable one with HAVE_GENERIC_JIT=1, on any processor
 ifneq ($(NO_REC), 1)
 ifeq ($(HAVE_GENERIC_JIT), 1)
 	DYNAREC_USED = 1
-	SOURCES_CXX += $(CORE_DIR)/core/rec-cpp/rec_cpp.cpp
-endif
+	SOURCES_C += $(CORE_DIR)/core/rec-portable/rec_portable.c
 
 # Recompiler (x64)
-ifneq ($(filter $(WITH_DYNAREC), x86_64 x64),)
+else ifneq ($(filter $(WITH_DYNAREC), x86_64 x64),)
 	DYNAREC_USED = 1
 	SOURCES_C += $(CORE_DIR)/core/rec-x64/rec_x64.c
 
@@ -416,18 +416,15 @@ ifneq ($(filter $(WITH_DYNAREC), x86_64 x64),)
 else ifneq ($(filter $(WITH_DYNAREC), i386 i686 x86),)
 	DYNAREC_USED = 1
 	SOURCES_C += $(CORE_DIR)/core/rec-x86/rec_x86.c
-endif
-
 
 # Recompiler (ARM)
-ifeq ($(WITH_DYNAREC), arm)
+else ifeq ($(WITH_DYNAREC), arm)
 	DYNAREC_USED = 1
 	SOURCES_C += $(CORE_DIR)/core/rec-ARM/rec_arm.c
 	SOURCES_ASM += $(CORE_DIR)/core/rec-ARM/ngen_arm.S
-endif
 
 # Recompiler (ARM64)
-ifneq ($(filter $(WITH_DYNAREC), arm64 aarch64),)
+else ifneq ($(filter $(WITH_DYNAREC), arm64 aarch64),)
 	DYNAREC_USED = 1
 	# (for macOS, what it has is in rec_arm64.c, in Apple's syntax)
 	ifeq (,$(findstring osx,$(platform)))

@@ -8,7 +8,7 @@
 # sh4_opcode_list.c, with the C flags the core is built with and what else
 # they call stubbed; it hashes where the allocator puts each register at
 # each operation, and the loads and write-backs it asks for, which must be
-# what the C++ allocator did (regalloc_expected.txt holds 5000 and 20000
+# what it did when last changed on purpose (regalloc_expected.txt holds 5000 and 20000
 # blocks). Extra flags, such as -fsanitize=address,undefined, go to
 # the compiler and the link. WINDOWS=1 builds it for Windows with mingw-w64
 # and runs it under wine.

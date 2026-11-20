@@ -220,6 +220,12 @@
 #define FEAT_DSPREC DYNAREC_NONE
 #endif
 
+/* The SH4's portable recompiler (core/rec-portable) in place of the
+ * processor's own (HAVE_GENERIC_JIT=1) */
+#if defined(TARGET_PORTABLE_REC) && !defined(FEAT_SHREC)
+#define FEAT_SHREC DYNAREC_CPP
+#endif
+
 /* defaults */
 
 #ifndef DC_PLATFORM 

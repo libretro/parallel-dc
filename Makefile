@@ -10,10 +10,10 @@ NO_EXCEPTIONS := 0
 NO_NVMEM      := 0
 NO_VERIFY     := 1
 HAVE_LTCG     ?= 0
-# The portable recompiler (rec-cpp) is opt-in, and not built for a
-# processor with no recompiler of its own: it has not been brought up to
-# date with the rest (no main loop, operations it has no class for). The
-# interpreter is.
+# The portable recompiler (core/rec-portable), for a processor with no
+# recompiler of its own: on by default for platform=unix (below), where
+# there is memory for its code cache; elsewhere such a processor has the
+# interpreter. HAVE_GENERIC_JIT=1 has it on any processor.
 HAVE_GENERIC_JIT := 0
 HAVE_GL3      := 0
 FORCE_GLES    := 0
@@ -1040,9 +1040,13 @@ ifeq ($(WITH_DYNAREC), mips)
 endif
 
 # No recompiler for this processor (WITH_DYNAREC empty, or one there is
-# none for): the generic CPU
+# none for): the generic CPU, and on Linux and the like the portable
+# recompiler (HAVE_GENERIC_JIT=0 for the interpreter alone)
 ifeq ($(HOST_CPU_FLAGS),)
 	HOST_CPU_FLAGS = -DHOST_CPU=$(HOST_CPU_GENERIC)
+	ifneq (,$(findstring unix,$(platform)))
+		HAVE_GENERIC_JIT = 1
+	endif
 endif
 
 ifeq ($(FORCE_GLES),1)
@@ -1239,13 +1243,8 @@ ifeq ($(HAVE_D3D12), 1)
 	CORE_DEFINES += -DHAVE_D3D12
 endif
 
-ifeq ($(DEBUG), 1)
-	HAVE_GENERIC_JIT = 0
-endif
-
 ifeq ($(HAVE_GENERIC_JIT), 1)
-	CORE_DEFINES += -DTARGET_NO_JIT
-	NEED_CXX11=1
+	CORE_DEFINES += -DTARGET_PORTABLE_REC
 endif
 
 ifeq ($(NEED_CXX11), 1)

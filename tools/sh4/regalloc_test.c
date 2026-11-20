@@ -3,7 +3,7 @@
  * and of random blocks of operations made up whole, with as many host
  * registers as each recompiler has and fewer, pairs in registers and not:
  * where each register is at each operation, and every load and write-back
- * asked for, hashed, against what the C++ allocator it replaced did
+ * asked for, hashed, against what it did when last changed on purpose
  * (sh tools/sh4/regalloc_run.sh). */
 #include <stdio.h>
 #include <stdlib.h>

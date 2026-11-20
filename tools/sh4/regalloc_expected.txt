@@ -1,2 +1,2 @@
-5000 blocks, 3112 made shorter, ae3183c3
-20000 blocks, 12612 made shorter, dee41e7f
+5000 blocks, 3102 made shorter, 9dfbf03b
+20000 blocks, 12564 made shorter, c78da0d6

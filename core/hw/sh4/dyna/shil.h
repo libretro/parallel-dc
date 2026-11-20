@@ -1,14 +1,8 @@
 #ifndef SHIL_H
 #define SHIL_H
-/* The recompilers' intermediate operations (shil): C and C++. C++ has the
- * operands' and operations' methods as well (the recompilers' backends). */
+/* The recompilers' intermediate operations (shil): C, and seen by C++ */
 #include <string.h>
 #include "hw/sh4/sh4_if.h"
-
-#ifdef __cplusplus
-#include <new>
-#include <string>
-#endif
 
 typedef struct shil_opcode shil_opcode;
 typedef void shil_chfp(shil_opcode* op);
@@ -46,122 +40,15 @@ enum shil_param_type
 	param types: r32, r64
 */
 
-
 #include "shilop.h"
 
 typedef struct shil_param
 {
-#ifdef __cplusplus
-
-	shil_param()
-	{
-		type=FMT_NULL;
-		_imm=0xFFFFFFFF;
-		memset(version, 0, sizeof(version));
-	}
-	shil_param(u32 type,u32 imm)
-	{
-		this->type=type;
-		if (type >= FMT_REG_BASE)
-			new (this) shil_param((Sh4RegType)imm);
-		_imm=imm;
-		memset(version, 0, sizeof(version));
-	}
-
-	shil_param(Sh4RegType reg)
-	{
-		type=FMT_NULL;
-		if (reg>=reg_fr_0 && reg<=reg_xf_15)
-		{
-			type=FMT_F32;
-			_imm=reg;
-		}
-		else if (reg>=regv_dr_0 && reg<=regv_dr_14)
-		{
-			type=FMT_F64;
-			_imm=(reg-regv_dr_0)*2+reg_fr_0;
-		}
-		else if (reg>=regv_xd_0 && reg<=regv_xd_14)
-		{
-			type=FMT_F64;
-			_imm=(reg-regv_xd_0)*2+reg_xf_0;
-		}
-		else if (reg>=regv_fv_0 && reg<=regv_fv_12)
-		{
-			type=FMT_V4;
-			_imm=(reg-regv_fv_0)*4+reg_fr_0;
-		}
-		else if (reg==regv_xmtrx)
-		{
-			type=FMT_V16;
-			_imm=reg_xf_0;
-		}
-		else if (reg==regv_fmtrx)
-		{
-			type=FMT_V16;
-			_imm=reg_fr_0;
-		}
-		else
-		{
-			type=FMT_I32;
-			_reg=reg;
-		}
-		memset(version, 0, sizeof(version));
-	}
-	union
-	{
-		u32 _imm;
-		Sh4RegType _reg;
-	};
-#else
 	u32 _imm;	/* (or the register, a Sh4RegType: one word either way) */
-#endif
 
 	u32 type;
 	u16 version[16];
 
-#ifdef __cplusplus
-	bool is_null() const { return type==FMT_NULL; }
-	bool is_imm() const { return type==FMT_IMM; }
-	bool is_reg() const { return type>=FMT_REG_BASE; }
-
-	bool is_r32i() const { return type==FMT_I32; }
-	bool is_r32f() const { return type==FMT_F32; }
-	u32 is_r32fv()  const { return type>=FMT_VECTOR_BASE?count():0; }
-	bool is_r64f() const { return type==FMT_F64; }
-
-	bool is_r32() const { return is_r32i() || is_r32f(); }
-	bool is_r64() const { return is_r64f(); }	/* just here for symmetry ... */
-
-	bool is_imm_s8() const { return is_imm() && is_s8(_imm); }
-	bool is_imm_u8() const { return is_imm() && is_u8(_imm); }
-	bool is_imm_s16() const { return is_imm() && is_s16(_imm); }
-	bool is_imm_u16() const { return is_imm() && is_u16(_imm); }
-
-	u32* reg_ptr()  const { verify(is_reg()); return GetRegPtr(_reg); }
-	s32  reg_nofs()  const { verify(is_reg()); return (s32)((u8*)GetRegPtr(_reg) - (u8*)GetRegPtr(reg_xf_0)-sizeof(Sh4cntx)); }
-	u32  reg_aofs()  const { return -reg_nofs(); }
-
-	u32 imm_value() const { verify(is_imm()); return _imm; }
-
-	bool is_vector() const { return type>=FMT_VECTOR_BASE; }
-
-	u32 count() const { return  type==FMT_F64?2:type==FMT_V2?2:
-								type==FMT_V3?3:type==FMT_V4?4:type==FMT_V8?8:
-								type==FMT_V16?16:1; }	/* count of hardware regs */
-
-	/*	
-		Imms:
-		is_imm
-		
-		regs:
-		integer regs            : is_r32i,is_r32,count=1
-		fpu regs, single view   : is_r32f,is_r32,count=1
-		fpu regs, double view   : is_r64f,count=2
-		fpu regs, quad view     : is_vector,is_r32fv=4, count=4
-		fpu regs, matrix view   : is_vector,is_r32fv=16, count=16
-	*/
-#endif
 } shil_param;
 
 /* C's constructors: none, a constant or a register of a type (by
@@ -263,11 +150,7 @@ struct shil_opcode
 	u16 guest_offs;
 	bool delay_slot;
 
-#ifdef __cplusplus
-	std::string dissasm() const;
-#endif
 };
-
 
 #ifdef __cplusplus
 extern "C" {
@@ -296,20 +179,6 @@ void ngen_CC_Finish(shil_opcode* op);
 void shil_name_reg(char *buf, size_t size, Sh4RegType reg);
 void shil_disasm(char *buf, size_t size, const shil_opcode *op);
 #ifdef __cplusplus
-}
-
-static inline std::string name_reg(Sh4RegType reg)
-{
-	char buf[64];
-	shil_name_reg(buf, sizeof(buf), reg);
-	return buf;
-}
-
-inline std::string shil_opcode::dissasm() const
-{
-	char buf[256];
-	shil_disasm(buf, sizeof(buf), this);
-	return buf;
 }
 #endif
 

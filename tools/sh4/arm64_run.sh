@@ -7,7 +7,7 @@
 # AArch64 host) and the C flags the core is built with there, with the
 # recompiler and what it compiles from, and run (under qemu-aarch64 on
 # another host); it hashes the code made of random blocks, which must be
-# what the C++ recompiler made of them (arm64_expected.txt holds 20000 and
+# what it made when last changed on purpose (arm64_expected.txt holds 20000 and
 # 5000 blocks). What the recompiler takes the address of as a number is put
 # at an address of its own: the interpreter's handlers, the functions
 # never called, sin_table and sh4_write_gen. Only does anything on Linux.

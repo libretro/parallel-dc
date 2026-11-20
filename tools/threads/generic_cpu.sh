@@ -1,9 +1,9 @@
 #!/bin/sh
-# A processor the core has no recompiler for, RISC-V 64 (a generic one to
-# the core: HOST_CPU_GENERIC): built for it with the cross compiler, as
-# `make ARCH=riscv64` has it - the interpreter, the C library's rounding,
-# every symbol there at the link - and the disc run on it under qemu
-# (headless.sh).
+# A processor the core has no recompiler of its own for, RISC-V 64 (a
+# generic one to the core: HOST_CPU_GENERIC): built for it with the cross
+# compiler, as `make ARCH=riscv64` has it - the portable recompiler, the C
+# library's rounding, every symbol there at the link - and the disc run on
+# it under qemu (headless.sh).
 #
 #   sh tools/threads/generic_cpu.sh
 #
@@ -13,6 +13,8 @@
 #        for that processor, with its recompilers
 # CROSS_FLAGS  what the compilers are to be given besides (for 32-bit ARM,
 #        -marm -mfpu=neon-vfpv4, as the core's ARM builds have)
+# MAKE_EXTRA  what make is to be given besides (HAVE_GENERIC_JIT=0: the
+#        interpreter alone)
 #
 # (The host's own programs the test runs say they cannot preload its
 # libGLESv2.so.2, which is RISC-V's: they do not need it.)
@@ -44,7 +46,7 @@ fi
    || { echo "generic_cpu: OpenGL's headers are not installed (libgl1-mesa-dev)" >&2; exit 1; }
 # (built away from the tree's own build)
 git worktree add --detach "$WORK/src" >/dev/null
-MAKEARGS="-C $WORK/src -j$(nproc) platform=unix ARCH=$ARCH CC=$CROSS-gcc"
+MAKEARGS="-C $WORK/src -j$(nproc) platform=unix ARCH=$ARCH CC=$CROSS-gcc $MAKE_EXTRA"
 # An OpenGL that does nothing to link with, of the functions the core calls
 make $MAKEARGS CXX="$CROSS-g++ -L$WORK/gl" -k >/dev/null 2>&1 || true
 find "$WORK/src/core" -name '*.o' -exec "$CROSS-nm" --undefined-only {} + 2>/dev/null \

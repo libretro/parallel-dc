@@ -6,9 +6,10 @@ name: Headless
 # timings and the MMU, states saved and loaded and every frame run ahead
 # (each the same, byte for byte, as the frames run straight), code that
 # rewrites itself, a NAOMI cartridge and romsets: tools/threads/headless.sh;
-# and again on a build with the interpreter alone, as iOS's is, and on one
-# for a processor with no recompiler, RISC-V 64 under qemu, and on 32-bit
-# ARM under qemu with its recompilers (tools/threads/generic_cpu.sh).
+# and again on a build with the interpreter alone, as iOS's is, on one with
+# the portable recompiler, on one for a processor with no recompiler of its
+# own, RISC-V 64 under qemu, with the portable recompiler and without, and
+# on 32-bit ARM under qemu with its recompilers (tools/threads/generic_cpu.sh).
 # And a strip's indices, the parse's C89 kernel, against the loop it
 # replaced (tools/pvr/ta_index_test.sh); and the parse timed on the heavy
 # disc, the strips its vertex loop found drawable whole making the indices
@@ -16,12 +17,14 @@ name: Headless
 # each read of SPG_STATUS sees, kept from the read before on its line,
 # against the beam found afresh (tools/pvr/spg_beam_test.sh). And the
 # recompilers' pool, pieces taken and given back at random
-# (tools/sh4/node_pool_test.sh). The register allocator's choices as the
-# C++ made them (tools/sh4/regalloc_run.sh). The x86-64 recompiler's code
-# as the C++ made it (tools/sh4/x64_run.sh), the 32-bit x86 one's
+# (tools/sh4/node_pool_test.sh). The register allocator's choices as
+# last made on purpose (tools/sh4/regalloc_run.sh). The x86-64 recompiler's
+# code as last made on purpose (tools/sh4/x64_run.sh), the 32-bit x86 one's
 # (tools/sh4/x86_run.sh), the AArch64 one's and the 32-bit ARM one's,
 # under qemu (tools/sh4/arm64_run.sh, tools/sh4/arm_run.sh), and the
 # sound chip's ARM7 recompiled for 32-bit ARM (tools/arm7/arm32_run.sh).
+# The portable recompiler against the interpreter, on blocks of random code
+# (tools/sh4/portable_run.sh).
 # And the recompilers
 # against the interpreters, each built alone (tools/sh4/run.sh), the sound
 # chip's ARM7 compiled for x86-64, x86, ARM64 and 32-bit ARM and its DSP
@@ -31,7 +34,7 @@ name: Headless
 # table as it always was (tools/sh4/opcode_table_run.sh), the decoder's
 # blocks as the C++ decoder made them (tools/sh4/decoder_run.sh), the wait
 # sites as the C++ gave them out and judged (tools/sh4/wait_site_run.sh), the
-# blocks the SSA optimizer leaves as the C++ left them (tools/sh4/ssa_run.sh),
+# blocks the SSA optimizer leaves as last made on purpose (tools/sh4/ssa_run.sh),
 # the block manager and the driver as the C++ did (tools/sh4/blockmanager_run.sh,
 # tools/sh4/driver_run.sh), the instruction
 # and operand caches as they always were (tools/sh4/sh4_cache_run.sh), the
@@ -129,6 +132,7 @@ on:
       - 'tools/sh4/x86_*'
       - 'tools/sh4/arm64_*'
       - 'tools/sh4/arm_*'
+      - 'tools/sh4/portable_*'
       - 'tools/sh4/node_pool_test.*'
       - 'tools/rend/band_pool_test.*'
       - 'tools/rend/custom_image*'
@@ -186,6 +190,7 @@ on:
       - 'tools/sh4/x86_*'
       - 'tools/sh4/arm64_*'
       - 'tools/sh4/arm_*'
+      - 'tools/sh4/portable_*'
       - 'tools/sh4/node_pool_test.*'
       - 'tools/rend/band_pool_test.*'
       - 'tools/rend/custom_image*'
@@ -257,6 +262,13 @@ jobs:
           make -C "$D" -j"$(nproc)" WITH_DYNAREC= HAVE_GENERIC_JIT=0 NO_REC=1 'HOST_CPU_FLAGS=-DHOST_CPU=$(HOST_CPU_X64)'
           WORK=${RUNNER_TEMP:-/tmp}/interp-work sh tools/threads/headless.sh "$D/parallel_dc_libretro.so"
           git worktree remove --force "$D"
+      - name: The same with the portable recompiler (HAVE_GENERIC_JIT=1), as a processor with no recompiler of its own has it
+        run: |
+          D=${RUNNER_TEMP:-/tmp}/portable
+          git worktree add --detach "$D"
+          make -C "$D" -j"$(nproc)" HAVE_GENERIC_JIT=1
+          WORK=${RUNNER_TEMP:-/tmp}/portable-work sh tools/threads/headless.sh "$D/parallel_dc_libretro.so"
+          git worktree remove --force "$D"
       - name: The threads a texture scaled up is shared out to (TSan, ASan/UBSan, no threads), and no OpenMP in the core
         run: sh tools/rend/band_pool_test.sh parallel_dc_libretro.so
       - name: Custom textures' pictures (PNG, JPEG) read as stb_image read them, cut and spoilt, dumped and read back (ASan/UBSan; AArch64)
@@ -277,22 +289,26 @@ jobs:
         run: sh tools/pvr/ta_parse_bench.sh
       - name: The beam kept from read to read of SPG_STATUS against the beam found afresh, straight and run ahead
         run: sh tools/pvr/spg_beam_test.sh
-      - name: The register allocator's choices, loads and write-backs, as the C++ made them (and with the sanitizers)
+      - name: The register allocator's choices, loads and write-backs, as last made on purpose (and with the sanitizers)
         run: |
           sh tools/sh4/regalloc_run.sh
           sh tools/sh4/regalloc_run.sh 5000 -fsanitize=address,undefined -fno-sanitize-recover=all
-      - name: The x86-64 recompiler's code, linked, unlinked and rewritten, as the C++ made it (and with the sanitizers)
+      - name: The x86-64 recompiler's code, linked, unlinked and rewritten, as last made on purpose (and with the sanitizers)
         run: |
           sh tools/sh4/x64_run.sh
           sh tools/sh4/x64_run.sh 5000 -fsanitize=address,undefined -fno-sanitize-recover=all
-      - name: The 32-bit x86 recompiler's code, linked, unlinked and rewritten, as the C++ made it
+      - name: The 32-bit x86 recompiler's code, linked, unlinked and rewritten, as last made on purpose
         run: sh tools/sh4/x86_run.sh
-      - name: The AArch64 recompiler's code, relinked and rewritten, as the C++ made it (under qemu)
+      - name: The AArch64 recompiler's code, relinked and rewritten, as last made on purpose (under qemu)
         run: sh tools/sh4/arm64_run.sh
-      - name: The 32-bit ARM recompiler's code, relinked and rewritten, as the C++ made it (under qemu)
+      - name: The 32-bit ARM recompiler's code, relinked and rewritten, as last made on purpose (under qemu)
         run: sh tools/sh4/arm_run.sh
       - name: The sound chip's ARM7 recompiled for 32-bit ARM, as it was last made on purpose (under qemu)
         run: sh tools/arm7/arm32_run.sh
+      - name: The portable recompiler against the interpreter, on blocks of random code (and with the sanitizers)
+        run: |
+          sh tools/sh4/portable_run.sh 60000
+          sh tools/sh4/portable_run.sh 20000 -fsanitize=address,undefined -fno-sanitize-recover=all
       - name: The recompilers' pool (blocks, their lists, the labels), pieces taken and given back
         run: sh tools/sh4/node_pool_test.sh
       - name: The interpreter's FMAC, a * b + c rounded once without fmaf(), against fmaf() rounding both ways the SH4 does (and ARM64's own, under qemu)
@@ -309,7 +325,7 @@ jobs:
         run: |
           sh tools/sh4/wait_site_run.sh
           sh tools/sh4/wait_site_run.sh 20000 -fsanitize=address,undefined -fno-sanitize-recover=all
-      - name: The SSA optimizer's blocks, decoded and made up, as the C++ left them, and a division of constants (and with the sanitizers)
+      - name: The SSA optimizer's blocks, decoded and made up, as last made on purpose, and a division of constants (and with the sanitizers)
         run: |
           sh tools/sh4/ssa_run.sh
           sh tools/sh4/ssa_run.sh 5000 -fsanitize=address,undefined -fno-sanitize-recover=all
@@ -508,15 +524,17 @@ jobs:
 
   generic-cpu:
     runs-on: ubuntu-24.04
-    timeout-minutes: 60
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
       - name: Install the RISC-V and 32-bit ARM cross compilers and qemu
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends g++-riscv64-linux-gnu gcc-riscv64-linux-gnu libc6-dev-riscv64-cross g++-arm-linux-gnueabihf gcc-arm-linux-gnueabihf libc6-dev-armhf-cross qemu-user-static python3 libgl1-mesa-dev
-      - name: A processor with no recompiler (RISC-V 64, under qemu) - built as make ARCH=riscv64 has it, every symbol there, and the disc run on it
+      - name: A processor with no recompiler of its own (RISC-V 64, under qemu) - built as make ARCH=riscv64 has it, with the portable recompiler, every symbol there, and the disc run on it
         run: sh tools/threads/generic_cpu.sh
+      - name: The same with the interpreter alone (HAVE_GENERIC_JIT=0)
+        run: MAKE_EXTRA=HAVE_GENERIC_JIT=0 sh tools/threads/generic_cpu.sh
       - name: 32-bit ARM, with its recompilers for the SH4 and the ARM7 (under qemu) - built as make ARCH=arm has it, every symbol there, and the disc run on it
         run: CROSS=arm-linux-gnueabihf QEMU=qemu-arm-static ARCH=arm CROSS_FLAGS="-marm -mfpu=neon-vfpv4" sh tools/threads/generic_cpu.sh
       - name: The texture converters in plain C (RISC-V 64, under qemu), against upstream's

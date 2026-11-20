@@ -1455,8 +1455,7 @@ sh4op(i0010_nnnn_mmmm_1110)
 	/* check  ++ */
 	u32 n = GetN(op);
 	u32 m = GetM(op);
-	mac.l=((u16)r[n])*
-		((u16)r[m]);
+	mac.l = (u32)(u16)r[n] * (u16)r[m];
 }
 
 /* muls.w <REG_M>,<REG_N> */
@@ -1568,7 +1567,8 @@ sh4op(i0000_nnnn_mmmm_0111)
 {
 	u32 n = GetN(op);
 	u32 m = GetM(op);
-	mac.l = (u32)((((s32)r[n]) * ((s32)r[m])));
+	/* (the low 32 bits are the same signed or not) */
+	mac.l = r[n] * r[m];
 }
 /* ************************ Div ! ************************ */
 /* div0u */
@@ -1808,7 +1808,7 @@ sh4op(i0100_nnnn_0010_0000)
 {
 	u32 n=GetN(op);
 	sr.T=r[n]>>31;
-	r[n]=((s32)r[n])<<1;
+	r[n] <<= 1;
 }
 
 

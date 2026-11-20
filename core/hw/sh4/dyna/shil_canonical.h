@@ -7,14 +7,6 @@
 	d) Cookies (if you're really lucky)
 
 */
-#if HOST_CPU == CPU_ARM && !defined(_ANDROID) && 0
-/* FIXME: Fix extern function support on shil, or remove these */
-extern "C" void ftrv_asm(float* fd,float* fn, float* fm);
-extern "C" f32 fipr_asm(float* fn, float* fm);
-#define ftrv_impl ftrv_asm
-#define fipr_impl fipr_asm
-#endif
-
 #ifndef ftrv_impl
 #define ftrv_impl f1
 #endif
@@ -25,8 +17,7 @@ extern "C" f32 fipr_asm(float* fn, float* fm);
 
 #define fsca_impl fsca_table
 
-/* (C: a canonical function's name, and an op's compile function's; C++
- * has the C names, declared with C linkage, with SHIL_C defined) */
+/* (a canonical function's name, and an op's compile function's) */
 #ifndef SHIL_FN
 #define SHIL_FN_(op,name) shil_opcl_##op##_##name
 #define SHIL_FN(op,name) SHIL_FN_(op,name)
@@ -44,8 +35,8 @@ extern "C" f32 fipr_asm(float* fn, float* fm);
 
 	#define shil_canonical(rv,name,args,code)
 	#define shil_compile(code)
-#elif SHIL_MODE==1 && (!defined(__cplusplus) || defined(SHIL_C))
-	/* C: functions, shil_opcl_<op>_<name>, and each op's static
+#elif SHIL_MODE==1
+	/* functions, shil_opcl_<op>_<name>, and each op's static
 	 * shil_compile_<op>() (the op's name is SHIL_OPNAME, put in before each) */
 	#define SHIL_START
 	#define SHIL_END
@@ -61,65 +52,21 @@ extern "C" f32 fipr_asm(float* fn, float* fm);
 	#define shil_cf_ext(x) ngen_CC_Call(op,(void*)(uintptr_t)&x);
 	#define shil_cf(x) shil_cf_ext(SHIL_FN(SHIL_OPNAME,x))
 	#define shil_compile(code) static void SHIL_COMPILE_FN(SHIL_OPNAME)(shil_opcode* op) { ngen_CC_Start(op); code ngen_CC_Finish(op); }
-#elif SHIL_MODE==2 && (!defined(__cplusplus) || defined(SHIL_C))
-	/* C: the functions' declarations */
+#elif SHIL_MODE==2
+	/* the functions' declarations */
 	#define SHIL_START
 	#define SHIL_END
 	#define shil_opc(name)
 	#define shil_opc_end()
 	#define shil_canonical(rv,name,args,code) rv SHIL_FN(SHIL_OPNAME,name) args;
 	#define shil_compile(code)
-#elif SHIL_MODE==3 && (!defined(__cplusplus) || defined(SHIL_C))
-	/* C: the table of the compile functions (after SHIL_MODE 1) */
+#elif SHIL_MODE==3
+	/* the table of the compile functions (after SHIL_MODE 1) */
 	#define SHIL_START \
 	shil_chfp* shil_chf[] = {
 	#define SHIL_END };
 	#define shil_opc(name) &shil_compile_##name,
 	#define shil_opc_end()
-	#define shil_canonical(rv,name,args,code)
-	#define shil_compile(code)
-#elif  SHIL_MODE==1
-	/* generate structs ... */
-	#define SHIL_START
-	#define SHIL_END
-
-	#define shil_opc(name) struct shil_opcl_##name { 
-	#define shil_opc_end() };
-
-	#define shil_canonical(rv,name,args,code) struct name { static rv impl args { code } };
-	
-	#define shil_cf_arg_u32(x) ngen_CC_Param(op,&op->x,CPT_u32);
-	#define shil_cf_arg_f32(x) ngen_CC_Param(op,&op->x,CPT_f32);
-	#define shil_cf_arg_ptr(x) ngen_CC_Param(op,&op->x,CPT_ptr);
-	#define shil_cf_rv_u32(x) ngen_CC_Param(op,&op->x,CPT_u32rv);
-	#define shil_cf_rv_f32(x) ngen_CC_Param(op,&op->x,CPT_f32rv);
-	#define shil_cf_rv_u64(x) ngen_CC_Param(op,&op->rd,CPT_u64rvL); ngen_CC_Param(op,&op->rd2,CPT_u64rvH);
-	#define shil_cf_ext(x) ngen_CC_Call(op,(void*)&x);
-	#define shil_cf(x) shil_cf_ext(x::impl)
-
-	#define shil_compile(code) static void compile(shil_opcode* op) { ngen_CC_Start(op); code ngen_CC_Finish(op); }
-#elif  SHIL_MODE==2
-	/* generate struct declarations ... */
-	#define SHIL_START
-	#define SHIL_END
-
-	#define shil_opc(name) struct shil_opcl_##name { 
-	#define shil_opc_end() };
-
-	#define shil_canonical(rv,name,args,code) struct name { static rv impl args; };
-	#define shil_compile(code) static void compile(shil_opcode* op);
-#elif  SHIL_MODE==3
-	/* generate struct list ... */
-	
-
-	#define SHIL_START \
-	shil_chfp* shil_chf[] = {
-
-	#define SHIL_END };
-
-	#define shil_opc(name) &shil_opcl_##name::compile,
-	#define shil_opc_end()
-
 	#define shil_canonical(rv,name,args,code)
 	#define shil_compile(code)
 #elif SHIL_MODE==4
@@ -143,7 +90,7 @@ extern "C" f32 fipr_asm(float* fn, float* fm);
 #include <math.h>
 #include "types.h"
 #include "../sh4_fmac.h"
-#if !defined(__cplusplus) && !((defined(__STDC_VERSION__) && __STDC_VERSION__ >= 199901L) || defined(_MSC_VER))
+#if !((defined(__STDC_VERSION__) && __STDC_VERSION__ >= 199901L) || defined(_MSC_VER))
 /* (C89 has the double functions alone: these are exact through them, or
  * rounded once, as the float ones are) */
 #ifndef sqrtf
@@ -198,6 +145,8 @@ shil_compile \
 
 #define UN_OP_I(z) UN_OP_I_BASE( return z (r1); ,u32)
 #define UN_OP_F(z) UN_OP_I_BASE( return z (r1); ,f32)
+/* (a NaN made the SH4's) */
+#define UN_OP_F_NAN(z) UN_OP_I_BASE( return fixNaN(z (r1)); ,f32)
 
 #define shil_recimp() \
 shil_compile( \
@@ -217,6 +166,7 @@ shil_compile( \
 
 #define UN_OP_I(z)
 #define UN_OP_F(z)
+#define UN_OP_F_NAN(z)
 #define shil_recimp()
 #endif
 
@@ -1107,7 +1057,7 @@ shil_opc_end()
 shil_opc(fsqrt)
 #undef SHIL_OPNAME
 #define SHIL_OPNAME fsqrt
-UN_OP_F(sqrtf)
+UN_OP_F_NAN(sqrtf)
 shil_opc_end()
 
 
@@ -1211,7 +1161,7 @@ shil_opc_end()
 shil_opc(fsrra)
 #undef SHIL_OPNAME
 #define SHIL_OPNAME fsrra
-UN_OP_F(1/sqrtf)
+UN_OP_F_NAN(1/sqrtf)
 shil_opc_end()
 
 
@@ -1339,5 +1289,6 @@ SHIL_END
 
 #undef UN_OP_I
 #undef UN_OP_F
+#undef UN_OP_F_NAN
 #undef BIN_OP_FU
 #undef shil_recimp

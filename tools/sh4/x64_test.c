@@ -4,8 +4,8 @@
  * the guest's memory mapped every way, blocks checked and not, and each set
  * of the processor's features it looks for: the code it makes for each,
  * its link sites linked and unlinked, and every fast memory access in it
- * rewritten as a call, hashed, against what the C++ recompiler it replaced
- * made (sh tools/sh4/x64_run.sh, tools/sh4/x86_run.sh).
+ * rewritten as a call, hashed, against what it made when last changed on
+ * purpose (sh tools/sh4/x64_run.sh, tools/sh4/x86_run.sh).
  *
  * Addresses outside the code cache - functions called, data reached - are
  * hashed as which thing they are, and where in it, rather than as numbers,

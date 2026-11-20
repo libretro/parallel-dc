@@ -6,7 +6,7 @@
 # x64_test.c, built for 32-bit x86 with i686-linux-gnu-gcc (or gcc -m32)
 # and the C flags the core is built with there, with the recompiler and
 # what it compiles from; it hashes the code made of random blocks, which
-# must be what the C++ recompiler made of them (x86_expected.txt holds
+# must be what it made when last changed on purpose (x86_expected.txt holds
 # 20000 and 5000 blocks). Only does anything on x86-64 and x86 Linux.
 set -e
 ROOT=$(cd "$(dirname "$0")/../.." && pwd)

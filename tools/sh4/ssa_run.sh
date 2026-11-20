@@ -8,7 +8,7 @@
 # with the C flags the core is built with and what else they call stubbed;
 # it hashes every block the optimizer leaves of the decoder's blocks of
 # random code and of random blocks of operations, which must be what the
-# C++ optimizer left (ssa_expected.txt holds 5000 and 20000 blocks). Extra flags, such as -fsanitize=address,undefined, go to
+# optimizer left when last changed on purpose (ssa_expected.txt holds 5000 and 20000 blocks). Extra flags, such as -fsanitize=address,undefined, go to
 # the compiler and the link. WINDOWS=1 builds it for Windows with mingw-w64
 # and runs it under wine.
 set -e

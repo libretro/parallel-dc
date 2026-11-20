@@ -1,6 +1,6 @@
 /* The SSA optimizer (core/hw/sh4/dyna/ssa.c) on blocks the decoder makes
  * of random code and on random blocks of operations made up whole, each
- * block it leaves hashed, against what the C++ optimizer it replaced left
+ * block it leaves hashed, against what it left when last changed on purpose
  * (sh tools/sh4/ssa_run.sh); a division of constants checked as well. */
 #include <stdio.h>
 #include <stdlib.h>

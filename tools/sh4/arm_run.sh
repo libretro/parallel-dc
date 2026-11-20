@@ -7,8 +7,8 @@
 # such a host) and the C flags the core is built with there, with the
 # recompiler and what it compiles from, and run (under qemu-arm on another
 # host); it hashes the code made of random blocks, relinked and with its
-# fast accesses rewritten, which must be what the C++ recompiler made of
-# them (arm_expected.txt holds 20000 and 5000 blocks). What the recompiler
+# fast accesses rewritten, which must be what it made of them when last
+# changed on purpose (arm_expected.txt holds 20000 and 5000 blocks). What the recompiler
 # takes the address of as a number is put at an address of its own: the
 # interpreter's handlers, the functions never called, sin_table,
 # sh4_write_gen and the MMU's tables. Only does anything on Linux.

@@ -28,7 +28,12 @@
 
 #if FEAT_SHREC != DYNAREC_NONE
 
-#ifdef HOST_APPLE_JIT
+/* (the portable recompiler's code is records, read: plain memory) */
+#if defined(HOST_APPLE_JIT) && FEAT_SHREC == DYNAREC_JIT
+#define REC_APPLE_JIT
+#endif
+
+#ifdef REC_APPLE_JIT
 /* (no array: the code goes in MAP_JIT memory, recSh4_HaveCodeCache()) */
 #else
 u8 SH4_TCB[CODE_SIZE + TEMP_CODE_SIZE + 4096]
@@ -630,7 +635,7 @@ static void recSh4_Reset(bool hard)
 	recSh4_ClearCache();
 }
 
-#ifdef HOST_APPLE_JIT
+#ifdef REC_APPLE_JIT
 static u8 *apple_code_cache;
 
 /* Whether there is memory for the code (see vmem_platform_alloc_jit()):
@@ -649,7 +654,7 @@ bool recSh4_HaveCodeCache(void)
 
 static void recSh4_Init(void)
 {
-#ifndef HOST_APPLE_JIT
+#ifndef REC_APPLE_JIT
 	void *candidate_ptr;
 #endif
 	INFO_LOG(DYNAREC, "recSh4 Init\n");
@@ -675,7 +680,7 @@ static void recSh4_Init(void)
 		}
 	}
 	
-#ifdef HOST_APPLE_JIT
+#ifdef REC_APPLE_JIT
 	recSh4_HaveCodeCache();
 	CodeCache = apple_code_cache;
 #else
@@ -684,7 +689,9 @@ static void recSh4_Init(void)
 
 	/* Call the platform-specific magic to make the pages RWX */
 	CodeCache = NULL;
-	#ifdef FEAT_NO_RWX_PAGES
+	#if FEAT_SHREC == DYNAREC_CPP
+	CodeCache = (u8 *)candidate_ptr;
+	#elif defined(FEAT_NO_RWX_PAGES)
 	verify(vmem_platform_prepare_jit_block_rw(candidate_ptr, CODE_SIZE + TEMP_CODE_SIZE, (void**)&CodeCache, &cc_rx_offset));
 	#else
 	verify(vmem_platform_prepare_jit_block(candidate_ptr, CODE_SIZE + TEMP_CODE_SIZE, (void**)&CodeCache));
