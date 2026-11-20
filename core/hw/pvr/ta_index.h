@@ -1,6 +1,6 @@
 #ifndef TA_INDEX_H
 #define TA_INDEX_H
-/* A strip's indices, for make_index() (ta_vtx.cpp): the vertices that are
+/* A strip's indices, for make_index() (ta_vtx.c): the vertices that are
  * drawn, each once, and where two must be to keep the strip's triangles
  * the right way round or to join it to the one before. C89. */
 #include <stddef.h>

@@ -25,7 +25,7 @@ extern "C" void *__wrap_dlopen(const char *file, int mode)
 {
 	return __real_dlopen(file != NULL && strcmp(file, "self") == 0 ? NULL : file, mode);
 }
-extern int ta_parse_cnt;
+extern "C" int ta_parse_cnt;
 
 static std::vector<double> times;	// ns a screen's frame (its fastest parse)
 static unsigned long long known_good;	// strips the vertex loop found drawable whole

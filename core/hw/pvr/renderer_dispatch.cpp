@@ -123,6 +123,15 @@ bool renderer_process(TA_context *ctx)
 	return renderer->Process(ctx);
 }
 
+u64 renderer_get_texture(u32 tsp, u32 tcw, int area)
+{
+	TSP t;
+	TCW c;
+	t.full = tsp;
+	c.full = tcw;
+	return renderer->GetTexture(t, c, area);
+}
+
 bool renderer_render(void)
 {
 	return renderer->Render();

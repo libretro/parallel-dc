@@ -31,15 +31,7 @@ typedef struct simd256_t
 } simd256_t;
 #endif
 
-/* The parameter types, and the lists that are modifier volumes' (as
- * ta_structs.h has them, for C++) */
-#define ParamType_End_Of_List 0
-#define ParamType_User_Tile_Clip 1
-#define ParamType_Object_List_Set 2
-#define ParamType_Polygon_or_Modifier_Volume 4
-#define ParamType_Sprite 5
-#define ParamType_Vertex_Parameter 7
-#define IsModVolList(list) (((list)&1)!=0)
+#include "ta_words.h"
 
 /* A block's parameter control word (ta_structs.h's PCW): its parameter
  * type, list type, and the byte of object control first in memory */

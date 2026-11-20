@@ -44,12 +44,12 @@ if [ -z "${WINE+set}" ]; then
    if [ -x /usr/lib/wine/wine64 ]; then WINE=/usr/lib/wine/wine64; else WINE=wine; fi
 fi
 sh tools/rend/kernels_dx12.sh check
-[ -f core/hw/pvr/ta_vtx.o ] || { echo "build the core first: core/hw/pvr/ta_vtx.o is not there" >&2; exit 1; }
+[ -f core/hw/pvr/renderer_dispatch.o ] || { echo "build the core first: core/hw/pvr/renderer_dispatch.o is not there" >&2; exit 1; }
 
 # the program: ta_gpu_test.sh's, with the device another program's
-CORE_FLAGS=$(make -n platform=unix -W core/hw/pvr/ta_vtx.cpp core/hw/pvr/ta_vtx.o 2>/dev/null | grep -m1 'core/hw/pvr/ta_vtx.cpp' \
+CORE_FLAGS=$(make -n platform=unix -W core/hw/pvr/renderer_dispatch.cpp core/hw/pvr/renderer_dispatch.o 2>/dev/null | grep -m1 'core/hw/pvr/renderer_dispatch.cpp' \
    | sed -e 's/^g++ //' -e 's/ -c / /' -e 's/ -MMD -MP .*$//' -e 's/-DGIT_VERSION=[^ ]* [^ ]*//')
-OBJS=$(make -n platform=unix -W core/hw/pvr/ta_vtx.cpp 2>/dev/null | tail -1 | tr ' ' '\n' | grep '\.o$' | grep -v 'glslang.js.o')
+OBJS=$(make -n platform=unix -W core/hw/pvr/renderer_dispatch.cpp 2>/dev/null | tail -1 | tr ' ' '\n' | grep '\.o$' | grep -v 'glslang.js.o')
 ${CC:-cc} -O1 -c -o "$WORK/headless.o" tools/threads/headless.c
 ${CC:-cc} -std=c99 -O2 -Wall -DTGT_REPLAY -iquote core/rend -Icore/libretro-common/include -iquote tools/pvr -c -o "$WORK/test.o" tools/pvr/ta_gpu_test.c
 ${CXX:-g++} $CORE_FLAGS -Itools/pvr -w -c -o "$WORK/cpu.o" tools/pvr/ta_gpu_test_cpu.cpp

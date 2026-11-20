@@ -6,6 +6,7 @@
 #include "pvr_regs.h"
 #include "pvr_mem.h"
 #include "ta.h"
+#include "ta_ctx.h"
 #include "Renderer_if.h"
 
 void libPvr_Reset(bool hard)
@@ -31,6 +32,9 @@ void libPvr_Reset(bool hard)
 
 s32 libPvr_Init(void)
 {
+   /* the tile accelerator's state machine, and its lists' log */
+   ta_fsm_fill();
+   ta_ctx_log_init();
    if (!spg_Init())
    {
       /* failed */

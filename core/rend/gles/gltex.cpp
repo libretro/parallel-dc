@@ -64,7 +64,6 @@ Compression
 	#include <xmmintrin.h>
 #endif
 
-extern u32 decoded_colors[3][65536];
 GlTextureCache TexCache;
 GLTexturePool glTexPool;
 

@@ -101,27 +101,13 @@ void ta_set_walk_check(bool on);
 extern u8 ta_fsm[2049];
 extern u32 ta_fsm_cl;
 void ta_fsm_fill(void);
-/* By object control, a polygon's header and vertex types (TaTypeLut's
- * table, ta_vtx.cpp) */
+/* By object control, a polygon's header and vertex types (ta_vtx.c) */
 const u32 *ta_type_lut(void);
 
 #define STRIPS_AS_PPARAMS 1
 
 #ifdef __cplusplus
 }
-
-class TaTypeLut
-{
-public:
-	static const TaTypeLut& instance() {
-		static TaTypeLut _instance;
-		return _instance;
-	}
-	u32 table[256];
-
-private:
-	TaTypeLut();
-};
 
 #include "ta_ctx.h"
 #endif

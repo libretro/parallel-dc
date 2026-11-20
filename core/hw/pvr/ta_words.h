@@ -134,11 +134,31 @@
 #define TCW_PalSelect_S 21
 #define TCW_PalSelect_B 6
 
-/* What the words hold, for C (ta_structs.h's ListType_ and ParamType_;
+/* What the words hold, for C (as the ListType_ and ParamType_ below;
  * ta.h has the pixel formats) */
 #define TA_LIST_OPAQUE        0
 #define TA_LIST_TRANSLUCENT   2
 #define TA_LIST_PUNCH_THROUGH 4
 #define TA_PARAM_SPRITE       5
+
+/* The lists, and the parameter types */
+#define ListType_Opaque 0
+#define ListType_Opaque_Modifier_Volume 1
+#define ListType_Translucent 2
+#define ListType_Translucent_Modifier_Volume 3
+#define ListType_Punch_Through 4
+#define IsModVolList(list) (((list)&1)!=0)
+
+/* (control parameters) */
+#define ParamType_End_Of_List 0
+#define ParamType_User_Tile_Clip 1
+#define ParamType_Object_List_Set 2
+/* (global parameters) */
+#define ParamType_Polygon_or_Modifier_Volume 4
+#define ParamType_Sprite 5
+/* (vertex, sprite or modifier volume parameters) */
+#define ParamType_Vertex_Parameter 7
+#define ParamType_Reserved_1 3
+#define ParamType_Reserved_2 6
 
 #endif

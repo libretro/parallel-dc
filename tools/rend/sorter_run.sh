@@ -23,10 +23,10 @@ CCMD=$(make -n -B core/hw/pvr/ta_list.o 2>/dev/null | grep 'ta_list\.c' | tail -
 CCMD=${CCMD% -o *}
 CFLAGS_T=$(echo "$CCMD" | sed 's| [^ ]*ta_list\.c||; s/ -MMD -MP//')
 CC=${CFLAGS_T%% *}
-XCMD=$(make -n -B core/hw/pvr/ta_vtx.o 2>/dev/null | grep 'ta_vtx\.cpp' | tail -n 1)
+XCMD=$(make -n -B core/hw/pvr/renderer_dispatch.o 2>/dev/null | grep 'renderer_dispatch\.cpp' | tail -n 1)
 [ -n "$XCMD" ] || { echo "cannot get the core's C++ compile flags from make" >&2; exit 1; }
 XCMD=${XCMD% -o *}
-CXXFLAGS_T=$(echo "$XCMD" | sed 's| [^ ]*ta_vtx\.cpp||; s/ -MMD -MP//; s/-DGIT_VERSION=[^ ]* [^ ]*//')
+CXXFLAGS_T=$(echo "$XCMD" | sed 's| [^ ]*renderer_dispatch\.cpp||; s/ -MMD -MP//; s/-DGIT_VERSION=[^ ]* [^ ]*//')
 CXX=${CXXFLAGS_T%% *}
 
 eval "$CXXFLAGS_T $EXTRA tools/pvr/ta_words_test.cpp -o \"$WORK/ta_words_test.o\""

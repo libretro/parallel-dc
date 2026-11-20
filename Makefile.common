@@ -15,7 +15,6 @@ SOURCES_CXX := \
 					\
 					\
 					$(CORE_DIR)/core/hw/pvr/renderer_dispatch.cpp \
-					$(CORE_DIR)/core/hw/pvr/ta_vtx.cpp \
 					$(CORE_DIR)/core/rend/TexCache.cpp \
 					\
 					\
@@ -99,7 +98,7 @@ SOURCES_C += $(CORE_DIR)/core/hw/naomi/naomi_dimm.c
 
 # The lists a frame's parse appends to (List<T>'s, typed: helper_classes.h)
 SOURCES_C += $(CORE_DIR)/core/hw/pvr/ta_list.c
-SOURCES_C += $(CORE_DIR)/core/hw/pvr/ta.c $(CORE_DIR)/core/hw/pvr/ta_ctx.c
+SOURCES_C += $(CORE_DIR)/core/hw/pvr/ta.c $(CORE_DIR)/core/hw/pvr/ta_ctx.c $(CORE_DIR)/core/hw/pvr/ta_vtx.c
 # ...the translucent polygons sorted
 SOURCES_C += $(CORE_DIR)/core/rend/sorter.c
 # ...and the texture converters

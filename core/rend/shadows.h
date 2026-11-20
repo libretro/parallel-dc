@@ -16,42 +16,75 @@
  * stencil bit 6, and what is not marked is darkened the old way after:
  * polygons that are blended, which cannot be drawn twice, or that left no
  * depth to be found by. */
-#pragma once
+#ifndef SHADOWS_H
+#define SHADOWS_H
+/* What C needs of it (ta_vtx.c) is C89; the rest is the renderers' C++ */
+#include <retro_inline.h>
+#include "types.h"
+#include "hw/pvr/Renderer_if.h"
+#include "hw/pvr/pvr_regs.h"
+#include "hw/pvr/ta_words.h"
+
+/* The part of the screen something covers, in the coordinates of the vertices */
+typedef struct ScreenBounds ScreenBounds;
+struct ScreenBounds
+{
+	float min_x, min_y, max_x, max_y;
+#ifdef __cplusplus
+	void add(float x, float y);
+	bool empty() const;
+	bool overlaps(const ScreenBounds& o) const;
+#endif
+};
+
+/* (written so that a coordinate that is not a number changes nothing) */
+static INLINE void screen_bounds_add(ScreenBounds *b, float x, float y)
+{
+	if (x < b->min_x) b->min_x = x;
+	if (x > b->max_x) b->max_x = x;
+	if (y < b->min_y) b->min_y = y;
+	if (y > b->max_y) b->max_y = y;
+}
+
+static INLINE bool screen_bounds_empty(const ScreenBounds *b)
+{
+	return !(b->min_x <= b->max_x && b->min_y <= b->max_y);
+}
+
+/* Whether a polygon that takes shadows can be drawn a second time for them */
+static INLINE bool CanDrawShadowed(u32 listType, const PolyParam *gp)
+{
+	if (gp->count <= 2 || !TAW_GET(TAW_FULL(gp->pcw), PCW_Shadow))
+		return false;
+	/* blended with what was there before: cannot be drawn twice */
+	if (TAW_GET(TAW_FULL(gp->tsp), TSP_SrcInstr) != 1 || TAW_GET(TAW_FULL(gp->tsp), TSP_DstInstr) != 0)
+		return false;
+	/* left no depth of its own to be found by */
+	if (listType == ListType_Opaque && (TAW_GET(TAW_FULL(gp->isp), ISP_TSP_ZWriteDis) || TAW_GET(TAW_FULL(gp->isp), ISP_TSP_DepthMode) == 0))
+		return false;
+	return true;
+}
+
+#ifdef __cplusplus
 #include <algorithm>
 #include <cmath>
-#include <cmath>
-#include <algorithm>
 #include "xform.h"
 #if defined(__SSE2__) || defined(_M_X64) || (defined(_M_IX86_FP) && _M_IX86_FP >= 2)
 #include <emmintrin.h>
 #endif
 
-#include "types.h"
-#include "hw/pvr/Renderer_if.h"
-#include "hw/pvr/pvr_regs.h"
-
-// The part of the screen something covers, in the coordinates of the vertices
-struct ScreenBounds
+inline void ScreenBounds::add(float x, float y)
 {
-	float min_x, min_y, max_x, max_y;
-
-	void add(float x, float y)
-	{
-		// written so that a coordinate that is not a number changes nothing
-		if (x < min_x) min_x = x;
-		if (x > max_x) max_x = x;
-		if (y < min_y) min_y = y;
-		if (y > max_y) max_y = y;
-	}
-	bool empty() const
-	{
-		return !(min_x <= max_x && min_y <= max_y);
-	}
-	bool overlaps(const ScreenBounds& o) const
-	{
-		return min_x <= o.max_x && max_x >= o.min_x && min_y <= o.max_y && max_y >= o.min_y;
-	}
-};
+	screen_bounds_add(this, x, y);
+}
+inline bool ScreenBounds::empty() const
+{
+	return screen_bounds_empty(this);
+}
+inline bool ScreenBounds::overlaps(const ScreenBounds& o) const
+{
+	return min_x <= o.max_x && max_x >= o.min_x && min_y <= o.max_y && max_y >= o.min_y;
+}
 
 // What the modifier volumes of a render pass cover
 static inline ScreenBounds ModVolBounds(int first, int count)
@@ -165,20 +198,6 @@ static inline void BoundsToScissor(const ScreenBounds& b, const xform& viewport,
 	rect[3] = y1 - y0;
 }
 
-// Whether a polygon that takes shadows can be drawn a second time for them
-static inline bool CanDrawShadowed(u32 listType, const PolyParam *gp)
-{
-	if (gp->count <= 2 || !gp->pcw.Shadow)
-		return false;
-	// blended with what was there before: cannot be drawn twice
-	if (gp->tsp.SrcInstr != 1 || gp->tsp.DstInstr != 0)
-		return false;
-	// left no depth of its own to be found by
-	if (listType == ListType_Opaque && (gp->isp.ZWriteDis || gp->isp.DepthMode == 0))
-		return false;
-	return true;
-}
-
 /* Where two polygons are at the very same depth, the one that was left
  * showing the first time has to be the one left showing the second time:
  * the later one if its depth test lets equal depths through (equal, less or
@@ -188,3 +207,6 @@ static inline bool ShadowLaterWins(u32 listType, const PolyParam *gp)
 {
 	return listType == ListType_Punch_Through || ((0xCC >> gp->isp.DepthMode) & 1);
 }
+#endif
+
+#endif

@@ -751,48 +751,6 @@ struct TA_VertexParam
 
 #pragma pack(pop)
 
-const u32 ListType_Opaque=0;
-const u32 ListType_Opaque_Modifier_Volume=1;
-const u32 ListType_Translucent =2;
-const u32 ListType_Translucent_Modifier_Volume=3;
-const u32 ListType_Punch_Through=4;
-#define IsModVolList(list) (((list)&1)!=0)
-
-
-
-//Control Parameter
-const u32 ParamType_End_Of_List=0;
-const u32 ParamType_User_Tile_Clip=1;
-const u32 ParamType_Object_List_Set=2;
-
-//Global Parameter
-const u32 ParamType_Polygon_or_Modifier_Volume=4;
-const u32 ParamType_Sprite=5;
-
-//Vertex , Sprite or ModVolume Parameter
-const u32 ParamType_Vertex_Parameter=7;
-
-//Reserved
-const u32 ParamType_Reserved_1=3;
-const u32 ParamType_Reserved_2=6;
-
-// Tile parameters in region array. One per tile * number of passes
-union RegionArrayTile
-{
-	struct
-	{
-		u32 Reserved_0		: 2;
-		u32 X				: 6;
-		u32 Y				: 6;
-		u32 Reserved_1		: 14;
-		u32 FlushAccumulate	: 1;
-		u32 PreSort			: 1;	// For type 2 only. Ignored for type 1.
-		u32 NoZClear		: 1;
-		u32 LastRegion		: 1;
-	};
-	u32 full;
-};
-
 enum PixelFormat
 {
 	Pixel1555 = 0,

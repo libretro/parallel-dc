@@ -17,6 +17,8 @@ extern TA_context* _pvrrc;
 extern int screen_width, screen_height;
 
 extern u32 VertexCount;
+/* (ta_vtx.c) */
+extern u32 decoded_colors[3][65536];
 extern u32 FrameCount;
 
 void rend_term(void);
@@ -88,6 +90,9 @@ void renderer_keep_picture(void);
 bool renderer_present_kept_picture(void);
 void renderer_resize(int width, int height);
 bool renderer_process(TA_context *ctx);
+/* The renderer's texture of a polygon's words, made now if it is not made
+ * (area 1: the second volume's) */
+u64 renderer_get_texture(u32 tsp, u32 tcw, int area);
 bool renderer_render(void);
 void renderer_present(void);
 /* Draw the render that is queued (libretro.cpp, rend_start_render()) */
