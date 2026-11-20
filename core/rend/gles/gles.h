@@ -32,7 +32,7 @@ extern "C" {
  * that for the vertices where the frame's are copied there */
 #define GL_BUFFER_ROOM (64 * 1024)
 void gl_buffer_room(GLuint buffer, size_t bytes);
-/* the translucent sort's lists and indices, room made now (gldraw.cpp) */
+/* the translucent sort's lists and indices, room made now (gldraw.c) */
 void gl_sort_reserve(void);
 
 #ifndef GL_DEPTH32F_STENCIL8
@@ -227,28 +227,6 @@ struct gl_ctx
 #endif
 };
 
-extern gl_ctx gl;
-/* the frontend's (libretro.c) */
-extern struct retro_hw_render_callback hw_render;
-
-#ifdef __cplusplus
-}
-
-extern GLuint fbTextureId;
-
-u64 gl_GetTexture(TSP tsp, TCW tcw, int area = 0);
-struct text_info {
-	u16* pdata;
-	u32 width;
-	u32 height;
-	u32 textype; /* 0 565, 1 1555, 2 4444 */
-};
-
-enum ModifierVolumeMode { Xor, Or, Inclusion, Exclusion, ModeCount };
-
-/* @taFlags: how the renderer draws a frame GPU-side TA processing decodes
- * (ta_gpu_prepare()'s TA_GPU_*; gles/ta_decoder_gl.h); 0, never */
-bool ProcessFrame(TA_context* ctx, u32 taFlags = 0);
 /* The frame's vertex and index buffers, where its strips are drawn from:
  * those it was parsed into (gles/parse_arena_gl.h), or the renderer's own
  * @own, which the lists are copied into */
@@ -257,44 +235,26 @@ GLuint gl_frame_index_buffer(GLuint own);
 /* ...the volumes' triangles drawn (those cut where there are: rend/modvol_clip.h) */
 GLuint gl_frame_modvol_buffer(GLuint own);
 /* Room for @bytes of a sorted pass's indices after the frame's in its index
- * buffer (gl_frame_index_buffer()), and their @offset there; nullptr: none,
+ * buffer (gl_frame_index_buffer()), and their @offset there; NULL: none,
  * and they go to a buffer of their own */
 u32 *gl_frame_sorted(size_t bytes, size_t *offset);
-/* ...and the frame's draws issued: the buffers the card's until they are done */
-void gl_frame_drawn();
-/* (the context going) */
-void gl_frame_buffers_term();
-void UpdateFogTexture(u8 *fog_table, GLenum texture_slot, GLint fog_image_format);
-void GetFramebufferScaling(float& scale_x, float& scale_y, float& scissoring_scale_x, float& scissoring_scale_y);
-void GetFramebufferSize(float& dc_width, float& dc_height);
 
-void UpdatePaletteTexture(GLenum texture_slot);
-void DoCleanup();
-void SortPParams(int first, int count);
+extern GLuint fbTextureId;
+
+enum ModifierVolumeMode { Xor, Or, Inclusion, Exclusion, ModeCount };
+/* The stencil's state for a modifier volume's pass: @mv_mode a
+ * ModifierVolumeMode, @cull_mode the volume's (ISP_Modvol) */
+void gl_set_mvs_mode(int mv_mode, u32 cull_mode);
 void SetCull(u32 CullMode);
-s32 SetTileClip(u32 val, GLint uniform);
-void SetMVS_Mode(ModifierVolumeMode mv_mode, ISP_Modvol ispc);
-
-void BindRTT(u32 addy, u32 fbw, u32 fbh, u32 channels, u32 fmt);
-void ReadRTTBuffer();
-void gl_keep_picture(void);
-void gl_restore_picture(void);
-void gl_carry_picture(int from_w, int from_h, int to_w, int to_h);
-void RenderFramebuffer();
-void DrawFramebuffer();
+void DrawFramebuffer(void);
+void DrawVmuTexture(u8 vmu_screen_number);
+void DrawGunCrosshair(u8 port);
 
 PipelineShader *GetProgram(bool cp_AlphaTest, bool pp_InsideClipping,
 		bool pp_Texture, bool pp_UseAlpha, bool pp_IgnoreTexA, u32 pp_ShadInstr, bool pp_Offset,
 		u32 pp_FogCtrl, bool pp_Gouraud, bool pp_BumpMap, bool fog_clamping, bool trilinear,
-		bool palette, bool shadowed = false);
+		bool palette, bool shadowed);
 void vertex_buffer_unmap(void);
-
-void findGLVersion();
-GLuint gl_CompileShader(const char* shader, GLuint type);
-GLuint gl_CompileAndLink(const char* VertexShader, const char* FragmentShader);
-void gl_bind_depth_ubo(GLuint program);
-bool CompilePipelineShader(PipelineShader* s);
-void vertex_buffer_unmap();
 
 extern GLuint vmuTextureId[4];
 extern GLuint lightgunTextureId[4];
@@ -320,44 +280,63 @@ extern struct ShaderUniforms_t
 	} base_clipping;
 	int palette_index;
 	float shade_scale_factor;
-
-	void Set(PipelineShader* s)
-	{
-		if (s->shade_scale_factor != -1)
-			glUniform1f(s->shade_scale_factor, shade_scale_factor);
-
-		if (s->cp_AlphaTestValue!=-1)
-			glUniform1f(s->cp_AlphaTestValue,PT_ALPHA);
-
-		if (s->depth_scale!=-1)
-			glUniform4fv( s->depth_scale, 1, depth_coefs);
-
-		if (s->sp_FOG_DENSITY!=-1)
-			glUniform1f(s->sp_FOG_DENSITY, fog_den_float);
-
-		if (s->sp_FOG_COL_RAM!=-1)
-			glUniform3fv( s->sp_FOG_COL_RAM, 1, ps_FOG_COL_RAM);
-
-		if (s->sp_FOG_COL_VERT!=-1)
-			glUniform3fv( s->sp_FOG_COL_VERT, 1, ps_FOG_COL_VERT);
-
-		if (s->fog_clamp_min != -1)
-			glUniform4fv(s->fog_clamp_min, 1, fog_clamp_min);
-		if (s->fog_clamp_max != -1)
-			glUniform4fv(s->fog_clamp_max, 1, fog_clamp_max);
-
-		if (s->normal_matrix != -1)
-			glUniformMatrix4fv(s->normal_matrix, 1, GL_FALSE, normal_mat);
-
-		if (s->palette_index != -1)
-		{
-			glUniform1i(s->palette_index, palette_index);
-			s->shadow_palette = palette_index;
-			s->shadow_set |= PIPELINE_SHADOW_PALETTE;
-		}
-	}
-
 } ShaderUniforms;
+/* The frame's uniforms, given to @s */
+void shader_uniforms_set(PipelineShader *s);
+
+extern const u32 Zfunction[8];
+extern const u32 SrcBlendGL[8], DstBlendGL[8];
+
+extern gl_ctx gl;
+/* the frontend's (libretro.c) */
+extern struct retro_hw_render_callback hw_render;
+
+#ifdef __cplusplus
+}
+
+u64 gl_GetTexture(TSP tsp, TCW tcw, int area = 0);
+struct text_info {
+	u16* pdata;
+	u32 width;
+	u32 height;
+	u32 textype; /* 0 565, 1 1555, 2 4444 */
+};
+
+/* @taFlags: how the renderer draws a frame GPU-side TA processing decodes
+ * (ta_gpu_prepare()'s TA_GPU_*; gles/ta_decoder_gl.h); 0, never */
+bool ProcessFrame(TA_context* ctx, u32 taFlags = 0);
+/* ...and the frame's draws issued: the buffers the card's until they are done */
+void gl_frame_drawn();
+/* (the context going) */
+void gl_frame_buffers_term();
+void UpdateFogTexture(u8 *fog_table, GLenum texture_slot, GLint fog_image_format);
+void GetFramebufferScaling(float& scale_x, float& scale_y, float& scissoring_scale_x, float& scissoring_scale_y);
+void GetFramebufferSize(float& dc_width, float& dc_height);
+
+void UpdatePaletteTexture(GLenum texture_slot);
+void DoCleanup();
+void SortPParams(int first, int count);
+s32 SetTileClip(u32 val, GLint uniform);
+static inline void SetMVS_Mode(ModifierVolumeMode mv_mode, ISP_Modvol ispc)
+{
+	gl_set_mvs_mode(mv_mode, ispc.CullMode);
+}
+
+void BindRTT(u32 addy, u32 fbw, u32 fbh, u32 channels, u32 fmt);
+void ReadRTTBuffer();
+void gl_keep_picture(void);
+void gl_restore_picture(void);
+void gl_carry_picture(int from_w, int from_h, int to_w, int to_h);
+void RenderFramebuffer();
+
+
+void findGLVersion();
+GLuint gl_CompileShader(const char* shader, GLuint type);
+GLuint gl_CompileAndLink(const char* VertexShader, const char* FragmentShader);
+void gl_bind_depth_ubo(GLuint program);
+bool CompilePipelineShader(PipelineShader* s);
+
+
 
 /* A texture of the texture pool's (rend/tex_pool.h) */
 struct GLPooledTexture : TexPoolEntry
@@ -448,8 +427,6 @@ class GlTextureCache : public BaseTextureCache<TextureCacheData>
 };
 extern GlTextureCache TexCache;
 
-extern const u32 Zfunction[8];
-extern const u32 SrcBlendGL[], DstBlendGL[];
 
 #endif
 

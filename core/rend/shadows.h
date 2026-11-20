@@ -18,7 +18,7 @@
  * depth to be found by. */
 #ifndef SHADOWS_H
 #define SHADOWS_H
-/* What C needs of it (ta_vtx.c) is C89; the rest is the renderers' C++ */
+/* C89, for C and C++ alike; C++ has its old names as well */
 #include <retro_inline.h>
 #include "types.h"
 #include "hw/pvr/Renderer_if.h"
@@ -65,41 +65,32 @@ static INLINE bool CanDrawShadowed(u32 listType, const PolyParam *gp)
 	return true;
 }
 
-#ifdef __cplusplus
-#include <algorithm>
-#include <cmath>
+#include <math.h>
 #include "xform.h"
 #if defined(__SSE2__) || defined(_M_X64) || (defined(_M_IX86_FP) && _M_IX86_FP >= 2)
 #include <emmintrin.h>
+#define SHADOWS_SSE2
 #endif
 
-inline void ScreenBounds::add(float x, float y)
+/* What the modifier volumes of a render pass cover */
+static INLINE ScreenBounds shadow_modvol_bounds(int first, int count)
 {
-	screen_bounds_add(this, x, y);
-}
-inline bool ScreenBounds::empty() const
-{
-	return screen_bounds_empty(this);
-}
-inline bool ScreenBounds::overlaps(const ScreenBounds& o) const
-{
-	return min_x <= o.max_x && max_x >= o.min_x && min_y <= o.max_y && max_y >= o.min_y;
-}
-
-// What the modifier volumes of a render pass cover
-static inline ScreenBounds ModVolBounds(int first, int count)
-{
-	ScreenBounds b = { 1e30f, 1e30f, -1e30f, -1e30f };
-	const ModifierVolumeParam *params = &pvrrc.global_param_mvo.head()[first];
-
-	for (int i = 0; i < count; i++)
+	ScreenBounds b;
+	const ModifierVolumeParam *params = TA_LIST_HEAD(pvrrc.global_param_mvo, ModifierVolumeParam) + first;
+	int i;
+	b.min_x = 1e30f;
+	b.min_y = 1e30f;
+	b.max_x = -1e30f;
+	b.max_y = -1e30f;
+	for (i = 0; i < count; i++)
 	{
-		const ModTriangle *t = &pvrrc.modtrig.head()[params[i].first];
-		for (u32 n = params[i].count; n != 0; n--, t++)
+		const ModTriangle *t = TA_LIST_HEAD(pvrrc.modtrig, ModTriangle) + params[i].first;
+		u32 n;
+		for (n = params[i].count; n != 0; n--, t++)
 		{
-			b.add(t->x0, t->y0);
-			b.add(t->x1, t->y1);
-			b.add(t->x2, t->y2);
+			screen_bounds_add(&b, t->x0, t->y0);
+			screen_bounds_add(&b, t->x1, t->y1);
+			screen_bounds_add(&b, t->x2, t->y2);
 		}
 	}
 	return b;
@@ -115,15 +106,14 @@ static inline ScreenBounds ModVolBounds(int first, int count)
  * minimum and a maximum taken of x and y at once, where the processor has
  * that. (A coordinate that is not a number still changes nothing: the
  * corner is the operand that such a minimum or maximum hands back.) */
-static inline bool PolyOverlaps(const PolyParam *gp, const ScreenBounds& area)
+static INLINE bool poly_overlaps(const PolyParam *gp, const ScreenBounds *area)
 {
-	const u32 *idx = &pvrrc.idx.head()[gp->first];
-	const Vertex *verts = pvrrc.verts.head();
+	const u32 *idx = TA_LIST_HEAD(pvrrc.idx, u32) + gp->first;
+	const Vertex *verts = TA_LIST_HEAD(pvrrc.verts, Vertex);
 	u32 n = gp->count;
-
-#if defined(__SSE2__) || defined(_M_X64) || (defined(_M_IX86_FP) && _M_IX86_FP >= 2)
-	const __m128 area_min = _mm_setr_ps(area.min_x, area.min_y, 0.f, 0.f);
-	const __m128 area_max = _mm_setr_ps(area.max_x, area.max_y, 0.f, 0.f);
+#ifdef SHADOWS_SSE2
+	const __m128 area_min = _mm_setr_ps(area->min_x, area->min_y, 0.f, 0.f);
+	const __m128 area_max = _mm_setr_ps(area->max_x, area->max_y, 0.f, 0.f);
 	__m128 lo = _mm_set1_ps(1e30f);
 	__m128 hi = _mm_set1_ps(-1e30f);
 
@@ -134,8 +124,9 @@ static inline bool PolyOverlaps(const PolyParam *gp, const ScreenBounds& area)
 		n -= run;
 		do
 		{
-			// x and y, which are next to each other in a vertex
-			/* (one 8-byte load, as movq: a vertex's x is 4-byte aligned, which a double load does not allow) */
+			/* x and y, which are next to each other in a vertex (one
+			 * 8-byte load, as movq: a vertex's x is 4-byte aligned, which a
+			 * double load does not allow) */
 			const __m128 xy = _mm_castsi128_ps(_mm_loadl_epi64((const __m128i *)&verts[*idx++].x));
 			lo = _mm_min_ps(xy, lo);
 			hi = _mm_max_ps(xy, hi);
@@ -145,7 +136,11 @@ static inline bool PolyOverlaps(const PolyParam *gp, const ScreenBounds& area)
 	}
 	return false;
 #else
-	ScreenBounds b = { 1e30f, 1e30f, -1e30f, -1e30f };
+	ScreenBounds b;
+	b.min_x = 1e30f;
+	b.min_y = 1e30f;
+	b.max_x = -1e30f;
+	b.max_y = -1e30f;
 
 	while (n != 0)
 	{
@@ -154,31 +149,37 @@ static inline bool PolyOverlaps(const PolyParam *gp, const ScreenBounds& area)
 		n -= run;
 		do
 		{
-			b.add(verts[*idx].x, verts[*idx].y);
+			screen_bounds_add(&b, verts[*idx].x, verts[*idx].y);
 			idx++;
 		} while (--run != 0);
-		if (b.overlaps(area))
+		if (b.min_x <= area->max_x && b.max_x >= area->min_x && b.min_y <= area->max_y && b.max_y >= area->min_y)
 			return true;
 	}
 	return false;
 #endif
 }
 
-// Bounds to a scissor rectangle (x, y, width, height), a pixel wider all round
-static inline void BoundsToScissor(const ScreenBounds& b, const xform& viewport, int *rect)
+/* (huge coordinates are common in volumes: kept where rounding is defined) */
+static INLINE float shadow_coord_clamp(float v)
 {
-	// huge coordinates are common in volumes; keep them where rounding is defined
-	float sx = std::min(std::max(b.min_x - 1.f, -32768.f), 32768.f);
-	float sy = std::min(std::max(b.min_y - 1.f, -32768.f), 32768.f);
-	float ex = std::min(std::max(b.max_x + 1.f, -32768.f), 32768.f);
-	float ey = std::min(std::max(b.max_y + 1.f, -32768.f), 32768.f);
+	return v < -32768.f ? -32768.f : v > 32768.f ? 32768.f : v;
+}
+
+/* Bounds to a scissor rectangle (x, y, width, height), a pixel wider all round */
+static INLINE void bounds_to_scissor(const ScreenBounds *b, const xform *viewport, int *rect)
+{
+	float sx = shadow_coord_clamp(b->min_x - 1.f);
+	float sy = shadow_coord_clamp(b->min_y - 1.f);
+	float ex = shadow_coord_clamp(b->max_x + 1.f);
+	float ey = shadow_coord_clamp(b->max_y + 1.f);
+	int x0, y0, x1, y1;
 
 	if (!pvrrc.isRTT)
 	{
-		sx = xform_x(&viewport, sx);
-		sy = xform_y(&viewport, sy);
-		ex = xform_x(&viewport, ex);
-		ey = xform_y(&viewport, ey);
+		sx = xform_x(viewport, sx);
+		sy = xform_y(viewport, sy);
+		ex = xform_x(viewport, ex);
+		ey = xform_y(viewport, ey);
 	}
 	else
 	{
@@ -188,10 +189,18 @@ static inline void BoundsToScissor(const ScreenBounds& b, const xform& viewport,
 		ex *= across;
 		ey *= settings.rend.RenderToTextureUpscale;
 	}
-	const int x0 = std::max(0, (int)floorf(std::min(sx, ex)));
-	const int y0 = std::max(0, (int)floorf(std::min(sy, ey)));
-	const int x1 = std::max(x0, (int)ceilf(std::max(sx, ex)));
-	const int y1 = std::max(y0, (int)ceilf(std::max(sy, ey)));
+	x0 = (int)floor(sx < ex ? sx : ex);
+	y0 = (int)floor(sy < ey ? sy : ey);
+	x1 = (int)ceil(sx > ex ? sx : ex);
+	y1 = (int)ceil(sy > ey ? sy : ey);
+	if (x0 < 0)
+		x0 = 0;
+	if (y0 < 0)
+		y0 = 0;
+	if (x1 < x0)
+		x1 = x0;
+	if (y1 < y0)
+		y1 = y0;
 	rect[0] = x0;
 	rect[1] = y0;
 	rect[2] = x1 - x0;
@@ -203,9 +212,40 @@ static inline void BoundsToScissor(const ScreenBounds& b, const xform& viewport,
  * the later one if its depth test lets equal depths through (equal, less or
  * equal, greater or equal, always; punch-through is always greater or
  * equal), the earlier one if not (less, greater, not equal). */
+static INLINE bool shadow_later_wins(u32 listType, const PolyParam *gp)
+{
+	return listType == ListType_Punch_Through || ((0xCC >> TAW_GET(TAW_FULL(gp->isp), ISP_TSP_DepthMode)) & 1);
+}
+
+#ifdef __cplusplus
+inline void ScreenBounds::add(float x, float y)
+{
+	screen_bounds_add(this, x, y);
+}
+inline bool ScreenBounds::empty() const
+{
+	return screen_bounds_empty(this);
+}
+inline bool ScreenBounds::overlaps(const ScreenBounds& o) const
+{
+	return min_x <= o.max_x && max_x >= o.min_x && min_y <= o.max_y && max_y >= o.min_y;
+}
+
+static inline ScreenBounds ModVolBounds(int first, int count)
+{
+	return shadow_modvol_bounds(first, count);
+}
+static inline bool PolyOverlaps(const PolyParam *gp, const ScreenBounds& area)
+{
+	return poly_overlaps(gp, &area);
+}
+static inline void BoundsToScissor(const ScreenBounds& b, const xform& viewport, int *rect)
+{
+	bounds_to_scissor(&b, &viewport, rect);
+}
 static inline bool ShadowLaterWins(u32 listType, const PolyParam *gp)
 {
-	return listType == ListType_Punch_Through || ((0xCC >> gp->isp.DepthMode) & 1);
+	return shadow_later_wins(listType, gp);
 }
 #endif
 

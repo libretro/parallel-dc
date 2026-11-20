@@ -103,8 +103,15 @@ typedef struct test_dir
 static test_dir the_dir;
 static char dirent_name[128];
 
+/* Set: the loader's listing waits in retro_opendir() until it is cleared
+ * (what is seen before the directory is listed, whatever the threads do) */
+static retro_atomic_int_t hold_listing;
+
 RDIR *retro_opendir(const char *name)
 {
+	int i;
+	for (i = 0; i < 5000 && retro_atomic_load_acquire_int(&hold_listing) != 0; i++)
+		retro_sleep(1);
 	if (!path_is_directory(name) || listing == NULL)
 		return NULL;
 	the_dir.at = -1;
@@ -317,7 +324,9 @@ int main(void)
 		dirs_there[0] = "/sys/dc/textures/T-1234N/";
 		listing = junk;
 		listing_count = 3;
+		retro_atomic_store_release_int(&hold_listing, 1);
 		CHECK(custom_texture_available());
+		retro_atomic_store_release_int(&hold_listing, 0);
 		CHECK(!listed(false));
 		custom_texture_terminate();
 	}

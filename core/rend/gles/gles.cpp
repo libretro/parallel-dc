@@ -613,7 +613,7 @@ static void pipeline_locations(PipelineShader *s, bool general)
 	s->key_now = ~0u;
 	s->shadow_set = 0;
 
-	ShaderUniforms.Set(s);
+	shader_uniforms_set(s);
 	s->uniforms_set = gl.uniforms_frame;
 }
 
@@ -673,7 +673,7 @@ void UsePipelineShader(PipelineShader *s)
 	if (owner->uniforms_set != gl.uniforms_frame)
 	{
 		owner->uniforms_set = gl.uniforms_frame;
-		ShaderUniforms.Set(owner);
+		shader_uniforms_set(owner);
 	}
 	if (s->general != nullptr && owner->key_now != s->key)
 	{
@@ -820,7 +820,7 @@ PipelineShader *GetProgram(bool cp_AlphaTest, bool pp_InsideClipping,
 	gu = glGetUniformLocation(shader->program, "fog_table");
 	if (gu != -1)
 		glUniform1i(gu, 1);
-	ShaderUniforms.Set(shader);
+	shader_uniforms_set(shader);
 #endif
 
 	return shader;
@@ -1270,8 +1270,6 @@ void UpdatePaletteTexture(GLenum texture_slot)
 	glActiveTexture(GL_TEXTURE0);
 }
 
-void DrawVmuTexture(u8 vmu_screen_number);
-void DrawGunCrosshair(u8 port);
 
 void vertex_buffer_unmap(void)
 {
