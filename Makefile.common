@@ -101,7 +101,8 @@ SOURCES_C += $(CORE_DIR)/core/hw/pvr/ta.c $(CORE_DIR)/core/hw/pvr/ta_ctx.c $(COR
 # ...the translucent polygons sorted
 SOURCES_C += $(CORE_DIR)/core/rend/sorter.c
 # ...and the texture converters
-SOURCES_C += $(CORE_DIR)/core/rend/texconv.c $(CORE_DIR)/core/rend/TexCache.c
+SOURCES_C += $(CORE_DIR)/core/rend/texconv.c $(CORE_DIR)/core/rend/TexCache.c $(CORE_DIR)/core/rend/tex_map.c \
+	$(CORE_DIR)/core/rend/tex_pool.c $(CORE_DIR)/core/rend/transform_matrix.c
 SOURCES_C += $(CORE_DIR)/core/rend/vram_lock.c
 SOURCES_C += $(CORE_DIR)/core/rend/rtt_watch.c
 SOURCES_C += $(CORE_DIR)/core/rend/upscaler.c

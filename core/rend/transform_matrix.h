@@ -18,212 +18,75 @@
     You should have received a copy of the GNU General Public License
     along with Flycast.  If not, see <https://www.gnu.org/licenses/>.
 */
-#pragma once
-#include <cmath>
-#include <algorithm>
+#ifndef REND_TRANSFORM_MATRIX_H
+#define REND_TRANSFORM_MATRIX_H
+/* The matrices a frame is drawn with: the game's coordinates to clip
+ * space (normal), to the scissor rectangles' (scissor), and to pixels
+ * (viewport). C89, for C and C++ alike (transform_matrix.c); C++ has
+ * TransformMatrix<invertY>. */
 #include "xform.h"
 #include "hw/pvr/ta_ctx.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+/* The picture's scale: the framebuffer's to the screen's (gles.cpp sets it) */
 extern float fb_scale_x, fb_scale_y;
-extern "C" int screen_width, screen_height;
+extern int screen_width, screen_height;
+
+typedef struct transform_matrix
+{
+	const rend_context *rc;
+	bool invert_y;		/* y up, OpenGL's */
+	xform normal;
+	xform scissor;
+	xform viewport;
+	vec2f dc_viewport;
+	float scale_x;
+	float scale_y;
+	float sidebar_width;
+} transform_matrix_t;
+
+/* The identity, y down or (@invert_y) up */
+void transform_matrix_init(transform_matrix_t *m, bool invert_y);
+/* The matrices of the frame of @rc */
+void transform_matrix_calc(transform_matrix_t *m, const rend_context *rc);
+/* Whether the frame's pixel clip leaves out part of the screen */
+bool transform_matrix_clipped(const transform_matrix_t *m);
+/* The temporal upscaler's jitter (rend/upscaler.h): the vertices moved by
+ * @x, @y pixels of the screen, the scissors not */
+void transform_matrix_jitter(transform_matrix_t *m, float x, float y);
+/* How many times wider than a render to a texture's target the game draws */
+float transform_matrix_rtt_hscale(void);
+
+#ifdef __cplusplus
+}
 
 template<bool invertY>
 class TransformMatrix
 {
 public:
-	TransformMatrix() = default;
+	TransformMatrix() { transform_matrix_init(&m, invertY); }
 	TransformMatrix(const rend_context& renderingContext)
 	{
+		transform_matrix_init(&m, invertY);
 		CalcMatrices(&renderingContext);
 	}
 
-	bool IsClipped() const
-	{
-		return renderingContext->fb_X_CLIP.min != 0
-				|| lroundf((renderingContext->fb_X_CLIP.max + 1) / scale_x) != 640L
-				|| renderingContext->fb_Y_CLIP.min != 0
-				|| lroundf((renderingContext->fb_Y_CLIP.max + 1) / scale_y) != 480L;
-	}
-
-	const xform& GetNormalMatrix() const {
-		return normalMatrix;
-	}
-	const xform& GetScissorMatrix() const {
-		return scissorMatrix;
-	}
-	const xform& GetViewportMatrix() const {
-		return viewportMatrix;
-	}
-
-	float GetSidebarWidth() const {
-		return sidebarWidth;
-	}
-
-	vec2f GetDreamcastViewport() const {
-		return dcViewport;
-	}
-
-	/* How many times wider than a render to a texture's target the game draws. */
-	static float RttHorizontalScale() {
-		return SCALER_CTL.hscale ? 2.f : 1.f;
-	}
-
-	/* The temporal upscaler's jitter (rend/upscaler.h): the vertices
-	 * moved by @x, @y pixels of the screen, the scissors not */
-	void Jitter(float x, float y)
-	{
-		normalMatrix.tx += 2.f * x / screen_width;
-		normalMatrix.ty += 2.f * y / screen_height * (invertY ? -1.f : 1.f);
-		// (and in pixels, for the compute renderer's frame)
-		viewportMatrix.tx += x;
-		viewportMatrix.ty += y * (invertY ? -1.f : 1.f);
-	}
-
-	void CalcMatrices(const rend_context *renderingContext)
-	{
-		this->renderingContext = renderingContext;
-
-		GetFramebufferScaling(false, scale_x, scale_y);
-
-		if (renderingContext->isRTT)
-		{
-			/* The texture's first pixel is the frame's first, where the
-			 * game's coordinates start; the pixel clip only says which of
-			 * them are written. So the texture goes as far as the clip's
-			 * last pixel, from 0. */
-			dcViewport.x = renderingContext->fb_X_CLIP.max + 1;
-			dcViewport.y = renderingContext->fb_Y_CLIP.max + 1;
-			/* The horizontal scaler halves what is drawn on its way to the
-			 * framebuffer, for a texture as for the screen: the game draws
-			 * twice as wide as the texture is. (The clip registers, which the
-			 * texture's size comes from, are in the framebuffer's pixels.)
-			 * From upstream. */
-			xform_set(&normalMatrix, 2.0f / (dcViewport.x * RttHorizontalScale()), 2.0f / dcViewport.y, 1.f, -1.f, -1.f, 0.f);
-			scissorMatrix = normalMatrix;
-			sidebarWidth = 0;
-		}
-		else
-		{
-			dcViewport.x = 640.f * scale_x;
-			dcViewport.y = 480.f * scale_y;
-
-			float startx = 0;
-			float starty = 0;
-#if 0
-			const bool vga = FB_R_CTRL.vclk_div == 1;
-			switch (SPG_LOAD.hcount)
-			{
-				case 857: // NTSC, VGA
-					startx = VO_STARTX.HStart - (vga ? 0xa8 : 0xa4);
-					break;
-				case 863: // PAL
-					startx = VO_STARTX.HStart - 0xae;
-					break;
-				default:
-					INFO_LOG(PVR, "unknown video mode: hcount %d\n", SPG_LOAD.hcount);
-					break;
-			}
-			switch (SPG_LOAD.vcount)
-			{
-				case 524: // NTSC, VGA
-					starty = VO_STARTY.VStart_field1 - (vga ? 0x28 : 0x12);
-					break;
-				case 262: // NTSC 240p
-					starty = VO_STARTY.VStart_field1 - 0x11;
-					break;
-				case 624: // PAL
-					starty = VO_STARTY.VStart_field1 - 0x2d;
-					break;
-				case 312: // PAL 240p
-					starty = VO_STARTY.VStart_field1 - 0x2e;
-					break;
-				default:
-					INFO_LOG(PVR, "unknown video mode: vcount %d\n", SPG_LOAD.vcount);
-					break;
-			}
-			// some heuristic...
-			startx *= 0.8;
-			starty *= 1.1;
-#endif
-			xform_set(&normalMatrix, 1.f, 1.f, 1.f, startx, starty, 0.f);
-			scissorMatrix = normalMatrix;
-
-			float scissoring_scale_x, scissoring_scale_y;
-			GetFramebufferScaling(true, scissoring_scale_x, scissoring_scale_y);
-
-			float dc2s_scale_h = screen_height / 480.0f;
-			sidebarWidth =  (screen_width - dc2s_scale_h * 640.0f) / 2;
-			float x_coef = 2.0f / (screen_width / dc2s_scale_h * scale_x);
-			float y_coef = 2.0f / dcViewport.y * (invertY ? -1 : 1);
-			// scaled, then moved to where the picture starts
-			xform to_clip;
-			xform_set(&to_clip, x_coef, y_coef, 1.f,
-					-1 + 2 * sidebarWidth / screen_width, invertY ? 1.f : -1.f, 0.f);
-			xform_mul(&normalMatrix, &to_clip, &normalMatrix);
-			xform_set(&to_clip, x_coef * scissoring_scale_x, y_coef * scissoring_scale_y, 1.f,
-					-1 + 2 * sidebarWidth / screen_width, invertY ? 1.f : -1.f, 0.f);
-			xform_mul(&scissorMatrix, &to_clip, &scissorMatrix);
-		}
-		xform depth;
-		xform_set(&depth, 1.f, 1.f, 1 / settings.rend.ExtraDepthScale, 0.f, 0.f, 0.f);
-		xform_mul(&normalMatrix, &depth, &normalMatrix);
-
-		// clip space to pixels: moved by 1, then scaled by half the size
-		xform vp_trans, half;
-		xform_set(&vp_trans, 1.f, 1.f, 1.f, 1.f, 1.f, 0.f);
-		if (renderingContext->isRTT)
-			xform_set(&half, dcViewport.x / 2, dcViewport.y / 2, 1.f, 0.f, 0.f, 0.f);
-		else
-			xform_set(&half, screen_width / 2, screen_height / 2, 1.f, 0.f, 0.f, 0.f);
-		xform_mul(&vp_trans, &half, &vp_trans);
-		xform_mul(&viewportMatrix, &vp_trans, &normalMatrix);
-		xform_mul(&scissorMatrix, &vp_trans, &scissorMatrix);
-	}
+	bool IsClipped() const { return transform_matrix_clipped(&m); }
+	const xform& GetNormalMatrix() const { return m.normal; }
+	const xform& GetScissorMatrix() const { return m.scissor; }
+	const xform& GetViewportMatrix() const { return m.viewport; }
+	float GetSidebarWidth() const { return m.sidebar_width; }
+	vec2f GetDreamcastViewport() const { return m.dc_viewport; }
+	static float RttHorizontalScale() { return transform_matrix_rtt_hscale(); }
+	void Jitter(float x, float y) { transform_matrix_jitter(&m, x, y); }
+	void CalcMatrices(const rend_context *renderingContext) { transform_matrix_calc(&m, renderingContext); }
 
 private:
-	void GetFramebufferScaling(bool scissor, float& scale_x, float& scale_y)
-	{
-		scale_x = 1.f;
-		scale_y = 1.f;
-
-		if (!renderingContext->isRTT && !renderingContext->isRenderFramebuffer)
-		{
-			if (!scissor)
-			{
-				scale_x = fb_scale_x;
-				scale_y = fb_scale_y;
-			}
-			if (SCALER_CTL.vscalefactor > 0x400)
-			{
-				// Interlace mode A (single framebuffer)
-				// (for the clip rectangles too: they are in the framebuffer's lines, half as
-				// many as the game draws - left as they were, they cut the picture off half way down)
-				if (SCALER_CTL.interlace == 0)
-					scale_y *= roundf((float)SCALER_CTL.vscalefactor / 0x400);
-				else if (SCALER_CTL.interlace == 1 && scissor)
-					// Interlace mode B (alternating framebuffers)
-					scale_y *= roundf((float)SCALER_CTL.vscalefactor / 0x400);
-			}
-
-			// VO pixel doubling is done after fb rendering/clipping
-			// so it should be used for scissoring as well
-			if (VO_CONTROL.pixel_double && !scissor)
-				scale_x *= 0.5f;
-
-			// the X Scaler halves the horizontal resolution but
-			// before clipping/scissoring
-			if (SCALER_CTL.hscale)
-				scale_x *= 2.f;
-		}
-	}
-
-	const rend_context *renderingContext = nullptr;
-
-	xform normalMatrix = { 1.f, 1.f, 1.f, 0.f, 0.f, 0.f };
-	xform scissorMatrix = { 1.f, 1.f, 1.f, 0.f, 0.f, 0.f };
-	xform viewportMatrix = { 1.f, 1.f, 1.f, 0.f, 0.f, 0.f };
-	vec2f dcViewport = { 0.f, 0.f };
-	float scale_x = 0;
-	float scale_y = 0;
-	float sidebarWidth = 0;
+	transform_matrix_t m;
 };
+#endif
+
+#endif

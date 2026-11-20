@@ -15,7 +15,7 @@
 #include "types.h"
 
 static int live;		/* textures constructed and not yet destroyed */
-static int warned;
+int warned;
 
 struct Counted
 {

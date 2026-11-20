@@ -31,7 +31,6 @@ struct ShaderUniforms_t ShaderUniforms;
 
 u32 gcflip;
 
-float fb_scale_x, fb_scale_y;
 
 //Fragment and vertex shaders code
 

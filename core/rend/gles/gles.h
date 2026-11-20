@@ -216,7 +216,6 @@ struct gl_ctx
 
 extern gl_ctx gl;
 extern GLuint fbTextureId;
-extern float fb_scale_x, fb_scale_y;
 
 u64 gl_GetTexture(TSP tsp, TCW tcw, int area = 0);
 struct text_info {

@@ -6,6 +6,9 @@
 #include "rend/tex_pool.h"
 #include <stdio.h>
 
+/* (the core's log, which the pool speaks to: nowhere here) */
+extern "C" { retro_log_printf_t log_cb = NULL; }
+
 static int fails;
 
 static void expect(const char *what, u32 got, u32 want)

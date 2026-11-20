@@ -16,27 +16,50 @@
 
 #include "types.h"
 #include "log/Log.h"
+#include <retro_inline.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+typedef struct VramBudget VramBudget;
 struct VramBudget
 {
-	u32 budget_kib = 0;	// what may be used, all together
-	u32 usage_kib = 0;	// of it, used already when it was read
-	bool exact = false;	// from the API; or an estimate
-
-	// what is left for new pools
+	u32 budget_kib;	/* what may be used, all together */
+	u32 usage_kib;	/* of it, used already when it was read */
+	bool exact;	/* from the API; or an estimate */
+#ifdef __cplusplus
+	VramBudget() : budget_kib(0), usage_kib(0), exact(false) {}
+	/* what is left for new pools */
 	u32 available_kib() const { return budget_kib > usage_kib ? budget_kib - usage_kib : 0; }
+#endif
 };
 
-static inline u32 vram_kib(u64 bytes)
+/* what is left for new pools */
+static INLINE u32 vram_budget_available_kib(const VramBudget *budget)
+{
+	return budget->budget_kib > budget->usage_kib ? budget->budget_kib - budget->usage_kib : 0;
+}
+
+static INLINE u32 vram_kib(u64 bytes)
 {
 	const u64 kib = bytes >> 10;
 	return kib > 0xffffffffull ? 0xffffffffu : (u32)kib;
 }
 
-static inline void vram_budget_log(const char *api, const VramBudget& budget)
+static INLINE void vram_budget_say(const char *api, const VramBudget *budget)
 {
 	NOTICE_LOG(RENDERER, "%s: video memory budget %u MB, %u MB in use (%s)\n", api,
-			budget.budget_kib >> 10, budget.usage_kib >> 10, budget.exact ? "reported" : "estimated");
+			budget->budget_kib >> 10, budget->usage_kib >> 10, budget->exact ? "reported" : "estimated");
 }
+
+#ifdef __cplusplus
+}
+
+static inline void vram_budget_log(const char *api, const VramBudget& budget)
+{
+	vram_budget_say(api, &budget);
+}
+#endif
 
 #endif

@@ -29,16 +29,23 @@
  *
  * The lists are threaded through the images' own entries, and nothing is
  * allocated to take an image or to give one back. Only the thread that
- * renders touches a pool. */
+ * renders touches a pool. C89, for C and C++ alike; C++ has the book as
+ * TexPoolBook. */
 #ifndef REND_TEX_POOL_H
 #define REND_TEX_POOL_H
 
+#include <string.h>
+#include <retro_inline.h>
 #include "types.h"
 #include "log/Log.h"
 #include "rend/vram_budget.h"
-#include <string.h>
+
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 /* What the pool knows of an image: the renderer's entry starts with this */
+typedef struct TexPoolEntry TexPoolEntry;
 struct TexPoolEntry
 {
 	TexPoolEntry *next;
@@ -46,332 +53,190 @@ struct TexPoolEntry
 	u32 bytes;
 };
 
-class TexPoolBook
+#define TEX_POOL_SIZES 8
+#define TEX_POOL_MIN_LOG2 3
+#define TEX_POOL_MAX_FORMATS 12
+#define TEX_POOL_MAX_FRAMES 8
+/* What a format's images are for: textures; or pictures rendered to */
+#define TEX_POOL_TEXTURES 0
+#define TEX_POOL_TARGETS 1
+/* (the format of a 32-bit texture's, TEX_TYPE_8888: what a texture scaled up is) */
+#define TEX_POOL_FORMAT_8888 3
+#define TEX_POOL_CLASSES (TEX_POOL_MAX_FORMATS * TEX_POOL_SIZES * TEX_POOL_SIZES * 2)
+
+/* (an image of the PowerVR's sizes, 8 to 1024 a side: its log2 - 3; -1 if not) */
+static INLINE int tex_pool_log2(u32 v)
+{
+	int l;
+	if (v < (8u << 0) || v > (8u << (TEX_POOL_SIZES - 1)) || (v & (v - 1)) != 0)
+		return -1;
+	for (l = 0; (8u << l) != v; l++)
+		;
+	return l;
+}
+
+/* The class of an image of @format (the renderer's own number for it,
+ * below TEX_POOL_MAX_FORMATS), @width by @height, with its mipmap levels
+ * or not; -1 if it is not a shape the pool has */
+static INLINE int tex_pool_class(u32 format, u32 width, u32 height, bool mips)
+{
+	const int lw = tex_pool_log2(width), lh = tex_pool_log2(height);
+	if (format >= TEX_POOL_MAX_FORMATS || lw < 0 || lh < 0)
+		return -1;
+	/* (a mipmapped texture of the PowerVR's is square) */
+	if (mips && lw != lh)
+		return -1;
+	return (int)(((format * TEX_POOL_SIZES + (u32)lw) * TEX_POOL_SIZES + (u32)lh) * 2 + (mips ? 1 : 0));
+}
+static INLINE u32 tex_pool_format(int cls) { return (u32)cls / (TEX_POOL_SIZES * TEX_POOL_SIZES * 2); }
+static INLINE u32 tex_pool_width(int cls) { return 8u << (((u32)cls / (TEX_POOL_SIZES * 2)) % TEX_POOL_SIZES); }
+static INLINE u32 tex_pool_height(int cls) { return 8u << (((u32)cls / 2) % TEX_POOL_SIZES); }
+static INLINE bool tex_pool_mips(int cls) { return (cls & 1) != 0; }
+/* The image's texels, all levels, for @texel bytes a texel */
+static INLINE u32 tex_pool_bytes(int cls, u32 texel)
+{
+	u32 w = tex_pool_width(cls), h = tex_pool_height(cls), bytes = w * h * texel;
+	if (tex_pool_mips(cls))
+		for (w /= 2; w != 0; w /= 2)
+			bytes += w * w * texel;
+	return bytes;
+}
+
+/* A rectangle of the PowerVR's, 2^(@lw + 3) by 2^(@lh + 3) texels: its
+ * share of the rectangles of a format used as much as 565. Strips and
+ * large ones are few. */
+u32 tex_pool_rect_share(u32 lw, u32 lh);
+/* The fewest square textures of 2^(@s + 3) texels without mipmaps of
+ * each format there is: the smallest ones, fonts and the like, which
+ * the tables give none of, eight of 8x8 and four of 16x16 (a few KB) */
+static INLINE u32 tex_pool_least(u32 s) { return s == 0 ? 8 : s == 1 ? 4 : 0; }
+/* How many of each shape of picture rendered to there are: the square
+ * ones, eight of 64, two of 128 to 512, and 1024x1024; and
+ * what renders of a screen are, 1024x512 (640x480 and the like) and
+ * 512x256; one of each twice as long as it is wide from 64; and two of
+ * each four times as long, to 256 (a strip rendered to and its copy:
+ * 128x32 and the like, 340 KB in all at 32 bits) */
+u32 tex_pool_target_count(u32 lw, u32 lh);
+/* Where a texture of @f, 2^(@lw + 3) by 2^(@lh + 3), with mipmaps or
+ * not, is drawn from: its own class (@texel[f] bytes a texel), or, scaled
+ * up by 2^@k (xBRZ: no larger than @up_max a side to be), the 32-bit
+ * class @k sizes up (its mipmaps, if it has them, made from it). -1:
+ * none (scaled past 1024). */
+int tex_pool_drawn(u32 f, u32 lw, u32 lh, bool mips, u32 k, u32 up_max, const u32 *texel, u32 *bytes);
+/* How many images of each class to make at the start (into @counts,
+ * TEX_POOL_CLASSES of them), for formats of @texel bytes a texel (0 for a
+ * format there is none of), of the kind @kind[f] (TEX_POOL_TEXTURES,
+ * TEX_POOL_TARGETS; all textures if null) and the given relative use
+ * (@use, in eighths: 8 for a format games use as much as 565). What the
+ * textures take is a sixteenth of what the budget has left, but no less
+ * than 16 MB and no more than 128 MB: three quarters of it the square
+ * ones, a quarter the rectangles. With textures scaled up @upscale times
+ * (xBRZ: those no larger than @up_max a side), the textures as they are
+ * drawn: 32-bit, as large as they are made (tex_pool_drawn()) - none of
+ * them for a factor no power of two, whose sizes no image of the pool's
+ * has. With renders to a texture @rtt times finer, the targets of those
+ * sizes as well as the console's (read back at its size). Returns the
+ * bytes, the targets' too. */
+u64 tex_pool_plan(const VramBudget *budget, const u32 *texel, const u32 *use, const u8 *kind, u32 formats, u32 *counts,
+		u32 upscale, u32 up_max, u32 rtt);
+
+/* The book of a pool's images: which are free, of each class */
+typedef struct tex_pool_book
+{
+	/* what has been done so far, for measuring */
+	u32 made, madeLate, lateClasses;
+	u64 bytesMade, bytesLate;
+
+	TexPoolEntry *free[TEX_POOL_CLASSES];
+	TexPoolEntry *retired[TEX_POOL_MAX_FRAMES];
+	bool said[TEX_POOL_CLASSES];
+	u32 frames;
+	u32 current;
+} tex_pool_book_t;
+
+/* Empty, for frames @frames in flight */
+void tex_pool_reset(tex_pool_book_t *b, u32 frames);
+/* A free image of class @cls, or null: the class has none left, and the
+ * renderer makes one (tex_pool_made() with @late) */
+static INLINE TexPoolEntry *tex_pool_take(tex_pool_book_t *b, int cls)
+{
+	TexPoolEntry *e = b->free[cls];
+	if (e != NULL)
+		b->free[cls] = e->next;
+	return e;
+}
+/* An image made: at the start, or because its class had none left */
+void tex_pool_made(tex_pool_book_t *b, TexPoolEntry *e, int cls, u32 bytes, bool late, const char *format);
+/* Free again now: nothing the GPU has still to do uses it */
+static INLINE void tex_pool_give(tex_pool_book_t *b, TexPoolEntry *e)
+{
+	e->next = b->free[e->cls];
+	b->free[e->cls] = e;
+}
+/* Free again once the frames that may still use it are done: when this
+ * frame's place comes round again (tex_pool_frame()) */
+static INLINE void tex_pool_retire(tex_pool_book_t *b, TexPoolEntry *e)
+{
+	e->next = b->retired[b->current];
+	b->retired[b->current] = e;
+}
+/* @index is the current frame's from here on: what was retired under
+ * it the last time is free */
+void tex_pool_frame(tex_pool_book_t *b, u32 index);
+/* Everything there is, free, retired or not, for the renderer to
+ * destroy, one at a time: NULL when there is none left (what textures
+ * hold they give back first) */
+TexPoolEntry *tex_pool_drain(tex_pool_book_t *b);
+void tex_pool_summary(const tex_pool_book_t *b, const char *api);
+
+#ifdef __cplusplus
+}
+
+class TexPoolBook : public tex_pool_book_t
 {
 public:
-	enum { SIZES = 8, MIN_LOG2 = 3, MAX_FORMATS = 12, MAX_FRAMES = 8 };
-	/* What a format's images are for: textures; or pictures rendered to */
-	enum { TEXTURES = 0, TARGETS = 1 };
-	/* (the format of TextureType::_8888's: what a texture scaled up is) */
-	enum { FORMAT_8888 = 3 };
-	enum { CLASSES = MAX_FORMATS * SIZES * SIZES * 2 };
+	enum { SIZES = TEX_POOL_SIZES, MIN_LOG2 = TEX_POOL_MIN_LOG2, MAX_FORMATS = TEX_POOL_MAX_FORMATS,
+			MAX_FRAMES = TEX_POOL_MAX_FRAMES };
+	enum { TEXTURES = TEX_POOL_TEXTURES, TARGETS = TEX_POOL_TARGETS };
+	enum { FORMAT_8888 = TEX_POOL_FORMAT_8888 };
+	enum { CLASSES = TEX_POOL_CLASSES };
 
-	/* The class of an image of @format (the renderer's own number for it,
-	 * below MAX_FORMATS), @width by @height, with its mipmap levels or
-	 * not; -1 if it is not a shape the pool has */
-	static int Class(u32 format, u32 width, u32 height, bool mips)
-	{
-		const int lw = log2_exact(width), lh = log2_exact(height);
-		if (format >= MAX_FORMATS || lw < 0 || lh < 0)
-			return -1;
-		// (a mipmapped texture of the PowerVR's is square)
-		if (mips && lw != lh)
-			return -1;
-		return (int)(((format * SIZES + (u32)lw) * SIZES + (u32)lh) * 2 + (mips ? 1 : 0));
-	}
-	static u32 Format(int cls) { return (u32)cls / (SIZES * SIZES * 2); }
-	static u32 Width(int cls) { return 8u << (((u32)cls / (SIZES * 2)) % SIZES); }
-	static u32 Height(int cls) { return 8u << (((u32)cls / 2) % SIZES); }
-	static bool Mips(int cls) { return (cls & 1) != 0; }
-	/* The image's texels, all levels, for @texel bytes a texel */
-	static u32 Bytes(int cls, u32 texel)
-	{
-		u32 w = Width(cls), h = Height(cls), bytes = w * h * texel;
-		if (Mips(cls))
-			for (w /= 2; w != 0; w /= 2)
-				bytes += w * w * texel;
-		return bytes;
-	}
+	TexPoolBook() { memset(static_cast<tex_pool_book_t *>(this), 0, sizeof(tex_pool_book_t)); frames = 1; }
 
-	/* A rectangle of the PowerVR's, 2^(@lw + 3) by 2^(@lh + 3) texels: its
-	 * share of the rectangles of a format used as much as 565. Strips and
-	 * large ones are few. */
-	static u32 RectShare(u32 lw, u32 lh)
-	{
-		// by the shorter side, for one twice as long; half as many for each doubling more
-		static const u32 shorter[SIZES] = { 2, 4, 6, 6, 4, 2, 1, 0 };
-		const u32 d = lw > lh ? lw - lh : lh - lw;
-		return d == 0 ? 0 : shorter[lw < lh ? lw : lh] >> (d - 1);
-	}
-	/* The fewest square textures of 2^(@s + 3) texels without mipmaps of
-	 * each format there is: the smallest ones, fonts and the like, which
-	 * the tables above give none of, eight of 8x8 and four of 16x16 (a few
-	 * KB) */
-	static u32 Least(u32 s) { return s == 0 ? 8 : s == 1 ? 4 : 0; }
-	/* How many of each shape of picture rendered to there are: the square
-	 * ones, eight of 64, two of 128 to 512, and 1024x1024; and
-	 * what renders of a screen are, 1024x512 (640x480 and the like) and
-	 * 512x256; one of each twice as long as it is wide from 64; and two of
-	 * each four times as long, to 256 (a strip rendered to and its copy:
-	 * 128x32 and the like, 340 KB in all at 32 bits) */
-	static u32 TargetCount(u32 lw, u32 lh)
-	{
-		if (lw == lh)
-			return lw == 3 ? 8 : lw >= 4 && lw <= 6 ? 2 : lw == 7 ? 1 : 0;
-		if (lw == 7 && lh == 6)
-			return 4;
-		if (lw == 6 && lh == 5)
-			return 2;
-		if ((lw == lh + 2 || lh == lw + 2) && (lw > lh ? lw : lh) <= 5)
-			return 2;
-		return lw >= 3 && lh >= 3 && (lw == lh + 1 || lh == lw + 1) ? 1 : 0;
-	}
-
-	/* Where a texture of @f, 2^(@lw + 3) by 2^(@lh + 3), with mipmaps or
-	 * not, is drawn from: its own class (@texel[f] bytes a texel), or, scaled
-	 * up by 2^@k (xBRZ: no larger than @upMax a side to be), the 32-bit
-	 * class @k sizes up (its mipmaps, if it has them, made from it). -1:
-	 * none (scaled past 1024). */
+	static int Class(u32 format, u32 width, u32 height, bool mips) { return tex_pool_class(format, width, height, mips); }
+	static u32 Format(int cls) { return tex_pool_format(cls); }
+	static u32 Width(int cls) { return tex_pool_width(cls); }
+	static u32 Height(int cls) { return tex_pool_height(cls); }
+	static bool Mips(int cls) { return tex_pool_mips(cls); }
+	static u32 Bytes(int cls, u32 texel) { return tex_pool_bytes(cls, texel); }
+	static u32 RectShare(u32 lw, u32 lh) { return tex_pool_rect_share(lw, lh); }
+	static u32 Least(u32 s) { return tex_pool_least(s); }
+	static u32 TargetCount(u32 lw, u32 lh) { return tex_pool_target_count(lw, lh); }
 	static int Drawn(u32 f, u32 lw, u32 lh, bool mips, u32 k, u32 upMax, const u32 *texel, u32 *bytes)
 	{
-		if (k != 0 && (8u << lw) * (8u << lh) <= upMax * upMax)
-		{
-			if (lw + k >= SIZES || lh + k >= SIZES || texel[FORMAT_8888] == 0)
-				return -1;
-			const int c = Class(FORMAT_8888, 8u << (lw + k), 8u << (lh + k), mips);
-			*bytes = Bytes(c, texel[FORMAT_8888]);
-			return c;
-		}
-		const int c = Class(f, 8u << lw, 8u << lh, mips);
-		*bytes = Bytes(c, texel[f]);
-		return c;
+		return tex_pool_drawn(f, lw, lh, mips, k, upMax, texel, bytes);
 	}
-
-	/* How many images of each class to make at the start (into @counts,
-	 * CLASSES of them), for formats of @texel bytes a texel (0 for a
-	 * format there is none of), of the kind @kind[f] (TEXTURES, TARGETS;
-	 * all TEXTURES if null) and the given relative use (@use, in eighths:
-	 * 8 for a format games use as much as 565). What the textures take is
-	 * a sixteenth of what the budget has left, but no less than 16 MB and
-	 * no more than 128 MB: three quarters of it the square ones, a quarter
-	 * the rectangles. With textures scaled up @upscale times (xBRZ: those no
-	 * larger than @upMax a side), the textures as they are drawn: 32-bit,
-	 * as large as they are made (Drawn()) - none of them for a
-	 * factor no power of two, whose sizes no image of the pool's has.
-	 * With renders to a texture @rtt times finer, the targets of those
-	 * sizes as well as the console's (read back at its size). Returns the
-	 * bytes, the targets' too. */
 	static u64 Plan(const VramBudget& budget, const u32 *texel, const u32 *use, const u8 *kind, u32 formats, u32 *counts,
 			u32 upscale = 1, u32 upMax = 0, u32 rtt = 1)
 	{
-		/* For a format used as much as 565: square, mipmapped, then not;
-		 * from 8 texels to 1024. */
-		static const u32 mipped[SIZES] = { 1, 4, 6, 12, 16, 16, 4, 0 };
-		static const u32 plain[SIZES]  = { 0, 0, 1,  2,  4,  4, 2, 0 };
-		u64 unit = 0, rectUnit = 0, want, bytes = 0;
-		u32 f, s, t, k = 0, b;
-		int c;
-
-		/* (2^k: a factor no power of two leaves those it scales out) */
-		if (upscale > 1)
-		{
-			while ((2u << k) <= upscale)
-				k++;
-			if ((1u << k) != upscale)
-				k = SIZES;
-		}
-		/* (renders to a texture @rtt times finer: 2^rk, none for a factor
-		 * no power of two) */
-		u32 rk = 0;
-		if (rtt > 1)
-		{
-			while ((2u << rk) <= rtt)
-				rk++;
-			if ((1u << rk) != rtt)
-				rk = SIZES;
-		}
-		memset(counts, 0, sizeof(u32) * CLASSES);
-		for (f = 0; f < formats && f < MAX_FORMATS; f++)
-		{
-			if (texel[f] == 0 || (kind != nullptr && kind[f] != TEXTURES))
-				continue;
-			for (s = 0; s < SIZES; s++)
-			{
-				if (Drawn(f, s, s, true, k, upMax, texel, &b) >= 0)
-					unit += (u64)mipped[s] * use[f] * b;
-				if (Drawn(f, s, s, false, k, upMax, texel, &b) >= 0)
-					unit += (u64)plain[s] * use[f] * b;
-				for (t = 0; t < SIZES; t++)
-					if (Drawn(f, s, t, false, k, upMax, texel, &b) >= 0)
-						rectUnit += (u64)RectShare(s, t) * use[f] * b;
-			}
-		}
-		want = (u64)budget.available_kib() * 1024 / 16;
-		if (want < 16ull << 20)
-			want = 16ull << 20;
-		if (want > 128ull << 20)
-			want = 128ull << 20;
-		// the tables above times their part of want / unit, rounded up (the units are in eighths)
-		const u64 squares = want * 8 * 3 / 4, rects = want * 8 / 4;
-		for (f = 0; f < formats && f < MAX_FORMATS; f++)
-		{
-			if (texel[f] == 0)
-				continue;
-			if (kind != nullptr && kind[f] == TARGETS)
-			{
-				for (s = 0; s < SIZES; s++)
-					for (t = 0; t < SIZES; t++)
-					{
-						/* (half as many of 256 a side and larger on a card
-						 * with little memory: the smaller, which a game
-						 * renders more of at once, take little) */
-						const u32 n = want < 64ull << 20 && (s >= 5 || t >= 5) ? (TargetCount(s, t) + 1) / 2 : TargetCount(s, t);
-						c = Class(f, 8u << s, 8u << t, false);
-						counts[c] += n;
-						bytes += (u64)n * Bytes(c, texel[f]);
-						/* ...and, rendered @rtt times finer, the same
-						 * renders as large as they are drawn (those still
-						 * no larger than 1024) */
-						if (rk != 0 && rk < SIZES && s + rk < SIZES && t + rk < SIZES && n != 0)
-						{
-							c = Class(f, 8u << (s + rk), 8u << (t + rk), false);
-							counts[c] += n;
-							bytes += (u64)n * Bytes(c, texel[f]);
-						}
-					}
-				continue;
-			}
-			for (s = 0; s < SIZES && unit != 0; s++)
-			{
-				u32 n;
-				if ((c = Drawn(f, s, s, true, k, upMax, texel, &b)) >= 0)
-				{
-					n = (u32)(((u64)mipped[s] * use[f] * squares + unit * 8 - 1) / (unit * 8));
-					counts[c] += n;
-					bytes += (u64)n * b;
-				}
-				if ((c = Drawn(f, s, s, false, k, upMax, texel, &b)) >= 0)
-				{
-					n = (u32)(((u64)plain[s] * use[f] * squares + unit * 8 - 1) / (unit * 8));
-					if (use[f] != 0 && n < Least(s))
-						n = Least(s);
-					counts[c] += n;
-					bytes += (u64)n * b;
-				}
-				for (t = 0; t < SIZES && rectUnit != 0; t++)
-				{
-					if (t == s || (c = Drawn(f, s, t, false, k, upMax, texel, &b)) < 0)
-						continue;
-					// (to the nearest: there are many of them, and few of each are used)
-					n = (u32)(((u64)RectShare(s, t) * use[f] * rects + rectUnit * 4) / (rectUnit * 8));
-					counts[c] += n;
-					bytes += (u64)n * b;
-				}
-			}
-		}
-		return bytes;
+		return tex_pool_plan(&budget, texel, use, kind, formats, counts, upscale, upMax, rtt);
 	}
 
-	void Reset(u32 frames)
-	{
-		memset(free, 0, sizeof(free));
-		memset(retired, 0, sizeof(retired));
-		memset(said, 0, sizeof(said));
-		this->frames = frames == 0 ? 1 : frames > MAX_FRAMES ? MAX_FRAMES : frames;
-		current = 0;
-		made = madeLate = lateClasses = 0;
-		bytesMade = bytesLate = 0;
-	}
-
-	/* A free image of class @cls, or null: the class has none left, and the
-	 * renderer makes one (Made() with @late) */
-	TexPoolEntry *Take(int cls)
-	{
-		TexPoolEntry *e = free[cls];
-		if (e != nullptr)
-			free[cls] = e->next;
-		return e;
-	}
-	/* An image made: at the start, or because its class had none left */
-	void Made(TexPoolEntry *e, int cls, u32 bytes, bool late, const char *format)
-	{
-		e->next = nullptr;
-		e->cls = (u32)cls;
-		e->bytes = bytes;
-		made++;
-		bytesMade += bytes;
-		if (!late)
-			return;
-		madeLate++;
-		bytesLate += bytes;
-		if (!said[cls])
-		{
-			said[cls] = true;
-			lateClasses++;
-			WARN_LOG(RENDERER, "Texture pool: no %ux%u %s%s image left, one made (the pool is too small for this game)\n",
-					Width(cls), Height(cls), format, Mips(cls) ? " mipmapped" : "");
-		}
-	}
-	/* Free again now: nothing the GPU has still to do uses it */
-	void Give(TexPoolEntry *e)
-	{
-		e->next = free[e->cls];
-		free[e->cls] = e;
-	}
-	/* Free again once the frames that may still use it are done: when this
-	 * frame's place comes round again (Frame()) */
-	void Retire(TexPoolEntry *e)
-	{
-		e->next = retired[current];
-		retired[current] = e;
-	}
-	/* @index is the current frame's from here on: what was retired under
-	 * it the last time is free */
-	void Frame(u32 index)
-	{
-		current = index % frames;
-		TexPoolEntry *e = retired[current];
-		retired[current] = nullptr;
-		while (e != nullptr)
-		{
-			TexPoolEntry *next = e->next;
-			Give(e);
-			e = next;
-		}
-	}
-	/* Everything there is, free, retired or not, for the renderer to
-	 * destroy: what is free and retired is handed to @fn here; what
-	 * textures hold they give back first */
+	void Reset(u32 frames) { tex_pool_reset(this, frames); }
+	TexPoolEntry *Take(int cls) { return tex_pool_take(this, cls); }
+	void Made(TexPoolEntry *e, int cls, u32 bytes, bool late, const char *format) { tex_pool_made(this, e, cls, bytes, late, format); }
+	void Give(TexPoolEntry *e) { tex_pool_give(this, e); }
+	void Retire(TexPoolEntry *e) { tex_pool_retire(this, e); }
+	void Frame(u32 index) { tex_pool_frame(this, index); }
 	template<typename Fn>
 	void Drain(Fn fn)
 	{
-		for (u32 i = 0; i < MAX_FRAMES; i++)
-			Frame(i);
-		for (u32 c = 0; c < CLASSES; c++)
-			while (free[c] != nullptr)
-			{
-				TexPoolEntry *e = free[c];
-				free[c] = e->next;
-				fn(e);
-			}
+		TexPoolEntry *e;
+		while ((e = tex_pool_drain(this)) != NULL)
+			fn(e);
 	}
-
-	void Summary(const char *api) const
-	{
-		NOTICE_LOG(RENDERER, "%s: texture pool, %u images made (%u MB), %u of them while the game ran (%u MB, %u shapes)\n",
-				api, made, (u32)(bytesMade >> 20), madeLate, (u32)(bytesLate >> 20), lateClasses);
-	}
-
-	// what has been done so far, for measuring
-	u32 made = 0, madeLate = 0, lateClasses = 0;
-	u64 bytesMade = 0, bytesLate = 0;
-
-private:
-	static int log2_exact(u32 v)
-	{
-		int l;
-		if (v < (8u << 0) || v > (8u << (SIZES - 1)) || (v & (v - 1)) != 0)
-			return -1;
-		for (l = 0; (8u << l) != v; l++)
-			;
-		return l;
-	}
-
-	TexPoolEntry *free[CLASSES];
-	TexPoolEntry *retired[MAX_FRAMES];
-	bool said[CLASSES];
-	u32 frames = 1;
-	u32 current = 0;
+	void Summary(const char *api) const { tex_pool_summary(this, api); }
 };
+#endif
 
 #endif
