@@ -6742,6 +6742,6 @@ static const u32 ta_gpu_spv_15[] = {
 0x0000004a,0x00000041,0x00000014,0x00000049,0x00000042,0x000600a9,0x00000006,0x0000004b,
 0x0000004a,0x00000035,0x00000036,0x000200fe,0x0000004b,0x00010038,
 };
-// by TAG_K_*: the words, and their size in bytes
-static const u32 * const ta_gpu_spv[] = { nullptr, ta_gpu_spv_1, ta_gpu_spv_2, ta_gpu_spv_3, ta_gpu_spv_4, ta_gpu_spv_5, ta_gpu_spv_6, ta_gpu_spv_7, ta_gpu_spv_8, ta_gpu_spv_9, ta_gpu_spv_10, ta_gpu_spv_11, ta_gpu_spv_12, ta_gpu_spv_13, ta_gpu_spv_14, ta_gpu_spv_15 };
+/* by TAG_K_*: the words, and their size in bytes */
+static const u32 * const ta_gpu_spv[] = { 0, ta_gpu_spv_1, ta_gpu_spv_2, ta_gpu_spv_3, ta_gpu_spv_4, ta_gpu_spv_5, ta_gpu_spv_6, ta_gpu_spv_7, ta_gpu_spv_8, ta_gpu_spv_9, ta_gpu_spv_10, ta_gpu_spv_11, ta_gpu_spv_12, ta_gpu_spv_13, ta_gpu_spv_14, ta_gpu_spv_15 };
 static const size_t ta_gpu_spv_size[] = { 0, sizeof(ta_gpu_spv_1), sizeof(ta_gpu_spv_2), sizeof(ta_gpu_spv_3), sizeof(ta_gpu_spv_4), sizeof(ta_gpu_spv_5), sizeof(ta_gpu_spv_6), sizeof(ta_gpu_spv_7), sizeof(ta_gpu_spv_8), sizeof(ta_gpu_spv_9), sizeof(ta_gpu_spv_10), sizeof(ta_gpu_spv_11), sizeof(ta_gpu_spv_12), sizeof(ta_gpu_spv_13), sizeof(ta_gpu_spv_14), sizeof(ta_gpu_spv_15) };

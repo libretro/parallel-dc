@@ -232,19 +232,19 @@ endif
 ifeq ($(HAVE_GL), 1)
 	SOURCES_CXX += $(CORE_DIR)/core/rend/gles/gles.cpp \
 						$(CORE_DIR)/core/rend/gles/gldraw.cpp \
-						$(CORE_DIR)/core/rend/gles/gltex.cpp \
-						$(CORE_DIR)/core/rend/gles/gl_texdecoder.cpp
+						$(CORE_DIR)/core/rend/gles/gltex.cpp
 	SOURCES_C += $(CORE_DIR)/core/rend/gles/gl_writeout.c \
+						$(CORE_DIR)/core/rend/gles/gl_texdecoder.c \
 						$(CORE_DIR)/core/rend/gles/glprogram_cache.c \
 						$(CORE_DIR)/core/rend/gles/glcache.c
 	ifeq ($(HAVE_GL4), 1)
 		SOURCES_CXX += $(CORE_DIR)/core/rend/gl4/gles.cpp \
 							$(CORE_DIR)/core/rend/gl4/gldraw.cpp \
 							$(CORE_DIR)/core/rend/gl4/gltex.cpp \
-							$(CORE_DIR)/core/rend/gl4/abuffer.cpp \
-							$(CORE_DIR)/core/rend/gles/ta_decoder_gl.cpp
+							$(CORE_DIR)/core/rend/gl4/abuffer.cpp
 		# (where a frame is parsed when the card draws it from there: gles/parse_arena_gl.h)
-		SOURCES_C += $(CORE_DIR)/core/rend/gles/parse_arena_gl.c
+		SOURCES_C += $(CORE_DIR)/core/rend/gles/parse_arena_gl.c \
+							$(CORE_DIR)/core/rend/gles/ta_decoder_gl.c
 	endif
 	SOURCES_C += $(LIBRETRO_COMM_DIR)/glsym/rglgen.c \
 						$(DEPS_DIR)/glsm/glsm.c

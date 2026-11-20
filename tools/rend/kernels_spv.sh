@@ -15,13 +15,13 @@
 #                                (rend/tile/pvr_compute.h, after the shared
 #                                rules' headers; vulkan/compute_drawer.cpp)
 #
-# and the OpenGL renderers' (gles/ta_decoder_gl.cpp), whose OpenGL takes
+# and the OpenGL renderers' (gles/ta_decoder_gl.c), whose OpenGL takes
 # SPIR-V (4.6, ARB_gl_spirv) or else compiles the text once:
 #
 #   core/rend/ta_gpu_gl_spv.inc  the decode's kernels for OpenGL
 #                                (TAG_SHADER_GL: --target-env opengl)
 #   core/rend/ta_gpu_glsl.inc    rend/ta_gpu.h itself as text, a line a string
-#   core/rend/texdecode_gl.inc   textures made on the GPU (gles/gl_texdecoder.cpp):
+#   core/rend/texdecode_gl.inc   textures made on the GPU (gles/gl_texdecoder.c):
 #                                rend/texdecode.h's text, and its kernels as
 #                                SPIR-V for OpenGL 4.6 (the bytes from a shader
 #                                storage buffer, uniforms at the locations
@@ -164,8 +164,8 @@ make_ta() {
       spv_array ta_gpu_spv_$k "$WORK/s.comp"
       k=$((k + 1))
    done
-   echo "// by TAG_K_*: the words, and their size in bytes"
-   printf 'static const u32 * const ta_gpu_spv[] = { nullptr'
+   echo "/* by TAG_K_*: the words, and their size in bytes */"
+   printf 'static const u32 * const ta_gpu_spv[] = { 0'
    k=1; while [ $k -le "$TAG_KERNELS" ]; do printf ', ta_gpu_spv_%d' $k; k=$((k + 1)); done
    echo ' };'
    printf 'static const size_t ta_gpu_spv_size[] = { 0'
@@ -187,8 +187,8 @@ make_ta_gl() {
       spv_array ta_gpu_gl_spv_$k "$WORK/s.comp" opengl
       k=$((k + 1))
    done
-   echo "// by TAG_K_*: the words, and their size in bytes"
-   printf 'static const u32 * const ta_gpu_gl_spv[] = { nullptr'
+   echo "/* by TAG_K_*: the words, and their size in bytes */"
+   printf 'static const u32 * const ta_gpu_gl_spv[] = { 0'
    k=1; while [ $k -le "$TAG_KERNELS" ]; do printf ', ta_gpu_gl_spv_%d' $k; k=$((k + 1)); done
    echo ' };'
    printf 'static const size_t ta_gpu_gl_spv_size[] = { 0'
@@ -201,7 +201,7 @@ make_ta_gl() {
 make_ta_glsl() {
    echo "/* rend/ta_gpu.h as text, a line a string, for the OpenGL renderers to"
    echo " * compile the kernels from where OpenGL takes no SPIR-V (the lines that"
-   echo " * go in front: gles/ta_decoder_gl.cpp). Made by tools/rend/kernels_spv.sh"
+   echo " * go in front: gles/ta_decoder_gl.c). Made by tools/rend/kernels_spv.sh"
    echo " * update from it. Not to be edited."
    echo " * header $(sha1sum < core/rend/ta_gpu.h | cut -c1-40)"
    echo " */"
@@ -221,7 +221,7 @@ make_texd() {
       texd_source $f > "$WORK/s.comp"
       spv_array texdecode_spv_$f "$WORK/s.comp"
    done
-   echo "// by TEXD_OUT8, 16, 32: the words, and their size in bytes"
+   echo "/* by TEXD_OUT8, 16, 32: the words, and their size in bytes */"
    echo "static const u32 * const texdecode_spv[] = { texdecode_spv_r8ui, texdecode_spv_r16ui, texdecode_spv_r32ui };"
    echo "static const size_t texdecode_spv_size[] = { sizeof(texdecode_spv_r8ui), sizeof(texdecode_spv_r16ui), sizeof(texdecode_spv_r32ui) };"
 }
@@ -235,12 +235,9 @@ make_gl() {
    echo " * glslang $(glslang_version)"
    sums gl
    echo " */"
-   echo "// (in pieces, of no more than some 16 KB each, for every compiler)"
+   echo "/* (a C string literal a line, for C and C++ alike) */"
    echo "static const char texdecode_glsl[] ="
-   split -l 120 core/rend/texdecode.h "$WORK/text."
-   for f in "$WORK"/text.*; do
-      printf 'R"TEXD('; cat "$f"; echo ')TEXD"'
-   done
+   sed -e 's/\\/\\\\/g' -e 's/"/\\"/g' -e 's/?/\\?/g' -e 's/^/"/' -e 's/$/\\n"/' core/rend/texdecode.h
    echo ";"
    for k in $GL_KERNELS; do
       n=${k%%:*}
@@ -250,7 +247,7 @@ make_gl() {
       od -An -v -w32 -tx4 --endian=little "$WORK/k.spv" | awk '{ s = ""; for (i = 1; i <= NF; i++) s = s "0x" $i ","; print s }'
       echo "};"
    done
-   echo "// by TEXD_KERNEL_GL: the words, and their size in bytes"
+   echo "/* by TEXD_KERNEL_GL: the words, and their size in bytes */"
    echo "static const u32 * const texdecode_glspv[] = { 0, texdecode_glspv_1, texdecode_glspv_2, texdecode_glspv_3, texdecode_glspv_4 };"
    echo "static const size_t texdecode_glspv_size[] = { 0, sizeof(texdecode_glspv_1), sizeof(texdecode_glspv_2), sizeof(texdecode_glspv_3), sizeof(texdecode_glspv_4) };"
 }
@@ -269,14 +266,14 @@ make_compute() {
       spv_array compute_spv_$k "$WORK/s.comp"
       k=$((k + 1))
    done
-   echo "// by PVRC_K_*: the words, and their size in bytes"
-   printf 'static const u32 * const compute_spv[] = { nullptr'
+   echo "/* by PVRC_K_*: the words, and their size in bytes */"
+   printf 'static const u32 * const compute_spv[] = { 0'
    k=1; while [ $k -le "$PVRC_KERNELS" ]; do printf ', compute_spv_%d' $k; k=$((k + 1)); done
    echo ' };'
    printf 'static const size_t compute_spv_size[] = { 0'
    k=1; while [ $k -le "$PVRC_KERNELS" ]; do printf ', sizeof(compute_spv_%d)' $k; k=$((k + 1)); done
    echo ' };'
-   echo "// the walk with PVRC_TEX_WATERFALL (SPIR-V 1.3, Vulkan 1.1's subgroups)"
+   echo "/* the walk with PVRC_TEX_WATERFALL (SPIR-V 1.3, Vulkan 1.1's subgroups) */"
    compute_source $PVRC_K_WALK waterfall > "$WORK/s.comp"
    spv_array compute_spv_walk_waterfall "$WORK/s.comp" vulkan1.1
 }
@@ -385,7 +382,7 @@ make_raster() {
       od -An -v -w32 -tx4 --endian=little "$WORK/k.spv" | awk '{ s = ""; for (i = 1; i <= NF; i++) s = s "0x" $i ","; print s }'
       echo "};"
    done
-   echo "// by RasterSpv: the words, and their size in bytes"
+   echo "/* by RasterSpv: the words, and their size in bytes */"
    printf 'static const u32 * const raster_spv[] = {'
    raster_list | while read name stage defs parts; do printf ' raster_spv_%s,' $name; done
    echo ' };'

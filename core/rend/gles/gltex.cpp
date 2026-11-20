@@ -9,6 +9,8 @@
 #include "gles.h"
 #include "rend/grow_buf.h"
 #include "gl_texdecoder.h"
+
+GLTexDecoder glTexDecoder;
 #include "hw/pvr/pvr_mem.h"
 
 #ifndef GL_UNPACK_ROW_LENGTH

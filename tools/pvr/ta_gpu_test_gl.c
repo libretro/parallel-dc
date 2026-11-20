@@ -1,5 +1,5 @@
 /* ta_gpu_test.c's device in OpenGL (built with TGT_GL): the kernels as the
- * OpenGL renderers run them (gles/ta_decoder_gl.cpp), with their buffers at
+ * OpenGL renderers run them (gles/ta_decoder_gl.c), with their buffers at
  * TAG_GL_BINDING on, in a context of EGL's without a surface (Mesa's
  * llvmpipe where there is no GPU: EGL_PLATFORM=surfaceless).
  *

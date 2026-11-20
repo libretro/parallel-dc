@@ -8357,10 +8357,10 @@ static const u32 compute_spv_8[] = {
 0x000000f9,0x000500c4,0x00000006,0x000000fc,0x000000fa,0x000000fb,0x000500c5,0x00000006,
 0x000000fd,0x000000f8,0x000000fc,0x000200fe,0x000000fd,0x00010038,
 };
-// by PVRC_K_*: the words, and their size in bytes
-static const u32 * const compute_spv[] = { nullptr, compute_spv_1, compute_spv_2, compute_spv_3, compute_spv_4, compute_spv_5, compute_spv_6, compute_spv_7, compute_spv_8 };
+/* by PVRC_K_*: the words, and their size in bytes */
+static const u32 * const compute_spv[] = { 0, compute_spv_1, compute_spv_2, compute_spv_3, compute_spv_4, compute_spv_5, compute_spv_6, compute_spv_7, compute_spv_8 };
 static const size_t compute_spv_size[] = { 0, sizeof(compute_spv_1), sizeof(compute_spv_2), sizeof(compute_spv_3), sizeof(compute_spv_4), sizeof(compute_spv_5), sizeof(compute_spv_6), sizeof(compute_spv_7), sizeof(compute_spv_8) };
-// the walk with PVRC_TEX_WATERFALL (SPIR-V 1.3, Vulkan 1.1's subgroups)
+/* the walk with PVRC_TEX_WATERFALL (SPIR-V 1.3, Vulkan 1.1's subgroups) */
 static const u32 compute_spv_walk_waterfall[] = {
 0x07230203,0x00010300,0x0008000b,0x00001f3c,0x00000000,0x00020011,0x00000001,0x00020011,
 0x0000000b,0x00020011,0x0000003d,0x00020011,0x00000040,0x0006000b,0x00000001,0x4c534c47,

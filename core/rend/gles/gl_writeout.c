@@ -21,7 +21,7 @@
 #ifndef APIENTRY
 #define APIENTRY
 #endif
-/* (what glsm does not wrap: as gl_texdecoder.cpp has it) */
+/* (what glsm does not wrap: as gl_texdecoder.c has it) */
 extern void (APIENTRY *__rglgen_glDispatchCompute)(GLuint, GLuint, GLuint);
 #define glDispatchCompute __rglgen_glDispatchCompute
 

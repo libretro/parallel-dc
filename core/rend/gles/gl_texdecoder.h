@@ -31,106 +31,71 @@
  * SPIR-V with OpenGL 4.6 (ARB_gl_spirv), or compiled from their text, as
  * program binaries kept in the frontend's system directory the next time,
  * where the driver can (glGetProgramBinary), by its name and the text's.
- * OpenGL ES (the GLES builds) and OpenGL 2 convert on the CPU, as before. */
-#pragma once
+ * OpenGL ES (the GLES builds) and OpenGL 2 convert on the CPU, as before.
+ *
+ * C89 (gl_texdecoder.c), for C and C++ alike; C++ has it as glTexDecoder. */
+#ifndef GLES_GL_TEXDECODER_H
+#define GLES_GL_TEXDECODER_H
 #include "types.h"
 #include "rend/TexCache.h"
 #include "rend/texdecode.h"
 #include <glsm/glsmsym.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+/* With the context current, the renderer's resources made */
+void gltd_init(void);
+void gltd_term(void);
+bool gltd_ready(void);
+/* Whether a texture of @type (TEX_TYPE_*), made into TEXD_OUT8, 16 or 32
+ * (@out), can be made by the kernels */
+bool gltd_takes(int type, u32 out);
+/* Whether a planar 16-bit texture of @type goes to its texture as it is
+ * (through the ring) */
+bool gltd_native(int type);
+/* @bytes of the ring for a texture of @levels levels to make (0 for a
+ * copy), and where they are (a multiple of 16); NULL if there is no
+ * room. What was asked for before goes to the GPU first if the lists have
+ * no room for this. */
+u8 *gltd_begin(u32 bytes, u32 levels, u32 *offset);
+/* The plan's levels made into @texture (of @type) from the bytes at
+ * @offset; what gltd_cancel() takes */
+u32 gltd_add_decode(GLuint texture, int type, const struct texd_plan *plan, u32 offset);
+/* @width by @height texels into level 0 of @texture, rows of @row_length
+ * from @offset */
+u32 gltd_add_copy(GLuint texture, int type, u32 offset, u32 row_length, u32 width, u32 height);
+u32 gltd_serial(void);
+/* What was added under @serial as @job is not done after all */
+void gltd_cancel(u32 job, u32 serial);
+/* What the frame asked for, recorded */
+void gltd_flush(void);
+
+#ifdef __cplusplus
+}
+
+/* The decoder as C++ has it */
 class GLTexDecoder
 {
 public:
-	/* With the context current, the renderer's resources made */
-	void Init();
-	void Term();
-	bool Ready() const { return ready; }
-
-	/* Whether a texture of @type, made into TEXD_OUT8, 16 or 32 (@out),
-	 * can be made by the kernels */
-	bool Takes(TextureType type, u32 out) const;
-	/* Whether a planar 16-bit texture of @type goes to its texture as it
-	 * is (through the ring) */
-	bool Native(TextureType type) const { return ready && (unsigned)type < 3 && native[(int)type]; }
-
-	/* @bytes of the ring for a texture of @levels levels to make (0 for a
-	 * copy), and where they are (a multiple of 16); null if there is no
-	 * room. What was asked for before goes to the GPU first if the lists
-	 * have no room for this. */
-	u8 *Begin(u32 bytes, u32 levels, u32 *offset);
-	/* The plan's levels made into @texture (of @type) from the bytes at
-	 * @offset; what Cancel() takes */
-	u32 AddDecode(GLuint texture, TextureType type, const texd_plan& plan, u32 offset);
-	/* @width by @height texels into level 0 of @texture, rows of @rowLength
-	 * from @offset */
-	u32 AddCopy(GLuint texture, TextureType type, u32 offset, u32 rowLength, u32 width, u32 height);
-	u32 Serial() const { return serial; }
-	/* What was added under @serial as @job is not done after all */
-	void Cancel(u32 job, u32 serial);
-
-	/* What the frame asked for, recorded */
-	void Flush();
-
-	// what has been done so far, for measuring
-	u64 statBytes = 0;
-	u64 statLevels = 0;
-	u64 statCopies = 0;
-	u64 statFull = 0;
-
-private:
-	enum { MAX_JOBS = 2048, MAX_LEVELS = 4096, MAX_FENCES = 8 };
-	enum { PROGRAM_32, PROGRAM_8, PROGRAM_DRAW, PROGRAMS };
-	struct Job
+	void Init() { gltd_init(); }
+	void Term() { gltd_term(); }
+	bool Ready() const { return gltd_ready(); }
+	bool Takes(TextureType type, u32 out) const { return gltd_takes((int)type, out); }
+	bool Native(TextureType type) const { return gltd_native((int)type); }
+	u8 *Begin(u32 bytes, u32 levels, u32 *offset) { return gltd_begin(bytes, levels, offset); }
+	u32 AddDecode(GLuint texture, TextureType type, const texd_plan& plan, u32 offset) { return gltd_add_decode(texture, (int)type, &plan, offset); }
+	u32 AddCopy(GLuint texture, TextureType type, u32 offset, u32 rowLength, u32 width, u32 height)
 	{
-		GLuint texture;
-		u32 first, count;	// levels; a copy has none
-		u32 offset, rowLength, width, height;	// a copy's
-		u8 type;
-		bool copy;
-		bool cancelled;
-	};
-	struct Level
-	{
-		u32 pc[6];
-		u32 mip;
-	};
-	struct Pending
-	{
-		void *fence;		// GLsync
-		u64 end;
-	};
-
-	bool MakePrograms();
-	GLuint Link(const u32 *spv, const size_t *spvSize, const char *const *sources, int stages, bool keep);
-	void Upload(u64 from, u64 to);
-	void Reclaim();
-
-	bool ready = false;
-	bool compute = false;		// OpenGL 4.3: compute kernels, the ring a storage buffer
-	bool persistent = false;	// the ring stays mapped
-	bool fences = false;
-	bool takes[5] = {};
-	bool native[3] = {};
-
-	GLuint ring = 0;			// the buffer
-	GLuint ringTexture = 0;		// OpenGL 3: what the kernels read the ring from
-	u32 ringRows = 0;
-	u8 *mapped = nullptr;		// the ring, mapped; or this side's memory for it
-	u8 *shadow = nullptr;
-	u64 size = 0;
-	u64 head = 0, tail = 0, flushed = 0;	// bytes handed out, given back, and up to where they went
-	Pending pending[MAX_FENCES];
-	u32 pendingCount = 0;
-
-	GLuint programs[PROGRAMS] = {};
-	GLint locations[PROGRAMS][2] = {};
-	GLuint framebuffer = 0;
-	GLuint vertexArray = 0;
-
-	Job jobs[MAX_JOBS];
-	Level levels[MAX_LEVELS];
-	u32 jobCount = 0, levelCount = 0;
-	u32 serial = 1;
+		return gltd_add_copy(texture, (int)type, offset, rowLength, width, height);
+	}
+	u32 Serial() const { return gltd_serial(); }
+	void Cancel(u32 job, u32 serial) { gltd_cancel(job, serial); }
+	void Flush() { gltd_flush(); }
 };
 
 extern GLTexDecoder glTexDecoder;
+#endif
+
+#endif

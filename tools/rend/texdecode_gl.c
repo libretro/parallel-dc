@@ -5,7 +5,7 @@
  * texdecode_test.c, run with "dump", writes every texture of its corpus -
  * the plan, the bytes the GPU is handed, what the CPU made - to its
  * standard output; this reads that from its standard input, as
- * texdecode_d3d11.c does, and makes each texture as gles/gl_texdecoder.cpp
+ * texdecode_d3d11.c does, and makes each texture as gles/gl_texdecoder.c
  * makes it, with the kernels the core has (rend/texdecode_gl.inc: the
  * header's text, which the renderers compile, and its SPIR-V), into
  * textures of the formats the texture pool has (GL_RGB565, GL_RGB5_A1,

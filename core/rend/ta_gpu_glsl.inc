@@ -1,6 +1,6 @@
 /* rend/ta_gpu.h as text, a line a string, for the OpenGL renderers to
  * compile the kernels from where OpenGL takes no SPIR-V (the lines that
- * go in front: gles/ta_decoder_gl.cpp). Made by tools/rend/kernels_spv.sh
+ * go in front: gles/ta_decoder_gl.c). Made by tools/rend/kernels_spv.sh
  * update from it. Not to be edited.
  * header f2624a01c36793fc3e615f023c9f727d59ca210d
  */

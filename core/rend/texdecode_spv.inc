@@ -1578,6 +1578,6 @@ static const u32 texdecode_spv_r32ui[] = {
 0x00000311,0x0003003e,0x00000312,0x0000030d,0x00070039,0x00000006,0x00000313,0x0000002d,
 0x0000030e,0x00000310,0x00000312,0x000200fe,0x00000313,0x00010038,
 };
-// by TEXD_OUT8, 16, 32: the words, and their size in bytes
+/* by TEXD_OUT8, 16, 32: the words, and their size in bytes */
 static const u32 * const texdecode_spv[] = { texdecode_spv_r8ui, texdecode_spv_r16ui, texdecode_spv_r32ui };
 static const size_t texdecode_spv_size[] = { sizeof(texdecode_spv_r8ui), sizeof(texdecode_spv_r16ui), sizeof(texdecode_spv_r32ui) };

@@ -64,7 +64,7 @@ for f in $FILES; do
       echo "FAIL clang: $f"; grep -E 'error' /tmp/gl_shapes.$$ | head -5
       fails=$((fails + 1))
    fi
-   case $f in core/rend/gl4/*|core/rend/gles/ta_decoder_gl.cpp) continue ;; esac
+   case $f in core/rend/gl4/*) continue ;; esac
    if ! $CXX $GL -DHAVE_LIBNX -DTARGET_LIBNX "$f" > /tmp/gl_shapes.$$ 2>&1; then
       echo "FAIL libnx: $f"; grep -E 'error' /tmp/gl_shapes.$$ | head -5
       fails=$((fails + 1))

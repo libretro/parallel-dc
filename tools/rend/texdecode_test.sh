@@ -105,7 +105,7 @@ if [ "${TEXD_D3D9:-1}" != 0 ] && command -v x86_64-w64-mingw32-gcc > /dev/null &
 fi
 
 if [ "${TEXD_GL:-1}" != 0 ]; then
-   # (the kernels' text as C: rend/texdecode_gl.inc has it as raw strings)
+   # (the kernels' text: rend/texdecode_gl.inc)
    ${CC:-cc} -std=gnu11 -O2 -Wall -Icore/rend -Icore/libretro-common/include -Itools/rend \
       -o "$WORK/texdecode_gl" tools/rend/texdecode_gl.c -lEGL -lGL
    # (the dump made again for each: it is a gigabyte and more)
