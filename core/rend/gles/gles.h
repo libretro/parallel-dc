@@ -1,5 +1,8 @@
-#pragma once
-#include <unordered_map>
+#ifndef GLES_GLES_H
+#define GLES_GLES_H
+/* The OpenGL renderers' shared state and calls. What is C89 - the
+ * context's state (gl), its programs' records, the state cache - is for C
+ * and C++ alike; the rest is C++'s. */
 #include <libretro.h>
 #include <glsm/glsm.h>
 #include <glsm/glsmsym.h>
@@ -9,6 +12,18 @@
 #include "rend/sorter.h"
 #include "rend/tileclip.h"
 #include "rend/tex_pool.h"
+#include "rend/tex_map.h"
+#include "rend/vram_budget.h"
+
+#include "gl_writeout.h"
+#include "glcache.h"
+#include "rend/depth_scale.h"
+#include "rend/ta_gpu.h"
+
+#ifdef __cplusplus
+#include <unordered_map>
+extern "C" {
+#endif
 
 /* A buffer's storage given now, @bytes, so that a frame's data no larger
  * than that, given it with glBufferData() as it comes, asks for no more
@@ -17,12 +32,8 @@
  * that for the vertices where the frame's are copied there */
 #define GL_BUFFER_ROOM (64 * 1024)
 void gl_buffer_room(GLuint buffer, size_t bytes);
-// the translucent sort's lists and indices, room made now (gldraw.cpp)
+/* the translucent sort's lists and indices, room made now (gldraw.cpp) */
 void gl_sort_reserve(void);
-#include "gl_writeout.h"
-#include "glcache.h"
-#include "rend/depth_scale.h"
-#include "rend/ta_gpu.h"
 
 #ifndef GL_DEPTH32F_STENCIL8
 #define GL_DEPTH32F_STENCIL8 0x8CAD
@@ -42,9 +53,9 @@ void gl_sort_reserve(void);
 #ifndef GL_COPY_READ_BUFFER
 #define GL_COPY_READ_BUFFER 0x8F36
 #endif
-// the uniform buffer binding of the depth scale (DepthScaleBlock in the vertex shaders)
+/* the uniform buffer binding of the depth scale (DepthScaleBlock in the vertex shaders) */
 #define DEPTH_UBO_BINDING 0
-// (the OpenGL ES headers spell the calling convention this way)
+/* (the OpenGL ES headers spell the calling convention this way) */
 #ifndef APIENTRYP
 #ifdef GL_APIENTRYP
 #define APIENTRYP GL_APIENTRYP
@@ -71,16 +82,16 @@ void gl_sort_reserve(void);
 #define VERTEX_COL_BASE_ARRAY 1
 #define VERTEX_COL_OFFS_ARRAY 2
 #define VERTEX_UV_ARRAY       3
-// OIT only
+/* OIT only */
 #define VERTEX_COL_BASE1_ARRAY 4
 #define VERTEX_COL_OFFS1_ARRAY 5
 #define VERTEX_UV1_ARRAY 6
-// (OIT only) a translucent strip's number: GPU-side TA processing's draws give it
+/* (OIT only) a translucent strip's number: GPU-side TA processing's draws give it */
 #define VERTEX_PP_ARRAY 7
 
 #define glCheck()
 
-//vertex types
+/*vertex types */
 extern u32 gcflip;
 extern xform ViewportMatrix;
 
@@ -88,6 +99,7 @@ void DrawStrips(void);
 
 enum { PIPELINE_SHADOW_TRILINEAR = 1, PIPELINE_SHADOW_PALETTE = 2, PIPELINE_SHADOW_CLIP = 4 };
 
+typedef struct PipelineShader PipelineShader;
 struct PipelineShader
 {
 	GLuint program;
@@ -102,7 +114,7 @@ struct PipelineShader
 	GLint normal_matrix;
 	GLint palette_index;
 	GLint shade_scale_factor;
-	GLint prepass_alpha;	// -1 where there is no depth prepass (GLES2): rend/sorter.h
+	GLint prepass_alpha;	/* -1 where there is no depth prepass (GLES2): rend/sorter.h */
 	/* What the program's per-polygon uniforms were last set to, a bit in
 	 * shadow_set each (SetGPState()): set again only when another value
 	 * is. A record drawn with its general program uses the general one's;
@@ -112,7 +124,7 @@ struct PipelineShader
 	GLint shadow_palette;
 	float shadow_clip[4];
 
-	//
+	/* */
 	bool cp_AlphaTest;
 	bool pp_InsideClipping;
 	bool pp_Texture;
@@ -135,10 +147,10 @@ struct PipelineShader
 	u32 key;
 	PipelineShader *general;
 	GLuint pending;
-	// (a general program's record) the uniform it reads the key from, and the key it has
+	/* (a general program's record) the uniform it reads the key from, and the key it has */
 	GLint key_bits;
 	u32 key_now;
-	// the frame the frame's uniforms were last given to the program in (ShaderUniforms.Set())
+	/* the frame the frame's uniforms were last given to the program in (ShaderUniforms.Set()) */
 	u32 uniforms_set;
 };
 
@@ -146,8 +158,7 @@ struct PipelineShader
  * and, for a general one, the polygon's key */
 void UsePipelineShader(PipelineShader *s);
 
-#include "rend/vram_budget.h"
-
+typedef struct gl_ctx gl_ctx;
 struct gl_ctx
 {
 	struct
@@ -162,11 +173,11 @@ struct gl_ctx
 
 	/* by key: room for them made with the renderer (rend/tex_map.h), a key
 	 * first drawn with taking none */
-	TexMap<PipelineShader> shaders;
+	tex_map_t shaders;
 	/* The general programs (glprogram_cache.h), by pp_Gouraud: no program
 	 * where there are none (OpenGL ES 2, OpenGL 2) */
 	PipelineShader general[2];
-	// the frame, for the uniforms given once a frame (UsePipelineShader())
+	/* the frame, for the uniforms given once a frame (UsePipelineShader()) */
 	u32 uniforms_frame;
 
 	struct
@@ -180,7 +191,7 @@ struct gl_ctx
 		GLuint depthb;
 		GLuint tex;
 		GLuint fbo;
-		struct GLPooledTexture *pooled;	// what tex is of the pool's (rend/tex_pool.h)
+		struct GLPooledTexture *pooled;	/* what tex is of the pool's (rend/tex_pool.h) */
 		/* the framebuffer and the depth renderbuffer kept from one render
 		 * to the next (with the pool), and how large that is */
 		bool kept;
@@ -192,7 +203,7 @@ struct gl_ctx
 	int gl_major;
 	int gl_minor;
 	bool is_gles;
-	bool buffer_storage;	// immutable buffers mapped persistently (ARB_buffer_storage, OpenGL 4.4)
+	bool buffer_storage;	/* immutable buffers mapped persistently (ARB_buffer_storage, OpenGL 4.4) */
 	/* The depth (rend/depth_scale.h; findGLVersion()): the format of the
 	 * depth buffers this renderer makes, the uniform buffer the depth scale
 	 * is in (0: a plain uniform), and glClipControl where the context has
@@ -200,7 +211,7 @@ struct gl_ctx
 	GLenum depth_format;
 	GLuint depth_ubo;
 	void (APIENTRYP clipControl)(GLenum origin, GLenum depth);
-	// (OpenGL ES's, for a desktop build on an ES context: glsm has glClearDepth() only)
+	/* (OpenGL ES's, for a desktop build on an ES context: glsm has glClearDepth() only) */
 	void (APIENTRYP clearDepthf)(GLfloat depth);
 	void (APIENTRYP copyBufferSubData)(GLenum readTarget, GLenum writeTarget, GLintptr readOffset, GLintptr writeOffset, GLsizeiptr size);
 	GLuint single_channel_format;
@@ -209,12 +220,20 @@ struct gl_ctx
 	GLenum index_type;
 	bool stencil_present;
 	f32 max_anisotropy;
-	VramBudget vram_budget;	// what video memory there was to use, at findGLVersion()
+	VramBudget vram_budget;	/* what video memory there was to use, at findGLVersion() */
 
+#ifdef __cplusplus
 	size_t get_index_size() { return index_type == GL_UNSIGNED_INT ? sizeof(u32) : sizeof(u16); }
+#endif
 };
 
 extern gl_ctx gl;
+/* the frontend's (libretro.c) */
+extern struct retro_hw_render_callback hw_render;
+
+#ifdef __cplusplus
+}
+
 extern GLuint fbTextureId;
 
 u64 gl_GetTexture(TSP tsp, TCW tcw, int area = 0);
@@ -222,7 +241,7 @@ struct text_info {
 	u16* pdata;
 	u32 width;
 	u32 height;
-	u32 textype; // 0 565, 1 1555, 2 4444
+	u32 textype; /* 0 565, 1 1555, 2 4444 */
 };
 
 enum ModifierVolumeMode { Xor, Or, Inclusion, Exclusion, ModeCount };
@@ -235,15 +254,15 @@ bool ProcessFrame(TA_context* ctx, u32 taFlags = 0);
  * @own, which the lists are copied into */
 GLuint gl_frame_vertex_buffer(GLuint own);
 GLuint gl_frame_index_buffer(GLuint own);
-// ...the volumes' triangles drawn (those cut where there are: rend/modvol_clip.h)
+/* ...the volumes' triangles drawn (those cut where there are: rend/modvol_clip.h) */
 GLuint gl_frame_modvol_buffer(GLuint own);
 /* Room for @bytes of a sorted pass's indices after the frame's in its index
  * buffer (gl_frame_index_buffer()), and their @offset there; nullptr: none,
  * and they go to a buffer of their own */
 u32 *gl_frame_sorted(size_t bytes, size_t *offset);
-// ...and the frame's draws issued: the buffers the card's until they are done
+/* ...and the frame's draws issued: the buffers the card's until they are done */
 void gl_frame_drawn();
-// (the context going)
+/* (the context going) */
 void gl_frame_buffers_term();
 void UpdateFogTexture(u8 *fog_table, GLenum texture_slot, GLint fog_image_format);
 void GetFramebufferScaling(float& scale_x, float& scale_y, float& scissoring_scale_x, float& scissoring_scale_y);
@@ -345,7 +364,7 @@ struct GLPooledTexture : TexPoolEntry
 {
 	GLuint name = 0;
 	u32 levels = 1;
-	GLPooledTexture *all = nullptr;		// every one there is, for Term()
+	GLPooledTexture *all = nullptr;		/* every one there is, for Term() */
 };
 
 /* The cache's textures on desktop OpenGL 3 and later (not OpenGL ES, nor
@@ -379,7 +398,7 @@ private:
 
 	TexPoolBook book;
 	bool ready = false;
-	bool storage = false;		// glTexStorage2D()
+	bool storage = false;		/* glTexStorage2D() */
 	GLPooledTexture *all = nullptr;
 };
 extern GLTexturePool glTexPool;
@@ -395,7 +414,7 @@ void gl_tex_flush();
 class TextureCacheData : public TexCacheImpl<TextureCacheData>
 {
 public:
-	GLuint texID;   //gl texture: its own, or the pool's
+	GLuint texID;   /*gl texture: its own, or the pool's */
 	void GetId(char *s, size_t n) { snprintf(s, n, "%u", (unsigned)texID); }
 	void UploadToGPU(int width, int height, u8 *temp_tex_buffer, bool mipmapped, bool mipmapsIncluded = false);
 	void *UploadMemory(u32 width, u32 height, size_t bytes, u32 pixel, bool mipmaps);
@@ -420,7 +439,7 @@ private:
 	void CancelDecode();
 
 	GLPooledTexture *pooled = nullptr;
-	GLuint ownID = 0;		// its own texture, kept while it has the pool's
+	GLuint ownID = 0;		/* its own texture, kept while it has the pool's */
 	u32 decodeJob = 0, decodeSerial = 0;
 };
 
@@ -432,4 +451,6 @@ extern GlTextureCache TexCache;
 extern const u32 Zfunction[8];
 extern const u32 SrcBlendGL[], DstBlendGL[];
 
-extern "C" struct retro_hw_render_callback hw_render;
+#endif
+
+#endif

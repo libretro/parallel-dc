@@ -233,9 +233,10 @@ ifeq ($(HAVE_GL), 1)
 	SOURCES_CXX += $(CORE_DIR)/core/rend/gles/gles.cpp \
 						$(CORE_DIR)/core/rend/gles/gldraw.cpp \
 						$(CORE_DIR)/core/rend/gles/gltex.cpp \
-						$(CORE_DIR)/core/rend/gles/gl_texdecoder.cpp \
-						$(CORE_DIR)/core/rend/gles/gl_writeout.cpp \
-						$(CORE_DIR)/core/rend/gles/glprogram_cache.cpp
+						$(CORE_DIR)/core/rend/gles/gl_texdecoder.cpp
+	SOURCES_C += $(CORE_DIR)/core/rend/gles/gl_writeout.c \
+						$(CORE_DIR)/core/rend/gles/glprogram_cache.c \
+						$(CORE_DIR)/core/rend/gles/glcache.c
 	ifeq ($(HAVE_GL4), 1)
 		SOURCES_CXX += $(CORE_DIR)/core/rend/gl4/gles.cpp \
 							$(CORE_DIR)/core/rend/gl4/gldraw.cpp \

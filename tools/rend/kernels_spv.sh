@@ -345,7 +345,7 @@ raster_source() {
    for part in "$@"; do
       case $part in
       key) cat core/rend/vulkan/pso_key.h ;;
-      resolve) echo "#define PVR_SHADER_GLSL"; echo "#define PVR_LANE_NONE"; sed -e '1,2d' -e '$d' core/rend/tile/pvr_resolve_text.inc ;;
+      resolve) echo "#define PVR_SHADER_GLSL"; echo "#define PVR_LANE_NONE"; cat core/rend/tile/pvr_lane.h core/rend/tile/pvr_resolve.h | grep -v '^#include' ;;
       pdc) echo "#extension GL_ARB_post_depth_coverage : require" ;;
       pattern) echo "#define PVR_SHADER_GLSL"; echo "#define PVR_LANE_NONE"; sed '/^#include/d' core/rend/tile/pvr_lane.h core/rend/ssaa_pattern.h ;;
       # hdr.glsl with hdr_transform.glsl where it #includes it (both beetle-psx's, as they are there)

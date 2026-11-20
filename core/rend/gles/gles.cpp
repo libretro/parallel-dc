@@ -702,16 +702,18 @@ static const u16 CommonKeys[] = {
 /* @key's: found, or made (value-initialized: its program to come) */
 static PipelineShader *shader_of(u32 key)
 {
-	PipelineShader *s = gl.shaders.Find(key);
-	if (s == nullptr && (s = gl.shaders.Add(key)) == nullptr)
+	PipelineShader *s = (PipelineShader *)tex_map_find(&gl.shaders, key);
+	if (s == nullptr && (s = (PipelineShader *)tex_map_add(&gl.shaders, key)) == nullptr)
 		die("Out of memory");
 	return s;
 }
 
 static void gl_make_programs()
 {
-	gl.shaders.Name("OpenGL programs");
-	gl.shaders.Reserve(2048);
+	if (gl.shaders.elem == 0)
+		tex_map_init(&gl.shaders, sizeof(PipelineShader), NULL, NULL);
+	gl.shaders.name = "OpenGL programs";
+	tex_map_reserve(&gl.shaders, 2048);
 	for (int g = 0; g < 2; g++)
 	{
 		PipelineShader *s = &gl.general[g];
@@ -762,9 +764,11 @@ static void gl_make_programs()
 	 * gone through) */
 	static u32 failed[1024];
 	u32 nfailed = 0;
-	gl.shaders.Each([&](u32 key, PipelineShader& sh) {
-		PipelineShader *s = &sh;
-		if (s->pending != 0 && s->program == 0)
+	for (u32 e = 0; e < tex_map_places(&gl.shaders); e++)
+	{
+		u64 key;
+		PipelineShader *s = (PipelineShader *)tex_map_at(&gl.shaders, e, &key);
+		if (s != nullptr && s->pending != 0 && s->program == 0)
 		{
 			const GLuint p = s->pending;
 			s->pending = 0;
@@ -778,13 +782,12 @@ static void gl_make_programs()
 				WARN_LOG(RENDERER, "OpenGL: the program of key %x did not link\n", s->key);
 				glDeleteProgram(p);
 				if (nfailed < ARRAY_SIZE(failed))
-					failed[nfailed++] = key;
+					failed[nfailed++] = (u32)key;
 			}
 		}
-		return true;
-	});
+	}
 	for (u32 i = 0; i < nfailed; i++)
-		gl.shaders.Remove(failed[i]);
+		tex_map_remove(&gl.shaders, failed[i]);
 }
 
 PipelineShader *GetProgram(bool cp_AlphaTest, bool pp_InsideClipping,
@@ -1110,15 +1113,19 @@ Tile clip
 
 static void gl_delete_shaders()
 {
-	gl.shaders.Each([](u32, PipelineShader& s) {
+	for (u32 e = 0; e < tex_map_places(&gl.shaders); e++)
+	{
+		u64 key;
+		const PipelineShader *s = (const PipelineShader *)tex_map_at(&gl.shaders, e, &key);
+		if (s == nullptr)
+			continue;
 		// (one drawn with a general program has none of its own, but may have one coming)
-		if (s.program != 0 && s.general == nullptr)
-			glDeleteProgram(s.program);
-		if (s.pending != 0)
-			glDeleteProgram(s.pending);
-		return true;
-	});
-	gl.shaders.Clear();
+		if (s->program != 0 && s->general == nullptr)
+			glDeleteProgram(s->program);
+		if (s->pending != 0)
+			glDeleteProgram(s->pending);
+	}
+	tex_map_clear(&gl.shaders);
 	for (PipelineShader& g : gl.general)
 	{
 		if (g.program != 0)

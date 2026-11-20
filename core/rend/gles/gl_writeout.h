@@ -6,17 +6,22 @@
  * renderer's own framebuffer (gles.cpp's own_target_bind()), the per-pixel
  * renderer's this one's (gl_writeout_target()); either goes to the
  * frontend's framebuffer in one blit, after the pass. */
-#pragma once
+#ifndef GLES_GL_WRITEOUT_H
+#define GLES_GL_WRITEOUT_H
 #include "types.h"
+
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 /* The pass's program made, or taken down, as the option and the context
  * have it; with @picture, the picture of @width x @height too (the
  * per-pixel renderer's). When the renderer starts and when it changes size
  * (a change of the option is one), never in a frame */
 void gl_writeout_init(int width, int height, bool picture);
-void gl_writeout_term();
-// whether the pass is made: the screen's picture is to be a texture
-bool gl_writeout_ready();
+void gl_writeout_term(void);
+/* whether the pass is made: the screen's picture is to be a texture */
+bool gl_writeout_ready(void);
 /* The pass in place over @texture, @width x @height, when the frame in the
  * registers has a write-out (ComputeFrame::WriteOut()) */
 void gl_writeout_pass(u32 texture, int width, int height);
@@ -28,3 +33,9 @@ u32 gl_writeout_target(u32 frontend, int width, int height);
  * not the framebuffer in video memory), and the picture to @frontend in
  * one blit, which is left bound */
 void gl_writeout_present(u32 frontend, int width, int height, bool pass);
+
+#ifdef __cplusplus
+}
+#endif
+
+#endif

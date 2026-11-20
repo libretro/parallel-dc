@@ -17,17 +17,23 @@ set -e
 cd "$(dirname "$0")/../.."
 RINC=core/rend/tile/pvr_resolve_text.inc
 SINC=core/rend/tile/pvr_scaler_text.inc
+# (as C string literals, a line each, for C and C++ alike; first the empty
+# line the text has always started with)
+as_c_strings() {
+   printf '%s\n' '"\n"'
+   sed -e 's/\\/\\\\/g' -e 's/"/\\"/g' -e 's/?/\\?/g' -e 's/^/"/' -e 's/$/\\n"/'
+}
+# ...and back, past the first line (the comment)
+from_c_strings() {
+   python3 -c 'import sys,ast; sys.stdout.write("".join(ast.literal_eval(l.replace("\\?", "?")) for l in sys.stdin.read().split("\n")[1:] if l))' < "$1"
+}
 make_scaler_text() {
    echo '/* rend/tile/pvr_scaler.h as text, after pvr_resolve_text.inc, for the write-out pass: made by tools/rend/ssaa_rules_test.sh update from it. Not to be edited. */'
-   echo 'R"PVR_TEXT('
-   grep -v '^#include' core/rend/tile/pvr_scaler.h
-   echo ')PVR_TEXT"'
+   grep -v '^#include' core/rend/tile/pvr_scaler.h | as_c_strings
 }
 make_resolve_text() {
    echo '/* rend/tile/pvr_lane.h and pvr_resolve.h as text, for the shaders that resolve: made by tools/rend/ssaa_rules_test.sh update from them. Not to be edited. */'
-   echo 'R"PVR_TEXT('
-   cat core/rend/tile/pvr_lane.h core/rend/tile/pvr_resolve.h | grep -v '^#include'
-   echo ')PVR_TEXT"'
+   cat core/rend/tile/pvr_lane.h core/rend/tile/pvr_resolve.h | grep -v '^#include' | as_c_strings
 }
 if [ "$1" = update ]; then
    make_resolve_text > $RINC
@@ -71,7 +77,7 @@ cmp -s "$WORK/scaler.inc" $SINC || { echo "FAIL: $SINC is not the header: run '$
 for n in 2 4 8; do
    l=$(( n == 8 ? 3 : n == 4 ? 2 : 1 ))
    { echo "#version 450"; echo "#define PVR_SHADER_GLSL"; echo "#define PVR_LANE_NONE"
-     sed -e '1,2d' -e '$d' $RINC
+     from_c_strings $RINC
      echo "layout (input_attachment_index = 0, set = 0, binding = 0) uniform subpassInputMS tex;"
      echo "layout (location = 0) out vec4 FragColor;"
      echo "void main() { uint rb = 0u, ga = 0u; for (int s = 0; s < $n; s++) { uint c = packUnorm4x8(subpassLoad(tex, s)); rb += pvr_resolve_rb(c); ga += pvr_resolve_ga(c); }"

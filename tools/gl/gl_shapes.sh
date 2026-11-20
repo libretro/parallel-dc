@@ -14,16 +14,22 @@
 #
 #   sh tools/gl/gl_shapes.sh
 #
-# CLANGXX and CXX: the compilers (clang++ and g++ by default).
+# The renderers' C files the same way, as C89 (CLANG and CC).
+#
+# CLANGXX and CXX, CLANG and CC: the compilers (clang++ and g++, clang and
+# gcc by default).
 cd "$(dirname "$0")/../.."
 CLANGXX=${CLANGXX:-clang++}
 CXX=${CXX:-g++}
-FLAGS="-I./core/libretro -I./core -I./core/deps -I./core/libretro-common/include
+CLANG=${CLANG:-clang}
+CC=${CC:-gcc}
+COMMON="-I./core/libretro -I./core -I./core/deps -I./core/libretro-common/include
    -I./core/deps/picotcp/include
    -I./core/deps/picotcp/modules -I./core/deps/khronos -D__LIBRETRO__
    -DHAVE_GLSYM_PRIVATE -DHAVE_THREADS -DHAVE_TEXUPSCALE
-   -DHAVE_CHD -std=c++11 -fno-rtti -fpermissive
-   -fno-operator-names -fsyntax-only"
+   -DHAVE_CHD -fsyntax-only"
+FLAGS="$COMMON -std=c++11 -fno-rtti -fpermissive -fno-operator-names"
+CFLAGS_S="$COMMON -std=c89 -Wno-long-long -Werror=implicit-function-declaration -Werror=incompatible-pointer-types"
 GL="$FLAGS -DHAVE_OPENGL"
 GLES="$FLAGS -DHAVE_OPENGLES -DHAVE_OPENGLES2 -DHAVE_GL3"
 # the renderers' sources, and what else draws with OpenGL
@@ -32,7 +38,27 @@ FILES=$( (ls core/rend/gles/*.cpp core/rend/gl4/*.cpp
    | grep -v -E '^core/(deps|libretro-common)/' | sort -u)
 fails=0
 
+# the C ones
+CFILES=$(ls core/rend/gles/*.c core/rend/gl4/*.c 2>/dev/null)
+for f in $CFILES; do
+   if ! $CLANG $CFLAGS_S -DHAVE_OPENGL -DHAVE_GL4 "$f" > /tmp/gl_shapes.$$ 2>&1; then
+      echo "FAIL clang: $f"; grep -E 'error' /tmp/gl_shapes.$$ | head -5
+      fails=$((fails + 1))
+   fi
+   if ! $CC $CFLAGS_S -DHAVE_OPENGL -DHAVE_LIBNX -DTARGET_LIBNX "$f" > /tmp/gl_shapes.$$ 2>&1; then
+      echo "FAIL libnx: $f"; grep -E 'error' /tmp/gl_shapes.$$ | head -5
+      fails=$((fails + 1))
+   fi
+   if ! $CC $CFLAGS_S -DHAVE_OPENGLES -DHAVE_OPENGLES2 -DHAVE_GL3 "$f" > /tmp/gl_shapes.$$ 2>&1; then
+      echo "FAIL gles: $f"; grep -E 'error' /tmp/gl_shapes.$$ | head -5
+      fails=$((fails + 1))
+   fi
+done
+FILES="$FILES
+$CFILES"
+
 for f in $FILES; do
+   case $f in *.c) continue ;; esac
    # (the per-pixel renderer is desktop OpenGL only: not on the Switch)
    if ! $CLANGXX $GL -DHAVE_GL4 "$f" > /tmp/gl_shapes.$$ 2>&1; then
       echo "FAIL clang: $f"; grep -E 'error' /tmp/gl_shapes.$$ | head -5

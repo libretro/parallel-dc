@@ -1,362 +1,257 @@
-#pragma once
+#ifndef GLES_GLCACHE_H
+#define GLES_GLCACHE_H
+/* The OpenGL state the renderers set, as last set, so that what is set
+ * again to what it is costs no call (glcache.c). C89, for C and C++
+ * alike; C++ has it as glcache, a GLCache. Render thread only. The
+ * OpenGL headers (glsm) come first. */
 #include <string.h>
+#include <retro_inline.h>
+#include "types.h"
 #include "rend/grow_buf.h"
+
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 #define TEXTURE_ID_CACHE_SIZE 32
 
-class GLCache {
-public:
-	GLCache() { Reset(); }
+/* A texture's parameters as last set: by its name, in a table that grows
+ * (names are small numbers; one past GLC_MAX_CACHED_NAME is not cached).
+ * All bits set is none yet: no enum is that, and the floats are NaN,
+ * which compares with nothing. */
+typedef struct glc_texture_params
+{
+	GLenum min_filter;
+	GLenum mag_filter;
+	GLenum wrap_s;
+	GLenum wrap_t;
+	GLfloat lod_bias;
+	GLfloat max_anisotropy;
+} glc_texture_params;
+#define GLC_MAX_CACHED_NAME (1 << 20)
 
-	void BindTexture(GLenum target,  GLuint texture) {
-		if (target == GL_TEXTURE_2D && !_disable_cache) {
-			if (texture != _texture) {
-				glBindTexture(target, texture);
-				_texture = texture;
-			}
-		}
-		else
+typedef struct gl_cache
+{
+	GLuint texture;
+	GLenum src_blend_factor;
+	GLenum dst_blend_factor;
+	GLclampf clear_r, clear_g, clear_b, clear_a;
+	GLboolean en_blend;
+	GLboolean en_cull_face;
+	GLboolean en_depth_test;
+	GLboolean en_scissor_test;
+	GLboolean en_stencil_test;
+	GLenum cull_face;
+	GLenum depth_func;
+	GLboolean depth_mask;
+	GLuint program;
+	GLenum stencil_func;
+	GLint stencil_ref;
+	GLuint stencil_fmask;
+	GLenum stencil_sfail;
+	GLenum stencil_dpfail;
+	GLenum stencil_dppass;
+	GLuint stencil_mask;
+	GLint scissor_x, scissor_y;
+	GLsizei scissor_w, scissor_h;
+	GLuint texture_ids[TEXTURE_ID_CACHE_SIZE];
+	GLuint texture_cache_size;
+	grow_buf_t texture_params;
+	bool disable_cache;
+} gl_cache_t;
+
+extern gl_cache_t glc;
+
+/* Everything forgotten: set again the next time */
+void glc_reset(void);
+void glc_disable_cache(void);
+void glc_enable_cache(void);
+/* A texture's parameters as last set; NULL if not cached */
+glc_texture_params *glc_params(GLuint texture);
+void glc_delete_textures(GLsizei n, const GLuint *textures);
+/* A texture name, from a few asked for at once */
+GLuint glc_gen_texture(void);
+void glc_tex_parameteri(GLenum target, GLenum pname, GLint param);
+/* The same for the parameters that are floats (bit for bit) */
+void glc_tex_parameterf(GLenum target, GLenum pname, GLfloat param);
+
+static INLINE void glc_bind_texture(GLenum target, GLuint texture)
+{
+	if (target == GL_TEXTURE_2D && !glc.disable_cache)
+	{
+		if (texture != glc.texture)
+		{
 			glBindTexture(target, texture);
-	}
-
-	void BlendFunc(GLenum sfactor, GLenum dfactor) {
-		if (sfactor != _src_blend_factor || dfactor != _dst_blend_factor || _disable_cache) {
-			_src_blend_factor = sfactor;
-			_dst_blend_factor = dfactor;
-			glBlendFunc(sfactor, dfactor);
+			glc.texture = texture;
 		}
 	}
+	else
+		glBindTexture(target, texture);
+}
 
-	void ClearColor(GLclampf red, GLclampf green, GLclampf blue, GLclampf alpha) {
-		if (red != _clear_r || green != _clear_g || blue != _clear_b || alpha != _clear_a || _disable_cache) {
-			_clear_r = red;
-			_clear_g = green;
-			_clear_b = blue;
-			_clear_a = alpha;
-			glClearColor(red, green, blue, alpha);
-		}
-	}
-
-	void CullFace(GLenum mode) {
-		if (mode != _cull_face || _disable_cache) {
-			_cull_face = mode;
-			glCullFace(mode);
-		}
-	}
-
-	void DeleteTextures(GLsizei n, const GLuint *textures) {
-		for (int i = 0; i < n; i++)
-		{
-			TextureParameters *params = Params(textures[i]);
-			if (params != nullptr)
-				memset(params, 0xFF, sizeof(*params));
-			if (textures[i] == _texture)
-				_texture = 0;
-		}
-		glDeleteTextures(n, textures);
-	}
-
-	void DepthFunc(GLenum func) {
-		if (func != _depth_func || _disable_cache) {
-			_depth_func = func;
-			glDepthFunc(func);
-		}
-	}
-
-	void DepthMask(GLboolean flag) {
-		if (flag != _depth_mask || _disable_cache) {
-			_depth_mask = flag;
-			glDepthMask(flag);
-		}
-	}
-
-	void Enable(GLenum cap) {
-		switch (cap) {
-		case GL_BLEND:
-			if (_en_blend == GL_TRUE && !_disable_cache)
-				return;
-			_en_blend = GL_TRUE;
-			glEnable(GL_BLEND);
-			break;
-		case GL_CULL_FACE:
-			if (_en_cull_face == GL_TRUE && !_disable_cache)
-				return;
-			_en_cull_face = GL_TRUE;
-			glEnable(GL_CULL_FACE);
-			break;
-		case GL_DEPTH_TEST:
-			if (_en_depth_test == GL_TRUE && !_disable_cache)
-				return;
-			_en_depth_test = GL_TRUE;
-			glEnable(GL_DEPTH_TEST);
-			break;
-		case GL_SCISSOR_TEST:
-			if (_en_scissor_test == GL_TRUE && !_disable_cache)
-				return;
-			_en_scissor_test = GL_TRUE;
-			glEnable(GL_SCISSOR_TEST);
-			break;
-		case GL_STENCIL_TEST:
-			if (_en_stencil_test == GL_TRUE && !_disable_cache)
-				return;
-			_en_stencil_test = GL_TRUE;
-			glEnable(GL_STENCIL_TEST);
-			break;
-		}
-	}
-
-	void Disable(GLenum cap) {
-		switch (cap) {
-		case GL_BLEND:
-			if (_en_blend == GL_FALSE && !_disable_cache)
-				return;
-			_en_blend = false;
-			glDisable(GL_BLEND);
-			break;
-		case GL_CULL_FACE:
-			if (_en_cull_face == GL_FALSE && !_disable_cache)
-				return;
-			_en_cull_face = false;
-			glDisable(GL_CULL_FACE);
-			break;
-		case GL_DEPTH_TEST:
-			if (_en_depth_test == GL_FALSE && !_disable_cache)
-				return;
-			_en_depth_test = false;
-			glDisable(GL_DEPTH_TEST);
-			break;
-		case GL_SCISSOR_TEST:
-			if (_en_scissor_test == GL_FALSE && !_disable_cache)
-				return;
-			_en_scissor_test = false;
-			glDisable(GL_SCISSOR_TEST);
-			break;
-		case GL_STENCIL_TEST:
-			if (_en_stencil_test == GL_FALSE && !_disable_cache)
-				return;
-			_en_stencil_test = false;
-			glDisable(GL_STENCIL_TEST);
-			break;
-		}
-	}
-
-	void UseProgram(GLuint program) {
-		if (program != _program || _disable_cache) {
-			_program = program;
-			glUseProgram(program);
-		}
-	}
-
-	void StencilFunc(GLenum func, GLint ref, GLuint mask) {
-		if (_stencil_func != func || _stencil_ref != ref || _stencil_fmask != mask || _disable_cache) {
-			_stencil_func = func;
-			_stencil_ref = ref;
-			_stencil_fmask = mask;
-
-			glStencilFunc(func, ref, mask);
-		}
-	}
-
-	void StencilOp(GLenum sfail, GLenum dpfail, GLenum dppass) {
-		if (_stencil_sfail != sfail ||_stencil_dpfail != dpfail || _stencil_dppass != dppass || _disable_cache) {
-			_stencil_sfail = sfail;
-			_stencil_dpfail = dpfail;
-			_stencil_dppass = dppass;
-
-			glStencilOp(sfail, dpfail, dppass);
-		}
-	}
-
-	void StencilMask(GLuint mask) {
-		if (_stencil_mask != mask || _disable_cache) {
-			_stencil_mask = mask;
-			glStencilMask(mask);
-		}
-	}
-
-	void Scissor(GLint x, GLint y, GLsizei width, GLsizei height)
+static INLINE void glc_blend_func(GLenum sfactor, GLenum dfactor)
+{
+	if (sfactor != glc.src_blend_factor || dfactor != glc.dst_blend_factor || glc.disable_cache)
 	{
-		if (x != _scissor.x || y != _scissor.y || width != _scissor.width || height != _scissor.height || _disable_cache)
-		{
-			_scissor.x = x;
-			_scissor.y = y;
-			_scissor.width = width;
-			_scissor.height = height;
-			glScissor(x, y, width, height);
-		}
+		glc.src_blend_factor = sfactor;
+		glc.dst_blend_factor = dfactor;
+		glBlendFunc(sfactor, dfactor);
 	}
+}
 
-	void TexParameteri(GLenum target,  GLenum pname,  GLint param)
+static INLINE void glc_clear_color(GLclampf red, GLclampf green, GLclampf blue, GLclampf alpha)
+{
+	if (red != glc.clear_r || green != glc.clear_g || blue != glc.clear_b || alpha != glc.clear_a || glc.disable_cache)
 	{
-		TextureParameters *cur_params = target == GL_TEXTURE_2D ? Params(_texture) : nullptr;
-		if (cur_params != nullptr)
-		{
-			GLenum *field = nullptr;
-			switch (pname) {
-			case GL_TEXTURE_MIN_FILTER: field = &cur_params->_min_filter; break;
-			case GL_TEXTURE_MAG_FILTER: field = &cur_params->_mag_filter; break;
-			case GL_TEXTURE_WRAP_S: field = &cur_params->_wrap_s; break;
-			case GL_TEXTURE_WRAP_T: field = &cur_params->_wrap_t; break;
-			}
-			if (field != nullptr)
-			{
-				if (*field == (GLenum)param)
-					return;
-				*field = param;
-			}
-		}
-		glTexParameteri(target, pname, param);
+		glc.clear_r = red;
+		glc.clear_g = green;
+		glc.clear_b = blue;
+		glc.clear_a = alpha;
+		glClearColor(red, green, blue, alpha);
 	}
+}
 
-	/* The same for the parameters that are floats (bit for bit) */
-	void TexParameterf(GLenum target,  GLenum pname,  GLfloat param)
+static INLINE void glc_cull_face(GLenum mode)
+{
+	if (mode != glc.cull_face || glc.disable_cache)
 	{
-		TextureParameters *cur_params = target == GL_TEXTURE_2D ? Params(_texture) : nullptr;
-		if (cur_params != nullptr)
-		{
-			GLfloat *field = nullptr;
-#ifdef GL_TEXTURE_LOD_BIAS
-			if (pname == GL_TEXTURE_LOD_BIAS)
-				field = &cur_params->_lod_bias;
-#endif
-#ifdef GL_TEXTURE_MAX_ANISOTROPY_EXT
-			if (pname == GL_TEXTURE_MAX_ANISOTROPY_EXT)
-				field = &cur_params->_max_anisotropy;
-#endif
-			if (field != nullptr)
-			{
-				if (memcmp(field, &param, sizeof(param)) == 0)
-					return;
-				*field = param;
-			}
-		}
-		glTexParameterf(target, pname, param);
+		glc.cull_face = mode;
+		glCullFace(mode);
 	}
+}
 
-	GLuint GenTexture() {
-		if (_texture_cache_size == 0) {
-			_texture_cache_size = TEXTURE_ID_CACHE_SIZE;
-			glGenTextures(_texture_cache_size,  _texture_ids);
-		}
-		return _texture_ids[--_texture_cache_size];
-	}
-
-	void Reset() {
-		_texture = 0xFFFFFFFFu;
-		if (_texture_params.data != nullptr)
-			memset(_texture_params.data, 0xFF, _texture_params.size);
-		_src_blend_factor = 0xFFFFFFFFu;
-		_dst_blend_factor = 0xFFFFFFFFu;
-		_clear_r = -1.f;
-		_clear_g = -1.f;
-		_clear_b = -1.f;
-		_clear_a = -1.f;
-		_en_blend = 0xFF;
-		_en_cull_face = 0xFF;
-		_en_depth_test = 0xFF;
-		_en_scissor_test = 0xFF;
-		_en_stencil_test = 0xFF;
-		_cull_face = 0xFFFFFFFFu;
-		_depth_func = 0xFFFFFFFFu;
-		_depth_mask = 0xFF;
-		_program = 0xFFFFFFFFu;
-		_texture_cache_size = 0;
-		_stencil_func = 0xFFFFFFFFu;
-		_stencil_ref = -1;
-		_stencil_fmask = 0;
-		_stencil_sfail = 0xFFFFFFFFu;
-		_stencil_dpfail = 0xFFFFFFFFu;
-		_stencil_dppass = 0xFFFFFFFFu;
-		_stencil_mask = 0;
-		_scissor.x = -1;
-		_scissor.y = -1;
-		_scissor.width = -1;
-		_scissor.height = -1;
-		if (_texture_cache_size > 0)
-		{
-			glDeleteTextures(_texture_cache_size, _texture_ids);
-			_texture_cache_size = 0;
-		}
-	}
-
-	void DisableCache()
+static INLINE void glc_depth_func(GLenum func)
+{
+	if (func != glc.depth_func || glc.disable_cache)
 	{
-	   _disable_cache = true;
-	   Reset();
+		glc.depth_func = func;
+		glDepthFunc(func);
 	}
-	void EnableCache()
+}
+
+static INLINE void glc_depth_mask(GLboolean flag)
+{
+	if (flag != glc.depth_mask || glc.disable_cache)
 	{
-		_disable_cache = false;
-		Reset();
+		glc.depth_mask = flag;
+		glDepthMask(flag);
+	}
+}
+
+/* (glsm has glEnable() and glDisable() of a capability's name, not of a
+ * value: one each, of the five kept) */
+#define GLC_SWITCH(on_off, call) \
+	switch (cap) \
+	{ \
+	case GL_BLEND: \
+		if (glc.en_blend == on_off && !glc.disable_cache) return; \
+		glc.en_blend = on_off; call(GL_BLEND); break; \
+	case GL_CULL_FACE: \
+		if (glc.en_cull_face == on_off && !glc.disable_cache) return; \
+		glc.en_cull_face = on_off; call(GL_CULL_FACE); break; \
+	case GL_DEPTH_TEST: \
+		if (glc.en_depth_test == on_off && !glc.disable_cache) return; \
+		glc.en_depth_test = on_off; call(GL_DEPTH_TEST); break; \
+	case GL_SCISSOR_TEST: \
+		if (glc.en_scissor_test == on_off && !glc.disable_cache) return; \
+		glc.en_scissor_test = on_off; call(GL_SCISSOR_TEST); break; \
+	case GL_STENCIL_TEST: \
+		if (glc.en_stencil_test == on_off && !glc.disable_cache) return; \
+		glc.en_stencil_test = on_off; call(GL_STENCIL_TEST); break; \
 	}
 
-private:
-	/* A texture's parameters as last set: by its name, in a table that
-	 * grows (names are small numbers; one past MaxCachedName is not cached).
-	 * All bits set is none yet: no enum is that, and the floats are NaN,
-	 * which compares with nothing. */
-	struct TextureParameters {
-		GLenum _min_filter;
-		GLenum _mag_filter;
-		GLenum _wrap_s;
-		GLenum _wrap_t;
-		GLfloat _lod_bias;
-		GLfloat _max_anisotropy;
-	};
-	enum { MaxCachedName = 1 << 20 };
-	TextureParameters *Params(GLuint texture)
+static INLINE void glc_enable(GLenum cap)
+{
+	GLC_SWITCH(GL_TRUE, glEnable)
+}
+
+static INLINE void glc_disable(GLenum cap)
+{
+	GLC_SWITCH(GL_FALSE, glDisable)
+}
+
+static INLINE void glc_use_program(GLuint program)
+{
+	if (program != glc.program || glc.disable_cache)
 	{
-		if (_disable_cache || texture >= MaxCachedName)
-			return nullptr;
-		const size_t had = _texture_params.size / sizeof(TextureParameters);
-		if (texture >= had)
-		{
-			size_t want = had != 0 ? had : 256;
-			while (want <= texture)
-				want *= 2;
-			if (grow_buf_reserve_keep(&_texture_params, want * sizeof(TextureParameters)) == nullptr)
-				return nullptr;
-			/* (the buffer may have grown past what was asked: all of it marked) */
-			memset((TextureParameters *)_texture_params.data + had, 0xFF,
-					_texture_params.size - had * sizeof(TextureParameters));
-		}
-		return (TextureParameters *)_texture_params.data + texture;
+		glc.program = program;
+		glUseProgram(program);
 	}
-	GLuint _array_buffer;
-	GLuint _element_array_buffer;
-	GLuint _texture;
-	GLenum _src_blend_factor;
-	GLenum _dst_blend_factor;
-	GLclampf _clear_r;
-	GLclampf _clear_g;
-	GLclampf _clear_b;
-	GLclampf _clear_a;
-	GLboolean _en_blend;
-	GLboolean _en_cull_face;
-	GLboolean _en_depth_test;
-	GLboolean _en_scissor_test;
-	GLboolean _en_stencil_test;
-	GLenum _cull_face;
-	GLenum _depth_func;
-	GLboolean _depth_mask;
-	GLuint _program;
-	GLenum _stencil_func;
-	GLint _stencil_ref;
-	GLuint _stencil_fmask;
-	GLenum _stencil_sfail;
-	GLenum _stencil_dpfail;
-	GLenum _stencil_dppass;
-	GLuint _stencil_mask;
-	struct {
-		GLint x;
-		GLint y;
-		GLsizei width;
-		GLsizei height;
-	} _scissor;
-	GLuint _texture_ids[TEXTURE_ID_CACHE_SIZE];
-	GLuint _texture_cache_size;
-	grow_buf_t _texture_params = GROW_BUF_INIT;
-	bool _disable_cache;
+}
+
+static INLINE void glc_stencil_func(GLenum func, GLint ref, GLuint mask)
+{
+	if (glc.stencil_func != func || glc.stencil_ref != ref || glc.stencil_fmask != mask || glc.disable_cache)
+	{
+		glc.stencil_func = func;
+		glc.stencil_ref = ref;
+		glc.stencil_fmask = mask;
+		glStencilFunc(func, ref, mask);
+	}
+}
+
+static INLINE void glc_stencil_op(GLenum sfail, GLenum dpfail, GLenum dppass)
+{
+	if (glc.stencil_sfail != sfail || glc.stencil_dpfail != dpfail || glc.stencil_dppass != dppass || glc.disable_cache)
+	{
+		glc.stencil_sfail = sfail;
+		glc.stencil_dpfail = dpfail;
+		glc.stencil_dppass = dppass;
+		glStencilOp(sfail, dpfail, dppass);
+	}
+}
+
+static INLINE void glc_stencil_mask(GLuint mask)
+{
+	if (glc.stencil_mask != mask || glc.disable_cache)
+	{
+		glc.stencil_mask = mask;
+		glStencilMask(mask);
+	}
+}
+
+static INLINE void glc_scissor(GLint x, GLint y, GLsizei width, GLsizei height)
+{
+	if (x != glc.scissor_x || y != glc.scissor_y || width != glc.scissor_w || height != glc.scissor_h || glc.disable_cache)
+	{
+		glc.scissor_x = x;
+		glc.scissor_y = y;
+		glc.scissor_w = width;
+		glc.scissor_h = height;
+		glScissor(x, y, width, height);
+	}
+}
+
+#ifdef __cplusplus
+}
+
+/* The cache as C++ has it: glcache.BindTexture() and the rest */
+class GLCache
+{
+public:
+	void BindTexture(GLenum target, GLuint texture) { glc_bind_texture(target, texture); }
+	void BlendFunc(GLenum sfactor, GLenum dfactor) { glc_blend_func(sfactor, dfactor); }
+	void ClearColor(GLclampf red, GLclampf green, GLclampf blue, GLclampf alpha) { glc_clear_color(red, green, blue, alpha); }
+	void CullFace(GLenum mode) { glc_cull_face(mode); }
+	void DeleteTextures(GLsizei n, const GLuint *textures) { glc_delete_textures(n, textures); }
+	void DepthFunc(GLenum func) { glc_depth_func(func); }
+	void DepthMask(GLboolean flag) { glc_depth_mask(flag); }
+	void Enable(GLenum cap) { glc_enable(cap); }
+	void Disable(GLenum cap) { glc_disable(cap); }
+	void UseProgram(GLuint program) { glc_use_program(program); }
+	void StencilFunc(GLenum func, GLint ref, GLuint mask) { glc_stencil_func(func, ref, mask); }
+	void StencilOp(GLenum sfail, GLenum dpfail, GLenum dppass) { glc_stencil_op(sfail, dpfail, dppass); }
+	void StencilMask(GLuint mask) { glc_stencil_mask(mask); }
+	void Scissor(GLint x, GLint y, GLsizei width, GLsizei height) { glc_scissor(x, y, width, height); }
+	void TexParameteri(GLenum target, GLenum pname, GLint param) { glc_tex_parameteri(target, pname, param); }
+	void TexParameterf(GLenum target, GLenum pname, GLfloat param) { glc_tex_parameterf(target, pname, param); }
+	GLuint GenTexture() { return glc_gen_texture(); }
+	void Reset() { glc_reset(); }
+	void DisableCache() { glc_disable_cache(); }
+	void EnableCache() { glc_enable_cache(); }
 };
 
 extern GLCache glcache;
+#endif
+
+#endif
