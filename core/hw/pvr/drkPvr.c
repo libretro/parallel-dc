@@ -8,6 +8,7 @@
 #include "ta.h"
 #include "ta_ctx.h"
 #include "Renderer_if.h"
+#include "rend/texconv.h"
 
 void libPvr_Reset(bool hard)
 {
@@ -35,6 +36,8 @@ s32 libPvr_Init(void)
    /* the tile accelerator's state machine, and its lists' log */
    ta_fsm_fill();
    ta_ctx_log_init();
+   /* the texture converters' twiddle tables */
+   texconv_init();
    if (!spg_Init())
    {
       /* failed */

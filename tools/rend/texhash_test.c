@@ -1,4 +1,4 @@
-/* The textures' hashes (TexCache.cpp: whole, and a VQ texture's codebook
+/* The textures' hashes (TexCache.c: whole, and a VQ texture's codebook
  * then its indices; seed 7) and the others the core takes (seeds 0 and 1),
  * with libretro-common's xxh32, against the values xxHash's own XXH32 gave
  * for them when it was the core's: custom textures are found by these

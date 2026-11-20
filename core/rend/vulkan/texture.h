@@ -152,17 +152,17 @@ private:
 	PooledImage *all = nullptr;
 };
 
-class Texture : public BaseTextureCacheData
+class Texture : public TexCacheImpl<Texture>
 {
 public:
 	~Texture();
-	void UploadToGPU(int width, int height, u8 *data, bool mipmapped, bool mipmapsIncluded = false) override;
-	void *UploadMemory(u32 width, u32 height, size_t bytes, u32 pixel, bool mipmaps) override;
-	bool GpuDecode(const texd_plan& plan) override;
-	bool PartMemory(size_t bytes, void **memory) override;
-	void UploadPart(const TexRegion *regions, u32 count, u8 *data, const size_t *offset) override;
-	int GpuDecodePart(const texd_plan& plan, const TexRegion *regions, u32 count) override;
-	bool CopyRender(BaseTextureCacheData *from, u32 x, u32 y, u32 scale, u32 columns) override;
+	void UploadToGPU(int width, int height, u8 *data, bool mipmapped, bool mipmapsIncluded = false);
+	void *UploadMemory(u32 width, u32 height, size_t bytes, u32 pixel, bool mipmaps);
+	bool GpuDecode(const texd_plan& plan);
+	bool PartMemory(size_t bytes, void **memory);
+	void UploadPart(const TexRegion *regions, u32 count, u8 *data, const size_t *offset);
+	int GpuDecodePart(const texd_plan& plan, const TexRegion *regions, u32 count);
+	bool CopyRender(BaseTextureCacheData *from, u32 x, u32 y, u32 scale, u32 columns);
 	static UploadRing& Ring();
 	/* The renderer's, while it has one */
 	static void SetDecoder(TexDecoder *decoder) { Texture::decoder = decoder; }
@@ -172,7 +172,7 @@ public:
 	 * renderer's own pictures, which go when it says.) */
 	void SetCached() { cached = true; }
 	u64 GetIntId() { return (u64)reinterpret_cast<uintptr_t>(this); }
-	void GetId(char *s, size_t n) override { snprintf(s, n, "%p", (void *)this); }
+	void GetId(char *s, size_t n) { snprintf(s, n, "%p", (void *)this); }
 	bool IsNew() const { return !image.get() && pooled == nullptr; }
 	vk::ImageView GetImageView() const { return pooled != nullptr ? *pooled->view : *imageView; }
 	u64 GetViewSerial() const { return pooled != nullptr ? pooled->viewSerial : ownSerial; }
@@ -190,7 +190,7 @@ public:
 	/* Where a command buffer comes from when an upload needs one: a
 	 * texture made on the GPU records nothing of its own */
 	void SetCommandPool(CommandPool *commandPool) { this->commandPool = commandPool; }
-	virtual bool Force32BitTexture(TextureType type) const override { return !VulkanContext::Instance()->IsFormatSupported(type); }
+	bool Force32BitTexture(TextureType type) const { return !VulkanContext::Instance()->IsFormatSupported(type); }
 
 	void SetPhysicalDevice(vk::PhysicalDevice physicalDevice) { this->physicalDevice = physicalDevice; }
 	void SetDevice(vk::Device device) { this->device = device; }

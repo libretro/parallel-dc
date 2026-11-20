@@ -28,7 +28,7 @@ bool vramlock_pending(void);
 extern u32 vram_write_epoch;
 
 /* The owner of a lock dropped by a write (or a render over it) is told,
- * and the lock is given back after: the texture cache's (TexCache.cpp) */
+ * and the lock is given back after: the texture cache's (TexCache.c) */
 void vramlock_dropped(void *owner);
 
 /* A write to video memory hit a protected page at @offset: it is opened

@@ -23,10 +23,13 @@
 #include "types.h"
 
 #ifdef __cplusplus
-class BaseTextureCacheData;
 extern "C" {
-#else
-typedef struct BaseTextureCacheData BaseTextureCacheData;
+#endif
+
+/* (TexCache.h) */
+#ifndef TEXCACHE_DATA_T
+#define TEXCACHE_DATA_T
+typedef struct texcache_data texcache_data;
 #endif
 
 typedef struct RttWatch RttWatch;
@@ -50,7 +53,7 @@ struct RttWatch
 	/* The texture cache's texture rendered to, NULL if none. On the console
 	 * a render writes video memory: every other texture made from what it
 	 * covers is made again (VramRendered()). */
-	const BaseTextureCacheData *target;
+	const texcache_data *target;
 };
 
 /* What a renderer hands the picture over to: w by h pixels of R, G, B, A

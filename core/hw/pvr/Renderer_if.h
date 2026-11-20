@@ -67,14 +67,14 @@ extern int max_idx, max_mvo, max_op, max_pt, max_tr, max_vtx, max_modt, ovrn;
 extern bool pend_rend;
 extern u32 fb_w_cur;
 
-/* Every texture made again before it is next used (TexCache.cpp) */
+/* Every texture made again before it is next used (TexCache.c) */
 extern bool KillTex;
 /* The tile accelerator's contexts emptied (ta_ctx.c) */
 void tactx_Reset(void);
 /* The custom textures' loader stopped (custom_texture.c) */
 void custom_texture_terminate(void);
 /* The texture cache's room for converting and scaling up given back
- * (TexCache.cpp) */
+ * (TexCache.c) */
 void texcache_scratch_free(void);
 
 /* The renderer in use, behind its C++ class (renderer_dispatch.cpp) */

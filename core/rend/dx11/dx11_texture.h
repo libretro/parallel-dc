@@ -85,22 +85,22 @@ private:
 	DX11PooledTexture *all = nullptr;
 };
 
-class DX11Texture : public BaseTextureCacheData
+class DX11Texture : public TexCacheImpl<DX11Texture>
 {
 public:
 	~DX11Texture() { ReleasePooled(); ReleaseSpare(); }
-	void UploadToGPU(int width, int height, u8 *data, bool mipmapped, bool mipmapsIncluded = false) override;
-	bool GpuDecode(const texd_plan& plan) override;
-	bool PartMemory(size_t bytes, void **memory) override;
-	void UploadPart(const TexRegion *regions, u32 count, u8 *data, const size_t *offset) override;
-	int GpuDecodePart(const texd_plan& plan, const TexRegion *regions, u32 count) override;
-	bool CopyRender(BaseTextureCacheData *from, u32 x, u32 y, u32 scale, u32 columns) override;
-	bool Delete() override;
+	void UploadToGPU(int width, int height, u8 *data, bool mipmapped, bool mipmapsIncluded = false);
+	bool GpuDecode(const texd_plan& plan);
+	bool PartMemory(size_t bytes, void **memory);
+	void UploadPart(const TexRegion *regions, u32 count, u8 *data, const size_t *offset);
+	int GpuDecodePart(const texd_plan& plan, const TexRegion *regions, u32 count);
+	bool CopyRender(BaseTextureCacheData *from, u32 x, u32 y, u32 scale, u32 columns);
+	bool Delete();
 	/* The renderer's, while it has them */
 	static void SetDecoder(DX11TexDecoder *decoder) { DX11Texture::decoder = decoder; }
 	static void SetPool(DX11TexturePool *pool) { DX11Texture::pool = pool; }
-	bool Force32BitTexture(TextureType type) const override;
-	void GetId(char *s, size_t n) override { snprintf(s, n, "%p", (void *)this); }
+	bool Force32BitTexture(TextureType type) const;
+	void GetId(char *s, size_t n) { snprintf(s, n, "%p", (void *)this); }
 	u64 GetIntId() { return (u64)reinterpret_cast<uintptr_t>(this); }
 	bool IsNew() const { return !texture; }
 

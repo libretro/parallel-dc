@@ -12,7 +12,7 @@ u32 vri(u32 addr);
 extern VArray2 vram;
 /* A write to video memory that faulted at @address, the host's: in a page
  * locked for the textures made from it, which are to be made again, and
- * which is opened (TexCache.cpp; false: not video memory) */
+ * which is opened (TexCache.c; false: not video memory) */
 bool VramLockedWrite(u8* address);
 
 #define VRAM_BANK_BIT 0x400000
@@ -52,7 +52,7 @@ extern u32 YUV_x_size;
 extern u32 YUV_y_size;
 extern u32 YUV_index;
 
-/* Video memory about to be written whole, by a block (rend/TexCache.cpp) */
+/* Video memory about to be written whole, by a block (rend/TexCache.c) */
 void VramBlockWrite(u32 offset, u32 size);
 
 /* A store queue to video memory (the 32-bit ARM's TAWriteSQ has it too) */

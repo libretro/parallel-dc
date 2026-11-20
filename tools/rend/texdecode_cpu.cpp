@@ -40,7 +40,7 @@ void rtt_watch_overwrite(u32, u32) {}
 extern VArray2 vram;
 
 namespace {
-struct TestTexture : public BaseTextureCacheData
+struct TestTexture : public TexCacheImpl<TestTexture>
 {
 	bool force32 = false;
 	bool planned = false;
@@ -48,15 +48,15 @@ struct TestTexture : public BaseTextureCacheData
 	u8 *out = nullptr;
 	size_t cap = 0, bytes = 0;
 
-	void GetId(char *s, size_t n) override { snprintf(s, n, "test"); }
-	bool Force32BitTexture(TextureType type) const override { return force32; }
-	bool GpuDecode(const texd_plan& p) override
+	void GetId(char *s, size_t n) { snprintf(s, n, "test"); }
+	bool Force32BitTexture(TextureType type) const { return force32; }
+	bool GpuDecode(const texd_plan& p)
 	{
 		plan = p;
 		planned = true;
 		return false;
 	}
-	void UploadToGPU(int width, int height, u8 *data, bool mipmapped, bool mipmapsIncluded) override
+	void UploadToGPU(int width, int height, u8 *data, bool mipmapped, bool mipmapsIncluded)
 	{
 		const size_t pixel = tex_type == TextureType::_8888 ? 4 : tex_type == TextureType::_8 ? 1 : 2;
 		size_t n = (size_t)width * height * pixel;
@@ -76,6 +76,7 @@ extern "C" void texd_cpu_init(void *video_memory)
 	vram.size = VRAM_SIZE;
 	settings.rend.TextureUpscale = 1;
 	settings.rend.MaxFilteredTextureSize = 256;
+	texconv_init();	/* (the twiddle tables: libPvr_Init()'s) */
 	settings.rend.GpuTextureDecode = true;
 }
 

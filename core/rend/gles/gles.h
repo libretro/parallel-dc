@@ -393,20 +393,20 @@ void gl_tex_init(bool depth);
 void gl_tex_term();
 void gl_tex_flush();
 
-class TextureCacheData : public BaseTextureCacheData
+class TextureCacheData : public TexCacheImpl<TextureCacheData>
 {
 public:
 	GLuint texID;   //gl texture: its own, or the pool's
-	virtual void GetId(char *s, size_t n) override { snprintf(s, n, "%u", (unsigned)texID); }
-	virtual void UploadToGPU(int width, int height, u8 *temp_tex_buffer, bool mipmapped, bool mipmapsIncluded = false) override;
-	virtual void *UploadMemory(u32 width, u32 height, size_t bytes, u32 pixel, bool mipmaps) override;
+	void GetId(char *s, size_t n) { snprintf(s, n, "%u", (unsigned)texID); }
+	void UploadToGPU(int width, int height, u8 *temp_tex_buffer, bool mipmapped, bool mipmapsIncluded = false);
+	void *UploadMemory(u32 width, u32 height, size_t bytes, u32 pixel, bool mipmaps);
 	void UploadToGPUFrom(int width, int height, u8 *temp_tex_buffer, bool mipmapped, bool mipmapsIncluded);
-	virtual bool GpuDecode(const texd_plan& plan) override;
-	virtual bool PartMemory(size_t bytes, void **memory) override;
-	virtual void UploadPart(const TexRegion *regions, u32 count, u8 *data, const size_t *offset) override;
-	virtual int GpuDecodePart(const texd_plan& plan, const TexRegion *regions, u32 count) override;
-	virtual bool CopyRender(BaseTextureCacheData *from, u32 x, u32 y, u32 scale, u32 columns) override;
-	virtual bool Delete() override;
+	bool GpuDecode(const texd_plan& plan);
+	bool PartMemory(size_t bytes, void **memory);
+	void UploadPart(const TexRegion *regions, u32 count, u8 *data, const size_t *offset);
+	int GpuDecodePart(const texd_plan& plan, const TexRegion *regions, u32 count);
+	bool CopyRender(BaseTextureCacheData *from, u32 x, u32 y, u32 scale, u32 columns);
+	bool Delete();
 	/* The picture rendered to is the texture now: @tex, the pool's @pooled
 	 * or one of its own */
 	void SetRendered(GLuint tex, GLPooledTexture *pooled);

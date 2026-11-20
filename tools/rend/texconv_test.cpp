@@ -155,14 +155,14 @@ static void part_check(const BaseTextureCacheData *t, bool mips, const TexRegion
 
 /* A texture whose upload is kept, as the GPU would have it: its levels
  * from the smallest, as the cache hands them over */
-class CacheTex : public BaseTextureCacheData
+class CacheTex : public TexCacheImpl<CacheTex>
 {
 public:
 	u8 *gpu;
 	size_t gpu_bytes;
 	bool made;
 
-	void GetId(char *s, size_t n) override { if (n != 0) s[0] = '\0'; }
+	void GetId(char *s, size_t n) { if (n != 0) s[0] = '\0'; }
 	static size_t Pixel(TextureType type)
 	{
 		return type == TextureType::_8888 ? 4 : type == TextureType::_8 ? 1 : 2;
@@ -185,7 +185,7 @@ public:
 		*width = 1u << (top - level);
 		return at;
 	}
-	void UploadToGPU(int width, int height, u8 *data, bool mipmapped, bool mipmapsIncluded) override
+	void UploadToGPU(int width, int height, u8 *data, bool mipmapped, bool mipmapsIncluded)
 	{
 		const size_t pixel = Pixel(tex_type);
 		gpu_bytes = (size_t)width * height * pixel;
@@ -196,13 +196,13 @@ public:
 		memcpy(gpu, data, gpu_bytes);
 		cache_whole_count++;
 	}
-	bool Force32BitTexture(TextureType type) const override { return cache_force32; }
-	bool PartMemory(size_t bytes, void **memory) override
+	bool Force32BitTexture(TextureType type) const { return cache_force32; }
+	bool PartMemory(size_t bytes, void **memory)
 	{
 		*memory = NULL;
 		return cache_parts && gpu != NULL;
 	}
-	void UploadPart(const TexRegion *regions, u32 count, u8 *data, const size_t *offset) override
+	void UploadPart(const TexRegion *regions, u32 count, u8 *data, const size_t *offset)
 	{
 		const size_t pixel = Pixel(tex_type);
 		u32 i, y;
@@ -219,7 +219,7 @@ public:
 		}
 		cache_part_count++;
 	}
-	bool GpuDecode(const texd_plan& plan) override
+	bool GpuDecode(const texd_plan& plan)
 	{
 		const size_t pixel = Pixel(tex_type);
 		u8 *bytes;
@@ -246,7 +246,7 @@ public:
 		cache_whole_count++;
 		return true;
 	}
-	int GpuDecodePart(const texd_plan& plan, const TexRegion *regions, u32 count) override
+	int GpuDecodePart(const texd_plan& plan, const TexRegion *regions, u32 count)
 	{
 		const size_t pixel = Pixel(tex_type);
 		TexPartPlan part;
@@ -695,6 +695,7 @@ int main(int argc, char **argv)
 {
 	static const u32 sizes[][2] = { {8, 8}, {32, 32}, {64, 16}, {16, 64}, {256, 256} };
 #ifndef UPSTREAM
+	texconv_init();	/* (the twiddle tables: libPvr_Init()'s) */
 	if (argc > 1 && !strcmp(argv[1], "cache"))
 		return cache_test();
 	if (argc > 1 && !strcmp(argv[1], "part"))

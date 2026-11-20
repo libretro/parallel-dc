@@ -232,7 +232,7 @@ static void add_one(void)
 	w.age = rnd() % 4;
 	w.serial = rnd();
 	w.used = rnd() & 1;
-	w.target = (const BaseTextureCacheData *)(uintptr_t)(rnd() % 3 * 16);
+	w.target = (const texcache_data *)(uintptr_t)(rnd() % 3 * 16);
 	mmu_strict = rnd() % 24 == 0;
 	last_addr = w.addr;
 	last_bytes = w.bytes;

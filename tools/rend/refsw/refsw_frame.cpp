@@ -71,13 +71,13 @@ f32 vrf(u32 addr) { return *(f32 *)&vram_bytes[addr & VRAM_MASK]; }
  * Textures
  */
 namespace {
-struct RefTexture : public BaseTextureCacheData
+struct RefTexture : public TexCacheImpl<RefTexture>
 {
 	std::vector<u8> texels;	/* the top level, RGBA as the cache makes it */
 	u32 got_w = 0, got_h = 0;
-	void GetId(char *s, size_t n) override { snprintf(s, n, "refsw"); }
-	bool Force32BitTexture(TextureType) const override { return true; }
-	void UploadToGPU(int width, int height, u8 *data, bool, bool) override
+	void GetId(char *s, size_t n) { snprintf(s, n, "refsw"); }
+	bool Force32BitTexture(TextureType) const { return true; }
+	void UploadToGPU(int width, int height, u8 *data, bool, bool)
 	{
 		if (tex_type != TextureType::_8888)
 			return;

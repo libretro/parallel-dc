@@ -78,20 +78,20 @@ private:
  * dynamic texture (a managed one on a device without them), locked with
  * D3DLOCK_DISCARD, which the texture cache converts the console's texture
  * straight into when it can (UploadMemory()). */
-class DX9Texture : public BaseTextureCacheData
+class DX9Texture : public TexCacheImpl<DX9Texture>
 {
 public:
 	~DX9Texture() { ReleasePooled(); ReleaseSpare(); }
-	void UploadToGPU(int width, int height, u8 *data, bool mipmapped, bool mipmapsIncluded = false) override;
-	void *UploadMemory(u32 width, u32 height, size_t bytes, u32 pixel, bool mipmaps) override;
-	bool GpuDecode(const texd_plan& plan) override;
-	bool CopyRender(BaseTextureCacheData *from, u32 x, u32 y, u32 scale, u32 columns) override;
-	bool Delete() override;
+	void UploadToGPU(int width, int height, u8 *data, bool mipmapped, bool mipmapsIncluded = false);
+	void *UploadMemory(u32 width, u32 height, size_t bytes, u32 pixel, bool mipmaps);
+	bool GpuDecode(const texd_plan& plan);
+	bool CopyRender(BaseTextureCacheData *from, u32 x, u32 y, u32 scale, u32 columns);
+	bool Delete();
 	/* The renderer's, while it has them */
 	static void SetDecoder(DX9TexDecoder *decoder) { DX9Texture::decoder = decoder; }
 	static void SetPool(DX9TexturePool *pool) { DX9Texture::pool = pool; }
-	bool Force32BitTexture(TextureType type) const override;
-	void GetId(char *s, size_t n) override { snprintf(s, n, "%p", (void *)this); }
+	bool Force32BitTexture(TextureType type) const;
+	void GetId(char *s, size_t n) { snprintf(s, n, "%p", (void *)this); }
 	u64 GetIntId() { return (u64)reinterpret_cast<uintptr_t>(this); }
 	bool IsNew() const { return !texture; }
 
