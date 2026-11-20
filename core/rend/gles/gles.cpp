@@ -889,6 +889,22 @@ static void gl_query_vram_budget(bool nvx_meminfo, bool ati_meminfo)
 	vram_budget_log("OpenGL", gl.vram_budget);
 }
 
+#ifdef __APPLE__
+/* macOS: a core profile context draws nothing without a vertex array object
+ * bound (GL_INVALID_OPERATION on every attribute and draw call); other
+ * drivers let the default one do. One is made with the context, and bound
+ * again at the start of each frame in case the frontend has unbound it. */
+static GLuint apple_vao;
+static void apple_vao_bind(bool fresh)
+{
+	if (gl.is_gles || gl.gl_major < 3)
+		return;
+	if (fresh || apple_vao == 0)
+		glGenVertexArrays(1, &apple_vao);
+	glBindVertexArray(apple_vao);
+}
+#endif
+
 void findGLVersion()
 {
 	gl.stencil_present = true;
@@ -936,7 +952,12 @@ void findGLVersion()
 		if (gl.gl_major >= 3)
 		{
 			gl.gl_version = "GL3";
+#ifdef __APPLE__
+			/* macOS: a core profile context takes GLSL 1.50 and up only */
+			gl.glsl_version_header = (gl.gl_major > 3 || gl.gl_minor >= 2) ? "#version 150" : "#version 130";
+#else
 			gl.glsl_version_header = "#version 130";
+#endif
 			gl.single_channel_format = GL_RED;
 			gl.single_channel_internal = GL_RED;
 		}
@@ -948,6 +969,9 @@ void findGLVersion()
 			gl.single_channel_internal = GL_ALPHA;
 		}
 	}
+#ifdef __APPLE__
+	apple_vao_bind(true);
+#endif
 	gl.max_anisotropy = 1.f;
 	bool nvx_meminfo = false, ati_meminfo = false;
 	/* The depth (rend/depth_scale.h): a 32-bit float depth buffer where
@@ -1411,6 +1435,9 @@ static void own_target_present(void)
 
 static bool RenderFrame(void)
 {
+#ifdef __APPLE__
+	apple_vao_bind(false);
+#endif
 	int vmu_screen_number = 0 ;
 	bool own_target = false;
 	int lightgun_port = 0 ;
