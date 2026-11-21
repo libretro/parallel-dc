@@ -1098,7 +1098,7 @@ struct gl4rend : Renderer
 		}
 #endif
 		palette_updated = true;
-		TexCache.Clear();
+		gl_texcache_clear();
 		// the textures' pool and the decoder, all of them now (gles/gl_texdecoder.h)
 		gl_tex_init(false);
 
@@ -1173,7 +1173,7 @@ struct gl4rend : Renderer
 			glDeleteFramebuffers(1, &depth_fbo);
 			depth_fbo = 0;
 		}
-		TexCache.Clear();
+		gl_texcache_clear();
 		rtt_watch_term();
 		gl_tex_term();
 		grow_buf_free(&gl4.trPolyWords);
@@ -1205,7 +1205,7 @@ struct gl4rend : Renderer
 
 	virtual u64 GetTexture(TSP tsp, TCW tcw, int area = 0) override
 	{
-		return gl_GetTexture(tsp, tcw, area);
+		return gl_get_texture(tsp.full, tcw.full, area);
 	}
 
 	// (TA processing switched on or off: between frames, the state bound)

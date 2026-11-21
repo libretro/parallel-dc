@@ -1,18 +1,17 @@
-#define PVR_REGS_FOR_RENDERER	// see hw/pvr/pvr_regs.h
+#define PVR_REGS_FOR_RENDERER	/* see hw/pvr/pvr_regs.h */
 #include <math.h>
+#include <stdlib.h>
+#include <string.h>
 #include "rend/rtt_watch.h"
 #include "rend/last_picture.h"
-#include <algorithm>
 
 #include <libretro.h>
 
 #include "gles.h"
 #include "rend/grow_buf.h"
 #include "gl_texdecoder.h"
-#include "ta_decoder_gl.h"
-
-GLTexDecoder glTexDecoder;
 #include "hw/pvr/pvr_mem.h"
+#include "rend/texdecode.h"
 
 #ifndef GL_UNPACK_ROW_LENGTH
 #define GL_UNPACK_ROW_LENGTH 0x0CF2
@@ -63,155 +62,196 @@ Compression
 	look into it, but afaik PVRC is not realtime doable
 */
 
-#if FEAT_HAS_SOFTREND
-	#include <xmmintrin.h>
-#endif
+/* The cache's textures (rend/TexCache.h), by their key */
+static tex_map_t tex_cache;
+static const texcache_ops gl_texture_ops;
 
-GlTextureCache TexCache;
-GLTexturePool glTexPool;
-/* (the C++ faces of the state cache, glcache.c, and the TA decoder, ta_decoder_gl.c) */
-GLCache glcache;
-GlTaDecoder glTaDecoder;
-
-Renderer* rend_GLES2() { return renderer_from_ops(&gles_renderer_ops); }
+static void tex_cache_ready(void)
+{
+	if (tex_cache.elem == 0)
+	{
+		tex_map_init(&tex_cache, sizeof(gl_texture), NULL, NULL);
+		tex_cache.name = "Texture cache";
+	}
+}
 
 void gl_texcache_clear(void)
 {
-	TexCache.Clear();
+	tex_cache_ready();
+	texcache_map_clear(&tex_cache);
 }
 
 void gl_texcache_collect_cleanup(void)
 {
-	TexCache.CollectCleanup();
+	tex_cache_ready();
+	texcache_map_collect(&tex_cache);
 }
 
-extern "C" struct retro_hw_render_callback hw_render;
+static gl_texture *gl_texture_of(u32 tsp, u32 tcw, int area)
+{
+	tex_cache_ready();
+	return (gl_texture *)texcache_map_get(&tex_cache, &gl_texture_ops, tsp, tcw, area);
+}
 
 /* ---- The texture pool ---- */
 
 /* By TextureType, and the pictures rendered to: the internal format, and
  * the format and type of what is uploaded */
-static const GLenum poolInternal[GLTexturePool::FORMATS] = { GL_RGB565, GL_RGB5_A1, GL_RGBA4, GL_RGBA8, GL_R8, GL_RGBA8, GL_RGB8 };
-static const GLenum poolFormat[GLTexturePool::FORMATS] = { GL_RGB, GL_RGBA, GL_RGBA, GL_RGBA, GL_RED, GL_RGBA, GL_RGB };
-static const GLenum poolType[GLTexturePool::FORMATS] = {
+static const GLenum poolInternal[GL_POOL_FORMATS] = { GL_RGB565, GL_RGB5_A1, GL_RGBA4, GL_RGBA8, GL_R8, GL_RGBA8, GL_RGB8 };
+static const GLenum poolFormat[GL_POOL_FORMATS] = { GL_RGB, GL_RGBA, GL_RGBA, GL_RGBA, GL_RED, GL_RGBA, GL_RGB };
+static const GLenum poolType[GL_POOL_FORMATS] = {
 	GL_UNSIGNED_SHORT_5_6_5, GL_UNSIGNED_SHORT_5_5_5_1, GL_UNSIGNED_SHORT_4_4_4_4, GL_UNSIGNED_BYTE, GL_UNSIGNED_BYTE, GL_UNSIGNED_BYTE, GL_UNSIGNED_BYTE
 };
-static const u32 poolTexel[GLTexturePool::FORMATS] = { 2, 2, 2, 4, 1, 4, 4 };
-static const char * const poolNames[GLTexturePool::FORMATS] = { "565", "5551", "4444", "8888", "8-bit", "RGBA8 rendered to", "RGB8 rendered to" };
+static const u32 poolTexel[GL_POOL_FORMATS] = { 2, 2, 2, 4, 1, 4, 4 };
+static const char * const poolNames[GL_POOL_FORMATS] = { "565", "5551", "4444", "8888", "8-bit", "RGBA8 rendered to", "RGB8 rendered to" };
 
-void GLTexturePool::Init()
+static struct
 {
-	if (ready)
-		return;
-	if (gl.gl_major < 3)
-		return;
-	storage = gl.is_gles || gl.gl_major > 4 || (gl.gl_major == 4 && gl.gl_minor >= 2);
-	book.Reset(1);
-	// how much games use them, in eighths of what they use 565
-	static const u32 use[FORMATS] = { 8, 6, 6, 4, 2, 0, 0 };
-	static const u8 kind[FORMATS] = { 0, 0, 0, 0, 0, TexPoolBook::TARGETS, TexPoolBook::TARGETS };
-	u32 counts[TexPoolBook::CLASSES];
-	/* (A driver that does not say what video memory there is - neither
-	 * GL_NVX_gpu_memory_info nor GL_ATI_meminfo, which is most of them - has
-	 * a budget that is a guess, and a low one: the pool is made as for a
-	 * card with 1.5 GB to spare, 96 MB of textures, which the busiest
-	 * games' scenes need.) */
-	VramBudget budget = gl.vram_budget;
-	if (!budget.exact && budget.available_kib() < (1536u << 10))
-	{
-		budget.budget_kib = 1536u << 10;
-		budget.usage_kib = 0;
-	}
-	const u64 bytes = TexPoolBook::Plan(budget, poolTexel, use, kind, FORMATS, counts,
-			texcache_upscale_factor(), (u32)settings.rend.MaxFilteredTextureSize,
-			settings.rend.RenderToTextureUpscale > 1 ? (u32)settings.rend.RenderToTextureUpscale : 1u);
-	ready = true;
-	while (glGetError() != GL_NO_ERROR)
-		;
-	for (int c = 0; c < TexPoolBook::CLASSES; c++)
-		for (u32 i = 0; i < counts[c]; i++)
-		{
-			GLPooledTexture *t = Make(c, false);
-			if (t == nullptr)
-				break;
-			book.Give(t);
-		}
-	NOTICE_LOG(RENDERER, "OpenGL: texture pool of %u textures, %u MB (planned %u MB)\n", book.made, (u32)(book.bytesMade >> 20), (u32)(bytes >> 20));
-}
+	tex_pool_book_t book;
+	bool ready;
+	bool storage;		/* glTexStorage2D() */
+	GLPooledTexture *all;	/* every one there is, for gl_tex_pool_term() */
+} pool;
 
-void GLTexturePool::Term()
+/* One of class @cls made: at the start, or (@late) because the class had
+ * none left */
+static GLPooledTexture *pool_make(int cls, bool late)
 {
-	if (!ready)
-		return;
-	book.Summary("OpenGL");
-	while (all != nullptr)
-	{
-		GLPooledTexture *next = all->all;
-		glcache.DeleteTextures(1, &all->name);
-		delete all;
-		all = next;
-	}
-	book.Reset(1);
-	ready = false;
-}
-
-GLPooledTexture *GLTexturePool::Make(int cls, bool late)
-{
-	const u32 f = TexPoolBook::Format(cls);
-	const u32 width = TexPoolBook::Width(cls), height = TexPoolBook::Height(cls);
-	GLPooledTexture *t = new GLPooledTexture();
-	t->levels = TexPoolBook::Mips(cls) ? 1 + bitscanrev(std::max(width, height)) : 1;
+	const u32 f = tex_pool_format(cls);
+	const u32 width = tex_pool_width(cls), height = tex_pool_height(cls);
+	GLPooledTexture *t = (GLPooledTexture *)calloc(1, sizeof(*t));
+	if (t == NULL)
+		return NULL;
+	t->levels = tex_pool_mips(cls) ? 1 + bitscanrev(width > height ? width : height) : 1;
 	glGenTextures(1, &t->name);
-	glcache.BindTexture(GL_TEXTURE_2D, t->name);
+	glc_bind_texture(GL_TEXTURE_2D, t->name);
 #ifndef HAVE_OPENGLES2
-	if (storage)
+	if (pool.storage)
 		glTexStorage2D(GL_TEXTURE_2D, t->levels, poolInternal[f], width, height);
 	else
 #endif
 	{
-		for (u32 l = 0; l < t->levels; l++)
-			glTexImage2D(GL_TEXTURE_2D, l, poolInternal[f], std::max(width >> l, 1u), std::max(height >> l, 1u), 0, poolFormat[f], poolType[f], nullptr);
+		u32 l;
+		for (l = 0; l < t->levels; l++)
+			glTexImage2D(GL_TEXTURE_2D, l, poolInternal[f], (width >> l) > 1 ? width >> l : 1, (height >> l) > 1 ? height >> l : 1,
+					0, poolFormat[f], poolType[f], NULL);
 		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, t->levels - 1);
 	}
 	if (glGetError() != GL_NO_ERROR)
 	{
 		WARN_LOG(RENDERER, "OpenGL: texture pool: a %ux%u %s texture could not be made\n", width, height, poolNames[f]);
-		glcache.DeleteTextures(1, &t->name);
-		delete t;
-		return nullptr;
+		glc_delete_textures(1, &t->name);
+		free(t);
+		return NULL;
 	}
-	book.Made(t, cls, TexPoolBook::Bytes(cls, poolTexel[f]), late, poolNames[f]);
-	t->all = all;
-	all = t;
+	tex_pool_made(&pool.book, &t->entry, cls, tex_pool_bytes(cls, poolTexel[f]), late, poolNames[f]);
+	t->all = pool.all;
+	pool.all = t;
 	return t;
 }
 
-GLPooledTexture *GLTexturePool::TakeClass(int cls)
+static void gl_tex_pool_init(void)
 {
-	if (!ready || cls < 0)
-		return nullptr;
-	TexPoolEntry *e = book.Take(cls);
-	return e != nullptr ? static_cast<GLPooledTexture *>(e) : Make(cls, true);
+	/* how much games use them, in eighths of what they use 565 */
+	static const u32 use[GL_POOL_FORMATS] = { 8, 6, 6, 4, 2, 0, 0 };
+	static const u8 kind[GL_POOL_FORMATS] = { 0, 0, 0, 0, 0, TEX_POOL_TARGETS, TEX_POOL_TARGETS };
+	/* (the renderer's thread's, at its start) */
+	static u32 counts[TEX_POOL_CLASSES];
+	VramBudget budget;
+	u64 bytes;
+	int c;
+
+	if (pool.ready || gl.gl_major < 3)
+		return;
+	pool.storage = gl.is_gles || gl.gl_major > 4 || (gl.gl_major == 4 && gl.gl_minor >= 2);
+	tex_pool_reset(&pool.book, 1);
+	/* (A driver that does not say what video memory there is - neither
+	 * GL_NVX_gpu_memory_info nor GL_ATI_meminfo, which is most of them - has
+	 * a budget that is a guess, and a low one: the pool is made as for a
+	 * card with 1.5 GB to spare, 96 MB of textures, which the busiest
+	 * games' scenes need.) */
+	budget = gl.vram_budget;
+	if (!budget.exact && vram_budget_available_kib(&budget) < (1536u << 10))
+	{
+		budget.budget_kib = 1536u << 10;
+		budget.usage_kib = 0;
+	}
+	bytes = tex_pool_plan(&budget, poolTexel, use, kind, GL_POOL_FORMATS, counts,
+			texcache_upscale_factor(), (u32)settings.rend.MaxFilteredTextureSize,
+			settings.rend.RenderToTextureUpscale > 1 ? (u32)settings.rend.RenderToTextureUpscale : 1u);
+	pool.ready = true;
+	while (glGetError() != GL_NO_ERROR)
+		;
+	for (c = 0; c < TEX_POOL_CLASSES; c++)
+	{
+		u32 i;
+		for (i = 0; i < counts[c]; i++)
+		{
+			GLPooledTexture *t = pool_make(c, false);
+			if (t == NULL)
+				break;
+			tex_pool_give(&pool.book, &t->entry);
+		}
+	}
+	NOTICE_LOG(RENDERER, "OpenGL: texture pool of %u textures, %u MB (planned %u MB)\n", pool.book.made,
+			(u32)(pool.book.bytesMade >> 20), (u32)(bytes >> 20));
 }
 
-GLPooledTexture *GLTexturePool::Take(TextureType type, u32 width, u32 height, bool mips)
+static void gl_tex_pool_term(void)
+{
+	if (!pool.ready)
+		return;
+	tex_pool_summary(&pool.book, "OpenGL");
+	while (pool.all != NULL)
+	{
+		GLPooledTexture *next = pool.all->all;
+		glc_delete_textures(1, &pool.all->name);
+		free(pool.all);
+		pool.all = next;
+	}
+	tex_pool_reset(&pool.book, 1);
+	pool.ready = false;
+}
+
+bool gl_tex_pool_ready(void)
+{
+	return pool.ready;
+}
+
+static GLPooledTexture *pool_take_class(int cls)
+{
+	TexPoolEntry *e;
+	if (!pool.ready || cls < 0)
+		return NULL;
+	e = tex_pool_take(&pool.book, cls);
+	/* (the entry first: the texture's) */
+	return e != NULL ? (GLPooledTexture *)e : pool_make(cls, true);
+}
+
+GLPooledTexture *gl_tex_pool_take(int type, u32 width, u32 height, bool mips)
 {
 	if ((unsigned)type >= 5)
-		return nullptr;
-	return TakeClass(TexPoolBook::Class((u32)type, width, height, mips));
+		return NULL;
+	return pool_take_class(tex_pool_class((u32)type, width, height, mips));
 }
 
-GLPooledTexture *GLTexturePool::TakeTarget(bool rgb, u32 width, u32 height)
+GLPooledTexture *gl_tex_pool_take_target(bool rgb, u32 width, u32 height)
 {
-	return TakeClass(TexPoolBook::Class(rgb ? TARGET_RGB : TARGET_RGBA, width, height, false));
+	return pool_take_class(tex_pool_class(rgb ? GL_POOL_TARGET_RGB : GL_POOL_TARGET_RGBA, width, height, false));
 }
 
-GLPooledTexture *GLTexturePool::Find(GLuint name) const
+void gl_tex_pool_give(GLPooledTexture *t)
 {
-	for (GLPooledTexture *t = all; t != nullptr; t = t->all)
+	tex_pool_give(&pool.book, &t->entry);
+}
+
+static GLPooledTexture *pool_find(GLuint name)
+{
+	GLPooledTexture *t;
+	for (t = pool.all; t != NULL; t = t->all)
 		if (t->name == name)
 			return t;
-	return nullptr;
+	return NULL;
 }
 
 static void rtt_gl_init(void);
@@ -222,16 +262,17 @@ static void upload_ring_follow(void);
 
 void gl_tex_init(bool depth)
 {
-	glTexDecoder.Init();
-	glTexPool.Init();
+	gltd_init();
+	gl_tex_pool_init();
 	upload_ring_init();
-	// what a render read back takes, made now (rtt_gl_init())
+	/* what a render read back takes, made now (rtt_gl_init()) */
 	rtt_gl_init();
-	// ...and the cache's room for them (rend/tex_map.h)
-	TexCache.ReserveFor(glTexPool.Book().made);
+	/* ...and the cache's room for them (rend/tex_map.h) */
+	tex_cache_ready();
+	texcache_map_reserve_for(&tex_cache, pool.book.made);
 	gl.rtt.kept = false;
-	gl.rtt.pooled = nullptr;
-	if (!glTexPool.Ready())
+	gl.rtt.pooled = NULL;
+	if (!pool.ready)
 		return;
 	/* The framebuffer renders to textures are drawn through, and their
 	 * depth buffer, now and for as long as the renderer is: as large as
@@ -240,10 +281,14 @@ void gl_tex_init(bool depth)
 	gl.rtt.depthWidth = gl.rtt.depthHeight = 0;
 	if (depth)
 	{
+		u32 side;
+		u32 room;
+		u32 scale;
 		GLint most = 0;
 		glGetIntegerv(GL_MAX_RENDERBUFFER_SIZE, &most);
-		const u32 scale = settings.rend.RenderToTextureUpscale > 1 ? settings.rend.RenderToTextureUpscale : 1;
-		const u32 side = std::min<u32>(1024 * scale, (u32)std::max(most, 1024));
+		scale = settings.rend.RenderToTextureUpscale > 1 ? settings.rend.RenderToTextureUpscale : 1;
+		room = (u32)(most > 1024 ? most : 1024);
+		side = 1024 * scale < room ? 1024 * scale : room;
 		glGenRenderbuffers(1, &gl.rtt.depthb);
 		glBindRenderbuffer(RARCH_GL_RENDERBUFFER, gl.rtt.depthb);
 		glRenderbufferStorage(RARCH_GL_RENDERBUFFER, gl.depth_format, side, side);
@@ -255,7 +300,7 @@ void gl_tex_init(bool depth)
 static void rtt_gl_term(void);
 static void fb_texture_term(void);
 
-void gl_tex_term()
+void gl_tex_term(void)
 {
 	if (gl.rtt.kept)
 	{
@@ -266,22 +311,22 @@ void gl_tex_term()
 		gl.rtt.fbo = gl.rtt.depthb = 0;
 		gl.rtt.kept = false;
 	}
-	if (gl.rtt.pooled != nullptr)
+	if (gl.rtt.pooled != NULL)
 	{
-		glTexPool.Give(gl.rtt.pooled);
-		gl.rtt.pooled = nullptr;
+		gl_tex_pool_give(gl.rtt.pooled);
+		gl.rtt.pooled = NULL;
 		gl.rtt.tex = 0;
 	}
 	upload_ring_term();
-	glTexPool.Term();
-	glTexDecoder.Term();
+	gl_tex_pool_term();
+	gltd_term();
 	rtt_gl_term();
 	fb_texture_term();
 }
 
-void gl_tex_flush()
+void gl_tex_flush(void)
 {
-	glTexDecoder.Flush();
+	gltd_flush();
 	upload_ring_fence();
 	upload_ring_follow();
 }
@@ -323,7 +368,7 @@ static struct
  * next texture) */
 static bool upload_ring_wanted(void)
 {
-	return glTexPool.Ready() && (!glTexDecoder.Ready() || !settings.rend.GpuTextureDecode)
+	return pool.ready && (!gltd_ready() || !settings.rend.GpuTextureDecode)
 			&& (gl.is_gles || gl.gl_major > 3 || (gl.gl_major == 3 && gl.gl_minor >= 2));
 }
 
@@ -336,14 +381,16 @@ static void upload_ring_init(void)
 		return;
 	/* A share of the video memory: 8 to 16 MB, room for the largest
 	 * texture, 1024x1024 with its mipmaps at 32 bits, and more */
-	bytes = (u64)gl.vram_budget.available_kib() * 1024 / 128;
-	bytes = std::max<u64>(bytes, 8 << 20);
-	bytes = std::min<u64>(bytes, 16 << 20);
+	bytes = (u64)vram_budget_available_kib(&gl.vram_budget) * 1024 / 128;
+	if (bytes < (8 << 20))
+		bytes = 8 << 20;
+	if (bytes > (16 << 20))
+		bytes = 16 << 20;
 	while (glGetError() != GL_NO_ERROR)
 		;
 	glGenBuffers(1, &upload.buffer);
 	glBindBuffer(GL_PIXEL_UNPACK_BUFFER, upload.buffer);
-	glBufferData(GL_PIXEL_UNPACK_BUFFER, (GLsizeiptr)bytes, nullptr, GL_STREAM_DRAW);
+	glBufferData(GL_PIXEL_UNPACK_BUFFER, (GLsizeiptr)bytes, NULL, GL_STREAM_DRAW);
 	glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
 	if (glGetError() != GL_NO_ERROR)
 	{
@@ -368,12 +415,12 @@ static void upload_ring_follow(void)
 
 static void upload_unmap(void)
 {
-	if (upload.mapped == nullptr)
+	if (upload.mapped == NULL)
 		return;
 	glBindBuffer(GL_PIXEL_UNPACK_BUFFER, upload.buffer);
 	glUnmapBuffer(GL_PIXEL_UNPACK_BUFFER);
 	glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
-	upload.mapped = nullptr;
+	upload.mapped = NULL;
 }
 
 static void upload_ring_term(void)
@@ -408,7 +455,7 @@ static u8 *upload_ring_take(size_t len)
 {
 	size_t live, at;
 	if (upload.buffer == 0)
-		return nullptr;
+		return NULL;
 	upload_unmap();
 	while (upload.count != 0)
 	{
@@ -441,14 +488,14 @@ static u8 *upload_ring_take(size_t len)
 		if (!upload.saidFull)
 			INFO_LOG(RENDERER, "OpenGL: the ring textures go through is full: one converted in memory of the cache's\n");
 		upload.saidFull = true;
-		return nullptr;
+		return NULL;
 	}
 	glBindBuffer(GL_PIXEL_UNPACK_BUFFER, upload.buffer);
 	upload.mapped = (u8 *)glMapBufferRange(GL_PIXEL_UNPACK_BUFFER, (GLintptr)at, (GLsizeiptr)len,
 			GL_MAP_WRITE_BIT | GL_MAP_INVALIDATE_RANGE_BIT | GL_MAP_UNSYNCHRONIZED_BIT);
 	glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
-	if (upload.mapped == nullptr)
-		return nullptr;
+	if (upload.mapped == NULL)
+		return NULL;
 	upload.at = at;
 	upload.len = len;
 	upload.head = at + len;
@@ -459,13 +506,14 @@ static u8 *upload_ring_take(size_t len)
  * the buffer bound, and the offset in it */
 static u8 *upload_ring_source(u8 *data, bool *bound)
 {
+	size_t offset;
 	*bound = false;
-	if (upload.mapped == nullptr || data < upload.mapped || data >= upload.mapped + upload.len)
+	if (upload.mapped == NULL || data < upload.mapped || data >= upload.mapped + upload.len)
 		return data;
-	const size_t offset = upload.at + (size_t)(data - upload.mapped);
+	offset = upload.at + (size_t)(data - upload.mapped);
 	glBindBuffer(GL_PIXEL_UNPACK_BUFFER, upload.buffer);
 	glUnmapBuffer(GL_PIXEL_UNPACK_BUFFER);
-	upload.mapped = nullptr;
+	upload.mapped = NULL;
 	*bound = true;
 	return (u8 *)(uintptr_t)offset;
 }
@@ -479,178 +527,185 @@ static void upload_ring_done(bool bound)
 static void upload_ring_init(void) { }
 static void upload_ring_term(void) { }
 static void upload_ring_fence(void) { }
-static u8 *upload_ring_take(size_t len) { return nullptr; }
+static u8 *upload_ring_take(size_t len) { return NULL; }
 static void upload_ring_follow(void) { }
 static u8 *upload_ring_source(u8 *data, bool *bound) { *bound = false; return data; }
 static void upload_ring_done(bool bound) { }
 #endif
 
-void *TextureCacheData::UploadMemory(u32 width, u32 height, size_t bytes, u32 pixel, bool mipmaps)
+static bool tex_take_pooled(gl_texture *t, u32 width, u32 height, bool mips)
 {
-	if (texID == 0 || !TakePooled(width, height, mipmaps))
-		return nullptr;
-	return upload_ring_take(bytes);
-}
-
-bool TextureCacheData::TakePooled(u32 width, u32 height, bool mips)
-{
-	if (!glTexPool.Ready() || texID == 0)
+	GLPooledTexture *p;
+	if (!pool.ready || t->texID == 0)
 		return false;
-	if (pooled != nullptr && (int)pooled->cls == TexPoolBook::Class((u32)tex_type, width, height, mips))
+	if (t->pooled != NULL && (int)t->pooled->entry.cls == tex_pool_class((u32)t->base.tex_type, width, height, mips))
 		return true;
-	GLPooledTexture *t = glTexPool.Take(tex_type, width, height, mips);
-	if (t == nullptr)
+	p = gl_tex_pool_take(t->base.tex_type, width, height, mips);
+	if (p == NULL)
 		return false;
-	if (pooled != nullptr)
-		glTexPool.Give(pooled);
+	if (t->pooled != NULL)
+		gl_tex_pool_give(t->pooled);
 	else
-		ownID = texID;
-	pooled = t;
-	texID = t->name;
+		t->ownID = t->texID;
+	t->pooled = p;
+	t->texID = p->name;
 	return true;
 }
 
-void TextureCacheData::ReleasePooled()
+static void tex_release_pooled(gl_texture *t)
 {
-	if (pooled == nullptr)
+	if (t->pooled == NULL)
 		return;
-	glTexPool.Give(pooled);
-	pooled = nullptr;
-	texID = ownID != 0 ? ownID : glcache.GenTexture();
-	ownID = 0;
+	gl_tex_pool_give(t->pooled);
+	t->pooled = NULL;
+	t->texID = t->ownID != 0 ? t->ownID : glc_gen_texture();
+	t->ownID = 0;
 }
 
-void TextureCacheData::CancelDecode()
+static void tex_cancel_decode(gl_texture *t)
 {
-	if (decodeSerial != 0)
-		glTexDecoder.Cancel(decodeJob, decodeSerial);
-	decodeSerial = 0;
+	if (t->decodeSerial != 0)
+		gltd_cancel(t->decodeJob, t->decodeSerial);
+	t->decodeSerial = 0;
+}
+
+static void *tex_upload_memory(texcache_data *base, u32 width, u32 height, size_t bytes, u32 pixel, bool mipmaps)
+{
+	gl_texture *t = (gl_texture *)base;
+	(void)pixel;
+	if (t->texID == 0 || !tex_take_pooled(t, width, height, mipmaps))
+		return NULL;
+	return upload_ring_take(bytes);
 }
 
 /* Made on the GPU (gl_texdecoder.h), or copied as it is. Everything that
  * can say no does before anything is changed but the texture it is made
  * into, which a no leaves for the CPU's upload to take. */
-bool TextureCacheData::GpuDecode(const texd_plan& plan)
+static bool tex_gpu_decode(texcache_data *base, const struct texd_plan *plan)
 {
-	if (texID == 0)
+	gl_texture *t = (gl_texture *)base;
+	const int type = base->tex_type;
+	u32 offset;
+	u8 *to;
+
+	if (t->texID == 0)
 		return false;
-	CancelDecode();
-	if (plan.native)
+	tex_cancel_decode(t);
+	if (plan->native)
 	{
-		const u32 stride = plan.level[0].sr & 0xFFFF;
-		if ((unsigned)tex_type >= 3)
+		const u32 stride = plan->level[0].sr & 0xFFFF;
+		GLenum format = GL_RGB, gltype = GL_UNSIGNED_SHORT_5_6_5, internal = GL_RGB;
+		if ((unsigned)type >= 3)
 			return false;
-		if (glTexDecoder.Native(tex_type))
+		if (gltd_native(type))
 		{
 			/* Through the ring, into the pool's texture: the PowerVR's
 			 * texels are OpenGL's 5-6-5, 1-5-5-5 reversed and 4-4-4-4
 			 * reversed as they are */
-			u32 offset;
-			if (!TakePooled(plan.width, plan.height, false))
+			if (!tex_take_pooled(t, plan->width, plan->height, false))
 				return false;
-			u8 * const to = glTexDecoder.Begin(plan.bytes, 0, &offset);
-			if (to == nullptr)
+			to = gltd_begin(plan->bytes, 0, &offset);
+			if (to == NULL)
 				return false;
-			memcpy(to, &vram[plan.src], plan.bytes);
-			decodeSerial = glTexDecoder.Serial();
-			decodeJob = glTexDecoder.AddCopy(texID, tex_type, offset + plan.level[0].data, stride, plan.width, plan.height);
+			memcpy(to, &vram.data[plan->src], plan->bytes);
+			t->decodeSerial = gltd_serial();
+			t->decodeJob = gltd_add_copy(t->texID, type, offset + plan->level[0].data, stride, plan->width, plan->height);
 			return true;
 		}
-		if (glTexPool.Ready())
+		if (pool.ready)
 			return false;
 		/* Straight from video memory: OpenGL ES has 5-6-5 alone, and no row
 		 * length but the texture's */
-		if (gl.is_gles && (tex_type != TextureType::_565 || stride != plan.width))
+		if (gl.is_gles && (type != TEX_TYPE_565 || stride != plan->width))
 			return false;
-		GLenum format = GL_RGB, type = GL_UNSIGNED_SHORT_5_6_5, internal = GL_RGB;
-		if (tex_type == TextureType::_5551)
+		if (type == TEX_TYPE_5551)
 		{
 			format = GL_BGRA;
-			type = GL_UNSIGNED_SHORT_1_5_5_5_REV;
+			gltype = GL_UNSIGNED_SHORT_1_5_5_5_REV;
 			internal = GL_RGBA;
 		}
-		else if (tex_type == TextureType::_4444)
+		else if (type == TEX_TYPE_4444)
 		{
 			format = GL_BGRA;
-			type = GL_UNSIGNED_SHORT_4_4_4_4_REV;
+			gltype = GL_UNSIGNED_SHORT_4_4_4_4_REV;
 			internal = GL_RGBA;
 		}
-		glcache.BindTexture(GL_TEXTURE_2D, texID);
-		if (stride != plan.width)
+		glc_bind_texture(GL_TEXTURE_2D, t->texID);
+		if (stride != plan->width)
 			glPixelStorei(GL_UNPACK_ROW_LENGTH, stride);
-		glTexImage2D(GL_TEXTURE_2D, 0, internal, plan.width, plan.height, 0, format, type, &vram[plan.src + plan.level[0].data]);
-		if (stride != plan.width)
+		glTexImage2D(GL_TEXTURE_2D, 0, internal, plan->width, plan->height, 0, format, gltype, &vram.data[plan->src + plan->level[0].data]);
+		if (stride != plan->width)
 			glPixelStorei(GL_UNPACK_ROW_LENGTH, 0);
 		return true;
 	}
-	if (!glTexDecoder.Takes(tex_type, plan.out) || !TakePooled(plan.width, plan.height, plan.mipmapped != 0)
-			|| pooled->levels < plan.levels)
+	if (!gltd_takes(type, plan->out) || !tex_take_pooled(t, plan->width, plan->height, plan->mipmapped != 0)
+			|| t->pooled->levels < plan->levels)
 		return false;
-	u32 offset;
-	u8 * const to = glTexDecoder.Begin(plan.pal + plan.pal_entries * 4, plan.levels, &offset);
-	if (to == nullptr)
+	to = gltd_begin(plan->pal + plan->pal_entries * 4, plan->levels, &offset);
+	if (to == NULL)
 		return false;
-	memcpy(to, &vram[plan.src], plan.bytes);
-	if (plan.pal_entries != 0)
-		memcpy(to + plan.pal, (plan.out == TEXD_OUT16 ? palette16_ram : palette32_ram) + plan.pal_index, plan.pal_entries * 4);
-	decodeSerial = glTexDecoder.Serial();
-	decodeJob = glTexDecoder.AddDecode(texID, tex_type, plan, offset);
+	memcpy(to, &vram.data[plan->src], plan->bytes);
+	if (plan->pal_entries != 0)
+		memcpy(to + plan->pal, (plan->out == TEXD_OUT16 ? palette16_ram : palette32_ram) + plan->pal_index, plan->pal_entries * 4);
+	t->decodeSerial = gltd_serial();
+	t->decodeJob = gltd_add_decode(t->texID, type, plan, offset);
 	return true;
 }
 
-void TextureCacheData::Renew()
+/* A texture of its own to be made anew: a custom texture's */
+static void tex_renew(gl_texture *t)
 {
-	CancelDecode();
-	if (pooled != nullptr)
-		ReleasePooled();
+	tex_cancel_decode(t);
+	if (t->pooled != NULL)
+		tex_release_pooled(t);
 	else
 	{
-		glcache.DeleteTextures(1, &texID);
-		texID = glcache.GenTexture();
+		glc_delete_textures(1, &t->texID);
+		t->texID = glc_gen_texture();
 	}
 }
 
-void TextureCacheData::SetRendered(GLuint tex, GLPooledTexture *pooled)
+/* The picture rendered to is the texture now: @tex, the pool's @pooled or
+ * one of its own */
+static void tex_set_rendered(gl_texture *t, GLuint tex, GLPooledTexture *pooled)
 {
-	CancelDecode();
-	if (this->pooled != nullptr)
+	tex_cancel_decode(t);
+	if (t->pooled != NULL)
 	{
-		glTexPool.Give(this->pooled);
-		this->pooled = nullptr;
-		if (ownID != 0)
-			glcache.DeleteTextures(1, &ownID);
-		ownID = 0;
+		gl_tex_pool_give(t->pooled);
+		t->pooled = NULL;
+		if (t->ownID != 0)
+			glc_delete_textures(1, &t->ownID);
+		t->ownID = 0;
 	}
-	else if (texID != 0)
-		glcache.DeleteTextures(1, &texID);
-	this->pooled = pooled;
-	texID = tex;
+	else if (t->texID != 0)
+		glc_delete_textures(1, &t->texID);
+	t->pooled = pooled;
+	t->texID = tex;
 }
 
-void TextureCacheData::UploadToGPU(int width, int height, u8 *temp_tex_buffer, bool mipmapped, bool mipmapsIncluded)
+static void tex_upload_from(gl_texture *t, int width, int height, u8 *temp_tex_buffer, bool mipmapped, bool mipmapsIncluded)
 {
-	bool bound;
-	CancelDecode();
-	temp_tex_buffer = upload_ring_source(temp_tex_buffer, &bound);
-	UploadToGPUFrom(width, height, temp_tex_buffer, mipmapped, mipmapsIncluded);
-	upload_ring_done(bound);
-}
+	const int type = t->base.tex_type;
+	GLuint comps, gltype;
+	u32 bytes_per_pixel = 2;
 
-void TextureCacheData::UploadToGPUFrom(int width, int height, u8 *temp_tex_buffer, bool mipmapped, bool mipmapsIncluded)
-{
-	if (texID != 0 && TakePooled(width, height, mipmapped || mipmapsIncluded))
+	if (t->texID != 0 && tex_take_pooled(t, width, height, mipmapped || mipmapsIncluded))
 	{
 		/* Into the pool's texture, made before the game with every level
 		 * it can have */
-		glcache.BindTexture(GL_TEXTURE_2D, texID);
-		const u32 f = (u32)tex_type;
+		const u32 f = (u32)type;
 		const u32 bpp = poolTexel[f];
+		glc_bind_texture(GL_TEXTURE_2D, t->texID);
 		if (mipmapsIncluded)
-			for (int i = 0; (1 << i) <= width; i++)
+		{
+			int i;
+			for (i = 0; (1 << i) <= width; i++)
 			{
-				glTexSubImage2D(GL_TEXTURE_2D, pooled->levels - i - 1, 0, 0, 1 << i, 1 << i, poolFormat[f], poolType[f], temp_tex_buffer);
+				glTexSubImage2D(GL_TEXTURE_2D, t->pooled->levels - i - 1, 0, 0, 1 << i, 1 << i, poolFormat[f], poolType[f], temp_tex_buffer);
 				temp_tex_buffer += (1 << (2 * i)) * bpp;
 			}
+		}
 		else
 		{
 			glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, width, height, poolFormat[f], poolType[f], temp_tex_buffer);
@@ -659,207 +714,208 @@ void TextureCacheData::UploadToGPUFrom(int width, int height, u8 *temp_tex_buffe
 		}
 		return;
 	}
-	ReleasePooled();
-	if (texID != 0)
+	tex_release_pooled(t);
+	if (t->texID == 0)
 	{
-		//upload to OpenGL !
-		glcache.BindTexture(GL_TEXTURE_2D, texID);
-		GLuint comps = tex_type == TextureType::_8 ? gl.single_channel_format : GL_RGBA;
-		GLuint gltype;
-		u32 bytes_per_pixel = 2;
-		switch (tex_type)
+		die("Soft rend disabled, invalid code path");
+		return;
+	}
+	/* upload to OpenGL */
+	glc_bind_texture(GL_TEXTURE_2D, t->texID);
+	comps = type == TEX_TYPE_8 ? gl.single_channel_format : GL_RGBA;
+	switch (type)
+	{
+	case TEX_TYPE_5551:
+		gltype = GL_UNSIGNED_SHORT_5_5_5_1;
+		break;
+	case TEX_TYPE_565:
+		gltype = GL_UNSIGNED_SHORT_5_6_5;
+		comps = GL_RGB;
+		break;
+	case TEX_TYPE_4444:
+		gltype = GL_UNSIGNED_SHORT_4_4_4_4;
+		break;
+	case TEX_TYPE_8888:
+		bytes_per_pixel = 4;
+		gltype = GL_UNSIGNED_BYTE;
+		break;
+	case TEX_TYPE_8:
+		bytes_per_pixel = 1;
+		gltype = GL_UNSIGNED_BYTE;
+		break;
+	default:
+		die("Unsupported texture type");
+		gltype = 0;
+		break;
+	}
+	if (mipmapsIncluded)
+	{
+		int mipmapLevels = 0;
+		int dim = width;
+		int i;
+		while (dim != 0)
 		{
-		case TextureType::_5551:
-			gltype = GL_UNSIGNED_SHORT_5_5_5_1;
-			break;
-		case TextureType::_565:
-			gltype = GL_UNSIGNED_SHORT_5_6_5;
-			comps = GL_RGB;
-			break;
-		case TextureType::_4444:
-			gltype = GL_UNSIGNED_SHORT_4_4_4_4;
-			break;
-		case TextureType::_8888:
-			bytes_per_pixel = 4;
-			gltype = GL_UNSIGNED_BYTE;
-			break;
-		case TextureType::_8:
-			bytes_per_pixel = 1;
-			gltype = GL_UNSIGNED_BYTE;
-			break;
-		default:
-			die("Unsupported texture type");
-			gltype = 0;
-			break;
+			mipmapLevels++;
+			dim >>= 1;
 		}
-		if (mipmapsIncluded)
-		{
-			int mipmapLevels = 0;
-			int dim = width;
-			while (dim != 0)
-			{
-				mipmapLevels++;
-				dim >>= 1;
-			}
 #if !defined(HAVE_OPENGLES2) && !defined(__APPLE__)
-			// Open GL 4.2 or GLES 3.0 min
-			if (gl.gl_major > 4 || (gl.gl_major == 4 && gl.gl_minor >= 2)
-					|| (gl.is_gles && gl.gl_major >= 3))
+		/* OpenGL 4.2 or OpenGL ES 3.0 at least */
+		if (gl.gl_major > 4 || (gl.gl_major == 4 && gl.gl_minor >= 2)
+				|| (gl.is_gles && gl.gl_major >= 3))
+		{
+			GLuint internalFormat;
+			switch (type)
 			{
-				GLuint internalFormat;
-				switch (tex_type)
-				{
-				case TextureType::_5551:
-					internalFormat = GL_RGB5_A1;
-					break;
-				case TextureType::_565:
-					internalFormat = GL_RGB565;
-					break;
-				case TextureType::_4444:
-					internalFormat = GL_RGBA4;
-					break;
-				case TextureType::_8888:
-					internalFormat = GL_RGBA8;
-					break;
-				case TextureType::_8:
-					internalFormat = gl.single_channel_internal;
-					break;
-				default:
-					die("Unsupported texture format");
-					internalFormat = 0;
-					break;
-				}
-				if (Updates == 1)
-				{
-					glTexStorage2D(GL_TEXTURE_2D, mipmapLevels, internalFormat, width, height);
-					glCheck();
-				}
-				for (int i = 0; i < mipmapLevels; i++)
-				{
-					glTexSubImage2D(GL_TEXTURE_2D, mipmapLevels - i - 1, 0, 0, 1 << i, 1 << i, comps, gltype, temp_tex_buffer);
-					temp_tex_buffer += (1 << (2 * i)) * bytes_per_pixel;
-				}
+			case TEX_TYPE_5551:
+				internalFormat = GL_RGB5_A1;
+				break;
+			case TEX_TYPE_565:
+				internalFormat = GL_RGB565;
+				break;
+			case TEX_TYPE_4444:
+				internalFormat = GL_RGBA4;
+				break;
+			case TEX_TYPE_8888:
+				internalFormat = GL_RGBA8;
+				break;
+			case TEX_TYPE_8:
+				internalFormat = gl.single_channel_internal;
+				break;
+			default:
+				die("Unsupported texture format");
+				internalFormat = 0;
+				break;
 			}
-			else
-#endif
+			if (t->base.Updates == 1)
 			{
-				glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_BASE_LEVEL, 0);
-				glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, mipmapLevels - 1);
-				for (int i = 0; i < mipmapLevels; i++)
-				{
-					glTexImage2D(GL_TEXTURE_2D, mipmapLevels - i - 1, tex_type == TextureType::_8 ? gl.single_channel_internal : comps, 1 << i, 1 << i, 0, comps, gltype, temp_tex_buffer);
-					temp_tex_buffer += (1 << (2 * i)) * bytes_per_pixel;
-				}
+				glTexStorage2D(GL_TEXTURE_2D, mipmapLevels, internalFormat, width, height);
+				glCheck();
+			}
+			for (i = 0; i < mipmapLevels; i++)
+			{
+				glTexSubImage2D(GL_TEXTURE_2D, mipmapLevels - i - 1, 0, 0, 1 << i, 1 << i, comps, gltype, temp_tex_buffer);
+				temp_tex_buffer += (1 << (2 * i)) * bytes_per_pixel;
 			}
 		}
 		else
+#endif
 		{
-			glTexImage2D(GL_TEXTURE_2D, 0, tex_type == TextureType::_8 ? gl.single_channel_internal : comps, width, height, 0, comps, gltype, temp_tex_buffer);
-			if (mipmapped)
-				glGenerateMipmap(GL_TEXTURE_2D);
-	}
-		glCheck();
-	}
-	else {
-		#if FEAT_HAS_SOFTREND
-			/*
-			if (tex_type == TextureType::_565)
-				tex_type = 0;
-			else if (tex_type == TextureType::_5551)
-				tex_type = 1;
-			else if (tex_type == TextureType::_4444)
-				tex_type = 2;
-			*/
-			u16 *tex_data = (u16 *)temp_tex_buffer;
-			if (pData) {
-				_mm_free(pData);
+			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_BASE_LEVEL, 0);
+			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, mipmapLevels - 1);
+			for (i = 0; i < mipmapLevels; i++)
+			{
+				glTexImage2D(GL_TEXTURE_2D, mipmapLevels - i - 1, type == TEX_TYPE_8 ? gl.single_channel_internal : comps, 1 << i, 1 << i, 0, comps, gltype, temp_tex_buffer);
+				temp_tex_buffer += (1 << (2 * i)) * bytes_per_pixel;
 			}
-
-			pData = (u16*)_mm_malloc(w * h * 16, 16);
-			for (int y = 0; y < h; y++) {
-				for (int x = 0; x < w; x++) {
-					u32* data = (u32*)&pData[(x + y*w) * 8];
-
-					data[0] = decoded_colors[tex_type][tex_data[(x + 1) % w + (y + 1) % h * w]];
-					data[1] = decoded_colors[tex_type][tex_data[(x + 0) % w + (y + 1) % h * w]];
-					data[2] = decoded_colors[tex_type][tex_data[(x + 1) % w + (y + 0) % h * w]];
-					data[3] = decoded_colors[tex_type][tex_data[(x + 0) % w + (y + 0) % h * w]];
-				}
-			}
-		#else
-			die("Soft rend disabled, invalid code path");
-		#endif
+		}
 	}
+	else
+	{
+		glTexImage2D(GL_TEXTURE_2D, 0, type == TEX_TYPE_8 ? gl.single_channel_internal : comps, width, height, 0, comps, gltype, temp_tex_buffer);
+		if (mipmapped)
+			glGenerateMipmap(GL_TEXTURE_2D);
+	}
+	glCheck();
 }
-	
+
+static void tex_upload_to_gpu(texcache_data *base, int width, int height, u8 *temp_tex_buffer, bool mipmapped, bool mipmapsIncluded)
+{
+	gl_texture *t = (gl_texture *)base;
+	bool bound;
+	tex_cancel_decode(t);
+	temp_tex_buffer = upload_ring_source(temp_tex_buffer, &bound);
+	tex_upload_from(t, width, height, temp_tex_buffer, mipmapped, mipmapsIncluded);
+	upload_ring_done(bound);
+}
+
 /* The texture the last whole update made, its shape the pool's if it is
  * the pool's, and nothing the decoder still has to do to it */
-bool TextureCacheData::PartMemory(size_t bytes, void **memory)
+static bool tex_part_memory(texcache_data *base, size_t bytes, void **memory)
 {
-	*memory = nullptr;
-	if (made_type != (u8)tex_type + 1 || texID == 0 || (decodeSerial != 0 && decodeSerial == glTexDecoder.Serial()))
+	gl_texture *t = (gl_texture *)base;
+	*memory = NULL;
+	if (base->made_type != (u8)base->tex_type + 1 || t->texID == 0 || (t->decodeSerial != 0 && t->decodeSerial == gltd_serial()))
 		return false;
-	if (pooled == nullptr)
+	if (t->pooled == NULL)
 		return true;
-	if ((int)pooled->cls != TexPoolBook::Class((u32)tex_type, w, h, made_mips))
+	if ((int)t->pooled->entry.cls != tex_pool_class((u32)base->tex_type, base->w, base->h, base->made_mips))
 		return false;
-	// (through the ring, where there is one and room in it)
+	/* (through the ring, where there is one and room in it) */
 	*memory = upload_ring_take(bytes);
 	return true;
 }
 
-void TextureCacheData::UploadPart(const TexRegion *regions, u32 count, u8 *data, const size_t *offset)
+static void tex_upload_part(texcache_data *base, const TexRegion *regions, u32 count, u8 *data, const size_t *offset)
 {
-	const u32 f = (u32)tex_type;
-	GLenum format, type;
+	gl_texture *t = (gl_texture *)base;
+	const int type = base->tex_type;
+	const u32 f = (u32)type;
+	GLenum format, gltype;
 	u32 i;
 	bool bound;
 
 	data = upload_ring_source(data, &bound);
-	if (pooled != nullptr)
+	if (t->pooled != NULL)
 	{
 		format = poolFormat[f];
-		type = poolType[f];
+		gltype = poolType[f];
 	}
 	else
 	{
-		/* as UploadToGPU() makes it */
-		format = tex_type == TextureType::_8 ? gl.single_channel_format : tex_type == TextureType::_565 ? GL_RGB : GL_RGBA;
-		type = tex_type == TextureType::_5551 ? GL_UNSIGNED_SHORT_5_5_5_1 : tex_type == TextureType::_565 ? GL_UNSIGNED_SHORT_5_6_5
-				: tex_type == TextureType::_4444 ? GL_UNSIGNED_SHORT_4_4_4_4 : GL_UNSIGNED_BYTE;
+		/* as tex_upload_from() makes it */
+		format = type == TEX_TYPE_8 ? gl.single_channel_format : type == TEX_TYPE_565 ? GL_RGB : GL_RGBA;
+		gltype = type == TEX_TYPE_5551 ? GL_UNSIGNED_SHORT_5_5_5_1 : type == TEX_TYPE_565 ? GL_UNSIGNED_SHORT_5_6_5
+				: type == TEX_TYPE_4444 ? GL_UNSIGNED_SHORT_4_4_4_4 : GL_UNSIGNED_BYTE;
 	}
-	glcache.BindTexture(GL_TEXTURE_2D, texID);
+	glc_bind_texture(GL_TEXTURE_2D, t->texID);
 	for (i = 0; i < count; i++)
-		glTexSubImage2D(GL_TEXTURE_2D, regions[i].level, regions[i].x, regions[i].y, regions[i].w, regions[i].h, format, type, data + offset[i]);
+		glTexSubImage2D(GL_TEXTURE_2D, regions[i].level, regions[i].x, regions[i].y, regions[i].w, regions[i].h, format, gltype, data + offset[i]);
 	upload_ring_done(bound);
 	glCheck();
 }
 
 /* The decoder's textures are made whole */
-int TextureCacheData::GpuDecodePart(const texd_plan& plan, const TexRegion *regions, u32 count)
+static int tex_gpu_decode_part(texcache_data *base, const struct texd_plan *plan, const TexRegion *regions, u32 count)
 {
-	return plan.native || glTexDecoder.Takes(tex_type, plan.out) ? TEXP_WHOLE : TEXP_CPU;
+	(void)regions;
+	(void)count;
+	return plan->native || gltd_takes(base->tex_type, plan->out) ? TEXP_WHOLE : TEXP_CPU;
 }
 
-bool TextureCacheData::Delete()
+static bool tex_delete(texcache_data *base)
 {
-	if (!BaseTextureCacheData::Delete())
+	gl_texture *t = (gl_texture *)base;
+	if (!texcache_delete(base))
 		return false;
-	CancelDecode();
+	tex_cancel_decode(t);
 
 	/* (a render to a texture that video memory has not got yet is kept: see rend/rtt_watch.h) */
-	if (texID && !rtt_watch_take(texID)) {
-		if (pooled != nullptr)
-			glTexPool.Give(pooled);
+	if (t->texID && !rtt_watch_take(t->texID))
+	{
+		if (t->pooled != NULL)
+			gl_tex_pool_give(t->pooled);
 		else
-			glcache.DeleteTextures(1, &texID);
+			glc_delete_textures(1, &t->texID);
 	}
-	pooled = nullptr;
-	if (ownID != 0 && ownID != texID)
-		glcache.DeleteTextures(1, &ownID);
-	ownID = 0;
-	
+	t->pooled = NULL;
+	if (t->ownID != 0 && t->ownID != t->texID)
+		glc_delete_textures(1, &t->ownID);
+	t->ownID = 0;
+
 	return true;
+}
+
+static void tex_get_id(texcache_data *base, char *s, size_t n)
+{
+	(void)n;
+	sprintf(s, "%u", (unsigned)((gl_texture *)base)->texID);
+}
+
+static bool tex_force_32bit(const texcache_data *t, int type)
+{
+	(void)t;
+	(void)type;
+	return false;
 }
 
 /* The framebuffers a read attaches the picture to, and the picture of the
@@ -882,8 +938,10 @@ static void rtt_gl_small(u32 w, u32 h)
 		rtt_said_larger = true;
 		WARN_LOG(RENDERER, "Render to a texture of %u x %u read back: its room made larger\n", w, h);
 	}
-	rtt_small_w = std::max(w, rtt_small_w);
-	rtt_small_h = std::max(h, rtt_small_h);
+	if (w > rtt_small_w)
+		rtt_small_w = w;
+	if (h > rtt_small_h)
+		rtt_small_h = h;
 	if (rtt_small_rb == 0)
 		glGenRenderbuffers(1, &rtt_small_rb);
 	glBindRenderbuffer(RARCH_GL_RENDERBUFFER, rtt_small_rb);
@@ -900,6 +958,7 @@ static void rtt_gl_small(u32 w, u32 h)
  * Where it is in that, at (*x, *y). False if it cannot be made smaller. */
 static bool rtt_gl_source(const RttWatch *watch, u32 *x, u32 *y)
 {
+	GLboolean was_scissor;
 	const u32 w = watch->w, h = watch->h, scale = watch->scale;
 
 	if (rtt_read_fbo == 0)
@@ -913,7 +972,7 @@ static bool rtt_gl_source(const RttWatch *watch, u32 *x, u32 *y)
 #if defined(GL_READ_FRAMEBUFFER) && defined(GL_DRAW_FRAMEBUFFER) && defined(GL_RGBA8)
 	if (gl.gl_major < 3)
 		return false;
-	const GLboolean was_scissor = glIsEnabled(GL_SCISSOR_TEST);
+	was_scissor = glIsEnabled(GL_SCISSOR_TEST);
 
 	rtt_gl_small(w, h);
 	glBindFramebuffer(GL_READ_FRAMEBUFFER, rtt_read_fbo);
@@ -943,26 +1002,28 @@ static void rtt_gl_detach(void)
  * a blit (OpenGL 3, OpenGL ES 3: glsm has no copy into a texture); the rest
  * of each row a narrower stride leaves, cleared. What it changes it puts
  * back. */
-bool TextureCacheData::CopyRender(BaseTextureCacheData *from, u32 x, u32 y, u32 scale, u32 columns)
+static bool tex_copy_render(texcache_data *base, texcache_data *from, u32 x, u32 y, u32 scale, u32 columns)
 {
 #if defined(GL_READ_FRAMEBUFFER) && defined(GL_DRAW_FRAMEBUFFER)
-	const TextureCacheData *src = static_cast<const TextureCacheData *>(from);
+	gl_texture *t = (gl_texture *)base;
+	const gl_texture *src = (const gl_texture *)from;
 	GLint was_fbo = 0;
+	GLboolean was_scissor;
 
-	if (gl.gl_major < 3 || texID == 0 || src->texID == 0 || src->texID == texID || columns == 0 || columns > w)
+	if (gl.gl_major < 3 || t->texID == 0 || src->texID == 0 || src->texID == t->texID || columns == 0 || columns > base->w)
 		return false;
 	if (scale < 1)
 		scale = 1;
-	CancelDecode();
-	tex_type = TextureType::_8888;
-	if (!TakePooled(w, h, false))
+	tex_cancel_decode(t);
+	base->tex_type = TEX_TYPE_8888;
+	if (!tex_take_pooled(t, base->w, base->h, false))
 	{
-		ReleasePooled();
-		glcache.BindTexture(GL_TEXTURE_2D, texID);
-		glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+		tex_release_pooled(t);
+		glc_bind_texture(GL_TEXTURE_2D, t->texID);
+		glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, base->w, base->h, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
 	}
 	glGetIntegerv(GL_FRAMEBUFFER_BINDING, &was_fbo);
-	const GLboolean was_scissor = glIsEnabled(GL_SCISSOR_TEST);
+	was_scissor = glIsEnabled(GL_SCISSOR_TEST);
 	if (rtt_read_fbo == 0)
 		glGenFramebuffers(1, &rtt_read_fbo);
 	if (rtt_copy_fbo == 0)
@@ -970,21 +1031,21 @@ bool TextureCacheData::CopyRender(BaseTextureCacheData *from, u32 x, u32 y, u32 
 	glBindFramebuffer(RARCH_GL_FRAMEBUFFER, rtt_read_fbo);
 	glFramebufferTexture2D(RARCH_GL_FRAMEBUFFER, RARCH_GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, src->texID, 0);
 	glBindFramebuffer(RARCH_GL_FRAMEBUFFER, rtt_copy_fbo);
-	glFramebufferTexture2D(RARCH_GL_FRAMEBUFFER, RARCH_GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, texID, 0);
+	glFramebufferTexture2D(RARCH_GL_FRAMEBUFFER, RARCH_GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, t->texID, 0);
 	glBindFramebuffer(GL_READ_FRAMEBUFFER, rtt_read_fbo);
 	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, rtt_copy_fbo);
 	if (was_scissor)
 		glDisable(GL_SCISSOR_TEST);
-	if (columns < w)
+	if (columns < base->w)
 	{
 		GLfloat was_clear[4];
 
 		glGetFloatv(GL_COLOR_CLEAR_VALUE, was_clear);
-		glClearColor(0.f, 0.f, 0.f, ClearOpaque() ? 1.f : 0.f);
+		glClearColor(0.f, 0.f, 0.f, texcache_clear_opaque(base) ? 1.f : 0.f);
 		glClear(GL_COLOR_BUFFER_BIT);
 		glClearColor(was_clear[0], was_clear[1], was_clear[2], was_clear[3]);
 	}
-	glBlitFramebuffer(x * scale, y * scale, (x + columns) * scale, (y + h) * scale, 0, 0, columns, h, GL_COLOR_BUFFER_BIT,
+	glBlitFramebuffer(x * scale, y * scale, (x + columns) * scale, (y + base->h) * scale, 0, 0, columns, base->h, GL_COLOR_BUFFER_BIT,
 			scale > 1 ? GL_LINEAR : GL_NEAREST);
 	if (was_scissor)
 		glEnable(GL_SCISSOR_TEST);
@@ -995,9 +1056,16 @@ bool TextureCacheData::CopyRender(BaseTextureCacheData *from, u32 x, u32 y, u32 
 	glBindFramebuffer(RARCH_GL_FRAMEBUFFER, was_fbo);
 	return true;
 #else
+	(void)base; (void)from; (void)x; (void)y; (void)scale; (void)columns;
 	return false;
 #endif
 }
+
+static const texcache_ops gl_texture_ops =
+{
+	tex_get_id, tex_upload_to_gpu, tex_upload_memory, tex_gpu_decode, tex_part_memory, tex_upload_part,
+	tex_gpu_decode_part, tex_copy_render, tex_force_32bit, tex_delete
+};
 
 /* rend/rtt_watch.h asks for a picture it left on the graphics card: w by h
  * pixels, whatever the card has it at. Called wherever the game first
@@ -1017,13 +1085,16 @@ static void rtt_gl_read(const RttWatch *watch, u8 *rgba)
 		glReadPixels(x0, y0, w, h, GL_RGBA, GL_UNSIGNED_BYTE, rgba);
 	else
 	{
-		/* no way to make it smaller on the card: the middle pixel of each */
-		u8 line[1024 * 8 * 4];
+		u32 y;
+		/* no way to make it smaller on the card: the middle pixel of each
+		 * (the renderer's thread's) */
+		static u8 line[1024 * 8 * 4];
 
-		for (u32 y = 0; y < h; y++)
+		for (y = 0; y < h; y++)
 		{
+			u32 x;
 			glReadPixels(x0, y0 + y * scale + scale / 2, w * scale, 1, GL_RGBA, GL_UNSIGNED_BYTE, line);
-			for (u32 x = 0; x < w; x++)
+			for (x = 0; x < w; x++)
 				memcpy(rgba + (y * w + x) * 4, line + (x * scale + scale / 2) * 4, 4);
 		}
 	}
@@ -1042,7 +1113,7 @@ static void rtt_gl_read(const RttWatch *watch, u8 *rgba)
 #define RTT_COPIES 18
 #define RTT_RING_RENDERS 4
 
-struct GlRttCopy
+typedef struct GlRttCopy
 {
 	u32 serial;         /* the render's (RttWatch::serial), 0 if none */
 	uintptr_t tex;
@@ -1050,7 +1121,7 @@ struct GlRttCopy
 	u64 stamp;          /* when it was last begun, for the oldest */
 	size_t at, len;     /* its room in the ring; none if len is 0 */
 	GLsync fence;
-};
+} GlRttCopy;
 
 static GlRttCopy rtt_copies[RTT_COPIES];
 static u64 rtt_stamp;
@@ -1064,15 +1135,17 @@ static bool rtt_gl_pbo(void)
 
 static GlRttCopy *rtt_gl_copy_of(const RttWatch *watch)
 {
-	for (GlRttCopy& c : rtt_copies)
-		if (c.serial == watch->serial && c.serial != 0 && c.tex == watch->tex)
-			return &c;
-	return nullptr;
+	int i;
+	for (i = 0; i < RTT_COPIES; i++)
+		if (rtt_copies[i].serial == watch->serial && rtt_copies[i].serial != 0 && rtt_copies[i].tex == watch->tex)
+			return &rtt_copies[i];
+	return NULL;
 }
 
 /* The ring, at least @bytes: made larger if it is not, every copy gone */
 static void rtt_gl_ring(size_t bytes)
 {
+	int i;
 	if (bytes <= rtt_ring_size)
 		return;
 	if (rtt_ring_size != 0 && !rtt_said_larger)
@@ -1080,18 +1153,18 @@ static void rtt_gl_ring(size_t bytes)
 		rtt_said_larger = true;
 		WARN_LOG(RENDERER, "Render to a texture read back: its room made larger, %u KB\n", (u32)(bytes >> 10));
 	}
-	for (GlRttCopy& c : rtt_copies)
+	for (i = 0; i < RTT_COPIES; i++)
 	{
-		if (c.fence != nullptr)
-			glDeleteSync(c.fence);
-		c.fence = nullptr;
-		c.serial = 0;
-		c.len = 0;
+		if (rtt_copies[i].fence != NULL)
+			glDeleteSync(rtt_copies[i].fence);
+		rtt_copies[i].fence = NULL;
+		rtt_copies[i].serial = 0;
+		rtt_copies[i].len = 0;
 	}
 	if (rtt_ring == 0)
 		glGenBuffers(1, &rtt_ring);
 	glBindBuffer(GL_PIXEL_PACK_BUFFER, rtt_ring);
-	glBufferData(GL_PIXEL_PACK_BUFFER, bytes, nullptr, GL_STREAM_READ);
+	glBufferData(GL_PIXEL_PACK_BUFFER, bytes, NULL, GL_STREAM_READ);
 	rtt_ring_size = bytes;
 	rtt_ring_head = 0;
 }
@@ -1103,30 +1176,35 @@ static void rtt_gl_ring(size_t bytes)
  * was begun in this batch. */
 static GlRttCopy *rtt_gl_copy_free(u64 since, size_t len)
 {
-	GlRttCopy *place = nullptr;
+	GlRttCopy *place = NULL;
 	size_t at = rtt_ring_head;
+	int i;
 
 	if (len > rtt_ring_size)
-		return nullptr;
+		return NULL;
 	if (at + len > rtt_ring_size)
 		at = 0;
-	for (GlRttCopy& c : rtt_copies)
-		if (c.len != 0 && c.at < at + len && at < c.at + c.len && c.serial != 0 && c.stamp > since)
-			return nullptr;
-	for (GlRttCopy& c : rtt_copies)
+	for (i = 0; i < RTT_COPIES; i++)
 	{
-		if (c.len != 0 && c.at < at + len && at < c.at + c.len)
-		{
-			c.serial = 0;
-			c.len = 0;
-		}
-		if (c.serial != 0 && c.stamp > since)
-			continue;
-		if (place == nullptr || (place->len != 0 && (c.len == 0 || c.stamp < place->stamp)))
-			place = &c;
+		const GlRttCopy *c = &rtt_copies[i];
+		if (c->len != 0 && c->at < at + len && at < c->at + c->len && c->serial != 0 && c->stamp > since)
+			return NULL;
 	}
-	if (place == nullptr)
-		return nullptr;
+	for (i = 0; i < RTT_COPIES; i++)
+	{
+		GlRttCopy *c = &rtt_copies[i];
+		if (c->len != 0 && c->at < at + len && at < c->at + c->len)
+		{
+			c->serial = 0;
+			c->len = 0;
+		}
+		if (c->serial != 0 && c->stamp > since)
+			continue;
+		if (place == NULL || (place->len != 0 && (c->len == 0 || c->stamp < place->stamp)))
+			place = c;
+	}
+	if (place == NULL)
+		return NULL;
 	place->at = at;
 	place->len = len;
 	rtt_ring_head = at + len;
@@ -1135,25 +1213,25 @@ static GlRttCopy *rtt_gl_copy_free(u64 since, size_t len)
 
 /* The copy of the picture into c's room in the ring, begun; false if it
  * cannot be (made smaller on the card) */
-static bool rtt_gl_begin(const RttWatch *watch, GlRttCopy& c)
+static bool rtt_gl_begin(const RttWatch *watch, GlRttCopy *c)
 {
 	u32 x0, y0;
 
 	if (!rtt_gl_source(watch, &x0, &y0))
 	{
-		c.len = 0;
+		c->len = 0;
 		return false;
 	}
 	glBindBuffer(GL_PIXEL_PACK_BUFFER, rtt_ring);
-	glReadPixels(x0, y0, watch->w, watch->h, GL_RGBA, GL_UNSIGNED_BYTE, (void *)(uintptr_t)c.at);
-	if (c.fence != nullptr)
-		glDeleteSync(c.fence);
-	c.fence = (GLsync)glFenceSync(GL_SYNC_GPU_COMMANDS_COMPLETE, 0);
-	c.serial = watch->serial;
-	c.tex = watch->tex;
-	c.w = watch->w;
-	c.h = watch->h;
-	c.stamp = ++rtt_stamp;
+	glReadPixels(x0, y0, watch->w, watch->h, GL_RGBA, GL_UNSIGNED_BYTE, (void *)(uintptr_t)c->at);
+	if (c->fence != NULL)
+		glDeleteSync(c->fence);
+	c->fence = (GLsync)glFenceSync(GL_SYNC_GPU_COMMANDS_COMPLETE, 0);
+	c->serial = watch->serial;
+	c->tex = watch->tex;
+	c->w = watch->w;
+	c->h = watch->h;
+	c->stamp = ++rtt_stamp;
 	return true;
 }
 
@@ -1161,25 +1239,27 @@ static bool rtt_gl_begin(const RttWatch *watch, GlRttCopy& c)
  * a read changes put back */
 static void rtt_gl_copies(const RttWatch *const *watches, unsigned count)
 {
+	unsigned i;
 	GLint was_fbo = 0, was_pack = 4, was_pbo = 0;
 	const u64 since = rtt_stamp;
-	GLsync last = nullptr;
+	GLsync last = NULL;
 
 	glGetIntegerv(GL_FRAMEBUFFER_BINDING, &was_fbo);
 	glGetIntegerv(GL_PACK_ALIGNMENT, &was_pack);
 	glGetIntegerv(GL_PIXEL_PACK_BUFFER_BINDING, &was_pbo);
 	glPixelStorei(GL_PACK_ALIGNMENT, 1);
-	for (unsigned i = 0; i < count; i++)
+	for (i = 0; i < count; i++)
 	{
-		if (rtt_gl_copy_of(watches[i]) != nullptr)
+		GlRttCopy *c;
+		if (rtt_gl_copy_of(watches[i]) != NULL)
 			continue;
-		GlRttCopy *c = rtt_gl_copy_free(since, (size_t)watches[i]->w * watches[i]->h * 4);
-		if (c == nullptr)
+		c = rtt_gl_copy_free(since, (size_t)watches[i]->w * watches[i]->h * 4);
+		if (c == NULL)
 			break;
-		if (rtt_gl_begin(watches[i], *c))
+		if (rtt_gl_begin(watches[i], c))
 			last = c->fence;
 	}
-	if (last != nullptr)
+	if (last != NULL)
 	{
 		rtt_gl_detach();
 		/* (on their way to the card now, not with whatever comes next: a
@@ -1199,15 +1279,20 @@ static void rtt_gl_prefetch(const RttWatch *const *watches, unsigned count)
 	/* (the room for the largest, made here where it is, not in a read: a
 	 * render larger than a screen) */
 	{
+		unsigned i;
 		size_t most = 0;
 		u32 w = 0, h = 0;
 		bool finer = false;
 		GLint was_pbo = 0, was_fbo = 0;
-		for (unsigned i = 0; i < count; i++)
+		for (i = 0; i < count; i++)
 		{
-			most = std::max(most, (size_t)watches[i]->w * watches[i]->h * 4);
-			w = std::max(w, watches[i]->w);
-			h = std::max(h, watches[i]->h);
+			const size_t len = (size_t)watches[i]->w * watches[i]->h * 4;
+			if (len > most)
+				most = len;
+			if (watches[i]->w > w)
+				w = watches[i]->w;
+			if (watches[i]->h > h)
+				h = watches[i]->h;
 			finer = finer || watches[i]->scale > 1;
 		}
 		if (most * RTT_RING_RENDERS > rtt_ring_size)
@@ -1236,22 +1321,23 @@ static bool rtt_gl_take_copy(const RttWatch *watch, RttWatchTake take)
 {
 	GlRttCopy *c = rtt_gl_copy_of(watch);
 	GLint was_pbo = 0;
+	const u8 *p;
 
-	if (c == nullptr)
+	if (c == NULL)
 	{
 		rtt_gl_copies(&watch, 1);
 		c = rtt_gl_copy_of(watch);
-		if (c == nullptr)
+		if (c == NULL)
 			return false;
 	}
 	glClientWaitSync(c->fence, GL_SYNC_FLUSH_COMMANDS_BIT, 0xFFFFFFFFFFFFFFFFull);
 	glDeleteSync(c->fence);
-	c->fence = nullptr;
+	c->fence = NULL;
 	glGetIntegerv(GL_PIXEL_PACK_BUFFER_BINDING, &was_pbo);
 	glBindBuffer(GL_PIXEL_PACK_BUFFER, rtt_ring);
-	const u8 *p = (const u8 *)glMapBufferRange(GL_PIXEL_PACK_BUFFER, (GLintptr)c->at, (GLsizeiptr)c->w * c->h * 4,
+	p = (const u8 *)glMapBufferRange(GL_PIXEL_PACK_BUFFER, (GLintptr)c->at, (GLsizeiptr)c->w * c->h * 4,
 			GL_MAP_READ_BIT);
-	if (p != nullptr)
+	if (p != NULL)
 	{
 		take(watch, p, (size_t)c->w * 4);
 		glUnmapBuffer(GL_PIXEL_PACK_BUFFER);
@@ -1259,7 +1345,7 @@ static bool rtt_gl_take_copy(const RttWatch *watch, RttWatchTake take)
 	glBindBuffer(GL_PIXEL_PACK_BUFFER, was_pbo);
 	c->serial = 0;
 	c->len = 0;
-	return p != nullptr;
+	return p != NULL;
 }
 #endif
 
@@ -1267,11 +1353,12 @@ static bool rtt_gl_take_copy(const RttWatch *watch, RttWatchTake take)
 static void rtt_gl_term(void)
 {
 #ifndef HAVE_OPENGLES2
-	for (GlRttCopy& c : rtt_copies)
+	int i;
+	for (i = 0; i < RTT_COPIES; i++)
 	{
-		if (c.fence != nullptr)
-			glDeleteSync(c.fence);
-		c = GlRttCopy();
+		if (rtt_copies[i].fence != NULL)
+			glDeleteSync(rtt_copies[i].fence);
+		memset(&rtt_copies[i], 0, sizeof(rtt_copies[i]));
 	}
 	if (rtt_ring != 0)
 		glDeleteBuffers(1, &rtt_ring);
@@ -1323,12 +1410,12 @@ static void rtt_gl_init(void)
 static void rtt_gl_release(uintptr_t tex)
 {
 	GLuint id = (GLuint)tex;
-	// (the pool's goes back to it)
-	GLPooledTexture *pooled = glTexPool.Find(id);
-	if (pooled != nullptr)
-		glTexPool.Give(pooled);
+	/* (the pool's goes back to it) */
+	GLPooledTexture *pooled = pool_find(id);
+	if (pooled != NULL)
+		gl_tex_pool_give(pooled);
 	else
-		glcache.DeleteTextures(1, &id);
+		glc_delete_textures(1, &id);
 }
 
 /* (from a pixel buffer where there are any; or read back to memory of this
@@ -1353,6 +1440,9 @@ static const RttWatchBackend rtt_gl_backend = { rtt_gl_take, rtt_gl_release };
  * is in the framebuffer the frontend gave to draw in. */
 void gl_keep_picture(void)
 {
+	GLint was_fbo = 0, was_pack = 4;
+	u8 *pixels;
+	u8 *line;
 	const int w = screen_width, h = screen_height;
 #if defined(GL_READ_FRAMEBUFFER) && defined(GL_DRAW_FRAMEBUFFER)
 	/* (what cannot be put back is not read: see gl_restore_picture()) */
@@ -1361,8 +1451,7 @@ void gl_keep_picture(void)
 #else
 	return;
 #endif
-	u8 *pixels = last_picture_keep(w, h);
-	GLint was_fbo = 0, was_pack = 4;
+	pixels = last_picture_keep(w, h);
 
 	if (pixels == NULL)
 		return;
@@ -1375,10 +1464,11 @@ void gl_keep_picture(void)
 	glPixelStorei(GL_PACK_ALIGNMENT, was_pack);
 
 	/* read bottom line first; kept top line first */
-	u8 *line = (u8 *)malloc((size_t)w * 4);
+	line = (u8 *)malloc((size_t)w * 4);
 	if (line != NULL)
 	{
-		for (int y = 0; y < h / 2; y++)
+		int y;
+		for (y = 0; y < h / 2; y++)
 		{
 			u8 *a = pixels + (size_t)y * w * 4, *b = pixels + (size_t)(h - 1 - y) * w * 4;
 			memcpy(line, a, (size_t)w * 4);
@@ -1394,6 +1484,10 @@ void gl_keep_picture(void)
  * one the render is about to draw in, at that one's size. */
 void gl_restore_picture(void)
 {
+	GLboolean was_scissor;
+	GLuint fbo;
+	GLint target;
+	GLuint tex;
 	int w, h;
 	const u8 *pixels = last_picture(&w, &h);
 
@@ -1403,13 +1497,13 @@ void gl_restore_picture(void)
 	if (gl.gl_major < 3)
 		return;
 
-	GLint target = 0;
-	GLuint fbo = 0;
-	const GLboolean was_scissor = glIsEnabled(GL_SCISSOR_TEST);
+	target = 0;
+	fbo = 0;
+	was_scissor = glIsEnabled(GL_SCISSOR_TEST);
 
 	glGetIntegerv(GL_FRAMEBUFFER_BINDING, &target);
-	GLuint tex = glcache.GenTexture();
-	glcache.BindTexture(GL_TEXTURE_2D, tex);
+	tex = glc_gen_texture();
+	glc_bind_texture(GL_TEXTURE_2D, tex);
 	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, pixels);
 	glGenFramebuffers(1, &fbo);
 	glBindFramebuffer(GL_READ_FRAMEBUFFER, fbo);
@@ -1423,7 +1517,7 @@ void gl_restore_picture(void)
 		glEnable(GL_SCISSOR_TEST);
 	glBindFramebuffer(RARCH_GL_FRAMEBUFFER, target);
 	glDeleteFramebuffers(1, &fbo);
-	glcache.DeleteTextures(1, &tex);
+	glc_delete_textures(1, &tex);
 #endif
 }
 
@@ -1441,14 +1535,15 @@ void gl_carry_picture(int from_w, int from_h, int to_w, int to_h)
 #if defined(GL_READ_FRAMEBUFFER) && defined(GL_DRAW_FRAMEBUFFER)
 	if (gl.gl_major >= 3)
 	{
+		GLuint tex;
 		GLint was_fbo = 0;
 		GLuint fbo = 0;
 		const GLuint target = hw_render.get_current_framebuffer();
 		const GLboolean was_scissor = glIsEnabled(GL_SCISSOR_TEST);
 
 		glGetIntegerv(GL_FRAMEBUFFER_BINDING, &was_fbo);
-		GLuint tex = glcache.GenTexture();
-		glcache.BindTexture(GL_TEXTURE_2D, tex);
+		tex = glc_gen_texture();
+		glc_bind_texture(GL_TEXTURE_2D, tex);
 		glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, to_w, to_h, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
 		glGenFramebuffers(1, &fbo);
 		if (was_scissor)
@@ -1464,7 +1559,7 @@ void gl_carry_picture(int from_w, int from_h, int to_w, int to_h)
 			glEnable(GL_SCISSOR_TEST);
 		glBindFramebuffer(RARCH_GL_FRAMEBUFFER, was_fbo);
 		glDeleteFramebuffers(1, &fbo);
-		glcache.DeleteTextures(1, &tex);
+		glc_delete_textures(1, &tex);
 	}
 #endif
 }
@@ -1475,6 +1570,9 @@ static bool rtt_rgb_bytes_refused;
 
 void BindRTT(u32 addy, u32 fbw, u32 fbh, u32 channels, u32 fmt)
 {
+   u32 fbh2;
+   u32 fbw2;
+	GLuint uStatus;
 	if (rtt_rgb_bytes_refused && channels == GL_RGB)
 		fmt = GL_UNSIGNED_SHORT_5_6_5;
 
@@ -1482,22 +1580,22 @@ void BindRTT(u32 addy, u32 fbw, u32 fbh, u32 channels, u32 fmt)
 	 * the texture is the pool's) */
 	if (gl.rtt.fbo && !gl.rtt.kept)
       glDeleteFramebuffers(1,&gl.rtt.fbo);
-	if (gl.rtt.pooled != nullptr)
-		glTexPool.Give(gl.rtt.pooled);
+	if (gl.rtt.pooled != NULL)
+		gl_tex_pool_give(gl.rtt.pooled);
 	else if (gl.rtt.tex)
-      glcache.DeleteTextures(1,&gl.rtt.tex);
-	gl.rtt.pooled = nullptr;
+      glc_delete_textures(1,&gl.rtt.tex);
+	gl.rtt.pooled = NULL;
 	gl.rtt.tex = 0;
 	if (gl.rtt.depthb && !gl.rtt.kept)
       glDeleteRenderbuffers(1,&gl.rtt.depthb);
 
 	gl.rtt.TexAddr=addy>>3;
 
-	// Find the smallest power of two texture that fits the viewport
-   u32 fbh2 = 2;
+	/* Find the smallest power of two texture that fits the viewport */
+   fbh2 = 2;
    while (fbh2 < fbh)
       fbh2 *= 2;
-   u32 fbw2 = 2;
+   fbw2 = 2;
    while (fbw2 < fbw)
       fbw2 *= 2;
 
@@ -1538,13 +1636,13 @@ void BindRTT(u32 addy, u32 fbw, u32 fbh, u32 channels, u32 fmt)
 
 	/* A texture for rendering to: the pool's, made at the start, if it has one of that shape */
 	if (fmt == GL_UNSIGNED_BYTE)
-		gl.rtt.pooled = glTexPool.TakeTarget(channels == GL_RGB, fbw2, fbh2);
-	if (gl.rtt.pooled != nullptr)
+		gl.rtt.pooled = gl_tex_pool_take_target(channels == GL_RGB, fbw2, fbh2);
+	if (gl.rtt.pooled != NULL)
 		gl.rtt.tex = gl.rtt.pooled->name;
 	else
 	{
-		gl.rtt.tex = glcache.GenTexture();
-		glcache.BindTexture(GL_TEXTURE_2D, gl.rtt.tex);
+		gl.rtt.tex = glc_gen_texture();
+		glc_bind_texture(GL_TEXTURE_2D, gl.rtt.tex);
 
 		glTexImage2D(GL_TEXTURE_2D, 0, channels, fbw2, fbh2, 0, channels, fmt, 0);
 	}
@@ -1557,7 +1655,7 @@ void BindRTT(u32 addy, u32 fbw, u32 fbh, u32 channels, u32 fmt)
 	/* Attach the texture to the FBO */
 	glFramebufferTexture2D(RARCH_GL_FRAMEBUFFER, RARCH_GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, gl.rtt.tex, 0);
 
-	// Attach the depth buffer we created earlier to our FBO.
+	/* Attach the depth buffer we created earlier to our FBO. */
 #if defined(HAVE_OPENGLES2) || defined(HAVE_OPENGLES1) || defined(OSX_PPC)
 	glFramebufferRenderbuffer(RARCH_GL_FRAMEBUFFER, RARCH_GL_DEPTH_ATTACHMENT,
          RARCH_GL_RENDERBUFFER, gl.rtt.depthb);
@@ -1569,31 +1667,34 @@ void BindRTT(u32 addy, u32 fbw, u32 fbh, u32 channels, u32 fmt)
 #endif
 
 	/* Check that our FBO creation was successful */
-	GLuint uStatus = glCheckFramebufferStatus(RARCH_GL_FRAMEBUFFER);
+	uStatus = glCheckFramebufferStatus(RARCH_GL_FRAMEBUFFER);
 
 	if (uStatus != RARCH_GL_FRAMEBUFFER_COMPLETE && channels == GL_RGB && fmt == GL_UNSIGNED_BYTE)
 	{
 		rtt_rgb_bytes_refused = true;
-		if (gl.rtt.pooled != nullptr)
+		if (gl.rtt.pooled != NULL)
 		{
-			// (the pool's goes back: one of the cache's own, made as below)
-			glTexPool.Give(gl.rtt.pooled);
-			gl.rtt.pooled = nullptr;
-			gl.rtt.tex = glcache.GenTexture();
+			/* (the pool's goes back: one of the cache's own, made as below) */
+			gl_tex_pool_give(gl.rtt.pooled);
+			gl.rtt.pooled = NULL;
+			gl.rtt.tex = glc_gen_texture();
 			glFramebufferTexture2D(RARCH_GL_FRAMEBUFFER, RARCH_GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, gl.rtt.tex, 0);
 		}
 		/* (the texture is still the one bound, and stays attached) */
-		glcache.BindTexture(GL_TEXTURE_2D, gl.rtt.tex);
+		glc_bind_texture(GL_TEXTURE_2D, gl.rtt.tex);
 		glTexImage2D(GL_TEXTURE_2D, 0, channels, fbw2, fbh2, 0, channels, GL_UNSIGNED_SHORT_5_6_5, 0);
 		uStatus = glCheckFramebufferStatus(RARCH_GL_FRAMEBUFFER);
 	}
 
 	verify(uStatus == RARCH_GL_FRAMEBUFFER_COMPLETE);
 
-   glViewport(0, 0, fbw, fbh);		// TODO CLIP_X/Y min?
+   glViewport(0, 0, fbw, fbh);		/* TODO CLIP_X/Y min? */
 }
 
-void ReadRTTBuffer() {
+void ReadRTTBuffer(void)
+{
+	u8 fb_packmode;
+	RttWatch watch;
 	/* The texture is the frame from its first pixel (see TransformMatrix);
 	 * what goes to video memory is the pixel clip's part of it, at its
 	 * place in the frame. */
@@ -1607,77 +1708,80 @@ void ReadRTTBuffer() {
 	u32 stride = FB_W_LINESTRIDE.stride * 8;
 	if (stride == 0)
 		stride = tex_w * 2;
-	else if (tex_w * 2 > stride) {
-    	// Happens for Virtua Tennis
-	w = x0 * 2 >= stride ? 0 : stride / 2 - x0;
-    }
+	else if (tex_w * 2 > stride)
+		/* (Virtua Tennis) */
+		w = x0 * 2 >= stride ? 0 : stride / 2 - x0;
 
-	const u8 fb_packmode = FB_W_CTRL.fb_packmode;
+	fb_packmode = FB_W_CTRL.fb_packmode;
 
-    //dumpRtTexture(fb_rtt.TexAddr, w, h);
-    
-    /* The picture stays on the graphics card, and video memory gets it when
-     * something first touches it there: see rend/rtt_watch.h. */
-    RttWatch watch = {};
-    watch.addr = (gl.rtt.TexAddr << 3) + y0 * stride + x0 * 2;
-    watch.w = w;
-    watch.h = h;
-    watch.x0 = x0;
-    watch.y0 = y0;
-    watch.stride = stride;
-    watch.bytes = h == 0 || w == 0 ? 0 : stride * (h - 1) + w * 2;
-    watch.packmode = fb_packmode;
-    watch.kval_bit = (FB_W_CTRL.fb_kval & 0x80) << 8;
-    watch.alpha_threshold = FB_W_CTRL.fb_alpha_threshold;
-    watch.dither = FB_W_CTRL.fb_dither;
-    watch.tex = gl.rtt.tex;
-    watch.scale = settings.rend.RenderToTextureUpscale > 1 ? settings.rend.RenderToTextureUpscale : 1;
-    if (watch.bytes != 0)
-       rtt_watch_supersede(watch.addr, watch.bytes);
+	/* The picture stays on the graphics card, and video memory gets it when
+	 * something first touches it there: see rend/rtt_watch.h. */
+	memset(&watch, 0, sizeof(watch));
+	watch.addr = (gl.rtt.TexAddr << 3) + y0 * stride + x0 * 2;
+	watch.w = w;
+	watch.h = h;
+	watch.x0 = x0;
+	watch.y0 = y0;
+	watch.stride = stride;
+	watch.bytes = h == 0 || w == 0 ? 0 : stride * (h - 1) + w * 2;
+	watch.packmode = fb_packmode;
+	watch.kval_bit = (FB_W_CTRL.fb_kval & 0x80) << 8;
+	watch.alpha_threshold = FB_W_CTRL.fb_alpha_threshold;
+	watch.dither = FB_W_CTRL.fb_dither;
+	watch.tex = gl.rtt.tex;
+	watch.scale = settings.rend.RenderToTextureUpscale > 1 ? settings.rend.RenderToTextureUpscale : 1;
+	if (watch.bytes != 0)
+		rtt_watch_supersede(watch.addr, watch.bytes);
 
-    if (tex_w > 1024 || tex_h > 1024) {
-    	/* too large to be drawn with from here: kept for video memory alone */
-    	watch.owned = true;
-    	rtt_watch_add(&watch, &rtt_gl_backend);
-    }
-    else
-    {
-    	// TexAddr : gl.rtt.TexAddr, Reserved : 0, StrideSel : 0, ScanOrder : 1
-    	TCW tcw = { { gl.rtt.TexAddr, 0, 0, 1 } };
-    	switch (fb_packmode) {
-    	case 0:
-    	case 3:
-    		tcw.PixelFmt = Pixel1555;
-    		break;
-    	case 1:
-    		tcw.PixelFmt = Pixel565;
-    		break;
-    	case 2:
-    		tcw.PixelFmt = Pixel4444;
-    		break;
-    	}
-    	TSP tsp = { 0 };
-	for (tsp.TexU = 0; tsp.TexU <= 7 && (8u << tsp.TexU) < tex_w; tsp.TexU++);
-	for (tsp.TexV = 0; tsp.TexV <= 7 && (8u << tsp.TexV) < tex_h; tsp.TexV++);
+	if (tex_w > 1024 || tex_h > 1024)
+	{
+		/* too large to be drawn with from here: kept for video memory alone */
+		watch.owned = true;
+		rtt_watch_add(&watch, &rtt_gl_backend);
+	}
+	else
+	{
+		/* TexAddr, ScanOrder 1 */
+		u32 tcw = TAW_SET(TAW_SET(0, TCW_TexAddr, gl.rtt.TexAddr), TCW_ScanOrder, 1);
+		u32 tsp = 0, u, v;
+		gl_texture *texture_data;
+		switch (fb_packmode)
+		{
+		case 0:
+		case 3:
+			tcw = TAW_SET(tcw, TCW_PixelFmt, TA_PIXEL_1555);
+			break;
+		case 1:
+			tcw = TAW_SET(tcw, TCW_PixelFmt, TA_PIXEL_565);
+			break;
+		case 2:
+			tcw = TAW_SET(tcw, TCW_PixelFmt, TA_PIXEL_4444);
+			break;
+		}
+		for (u = 0; u <= 7 && (8u << u) < tex_w; u++)
+			;
+		for (v = 0; v <= 7 && (8u << v) < tex_h; v++)
+			;
+		tsp = TAW_SET(TAW_SET(tsp, TSP_TexU, u), TSP_TexV, v);
 
-    	TextureCacheData *texture_data = TexCache.getTextureCacheData(tsp, tcw);
-    	if (texture_data->texID == 0)
-    		texture_data->Create();
-    	texture_data->SetRendered(gl.rtt.tex, gl.rtt.pooled);
-    	texture_data->dirty = 0;
-	texture_data->stride_read = 0;	// (rendered, not read)
-	texture_data->made_type = 0;
-      libCore_vramlock_Lock(texture_data->sa_tex, texture_data->sa + texture_data->size - 1, texture_data);
-      watch.target = texture_data;
-      rtt_watch_add(&watch, &rtt_gl_backend);
-    }
-    gl.rtt.tex = 0;
-    gl.rtt.pooled = nullptr;
+		texture_data = gl_texture_of(tsp, tcw, 0);
+		if (texture_data->texID == 0)
+			texcache_create(&texture_data->base);
+		tex_set_rendered(texture_data, gl.rtt.tex, gl.rtt.pooled);
+		texture_data->base.dirty = 0;
+		texture_data->base.stride_read = 0;	/* (rendered, not read) */
+		texture_data->base.made_type = 0;
+		libCore_vramlock_Lock(texture_data->base.sa_tex, texture_data->base.sa + texture_data->base.size - 1, &texture_data->base);
+		watch.target = &texture_data->base;
+	  rtt_watch_add(&watch, &rtt_gl_backend);
+	}
+	gl.rtt.tex = 0;
+	gl.rtt.pooled = NULL;
 
 	if (gl.rtt.fbo && !gl.rtt.kept) { glDeleteFramebuffers(1,&gl.rtt.fbo); gl.rtt.fbo = 0; }
 	if (gl.rtt.depthb && !gl.rtt.kept) { glDeleteRenderbuffers(1,&gl.rtt.depthb); gl.rtt.depthb = 0; }
 
-   glBindFramebuffer(RARCH_GL_FRAMEBUFFER, hw_render.get_current_framebuffer());
+	glBindFramebuffer(RARCH_GL_FRAMEBUFFER, hw_render.get_current_framebuffer());
 }
 
 static int TexCacheLookups;
@@ -1687,43 +1791,30 @@ static float LastTexCacheStats;
 
 u64 gl_get_texture(u32 tsp, u32 tcw, int area)
 {
-	TSP t;
-	TCW c;
-	t.full = tsp;
-	c.full = tcw;
-	return gl_GetTexture(t, c, area);
-}
+	gl_texture *tf = gl_texture_of(tsp, tcw, area);
 
-u64 gl_GetTexture(TSP tsp, TCW tcw, int area)
-{
-   TexCacheLookups++;
-
-	//lookup texture
-   TextureCacheData* tf = TexCache.getTextureCacheData(tsp, tcw, area);
-
-   if (tf->texID == 0)
-   {
-		tf->Create();
-		tf->texID = glcache.GenTexture();
+	TexCacheLookups++;
+	if (tf->texID == 0)
+	{
+		texcache_create(&tf->base);
+		tf->texID = glc_gen_texture();
 	}
 
-	//update if needed
-	if (tf->NeedsUpdate())
-		tf->Update();
-   else
-   {
-      if (tf->IsCustomTextureAvailable())
-      {
-      	tf->Renew();
-      	tf->CheckCustomTexture();
-      }
-      TexCacheHits++;
-   }
+	/* update if needed */
+	if (texcache_needs_update(&tf->base))
+		texcache_update(&tf->base);
+	else
+	{
+		if (texcache_custom_available(&tf->base))
+		{
+			tex_renew(tf);
+			texcache_check_custom(&tf->base);
+		}
+		TexCacheHits++;
+	}
 
-	// Return gl texture
 	return tf->texID;
 }
-
 
 GLuint fbTextureId;
 /* the picture's size the texture was made for; the buffer it is converted
@@ -1738,61 +1829,66 @@ static grow_buf_t fbScratch;
  * texture is made from: a buffer of the card's, mapped, where there is one.
  * The texture is kept from one frame to the next and made again only for
  * another size. */
-void RenderFramebuffer()
+void RenderFramebuffer(void)
 {
+	FramebufferRead fb;
+	size_t bytes;
+	int width, height;
+	u8 *scratch;
 	if (FB_R_SIZE.fb_x_size == 0 || FB_R_SIZE.fb_y_size == 0)
 		return;
 
-	FramebufferRead fb;
 	ReadFramebufferGeometry(&fb);
-	const int width = fb.width, height = fb.height;
-	const size_t bytes = (size_t)width * height * 4;
+	width = fb.width;
+	height = fb.height;
+	bytes = (size_t)width * height * 4;
 
 	if (fbTextureId == 0)
 	{
-		fbTextureId = glcache.GenTexture();
+		fbTextureId = glc_gen_texture();
 		fbTextureW = fbTextureH = 0;
 	}
-	glcache.BindTexture(GL_TEXTURE_2D, fbTextureId);
+	glc_bind_texture(GL_TEXTURE_2D, fbTextureId);
 	if (fbTextureW != width || fbTextureH != height)
 	{
-		//set texture repeat mode
-		glcache.TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-		glcache.TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-		glcache.TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-		glcache.TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-		glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+		/* set texture repeat mode */
+		glc_tex_parameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+		glc_tex_parameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+		glc_tex_parameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+		glc_tex_parameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+		glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
 		fbTextureW = width;
 		fbTextureH = height;
 	}
 #ifndef HAVE_OPENGLES2
 	if (gl.gl_major >= 3)
 	{
+		u8 *p;
 		if (fbUnpack == 0)
 			glGenBuffers(1, &fbUnpack);
 		glBindBuffer(GL_PIXEL_UNPACK_BUFFER, fbUnpack);
 		if (fbUnpackSize < bytes)
 		{
-			glBufferData(GL_PIXEL_UNPACK_BUFFER, bytes, nullptr, GL_STREAM_DRAW);
+			glBufferData(GL_PIXEL_UNPACK_BUFFER, bytes, NULL, GL_STREAM_DRAW);
 			fbUnpackSize = bytes;
 		}
 		/* (whatever the card still reads of the last one is its own: the
 		 * buffer's memory is new) */
-		u8 *p = (u8 *)glMapBufferRange(GL_PIXEL_UNPACK_BUFFER, 0, (GLsizeiptr)bytes,
+		p = (u8 *)glMapBufferRange(GL_PIXEL_UNPACK_BUFFER, 0, (GLsizeiptr)bytes,
 				GL_MAP_WRITE_BIT | GL_MAP_INVALIDATE_BUFFER_BIT);
-		if (p != nullptr)
+		if (p != NULL)
 		{
 			ReadFramebufferTo(&fb, p, (size_t)width * 4);
 			glUnmapBuffer(GL_PIXEL_UNPACK_BUFFER);
-			glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, width, height, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+			glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, width, height, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
 			glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
 			return;
 		}
 		glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
 	}
 #endif
-	u8 *scratch = (u8 *)grow_buf_reserve(&fbScratch, bytes);
-	if (scratch == nullptr)
+	scratch = (u8 *)grow_buf_reserve(&fbScratch, bytes);
+	if (scratch == NULL)
 		return;
 	ReadFramebufferTo(&fb, scratch, (size_t)width * 4);
 	glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, width, height, GL_RGBA, GL_UNSIGNED_BYTE, scratch);

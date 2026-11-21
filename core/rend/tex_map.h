@@ -114,6 +114,8 @@ public:
 		}
 	}
 	void Clear() { tex_map_clear(&m); }
+	/* (the C one: rend/TexCache.h's texcache_map_*) */
+	tex_map_t *Map() { return &m; }
 
 private:
 	/* (value-initialized, as a map's new value is: what has no

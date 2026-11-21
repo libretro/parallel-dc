@@ -15,13 +15,13 @@
 #include "rend/texconv.h"
 #include "rend/vram_lock.h"
 #include "rend/custom_texture.h"
+#include "rend/tex_map.h"
 
 #ifdef __cplusplus
 #include <algorithm>
 #include <array>
 #include <memory>
 #include <unordered_map>
-#include "rend/tex_map.h"
 #endif
 
 #ifdef __cplusplus
@@ -174,6 +174,9 @@ typedef struct texcache_ops
 	bool (*copy_render)(texcache_data *t, texcache_data *from, u32 x, u32 y, u32 scale, u32 columns);
 	/* the texture made 32-bit, whatever its type (TEX_TYPE_*) */
 	bool (*force_32bit)(const texcache_data *t, int type);
+	/* What it holds given back, the cache's (texcache_delete()) and the
+	 * renderer's; false while the custom texture loader has it */
+	bool (*del)(texcache_data *t);
 } texcache_ops;
 
 struct texcache_data
@@ -308,6 +311,25 @@ bool texcache_needs_update(texcache_data *t);
 bool texcache_delete(texcache_data *t);
 
 void libCore_vramlock_Lock(u32 start_offset, u32 end_offset, texcache_data *texture);
+
+/* ---- A renderer's textures by their key: a tex_map (rend/tex_map.h) of
+ * its textures, each starting with its texcache_data ---- */
+
+/* The key of the texture of @tsp, @tcw (and @area: see tex_gpu_paletted()) */
+u64 texcache_key(u32 tsp, u32 tcw, int area);
+/* Room for @textures, and their locks on video memory, made now: the
+ * renderer's start (texcache_reserve()) */
+void texcache_map_reserve(tex_map_t *m, u32 textures);
+/* ...as many as a pool of @images textures' images serves: twice that, no
+ * fewer than 1024 */
+void texcache_map_reserve_for(tex_map_t *m, u32 images);
+/* The texture of @tsp, @tcw, made (with @ops, NULL: the one the element's
+ * own making gave it) if there is none */
+texcache_data *texcache_map_get(tex_map_t *m, const texcache_ops *ops, u32 tsp, u32 tcw, int area);
+/* A few a frame of those not used for 120 frames, deleted */
+void texcache_map_collect(tex_map_t *m);
+/* Every one deleted, the custom texture loader stopped first if it has one */
+void texcache_map_clear(tex_map_t *m);
 
 /* The framebuffer the game wrote, as RGBA8: its geometry first, so that a
  * renderer can find room of that size where the card reads it, then
@@ -492,6 +514,7 @@ private:
 		return self(t)->CopyRender(static_cast<BaseTextureCacheData *>(from), x, y, scale, columns);
 	}
 	static bool force_32bit(const texcache_data *t, int type) { return self(t)->Force32BitTexture((TextureType)type); }
+	static bool del(texcache_data *t) { return self(t)->Delete(); }
 	static const texcache_ops table;
 };
 
@@ -499,7 +522,8 @@ template<class D>
 const texcache_ops TexCacheImpl<D>::table = {
 	TexCacheImpl<D>::get_id, TexCacheImpl<D>::upload_to_gpu, TexCacheImpl<D>::upload_memory,
 	TexCacheImpl<D>::gpu_decode, TexCacheImpl<D>::part_memory, TexCacheImpl<D>::upload_part,
-	TexCacheImpl<D>::gpu_decode_part, TexCacheImpl<D>::copy_render, TexCacheImpl<D>::force_32bit
+	TexCacheImpl<D>::gpu_decode_part, TexCacheImpl<D>::copy_render, TexCacheImpl<D>::force_32bit,
+	TexCacheImpl<D>::del
 };
 
 template<typename Texture>
@@ -508,106 +532,25 @@ class BaseTextureCache
 public:
 	/* Room for @textures, and their locks on video memory, made now: the
 	 * renderer's start (rend/tex_map.h, texcache_reserve()) */
-	void Reserve(u32 textures)
-	{
-		cache.Reserve(textures);
-		texcache_reserve(textures);
-	}
+	void Reserve(u32 textures) { texcache_map_reserve(cache.Map(), textures); }
 	/* ...as many as a pool of @images textures' images serves: twice
 	 * that, no fewer than 1024 */
-	void ReserveFor(u32 images) { Reserve(images * 2 > 1024 ? images * 2 : 1024); }
+	void ReserveFor(u32 images) { texcache_map_reserve_for(cache.Map(), images); }
 
+	/* (texcache_data first in each: where the map's element starts) */
 	Texture *getTextureCacheData(TSP tsp, TCW tcw, int area = 0)
 	{
-		u64 key = tsp.full & TSPTextureCacheMask.full;
-		if ((tcw.PixelFmt == PixelPal4 || tcw.PixelFmt == PixelPal8)
-				&& !BaseTextureCacheData::IsGpuHandledPaletted(tsp, tcw, area))
-			// Paletted textures have a palette selection that must be part of the key
-			// We also add the palette type to the key to avoid thrashing the cache
-			// when the palette type is changed. If the palette type is changed back in the future,
-			// this texture will stil be available.
-			// (bit 9: made colours here, which a texture of the same address left as indices is not)
-			key |= ((u64)tcw.full << 32) | ((PAL_RAM_CTRL & 3) << 6) | ((tsp.FilterMode != 0) << 8) | (1 << 9);
-		else
-			key |= (u64)(tcw.full & TCWTextureCacheMask.full) << 32;
-
-		Texture* texture = cache.Find(key);
-		if (texture != nullptr)
-			// Needed if the texture is updated
-			texture->tcw.StrideSel = tcw.StrideSel;
-		else //create if not existing
-		{
-			texture = cache.Add(key);
-			if (texture == nullptr)
-				die("Out of memory");
-
-			texture->tsp = tsp;
-			texture->tcw = tcw;
-			texture->area = (u8)area;
-		}
-
-		return texture;
+		return static_cast<Texture *>(static_cast<BaseTextureCacheData *>(
+				texcache_map_get(cache.Map(), NULL, tsp.full, tcw.full, area)));
 	}
 
-   virtual ~BaseTextureCache() {}
+	virtual ~BaseTextureCache() {}
 
-	void CollectCleanup()
-	{
-		/* (a few a frame, those not used for 120 frames) */
-		u64 list[6];
-		u32 n = 0;
-
-		u32 TargetFrame = std::max((u32)120, FrameCount) - 120;
-
-		cache.Each([&](u64 key, Texture& texture) {
-			if (texture.dirty && texture.dirty < TargetFrame)
-				list[n++] = key;
-			return n < 6;
-		});
-
-		for (u32 i = 0; i < n; i++)
-		{
-			if (cache.Find(list[i])->Delete())
-				cache.Remove(list[i]);
-		}
-	}
-
-	void Clear()
-	{
-		/* A texture whose custom image is still being loaded is the
-		 * loader's as well as the cache's: the loader has a pointer to it
-		 * and writes to it when it is done. Delete() refuses those, and
-		 * they were destroyed here all the same. If there is one, the
-		 * loader is stopped first, which leaves it with none; it starts
-		 * again with the next texture that asks.
-		 *
-		 * A count at zero is a texture the loader has finished with or
-		 * never had: only the renderer raises it from zero, and bringing
-		 * it back there is the last thing the loader does to a texture. */
-		bool loading = false;
-		cache.Each([&](u64, Texture& texture) {
-			loading = retro_atomic_load_acquire_int(&texture.custom.in_progress) > 0;
-			return !loading;
-		});
-		if (loading)
-			texcache_stop_custom_loads();
-		cache.Each([](u64, Texture& texture) {
-			texture.Delete();
-			return true;
-		});
-
-		cache.Clear();
-		KillTex = false;
-		INFO_LOG(RENDERER, "Texture cache cleared\n");
-	}
+	void CollectCleanup() { texcache_map_collect(cache.Map()); }
+	void Clear() { texcache_map_clear(cache.Map()); }
 
 protected:
 	TexMap<Texture> cache;
-	// Only use TexU and TexV from TSP in the cache key
-	//     TexV : 7, TexU : 7
-	const TSP TSPTextureCacheMask = { { 7, 7 } };
-	//     TexAddr : 0x1FFFFF, Reserved : 0, StrideSel : 0, ScanOrder : 1, PixelFmt : 7, VQ_Comp : 1, MipMapped : 1
-	const TCW TCWTextureCacheMask = { { 0x1FFFFF, 0, 0, 1, 7, 1, 1 } };
 };
 #endif
 

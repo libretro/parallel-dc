@@ -330,6 +330,44 @@ GLuint gl_CompileAndLink(const char* VertexShader, const char* FragmentShader);
 void gl_bind_depth_ubo(GLuint program);
 bool CompilePipelineShader(PipelineShader* s);
 
+/* A texture of the texture pool's (rend/tex_pool.h) */
+typedef struct GLPooledTexture
+{
+	TexPoolEntry entry;	/* (first: the pool's book has it) */
+	GLuint name;
+	u32 levels;
+	struct GLPooledTexture *all;	/* every one there is, for the pool's end */
+} GLPooledTexture;
+
+/* The cache's textures on desktop OpenGL 3 and later and OpenGL ES 3: made
+ * when the renderer starts, with their storage (glTexStorage2D() where
+ * there is one), and handed out to the textures that need one of their
+ * shape. The formats are the texture types (TEX_TYPE_*), and the pictures
+ * rendered to: RGBA8 and RGB8. One given back can be handed out again at
+ * once: OpenGL sees to it that what the GPU still has to do with it is
+ * done first. */
+#define GL_POOL_FORMATS 7
+#define GL_POOL_TARGET_RGBA 5
+#define GL_POOL_TARGET_RGB 6
+bool gl_tex_pool_ready(void);
+/* A texture of @type, @width by @height, with its levels or not: a free one
+ * of that shape, or one made now if there is none. NULL if the shape is not
+ * one of the pool's. */
+GLPooledTexture *gl_tex_pool_take(int type, u32 width, u32 height, bool mips);
+/* A picture to render to, RGB8 or RGBA8 */
+GLPooledTexture *gl_tex_pool_take_target(bool rgb, u32 width, u32 height);
+void gl_tex_pool_give(GLPooledTexture *texture);
+
+/* A texture of the cache's (rend/TexCache.h) */
+typedef struct gl_texture
+{
+	texcache_data base;	/* (first: the cache's) */
+	GLuint texID;		/* its own, or the pool's */
+	GLPooledTexture *pooled;
+	GLuint ownID;		/* its own texture, kept while it has the pool's */
+	u32 decodeJob, decodeSerial;
+} gl_texture;
+
 /* The textures' pool and the decoder (gl_texdecoder.h): made when a renderer
  * starts (@depth: with the depth buffer renders to textures are made with),
  * and what a frame's textures asked of the decoder, recorded before its
@@ -341,93 +379,11 @@ void gl_tex_flush(void);
 #ifdef __cplusplus
 }
 
-u64 gl_GetTexture(TSP tsp, TCW tcw, int area = 0);
 static inline void SetMVS_Mode(ModifierVolumeMode mv_mode, ISP_Modvol ispc)
 {
 	gl_set_mvs_mode(mv_mode, ispc.CullMode);
 }
 
-/* A texture of the texture pool's (rend/tex_pool.h) */
-struct GLPooledTexture : TexPoolEntry
-{
-	GLuint name = 0;
-	u32 levels = 1;
-	GLPooledTexture *all = nullptr;		/* every one there is, for Term() */
-};
-
-/* The cache's textures on desktop OpenGL 3 and later (not OpenGL ES, nor
- * OpenGL 2, which make theirs as before): made when the renderer starts,
- * with their storage (glTexStorage2D() where there is one), and handed out
- * to the textures that need one of their shape. The formats are the texture
- * types, by their numbers, and the pictures rendered to: RGBA8 and RGB8.
- * A texture given back can be handed out again at once: OpenGL sees to it
- * that what the GPU still has to do with it is done first. */
-class GLTexturePool
-{
-public:
-	void Init();
-	void Term();
-	bool Ready() const { return ready; }
-	/* A texture of @type, @width by @height, with its levels or not: a
-	 * free one of that shape, or one made now if there is none. Null if the
-	 * shape is not one of the pool's. */
-	GLPooledTexture *Take(TextureType type, u32 width, u32 height, bool mips);
-	/* A picture to render to, RGB8 or RGBA8 */
-	GLPooledTexture *TakeTarget(bool rgb, u32 width, u32 height);
-	void Give(GLPooledTexture *texture) { book.Give(texture); }
-	/* The pool's texture of that name, or null */
-	GLPooledTexture *Find(GLuint name) const;
-	const TexPoolBook& Book() const { return book; }
-	enum { FORMATS = 7, TARGET_RGBA = 5, TARGET_RGB = 6 };
-
-private:
-	GLPooledTexture *Make(int cls, bool late);
-	GLPooledTexture *TakeClass(int cls);
-
-	TexPoolBook book;
-	bool ready = false;
-	bool storage = false;		/* glTexStorage2D() */
-	GLPooledTexture *all = nullptr;
-};
-extern GLTexturePool glTexPool;
-
-
-class TextureCacheData : public TexCacheImpl<TextureCacheData>
-{
-public:
-	GLuint texID;   /*gl texture: its own, or the pool's */
-	void GetId(char *s, size_t n) { snprintf(s, n, "%u", (unsigned)texID); }
-	void UploadToGPU(int width, int height, u8 *temp_tex_buffer, bool mipmapped, bool mipmapsIncluded = false);
-	void *UploadMemory(u32 width, u32 height, size_t bytes, u32 pixel, bool mipmaps);
-	void UploadToGPUFrom(int width, int height, u8 *temp_tex_buffer, bool mipmapped, bool mipmapsIncluded);
-	bool GpuDecode(const texd_plan& plan);
-	bool PartMemory(size_t bytes, void **memory);
-	void UploadPart(const TexRegion *regions, u32 count, u8 *data, const size_t *offset);
-	int GpuDecodePart(const texd_plan& plan, const TexRegion *regions, u32 count);
-	bool CopyRender(BaseTextureCacheData *from, u32 x, u32 y, u32 scale, u32 columns);
-	bool Delete();
-	/* The picture rendered to is the texture now: @tex, the pool's @pooled
-	 * or one of its own */
-	void SetRendered(GLuint tex, GLPooledTexture *pooled);
-	/* A texture of its own to be made anew: a custom texture's */
-	void Renew();
-
-private:
-	/* The pool's texture for this shape, the one it has if it is that;
-	 * false if the pool has none of this shape */
-	bool TakePooled(u32 width, u32 height, bool mips);
-	void ReleasePooled();
-	void CancelDecode();
-
-	GLPooledTexture *pooled = nullptr;
-	GLuint ownID = 0;		/* its own texture, kept while it has the pool's */
-	u32 decodeJob = 0, decodeSerial = 0;
-};
-
-class GlTextureCache : public BaseTextureCache<TextureCacheData>
-{
-};
-extern GlTextureCache TexCache;
 
 
 #endif

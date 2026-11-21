@@ -1758,3 +1758,114 @@ void libCore_vramlock_Lock(u32 start_offset64, u32 end_offset64, texcache_data *
 {
 	vramlock_lock(start_offset64, end_offset64, texture, &texture->lock_block);
 }
+
+/* ---- A renderer's textures by their key ---- */
+
+/* (of the TSP, TexU and TexV alone; of the TCW, all but the stride select) */
+#define TSP_KEY_MASK (TAW_MASK(TSP_TexU) | TAW_MASK(TSP_TexV))
+#define TCW_KEY_MASK (TAW_MASK(TCW_TexAddr) | TAW_MASK(TCW_ScanOrder) | TAW_MASK(TCW_PixelFmt) \
+		| TAW_MASK(TCW_VQ_Comp) | TAW_MASK(TCW_MipMapped))
+
+u64 texcache_key(u32 tsp, u32 tcw, int area)
+{
+	const u32 fmt = TAW_GET(tcw, TCW_PixelFmt);
+	u64 key = tsp & TSP_KEY_MASK;
+
+	if ((fmt == TA_PIXEL_4BPP || fmt == TA_PIXEL_8BPP) && !tex_gpu_paletted(tsp, tcw, area))
+		/* A paletted texture's palette selection is part of its key, and
+		 * the palette's type, so that a texture whose palette's type comes
+		 * back is still there; bit 9: made colours here, which a texture
+		 * of the same address left as indices is not */
+		key |= ((u64)tcw << 32) | ((PAL_RAM_CTRL & 3) << 6) | ((u64)(TAW_GET(tsp, TSP_FilterMode) != 0) << 8) | (1 << 9);
+	else
+		key |= (u64)(tcw & TCW_KEY_MASK) << 32;
+	return key;
+}
+
+void texcache_map_reserve(tex_map_t *m, u32 textures)
+{
+	tex_map_reserve(m, textures);
+	texcache_reserve(textures);
+}
+
+void texcache_map_reserve_for(tex_map_t *m, u32 images)
+{
+	texcache_map_reserve(m, images * 2 > 1024 ? images * 2 : 1024);
+}
+
+texcache_data *texcache_map_get(tex_map_t *m, const texcache_ops *ops, u32 tsp, u32 tcw, int area)
+{
+	const u64 key = texcache_key(tsp, tcw, area);
+	texcache_data *t = (texcache_data *)tex_map_find(m, key);
+
+	if (t != NULL)
+	{
+		/* (needed if the texture is updated) */
+		t->tcw = TAW_SET(t->tcw, TCW_StrideSel, TAW_GET(tcw, TCW_StrideSel));
+		return t;
+	}
+	t = (texcache_data *)tex_map_add(m, key);
+	if (t == NULL)
+		die("Out of memory");
+	if (ops != NULL)
+		t->ops = ops;
+	t->tsp = tsp;
+	t->tcw = tcw;
+	t->area = (u8)area;
+	return t;
+}
+
+void texcache_map_collect(tex_map_t *m)
+{
+	/* (a few a frame, those not used for 120 frames) */
+	const u32 target = (FrameCount > 120 ? FrameCount : 120) - 120;
+	u64 list[6];
+	u32 n = 0, e, i;
+	u64 key;
+
+	for (e = 0; e < tex_map_places(m) && n < 6; e++)
+	{
+		const texcache_data *t = (const texcache_data *)tex_map_at(m, e, &key);
+		if (t != NULL && t->dirty && t->dirty < target)
+			list[n++] = key;
+	}
+	for (i = 0; i < n; i++)
+	{
+		texcache_data *t = (texcache_data *)tex_map_find(m, list[i]);
+		if (t->ops->del(t))
+			tex_map_remove(m, list[i]);
+	}
+}
+
+void texcache_map_clear(tex_map_t *m)
+{
+	u32 e;
+	u64 key;
+
+	/* A texture whose custom image is still being loaded is the loader's as
+	 * well as the cache's: the loader has a pointer to it and writes to it
+	 * when it is done, and a delete refuses it. If there is one, the
+	 * loader is stopped first, which leaves it with none; it starts again
+	 * with the next texture that asks. (A count at zero is a texture the
+	 * loader has finished with or never had: only the renderer raises it
+	 * from zero, and bringing it back there is the last thing the loader
+	 * does to a texture.) */
+	for (e = 0; e < tex_map_places(m); e++)
+	{
+		texcache_data *t = (texcache_data *)tex_map_at(m, e, &key);
+		if (t != NULL && retro_atomic_load_acquire_int(&t->custom.in_progress) > 0)
+		{
+			texcache_stop_custom_loads();
+			break;
+		}
+	}
+	for (e = 0; e < tex_map_places(m); e++)
+	{
+		texcache_data *t = (texcache_data *)tex_map_at(m, e, &key);
+		if (t != NULL)
+			t->ops->del(t);
+	}
+	tex_map_clear(m);
+	KillTex = false;
+	INFO_LOG(RENDERER, "Texture cache cleared\n");
+}

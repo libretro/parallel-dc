@@ -230,8 +230,9 @@ endif
 endif
 
 ifeq ($(HAVE_GL), 1)
-	SOURCES_CXX += $(CORE_DIR)/core/rend/gles/gltex.cpp
+	SOURCES_CXX += $(CORE_DIR)/core/rend/gles/gles_renderer.cpp
 	SOURCES_C += $(CORE_DIR)/core/rend/gles/gles.c \
+						$(CORE_DIR)/core/rend/gles/gltex.c \
 						$(CORE_DIR)/core/rend/gles/gl_writeout.c \
 						$(CORE_DIR)/core/rend/gles/gldraw.c \
 						$(CORE_DIR)/core/rend/gles/gl_texdecoder.c \

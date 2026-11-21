@@ -5,8 +5,8 @@
  * The texture's bytes - the texels, the codebook of a compressed texture,
  * the part of the palette a paletted one uses - are copied as they are
  * into a ring, and a kernel of rend/texdecode.h makes the texels from them
- * into the texture of the texture pool's it was given (gles.h,
- * GLTexturePool): the same text the CPU's converters are tested against.
+ * into the texture of the texture pool's it was given (gles.h, gltex.c):
+ * the same text the CPU's converters are tested against.
  *  - OpenGL 4.3 and later: the ring is a buffer the kernels read as a
  *    shader storage buffer. 32-bit texels and palette indices are written
  *    by compute kernels through rgba8ui and r8ui images of the level;

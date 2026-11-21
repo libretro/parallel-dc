@@ -2,6 +2,12 @@
 #include <libretro.h>
 
 #include "gl4.h"
+#include "rend/gles/ta_decoder_gl.h"
+
+/* (the C++ faces of the state cache, gles/glcache.c, and the TA decoder,
+ * gles/ta_decoder_gl.c, the per-pixel renderer draws with) */
+GLCache glcache;
+GlTaDecoder glTaDecoder;
 
 GLuint gl4BindRTT(u32 addy, u32 fbw, u32 fbh, u32 channels, u32 fmt)
 {
@@ -9,7 +15,7 @@ GLuint gl4BindRTT(u32 addy, u32 fbw, u32 fbh, u32 channels, u32 fmt)
 	if (gl.rtt.fbo && !gl.rtt.kept)
 		glDeleteFramebuffers(1,&gl.rtt.fbo);
 	if (gl.rtt.pooled != nullptr)
-		glTexPool.Give(gl.rtt.pooled);
+		gl_tex_pool_give(gl.rtt.pooled);
 	else if (gl.rtt.tex)
 		glcache.DeleteTextures(1,&gl.rtt.tex);
 	gl.rtt.pooled = nullptr;
@@ -35,7 +41,7 @@ GLuint gl4BindRTT(u32 addy, u32 fbw, u32 fbh, u32 channels, u32 fmt)
 
 	// A texture for rendering to: the pool's, made at the start, if it has one of that shape
 	if (fmt == GL_UNSIGNED_BYTE)
-		gl.rtt.pooled = glTexPool.TakeTarget(channels == GL_RGB, fbw2, fbh2);
+		gl.rtt.pooled = gl_tex_pool_take_target(channels == GL_RGB, fbw2, fbh2);
 	if (gl.rtt.pooled != nullptr)
 		gl.rtt.tex = gl.rtt.pooled->name;
 	else
