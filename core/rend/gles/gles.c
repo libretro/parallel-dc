@@ -1,4 +1,4 @@
-#define PVR_REGS_FOR_RENDERER	// see hw/pvr/pvr_regs.h
+#define PVR_REGS_FOR_RENDERER	/* see hw/pvr/pvr_regs.h */
 #include <math.h>
 #include "rend/rtt_watch.h"
 #include <string.h>
@@ -23,439 +23,434 @@
 #define GL_MINOR_VERSION                  0x821C
 #endif
 
-GLCache glcache;
 gl_ctx gl;
-GlTaDecoder glTaDecoder;
 
 struct ShaderUniforms_t ShaderUniforms;
 
 u32 gcflip;
 
 
-//Fragment and vertex shaders code
+/* Fragment and vertex shaders code */
 
-static const char* VertexShaderSource = R"(%s
-#define TARGET_GL %s
-#define pp_Gouraud %d
-#define DEPTH_UBO %d
-
-#define GLES2 0
-#define GLES3 1
-#define GL2 2
-#define GL3 3
-
-// (uniform buffers: OpenGL 3.1's, an extension to GLSL 1.30; see depth_scale below)
-#if DEPTH_UBO == 1 && TARGET_GL == GL3
-#extension GL_ARB_uniform_buffer_object : enable
-#endif
-#if TARGET_GL == GL2
-#define highp
-#define lowp
-#define mediump
-#endif
-#if TARGET_GL == GLES2 || TARGET_GL == GL2
-#define in attribute
-#define out varying
-#endif
-
-
-#if TARGET_GL == GL3 || TARGET_GL == GLES3
-#if pp_Gouraud == 0
-#define INTERPOLATION flat
-#else
-#define INTERPOLATION smooth
-#endif
-#else
-#define INTERPOLATION
-#endif
-
-/* The depth is the position's (rend/depth_scale.h): the vertex goes out at
-   (x*w, y*w, a*S + b*w, w) with w = 1/z, a depth of a*S*z + b, 1/w as the
-   chip has it, linear in screen space. depth_scale is (a, b, -, S): S is
-   1/fZ_max, which a frame decoded on the GPU has only on the GPU, so where
-   the context has uniform buffers it is one the renderer copies into
-   (DEPTH_UBO; gl_ctx::depth_ubo). The same text places the vertices of
-   every program, and the position is invariant: a pass that tests EQUAL
-   against another's depth is exact. */
-invariant gl_Position;
-#if DEPTH_UBO == 1
-layout(std140) uniform DepthScaleBlock { highp vec4 depth_scale; };
-#else
-uniform highp vec4      depth_scale;
-#endif
-/* Vertex constants*/ 
-uniform highp mat4 normal_matrix;
-uniform highp float sp_FOG_DENSITY;
-
-/* Vertex input */
-in highp vec4    in_pos;
-in mediump vec4  in_base;
-in mediump vec4  in_offs;
-in highp vec2    in_uv;
-/* output */
-INTERPOLATION out mediump vec4 vtx_base;
-INTERPOLATION out mediump vec4 vtx_offs;
-              out highp vec2 vtx_uv;
-#if TARGET_GL == GLES2
-              out highp float fog_depth;
-#endif 
-
-void main()
-{
-	vtx_base = in_base;
-	vtx_offs = in_offs;
-	vtx_uv = in_uv;
-	highp vec4 vpos = normal_matrix * in_pos;
-	vpos.w = 1.0 / vpos.z;
-#if TARGET_GL == GLES2
-   // Interpolated with perspective correction, 1/depth comes out as one over
-   // the depth at the pixel, which is what fog goes by. depth itself does not:
-   // it came out too large inside any triangle that spans a range of depths.
-   fog_depth = vpos.w;
-#endif
-	vpos.xy *= vpos.w;
-	// (a z beyond fZ_max is at the nearest depth, not clipped)
-	vpos.z = min(depth_scale.x * depth_scale.w + depth_scale.y * vpos.w, vpos.w);
-	gl_Position = vpos;
-}
-)";
+static const char* VertexShaderSource = "%s\n"
+"#define TARGET_GL %s\n"
+"#define pp_Gouraud %d\n"
+"#define DEPTH_UBO %d\n"
+"\n"
+"#define GLES2 0\n"
+"#define GLES3 1\n"
+"#define GL2 2\n"
+"#define GL3 3\n"
+"\n"
+"// (uniform buffers: OpenGL 3.1's, an extension to GLSL 1.30; see depth_scale below)\n"
+"#if DEPTH_UBO == 1 && TARGET_GL == GL3\n"
+"#extension GL_ARB_uniform_buffer_object : enable\n"
+"#endif\n"
+"#if TARGET_GL == GL2\n"
+"#define highp\n"
+"#define lowp\n"
+"#define mediump\n"
+"#endif\n"
+"#if TARGET_GL == GLES2 || TARGET_GL == GL2\n"
+"#define in attribute\n"
+"#define out varying\n"
+"#endif\n"
+"\n"
+"\n"
+"#if TARGET_GL == GL3 || TARGET_GL == GLES3\n"
+"#if pp_Gouraud == 0\n"
+"#define INTERPOLATION flat\n"
+"#else\n"
+"#define INTERPOLATION smooth\n"
+"#endif\n"
+"#else\n"
+"#define INTERPOLATION\n"
+"#endif\n"
+"\n"
+"/* The depth is the position's (rend/depth_scale.h): the vertex goes out at\n"
+"   (x*w, y*w, a*S + b*w, w) with w = 1/z, a depth of a*S*z + b, 1/w as the\n"
+"   chip has it, linear in screen space. depth_scale is (a, b, -, S): S is\n"
+"   1/fZ_max, which a frame decoded on the GPU has only on the GPU, so where\n"
+"   the context has uniform buffers it is one the renderer copies into\n"
+"   (DEPTH_UBO; gl_ctx::depth_ubo). The same text places the vertices of\n"
+"   every program, and the position is invariant: a pass that tests EQUAL\n"
+"   against another's depth is exact. */\n"
+"invariant gl_Position;\n"
+"#if DEPTH_UBO == 1\n"
+"layout(std140) uniform DepthScaleBlock { highp vec4 depth_scale; };\n"
+"#else\n"
+"uniform highp vec4      depth_scale;\n"
+"#endif\n"
+"/* Vertex constants*/ \n"
+"uniform highp mat4 normal_matrix;\n"
+"uniform highp float sp_FOG_DENSITY;\n"
+"\n"
+"/* Vertex input */\n"
+"in highp vec4    in_pos;\n"
+"in mediump vec4  in_base;\n"
+"in mediump vec4  in_offs;\n"
+"in highp vec2    in_uv;\n"
+"/* output */\n"
+"INTERPOLATION out mediump vec4 vtx_base;\n"
+"INTERPOLATION out mediump vec4 vtx_offs;\n"
+"              out highp vec2 vtx_uv;\n"
+"#if TARGET_GL == GLES2\n"
+"              out highp float fog_depth;\n"
+"#endif \n"
+"\n"
+"void main()\n"
+"{\n"
+"	vtx_base = in_base;\n"
+"	vtx_offs = in_offs;\n"
+"	vtx_uv = in_uv;\n"
+"	highp vec4 vpos = normal_matrix * in_pos;\n"
+"	vpos.w = 1.0 / vpos.z;\n"
+"#if TARGET_GL == GLES2\n"
+"   // Interpolated with perspective correction, 1/depth comes out as one over\n"
+"   // the depth at the pixel, which is what fog goes by. depth itself does not:\n"
+"   // it came out too large inside any triangle that spans a range of depths.\n"
+"   fog_depth = vpos.w;\n"
+"#endif\n"
+"	vpos.xy *= vpos.w;\n"
+"	// (a z beyond fZ_max is at the nearest depth, not clipped)\n"
+"	vpos.z = min(depth_scale.x * depth_scale.w + depth_scale.y * vpos.w, vpos.w);\n"
+"	gl_Position = vpos;\n"
+"}\n";
 
 const char* PixelPipelineShader =
-R"(%s
-#define TARGET_GL %s
-
-#define cp_AlphaTest %d
-#define pp_ClipInside %d
-#define pp_UseAlpha %d
-#define pp_Texture %d
-#define pp_IgnoreTexA %d
-#define pp_ShadInstr %d
-#define pp_Offset %d
-#define pp_FogCtrl %d
-#define pp_Gouraud %d
-#define pp_BumpMap %d
-#define FogClamping %d
-#define pp_TriLinear %d
-#define pp_Palette %d
-#define pp_Shadowed %d
-
-#define PI 3.1415926
-
-
-#define GLES2 0
-#define GLES3 1
-#define GL2 2
-#define GL3 3
-
-
-#if TARGET_GL == GL2
-#define highp
-#define lowp
-#define mediump
-#endif
-/* The general program (glprogram_cache.h): one for each pp_Gouraud, the
- * other bits of a polygon's key (GetProgram()) read from a uniform. The
- * code below is the same for both, so what one draws the other draws.
- * OpenGL ES 2 and OpenGL 2 have no integer bit operations: there the key
- * comes as its four nibbles, each a float a mediump one holds exactly,
- * and a field is taken out with floor() and mod(). */
-#ifdef GENERAL_PROGRAM
-#undef cp_AlphaTest
-#undef pp_ClipInside
-#undef pp_UseAlpha
-#undef pp_Texture
-#undef pp_IgnoreTexA
-#undef pp_ShadInstr
-#undef pp_Offset
-#undef pp_FogCtrl
-#undef pp_BumpMap
-#undef FogClamping
-#undef pp_TriLinear
-#undef pp_Palette
-#undef pp_Shadowed
-#if TARGET_GL == GLES2 || TARGET_GL == GL2
-uniform mediump vec4 key_nibbles;
-#define KEY_FIELD(n, shift, values) int(mod(floor(key_nibbles.n / shift), values))
-#define pp_ClipInside KEY_FIELD(w, 8.0, 2.0)
-#define cp_AlphaTest KEY_FIELD(w, 4.0, 2.0)
-#define pp_Texture KEY_FIELD(w, 2.0, 2.0)
-#define pp_UseAlpha KEY_FIELD(w, 1.0, 2.0)
-#define pp_IgnoreTexA KEY_FIELD(z, 8.0, 2.0)
-#define pp_ShadInstr KEY_FIELD(z, 2.0, 4.0)
-#define pp_Offset KEY_FIELD(z, 1.0, 2.0)
-#define pp_FogCtrl KEY_FIELD(y, 4.0, 4.0)
-#define pp_BumpMap KEY_FIELD(y, 1.0, 2.0)
-#define FogClamping KEY_FIELD(x, 8.0, 2.0)
-#define pp_TriLinear KEY_FIELD(x, 4.0, 2.0)
-#define pp_Palette KEY_FIELD(x, 2.0, 2.0)
-#define pp_Shadowed KEY_FIELD(x, 1.0, 2.0)
-#else
-uniform highp int key_bits;
-#define pp_ClipInside ((key_bits >> 15) & 1)
-#define cp_AlphaTest ((key_bits >> 14) & 1)
-#define pp_Texture ((key_bits >> 13) & 1)
-#define pp_UseAlpha ((key_bits >> 12) & 1)
-#define pp_IgnoreTexA ((key_bits >> 11) & 1)
-#define pp_ShadInstr ((key_bits >> 9) & 3)
-#define pp_Offset ((key_bits >> 8) & 1)
-#define pp_FogCtrl ((key_bits >> 6) & 3)
-#define pp_BumpMap ((key_bits >> 4) & 1)
-#define FogClamping ((key_bits >> 3) & 1)
-#define pp_TriLinear ((key_bits >> 2) & 1)
-#define pp_Palette ((key_bits >> 1) & 1)
-#define pp_Shadowed (key_bits & 1)
-#endif
-#endif
-#if TARGET_GL == GLES3
-out highp vec4 FragColor;
-#define gl_FragColor FragColor
-#define FOG_CHANNEL r
-#elif TARGET_GL == GL3
-out highp vec4 FragColor;
-#define gl_FragColor FragColor
-#define FOG_CHANNEL r
-#else
-#define in varying
-#define texture texture2D
-#define FOG_CHANNEL a
-#endif
-
-#if TARGET_GL == GL3 || TARGET_GL == GLES3
-#if pp_Gouraud == 0
-#define INTERPOLATION flat
-#else
-#define INTERPOLATION smooth
-#endif
-#else
-#define INTERPOLATION
-#endif
-
-/* Shader program params*/
-/* gles has no alpha test stage, so its emulated on the shader */
-uniform highp float cp_AlphaTestValue;
-uniform highp vec4 pp_ClipTest;
-uniform mediump vec3 sp_FOG_COL_RAM,sp_FOG_COL_VERT;
-uniform highp float sp_FOG_DENSITY;
-uniform mediump sampler2D tex,fog_table;
-uniform lowp float trilinear_alpha;
-uniform mediump vec4 fog_clamp_min;
-uniform mediump vec4 fog_clamp_max;
-uniform mediump sampler2D palette;
-uniform mediump int palette_index;
-#if TARGET_GL != GLES2
-// The depth prepass of sorted translucent polygons (rend/sorter.h): its least alpha, 0 for the colours
-uniform highp float prepass_alpha;
-#endif
-uniform lowp float shade_scale_factor;
-
-/* Precision. The colours that come in are eight bits each, so many 255ths.
- * lowp need not hold those: it may be a number of 256ths and nothing finer,
- * and no 255th but 0 and 1 is one of them - a colour, a texel, the fog
- * colour or a clamp limit kept in lowp can be half a step out before
- * anything is done with it, and comes out a step out about as often as
- * not. Nor need lowp reach past 2, and a texel times 255, which is how the
- * fog table and a palette index are read, is done in the precision of the
- * texel: a sampler is lowp unless it says otherwise. So colours, samplers
- * and what is worked out from them (texture times colour, plus offset, into
- * fog) are mediump, which has ten bits at the least. (Only what is a number
- * of quarters or of 256ths as it comes stays lowp.) Texture coordinates are
- * highp: in mediump, which may be a 16-bit float, a coordinate that repeats
- * a large texture a few times no longer says which texel. The clip
- * rectangle is in pixels and was lowp, which need not reach past 2. */
-/* Vertex input*/
-INTERPOLATION in mediump vec4 vtx_base;
-INTERPOLATION in mediump vec4 vtx_offs;
-in highp vec2 vtx_uv;
-#if TARGET_GL == GLES2
-in highp float fog_depth;
-#endif
-
-// The fog coefficient for a depth, worked out the way the PowerVR2 does it.
-// The depth times the fog density, between 1 and just under 256, is taken
-// apart as a float: its exponent and the top four bits of its mantissa
-// pick one of the 128 table entries, and the next eight bits of mantissa
-// blend that entry with the following one. The blend is done in whole
-// numbers out of 256 and so is the result, which is returned over 256.
-// Splitting the float is done by comparing and halving, which is exact
-// and costs less than the log2() and pow() this used to take.
-highp float fog_mode2(highp float w)
-{
-#if TARGET_GL == GLES2
-	// fog_depth is 1/depth, the one thing a varying carries across a triangle exactly
-	highp float z = sp_FOG_DENSITY / fog_depth;
-#else
-	highp float z = w * sp_FOG_DENSITY;
-#endif
-	// Not clamp(): where the depth is infinite and the density zero their
-	// product is not a number, and that has to come out as 1 like anything
-	// else below 1. The texture lookup this used to end in swallowed it.
-	if (!(z >= 1.0))
-		z = 1.0;
-	if (z > 255.9999)
-		z = 255.9999;
-	highp float e = 0.0;
-	if (z >= 16.0) { z *= 0.0625; e = 4.0; }
-	if (z >= 4.0) { z *= 0.25; e += 2.0; }
-	if (z >= 2.0) { z *= 0.5; e += 1.0; }
-	highp float t = (z - 1.0) * 16.0;
-	highp float i = floor(t);
-	highp float blend = floor((t - i) * 256.0);
-	highp float u = (e * 16.0 + i + 0.5) / 128.0;
-	// The table is two rows: the entry's own value under 0.75, the next entry's under 0.25
-	highp float next = floor(texture(fog_table, vec2(u, 0.25)).FOG_CHANNEL * 255.0 + 0.5);
-	highp float cur = floor(texture(fog_table, vec2(u, 0.75)).FOG_CHANNEL * 255.0 + 0.5);
-	return floor((next * blend + cur * (255.0 - blend)) / 256.0) / 256.0;
-}
-
-highp vec4 fog_clamp(highp vec4 col)
-{
-	if (FogClamping == 1)
-		return clamp(col, fog_clamp_min, fog_clamp_max);
-	return col;
-}
-
-// The palette is a row of 1024 colours, and a colour is read at the middle
-// of its texel. (It used to be read at index/1023: the first few a
-// thousandth of a texel from the one before, the last at the very end of
-// the row.)
-mediump vec4 palettePixel(highp vec2 coords)
-{
-	highp float index = texture(tex, coords).FOG_CHANNEL;
-	highp vec2 c = vec2((index * 255.0 + float(palette_index) + 0.5) / 1024.0, 0.5);
-	return texture(palette, c);
-}
-
-void main()
-{
-	// Clip inside the box
-	if (pp_ClipInside == 1)
-	{
-		if (gl_FragCoord.x >= pp_ClipTest.x && gl_FragCoord.x <= pp_ClipTest.z
-				&& gl_FragCoord.y >= pp_ClipTest.y && gl_FragCoord.y <= pp_ClipTest.w)
-			discard;
-	}
-	
-	mediump vec4 color=vtx_base;
-	if (pp_UseAlpha==0)
-		color.a=1.0;
-	mediump vec4 offset = vtx_offs;
-	if (pp_Shadowed == 1)
-	{
-		// A pixel inside a modifier volume: what the polygon is shaded with,
-		// its base and offset colours, is scaled before the texture is
-		// combined with them. The texture itself is not.
-		color.rgb *= shade_scale_factor;
-		offset = vec4(vtx_offs.rgb * shade_scale_factor, vtx_offs.a);
-	}
-	if (pp_Texture==1)
-	{
-		mediump vec4 texcol;
-		if (pp_Palette == 0)
-			texcol = texture(tex, vtx_uv);
-		else
-			texcol = palettePixel(vtx_uv);
-		
-		if (pp_BumpMap == 1)
-		{
-			highp float s = PI / 2.0 * (texcol.a * 15.0 * 16.0 + texcol.r * 15.0) / 255.0;
-			highp float r = 2.0 * PI * (texcol.g * 15.0 * 16.0 + texcol.b * 15.0) / 255.0;
-			texcol.a = clamp(offset.a + offset.r * sin(s) + offset.g * cos(s) * cos(r - 2.0 * PI * offset.b), 0.0, 1.0);
-			texcol.rgb = vec3(1.0, 1.0, 1.0);	
-		}
-		else if (pp_IgnoreTexA==1)
-			texcol.a=1.0;	
-		if (pp_ShadInstr==0)
-		{
-			color=texcol;
-		}
-		if (pp_ShadInstr==1)
-		{
-			color.rgb*=texcol.rgb;
-			color.a=texcol.a;
-		}
-		if (pp_ShadInstr==2)
-		{
-			color.rgb=mix(color.rgb,texcol.rgb,texcol.a);
-		}
-		if (pp_ShadInstr==3)
-		{
-			color*=texcol;
-		}
-		
-		if (pp_Offset==1 && pp_BumpMap == 0)
-		{
-			color.rgb+=offset.rgb;
-		}
-	}
-	
-	color = fog_clamp(color);
-	
-	// Look-up table mode 2: the fog colour takes the place of the pixel's
-	// colour and the fog coefficient the place of its alpha. This is a mode
-	// of the fog unit, which comes after the texture has been combined in,
-	// so it is the combined colour that is replaced: a textured polygon
-	// comes out in plain fog colour. It used to be done to the base colour,
-	// before texturing, and the texture was then applied on top.
-	if (pp_FogCtrl == 3)
-		color = vec4(sp_FOG_COL_RAM.rgb, fog_mode2(gl_FragCoord.w) * (256.0 / 255.0));
-	if (pp_FogCtrl == 0)
-	{
-		highp float fog = fog_mode2(gl_FragCoord.w);
-		color.rgb = color.rgb * (255.0 / 256.0 - fog) + sp_FOG_COL_RAM.rgb * fog;
-	}
-	if (pp_FogCtrl == 1 && pp_Offset==1 && pp_BumpMap == 0)
-	{
-		highp float fog = offset.a * (255.0 / 256.0);
-		color.rgb = color.rgb * (255.0 / 256.0 - fog) + sp_FOG_COL_VERT.rgb * fog;
-	}
-	
-	if (pp_TriLinear == 1)
-		color *= trilinear_alpha;
-	
-	// Punch-through polygons are tested on the alpha of the finished colour,
-	// after the texture and the vertex colours are combined and clamped.
-	if (cp_AlphaTest == 1)
-	{
-		if (cp_AlphaTestValue > color.a)
-			discard;
-		color.a=1.0;
-	}
-	//color.rgb=vec3(gl_FragCoord.w * sp_FOG_DENSITY / 128.0);
-#if TARGET_GL != GLES2
-	// (the sorted translucent depth prepass: rend/sorter.h; the depth itself is the position's)
-	if (color.a < prepass_alpha)
-		discard;
-#endif
-	gl_FragColor =color;
-}
-)";
+"%s\n"
+"#define TARGET_GL %s\n"
+"\n"
+"#define cp_AlphaTest %d\n"
+"#define pp_ClipInside %d\n"
+"#define pp_UseAlpha %d\n"
+"#define pp_Texture %d\n"
+"#define pp_IgnoreTexA %d\n"
+"#define pp_ShadInstr %d\n"
+"#define pp_Offset %d\n"
+"#define pp_FogCtrl %d\n"
+"#define pp_Gouraud %d\n"
+"#define pp_BumpMap %d\n"
+"#define FogClamping %d\n"
+"#define pp_TriLinear %d\n"
+"#define pp_Palette %d\n"
+"#define pp_Shadowed %d\n"
+"\n"
+"#define PI 3.1415926\n"
+"\n"
+"\n"
+"#define GLES2 0\n"
+"#define GLES3 1\n"
+"#define GL2 2\n"
+"#define GL3 3\n"
+"\n"
+"\n"
+"#if TARGET_GL == GL2\n"
+"#define highp\n"
+"#define lowp\n"
+"#define mediump\n"
+"#endif\n"
+"/* The general program (glprogram_cache.h): one for each pp_Gouraud, the\n"
+" * other bits of a polygon's key (GetProgram()) read from a uniform. The\n"
+" * code below is the same for both, so what one draws the other draws.\n"
+" * OpenGL ES 2 and OpenGL 2 have no integer bit operations: there the key\n"
+" * comes as its four nibbles, each a float a mediump one holds exactly,\n"
+" * and a field is taken out with floor() and mod(). */\n"
+"#ifdef GENERAL_PROGRAM\n"
+"#undef cp_AlphaTest\n"
+"#undef pp_ClipInside\n"
+"#undef pp_UseAlpha\n"
+"#undef pp_Texture\n"
+"#undef pp_IgnoreTexA\n"
+"#undef pp_ShadInstr\n"
+"#undef pp_Offset\n"
+"#undef pp_FogCtrl\n"
+"#undef pp_BumpMap\n"
+"#undef FogClamping\n"
+"#undef pp_TriLinear\n"
+"#undef pp_Palette\n"
+"#undef pp_Shadowed\n"
+"#if TARGET_GL == GLES2 || TARGET_GL == GL2\n"
+"uniform mediump vec4 key_nibbles;\n"
+"#define KEY_FIELD(n, shift, values) int(mod(floor(key_nibbles.n / shift), values))\n"
+"#define pp_ClipInside KEY_FIELD(w, 8.0, 2.0)\n"
+"#define cp_AlphaTest KEY_FIELD(w, 4.0, 2.0)\n"
+"#define pp_Texture KEY_FIELD(w, 2.0, 2.0)\n"
+"#define pp_UseAlpha KEY_FIELD(w, 1.0, 2.0)\n"
+"#define pp_IgnoreTexA KEY_FIELD(z, 8.0, 2.0)\n"
+"#define pp_ShadInstr KEY_FIELD(z, 2.0, 4.0)\n"
+"#define pp_Offset KEY_FIELD(z, 1.0, 2.0)\n"
+"#define pp_FogCtrl KEY_FIELD(y, 4.0, 4.0)\n"
+"#define pp_BumpMap KEY_FIELD(y, 1.0, 2.0)\n"
+"#define FogClamping KEY_FIELD(x, 8.0, 2.0)\n"
+"#define pp_TriLinear KEY_FIELD(x, 4.0, 2.0)\n"
+"#define pp_Palette KEY_FIELD(x, 2.0, 2.0)\n"
+"#define pp_Shadowed KEY_FIELD(x, 1.0, 2.0)\n"
+"#else\n"
+"uniform highp int key_bits;\n"
+"#define pp_ClipInside ((key_bits >> 15) & 1)\n"
+"#define cp_AlphaTest ((key_bits >> 14) & 1)\n"
+"#define pp_Texture ((key_bits >> 13) & 1)\n"
+"#define pp_UseAlpha ((key_bits >> 12) & 1)\n"
+"#define pp_IgnoreTexA ((key_bits >> 11) & 1)\n"
+"#define pp_ShadInstr ((key_bits >> 9) & 3)\n"
+"#define pp_Offset ((key_bits >> 8) & 1)\n"
+"#define pp_FogCtrl ((key_bits >> 6) & 3)\n"
+"#define pp_BumpMap ((key_bits >> 4) & 1)\n"
+"#define FogClamping ((key_bits >> 3) & 1)\n"
+"#define pp_TriLinear ((key_bits >> 2) & 1)\n"
+"#define pp_Palette ((key_bits >> 1) & 1)\n"
+"#define pp_Shadowed (key_bits & 1)\n"
+"#endif\n"
+"#endif\n"
+"#if TARGET_GL == GLES3\n"
+"out highp vec4 FragColor;\n"
+"#define gl_FragColor FragColor\n"
+"#define FOG_CHANNEL r\n"
+"#elif TARGET_GL == GL3\n"
+"out highp vec4 FragColor;\n"
+"#define gl_FragColor FragColor\n"
+"#define FOG_CHANNEL r\n"
+"#else\n"
+"#define in varying\n"
+"#define texture texture2D\n"
+"#define FOG_CHANNEL a\n"
+"#endif\n"
+"\n"
+"#if TARGET_GL == GL3 || TARGET_GL == GLES3\n"
+"#if pp_Gouraud == 0\n"
+"#define INTERPOLATION flat\n"
+"#else\n"
+"#define INTERPOLATION smooth\n"
+"#endif\n"
+"#else\n"
+"#define INTERPOLATION\n"
+"#endif\n"
+"\n"
+"/* Shader program params*/\n"
+"/* gles has no alpha test stage, so its emulated on the shader */\n"
+"uniform highp float cp_AlphaTestValue;\n"
+"uniform highp vec4 pp_ClipTest;\n"
+"uniform mediump vec3 sp_FOG_COL_RAM,sp_FOG_COL_VERT;\n"
+"uniform highp float sp_FOG_DENSITY;\n"
+"uniform mediump sampler2D tex,fog_table;\n"
+"uniform lowp float trilinear_alpha;\n"
+"uniform mediump vec4 fog_clamp_min;\n"
+"uniform mediump vec4 fog_clamp_max;\n"
+"uniform mediump sampler2D palette;\n"
+"uniform mediump int palette_index;\n"
+"#if TARGET_GL != GLES2\n"
+"// The depth prepass of sorted translucent polygons (rend/sorter.h): its least alpha, 0 for the colours\n"
+"uniform highp float prepass_alpha;\n"
+"#endif\n"
+"uniform lowp float shade_scale_factor;\n"
+"\n"
+"/* Precision. The colours that come in are eight bits each, so many 255ths.\n"
+" * lowp need not hold those: it may be a number of 256ths and nothing finer,\n"
+" * and no 255th but 0 and 1 is one of them - a colour, a texel, the fog\n"
+" * colour or a clamp limit kept in lowp can be half a step out before\n"
+" * anything is done with it, and comes out a step out about as often as\n"
+" * not. Nor need lowp reach past 2, and a texel times 255, which is how the\n"
+" * fog table and a palette index are read, is done in the precision of the\n"
+" * texel: a sampler is lowp unless it says otherwise. So colours, samplers\n"
+" * and what is worked out from them (texture times colour, plus offset, into\n"
+" * fog) are mediump, which has ten bits at the least. (Only what is a number\n"
+" * of quarters or of 256ths as it comes stays lowp.) Texture coordinates are\n"
+" * highp: in mediump, which may be a 16-bit float, a coordinate that repeats\n"
+" * a large texture a few times no longer says which texel. The clip\n"
+" * rectangle is in pixels and was lowp, which need not reach past 2. */\n"
+"/* Vertex input*/\n"
+"INTERPOLATION in mediump vec4 vtx_base;\n"
+"INTERPOLATION in mediump vec4 vtx_offs;\n"
+"in highp vec2 vtx_uv;\n"
+"#if TARGET_GL == GLES2\n"
+"in highp float fog_depth;\n"
+"#endif\n"
+"\n"
+"// The fog coefficient for a depth, worked out the way the PowerVR2 does it.\n"
+"// The depth times the fog density, between 1 and just under 256, is taken\n"
+"// apart as a float: its exponent and the top four bits of its mantissa\n"
+"// pick one of the 128 table entries, and the next eight bits of mantissa\n"
+"// blend that entry with the following one. The blend is done in whole\n"
+"// numbers out of 256 and so is the result, which is returned over 256.\n"
+"// Splitting the float is done by comparing and halving, which is exact\n"
+"// and costs less than the log2() and pow() this used to take.\n"
+"highp float fog_mode2(highp float w)\n"
+"{\n"
+"#if TARGET_GL == GLES2\n"
+"	// fog_depth is 1/depth, the one thing a varying carries across a triangle exactly\n"
+"	highp float z = sp_FOG_DENSITY / fog_depth;\n"
+"#else\n"
+"	highp float z = w * sp_FOG_DENSITY;\n"
+"#endif\n"
+"	// Not clamp(): where the depth is infinite and the density zero their\n"
+"	// product is not a number, and that has to come out as 1 like anything\n"
+"	// else below 1. The texture lookup this used to end in swallowed it.\n"
+"	if (!(z >= 1.0))\n"
+"		z = 1.0;\n"
+"	if (z > 255.9999)\n"
+"		z = 255.9999;\n"
+"	highp float e = 0.0;\n"
+"	if (z >= 16.0) { z *= 0.0625; e = 4.0; }\n"
+"	if (z >= 4.0) { z *= 0.25; e += 2.0; }\n"
+"	if (z >= 2.0) { z *= 0.5; e += 1.0; }\n"
+"	highp float t = (z - 1.0) * 16.0;\n"
+"	highp float i = floor(t);\n"
+"	highp float blend = floor((t - i) * 256.0);\n"
+"	highp float u = (e * 16.0 + i + 0.5) / 128.0;\n"
+"	// The table is two rows: the entry's own value under 0.75, the next entry's under 0.25\n"
+"	highp float next = floor(texture(fog_table, vec2(u, 0.25)).FOG_CHANNEL * 255.0 + 0.5);\n"
+"	highp float cur = floor(texture(fog_table, vec2(u, 0.75)).FOG_CHANNEL * 255.0 + 0.5);\n"
+"	return floor((next * blend + cur * (255.0 - blend)) / 256.0) / 256.0;\n"
+"}\n"
+"\n"
+"highp vec4 fog_clamp(highp vec4 col)\n"
+"{\n"
+"	if (FogClamping == 1)\n"
+"		return clamp(col, fog_clamp_min, fog_clamp_max);\n"
+"	return col;\n"
+"}\n"
+"\n"
+"// The palette is a row of 1024 colours, and a colour is read at the middle\n"
+"// of its texel. (It used to be read at index/1023: the first few a\n"
+"// thousandth of a texel from the one before, the last at the very end of\n"
+"// the row.)\n"
+"mediump vec4 palettePixel(highp vec2 coords)\n"
+"{\n"
+"	highp float index = texture(tex, coords).FOG_CHANNEL;\n"
+"	highp vec2 c = vec2((index * 255.0 + float(palette_index) + 0.5) / 1024.0, 0.5);\n"
+"	return texture(palette, c);\n"
+"}\n"
+"\n"
+"void main()\n"
+"{\n"
+"	// Clip inside the box\n"
+"	if (pp_ClipInside == 1)\n"
+"	{\n"
+"		if (gl_FragCoord.x >= pp_ClipTest.x && gl_FragCoord.x <= pp_ClipTest.z\n"
+"				&& gl_FragCoord.y >= pp_ClipTest.y && gl_FragCoord.y <= pp_ClipTest.w)\n"
+"			discard;\n"
+"	}\n"
+"	\n"
+"	mediump vec4 color=vtx_base;\n"
+"	if (pp_UseAlpha==0)\n"
+"		color.a=1.0;\n"
+"	mediump vec4 offset = vtx_offs;\n"
+"	if (pp_Shadowed == 1)\n"
+"	{\n"
+"		// A pixel inside a modifier volume: what the polygon is shaded with,\n"
+"		// its base and offset colours, is scaled before the texture is\n"
+"		// combined with them. The texture itself is not.\n"
+"		color.rgb *= shade_scale_factor;\n"
+"		offset = vec4(vtx_offs.rgb * shade_scale_factor, vtx_offs.a);\n"
+"	}\n"
+"	if (pp_Texture==1)\n"
+"	{\n"
+"		mediump vec4 texcol;\n"
+"		if (pp_Palette == 0)\n"
+"			texcol = texture(tex, vtx_uv);\n"
+"		else\n"
+"			texcol = palettePixel(vtx_uv);\n"
+"		\n"
+"		if (pp_BumpMap == 1)\n"
+"		{\n"
+"			highp float s = PI / 2.0 * (texcol.a * 15.0 * 16.0 + texcol.r * 15.0) / 255.0;\n"
+"			highp float r = 2.0 * PI * (texcol.g * 15.0 * 16.0 + texcol.b * 15.0) / 255.0;\n"
+"			texcol.a = clamp(offset.a + offset.r * sin(s) + offset.g * cos(s) * cos(r - 2.0 * PI * offset.b), 0.0, 1.0);\n"
+"			texcol.rgb = vec3(1.0, 1.0, 1.0);	\n"
+"		}\n"
+"		else if (pp_IgnoreTexA==1)\n"
+"			texcol.a=1.0;	\n"
+"		if (pp_ShadInstr==0)\n"
+"		{\n"
+"			color=texcol;\n"
+"		}\n"
+"		if (pp_ShadInstr==1)\n"
+"		{\n"
+"			color.rgb*=texcol.rgb;\n"
+"			color.a=texcol.a;\n"
+"		}\n"
+"		if (pp_ShadInstr==2)\n"
+"		{\n"
+"			color.rgb=mix(color.rgb,texcol.rgb,texcol.a);\n"
+"		}\n"
+"		if (pp_ShadInstr==3)\n"
+"		{\n"
+"			color*=texcol;\n"
+"		}\n"
+"		\n"
+"		if (pp_Offset==1 && pp_BumpMap == 0)\n"
+"		{\n"
+"			color.rgb+=offset.rgb;\n"
+"		}\n"
+"	}\n"
+"	\n"
+"	color = fog_clamp(color);\n"
+"	\n"
+"	// Look-up table mode 2: the fog colour takes the place of the pixel's\n"
+"	// colour and the fog coefficient the place of its alpha. This is a mode\n"
+"	// of the fog unit, which comes after the texture has been combined in,\n"
+"	// so it is the combined colour that is replaced: a textured polygon\n"
+"	// comes out in plain fog colour. It used to be done to the base colour,\n"
+"	// before texturing, and the texture was then applied on top.\n"
+"	if (pp_FogCtrl == 3)\n"
+"		color = vec4(sp_FOG_COL_RAM.rgb, fog_mode2(gl_FragCoord.w) * (256.0 / 255.0));\n"
+"	if (pp_FogCtrl == 0)\n"
+"	{\n"
+"		highp float fog = fog_mode2(gl_FragCoord.w);\n"
+"		color.rgb = color.rgb * (255.0 / 256.0 - fog) + sp_FOG_COL_RAM.rgb * fog;\n"
+"	}\n"
+"	if (pp_FogCtrl == 1 && pp_Offset==1 && pp_BumpMap == 0)\n"
+"	{\n"
+"		highp float fog = offset.a * (255.0 / 256.0);\n"
+"		color.rgb = color.rgb * (255.0 / 256.0 - fog) + sp_FOG_COL_VERT.rgb * fog;\n"
+"	}\n"
+"	\n"
+"	if (pp_TriLinear == 1)\n"
+"		color *= trilinear_alpha;\n"
+"	\n"
+"	// Punch-through polygons are tested on the alpha of the finished colour,\n"
+"	// after the texture and the vertex colours are combined and clamped.\n"
+"	if (cp_AlphaTest == 1)\n"
+"	{\n"
+"		if (cp_AlphaTestValue > color.a)\n"
+"			discard;\n"
+"		color.a=1.0;\n"
+"	}\n"
+"	//color.rgb=vec3(gl_FragCoord.w * sp_FOG_DENSITY / 128.0);\n"
+"#if TARGET_GL != GLES2\n"
+"	// (the sorted translucent depth prepass: rend/sorter.h; the depth itself is the position's)\n"
+"	if (color.a < prepass_alpha)\n"
+"		discard;\n"
+"#endif\n"
+"	gl_FragColor =color;\n"
+"}\n";
 
 static const char* ModifierVolumeShader = 
-R"(%s
-#define TARGET_GL %s
-
-#define GLES2 0
-#define GLES3 1
-#define GL2 2
-#define GL3 3
-
-#if TARGET_GL == GL2
-#define highp
-#define lowp
-#define mediump
-#endif
-#if TARGET_GL != GLES2 && TARGET_GL != GL2
-out highp vec4 FragColor;
-#define gl_FragColor FragColor
-#endif
-
-uniform lowp float sp_ShaderColor;
-// (the depth is the position's; the colour is the final pass's tint)
-void main()
-{
-   gl_FragColor=vec4(0.0, 0.0, 0.0, sp_ShaderColor);
-}
-)";
+"%s\n"
+"#define TARGET_GL %s\n"
+"\n"
+"#define GLES2 0\n"
+"#define GLES3 1\n"
+"#define GL2 2\n"
+"#define GL3 3\n"
+"\n"
+"#if TARGET_GL == GL2\n"
+"#define highp\n"
+"#define lowp\n"
+"#define mediump\n"
+"#endif\n"
+"#if TARGET_GL != GLES2 && TARGET_GL != GL2\n"
+"out highp vec4 FragColor;\n"
+"#define gl_FragColor FragColor\n"
+"#endif\n"
+"\n"
+"uniform lowp float sp_ShaderColor;\n"
+"// (the depth is the position's; the colour is the final pass's tint)\n"
+"void main()\n"
+"{\n"
+"   gl_FragColor=vec4(0.0, 0.0, 0.0, sp_ShaderColor);\n"
+"}\n";
 
 
 int screen_width  = 640;
@@ -518,13 +513,14 @@ static void pipeline_from_key(PipelineShader *s, u32 key)
 	s->shadowed = key & 1;
 }
 
-// A program's depth scale block (DEPTH_UBO in the vertex shader) given the renderer's uniform buffer
+/* A program's depth scale block (DEPTH_UBO in the vertex shader) given the renderer's uniform buffer */
 void gl_bind_depth_ubo(GLuint program)
 {
+	GLuint block;
 #ifndef HAVE_OPENGLES2
 	if (gl.depth_ubo == 0)
 		return;
-	const GLuint block = glGetUniformBlockIndex(program, "DepthScaleBlock");
+	block = glGetUniformBlockIndex(program, "DepthScaleBlock");
 	if (block != GL_INVALID_INDEX)
 		glUniformBlockBinding(program, block, DEPTH_UBO_BINDING);
 #endif
@@ -532,36 +528,53 @@ void gl_bind_depth_ubo(GLuint program)
 
 /* A polygon's program asked of the driver (glprogram_cache.h): its own, or
  * (@general) the general one of its pp_Gouraud */
+/* The shaders' text, made from their sources (the renderer's thread's: the
+ * driver keeps its own copy, glShaderSource()) */
+static char gl_vshader[8192], gl_fshader[16384];
+
+/* Whether @fmt with @strings of its %s's and @ints %d's fits in @room */
+static bool gl_shader_fits(size_t room, const char *fmt, const char *a, const char *b, int ints)
+{
+	return strlen(fmt) + strlen(a) + strlen(b) + (size_t)ints * 11 < room;
+}
+
+/* The vertex shader's text, of a program of @pp_Gouraud */
+static const char *gl_vertex_text(int pp_Gouraud)
+{
+	verify(gl_shader_fits(sizeof(gl_vshader), VertexShaderSource, gl.glsl_version_header, gl.gl_version, 2));
+	sprintf(gl_vshader, VertexShaderSource, gl.glsl_version_header, gl.gl_version, pp_Gouraud, gl.depth_ubo != 0);
+	return gl_vshader;
+}
+
 static GLuint make_pipeline_program(const PipelineShader *s, bool general, bool background)
 {
-	char vshader[8192];
-	int rc = snprintf(vshader, sizeof(vshader), VertexShaderSource, gl.glsl_version_header, gl.gl_version, s->pp_Gouraud, gl.depth_ubo != 0);
-	verify(rc + 1 <= (int)sizeof(vshader));
-
 	char header[128];
-	snprintf(header, sizeof(header), "%s\n#define GENERAL_PROGRAM", gl.glsl_version_header);
-	char pshader[16384];
-	rc = snprintf(pshader, sizeof(pshader), PixelPipelineShader, general ? header : gl.glsl_version_header, gl.gl_version,
-                s->cp_AlphaTest,s->pp_InsideClipping,s->pp_UseAlpha,
-                s->pp_Texture,s->pp_IgnoreTexA,s->pp_ShadInstr,s->pp_Offset,s->pp_FogCtrl, s->pp_Gouraud, s->pp_BumpMap,
-				s->fog_clamping, s->trilinear, s->palette, s->shadowed);
-	verify(rc + 1 <= (int)sizeof(pshader));
+	const char *vshader = gl_vertex_text(s->pp_Gouraud);
 
-	return glprog_make(vshader, pshader, background);
+	verify(strlen(gl.glsl_version_header) + 32 < sizeof(header));
+	sprintf(header, "%s\n#define GENERAL_PROGRAM", gl.glsl_version_header);
+	verify(gl_shader_fits(sizeof(gl_fshader), PixelPipelineShader, header, gl.gl_version, 12));
+	sprintf(gl_fshader, PixelPipelineShader, general ? header : gl.glsl_version_header, gl.gl_version,
+			s->cp_AlphaTest, s->pp_InsideClipping, s->pp_UseAlpha,
+			s->pp_Texture, s->pp_IgnoreTexA, s->pp_ShadInstr, s->pp_Offset, s->pp_FogCtrl, s->pp_Gouraud, s->pp_BumpMap,
+			s->fog_clamping, s->trilinear, s->palette, s->shadowed);
+
+	return glprog_make(vshader, gl_fshader, background);
 }
 
 /* Its uniforms found, the samplers and this frame's uniforms given (the
  * program bound). A general program has all of them. */
 static void pipeline_locations(PipelineShader *s, bool general)
 {
-	glcache.UseProgram(s->program);
+	GLint gu;
+	glc_use_program(s->program);
 
-	//setup texture 0 as the input for the shader
-	GLint gu = glGetUniformLocation(s->program, "tex");
+	/* setup texture 0 as the input for the shader */
+	gu = glGetUniformLocation(s->program, "tex");
 	if (s->pp_Texture==1 || general)
 		glUniform1i(gu,0);
 
-	//get the uniform locations
+	/* get the uniform locations */
 	s->depth_scale      = glGetUniformLocation(s->program, "depth_scale");
 	gl_bind_depth_ubo(s->program);
 
@@ -571,7 +584,7 @@ static void pipeline_locations(PipelineShader *s, bool general)
 
 	s->cp_AlphaTestValue= glGetUniformLocation(s->program, "cp_AlphaTestValue");
 
-	//FOG_COL_RAM,FOG_COL_VERT,FOG_DENSITY;
+	/* FOG_COL_RAM,FOG_COL_VERT,FOG_DENSITY; */
 	if ((s->pp_FogCtrl==1 && s->pp_Texture==1) || general)
 		s->sp_FOG_COL_VERT=glGetUniformLocation(s->program, "sp_FOG_COL_VERT");
 	else
@@ -584,11 +597,11 @@ static void pipeline_locations(PipelineShader *s, bool general)
 	{
 		s->sp_FOG_COL_RAM=-1;
 	}
-	// Setup texture 1 as the fog table
+	/* Setup texture 1 as the fog table */
 	gu = glGetUniformLocation(s->program, "fog_table");
 	if (gu != -1)
 		glUniform1i(gu, 1);
-	// And texture 2 as palette
+	/* And texture 2 as palette */
 	gu = glGetUniformLocation(s->program, "palette");
 	if (gu != -1)
 		glUniform1i(gu, 2);
@@ -627,7 +640,7 @@ bool CompilePipelineShader(	PipelineShader* s)
 	return glIsProgram(s->program)==GL_TRUE;
 }
 
-// A polygon drawn with the general program @g until its own is there
+/* A polygon drawn with the general program @g until its own is there */
 static void use_general(PipelineShader *s, PipelineShader *g)
 {
 	s->program = g->program;
@@ -654,9 +667,10 @@ static void use_general(PipelineShader *s, PipelineShader *g)
  * general program (it did not link), made now as ever. */
 static void pipeline_first(PipelineShader *s, u32 key)
 {
+	PipelineShader *g;
 	pipeline_from_key(s, key);
 	glprog_note(GLPROG_GLES, key);
-	PipelineShader *g = &gl.general[s->pp_Gouraud];
+	g = &gl.general[s->pp_Gouraud];
 	if (g->program == 0)
 	{
 		CompilePipelineShader(s);
@@ -668,14 +682,15 @@ static void pipeline_first(PipelineShader *s, u32 key)
 
 void UsePipelineShader(PipelineShader *s)
 {
-	glcache.UseProgram(s->program);
-	PipelineShader *owner = s->general != nullptr ? s->general : s;
+	PipelineShader *owner;
+	glc_use_program(s->program);
+	owner = s->general != NULL ? s->general : s;
 	if (owner->uniforms_set != gl.uniforms_frame)
 	{
 		owner->uniforms_set = gl.uniforms_frame;
 		shader_uniforms_set(owner);
 	}
-	if (s->general != nullptr && owner->key_now != s->key)
+	if (s->general != NULL && owner->key_now != s->key)
 	{
 		owner->key_now = s->key;
 		if (gl.gl_major >= 3)
@@ -691,9 +706,9 @@ void UsePipelineShader(PipelineShader *s)
  * start with those of earlier runs. (The general program draws the
  * others the first time.) */
 static const u16 CommonKeys[] = {
-	0x00a0,	// Gouraud, untextured, no alpha, no fog
-	0x0aa0,	// ...the same, with texture bits a polygon without a texture leaves
-	0x37a0,	// Gouraud, textured, alpha, modulated alpha, offset, no fog
+	0x00a0,	/* Gouraud, untextured, no alpha, no fog */
+	0x0aa0,	/* ...the same, with texture bits a polygon without a texture leaves */
+	0x37a0,	/* Gouraud, textured, alpha, modulated alpha, offset, no fog */
 };
 
 /* At the renderer's start: the general programs, and the programs of the
@@ -703,50 +718,58 @@ static const u16 CommonKeys[] = {
 static PipelineShader *shader_of(u32 key)
 {
 	PipelineShader *s = (PipelineShader *)tex_map_find(&gl.shaders, key);
-	if (s == nullptr && (s = (PipelineShader *)tex_map_add(&gl.shaders, key)) == nullptr)
+	if (s == NULL && (s = (PipelineShader *)tex_map_add(&gl.shaders, key)) == NULL)
 		die("Out of memory");
 	return s;
 }
 
-static void gl_make_programs()
+/* (the keys made at the start, at most) */
+#define GL_START_KEYS 1024
+
+static void gl_make_programs(void)
 {
+	int g;
+	u32 e;
+	/* (the renderer's thread's, at its start) */
+	static u32 keys[GL_START_KEYS];
+	static u32 failed[1024];
+	u32 nkeys, count, i, nfailed;
+	const u32 *known;
 	if (gl.shaders.elem == 0)
 		tex_map_init(&gl.shaders, sizeof(PipelineShader), NULL, NULL);
 	gl.shaders.name = "OpenGL programs";
 	tex_map_reserve(&gl.shaders, 2048);
-	for (int g = 0; g < 2; g++)
+	for (g = 0; g < 2; g++)
 	{
 		PipelineShader *s = &gl.general[g];
 		memset(s, 0, sizeof(*s));
 		s->pp_Gouraud = g;
 		s->program = make_pipeline_program(s, true, true);
 	}
-	u32 count = 0;
-	const u32 *known = glprog_known(GLPROG_GLES, &count);
-	const u32 most = count + (u32)ARRAY_SIZE(CommonKeys) + 3;
-	std::vector<u32> keys;
-	keys.reserve(most);
-	for (u32 i = 0; i < count; i++)
-		if (known[i] <= 0xFFFF)
-			keys.push_back(known[i]);
-	for (u16 k : CommonKeys)
-		keys.push_back(k);
-	// (the framebuffer's, the VMU screens' and the crosshairs': drawn with DrawQuad())
-	keys.push_back(pipeline_key(false, false, true, false, true, 0, false, 2, false, false, false, false, false, false));
-	keys.push_back(pipeline_key(false, false, true, true, false, 0, false, 2, false, false, false, false, false, false));
-	if (keys.size() > 1024)
-		keys.resize(1024);
+	count = 0;
+	known = glprog_known(GLPROG_GLES, &count);
+	nkeys = 0;
+	for (i = 0; i < count; i++)
+		if (known[i] <= 0xFFFF && nkeys < GL_START_KEYS)
+			keys[nkeys++] = known[i];
+	for (i = 0; i < (sizeof(CommonKeys) / sizeof(CommonKeys[0])) && nkeys < GL_START_KEYS; i++)
+		keys[nkeys++] = CommonKeys[i];
+	/* (the framebuffer's, the VMU screens' and the crosshairs': drawn with DrawQuad()) */
+	if (nkeys < GL_START_KEYS)
+		keys[nkeys++] = pipeline_key(false, false, true, false, true, 0, false, 2, false, false, false, false, false, false);
+	if (nkeys < GL_START_KEYS)
+		keys[nkeys++] = pipeline_key(false, false, true, true, false, 0, false, 2, false, false, false, false, false, false);
 	if (!PipelineTestGeneral)
-		for (u32 key : keys)
+		for (i = 0; i < nkeys; i++)
 		{
-			PipelineShader *s = shader_of(key);
+			PipelineShader *s = shader_of(keys[i]);
 			if (s->program != 0 || s->pending != 0)
 				continue;
-			pipeline_from_key(s, key);
+			pipeline_from_key(s, keys[i]);
 			s->pending = make_pipeline_program(s, false, true);
 		}
-	// now waited for
-	for (int g = 0; g < 2; g++)
+	/* now waited for */
+	for (g = 0; g < 2; g++)
 	{
 		PipelineShader *s = &gl.general[g];
 		if (s->program == 0)
@@ -762,13 +785,12 @@ static void gl_make_programs()
 	}
 	/* (those that did not link go: taken away after, not while they are
 	 * gone through) */
-	static u32 failed[1024];
-	u32 nfailed = 0;
-	for (u32 e = 0; e < tex_map_places(&gl.shaders); e++)
+	nfailed = 0;
+	for (e = 0; e < tex_map_places(&gl.shaders); e++)
 	{
 		u64 key;
 		PipelineShader *s = (PipelineShader *)tex_map_at(&gl.shaders, e, &key);
-		if (s != nullptr && s->pending != 0 && s->program == 0)
+		if (s != NULL && s->pending != 0 && s->program == 0)
 		{
 			const GLuint p = s->pending;
 			s->pending = 0;
@@ -781,12 +803,12 @@ static void gl_make_programs()
 			{
 				WARN_LOG(RENDERER, "OpenGL: the program of key %x did not link\n", s->key);
 				glDeleteProgram(p);
-				if (nfailed < ARRAY_SIZE(failed))
+				if (nfailed < (sizeof(failed) / sizeof(failed[0])))
 					failed[nfailed++] = (u32)key;
 			}
 		}
 	}
-	for (u32 i = 0; i < nfailed; i++)
+	for (i = 0; i < nfailed; i++)
 		tex_map_remove(&gl.shaders, failed[i]);
 }
 
@@ -803,20 +825,20 @@ PipelineShader *GetProgram(bool cp_AlphaTest, bool pp_InsideClipping,
 		pipeline_first(shader, rv);
 
 #ifdef RPI4_SET_UNIFORM_ATTRIBUTES_BUG
-	// rpi 4 has a bug where it does not save uniform and attribute state with
-	// the program, so they have to be reinit each time you reuse the program
-	glcache.UseProgram(shader->program);
-	if (shader->general != nullptr)
+	/* rpi 4 has a bug where it does not save uniform and attribute state with */
+	/* the program, so they have to be reinit each time you reuse the program */
+	glc_use_program(shader->program);
+	if (shader->general != NULL)
 	{
-		// (and the key, and this frame's uniforms, given again: UsePipelineShader())
+		/* (and the key, and this frame's uniforms, given again: UsePipelineShader()) */
 		shader->general->key_now = ~0u;
 		shader->general->uniforms_set = gl.uniforms_frame - 1;
 	}
-	//setup texture 0 as the input for the shader
+	/* setup texture 0 as the input for the shader */
 	GLuint gu=glGetUniformLocation(shader->program, "tex");
 	if (shader->pp_Texture==1)
 		glUniform1i(gu,0);
-	// Setup texture 1 as the fog table
+	/* Setup texture 1 as the fog table */
 	gu = glGetUniformLocation(shader->program, "fog_table");
 	if (gu != -1)
 		glUniform1i(gu, 1);
@@ -838,27 +860,29 @@ PipelineShader *GetProgram(bool cp_AlphaTest, bool pp_InsideClipping,
 #define GL_MOST_KIB (1 << 28)
 static void gl_query_vram_budget(bool nvx_meminfo, bool ati_meminfo)
 {
-	const GLenum nvx_dedicated = 0x9047;		// GL_GPU_MEMORY_INFO_DEDICATED_VIDMEM_NVX
-	const GLenum nvx_total_available = 0x9048;	// GL_GPU_MEMORY_INFO_TOTAL_AVAILABLE_MEMORY_NVX
-	const GLenum nvx_current_available = 0x9049;	// GL_GPU_MEMORY_INFO_CURRENT_AVAILABLE_VIDMEM_NVX
-	const GLenum ati_texture_free = 0x87FC;		// GL_TEXTURE_FREE_MEMORY_ATI
+	const char *renderer_name;
+	const GLenum nvx_dedicated = 0x9047;		/* GL_GPU_MEMORY_INFO_DEDICATED_VIDMEM_NVX */
+	const GLenum nvx_total_available = 0x9048;	/* GL_GPU_MEMORY_INFO_TOTAL_AVAILABLE_MEMORY_NVX */
+	const GLenum nvx_current_available = 0x9049;	/* GL_GPU_MEMORY_INFO_CURRENT_AVAILABLE_VIDMEM_NVX */
+	const GLenum ati_texture_free = 0x87FC;		/* GL_TEXTURE_FREE_MEMORY_ATI */
 	GLint kib[4] = { 0, 0, 0, 0 };
 
-	gl.vram_budget = VramBudget();
+	memset(&gl.vram_budget, 0, sizeof(gl.vram_budget));
 	/* (a rasterizer in software has no video memory, and what Mesa's say of
 	 * it through GL_NVX_gpu_memory_info is what was on the stack - another
 	 * figure each run: the budget is the estimate, every run the same) */
-	const char *renderer_name = (const char *)glGetString(GL_RENDERER);
-	if (renderer_name != nullptr && (strstr(renderer_name, "llvmpipe") != nullptr || strstr(renderer_name, "softpipe") != nullptr))
+	renderer_name = (const char *)glGetString(GL_RENDERER);
+	if (renderer_name != NULL && (strstr(renderer_name, "llvmpipe") != NULL || strstr(renderer_name, "softpipe") != NULL))
 		nvx_meminfo = ati_meminfo = false;
 	if (nvx_meminfo)
 	{
 		GLint total = 0, dedicated = 0;
+		bool ok;
 		glGetIntegerv(nvx_dedicated, &dedicated);
 		glGetIntegerv(nvx_total_available, &total);
 		glGetIntegerv(nvx_current_available, &kib[0]);
 		/* (a figure no card has, 256 GB or more, is not one) */
-		const bool ok = glGetError() == GL_NO_ERROR && total > 0 && total < GL_MOST_KIB
+		ok = glGetError() == GL_NO_ERROR && total > 0 && total < GL_MOST_KIB
 				&& dedicated >= 0 && dedicated < GL_MOST_KIB;
 		if (ok && dedicated > 0 && dedicated < GL_UMA_DEDICATED_KIB)
 		{
@@ -874,8 +898,9 @@ static void gl_query_vram_budget(bool nvx_meminfo, bool ati_meminfo)
 	}
 	if (!gl.vram_budget.exact && ati_meminfo)
 	{
+		bool ok;
 		glGetIntegerv(ati_texture_free, kib);
-		const bool ok = glGetError() == GL_NO_ERROR;
+		ok = glGetError() == GL_NO_ERROR;
 		if (ok && kib[0] >= 0 && kib[0] < GL_UMA_DEDICATED_KIB && kib[2] > kib[0])
 		{
 			gl.vram_budget.budget_kib = (u32)kib[0] + (u32)kib[2];
@@ -889,11 +914,14 @@ static void gl_query_vram_budget(bool nvx_meminfo, bool ati_meminfo)
 	}
 	if (!gl.vram_budget.exact)
 		gl.vram_budget.budget_kib = (gl.is_gles ? 256u : 512u) << 10;
-	vram_budget_log("OpenGL", gl.vram_budget);
+	vram_budget_say("OpenGL", &gl.vram_budget);
 }
 
-void findGLVersion()
+void findGLVersion(void)
 {
+	const char *version;
+	bool ubo, clip_control;
+	bool nvx_meminfo, ati_meminfo;
 	gl.stencil_present = true;
 	gl.index_type = GL_UNSIGNED_INT;
 
@@ -906,10 +934,11 @@ void findGLVersion()
 	else
 		glGetIntegerv(GL_MINOR_VERSION, &gl.gl_minor);
 
-	const char *version = (const char *)glGetString(GL_VERSION);
+	version = (const char *)glGetString(GL_VERSION);
 	NOTICE_LOG(RENDERER, "OpenGL version: %s\n", version);
 	if (!strncmp(version, "OpenGL ES", 9))
 	{
+		GLint stencilBits;
 		gl.is_gles = true;
 		if (gl.gl_major >= 3)
 		{
@@ -928,7 +957,7 @@ void findGLVersion()
 			gl.single_channel_internal = GL_ALPHA;
 		}
 
-		GLint stencilBits = 0;
+		stencilBits = 0;
 		glGetIntegerv(GL_STENCIL_BITS, &stencilBits);
 		if (stencilBits == 0)
 			gl.stencil_present = false;
@@ -952,7 +981,8 @@ void findGLVersion()
 		}
 	}
 	gl.max_anisotropy = 1.f;
-	bool nvx_meminfo = false, ati_meminfo = false;
+	nvx_meminfo = false;
+	ati_meminfo = false;
 	/* The depth (rend/depth_scale.h): a 32-bit float depth buffer where
 	 * this renderer makes its own (OpenGL 3.0, OpenGL ES 3.0; the frame
 	 * buffer the frontend gives has what it gives), the depth scale in a
@@ -960,19 +990,21 @@ void findGLVersion()
 	 * OpenGL ES 3.0: so that a frame decoded on the GPU can write it), and
 	 * clip space z in [0,1] where the context has ARB_clip_control
 	 * (OpenGL 4.5's), which keeps a float depth buffer's precision */
-	bool ubo = false, clip_control = false;
+	ubo = false;
+	clip_control = false;
 	gl.depth_format = gl.gl_major >= 3 ? GL_DEPTH32F_STENCIL8 : RARCH_GL_DEPTH24_STENCIL8;
 #ifndef HAVE_OPENGLES2
-	// (a build with the OpenGL ES 2 headers has no uniform buffer functions: the uniform, on any context)
+	/* (a build with the OpenGL ES 2 headers has no uniform buffer functions: the uniform, on any context) */
 	ubo = gl.is_gles ? gl.gl_major >= 3 : gl.gl_major * 10 + gl.gl_minor >= 31;
 	gl.buffer_storage = false;
-	// (by the extension, which every driver with it lists, 4.5's or not: the other path can then be tried by turning the extension off)
+	/* (by the extension, which every driver with it lists, 4.5's or not: the other path can then be tried by turning the extension off) */
 	if (gl.gl_major >= 3)
 	{
-		for (u32 i = 0; ; i++)
+		u32 i;
+		for (i = 0; ; i++)
 		{
 			const char* extension = (const char *)glGetStringi(GL_EXTENSIONS, i);
-			if (extension == nullptr)
+			if (extension == NULL)
 				break;
 			if (!strcmp(extension, "GL_EXT_texture_filter_anisotropic"))
 				glGetFloatv(GL_MAX_TEXTURE_MAX_ANISOTROPY_EXT, &gl.max_anisotropy);
@@ -984,7 +1016,7 @@ void findGLVersion()
 				ubo = true;
 			else if (!strcmp(extension, "GL_ARB_clip_control") && !gl.is_gles)
 				clip_control = true;
-			// (by the extension too, which every driver with OpenGL 4.4 lists)
+			/* (by the extension too, which every driver with OpenGL 4.4 lists) */
 			else if (!strcmp(extension, "GL_ARB_buffer_storage") && !gl.is_gles)
 				gl.buffer_storage = true;
 		}
@@ -993,23 +1025,23 @@ void findGLVersion()
 #endif
 	{
 		const char *extensions = (const char *)glGetString(GL_EXTENSIONS);
-		if (extensions != nullptr)
+		if (extensions != NULL)
 		{
-			nvx_meminfo = strstr(extensions, "GL_NVX_gpu_memory_info") != nullptr;
-			ati_meminfo = strstr(extensions, "GL_ATI_meminfo") != nullptr;
+			nvx_meminfo = strstr(extensions, "GL_NVX_gpu_memory_info") != NULL;
+			ati_meminfo = strstr(extensions, "GL_ATI_meminfo") != NULL;
 		}
 	}
-	gl.clipControl = nullptr;
-	gl.clearDepthf = nullptr;
-	gl.copyBufferSubData = nullptr;
+	gl.clipControl = NULL;
+	gl.clearDepthf = NULL;
+	gl.copyBufferSubData = NULL;
 	{
-		glsm_ctx_proc_address_t proc = { nullptr };
-		if (glsm_ctl(GLSM_CTL_PROC_ADDRESS_GET, &proc) && proc.addr != nullptr)
+		glsm_ctx_proc_address_t proc = { NULL };
+		if (glsm_ctl(GLSM_CTL_PROC_ADDRESS_GET, &proc) && proc.addr != NULL)
 		{
 			if (clip_control)
 				gl.clipControl = (void (APIENTRYP)(GLenum, GLenum))proc.addr("glClipControl");
 #ifndef HAVE_OPENGLES
-			// (an ES build has glsm's, which is ES's)
+			/* (an ES build has glsm's, which is ES's) */
 			if (gl.is_gles)
 				gl.clearDepthf = (void (APIENTRYP)(GLfloat))proc.addr("glClearDepthf");
 #endif
@@ -1020,18 +1052,18 @@ void findGLVersion()
 	if (gl.depth_ubo != 0)
 		glDeleteBuffers(1, &gl.depth_ubo);
 	gl.depth_ubo = 0;
-	// (the copy is OpenGL 3.1's too; without it the uniform, and no frame decoded on the GPU: GlTaDecoder needs 4.3)
-	if (ubo && gl.copyBufferSubData != nullptr)
+	/* (the copy is OpenGL 3.1's too; without it the uniform, and no frame decoded on the GPU: GlTaDecoder needs 4.3) */
+	if (ubo && gl.copyBufferSubData != NULL)
 	{
 		glGenBuffers(1, &gl.depth_ubo);
 		glBindBuffer(GL_UNIFORM_BUFFER, gl.depth_ubo);
-		glBufferData(GL_UNIFORM_BUFFER, 16, nullptr, GL_DYNAMIC_DRAW);
+		glBufferData(GL_UNIFORM_BUFFER, 16, NULL, GL_DYNAMIC_DRAW);
 		glBindBuffer(GL_UNIFORM_BUFFER, 0);
 	}
 	(void)clip_control;
 	NOTICE_LOG(RENDERER, "OpenGL depth: %s depth buffers, the scale in a %s, clip space z in %s\n",
 			gl.depth_format == GL_DEPTH32F_STENCIL8 ? "32-bit float" : "24-bit",
-			gl.depth_ubo != 0 ? "uniform buffer" : "uniform", gl.clipControl != nullptr ? "[0,1]" : "[-1,1]");
+			gl.depth_ubo != 0 ? "uniform buffer" : "uniform", gl.clipControl != NULL ? "[0,1]" : "[-1,1]");
 	while (glGetError() != GL_NO_ERROR)
 		;
 	gl_query_vram_budget(nvx_meminfo, ati_meminfo);
@@ -1045,15 +1077,16 @@ GLuint gl_CompileShader(const char* shader,GLuint type)
 	glShaderSource(rv, 1,&shader, NULL);
 	glCompileShader(rv);
 
-	//lets see if it compiled ...
+	/* lets see if it compiled ... */
 	glGetShaderiv(rv, GL_COMPILE_STATUS, &result);
 	glGetShaderiv(rv, GL_INFO_LOG_LENGTH, &compile_log_len);
 
 	if (!result && compile_log_len>0)
 	{
+		char*compile_log;
 		if (compile_log_len==0)
 			compile_log_len=1;
-		char* compile_log=(char*)malloc(compile_log_len);
+		compile_log = (char*)malloc(compile_log_len);
 		*compile_log=0;
 
 		glGetShaderInfoLog(rv, compile_log_len, &compile_log_len, compile_log);
@@ -1065,14 +1098,14 @@ GLuint gl_CompileShader(const char* shader,GLuint type)
 	return rv;
 }
 
-// (through the programs kept: glprogram_cache.h)
+/* (through the programs kept: glprogram_cache.h) */
 GLuint gl_CompileAndLink(const char* VertexShader, const char* FragmentShader)
 {
 	const GLuint program = glprog_make(VertexShader, FragmentShader, false);
 	if (glprog_failed())
 		die("shader compile fail\n");
 
-	glcache.UseProgram(program);
+	glc_use_program(program);
 
 	verify(glIsProgram(program));
 
@@ -1111,39 +1144,41 @@ Tile clip
 
 */
 
-static void gl_delete_shaders()
+static void gl_delete_shaders(void)
 {
-	for (u32 e = 0; e < tex_map_places(&gl.shaders); e++)
+	u32 e;
+	int g;
+	for (e = 0; e < tex_map_places(&gl.shaders); e++)
 	{
 		u64 key;
 		const PipelineShader *s = (const PipelineShader *)tex_map_at(&gl.shaders, e, &key);
-		if (s == nullptr)
+		if (s == NULL)
 			continue;
-		// (one drawn with a general program has none of its own, but may have one coming)
-		if (s->program != 0 && s->general == nullptr)
+		/* (one drawn with a general program has none of its own, but may have one coming) */
+		if (s->program != 0 && s->general == NULL)
 			glDeleteProgram(s->program);
 		if (s->pending != 0)
 			glDeleteProgram(s->pending);
 	}
 	tex_map_clear(&gl.shaders);
-	for (PipelineShader& g : gl.general)
+	for (g = 0; g < 2; g++)
 	{
-		if (g.program != 0)
-			glDeleteProgram(g.program);
-		g.program = 0;
+		if (gl.general[g].program != 0)
+			glDeleteProgram(gl.general[g].program);
+		gl.general[g].program = 0;
 	}
 	glDeleteProgram(gl.modvol_shader.program);
 	gl.modvol_shader.program = 0;
 }
 
-static void own_target_term(void);	// (RenderFrame()'s framebuffer)
+static void own_target_term(void);	/* (RenderFrame()'s framebuffer) */
 
 static void gl_term(void)
 {
 	gl_frame_buffers_term();
-	glcache.DeleteTextures(ARRAY_SIZE(vmuTextureId), vmuTextureId);
+	glc_delete_textures((sizeof(vmuTextureId) / sizeof(vmuTextureId[0])), vmuTextureId);
 	memset(vmuTextureId, 0, sizeof(vmuTextureId));
-	glcache.DeleteTextures(ARRAY_SIZE(lightgunTextureId), lightgunTextureId);
+	glc_delete_textures((sizeof(lightgunTextureId) / sizeof(lightgunTextureId[0])), lightgunTextureId);
 	memset(lightgunTextureId, 0, sizeof(lightgunTextureId));
 
 	glDeleteBuffers(1, &gl.vbo.geometry);
@@ -1153,11 +1188,11 @@ static void gl_term(void)
 	if (gl.depth_ubo != 0)
 		glDeleteBuffers(1, &gl.depth_ubo);
 	gl.depth_ubo = 0;
-	glcache.DeleteTextures(1, &fbTextureId);
+	glc_delete_textures(1, &fbTextureId);
 	fbTextureId = 0;
-	glcache.DeleteTextures(1, &fogTextureId);
+	glc_delete_textures(1, &fogTextureId);
 	fogTextureId = 0;
-	glcache.DeleteTextures(1, &paletteTextureId);
+	glc_delete_textures(1, &paletteTextureId);
 	paletteTextureId = 0;
 	own_target_term();
 
@@ -1167,7 +1202,7 @@ static void gl_term(void)
 void gl_buffer_room(GLuint buffer, size_t bytes)
 {
 	glBindBuffer(GL_ARRAY_BUFFER, buffer);
-	glBufferData(GL_ARRAY_BUFFER, (GLsizeiptr)bytes, nullptr, GL_STREAM_DRAW);
+	glBufferData(GL_ARRAY_BUFFER, (GLsizeiptr)bytes, NULL, GL_STREAM_DRAW);
 	glBindBuffer(GL_ARRAY_BUFFER, 0);
 }
 
@@ -1183,18 +1218,16 @@ static bool gl_create_resources(void)
 	gl_buffer_room(gl.vbo.modvols, GL_BUFFER_ROOM);
 	gl_buffer_room(gl.vbo.idxs, GL_BUFFER_ROOM);
 	gl_buffer_room(gl.vbo.idxs2, GL_BUFFER_ROOM);
-	// (and the translucent sort's room: rend/sorter.h)
+	/* (and the translucent sort's room: rend/sorter.h) */
 	gl_sort_reserve();
 
    findGLVersion();
    glprog_open();
 
-   char vshader[8192];
-   sprintf(vshader, VertexShaderSource, gl.glsl_version_header, gl.gl_version, 1, gl.depth_ubo != 0);
-   char fshader[8192];
-	sprintf(fshader, ModifierVolumeShader, gl.glsl_version_header, gl.gl_version);
+	verify(gl_shader_fits(sizeof(gl_fshader), ModifierVolumeShader, gl.glsl_version_header, gl.gl_version, 0));
+	sprintf(gl_fshader, ModifierVolumeShader, gl.glsl_version_header, gl.gl_version);
 
-	gl.modvol_shader.program = gl_CompileAndLink(vshader, fshader);
+	gl.modvol_shader.program = gl_CompileAndLink(gl_vertex_text(1), gl_fshader);
 	gl_bind_depth_ubo(gl.modvol_shader.program);
 	gl.modvol_shader.normal_matrix  = glGetUniformLocation(gl.modvol_shader.program, "normal_matrix");
 	gl.modvol_shader.depth_scale = glGetUniformLocation(gl.modvol_shader.program, "depth_scale");
@@ -1226,19 +1259,19 @@ void UpdateFogTexture(u8 *fog_table, GLenum texture_slot, GLint fog_image_format
 	glActiveTexture(texture_slot);
 	if (fogTextureId == 0)
 	{
-		fogTextureId = glcache.GenTexture();
-		glcache.BindTexture(GL_TEXTURE_2D, fogTextureId);
+		fogTextureId = glc_gen_texture();
+		glc_bind_texture(GL_TEXTURE_2D, fogTextureId);
 		/* The shader reads single entries, at the middle of their texels,
 		 * and blends them itself: nothing for the card to filter, and
 		 * filtering, a card whose weights are not exact there lets the
 		 * entry next to it in. */
-		glcache.TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-		glcache.TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-		glcache.TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-		glcache.TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+		glc_tex_parameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+		glc_tex_parameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+		glc_tex_parameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+		glc_tex_parameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
 	}
 	else
-		glcache.BindTexture(GL_TEXTURE_2D, fogTextureId);
+		glc_bind_texture(GL_TEXTURE_2D, fogTextureId);
 
     glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
 	glTexImage2D(GL_TEXTURE_2D, 0, fog_image_format == GL_RED ? GL_R8 : fog_image_format, 128, 2, 0, fog_image_format, GL_UNSIGNED_BYTE, temp_tex_buffer);
@@ -1253,15 +1286,15 @@ void UpdatePaletteTexture(GLenum texture_slot)
 	glActiveTexture(texture_slot);
 	if (paletteTextureId == 0)
 	{
-		paletteTextureId = glcache.GenTexture();
-		glcache.BindTexture(GL_TEXTURE_2D, paletteTextureId);
-		glcache.TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-		glcache.TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-		glcache.TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-		glcache.TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+		paletteTextureId = glc_gen_texture();
+		glc_bind_texture(GL_TEXTURE_2D, paletteTextureId);
+		glc_tex_parameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+		glc_tex_parameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+		glc_tex_parameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+		glc_tex_parameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
 	}
 	else
-		glcache.BindTexture(GL_TEXTURE_2D, paletteTextureId);
+		glc_bind_texture(GL_TEXTURE_2D, paletteTextureId);
 
    glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
 	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, 1024, 1, 0, GL_RGBA, GL_UNSIGNED_BYTE, palette32_ram);
@@ -1280,23 +1313,24 @@ void vertex_buffer_unmap(void)
 void DoCleanup() {
 }
 
-static void upload_vertex_indices()
+static void upload_vertex_indices(void)
 {
 	if (gl.index_type == GL_UNSIGNED_SHORT)
 	{
+		u32 i;
 		/* (kept from one frame to the next: grown, never made again) */
 		static grow_buf_t short_idx;
-		const u32 count = pvrrc.idx.used();
+		const u32 count = TA_LIST_USED(pvrrc.idx, u32);
 		u16 *to = (u16 *)grow_buf_reserve(&short_idx, (size_t)count * sizeof(u16) + 2);
-		const u32 *p = pvrrc.idx.head();
-		if (to == nullptr)
+		const u32 *p = TA_LIST_HEAD(pvrrc.idx, u32);
+		if (to == NULL)
 			return;
-		for (u32 i = 0; i < count; i++)
+		for (i = 0; i < count; i++)
 			to[i] = (u16)p[i];
 		glBufferData(GL_ELEMENT_ARRAY_BUFFER, count * sizeof(u16), to, GL_STREAM_DRAW);
 	}
 	else
-		glBufferData(GL_ELEMENT_ARRAY_BUFFER,pvrrc.idx.bytes(),pvrrc.idx.head(),GL_STREAM_DRAW);
+		glBufferData(GL_ELEMENT_ARRAY_BUFFER,TA_LIST_BYTES(pvrrc.idx),TA_LIST_HEAD(pvrrc.idx, u32),GL_STREAM_DRAW);
 }
 
 /* The picture of a frame for the screen, drawn into a framebuffer of the
@@ -1332,7 +1366,7 @@ static void own_target_term(void)
 	if (own_fbo != 0)
 		glDeleteFramebuffers(1, &own_fbo);
 	if (own_color != 0 && own_color_texture)
-		glcache.DeleteTextures(1, &own_color);
+		glc_delete_textures(1, &own_color);
 	else if (own_color != 0)
 		glDeleteRenderbuffers(1, &own_color);
 	if (own_depth != 0)
@@ -1346,21 +1380,22 @@ static void own_target_term(void)
  * frontend's), false if it is the frontend's */
 static bool own_target_bind(int w, int h)
 {
+	GLuint target;
 #if defined(GL_READ_FRAMEBUFFER) && defined(GL_DRAW_FRAMEBUFFER)
 	const bool texture = gl_writeout_ready();
 	if ((gl.depth_format != GL_DEPTH32F_STENCIL8 && !texture) || w <= 0 || h <= 0)
 		return false;
-	const GLuint target = hw_render.get_current_framebuffer();
+	target = hw_render.get_current_framebuffer();
 	if (own_fbo == 0 || own_w != w || own_h != h || own_color_texture != texture)
 	{
 		own_target_term();
 		own_color_texture = texture;
 		if (texture)
 		{
-			own_color = glcache.GenTexture();
-			glcache.BindTexture(GL_TEXTURE_2D, own_color);
+			own_color = glc_gen_texture();
+			glc_bind_texture(GL_TEXTURE_2D, own_color);
 			glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, w, h);
-			glcache.BindTexture(GL_TEXTURE_2D, 0);
+			glc_bind_texture(GL_TEXTURE_2D, 0);
 		}
 		else
 		{
@@ -1388,7 +1423,7 @@ static bool own_target_bind(int w, int h)
 		}
 		own_w = w;
 		own_h = h;
-		glcache.Disable(GL_SCISSOR_TEST);
+		glc_disable(GL_SCISSOR_TEST);
 		glBindFramebuffer(GL_READ_FRAMEBUFFER, target);
 		glBindFramebuffer(GL_DRAW_FRAMEBUFFER, own_fbo);
 		glBlitFramebuffer(0, 0, w, h, 0, 0, w, h, GL_COLOR_BUFFER_BIT, GL_NEAREST);
@@ -1401,12 +1436,12 @@ static bool own_target_bind(int w, int h)
 #endif
 }
 
-// The picture drawn in the renderer's own framebuffer to the frontend's, which is left bound
+/* The picture drawn in the renderer's own framebuffer to the frontend's, which is left bound */
 static void own_target_present(void)
 {
 #if defined(GL_READ_FRAMEBUFFER) && defined(GL_DRAW_FRAMEBUFFER)
 	const GLuint target = hw_render.get_current_framebuffer();
-	glcache.Disable(GL_SCISSOR_TEST);
+	glc_disable(GL_SCISSOR_TEST);
 	glBindFramebuffer(GL_READ_FRAMEBUFFER, own_fbo);
 	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, target);
 	glBlitFramebuffer(0, 0, own_w, own_h, 0, 0, own_w, own_h, GL_COLOR_BUFFER_BIT, GL_NEAREST);
@@ -1414,20 +1449,37 @@ static void own_target_present(void)
 #endif
 }
 
+/* (lroundf()'s: half away from zero) */
+static long gl_round_away(float v)
+{
+	const double d = v;
+	return d >= 0 ? (long)floor(d + 0.5) : -(long)floor(-d + 0.5);
+}
+
 static bool RenderFrame(void)
 {
+	bool is_rtt;
+	u8*fog_colram_bgra;
+	u8*fog_colvert_bgra;
+	s32 fog_den_exp;
+	float fog_den_mant;
+	u8*fog_density;
+	bool wide_screen_on;
+	transform_matrix_t matrices;
+	const xform *scissor_mat;
 	int vmu_screen_number = 0 ;
 	bool own_target = false;
 	int lightgun_port = 0 ;
 
 	DoCleanup();
 
-	bool is_rtt = pvrrc.isRTT;
+	is_rtt = pvrrc.isRTT;
 
-	TransformMatrix<true> matrices(pvrrc);
-	xform_to_mat4(&matrices.GetNormalMatrix(), ShaderUniforms.normal_mat);
-	const xform& scissor_mat = matrices.GetScissorMatrix();
-	ViewportMatrix = matrices.GetViewportMatrix();
+	transform_matrix_init(&matrices, true);
+	transform_matrix_calc(&matrices, &pvrrc);
+	xform_to_mat4(&matrices.normal, ShaderUniforms.normal_mat);
+	scissor_mat = &matrices.scissor;
+	ViewportMatrix = matrices.viewport;
 
 	if (!is_rtt)
 		gcflip = 0;
@@ -1439,9 +1491,9 @@ static bool RenderFrame(void)
 	 * device's clip space - [0,1] with clip control, else [-1,1] - and undo
 	 * what the matrix scales z by */
 	{
-		const float mul = 1.f / matrices.GetNormalMatrix().sz;
-		ShaderUniforms.depth_coefs[0] = gl.clipControl != nullptr ? mul : 2.f * mul;
-		ShaderUniforms.depth_coefs[1] = gl.clipControl != nullptr ? 0.f : -1.f;
+		const float mul = 1.f / matrices.normal.sz;
+		ShaderUniforms.depth_coefs[0] = gl.clipControl != NULL ? mul : 2.f * mul;
+		ShaderUniforms.depth_coefs[1] = gl.clipControl != NULL ? 0.f : -1.f;
 		ShaderUniforms.depth_coefs[2] = 0;
 		ShaderUniforms.depth_coefs[3] = pvr_depth_scale(pvrrc.fZ_max);
 #ifndef HAVE_OPENGLES2
@@ -1454,7 +1506,7 @@ static bool RenderFrame(void)
 			glBufferSubData(GL_UNIFORM_BUFFER, 0, sizeof(ShaderUniforms.depth_coefs), ShaderUniforms.depth_coefs);
 			if (pvrrc.gpu)
 			{
-				glBindBuffer(GL_COPY_READ_BUFFER, glTaDecoder.Draw().frame);
+				glBindBuffer(GL_COPY_READ_BUFFER, gltad_draw()->frame);
 				gl.copyBufferSubData(GL_COPY_READ_BUFFER, GL_UNIFORM_BUFFER, TAG_O_ZSCALE * 4, 12, 4);
 				glBindBuffer(GL_COPY_READ_BUFFER, 0);
 			}
@@ -1463,12 +1515,12 @@ static bool RenderFrame(void)
 		}
 #endif
 	}
-	if (gl.clipControl != nullptr)
+	if (gl.clipControl != NULL)
 		gl.clipControl(GL_LOWER_LEFT, GL_ZERO_TO_ONE);
 
-	//VERT and RAM fog color constants
-	u8* fog_colvert_bgra = (u8*)&FOG_COL_VERT;
-	u8* fog_colram_bgra = (u8*)&FOG_COL_RAM;
+	/* VERT and RAM fog color constants */
+	fog_colvert_bgra = (u8*)&FOG_COL_VERT;
+	fog_colram_bgra = (u8*)&FOG_COL_RAM;
 	ShaderUniforms.ps_FOG_COL_VERT[0] = fog_colvert_bgra[2] / 255.0f;
 	ShaderUniforms.ps_FOG_COL_VERT[1] = fog_colvert_bgra[1] / 255.0f;
 	ShaderUniforms.ps_FOG_COL_VERT[2] = fog_colvert_bgra[0] / 255.0f;
@@ -1477,11 +1529,11 @@ static bool RenderFrame(void)
 	ShaderUniforms.ps_FOG_COL_RAM[1] = fog_colram_bgra[1] / 255.0f;
 	ShaderUniforms.ps_FOG_COL_RAM[2] = fog_colram_bgra[0] / 255.0f;
 
-	//Fog density constant
-	u8* fog_density = (u8*)&FOG_DENSITY;
-	float fog_den_mant = fog_density[1] / 128.0f;  //bit 7 -> x. bit, so [6:0] -> fraction -> /128
-	s32 fog_den_exp = (s8)fog_density[0];
-	ShaderUniforms.fog_den_float = fog_den_mant * powf(2.0f, fog_den_exp);
+	/* Fog density constant */
+	fog_density = (u8*)&FOG_DENSITY;
+	fog_den_mant = fog_density[1] / 128.0f;  /* bit 7 -> x. bit, so [6:0] -> fraction -> /128 */
+	fog_den_exp = (s8)fog_density[0];
+	ShaderUniforms.fog_den_float = fog_den_mant * (float)pow(2.0, fog_den_exp);
 
 	ShaderUniforms.fog_clamp_min[0] = ((pvrrc.fog_clamp_min >> 16) & 0xFF) / 255.0f;
 	ShaderUniforms.fog_clamp_min[1] = ((pvrrc.fog_clamp_min >> 8) & 0xFF) / 255.0f;
@@ -1501,7 +1553,7 @@ static bool RenderFrame(void)
 		palette_updated = false;
 	}
 
-	glcache.UseProgram(gl.modvol_shader.program);
+	glc_use_program(gl.modvol_shader.program);
 
 	glUniform4fv(gl.modvol_shader.depth_scale, 1, ShaderUniforms.depth_coefs);
 	glUniformMatrix4fv(gl.modvol_shader.normal_matrix, 1, GL_FALSE, ShaderUniforms.normal_mat);
@@ -1515,12 +1567,13 @@ static bool RenderFrame(void)
 	ShaderUniforms.PT_ALPHA = ((PT_ALPHA_REF & 0xFF) - 0.5f) / 255.0f;
 	ShaderUniforms.shade_scale_factor = FPU_SHAD_SCALE.scale_factor / 256.f;
 
-	// (given to each program the first time it is bound in the frame: UsePipelineShader())
+	/* (given to each program the first time it is bound in the frame: UsePipelineShader()) */
 	gl.uniforms_frame++;
 
-	//setup render target first
+	/* setup render target first */
 	if (is_rtt)
 	{
+		GLuint channels = GL_RGBA, format = GL_UNSIGNED_BYTE;
 		/* A pixel clip that ends before it starts holds no pixel: the chip
 		 * writes nothing. (Its size would be negative here, and a texture
 		 * that size is no texture at all.) */
@@ -1531,15 +1584,14 @@ static bool RenderFrame(void)
 					pvrrc.fb_X_CLIP.min, pvrrc.fb_X_CLIP.max, pvrrc.fb_Y_CLIP.min, pvrrc.fb_Y_CLIP.max);
 			return false;
 		}
-		GLuint channels,format;
 		switch(FB_W_CTRL.fb_packmode)
 		{
-			case 0: //0x0   0555 KRGB 16 bit  (default)	Bit 15 is the value of fb_kval[7].
+			case 0: /* 0x0   0555 KRGB 16 bit  (default)	Bit 15 is the value of fb_kval[7]. */
 				channels=GL_RGBA;
 				format=GL_UNSIGNED_BYTE;
 				break;
 
-			case 1: //0x1   565 RGB 16 bit
+			case 1: /* 0x1   565 RGB 16 bit */
 				channels=GL_RGB;
 				/* Five or six bits a channel is what the game asked for, and
 				 * what the picture is cut down to when it goes to video
@@ -1550,29 +1602,29 @@ static bool RenderFrame(void)
 				format = GL_UNSIGNED_BYTE;
 				break;
 
-			case 2: //0x2   4444 ARGB 16 bit
+			case 2: /* 0x2   4444 ARGB 16 bit */
 				channels=GL_RGBA;
 				format=GL_UNSIGNED_BYTE;
 				break;
 
-			case 3://0x3    1555 ARGB 16 bit    The alpha value is determined by comparison with the value of fb_alpha_threshold.
+			case 3:/* 0x3    1555 ARGB 16 bit    The alpha value is determined by comparison with the value of fb_alpha_threshold. */
 				channels=GL_RGBA;
 				format=GL_UNSIGNED_BYTE;
 				break;
 
-			case 4: //0x4   888 RGB 24 bit packed
-			case 5: //0x5   0888 KRGB 32 bit    K is the value of fk_kval.
-			case 6: //0x6   8888 ARGB 32 bit
+			case 4: /* 0x4   888 RGB 24 bit packed */
+			case 5: /* 0x5   0888 KRGB 32 bit    K is the value of fk_kval. */
+			case 6: /* 0x6   8888 ARGB 32 bit */
 				WARN_LOG(RENDERER, "Unsupported render to texture format: %d\n", FB_W_CTRL.fb_packmode);
 				return false;
-			case 7: //7     invalid
-				// (a mode the chip does not have, which a game can write all the same: nothing is drawn)
+			case 7: /* 7     invalid */
+				/* (a mode the chip does not have, which a game can write all the same: nothing is drawn) */
 				WARN_LOG(RENDERER, "Invalid render to texture format: 7\n");
 				return false;
 		}
 		DEBUG_LOG(RENDERER, "RTT packmode=%d stride=%d - %d,%d -> %d,%d\n", FB_W_CTRL.fb_packmode, FB_W_LINESTRIDE.stride * 8,
  				FB_X_CLIP.min, FB_Y_CLIP.min, FB_X_CLIP.max, FB_Y_CLIP.max);
-		// (from the frame's first pixel: see TransformMatrix)
+		/* (from the frame's first pixel: see TransformMatrix) */
 		BindRTT(FB_W_SOF1 & VRAM_MASK, FB_X_CLIP.max + 1, FB_Y_CLIP.max + 1, channels,format);
 	}
 	else
@@ -1583,26 +1635,26 @@ static bool RenderFrame(void)
 		gl_restore_picture();
 	}
 
-	bool wide_screen_on = !is_rtt && settings.rend.WideScreen && !matrices.IsClipped();
+	wide_screen_on = !is_rtt && settings.rend.WideScreen && !transform_matrix_clipped(&matrices);
 
-	//Color is cleared by the background plane
+	/* Color is cleared by the background plane */
 
-	glcache.Disable(GL_SCISSOR_TEST);
+	glc_disable(GL_SCISSOR_TEST);
 
-	glcache.DepthMask(GL_TRUE);
+	glc_depth_mask(GL_TRUE);
 	/* (a desktop build on an OpenGL ES context: glClearDepth() is not ES's,
 	 * and does nothing there) */
-	if (gl.clearDepthf != nullptr)
+	if (gl.clearDepthf != NULL)
 		gl.clearDepthf(0.f);
 	else
 		glClearDepth(0.0);
-	glcache.StencilMask(0xFF); glCheck();
+	glc_stencil_mask(0xFF); glCheck();
 	glClearStencil(0);
 	if (!is_rtt && pvrrc.clearFramebuffer)
 	{
-		// a framebuffer the game has not drawn to lately: nothing of the last picture belongs in it
+		/* a framebuffer the game has not drawn to lately: nothing of the last picture belongs in it */
 		glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
-		glcache.ClearColor(VO_BORDER_COL.Red / 255.f, VO_BORDER_COL.Green / 255.f, VO_BORDER_COL.Blue / 255.f, 1.f);
+		glc_clear_color(VO_BORDER_COL.Red / 255.f, VO_BORDER_COL.Green / 255.f, VO_BORDER_COL.Blue / 255.f, 1.f);
 		glClear(GL_COLOR_BUFFER_BIT | GL_STENCIL_BUFFER_BIT | GL_DEPTH_BUFFER_BIT); glCheck();
 	}
 	else
@@ -1610,36 +1662,36 @@ static bool RenderFrame(void)
 		glClear(GL_STENCIL_BUFFER_BIT | GL_DEPTH_BUFFER_BIT); glCheck();
 	}
 
-	//move vertex to gpu
+	/* move vertex to gpu */
 
 	if (!pvrrc.isRenderFramebuffer)
 	{
-		// (a frame decoded on the GPU is there already: DrawStrips() draws from the decode's buffers)
+		/* (a frame decoded on the GPU is there already: DrawStrips() draws from the decode's buffers) */
 		if (!pvrrc.gpu)
 		{
-			//Main VBO, but where the frame was parsed into the buffers the card reads
+			/* Main VBO, but where the frame was parsed into the buffers the card reads */
 			if (gl_frame_vertex_buffer(0) == 0)
 			{
 				glBindBuffer(GL_ARRAY_BUFFER, gl.vbo.geometry); glCheck();
 				glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, gl.vbo.idxs); glCheck();
 
-				glBufferData(GL_ARRAY_BUFFER,pvrrc.verts.bytes(),pvrrc.verts.head(),GL_STREAM_DRAW); glCheck();
+				glBufferData(GL_ARRAY_BUFFER,TA_LIST_BYTES(pvrrc.verts),TA_LIST_HEAD(pvrrc.verts, Vertex),GL_STREAM_DRAW); glCheck();
 
 				upload_vertex_indices();
 			}
 
-			//Modvol VBO (but where they were parsed into the buffers the card reads)
-			if (pvrrc.modtrig.used() && !pvrrc.mv_clip.used() && gl_frame_modvol_buffer(0) == 0)
+			/* Modvol VBO (but where they were parsed into the buffers the card reads) */
+			if (TA_LIST_USED(pvrrc.modtrig, ModTriangle) && !TA_LIST_USED(pvrrc.mv_clip, ModTriangle) && gl_frame_modvol_buffer(0) == 0)
 			{
 				glBindBuffer(GL_ARRAY_BUFFER, gl.vbo.modvols); glCheck();
-				glBufferData(GL_ARRAY_BUFFER,pvrrc.modtrig.bytes(),pvrrc.modtrig.head(),GL_STREAM_DRAW); glCheck();
+				glBufferData(GL_ARRAY_BUFFER,TA_LIST_BYTES(pvrrc.modtrig),TA_LIST_HEAD(pvrrc.modtrig, ModTriangle),GL_STREAM_DRAW); glCheck();
 			}
 		}
-		// the volumes' triangles with those far off the screen cut (rend/modvol_clip.h), however the frame was decoded
-		if (pvrrc.mv_clip.used() && gl_frame_modvol_buffer(0) == 0)
+		/* the volumes' triangles with those far off the screen cut (rend/modvol_clip.h), however the frame was decoded */
+		if (TA_LIST_USED(pvrrc.mv_clip, ModTriangle) && gl_frame_modvol_buffer(0) == 0)
 		{
 			glBindBuffer(GL_ARRAY_BUFFER, gl.vbo.modvols); glCheck();
-			glBufferData(GL_ARRAY_BUFFER, pvrrc.mv_clip.bytes(), pvrrc.mv_clip.head(), GL_STREAM_DRAW); glCheck();
+			glBufferData(GL_ARRAY_BUFFER, TA_LIST_BYTES(pvrrc.mv_clip), TA_LIST_HEAD(pvrrc.mv_clip, ModTriangle), GL_STREAM_DRAW); glCheck();
 		}
 
 		if (!wide_screen_on)
@@ -1650,10 +1702,10 @@ static bool RenderFrame(void)
 			float min_y;
 			if (!is_rtt)
 			{
-				min_x = xform_x(&scissor_mat, pvrrc.fb_X_CLIP.min);
-				min_y = xform_y(&scissor_mat, pvrrc.fb_Y_CLIP.min);
-				width = xform_w(&scissor_mat, pvrrc.fb_X_CLIP.max - pvrrc.fb_X_CLIP.min + 1);
-				height = xform_h(&scissor_mat, pvrrc.fb_Y_CLIP.max - pvrrc.fb_Y_CLIP.min + 1);
+				min_x = xform_x(scissor_mat, pvrrc.fb_X_CLIP.min);
+				min_y = xform_y(scissor_mat, pvrrc.fb_Y_CLIP.min);
+				width = xform_w(scissor_mat, pvrrc.fb_X_CLIP.max - pvrrc.fb_X_CLIP.min + 1);
+				height = xform_h(scissor_mat, pvrrc.fb_Y_CLIP.max - pvrrc.fb_Y_CLIP.min + 1);
 				if (width < 0)
 				{
 					min_x += width;
@@ -1665,15 +1717,15 @@ static bool RenderFrame(void)
 					height = -height;
 				}
 
-				if (matrices.GetSidebarWidth() > 0)
+				if (matrices.sidebar_width > 0)
 				{
-					float rounded_offs_x = matrices.GetSidebarWidth() + 0.5f;
+					float rounded_offs_x = matrices.sidebar_width + 0.5f;
 
-					glcache.ClearColor(0.f, 0.f, 0.f, 0.f);
-					glcache.Enable(GL_SCISSOR_TEST);
-					glcache.Scissor(0, 0, rounded_offs_x, screen_height);
+					glc_clear_color(0.f, 0.f, 0.f, 0.f);
+					glc_enable(GL_SCISSOR_TEST);
+					glc_scissor(0, 0, rounded_offs_x, screen_height);
 					glClear(GL_COLOR_BUFFER_BIT);
-					glcache.Scissor(screen_width - rounded_offs_x, 0, rounded_offs_x, screen_height);
+					glc_scissor(screen_width - rounded_offs_x, 0, rounded_offs_x, screen_height);
 					glClear(GL_COLOR_BUFFER_BIT);
 				}
 			}
@@ -1693,12 +1745,12 @@ static bool RenderFrame(void)
 			}
 
 			ShaderUniforms.base_clipping.enabled = true;
-			ShaderUniforms.base_clipping.x = (int)lroundf(min_x);
-			ShaderUniforms.base_clipping.y = (int)lroundf(min_y);
-			ShaderUniforms.base_clipping.width = (int)lroundf(width);
-			ShaderUniforms.base_clipping.height = (int)lroundf(height);
-			glcache.Scissor(ShaderUniforms.base_clipping.x, ShaderUniforms.base_clipping.y, ShaderUniforms.base_clipping.width, ShaderUniforms.base_clipping.height);
-			glcache.Enable(GL_SCISSOR_TEST);
+			ShaderUniforms.base_clipping.x = (int)gl_round_away(min_x);
+			ShaderUniforms.base_clipping.y = (int)gl_round_away(min_y);
+			ShaderUniforms.base_clipping.width = (int)gl_round_away(width);
+			ShaderUniforms.base_clipping.height = (int)gl_round_away(height);
+			glc_scissor(ShaderUniforms.base_clipping.x, ShaderUniforms.base_clipping.y, ShaderUniforms.base_clipping.width, ShaderUniforms.base_clipping.height);
+			glc_enable(GL_SCISSOR_TEST);
 		}
 		else
 		{
@@ -1706,7 +1758,7 @@ static bool RenderFrame(void)
 		}
 
 		DrawStrips();
-		// (the chip's write-out, where the option asks for it, in place: gl_writeout.h)
+		/* (the chip's write-out, where the option asks for it, in place: gl_writeout.h) */
 		if (!is_rtt && own_target && own_color_texture)
 		{
 			gl_writeout_pass(own_color, screen_width, screen_height);
@@ -1715,7 +1767,7 @@ static bool RenderFrame(void)
 	}
 	else
 	{
-		glcache.ClearColor(0.f, 0.f, 0.f, 0.f);
+		glc_clear_color(0.f, 0.f, 0.f, 0.f);
 		glClear(GL_COLOR_BUFFER_BIT);
 		glBindBuffer(GL_ARRAY_BUFFER, gl.vbo.geometry); glCheck();
 		glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, gl.vbo.idxs); glCheck();
@@ -1742,8 +1794,8 @@ static bool RenderFrame(void)
 		own_target_present();
 	if (is_rtt)
 		ReadRTTBuffer();
-	// (the frontend's own drawing has the context as it was)
-	if (gl.clipControl != nullptr)
+	/* (the frontend's own drawing has the context as it was) */
+	if (gl.clipControl != NULL)
 		gl.clipControl(GL_LOWER_LEFT, GL_NEGATIVE_ONE_TO_ONE);
 
 	return !is_rtt;
@@ -1763,7 +1815,7 @@ static parse_arena_gl_t parse_arena;
 static bool parse_arena_tried;
 #endif
 
-// (the buffer of part @part of the arena's the frame was parsed into, or @own)
+/* (the buffer of part @part of the arena's the frame was parsed into, or @own) */
 static GLuint frame_buffer(unsigned part, GLuint own)
 {
 #ifdef HAVE_GL4
@@ -1786,7 +1838,7 @@ GLuint gl_frame_index_buffer(GLuint own)
 
 GLuint gl_frame_modvol_buffer(GLuint own)
 {
-	return frame_buffer(pvrrc.mv_clip.used() != 0 ? PARSE_ARENA_MV_CLIP : PARSE_ARENA_MODTRIG, own);
+	return frame_buffer(TA_LIST_USED(pvrrc.mv_clip, ModTriangle) != 0 ? PARSE_ARENA_MV_CLIP : PARSE_ARENA_MODTRIG, own);
 }
 
 #ifdef HAVE_GL4
@@ -1799,18 +1851,18 @@ u32 *gl_frame_sorted(size_t bytes, size_t *offset)
 #ifdef HAVE_GL4
 	return (u32 *)parse_arena_gl_sorted(&parse_arena, bytes, offset);
 #else
-	return nullptr;
+	return NULL;
 #endif
 }
 
-void gl_frame_drawn()
+void gl_frame_drawn(void)
 {
 #ifdef HAVE_GL4
 	parse_arena_gl_done(&parse_arena);
 #endif
 }
 
-void gl_frame_buffers_term()
+void gl_frame_buffers_term(void)
 {
 #ifdef HAVE_GL4
 	if (parse_arena.ready)
@@ -1826,22 +1878,22 @@ void gl_frame_buffers_term()
 /* The frame's lists into a slot of the arena, where one is free */
 static void parse_where_drawn(TA_context* ctx)
 {
+	ta_list_t *lists[PARSE_ARENA_PARTS];
 #ifdef HAVE_GL4
 	if (!gl.buffer_storage || gl.index_type != GL_UNSIGNED_INT)
 		return;
 	if (!parse_arena_tried)
 	{
-		parse_arena_tried = true;
 		size_t room[PARSE_ARENA_PARTS];
-		TA_context::ArenaRooms(room);
+		parse_arena_tried = true;
+		tactx_arena_rooms(room);
 		if (parse_arena_gl_init(&parse_arena, room, 3))
 			NOTICE_LOG(RENDERER, "OpenGL: renders parsed where the card reads them, not copied there\n");
 		else
 			INFO_LOG(RENDERER, "OpenGL: renders copied to the card (the buffers for them could not be had, or read slowly)\n");
 	}
 	/* (four vertices at the head the parse keeps: the background's, FillBGP()'s) */
-	ta_list_t *lists[PARSE_ARENA_PARTS];
-	ctx->ArenaLists(lists);
+	tactx_arena_lists(ctx, lists);
 	if (parse_arena_gl_attach(&parse_arena, lists, 4 * sizeof(Vertex)))
 		parsed_here++;
 	else if (parse_arena.ready)
@@ -1854,7 +1906,7 @@ static void parse_where_drawn(TA_context* ctx)
 #endif
 }
 
-static void parse_not_drawn()
+static void parse_not_drawn(void)
 {
 #ifdef HAVE_GL4
 	parse_arena_gl_cancel(&parse_arena);
@@ -1865,12 +1917,12 @@ bool ProcessFrame(TA_context* ctx, u32 taFlags)
 {
    if (KillTex)
    {
-      TexCache.Clear();
+      gl_texcache_clear();
       INFO_LOG(RENDERER, "Texture cache cleared\n");
    }
 
-   glTaDecoder.BeginFrame();
-   // the modifier volumes' triangles far off the screen cut before the GPU clips them (rend/modvol_clip.h)
+   gltad_begin_frame();
+   /* the modifier volumes' triangles far off the screen cut before the GPU clips them (rend/modvol_clip.h) */
    ta_set_modvol_clip(true);
    if (ctx->rend.isRenderFramebuffer)
 		RenderFramebuffer();
@@ -1880,133 +1932,134 @@ bool ProcessFrame(TA_context* ctx, u32 taFlags)
 		 * be drawn from the GPU's decode, in the full parse's place, and the
 		 * decode is dispatched; or it is parsed as ever */
 		bool rv;
-		if (taFlags == 0 || !glTaDecoder.Ready() || !glTaDecoder.Prepare(ctx, taFlags, &rv))
+		if (taFlags == 0 || !gltad_ready() || !gltad_prepare(ctx, taFlags, &rv))
 		{
 			parse_where_drawn(ctx);
 			rv = ta_parse_vdrc(ctx);
 		}
 		else if (rv)
-			glTaDecoder.Record(ctx);
+			gltad_record(ctx);
 		if (!rv || ctx->rend.Overrun)
 			parse_not_drawn();
 		if (!rv)
 			return false;
-		// the textures the frame's polygons asked for that are made on the GPU, before the draws
+		/* the textures the frame's polygons asked for that are made on the GPU, before the draws */
 		gl_tex_flush();
 	}
-   TexCache.CollectCleanup();
+   gl_texcache_collect_cleanup();
 
    return !ctx->rend.Overrun;
 }
 
-struct glesrend : Renderer
+static bool gles_init(void)
 {
-   bool Init() override
-   {
-      if (!gl_create_resources())
-         return false;
+	if (!gl_create_resources())
+		return false;
 
-      glcache.EnableCache();
-      /* A new context has dithering on, and a driver may then dither what
-       * is drawn (to a target of less than eight bits a channel, as a rule).
-       * Nothing here wants it: what the console dithers is dithered when
-       * the picture is packed for video memory. */
-      glDisable(GL_DITHER);
+	glc_enable_cache();
+	/* A new context has dithering on, and a driver may then dither what
+	 * is drawn (to a target of less than eight bits a channel, as a rule).
+	 * Nothing here wants it: what the console dithers is dithered when
+	 * the picture is packed for video memory. */
+	glDisable(GL_DITHER);
 
 #ifdef HAVE_OPENGLES
-      glHint(GL_GENERATE_MIPMAP_HINT, GL_FASTEST);
+	glHint(GL_GENERATE_MIPMAP_HINT, GL_FASTEST);
 #endif
 
 #ifdef HAVE_TEXUPSCALE
-      if (settings.rend.TextureUpscale > 1)
-      {
-         // Trick to preload the tables used by xBRZ
-         u32 src[] { 0x11111111, 0x22222222, 0x33333333, 0x44444444 };
-         u32 dst[16];
-         UpscalexBRZ(2, src, dst, 2, 2, false);
-      }
+	if (settings.rend.TextureUpscale > 1)
+	{
+		/* Trick to preload the tables used by xBRZ */
+		u32 src[4] = { 0x11111111, 0x22222222, 0x33333333, 0x44444444 };
+		u32 dst[16];
+		UpscalexBRZ(2, src, dst, 2, 2, false);
+	}
 #endif
-      palette_updated = true;
-      TexCache.Clear();
-      // the textures' pool and the decoder, all of them now (gl_texdecoder.h)
-      gl_tex_init(true);
+	palette_updated = true;
+	gl_texcache_clear();
+	/* the textures' pool and the decoder, all of them now (gl_texdecoder.h) */
+	gl_tex_init(true);
 
-      /* GPU-side TA processing, if it is on and the context has OpenGL 4.3:
-       * here, when the renderer is set up, not in a frame */
-      glTaDecoder.WantSort(true);
-      glTaDecoder.Setup(ta_gpu_wanted());
+	/* GPU-side TA processing, if it is on and the context has OpenGL 4.3:
+	 * here, when the renderer is set up, not in a frame */
+	gltad_want_sort(true);
+	gltad_setup(ta_gpu_wanted());
 
-      // the polygons' programs, so that none is made in a frame (glprogram_cache.h)
-      gl_make_programs();
-      gl_writeout_init(screen_width, screen_height, false);
-      glprog_save(false);
-      glprog_started();
+	/* the polygons' programs, so that none is made in a frame (glprogram_cache.h) */
+	gl_make_programs();
+	gl_writeout_init(screen_width, screen_height, false);
+	glprog_save(false);
+	glprog_started();
 
-      return true;
-   }
-	void Resize(int w, int h) override
-	{
-		gl_carry_picture(screen_width, screen_height, w, h);
-		screen_width=w;
-		screen_height=h;
-		// (the write-out's picture, of the new size: gl_writeout.h)
-		gl_writeout_init(w, h, false);
-	}
-	void KeepPicture() override
-	{
-		gl_keep_picture();
-	}
+	return true;
+}
 
-	void Term() override
-   {
-		// (what is new kept, while the programs are there: glprogram_cache.h)
-		glprog_log("per triangle");
-		glprog_close();
-		glTaDecoder.Term();
-		ta_set_modvol_clip(false);
-		gl_writeout_term();
-	   TexCache.Clear();
-		rtt_watch_term();
-		gl_tex_term();
+static void gles_resize(int w, int h)
+{
+	gl_carry_picture(screen_width, screen_height, w, h);
+	screen_width = w;
+	screen_height = h;
+	/* (the write-out's picture, of the new size: gl_writeout.h) */
+	gl_writeout_init(w, h, false);
+}
 
-	   gl_term();
-   }
+static void gles_term(void)
+{
+	/* (what is new kept, while the programs are there: glprogram_cache.h) */
+	glprog_log("per triangle");
+	glprog_close();
+	gltad_term();
+	ta_set_modvol_clip(false);
+	gl_writeout_term();
+	gl_texcache_clear();
+	rtt_watch_term();
+	gl_tex_term();
 
-	bool Process(TA_context* ctx) override
-   {
+	gl_term();
+}
+
+static bool gles_process(TA_context *ctx)
+{
 #if !defined(TARGET_NO_THREADS)
-      if (!settings.rend.ThreadedRendering)
+	if (!settings.rend.ThreadedRendering)
 #endif
-         glsm_ctl(GLSM_CTL_STATE_BIND, NULL);
-      /* GPU-side TA processing: a sorted pass's translucent triangles
-       * sorted from the frame's depths (TA_GPU_SORT); sorted by strip, the
-       * polygons are sorted from the CPU's vertices, and a frame that may
-       * have a sorted pass is parsed. The polygons drawn again for shadows
-       * are those the GPU says reach into the volumes. */
-      return ProcessFrame(ctx, TA_GPU_DRAW | TA_GPU_SHADOWS
-            | (!settings.pvr.Emulation.AlphaSortMode && glTaDecoder.CanSort() ? TA_GPU_SORT : TA_GPU_NO_SORT));
-   }
-	bool Render() override
-   {
-      bool ret = RenderFrame();
-      gl_frame_drawn();
-      glTaDecoder.EndFrame();
+		glsm_ctl(GLSM_CTL_STATE_BIND, NULL);
+	/* GPU-side TA processing: a sorted pass's translucent triangles
+	 * sorted from the frame's depths (TA_GPU_SORT); sorted by strip, the
+	 * polygons are sorted from the CPU's vertices, and a frame that may
+	 * have a sorted pass is parsed. The polygons drawn again for shadows
+	 * are those the GPU says reach into the volumes. */
+	return ProcessFrame(ctx, TA_GPU_DRAW | TA_GPU_SHADOWS
+			| (!settings.pvr.Emulation.AlphaSortMode && gltad_can_sort() ? TA_GPU_SORT : TA_GPU_NO_SORT));
+}
+
+static bool gles_render(void)
+{
+	const bool ret = RenderFrame();
+	gl_frame_drawn();
+	gltad_end_frame();
 #if !defined(TARGET_NO_THREADS)
-      if (!settings.rend.ThreadedRendering)
+	if (!settings.rend.ThreadedRendering)
 #endif
-    	  glsm_ctl(GLSM_CTL_STATE_UNBIND, NULL);
-      return ret;
-   }
+		glsm_ctl(GLSM_CTL_STATE_UNBIND, NULL);
+	return ret;
+}
 
-	virtual u64 GetTexture(TSP tsp, TCW tcw, int area = 0) override {
-		return gl_GetTexture(tsp, tcw, area);
-	}
+/* (TA processing switched on or off: between frames, the state bound) */
+static void gles_options_changed(void)
+{
+	gltad_setup(ta_gpu_wanted());
+}
 
-	// (TA processing switched on or off: between frames, the state bound)
-	void OptionsChanged() override
-	{
-		glTaDecoder.Setup(ta_gpu_wanted());
-	}
+const renderer_ops gles_renderer_ops =
+{
+	gles_init,
+	gles_resize,
+	gles_term,
+	gles_process,
+	gles_render,
+	gl_keep_picture,
+	gl_get_texture,
+	gles_options_changed
 };
-
-Renderer* rend_GLES2() { return new glesrend(); }

@@ -22,9 +22,10 @@ extern "C" {
 #else
 #define TA_LIST(T) struct { ta_list_t l; }
 #endif
-/* ...its first element, and how many it has (List<T>'s head(), used()) */
+/* ...its first element, how many it has and their bytes (List<T>'s head(), used(), bytes()) */
 #define TA_LIST_HEAD(list, T) ((T *)(list).l.base)
 #define TA_LIST_USED(list, T) ((int)((T *)(list).l.cur - (T *)(list).l.base))
+#define TA_LIST_BYTES(list) ((u32)((const u8 *)(list).l.cur - (const u8 *)(list).l.base))
 
 /* Vertex storage types */
 typedef struct Vertex Vertex;

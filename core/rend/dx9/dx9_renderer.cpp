@@ -211,7 +211,7 @@ void DX9Renderer::CheckKeptPicture()
 	restoredSwap = true;
 }
 
-/* Uploaded when it differs from what the card has: see UpdateFogTexture() in gles.cpp */
+/* Uploaded when it differs from what the card has: see UpdateFogTexture() in gles/gles.c */
 void DX9Renderer::CheckFogTexture()
 {
 	u8 texData[256];
@@ -503,7 +503,7 @@ void DX9Renderer::SetupFrame()
 		frag[DX9PC_FogColVert][i] = fog_colvert_bgra[2 - i] / 255.0f;
 		frag[DX9PC_FogColRam][i] = fog_colram_bgra[2 - i] / 255.0f;
 	}
-	// half a step under the reference: see the same in gles/gles.cpp
+	// half a step under the reference: see the same in gles/gles.c
 	frag[DX9PC_FrameParams][0] = ((PT_ALPHA_REF & 0xFF) - 0.5f) / 255.0f;
 	//Fog density constant
 	const u8* fog_density = (const u8*)&FOG_DENSITY;

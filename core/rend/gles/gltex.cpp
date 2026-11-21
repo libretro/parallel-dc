@@ -9,6 +9,7 @@
 #include "gles.h"
 #include "rend/grow_buf.h"
 #include "gl_texdecoder.h"
+#include "ta_decoder_gl.h"
 
 GLTexDecoder glTexDecoder;
 #include "hw/pvr/pvr_mem.h"
@@ -68,6 +69,21 @@ Compression
 
 GlTextureCache TexCache;
 GLTexturePool glTexPool;
+/* (the C++ faces of the state cache, glcache.c, and the TA decoder, ta_decoder_gl.c) */
+GLCache glcache;
+GlTaDecoder glTaDecoder;
+
+Renderer* rend_GLES2() { return renderer_from_ops(&gles_renderer_ops); }
+
+void gl_texcache_clear(void)
+{
+	TexCache.Clear();
+}
+
+void gl_texcache_collect_cleanup(void)
+{
+	TexCache.CollectCleanup();
+}
 
 extern "C" struct retro_hw_render_callback hw_render;
 
@@ -1668,6 +1684,15 @@ static int TexCacheLookups;
 static int TexCacheHits;
 static float LastTexCacheStats;
 
+
+u64 gl_get_texture(u32 tsp, u32 tcw, int area)
+{
+	TSP t;
+	TCW c;
+	t.full = tsp;
+	c.full = tcw;
+	return gl_GetTexture(t, c, area);
+}
 
 u64 gl_GetTexture(TSP tsp, TCW tcw, int area)
 {

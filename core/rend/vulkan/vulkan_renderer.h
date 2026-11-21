@@ -405,7 +405,7 @@ protected:
 			fogTexture->tex_type = TextureType::_8;
 			fogUploadedValid = false;
 		}
-		// Uploaded when it differs from what the GPU has: see UpdateFogTexture() in gles.cpp
+		// Uploaded when it differs from what the GPU has: see UpdateFogTexture() in gles/gles.c
 		u8 texData[256];
 		MakeFogTexture(texData);
 		if (fogUploadedValid && !memcmp(fogUploaded, texData, sizeof(fogUploaded)))

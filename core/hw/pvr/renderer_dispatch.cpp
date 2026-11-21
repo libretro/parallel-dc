@@ -3,6 +3,35 @@
 #include "Renderer_if.h"
 
 Renderer* renderer;
+
+/* A renderer of C's (renderer_ops) as a Renderer */
+struct OpsRenderer : Renderer
+{
+	explicit OpsRenderer(const renderer_ops *o) : ops(o) { }
+	bool Init() override { return ops->init(); }
+	void Resize(int w, int h) override { ops->resize(w, h); }
+	void Term() override { ops->term(); }
+	bool Process(TA_context *ctx) override { return ops->process(ctx); }
+	bool Render() override { return ops->render(); }
+	void KeepPicture() override
+	{
+		if (ops->keep_picture != NULL)
+			ops->keep_picture();
+	}
+	u64 GetTexture(TSP tsp, TCW tcw, int area) override
+	{
+		return ops->get_texture != NULL ? ops->get_texture(tsp.full, tcw.full, area) : 0;
+	}
+	void OptionsChanged() override
+	{
+		if (ops->options_changed != NULL)
+			ops->options_changed();
+	}
+
+	const renderer_ops *ops;
+};
+
+Renderer* renderer_from_ops(const renderer_ops *ops) { return new OpsRenderer(ops); }
 static Renderer* fallback_renderer;
 
 void renderer_create(void)

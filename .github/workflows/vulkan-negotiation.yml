@@ -37,6 +37,12 @@ name: Vulkan negotiation
 # ES, each renderer (tools/gl/gl_clip.sh).
 # And textures of one channel - the fog table, paletted indices - on
 # OpenGL ES 2 and 3 and OpenGL 2 and 3+ (tools/gl/gl_channels.sh).
+# And the fog coefficient against the hardware's, and the core's own
+# OpenGL ES 2 shaders, read out of gles.c, compiled and drawn with
+# (tools/pvr/run.sh).
+# And the renderers' sources checked for what makes speckles: a position
+# that is not invariant, a depth written, the volumes' draws out of order
+# (tools/rend/speckle_test.sh, without a device).
 # And a state saved while a render to a texture is still on the card, every
 # frame run ahead, with OpenGL and OpenGL ES (tools/gl/gl_ahead.sh).
 # And the OpenGL renderers compiled as macOS (clang), the Switch (libnx)
@@ -293,11 +299,16 @@ jobs:
         run: sh tools/gl/gl_clip.sh
       - name: Textures of one channel (fog table, paletted indices), OpenGL ES 2 and 3, OpenGL 2 and 3+
         run: sh tools/gl/gl_channels.sh
+      - name: The fog against the hardware's, and the core's own OpenGL ES 2 shaders drawn with on an OpenGL ES 2 context
+        run: sh tools/pvr/run.sh
+      - name: Speckles - the renderers' sources place every vertex the same way and write no depth of their own, the volumes' draws in order
+        run: sh tools/rend/speckle_test.sh
       - name: OpenGL - nothing compiled on the draw path, cold, OpenGL ES 2 and 3, OpenGL 2 and 3+, the general programs' pictures (AGENTS.md)
         run: |
-          # (the built core again, every polygon drawn with the general programs: gles.cpp and the link)
+          # (the built core again, every polygon drawn with the general programs: gles.c and the link)
+          rm -rf "$RUNNER_TEMP/general"
           cp -a . "$RUNNER_TEMP/general"
-          sed -i '1i #define GL_PROGRAM_TEST_GENERAL' "$RUNNER_TEMP/general/core/rend/gles/gles.cpp"
+          sed -i '1i #define GL_PROGRAM_TEST_GENERAL' "$RUNNER_TEMP/general/core/rend/gles/gles.c"
           make -j"$(nproc)" -C "$RUNNER_TEMP/general"
           GENERAL="$RUNNER_TEMP/general/parallel_dc_libretro.so" sh tools/gl/gl_draw_path.sh
       - name: A state saved while a render to a texture is on the card, every frame run ahead (OpenGL and OpenGL ES)

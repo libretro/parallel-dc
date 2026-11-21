@@ -331,7 +331,7 @@ static void cf_fog(u32 *out, const rend_context *rc)
 		out[PVRC_F_CLAMP_MIN + c] = fbits(((rc->fog_clamp_min >> shifts[c]) & 0xFF) / 255.0f);
 		out[PVRC_F_CLAMP_MAX + c] = fbits(((rc->fog_clamp_max >> shifts[c]) & 0xFF) / 255.0f);
 	}
-	/* (half a step under the reference: see the same in gles/gles.cpp) */
+	/* (half a step under the reference: see the same in gles/gles.c) */
 	out[PVRC_F_ALPHA_REF] = fbits(((PT_ALPHA_REF & 0xFF) - 0.5f) / 255.0f);
 }
 

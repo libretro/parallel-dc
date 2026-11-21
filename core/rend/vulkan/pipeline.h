@@ -65,7 +65,7 @@ public:
 		if (fogImageView)
 		{
 			TSP fogTsp = {};
-			// single entries, read at the middle of their texels: see UpdateFogTexture() in gles.cpp
+			// single entries, read at the middle of their texels: see UpdateFogTexture() in gles/gles.c
 			fogTsp.FilterMode = 0;
 			fogTsp.ClampU = 1;
 			fogTsp.ClampV = 1;

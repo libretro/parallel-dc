@@ -448,8 +448,6 @@ void main()
 
 int max_image_width;
 int max_image_height;
-extern GLuint fogTextureId;
-extern GLuint paletteTextureId;
 
 /* A program of @pixel_source (the polygons' by default) for @s: compiled
  * now (@background: asked of the driver, not waited for; @general: the

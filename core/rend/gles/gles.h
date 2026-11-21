@@ -291,10 +291,12 @@ extern gl_ctx gl;
 /* the frontend's (libretro.c) */
 extern struct retro_hw_render_callback hw_render;
 
-#ifdef __cplusplus
-}
+/* @area: 1 for the texture of a polygon's second volume */
+u64 gl_get_texture(u32 tsp, u32 tcw, int area);
+/* the texture cache's (gltex.cpp) */
+void gl_texcache_clear(void);
+void gl_texcache_collect_cleanup(void);
 
-u64 gl_GetTexture(TSP tsp, TCW tcw, int area = 0);
 struct text_info {
 	u16* pdata;
 	u32 width;
@@ -304,39 +306,46 @@ struct text_info {
 
 /* @taFlags: how the renderer draws a frame GPU-side TA processing decodes
  * (ta_gpu_prepare()'s TA_GPU_*; gles/ta_decoder_gl.h); 0, never */
-bool ProcessFrame(TA_context* ctx, u32 taFlags = 0);
+bool ProcessFrame(TA_context* ctx, u32 taFlags);
 /* ...and the frame's draws issued: the buffers the card's until they are done */
-void gl_frame_drawn();
+void gl_frame_drawn(void);
 /* (the context going) */
-void gl_frame_buffers_term();
+void gl_frame_buffers_term(void);
+extern GLuint fogTextureId;
+extern GLuint paletteTextureId;
 void UpdateFogTexture(u8 *fog_table, GLenum texture_slot, GLint fog_image_format);
-void GetFramebufferScaling(float& scale_x, float& scale_y, float& scissoring_scale_x, float& scissoring_scale_y);
-void GetFramebufferSize(float& dc_width, float& dc_height);
-
 void UpdatePaletteTexture(GLenum texture_slot);
-void DoCleanup();
-void SortPParams(int first, int count);
-s32 SetTileClip(u32 val, GLint uniform);
-static inline void SetMVS_Mode(ModifierVolumeMode mv_mode, ISP_Modvol ispc)
-{
-	gl_set_mvs_mode(mv_mode, ispc.CullMode);
-}
+void DoCleanup(void);
 
 void BindRTT(u32 addy, u32 fbw, u32 fbh, u32 channels, u32 fmt);
-void ReadRTTBuffer();
+void ReadRTTBuffer(void);
 void gl_keep_picture(void);
 void gl_restore_picture(void);
 void gl_carry_picture(int from_w, int from_h, int to_w, int to_h);
-void RenderFramebuffer();
+void RenderFramebuffer(void);
 
-
-void findGLVersion();
+void findGLVersion(void);
 GLuint gl_CompileShader(const char* shader, GLuint type);
 GLuint gl_CompileAndLink(const char* VertexShader, const char* FragmentShader);
 void gl_bind_depth_ubo(GLuint program);
 bool CompilePipelineShader(PipelineShader* s);
 
+/* The textures' pool and the decoder (gl_texdecoder.h): made when a renderer
+ * starts (@depth: with the depth buffer renders to textures are made with),
+ * and what a frame's textures asked of the decoder, recorded before its
+ * draws */
+void gl_tex_init(bool depth);
+void gl_tex_term(void);
+void gl_tex_flush(void);
 
+#ifdef __cplusplus
+}
+
+u64 gl_GetTexture(TSP tsp, TCW tcw, int area = 0);
+static inline void SetMVS_Mode(ModifierVolumeMode mv_mode, ISP_Modvol ispc)
+{
+	gl_set_mvs_mode(mv_mode, ispc.CullMode);
+}
 
 /* A texture of the texture pool's (rend/tex_pool.h) */
 struct GLPooledTexture : TexPoolEntry
@@ -382,13 +391,6 @@ private:
 };
 extern GLTexturePool glTexPool;
 
-/* The textures' pool and the decoder (gl_texdecoder.h): made when a renderer
- * starts (@depth: with the depth buffer renders to textures are made with),
- * and what a frame's textures asked of the decoder, recorded before its
- * draws */
-void gl_tex_init(bool depth);
-void gl_tex_term();
-void gl_tex_flush();
 
 class TextureCacheData : public TexCacheImpl<TextureCacheData>
 {

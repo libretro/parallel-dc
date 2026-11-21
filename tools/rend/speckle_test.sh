@@ -73,7 +73,7 @@ R=$ROOT/core/rend
 for f in $R/vulkan/shaders/*.frag $R/vulkan/shaders/*.glsl; do
    grep -q 'gl_FragDepth' "$f" && bad "$f writes gl_FragDepth"
 done
-for f in $R/gles/*.cpp $R/gl4/*.cpp; do
+for f in $R/gles/*.c $R/gles/*.cpp $R/gl4/*.cpp; do
    grep -Eq 'gl_FragDepth *=' "$f" && bad "$f writes gl_FragDepth"
 done
 for f in $R/dx11/*.cpp $R/dx11/oit/*.cpp $R/dx12/shaders/*.hlsl; do
@@ -94,9 +94,9 @@ if [ -f $R/vulkan/shaders/position.glsl ]; then
 else
    bad "no vulkan/shaders/position.glsl: the Vulkan vertex shaders do not share one position"
 fi
-for f in $R/gles/gles.cpp $R/gl4/gles.cpp; do
-   grep -q '^invariant gl_Position;' "$f" || bad "$f: gl_Position not invariant"
-done
+# (gles.c has its shaders as C string literals, a line each)
+grep -q '^"invariant gl_Position;\\n"' $R/gles/gles.c || bad "$R/gles/gles.c: gl_Position not invariant"
+grep -q '^invariant gl_Position;' $R/gl4/gles.cpp || bad "$R/gl4/gles.cpp: gl_Position not invariant"
 H=$R/dx12/shaders/dx12_raster.hlsl
 if [ -f $H ]; then
    grep -q '^precise float4 transformVertex' $H || bad "$H: transformVertex() not precise"

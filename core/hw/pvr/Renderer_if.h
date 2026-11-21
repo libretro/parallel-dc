@@ -13,7 +13,7 @@ extern TA_context* _pvrrc;
 
 #define pvrrc (_pvrrc->rend)
 
-/* The size the frontend shows the picture at (gles.cpp) */
+/* The size the frontend shows the picture at (gles/gles.c) */
 extern int screen_width, screen_height;
 
 extern u32 VertexCount;
@@ -98,6 +98,23 @@ void renderer_present(void);
 /* Draw the render that is queued (libretro.cpp, rend_start_render()) */
 bool rend_single_frame(void);
 
+/* A renderer of C's: what Renderer's methods do (renderer_dispatch.cpp
+ * makes it one); NULL for what Renderer does by default */
+typedef struct renderer_ops
+{
+	bool (*init)(void);
+	void (*resize)(int w, int h);
+	void (*term)(void);
+	bool (*process)(TA_context *ctx);
+	bool (*render)(void);
+	void (*keep_picture)(void);
+	u64 (*get_texture)(u32 tsp, u32 tcw, int area);
+	void (*options_changed)(void);
+} renderer_ops;
+
+/* the per-triangle/strip OpenGL renderer (gles/gles.c) */
+extern const renderer_ops gles_renderer_ops;
+
 #ifdef __cplusplus
 }
 
@@ -158,6 +175,8 @@ Renderer* rend_D3D9();
 Renderer* rend_D3D12();
 Renderer* rend_OITD3D12();
 Renderer* rend_GLES2();
+/* A renderer of C's as a Renderer (renderer_dispatch.cpp) */
+Renderer* renderer_from_ops(const renderer_ops *ops);
 Renderer* rend_GL4();
 Renderer* rend_Vulkan();
 Renderer* rend_OITVulkan();

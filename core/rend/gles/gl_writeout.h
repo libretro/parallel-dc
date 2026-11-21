@@ -3,7 +3,7 @@
  * OpenGL renderers, as the core option reicast_pvr2_scaler asks: a
  * compute shader's pass in place over the picture, OpenGL 4.3 and later
  * only. The picture is then a texture of the core's: the per-triangle
- * renderer's own framebuffer (gles.cpp's own_target_bind()), the per-pixel
+ * renderer's own framebuffer (gles.c's own_target_bind()), the per-pixel
  * renderer's this one's (gl_writeout_target()); either goes to the
  * frontend's framebuffer in one blit, after the pass. */
 #ifndef GLES_GL_WRITEOUT_H

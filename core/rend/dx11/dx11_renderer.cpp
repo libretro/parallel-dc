@@ -279,7 +279,7 @@ void DX11Renderer::CheckKeptPicture()
 		restoredPicture.reset();
 }
 
-/* Uploaded when it differs from what the card has: see UpdateFogTexture() in gles.cpp */
+/* Uploaded when it differs from what the card has: see UpdateFogTexture() in gles/gles.c */
 void DX11Renderer::CheckFogTexture()
 {
 	u8 texData[256];
@@ -592,7 +592,7 @@ void DX11Renderer::MakeFragmentConstants(FragmentConstants& constants)
 	constants.colorClampMax[2] = ((pvrrc.fog_clamp_max >> 0) & 0xFF) / 255.0f;
 	constants.colorClampMax[3] = ((pvrrc.fog_clamp_max >> 24) & 0xFF) / 255.0f;
 
-	// half a step under the reference: see the same in gles/gles.cpp
+	// half a step under the reference: see the same in gles/gles.c
 	constants.alphaTestValue = ((PT_ALPHA_REF & 0xFF) - 0.5f) / 255.0f;
 	constants.shadeScale = FPU_SHAD_SCALE.scale_factor / 256.f;
 }

@@ -31,7 +31,7 @@
 extern "C" {
 #endif
 
-/* The picture's scale: the framebuffer's to the screen's (gles.cpp sets it) */
+/* The picture's scale: the framebuffer's to the screen's (gles/gles.c sets it) */
 extern float fb_scale_x, fb_scale_y;
 extern int screen_width, screen_height;
 

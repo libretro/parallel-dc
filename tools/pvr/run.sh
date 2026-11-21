@@ -20,7 +20,7 @@ ${CC:-cc} -std=c99 -O2 -Wall -Wextra -ffp-contract=off \
    -o "$WORK/fog_test" "$ROOT/tools/pvr/fog_test.c" -lm
 "$WORK/fog_test"
 
-python3 "$ROOT/tools/pvr/gles2_shaders.py" "$ROOT/core/rend/gles/gles.cpp" > "$WORK/gles2_shaders.h"
+python3 "$ROOT/tools/pvr/gles2_shaders.py" "$ROOT/core/rend/gles/gles.c" > "$WORK/gles2_shaders.h"
 ${CC:-cc} -std=c99 -O2 -Wall -Wextra -I "$WORK" \
    -o "$WORK/gles2_test" "$ROOT/tools/pvr/gles2_test.c" -lEGL -lGLESv2
 if [ -z "$DISPLAY$WAYLAND_DISPLAY" ]; then

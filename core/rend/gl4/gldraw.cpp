@@ -11,7 +11,6 @@ Takes vertex, textures and renders to the currently set up target
 */
 
 static gl4PipelineShader* CurrentShader;
-extern u32 gcflip;
 GLuint geom_fbo;
 GLuint stencilTexId;
 GLuint opaqueTexId;
