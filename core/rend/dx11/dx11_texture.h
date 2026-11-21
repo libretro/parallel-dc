@@ -30,8 +30,8 @@
 #include <string>
 #include <cstdio>
 #include "comptr.h"
+#include "dx11_texdecoder.h"
 
-class DX11TexDecoder;
 
 /* A texture of the texture pool's: a view of it to sample, and of each
  * level for the decoder to write through - an unsigned integer view of
@@ -57,7 +57,7 @@ struct DX11PooledTexture : TexPoolEntry
 class DX11TexturePool
 {
 public:
-	void Init(ID3D11Device *device, const VramBudget& budget, const DX11TexDecoder *decoder);
+	void Init(ID3D11Device *device, const VramBudget& budget);
 	void Term();
 	/* A texture of @type, @width by @height, with its levels or not: a
 	 * free one of that shape, or one made now if there is none. Null if
@@ -97,7 +97,7 @@ public:
 	bool CopyRender(BaseTextureCacheData *from, u32 x, u32 y, u32 scale, u32 columns);
 	bool Delete();
 	/* The renderer's, while it has them */
-	static void SetDecoder(DX11TexDecoder *decoder) { DX11Texture::decoder = decoder; }
+	static void SetDecoder(bool use) { DX11Texture::decoder = use; }
 	static void SetPool(DX11TexturePool *pool) { DX11Texture::pool = pool; }
 	bool Force32BitTexture(TextureType type) const;
 	void GetId(char *s, size_t n) { snprintf(s, n, "%p", (void *)this); }
@@ -141,7 +141,7 @@ private:
 	DX11PooledTexture *pooled = nullptr;
 	DX11PooledTexture *sparePooled = nullptr;
 	u32 decodeJob = 0, decodeCount = 0, decodeSerial = 0;
-	static DX11TexDecoder *decoder;
+	static bool decoder;		/* the renderer has the decoder (dx11_texdecoder.h) */
 	static DX11TexturePool *pool;
 };
 
@@ -149,41 +149,6 @@ class DX11TextureCache : public BaseTextureCache<DX11Texture>
 {
 public:
 	void Cleanup() { CollectCleanup(); }
-};
-
-class DX11Samplers
-{
-public:
-	/* A polygon's: MipMapD, FilterMode, ClampU, ClampV, FlipU, FlipV */
-	ID3D11SamplerState *GetSampler(TSP tsp)
-	{
-		ID3D11SamplerState *sampler = samplers[(tsp.full & TSP_Mask) >> 8];
-		return sampler != nullptr ? sampler : MakeSampler(tsp);
-	}
-	/* Clamped, nearest: the fog table's and the palette's */
-	ID3D11SamplerState *GetPointSampler();
-	/* Clamped, linear: pictures drawn whole onto another */
-	ID3D11SamplerState *GetLinearSampler();
-	void Term()
-	{
-		for (auto& sampler : samplers)
-			sampler.reset();
-		linear.reset();
-		started = false;
-	}
-	/* Every one a frame can want, made before the first (AGENTS.md): one
-	 * made after is made on the draw path (drawPath) */
-	bool MakeAll();
-	u32 drawPath = 0;
-
-	static const u32 TSP_Mask = 0x7ef00;
-
-private:
-	bool started = false;
-	ID3D11SamplerState *MakeSampler(TSP tsp);
-	/* (looked up for every polygon: by the bits themselves) */
-	ComPtr<ID3D11SamplerState> samplers[(TSP_Mask >> 8) + 1];
-	ComPtr<ID3D11SamplerState> linear;
 };
 
 /* The Direct3D 11 renderers' side of rend/rtt_watch.h, as vulkan/rtt_read.h

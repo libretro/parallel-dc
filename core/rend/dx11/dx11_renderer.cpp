@@ -89,25 +89,22 @@ bool DX11Renderer::Init()
 	/* (the passes' sorted draws: room before the first frame) */
 	SortPassesReserve(&sortedPasses);
 	SortPassesReserve(&prepassPasses);
-	context = DX11Context::Instance();
-	device = context->GetDevice();
-	deviceContext = context->GetDeviceContext();
+	device = dx11c.device;
+	deviceContext = dx11c.device_context;
 	if (device == nullptr || deviceContext == nullptr)
 	{
 		WARN_LOG(RENDERER, "DX11: no device\n");
 		return false;
 	}
-	shaders = &context->GetShaders();
-	samplers = &context->GetSamplers();
-	blendStates = &context->GetBlendStates();
+	shaders = &dx11_shaders();
 
 	DX11Lock lock;
 	/* Everything a frame can want made now, before the first: no shader or
 	 * state is made on the draw path (AGENTS.md) */
 	bool success = shaders->Start();
-	success = depthStencilStates.MakeAll() && success;
-	success = blendStates->MakeAll() && success;
-	success = samplers->MakeAll() && success;
+	success = dx11_depth_states_make_all(&depthStencilStates) && success;
+	success = dx11_blend_make_all() && success;
+	success = dx11_samplers_make_all() && success;
 	// what a render read back takes, made now (dx11_rtt_init())
 	dx11_rtt_init();
 	ID3DBlob *blob = shaders->GetVertexShaderBlob();
@@ -155,13 +152,13 @@ bool DX11Renderer::Init()
 		return false;
 	}
 	// textures made on the GPU, and the textures themselves, all of them now (rend/tex_pool.h)
-	texDecoder.Init(context);
-	texPool.Init(device, context->GetVramBudget(), &texDecoder);
+	dx11_texdec_init();
+	texPool.Init(device, dx11c.vram_budget);
 	// ...and the cache's room for them (rend/tex_map.h)
 	texCache.ReserveFor(texPool.Book().made);
 	// the chip's write-out, and the pictures made for it (dx11_writeout.h)
 	writeOutPictures = writeOut.Init(device, deviceContext, shaders);
-	DX11Texture::SetDecoder(texDecoder.Ready() ? &texDecoder : nullptr);
+	DX11Texture::SetDecoder(dx11_texdec_ready());
 	DX11Texture::SetPool(&texPool);
 	// GPU-side TA processing, if it is on: here, not in a frame
 	taDecoder.WantSort(TaSorts());
@@ -185,25 +182,25 @@ void DX11Renderer::Term()
 	DX11Lock lock;
 	if (deviceContext != nullptr)
 	{
-		context->SetTargets(nullptr, nullptr);
-		context->UnbindPSResources(4);
+		dx11c_set_targets(nullptr, nullptr);
+		dx11c_unbind_ps_resources(4);
 	}
-	DX11Context::Instance()->SetFrame(nullptr, nullptr);
+	dx11c_set_frame(nullptr, nullptr);
 	taDecoder.Term();
 	ta_set_modvol_clip(false);
 	dx11_rtt_term();
 	texCache.Clear();
 	// (what the cache's textures had is back in the pool by now)
 	DX11Texture::SetPool(nullptr);
-	DX11Texture::SetDecoder(nullptr);
+	DX11Texture::SetDecoder(false);
 	texPool.Term();
-	texDecoder.Term();
-	overlay.Term();
+	dx11_texdec_term();
+	dx11_overlay_term();
 	writeOut.Term();
 	if (shaders != nullptr)
 		NOTICE_LOG(RENDERER, "DX11: %u depth-stencil, %u blend and %u sampler states made on the draw path\n",
-				depthStencilStates.drawPath, blendStates->drawPath, samplers->drawPath);
-	depthStencilStates.Term();
+				depthStencilStates.draw_path, dx11_blends.draw_path, dx11_samplers.draw_path);
+	dx11_depth_states_term(&depthStencilStates);
 	fbView.reset();
 	fbTexture.reset();
 	restoredPicture.reset();
@@ -311,19 +308,19 @@ bool DX11Renderer::Process(TA_context* ctx)
 	 * which would keep the emulation waiting too. */
 	const bool keep = ctx->rend.isRTT || !settings.rend.ThreadedRendering;
 	if (keep && !ctx->rend.isRTT)
-		context->WaitPresentIndex();
-	context->Lock();
+		dx11c_wait_present_index();
+	dx11c_lock();
 	const bool result = ProcessLocked(ctx);
 	heldFromProcess = keep && result;
 	if (!heldFromProcess)
-		context->Unlock();
+		dx11c_unlock();
 	return result;
 }
 
 bool DX11Renderer::ProcessLocked(TA_context* ctx)
 {
 	if (!ctx->rend.isRTT)
-		overlay.Prepare();
+		dx11_overlay_prepare();
 	if (!ctx->rend.isRTT && !ctx->rend.isRenderFramebuffer)
 		CheckKeptPicture();
 
@@ -348,7 +345,7 @@ bool DX11Renderer::ProcessLocked(TA_context* ctx)
 	else if (result)
 		taDecoder.Record(ctx);
 	// the textures the frame's polygons asked for that are made on the GPU, before the draws
-	texDecoder.Flush();
+	dx11_texdec_flush();
 
 	texCache.Cleanup();
 
@@ -364,7 +361,7 @@ bool DX11Renderer::ProcessLocked(TA_context* ctx)
 
 void DX11Renderer::SetCullMode(int mode)
 {
-	context->SetRasterizer(rasterizers[mode == 3 ? 2 : mode == 2 ? 1 : 0]);
+	dx11c_set_rasterizer(rasterizers[mode == 3 ? 2 : mode == 2 ? 1 : 0]);
 }
 
 void DX11Renderer::SetPolyConstants(const PolyConstants& constants)
@@ -507,7 +504,7 @@ bool DX11Renderer::UploadGeometry()
 	 * any of it; started again (discarded) when it is full - and always on
 	 * a deferred context, whose commands are each a list of their own */
 	D3D11_MAP mode = D3D11_MAP_WRITE_NO_OVERWRITE;
-	if (!geometry || end > geometrySize || !context->CanReadBack())
+	if (!geometry || end > geometrySize || !dx11c.immediate)
 	{
 		mode = D3D11_MAP_WRITE_DISCARD;
 		end = layGeometry(0, vertexBytes, indexBytes, modVolBytes, vertices, indexes, modVols);
@@ -622,13 +619,13 @@ void DX11Renderer::SetupFrame()
 	MakeFragmentConstants(frag);
 	SetConstants(fragConstants.get(), frag, fragUploaded, fragUploadedValid);
 
-	context->SetVSConstants(vtxConstants);
+	dx11c_set_vs_constants(vtxConstants);
 	ID3D11Buffer * const buffers[] = { fragConstants, PolyConstantsBuffer() };
-	context->SetPSConstants(0, 2, buffers);
+	dx11c_set_ps_constants_n(0, 2, buffers);
 	ID3D11ShaderResourceView * const views[] = { paletteView, fogView };
-	context->SetPSResources(1, 2, views);
-	context->SetPSSampler(1, samplers->GetPointSampler());
-	context->SetInputLayout(PolyInputLayout());
+	dx11c_set_ps_resources(1, 2, views);
+	dx11c_set_ps_sampler(1, dx11_sampler_point());
+	dx11c_set_input_layout(PolyInputLayout());
 	BindGeometry();
 	// (what was pushed, for a polygon that pushes nothing: anything at all)
 	if (!polyUploadedValid && PolyConstantsBuffer() == polyConstants.get())
@@ -726,7 +723,7 @@ static bool makeScreenTarget(ID3D11Device *device, ID3D11DeviceContext *deviceCo
 
 bool DX11Renderer::EnsureScreen(u32 width, u32 height)
 {
-	const unsigned count = DX11Context::Instance()->GetPresentCount();
+	const unsigned count = dx11c_present_count();
 
 	if (width != screenWidth || height != screenHeight)
 	{
@@ -766,7 +763,7 @@ bool DX11Renderer::EnsureScreen(u32 width, u32 height)
 		target = ScreenTarget();
 		return false;
 	}
-	if (DX11Context::Instance()->IsHandedOver(target.texture))
+	if (dx11c_is_handed_over(target.texture))
 	{
 		/* A render to the screen after one this frame has handed over
 		 * already: this one goes to the extra picture, which takes the
@@ -797,15 +794,15 @@ void DX11Renderer::DrawLastPicture(u32 width, u32 height)
 	ID3D11ShaderResourceView *view = LastPictureView();
 	if (view == nullptr)
 		return;
-	context->SetViewport((float)width, (float)height);
+	dx11c_set_viewport((float)width, (float)height);
 	/* (the picture kept from another context can be of another size) */
-	context->GetQuad().Draw(view, havePicture ? samplers->GetPointSampler() : samplers->GetLinearSampler());
-	context->SetPSResource(0, nullptr);
+	dx11c_draw_quad(view, havePicture ? dx11_sampler_point() : dx11_sampler_linear());
+	dx11c_set_ps_resource(0, nullptr);
 }
 
 bool DX11Renderer::BeginScreen()
 {
-	screenIndex = (int)DX11Context::Instance()->GetPresentIndex();
+	screenIndex = (int)dx11c_present_index();
 	if (!EnsureScreen(screen_width, screen_height))
 		return false;
 	ScreenTarget& target = screenTargets[screenIndex];
@@ -819,7 +816,7 @@ bool DX11Renderer::BeginScreen()
 		SetBaseScissor();
 		return true;
 	}
-	context->SetTargets(target.target, depthView);
+	dx11c_set_targets(target.target, depthView);
 	deviceContext->ClearDepthStencilView(depthView, D3D11_CLEAR_DEPTH | D3D11_CLEAR_STENCIL, 0.f, 0);
 
 	/* A framebuffer the game has not drawn to lately starts as the border
@@ -851,7 +848,7 @@ bool DX11Renderer::BeginScreen()
 		}
 		deviceContext->ClearRenderTargetView(target.target, color);
 	}
-	context->SetViewport((float)screenWidth, (float)screenHeight);
+	dx11c_set_viewport((float)screenWidth, (float)screenHeight);
 	SetBaseScissor();
 	return true;
 }
@@ -861,23 +858,23 @@ void DX11Renderer::EndScreen(bool writeOutPass)
 	ScreenTarget& target = screenTargets[screenIndex];
 	if (writeOutPass && target.uav)
 	{
-		context->SetTargets(nullptr, nullptr);
+		dx11c_set_targets(nullptr, nullptr);
 		writeOut.Record(target.uav, screenWidth, screenHeight);
 	}
 	// what goes over the picture, onto it (with the depth test off: whatever depth is bound is not looked at)
-	if (!overlay.IsEmpty())
+	if (!dx11_overlay_empty())
 	{
-		context->SetTargets(target.target, BindsScreen() ? depthView.get() : nullptr);
-		context->SetViewport((float)screenWidth, (float)screenHeight);
-		overlay.Draw(screenWidth, screenHeight);
+		dx11c_set_targets(target.target, BindsScreen() ? depthView.get() : nullptr);
+		dx11c_set_viewport((float)screenWidth, (float)screenHeight);
+		dx11_overlay_draw(screenWidth, screenHeight);
 	}
-	context->SetTargets(nullptr, nullptr);
+	dx11c_set_targets(nullptr, nullptr);
 
 	havePicture = true;
 	lastScreen = screenIndex;
 	lastInExtra = false;
 	restoredPicture.reset();
-	DX11Context::Instance()->SetFrame(target.texture, target.view);
+	dx11c_set_frame(target.texture, target.view);
 }
 
 void DX11Renderer::KeepPicture()
@@ -976,15 +973,15 @@ bool DX11Renderer::BeginRTT()
 
 	/* (a texture this render draws with is not to be bound while it is
 	 * drawn into: the textures' slots, not the palette's and the fog's) */
-	context->SetPSResource(0, nullptr);
-	context->SetPSResource(3, nullptr);
+	dx11c_set_ps_resource(0, nullptr);
+	dx11c_set_ps_resource(3, nullptr);
 	if (BindsScreen())
 	{
-		context->SetTargets(rttTexture->spareTarget, depthView);
+		dx11c_set_targets(rttTexture->spareTarget, depthView);
 		const float black[4] = { 0.f, 0.f, 0.f, 1.f };
 		deviceContext->ClearRenderTargetView(rttTexture->spareTarget, black);
 		deviceContext->ClearDepthStencilView(depthView, D3D11_CLEAR_DEPTH | D3D11_CLEAR_STENCIL, 0.f, 0);
-		context->SetViewport((float)upscaledWidth, (float)upscaledHeight);
+		dx11c_set_viewport((float)upscaledWidth, (float)upscaledHeight);
 	}
 	// only the pixel clip is written
 	baseScissor = D3D11_RECT{ (LONG)(clipX * scale), (LONG)(clipY * scale),
@@ -1060,22 +1057,22 @@ bool DX11Renderer::UploadFramebuffer()
  * renderers draw it */
 void DX11Renderer::DrawFramebuffer()
 {
-	screenIndex = (int)DX11Context::Instance()->GetPresentIndex();
+	screenIndex = (int)dx11c_present_index();
 	if (!EnsureScreen(screen_width, screen_height))
 		return;
 	ScreenTarget& target = screenTargets[screenIndex];
 	matrices.CalcMatrices(&pvrrc);
-	context->SetTargets(target.target, nullptr);
+	dx11c_set_targets(target.target, nullptr);
 	const float black[4] = { 0.f, 0.f, 0.f, 1.f };
 	deviceContext->ClearRenderTargetView(target.target, black);
-	context->SetViewport((float)screenWidth, (float)screenHeight);
+	dx11c_set_viewport((float)screenWidth, (float)screenHeight);
 
 	const xform& viewport = matrices.GetViewportMatrix();
 	const float x0 = xform_x(&viewport, 0.f), x1 = xform_x(&viewport, 640.f);
 	const float y0 = xform_y(&viewport, 0.f), y1 = xform_y(&viewport, 480.f);
-	DX11Context::Instance()->GetQuad().Draw(fbView, samplers->GetLinearSampler(),
+	dx11c_draw_quad_at(fbView, dx11_sampler_linear(),
 			x0 * 2.f / screenWidth - 1.f, 1.f - y1 * 2.f / screenHeight,
-			(x1 - x0) * 2.f / screenWidth, (y1 - y0) * 2.f / screenHeight);
+			(x1 - x0) * 2.f / screenWidth, (y1 - y0) * 2.f / screenHeight, 0.f, 0.f, 1.f, 1.f, nullptr, nullptr);
 	EndScreen();
 }
 
@@ -1090,7 +1087,7 @@ bool DX11Renderer::Render()
 	struct Unlocker
 	{
 		bool locked;
-		~Unlocker() { if (locked) DX11Context::Instance()->Unlock(); }
+		~Unlocker() { if (locked) dx11c_unlock(); }
 	} unlocker = { held };
 	if (device == nullptr)
 		return false;
@@ -1107,8 +1104,8 @@ bool DX11Renderer::Render()
 		/* the frontend may still be showing what is in the screen's next
 		 * picture: it is waited for, before the context is taken */
 		if (!pvrrc.isRTT)
-			context->WaitPresentIndex();
-		context->Lock();
+			dx11c_wait_present_index();
+		dx11c_lock();
 		unlocker.locked = true;
 	}
 
@@ -1126,7 +1123,7 @@ bool DX11Renderer::Render()
 	// (sorted into the geometry buffer, and the provoking vertices set: UploadGeometry())
 	if (!UploadGeometry())
 	{
-		context->SetTargets(nullptr, nullptr);
+		dx11c_set_targets(nullptr, nullptr);
 		rttTexture = nullptr;
 		return false;
 	}
@@ -1220,7 +1217,7 @@ void DX11Renderer::DrawPoly(u32 listType, bool sortTriangles, const PolyParam& p
 	if (poly.pcw.Texture && poly.texid != 0)
 	{
 		DX11Texture *texture = (DX11Texture *)(uintptr_t)poly.texid;
-		SetTexture(0, texture->textureView, samplers->GetSampler(poly.tsp));
+		SetTexture(0, texture->textureView, dx11_sampler_get(poly.tsp.full));
 	}
 
 	// Depth and stencil
@@ -1252,27 +1249,27 @@ void DX11Renderer::DrawPoly(u32 listType, bool sortTriangles, const PolyParam& p
 		 * (bit 0). Bit 6 marks the pixels drawn this way; whether one already
 		 * marked may be drawn over is what tells the two kinds apart. */
 		if (shadowPass == ShadowPass::LaterWins)
-			SetDepthStencil(depthStencilStates.Get(true, false, 2, DX11Stencil::ShadowLaterWins), 0xC1);
+			SetDepthStencil(depthState(true, false, 2, DX11Stencil_ShadowLaterWins), 0xC1);
 		else
-			SetDepthStencil(depthStencilStates.Get(true, false, 2, DX11Stencil::ShadowEarlierWins), 0x81);
+			SetDepthStencil(depthState(true, false, 2, DX11Stencil_ShadowEarlierWins), 0x81);
 	}
 	else if (shadowed)
-		SetDepthStencil(depthStencilStates.Get(true, depthWrite, depthFunc, DX11Stencil::Shadow), poly.pcw.Shadow != 0 ? 0x80 : 0);
+		SetDepthStencil(depthState(true, depthWrite, depthFunc, DX11Stencil_Shadow), poly.pcw.Shadow != 0 ? 0x80 : 0);
 	else
-		SetDepthStencil(depthStencilStates.Get(true, depthWrite, depthFunc));
+		SetDepthStencil(depthState(true, depthWrite, depthFunc));
 
 	// Apparently punch-through polys support blending, or at least some combinations
 	// An opaque polygon is blended by its instructions too when it is in a
 	// list continuation; the ones of the first render pass have had theirs
 	// set to source x 1 and destination x 0 when the list was read.
 	if (prepassDraw)
-		SetBlend(blendStates->Get(false, 1, 0, false));
+		SetBlend(blendState(false, 1, 0, false));
 	else if (shadowPass == ShadowPass::None
 			&& (listType == ListType_Translucent || listType == ListType_Punch_Through
 				|| poly.tsp.SrcInstr != 1 || poly.tsp.DstInstr != 0))
-		SetBlend(blendStates->Get(true, poly.tsp.SrcInstr, poly.tsp.DstInstr));
+		SetBlend(blendState(true, poly.tsp.SrcInstr, poly.tsp.DstInstr));
 	else
-		SetBlend(blendStates->Get(false));
+		SetBlend(blendState(false));
 
 	SetCullMode(poly.isp.CullMode);
 	SetTopology(prepassDraw || (sortTriangles && !settings.pvr.Emulation.AlphaSortMode) ? D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST : D3D11_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP);
@@ -1319,7 +1316,7 @@ void DX11Renderer::DrawSorted(const SortTrigDrawParam *polys, u32 count, bool mu
 	{
 		if (count == 0)
 			return;
-		context->SetIndexBuffer(taDecoder.Draw().sorted);
+		dx11c_set_index_buffer(taDecoder.Draw().sorted);
 		gpuSorted = true;
 	}
 	for (u32 i = 0; i < count; i++)
@@ -1330,11 +1327,11 @@ void DX11Renderer::DrawSorted(const SortTrigDrawParam *polys, u32 count, bool mu
 		// Sorted translucent polygons are drawn without writing depth. Where
 		// a later render pass needs their depth (Cosmic Smash), it is written
 		// now, for those that do not have Z write disabled.
-		context->SetInputLayout(positionInputLayout);
+		dx11c_set_input_layout(positionInputLayout);
 		SetVS(shaders->GetModVolVertexShader());
 		SetPS(shaders->GetModVolPixelShader());
-		SetBlend(blendStates->Get(false, 1, 0, false));
-		SetDepthStencil(depthStencilStates.Get(true, true, 6));
+		SetBlend(blendState(false, 1, 0, false));
+		SetDepthStencil(depthState(true, true, 6));
 		SetTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 		for (u32 i = 0; i < count; i++)
 		{
@@ -1346,11 +1343,11 @@ void DX11Renderer::DrawSorted(const SortTrigDrawParam *polys, u32 count, bool mu
 			SetCullMode(param.ppid->isp.CullMode);
 			deviceContext->DrawIndexed(param.count, indexBase + base + param.first, vertexBase);
 		}
-		context->SetInputLayout(mainInputLayout);
+		dx11c_set_input_layout(mainInputLayout);
 	}
 	if (pvrrc.gpu)
 	{
-		context->SetIndexBuffer(taDecoder.Draw().indices);
+		dx11c_set_index_buffer(taDecoder.Draw().indices);
 		gpuSorted = false;
 	}
 }
@@ -1367,7 +1364,7 @@ void DX11Renderer::DrawPrepass(const SortTrigDrawParam *polys, u32 count)
 	const u32 base = pvrrc.gpu ? 0 : pvrrc.idx.used();
 	if (pvrrc.gpu)
 	{
-		context->SetIndexBuffer(taDecoder.Draw().sorted);
+		dx11c_set_index_buffer(taDecoder.Draw().sorted);
 		gpuSorted = true;
 	}
 	prepassDraw = true;
@@ -1376,7 +1373,7 @@ void DX11Renderer::DrawPrepass(const SortTrigDrawParam *polys, u32 count)
 	prepassDraw = false;
 	if (pvrrc.gpu)
 	{
-		context->SetIndexBuffer(taDecoder.Draw().indices);
+		dx11c_set_index_buffer(taDecoder.Draw().indices);
 		gpuSorted = false;
 	}
 	if (savedValid)
@@ -1407,11 +1404,11 @@ void DX11Renderer::DrawModVols(int first, int count, const RenderPass& previous_
 		return;
 
 	// (the modifier volumes' triangles are at vertex slot 1)
-	context->SetInputLayout(modVolInputLayout);
+	dx11c_set_input_layout(modVolInputLayout);
 	SetTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 	SetVS(shaders->GetModVolVertexShader());
 	SetPS(shaders->GetModVolPixelShader());
-	SetBlend(blendStates->Get(false, 1, 0, false));
+	SetBlend(blendState(false, 1, 0, false));
 	SetScissor(baseScissor);
 
 	ModifierVolumeParam* params = &pvrrc.global_param_mvo.head()[first];
@@ -1443,21 +1440,21 @@ void DX11Renderer::DrawModVols(int first, int count, const RenderPass& previous_
 
 		SetCullMode(param.isp.CullMode);
 		if (!param.isp.VolumeLast && mv_mode > 0)
-			SetDepthStencil(depthStencilStates.Get(true, false, 4, DX11Stencil::Or), 2);	// OR'ing (open volume or quad)
+			SetDepthStencil(depthState(true, false, 4, DX11Stencil_Or), 2);	// OR'ing (open volume or quad)
 		else
-			SetDepthStencil(depthStencilStates.Get(true, false, 4, DX11Stencil::Xor), 2);	// XOR'ing (closed volume)
+			SetDepthStencil(depthState(true, false, 4, DX11Stencil_Xor), 2);	// XOR'ing (closed volume)
 		deviceContext->Draw(mvCount * 3, modVolBase + mvFirst * 3);
 
 		if (mv_mode == 1 || mv_mode == 2)
 		{
 			// Sum the area
-			SetDepthStencil(depthStencilStates.Get(false, false, 7, mv_mode == 1 ? DX11Stencil::Inclusion : DX11Stencil::Exclusion), 1);
+			SetDepthStencil(depthState(false, false, 7, mv_mode == 1 ? DX11Stencil_Inclusion : DX11Stencil_Exclusion), 1);
 			deviceContext->Draw((mvFirst + mvCount - mod_base) * 3, modVolBase + mod_base * 3);
 			mod_base = -1;
 		}
 	}
 	SetScissor(baseScissor);
-	context->SetInputLayout(mainInputLayout);
+	dx11c_set_input_layout(mainInputLayout);
 
 	/* The polygons that take shadows, again, where they are in a volume
 	 * (whose bounds the header pass has worked out for a frame decoded on
@@ -1476,15 +1473,15 @@ void DX11Renderer::DrawModVols(int first, int count, const RenderPass& previous_
 
 	// What is left: darkened as it is. The background polygon is the
 	// rectangle drawn: the first four vertices' positions.
-	context->SetInputLayout(positionInputLayout);
+	dx11c_set_input_layout(positionInputLayout);
 	SetTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP);
 	SetVS(shaders->GetModVolVertexShader());
 	SetPS(shaders->GetModVolPixelShader());
-	SetBlend(blendStates->GetAlpha());
-	SetDepthStencil(depthStencilStates.Get(false, false, 7, DX11Stencil::Final), 0x81);
+	SetBlend(dx11_blend_alpha());
+	SetDepthStencil(depthState(false, false, 7, DX11Stencil_Final), 0x81);
 	SetCullMode(0);
 	deviceContext->DrawIndexed(4, indexBase, vertexBase);
-	context->SetInputLayout(mainInputLayout);
+	dx11c_set_input_layout(mainInputLayout);
 }
 
 void DX11Renderer::DrawFrame()

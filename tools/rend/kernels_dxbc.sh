@@ -5,7 +5,7 @@
 #
 #   core/rend/texdecode_dxbc.inc  textures made on the GPU, Direct3D 11
 #                                 (rend/texdecode.h with TEXD_KERNEL_D3D;
-#                                 dx11/dx11_texdecoder.cpp)
+#                                 dx11/dx11_texdecoder.c)
 #   core/rend/texdecode_dx9.inc   the same for Direct3D 9, shader model 3
 #                                 (rend/texdecode_sm3.h with TEXD_SM3_KERNEL;
 #                                 dx9/dx9_texdecoder.c)

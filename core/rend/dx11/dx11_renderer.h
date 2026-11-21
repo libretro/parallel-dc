@@ -32,7 +32,11 @@
 #include "dx11_writeout.h"
 #include "rend/shadows.h"
 #include "rend/depth_scale.h"
+#include "comptr.h"
 #include "dx11context_lr.h"
+#include "dx11_shaders.h"
+#include "dx11_texture.h"
+#include "dx11_renderstate.h"
 #include "dx11_overlay.h"
 #include "dx11_texdecoder.h"
 #include "dx11_ta_decoder.h"
@@ -47,7 +51,7 @@
  * the shadows of rend/shadows.h, renders to textures that stay on the card
  * until the game touches them in video memory (rend/rtt_watch.h), the
  * picture kept across a new context or a new size (rend/last_picture.h).
- * The frame is a picture the frontend is handed (DX11Context::SetFrame). */
+ * The frame is a picture the frontend is handed (dx11c_set_frame()). */
 class DX11Renderer : public Renderer
 {
 public:
@@ -107,15 +111,10 @@ protected:
 
 	ID3D11Device *device = nullptr;
 	ID3D11DeviceContext *deviceContext = nullptr;
-	DX11Context *context = nullptr;
 	DX11Shaders *shaders = nullptr;
-	DX11Samplers *samplers = nullptr;
-	DX11BlendStates *blendStates = nullptr;
-	DX11DepthStencilStates depthStencilStates;
-	DX11TexDecoder texDecoder;		// (before the cache: textures going away tell it)
+	dx11_depth_states depthStencilStates = {};
 	DX11TexturePool texPool;		// (and give their textures back)
 	DX11TextureCache texCache;
-	DX11Overlay overlay;
 	TransformMatrix<false> matrices;
 	/* GPU-side TA processing (dx11_ta_decoder.h): a frame it decodes is
 	 * drawn from its buffers, its draws' arguments the GPU's */
@@ -225,7 +224,7 @@ protected:
 	u32 targetHeight = 0;
 
 	D3D11_RECT baseScissor{};
-	void SetScissor(const D3D11_RECT& rect) { context->SetScissor(rect); }
+	void SetScissor(const D3D11_RECT& rect) { dx11c_set_scissor(&rect); }
 	TileClipping SetTileClip(u32 val, D3D11_RECT& rect);
 	void SetBaseScissor();
 	void SetProvokingVertices();
@@ -268,24 +267,32 @@ protected:
 		{
 			const DX11TaDraw& gpu = taDecoder.Draw();
 			// (the volumes' triangles cut on the CPU, when the frame has them: in the geometry buffer)
-			context->SetGeometry(gpu.vertices, sizeof(Vertex), pvrrc.mv_clip.used() != 0 ? (ID3D11Buffer *)geometry : (ID3D11Buffer *)gpu.modtrig,
+			dx11c_set_geometry2(gpu.vertices, sizeof(Vertex), pvrrc.mv_clip.used() != 0 ? (ID3D11Buffer *)geometry : (ID3D11Buffer *)gpu.modtrig,
 					sizeof(float) * 3, gpu.indices);
 		}
 		else
-			context->SetGeometry(geometry, sizeof(Vertex), sizeof(float) * 3, geometry);
+			dx11c_set_geometry(geometry, sizeof(Vertex), sizeof(float) * 3, geometry);
 	}
 
 	/* (the context's, which sets only what differs from what is bound) */
-	void SetVS(ID3D11VertexShader *vs) { context->SetVS(vs); }
-	void SetPS(ID3D11PixelShader *ps) { context->SetPS(ps); }
-	void SetBlend(ID3D11BlendState *blend) { context->SetBlend(blend); }
-	void SetDepthStencil(ID3D11DepthStencilState *depth, UINT ref = 0) { context->SetDepthStencil(depth, ref); }
+	void SetVS(ID3D11VertexShader *vs) { dx11c_set_vs(vs); }
+	void SetPS(ID3D11PixelShader *ps) { dx11c_set_ps(ps); }
+	void SetBlend(ID3D11BlendState *blend) { dx11c_set_blend(blend, nullptr); }
+	void SetDepthStencil(ID3D11DepthStencilState *depth, UINT ref = 0) { dx11c_set_depth_stencil(depth, ref); }
+	ID3D11DepthStencilState *depthState(bool depthTest, bool depthWrite, int depthFunc, DX11Stencil stencil = DX11Stencil_None)
+	{
+		return dx11_depth_states_get(&depthStencilStates, depthTest, depthWrite, depthFunc, stencil);
+	}
+	ID3D11BlendState *blendState(bool enable, u32 src = 1, u32 dst = 0, bool writeColor = true)
+	{
+		return dx11_blend_get(enable, src, dst, writeColor);
+	}
 	void SetTexture(int slot, ID3D11ShaderResourceView *view, ID3D11SamplerState *sampler)
 	{
-		context->SetPSResource(slot, view);
-		context->SetPSSampler(slot, sampler);
+		dx11c_set_ps_resource(slot, view);
+		dx11c_set_ps_sampler(slot, sampler);
 	}
-	void SetTopology(D3D11_PRIMITIVE_TOPOLOGY topology) { context->SetTopology(topology); }
+	void SetTopology(D3D11_PRIMITIVE_TOPOLOGY topology) { dx11c_set_topology(topology); }
 
 	/* The context taken by Process() and kept for the Render() after it */
 	bool heldFromProcess = false;

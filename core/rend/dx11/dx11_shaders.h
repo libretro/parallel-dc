@@ -31,6 +31,7 @@
 #include "rend/d3d_warm.h"
 #include "rend/d3d_shader_cache.h"
 #include "rend/tex_map.h"
+#include "dx11_shaders_c.h"
 
 /* What a shader is compiled from: its source, profile and macros (a list
  * ending with a null one). One function says it for each shader, for the
@@ -248,6 +249,9 @@ protected:
 	void MakeSources() override;
 	void Fixed(std::vector<d3d_warm_job_t>& jobs) const override;
 };
+
+/* The renderers' shaders, made with the context (dx11_shaders_c.h) */
+DX11Shaders& dx11_shaders();
 
 /* The write-out pass's HLSL (dx11_writeout.cpp) */
 extern const char *const DX11WriteOutSource;

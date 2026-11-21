@@ -52,7 +52,7 @@ public:
 	static u64 PlannedSize(int width, int height)
 	{
 		return oit_buffer_bytes((u32)std::max(width, 0), (u32)std::max(height, 0),
-				DX11Context::Instance()->GetVramBudget().available_kib(),
+				vram_budget_available_kib(&dx11c.vram_budget),
 				(u64)D3D11_REQ_RESOURCE_SIZE_IN_MEGABYTES_EXPRESSION_C_TERM * 1024u * 1024u);
 	}
 
@@ -247,11 +247,11 @@ public:
 
 	/* With one render target, the lists at u1, u2 and u3, and how large
 	 * they can be at b2 */
-	void Bind(DX11Context *context, ID3D11RenderTargetView *target, ID3D11DepthStencilView *depth)
+	void Bind(ID3D11RenderTargetView *target, ID3D11DepthStencilView *depth)
 	{
 		ID3D11UnorderedAccessView * const views[] = { pixelsView, pointersView, counterView };
-		context->SetTargetsAndUAVs(target, depth, views);
-		context->SetPSConstants(2, constants);
+		dx11c_set_targets_and_uavs(target, depth, views);
+		dx11c_set_ps_constants(2, constants);
 	}
 	/* The buffer starts filling from its beginning again */
 	void ResetCount(ID3D11DeviceContext *deviceContext)

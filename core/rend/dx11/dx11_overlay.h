@@ -17,43 +17,27 @@
     along with Flycast.  If not, see <https://www.gnu.org/licenses/>.
 */
 #pragma once
-/* (Direct3D's headers before the emulator's: hw/pvr/pvr_regs.h has macros
- * with the names of some of their parameters) */
 #include "rend/d3d_system.h"
 #include <windows.h>
 #include <d3d11.h>
-#include <d3dcompiler.h>
 #include "types.h"
-#include "comptr.h"
+
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 /* What goes over the picture: the VMUs' screens and the light guns'
  * crosshairs, where the core options put them (as the Vulkan renderers'
- * vulkan/vmu.cpp does it). */
-class DX11Overlay
-{
-public:
-	/* Before the frame: the textures of what has changed */
-	void Prepare();
-	/* Onto the target that is bound, @width by @height */
-	void Draw(int width, int height);
-	/* Nothing to draw */
-	bool IsEmpty() const
-	{
-		for (int i = 0; i < 4; i++)
-			if (vmus[i].view || crosshairs[i].view)
-				return false;
-		return true;
-	}
-	void Term();
+ * vulkan/vmu.cpp does it). The renderer's, one at a time. */
 
-private:
-	struct Picture
-	{
-		ComPtr<ID3D11Texture2D> texture;
-		ComPtr<ID3D11ShaderResourceView> view;
-	};
-	bool Upload(Picture& picture, int width, int height, const u8 *rgba);
+/* Before the frame: the textures of what has changed */
+void dx11_overlay_prepare(void);
+/* Onto the target that is bound, @width by @height */
+void dx11_overlay_draw(int width, int height);
+/* Nothing to draw */
+bool dx11_overlay_empty(void);
+void dx11_overlay_term(void);
 
-	Picture vmus[4];
-	Picture crosshairs[4];
-};
+#ifdef __cplusplus
+}
+#endif

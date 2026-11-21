@@ -1094,3 +1094,37 @@ void DX11Shaders::Term()
 	device = nullptr;
 	compile = nullptr;
 }
+
+/* ---- The context's (dx11_shaders_c.h) ---- */
+
+static DX11Shaders theShaders;
+
+DX11Shaders& dx11_shaders()
+{
+	return theShaders;
+}
+
+void dx11_shaders_init(ID3D11Device *device, pD3DCompile compile)
+{
+	theShaders.Init(device, compile);
+}
+
+void dx11_shaders_term(void)
+{
+	theShaders.Term();
+}
+
+ID3D11VertexShader *dx11_shaders_quad_vs(void)
+{
+	return theShaders.GetQuadVertexShader();
+}
+
+ID3D11PixelShader *dx11_shaders_quad_ps(void)
+{
+	return theShaders.GetQuadPixelShader();
+}
+
+ID3DBlob *dx11_shaders_quad_vs_blob(void)
+{
+	return theShaders.GetQuadVertexShaderBlob();
+}

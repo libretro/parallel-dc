@@ -40,39 +40,39 @@ static NvUavOverlap nvBeginUavOverlap, nvEndUavOverlap;
 static NvMultiDrawIndexed nvMultiDrawIndexed;
 static bool probed;
 
-static void probe()
+static void probe(void)
 {
 	if (probed)
 		return;
 	probed = true;
 	nvBeginUavOverlap = (NvUavOverlap)nvapi_query(NvId_D3D11_BeginUAVOverlap);
 	nvEndUavOverlap = (NvUavOverlap)nvapi_query(NvId_D3D11_EndUAVOverlap);
-	// (both or neither: a run begun is always ended)
-	if (nvBeginUavOverlap == nullptr || nvEndUavOverlap == nullptr)
-		nvBeginUavOverlap = nvEndUavOverlap = nullptr;
+	/* (both or neither: a run begun is always ended) */
+	if (nvBeginUavOverlap == NULL || nvEndUavOverlap == NULL)
+		nvBeginUavOverlap = nvEndUavOverlap = NULL;
 	nvMultiDrawIndexed = (NvMultiDrawIndexed)nvapi_query(NvId_D3D11_MultiDrawIndexedInstancedIndirect);
 }
 
-bool dx11_nvapi_uav_overlap_available()
+bool dx11_nvapi_uav_overlap_available(void)
 {
 	probe();
-	return nvBeginUavOverlap != nullptr;
+	return nvBeginUavOverlap != NULL;
 }
 
 void dx11_nvapi_begin_uav_overlap(ID3D11DeviceContext *context)
 {
-	nvBeginUavOverlap(context);
+	nvBeginUavOverlap((IUnknown *)context);
 }
 
 void dx11_nvapi_end_uav_overlap(ID3D11DeviceContext *context)
 {
-	nvEndUavOverlap(context);
+	nvEndUavOverlap((IUnknown *)context);
 }
 
-bool dx11_nvapi_multi_draw_available()
+bool dx11_nvapi_multi_draw_available(void)
 {
 	probe();
-	return nvMultiDrawIndexed != nullptr;
+	return nvMultiDrawIndexed != NULL;
 }
 
 bool dx11_nvapi_multi_draw_indexed(ID3D11DeviceContext *context, u32 count, ID3D11Buffer *args, u32 offset, u32 stride)

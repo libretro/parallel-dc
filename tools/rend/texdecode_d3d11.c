@@ -6,7 +6,7 @@
  * the CPU and writes, for each, what a renderer that converts on the GPU
  * is handed (the plan and the bytes) and what the CPU made, to its
  * standard output; this reads that from its standard input. Each texture
- * is then made as dx11/dx11_texdecoder.cpp makes it, with the kernels the
+ * is then made as dx11/dx11_texdecoder.c makes it, with the kernels the
  * core has (rend/texdecode_dxbc.inc), into a texture made as the texture
  * pool makes them (dx11/dx11_texture.cpp):
  *   - 32-bit texels and palette indices by the compute kernels, through

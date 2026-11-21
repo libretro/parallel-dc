@@ -23,7 +23,7 @@
 # Direct3D 9 on wine's OpenGL renderer: its Vulkan one leaves a shader
 # model 3 picture black, and two builds that drew nothing are the same;
 # a run whose last picture has a few colours at most fails, as one that
-# drew nothing.
+# drew nothing, with every API.
 # Needs mingw-w64, wine, Xvfb with OpenGL (mesa), python3 and a Vulkan
 # driver (lavapipe will do), as tools/hdr/d3d_hdr.sh.
 set -e
@@ -104,6 +104,10 @@ for d in plain atlas cull dma slant blend; do
                || { echo "  FAIL: $name ($c) did not run:"; tail -3 "$WORK/$name.$c.log.err"; fails=$((fails + 1)); }
          done
          if [ -s "$WORK/$name.A.raw" ] && cmp -s "$WORK/$name.A.raw" "$WORK/$name.B.raw"; then
+            if ! python3 tools/rend/raw_colours.py "$WORK/$name.B.raw" 16 > /dev/null; then
+               echo "  FAIL: $name: drew nothing (its picture a few colours at most)"; fails=$((fails + 1))
+               continue
+            fi
             echo "same  $name"
          else
             echo "  FAIL: $name: not the same picture"; fails=$((fails + 1))

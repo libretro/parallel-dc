@@ -26,7 +26,7 @@
 #include <algorithm>
 #include <vector>
 
-DX11TexDecoder *DX11Texture::decoder;
+bool DX11Texture::decoder;
 DX11TexturePool *DX11Texture::pool;
 
 /* ---- The texture pool ---- */
@@ -39,7 +39,7 @@ static const DXGI_FORMAT poolFormats[DX11TexturePool::FORMATS] = {
 static const char * const poolFormatNames[DX11TexturePool::FORMATS] = { "565", "5551", "4444", "8888", "8-bit", "8888 rendered to" };
 static const u32 poolTexel[DX11TexturePool::FORMATS] = { 2, 2, 2, 4, 1, 4 };
 
-void DX11TexturePool::Init(ID3D11Device *device, const VramBudget& budget, const DX11TexDecoder *decoder)
+void DX11TexturePool::Init(ID3D11Device *device, const VramBudget& budget)
 {
 	if (ready)
 		return;
@@ -51,12 +51,12 @@ void DX11TexturePool::Init(ID3D11Device *device, const VramBudget& budget, const
 	u32 have[FORMATS];
 	for (int f = 0; f < FORMATS; f++)
 	{
-		usable[f] = f == TARGET || DX11Context::Instance()->IsFormatSupported((TextureType)f);
-		writable[f] = f != TARGET && usable[f] && decoder != nullptr && decoder->Takes((TextureType)f);
+		usable[f] = f == TARGET || dx11c_format_supported((int)(TextureType)f);
+		writable[f] = f != TARGET && usable[f] && dx11_texdec_takes((int)f);
 		have[f] = usable[f] ? poolTexel[f] : 0;
 	}
 	generates = texcache_upscale_factor() > 1 && usable[(int)TextureType::_8888]
-			&& DX11Context::Instance()->CanGenerateMips(TextureType::_8888);
+			&& dx11c_can_generate_mips((int)TextureType::_8888);
 	u32 counts[TexPoolBook::CLASSES];
 	const u64 bytes = TexPoolBook::Plan(budget, have, use, kind, FORMATS, counts,
 			texcache_upscale_factor(), (u32)settings.rend.MaxFilteredTextureSize,
@@ -236,8 +236,8 @@ void DX11Texture::ReleasePooled()
 
 void DX11Texture::CancelDecode()
 {
-	if (decodeCount != 0 && decoder != nullptr)
-		decoder->Cancel(decodeJob, decodeCount, decodeSerial);
+	if (decodeCount != 0 && decoder)
+		dx11_texdec_cancel(decodeJob, decodeCount, decodeSerial);
 	decodeCount = 0;
 }
 
@@ -246,27 +246,26 @@ void DX11Texture::CancelDecode()
  * into, which a no leaves for the CPU's upload to take. */
 bool DX11Texture::GpuDecode(const texd_plan& plan)
 {
-	DX11Context *context = DX11Context::Instance();
-	if (context->GetDevice() == nullptr || pool == nullptr)
+	if (dx11c.device == nullptr || pool == nullptr)
 		return false;
 	if (plan.native)
 	{
 		/* A planar 16-bit texture: the PowerVR's texels are Direct3D's
 		 * as they are, and its rows go from video memory to the texture */
-		if (tex_type == TextureType::_8888 || tex_type == TextureType::_8 || !context->IsFormatSupported(tex_type)
+		if (tex_type == TextureType::_8888 || tex_type == TextureType::_8 || !dx11c_format_supported((int)tex_type)
 				|| !TakePooled(plan.width, plan.height, false))
 			return false;
 		CancelDecode();
-		context->GetDeviceContext()->UpdateSubresource(texture, 0, nullptr, &vram[plan.src + plan.level[0].data],
+		dx11c.device_context->UpdateSubresource(texture, 0, nullptr, &vram[plan.src + plan.level[0].data],
 				(plan.level[0].sr & 0xFFFF) * 2, 0);
 		return true;
 	}
-	if (decoder == nullptr || !decoder->Takes(tex_type)
+	if (!decoder || !dx11_texdec_takes((int)tex_type)
 			|| !TakePooled(plan.width, plan.height, plan.mipmapped != 0) || !pooled->writable || pooled->levels < plan.levels)
 		return false;
 	CancelDecode();
 	u32 base;
-	u8 * const to = decoder->Begin(plan.pal + plan.pal_entries * 4, plan.levels, &base);
+	u8 * const to = dx11_texdec_begin(plan.pal + plan.pal_entries * 4, plan.levels, &base);
 	if (to == nullptr)
 		return false;
 	memcpy(to, &vram[plan.src], plan.bytes);
@@ -275,16 +274,16 @@ bool DX11Texture::GpuDecode(const texd_plan& plan)
 
 	const u32 d3d16 = plan.out != TEXD_OUT16 ? 0
 			: TEXD_D3D16(tex_type == TextureType::_5551 ? TEXD_D3D_5551 : tex_type == TextureType::_4444 ? TEXD_D3D_4444 : TEXD_D3D_565);
-	decodeJob = decoder->Next();
-	decodeSerial = decoder->Serial();
+	decodeJob = dx11_texdec_next();
+	decodeSerial = dx11_texdec_serial();
 	for (u32 i = 0; i < plan.levels; i++)
 	{
 		const texd_level& lv = plan.level[i];
 		const u32 pc[6] = { base, lv.data, plan.pal, lv.wh, lv.sr, lv.mode | d3d16 };
 		if (plan.out == TEXD_OUT16)
-			decoder->Add(nullptr, pooled->targets[lv.mip], pc);
+			dx11_texdec_add(nullptr, pooled->targets[lv.mip], pc);
 		else
-			decoder->Add(pooled->uavs[lv.mip], nullptr, pc);
+			dx11_texdec_add(pooled->uavs[lv.mip], nullptr, pc);
 	}
 	decodeCount = plan.levels;
 	return true;
@@ -313,9 +312,8 @@ static const u16 *turnBits(u8 *data, size_t texels, unsigned by, bool inPlace)
 
 void DX11Texture::UploadToGPU(int width, int height, u8 *data, bool mipmapped, bool mipmapsIncluded)
 {
-	DX11Context *context = DX11Context::Instance();
-	ID3D11Device *device = context->GetDevice();
-	ID3D11DeviceContext *deviceContext = context->GetDeviceContext();
+	ID3D11Device *device = dx11c.device;
+	ID3D11DeviceContext *deviceContext = dx11c.device_context;
 	if (device == nullptr)
 		return;
 	// what the decoder was to make of it this frame is this now
@@ -355,7 +353,7 @@ void DX11Texture::UploadToGPU(int width, int height, u8 *data, bool mipmapped, b
 		for (int dim = width / 2; dim != 0; dim /= 2)
 			levels++;
 	// smaller levels made on the card, where it can make them
-	const bool generate = mipmapped && !mipmapsIncluded && context->CanGenerateMips(tex_type);
+	const bool generate = mipmapped && !mipmapsIncluded && dx11c_can_generate_mips((int)tex_type);
 	if (generate)
 		for (int dim = std::max(width, height) / 2; dim != 0; dim /= 2)
 			levels++;
@@ -480,8 +478,8 @@ bool DX11Texture::PartReady() const
 	unsigned turn;
 	D3D11_TEXTURE2D_DESC desc;
 
-	if (made_type != (u8)tex_type + 1 || !texture || DX11Context::Instance()->GetDevice() == nullptr
-			|| (decodeCount != 0 && decoder != nullptr && decodeSerial == decoder->Serial()))
+	if (made_type != (u8)tex_type + 1 || !texture || dx11c.device == nullptr
+			|| (decodeCount != 0 && decoder && decodeSerial == dx11_texdec_serial()))
 		return false;
 	texture->GetDesc(&desc);
 	return desc.Width == w && desc.Height == h && desc.Format == typeFormat(tex_type, &bpp, &turn)
@@ -497,7 +495,7 @@ bool DX11Texture::PartMemory(size_t bytes, void **memory)
 
 void DX11Texture::UploadPart(const TexRegion *regions, u32 count, u8 *data, const size_t *offset)
 {
-	ID3D11DeviceContext *deviceContext = DX11Context::Instance()->GetDeviceContext();
+	ID3D11DeviceContext *deviceContext = dx11c.device_context;
 	u32 bpp, i;
 	unsigned turn;
 
@@ -516,19 +514,18 @@ void DX11Texture::UploadPart(const TexRegion *regions, u32 count, u8 *data, cons
  * they are (GpuDecode()); the decoder's textures are made whole */
 int DX11Texture::GpuDecodePart(const texd_plan& plan, const TexRegion *regions, u32 count)
 {
-	DX11Context *context = DX11Context::Instance();
 	u32 i;
 
 	if (!plan.native)
-		return decoder == nullptr || !decoder->Takes(tex_type) ? TEXP_CPU : TEXP_WHOLE;
-	if (tex_type == TextureType::_8888 || tex_type == TextureType::_8 || !context->IsFormatSupported(tex_type) || !PartReady())
+		return !decoder || !dx11_texdec_takes((int)tex_type) ? TEXP_CPU : TEXP_WHOLE;
+	if (tex_type == TextureType::_8888 || tex_type == TextureType::_8 || !dx11c_format_supported((int)tex_type) || !PartReady())
 		return TEXP_WHOLE;
 	for (i = 0; i < count; i++)
 	{
 		const TexRegion& r = regions[i];
 		const u32 stride = plan.level[0].sr & 0xFFFF;
 		const D3D11_BOX box = { 0, r.y, 0, plan.width, r.y + r.h, 1 };
-		context->GetDeviceContext()->UpdateSubresource(texture, 0, &box, &vram[plan.src + plan.level[0].data + r.y * stride * 2],
+		dx11c.device_context->UpdateSubresource(texture, 0, &box, &vram[plan.src + plan.level[0].data + r.y * stride * 2],
 				stride * 2, 0);
 	}
 	return TEXP_DONE;
@@ -536,7 +533,7 @@ int DX11Texture::GpuDecodePart(const texd_plan& plan, const TexRegion *regions, 
 
 bool DX11Texture::Force32BitTexture(TextureType type) const
 {
-	return !DX11Context::Instance()->IsFormatSupported(type);
+	return !dx11c_format_supported((int)type);
 }
 
 bool DX11Texture::Delete()
@@ -551,83 +548,6 @@ bool DX11Texture::Delete()
 	spareView.reset();
 	spare.reset();
 	return true;
-}
-
-ID3D11SamplerState *DX11Samplers::MakeSampler(TSP tsp)
-{
-	const u32 key = tsp.full & TSP_Mask;
-
-	D3D11_SAMPLER_DESC desc{};
-	if (tsp.FilterMode == 0)
-		desc.Filter = D3D11_FILTER_MIN_MAG_MIP_POINT;
-	else if (settings.rend.AnisotropicFiltering > 1)
-		desc.Filter = D3D11_FILTER_ANISOTROPIC;
-	else
-		// (the mipmap level nearest, as the Vulkan renderer's: trilinear filtering is two passes)
-		desc.Filter = D3D11_FILTER_MIN_MAG_LINEAR_MIP_POINT;
-	desc.AddressU = tsp.ClampU ? D3D11_TEXTURE_ADDRESS_CLAMP : tsp.FlipU ? D3D11_TEXTURE_ADDRESS_MIRROR : D3D11_TEXTURE_ADDRESS_WRAP;
-	desc.AddressV = tsp.ClampV ? D3D11_TEXTURE_ADDRESS_CLAMP : tsp.FlipV ? D3D11_TEXTURE_ADDRESS_MIRROR : D3D11_TEXTURE_ADDRESS_WRAP;
-	desc.AddressW = D3D11_TEXTURE_ADDRESS_CLAMP;
-	desc.MipLODBias = D_Adjust_LoD_Bias[tsp.MipMapD];
-	desc.MaxAnisotropy = std::min(16, std::max(1, settings.rend.AnisotropicFiltering));
-	desc.ComparisonFunc = D3D11_COMPARISON_NEVER;
-	desc.MinLOD = 0.f;
-	desc.MaxLOD = D3D11_FLOAT32_MAX;
-
-	ComPtr<ID3D11SamplerState>& sampler = samplers[key >> 8];
-	if (started)
-		drawPath++;
-	ID3D11Device *device = DX11Context::Instance()->GetDevice();
-	if (device == nullptr || FAILED(device->CreateSamplerState(&desc, sampler.put())))
-		WARN_LOG(RENDERER, "Sampler creation failed\n");
-	return sampler;
-}
-
-ID3D11SamplerState *DX11Samplers::GetPointSampler()
-{
-	TSP tsp = {};
-	tsp.FilterMode = 0;
-	tsp.ClampU = 1;
-	tsp.ClampV = 1;
-	return GetSampler(tsp);
-}
-
-bool DX11Samplers::MakeAll()
-{
-	bool ok = true;
-	started = false;
-	// (every combination of the bits a sampler is made from: 1024)
-	for (u32 bits = TSP_Mask; ; bits = (bits - 1) & TSP_Mask)
-	{
-		TSP tsp;
-		tsp.full = bits;
-		if (samplers[bits >> 8] == nullptr)
-			ok = MakeSampler(tsp) != nullptr && ok;
-		if (bits == 0)
-			break;
-	}
-	ok = GetLinearSampler() != nullptr && ok;
-	started = true;
-	return ok;
-}
-
-ID3D11SamplerState *DX11Samplers::GetLinearSampler()
-{
-	if (!linear)
-	{
-		if (started)
-			drawPath++;
-		D3D11_SAMPLER_DESC desc{};
-		desc.Filter = D3D11_FILTER_MIN_MAG_MIP_LINEAR;
-		desc.AddressU = desc.AddressV = desc.AddressW = D3D11_TEXTURE_ADDRESS_CLAMP;
-		desc.MaxAnisotropy = 1;
-		desc.ComparisonFunc = D3D11_COMPARISON_NEVER;
-		desc.MaxLOD = D3D11_FLOAT32_MAX;
-		ID3D11Device *device = DX11Context::Instance()->GetDevice();
-		if (device == nullptr || FAILED(device->CreateSamplerState(&desc, linear.put())))
-			WARN_LOG(RENDERER, "Sampler creation failed\n");
-	}
-	return linear;
 }
 
 /* ---- Renders to textures, and video memory (rend/rtt_watch.h) ---- */
@@ -676,10 +596,9 @@ static bool makeStaging(ID3D11Device *device, u32 width, u32 height)
 static bool readBack(ID3D11Texture2D *texture, u32 x, u32 y, u32 width, u32 height, u8 *rgba,
 		const RttWatch *watch = nullptr, RttWatchTake take = nullptr)
 {
-	DX11Context *context = DX11Context::Instance();
-	ID3D11DeviceContext *deviceContext = context->GetDeviceContext();
+	ID3D11DeviceContext *deviceContext = dx11c.device_context;
 
-	if (!context->CanReadBack() || !makeStaging(context->GetDevice(), width, height))
+	if (!dx11c.immediate || !makeStaging(dx11c.device, width, height))
 	{
 		if (take != nullptr)
 			take(watch, nullptr, 0);
@@ -750,7 +669,7 @@ static Dx11RttCopy *rtt_copy_of(const RttWatch *watch)
  * every copy gone - never in the fault handler */
 static bool rtt_ring(u32 w, u32 rows)
 {
-	ID3D11Device *device = DX11Context::Instance()->GetDevice();
+	ID3D11Device *device = dx11c.device;
 
 	if (w <= rttRingW && rows <= rttRingH)
 		return true;
@@ -831,7 +750,7 @@ static Dx11RttCopy *rtt_copy_free(u64 since, u32 rows)
  * at least @w by @h: made larger if it is not - never in the fault handler */
 static bool rtt_small(u32 w, u32 h)
 {
-	ID3D11Device *device = DX11Context::Instance()->GetDevice();
+	ID3D11Device *device = dx11c.device;
 
 	if (small)
 	{
@@ -877,7 +796,6 @@ void dx11_rtt_init(void)
  * size, filtered: what the console would have of it, on the card */
 static bool shrink(DX11Texture *texture, u32 x0, u32 y0, u32 w, u32 h, u32 scale)
 {
-	DX11Context *context = DX11Context::Instance();
 
 	if (!small)
 		return false;
@@ -889,12 +807,12 @@ static bool shrink(DX11Texture *texture, u32 x0, u32 y0, u32 w, u32 h, u32 scale
 	}
 	D3D11_TEXTURE2D_DESC src;
 	texture->texture->GetDesc(&src);
-	context->SetTargets(smallTarget, nullptr);
-	context->SetViewport((float)w, (float)h);
-	context->GetQuad().Draw(texture->textureView, context->GetSamplers().GetLinearSampler(),
+	dx11c_set_targets(smallTarget, nullptr);
+	dx11c_set_viewport((float)w, (float)h);
+	dx11c_draw_quad_at(texture->textureView, dx11_sampler_linear(),
 			-1.f, -1.f, 2.f, 2.f,
 			(float)x0 / src.Width, (float)y0 / src.Height,
-			(float)(x0 + w * scale) / src.Width, (float)(y0 + h * scale) / src.Height);
+			(float)(x0 + w * scale) / src.Width, (float)(y0 + h * scale) / src.Height, nullptr, nullptr);
 	return true;
 }
 
@@ -904,16 +822,15 @@ static bool shrink(DX11Texture *texture, u32 x0, u32 y0, u32 w, u32 h, u32 scale
  * the texture drawn onto a picture of w by h). Not waited for. */
 static bool rtt_copy(const RttWatch *watch, Dx11RttCopy& c)
 {
-	DX11Context *context = DX11Context::Instance();
-	ID3D11Device *device = context->GetDevice();
-	ID3D11DeviceContext *deviceContext = context->GetDeviceContext();
+	ID3D11Device *device = dx11c.device;
+	ID3D11DeviceContext *deviceContext = dx11c.device_context;
 	DX11Texture *texture = (DX11Texture *)watch->tex;
 	const u32 w = watch->w, h = watch->h, scale = watch->scale > 1 ? watch->scale : 1;
 	const u32 x0 = watch->x0 * scale, y0 = watch->y0 * scale;
 	ID3D11Texture2D *source = texture->texture;
 	u32 sx = x0, sy = y0;
 
-	if (device == nullptr || !context->CanReadBack() || !texture->texture || !rttRing || w > rttRingW || h > c.rows)
+	if (device == nullptr || !dx11c.immediate || !texture->texture || !rttRing || w > rttRingW || h > c.rows)
 		return false;
 	if (scale > 1)
 	{
@@ -964,7 +881,7 @@ static void dx11_rtt_prefetch(const RttWatch *const *watches, unsigned count)
 				any = true;
 		}
 	if (any)
-		DX11Context::Instance()->GetDeviceContext()->Flush();
+		dx11c.device_context->Flush();
 }
 
 /* The picture, from its copy - made ahead as often as not, and done by
@@ -972,7 +889,7 @@ static void dx11_rtt_prefetch(const RttWatch *const *watches, unsigned count)
 static void dx11_rtt_read(const RttWatch *watch, u8 *, RttWatchTake take)
 {
 	DX11Lock lock;
-	ID3D11DeviceContext *deviceContext = DX11Context::Instance()->GetDeviceContext();
+	ID3D11DeviceContext *deviceContext = dx11c.device_context;
 	Dx11RttCopy *c = rtt_copy_of(watch);
 
 	if (c == nullptr)
@@ -1026,8 +943,7 @@ static void covered(u32& addr, u32 x0, u32 y0, u32& width, u32 height, u32& stri
 bool DX11Texture::CopyRender(BaseTextureCacheData *from, u32 x, u32 y, u32 scale, u32 columns)
 {
 	DX11Texture *src = static_cast<DX11Texture *>(from);
-	DX11Context *context = DX11Context::Instance();
-	ID3D11Device *device = context->GetDevice();
+	ID3D11Device *device = dx11c.device;
 	D3D11_TEXTURE2D_DESC sd;
 
 	if (device == nullptr || src == this || !src->texture || columns == 0 || columns > w)
@@ -1091,11 +1007,11 @@ bool DX11Texture::CopyRender(BaseTextureCacheData *from, u32 x, u32 y, u32 scale
 		for (u32 row = 0; row < h && w <= 1024; row++)
 		{
 			const D3D11_BOX rest = { columns, row, 0, w, row + 1, 1 };
-			context->GetDeviceContext()->UpdateSubresource(texture, 0, &rest, clear, (w - columns) * 4, 0);
+			dx11c.device_context->UpdateSubresource(texture, 0, &rest, clear, (w - columns) * 4, 0);
 		}
 	}
 	const D3D11_BOX box = { sx, sy, 0, sx + columns, sy + h, 1 };
-	context->GetDeviceContext()->CopySubresourceRegion(texture, 0, 0, 0, 0, source, 0, &box);
+	dx11c.device_context->CopySubresourceRegion(texture, 0, 0, 0, 0, source, 0, &box);
 	return true;
 }
 

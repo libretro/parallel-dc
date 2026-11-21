@@ -145,8 +145,7 @@ static bool makeUav(ID3D11Device *device, ID3D11Buffer *buffer, u64 bytes, ComPt
 
 bool DX11TaDecoder::Init()
 {
-	DX11Context *context = DX11Context::Instance();
-	ID3D11Device *device = context->GetDevice();
+	ID3D11Device *device = dx11c.device;
 	if (device == nullptr)
 		return false;
 	auto no = [this](const char *why) {
@@ -160,13 +159,13 @@ bool DX11TaDecoder::Init()
 	 * compute shaders with unordered access views of typed buffers, which
 	 * feature level 11.0 has; the device's own context, which runs what it
 	 * is given as it is given and maps a buffer without discarding it */
-	if (context->GetVendor() != 0x10de)
+	if (dx11c.vendor != 0x10de)
 		return no("GPU TA processing in Direct3D 11 needs an NVIDIA GPU");
 	if (!dx11_nvapi_multi_draw_available())
 		return no("no NVAPI multi-draw indirect: GPU TA processing in Direct3D 11 needs NVIDIA's driver with NVAPI");
-	if (context->GetFeatureLevel() < D3D_FEATURE_LEVEL_11_0)
+	if (dx11c.feature_level < D3D_FEATURE_LEVEL_11_0)
 		return no("feature level 11.0 needed");
-	if (!context->CanReadBack())
+	if (!dx11c.immediate)
 		return no("the frontend's context is a deferred one");
 
 	TaGpuSizes sz;
@@ -338,13 +337,12 @@ void DX11TaDecoder::Term()
 	ta_set_gpu_processing(false);
 	/* Nothing of it is left bound: the context's record of what is bound
 	 * must not name a buffer that goes (dx11context_lr.h) */
-	DX11Context *context = DX11Context::Instance();
-	if (context->GetDeviceContext() != nullptr)
+	if (dx11c.device_context != nullptr)
 	{
 		DX11Lock lock;
-		context->SetGeometry(nullptr, 0, 0, nullptr);
-		context->SetVertexBuffer(nullptr, 0, 2);
-		context->SetPSResource(5, nullptr);
+		dx11c_set_geometry(nullptr, 0, 0, nullptr);
+		dx11c_set_vertex_buffer(nullptr, 0, 2);
+		dx11c_set_ps_resource(5, nullptr);
 	}
 	delete res;
 	res = nullptr;
@@ -380,7 +378,7 @@ bool DX11TaDecoder::Prepare(TA_context *ctx, u32 want, bool *rv)
 		return false;
 	}
 	Resources& r = *res;
-	ID3D11DeviceContext *deviceContext = DX11Context::Instance()->GetDeviceContext();
+	ID3D11DeviceContext *deviceContext = dx11c.device_context;
 	/* This frame's piece of the tables, and room in the ring for its data,
 	 * where the GPU is done with the decodes that read them (polled, never
 	 * waited for); if not, the frame is parsed. (Discarding the input every
@@ -452,7 +450,7 @@ void DX11TaDecoder::SetGroups(u32 groups)
 	if (groups == res->groupsSet)
 		return;
 	const u32 words[4] = { groups, 0, 0, 0 };
-	DX11Context::Instance()->GetDeviceContext()->UpdateSubresource(res->groups, 0, nullptr, words, 0, 0);
+	dx11c.device_context->UpdateSubresource(res->groups, 0, nullptr, words, 0, 0);
 	res->groupsSet = groups;
 }
 
@@ -463,15 +461,14 @@ void DX11TaDecoder::Record(TA_context *ctx)
 		return;
 	prepared = false;
 	Resources& r = *res;
-	DX11Context *context = DX11Context::Instance();
-	ID3D11DeviceContext *dc = context->GetDeviceContext();
+	ID3D11DeviceContext *dc = dx11c.device_context;
 
 	/* The outputs are bound to be written: Direct3D 11 unbinds them from
 	 * wherever they are bound to be read, behind the context's back, so
 	 * the context unbinds them first (the vertices, the volumes' triangles
 	 * and the indices; the per-pixel renderer's polygon words) */
-	context->SetGeometry(nullptr, 0, 0, nullptr);
-	context->SetPSResource(5, nullptr);
+	dx11c_set_geometry(nullptr, 0, 0, nullptr);
+	dx11c_set_ps_resource(5, nullptr);
 
 	/* The frame's words as a decode starts them, the slots' heads and the
 	 * translucent draw records zeroed: copies */
@@ -616,7 +613,7 @@ void DX11TaDecoder::Record(TA_context *ctx)
 void DX11TaDecoder::CopyDepthScale(ID3D11Buffer *dst, u32 offset)
 {
 	const D3D11_BOX box{ TAG_O_ZSCALE * 4, 0, 0, TAG_O_ZSCALE * 4 + 4, 1, 1 };
-	DX11Context::Instance()->GetDeviceContext()->CopySubresourceRegion(dst, 0, offset, 0, 0, res->buffers[B_FRM], 0, &box);
+	dx11c.device_context->CopySubresourceRegion(dst, 0, offset, 0, 0, res->buffers[B_FRM], 0, &box);
 }
 
 void DX11TaDecoder::DrawRecords(u32 slot, u32 count)
@@ -624,7 +621,7 @@ void DX11TaDecoder::DrawRecords(u32 slot, u32 count)
 	if (count == 0)
 		return;
 	const u32 stride = TAG_C_WORDS * 4;
-	if (!dx11_nvapi_multi_draw_indexed(DX11Context::Instance()->GetDeviceContext(), count, res->buffers[B_TRD], slot * stride, stride)
+	if (!dx11_nvapi_multi_draw_indexed(dx11c.device_context, count, res->buffers[B_TRD], slot * stride, stride)
 			&& statDrawFailed++ == 0)
 		WARN_LOG(RENDERER, "DX11: NVAPI's multi-draw indirect failed: a translucent draw group is not drawn\n");
 }

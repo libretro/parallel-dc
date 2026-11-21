@@ -57,8 +57,7 @@ class DX11OITRenderer final : public DX11Renderer
 public:
 	bool Init() override
 	{
-		DX11Context *context = DX11Context::Instance();
-		if (!context->HasPerPixel())
+		if (!dx11c_has_per_pixel())
 		{
 			/* (the per-triangle renderer is set up instead) */
 			WARN_LOG(RENDERER, "DX11: the per-pixel renderer needs feature level 11.0 and a context that can be read back from\n");
@@ -68,7 +67,7 @@ public:
 			return false;
 
 		DX11Lock lock;
-		oitShaders.Init(device, context->GetCompiler());
+		oitShaders.Init(device, dx11c.compile);
 		// (everything a frame can want, made now: AGENTS.md)
 		bool success = oitShaders.Start();
 		ID3DBlob *blob = oitShaders.GetVertexShaderBlob();
@@ -161,12 +160,12 @@ private:
 	bool UploadTrPolyParams();
 	void BindOIT(ID3D11RenderTargetView *target, ID3D11DepthStencilView *depth)
 	{
-		buffers.Bind(context, target, depth);
+		buffers.Bind(target, depth);
 	}
 	/* the depth buffer's depth or stencil, for the shaders to read */
 	void SetT4(ID3D11ShaderResourceView *view)
 	{
-		context->SetPSResource(4, view);
+		dx11c_set_ps_resource(4, view);
 	}
 	void DrawPoly(u32 listType, bool autosort, DX11OITShaders::Pass pass, const PolyParam& poly, u32 first, u32 count);
 	void DrawList(u32 listType, bool autosort, DX11OITShaders::Pass pass, const List<PolyParam>& polys, u32 first, u32 last);
@@ -329,8 +328,8 @@ bool DX11OITRenderer::UploadTrPolyParams()
 	if (pvrrc.gpu)
 	{
 		const DX11TaDraw& gpu = taDecoder.Draw();
-		context->SetPSResource(5, gpu.trParams);
-		context->SetVertexBuffer(gpu.instances, sizeof(u32), 2);
+		dx11c_set_ps_resource(5, gpu.trParams);
+		dx11c_set_vertex_buffer(gpu.instances, sizeof(u32), 2);
 		return true;
 	}
 	const int count = pvrrc.global_param_tr.used();
@@ -378,7 +377,7 @@ bool DX11OITRenderer::UploadTrPolyParams()
 		words[1] = pp->tsp1.full;
 	}
 	deviceContext->Unmap(trPolyParams, 0);
-	context->SetPSResource(5, trPolyParamsView);
+	dx11c_set_ps_resource(5, trPolyParamsView);
 
 	if (!polyNumbers || polyNumbersCount < (u32)count)
 	{
@@ -404,7 +403,7 @@ bool DX11OITRenderer::UploadTrPolyParams()
 		}
 		polyNumbersCount = newCount;
 	}
-	context->SetVertexBuffer(polyNumbers, sizeof(u32), 2);
+	dx11c_set_vertex_buffer(polyNumbers, sizeof(u32), 2);
 	return true;
 }
 
@@ -481,9 +480,9 @@ void DX11OITRenderer::DrawPoly(u32 listType, bool autosort, DX11OITShaders::Pass
 	if (poly.pcw.Texture && !depthOnly)
 	{
 		if (poly.texid != 0)
-			SetTexture(0, ((DX11Texture *)(uintptr_t)poly.texid)->textureView, samplers->GetSampler(poly.tsp));
+			SetTexture(0, ((DX11Texture *)(uintptr_t)poly.texid)->textureView, dx11_sampler_get(poly.tsp.full));
 		if (twoVolumes && poly.texid1 != 0)
-			SetTexture(3, ((DX11Texture *)(uintptr_t)poly.texid1)->textureView, samplers->GetSampler(poly.tsp1));
+			SetTexture(3, ((DX11Texture *)(uintptr_t)poly.texid1)->textureView, dx11_sampler_get(poly.tsp1.full));
 	}
 
 	DX11OITShaders::FragmentShaderParams params = {};
@@ -540,15 +539,15 @@ void DX11OITRenderer::DrawPoly(u32 listType, bool autosort, DX11OITShaders::Pass
 		depthWrite = !poly.isp.ZWriteDis;
 
 	if (pass == DX11OITShaders::Depth && (listType == ListType_Opaque || listType == ListType_Punch_Through))
-		SetDepthStencil(depthStencilStates.Get(true, depthWrite, depthFunc, DX11Stencil::Shadow), poly.pcw.Shadow != 0 ? 0x80 : 0);
+		SetDepthStencil(depthState(true, depthWrite, depthFunc, DX11Stencil_Shadow), poly.pcw.Shadow != 0 ? 0x80 : 0);
 	else
-		SetDepthStencil(depthStencilStates.Get(true, depthWrite, depthFunc));
+		SetDepthStencil(depthState(true, depthWrite, depthFunc));
 
 	// Apparently punch-through polys support blending, or at least some combinations
 	if (listType == ListType_Punch_Through || pass == DX11OITShaders::Color)
-		SetBlend(blendStates->Get(true, poly.tsp.SrcInstr, poly.tsp.DstInstr));
+		SetBlend(blendState(true, poly.tsp.SrcInstr, poly.tsp.DstInstr));
 	else
-		SetBlend(blendStates->Get(false, 1, 0, false));
+		SetBlend(blendState(false, 1, 0, false));
 
 	SetCullMode(poly.isp.CullMode);
 	SetTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP);
@@ -577,13 +576,13 @@ void DX11OITRenderer::DrawModifierVolumes(bool translucent, int first, int count
 		return;
 
 	// (the modifier volumes' triangles are at vertex slot 1)
-	context->SetInputLayout(modVolInputLayout);
+	dx11c_set_input_layout(modVolInputLayout);
 	SetTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 	SetVS(oitShaders.GetModVolVertexShader());
-	SetBlend(blendStates->Get(false, 1, 0, false));
+	SetBlend(blendState(false, 1, 0, false));
 	if (translucent)
 		// (the lists are marked by the shaders, and nothing else is tested or written)
-		SetDepthStencil(depthStencilStates.Get(false, false, 7));
+		SetDepthStencil(depthState(false, false, 7));
 	else
 		SetPS(oitShaders.GetModVolPixelShader());
 	SetScissor(baseScissor);
@@ -621,7 +620,7 @@ void DX11OITRenderer::DrawModifierVolumes(bool translucent, int first, int count
 			if (translucent)
 				SetPS(oitShaders.GetTrModVolPixelShader(DX11OITShaders::Or));
 			else
-				SetDepthStencil(depthStencilStates.Get(true, false, 4, DX11Stencil::Or), 2);
+				SetDepthStencil(depthState(true, false, 4, DX11Stencil_Or), 2);
 		}
 		else
 		{
@@ -629,7 +628,7 @@ void DX11OITRenderer::DrawModifierVolumes(bool translucent, int first, int count
 			if (translucent)
 				SetPS(oitShaders.GetTrModVolPixelShader(DX11OITShaders::Xor));
 			else
-				SetDepthStencil(depthStencilStates.Get(true, false, 4, DX11Stencil::Xor), 2);
+				SetDepthStencil(depthState(true, false, 4, DX11Stencil_Xor), 2);
 		}
 		deviceContext->Draw(mvCount * 3, modVolBase + mvFirst * 3);
 
@@ -639,13 +638,13 @@ void DX11OITRenderer::DrawModifierVolumes(bool translucent, int first, int count
 			if (translucent)
 				SetPS(oitShaders.GetTrModVolPixelShader(mv_mode == 1 ? DX11OITShaders::Inclusion : DX11OITShaders::Exclusion));
 			else
-				SetDepthStencil(depthStencilStates.Get(false, false, 7, mv_mode == 1 ? DX11Stencil::Inclusion : DX11Stencil::Exclusion), 1);
+				SetDepthStencil(depthState(false, false, 7, mv_mode == 1 ? DX11Stencil_Inclusion : DX11Stencil_Exclusion), 1);
 			deviceContext->Draw((mvFirst + mvCount - mod_base) * 3, modVolBase + mod_base * 3);
 			mod_base = -1;
 		}
 	}
 	SetScissor(baseScissor);
-	context->SetInputLayout(oitInputLayout);
+	dx11c_set_input_layout(oitInputLayout);
 }
 
 /* The lists put together over the opaque polygons' picture, into @target:
@@ -654,26 +653,26 @@ void DX11OITRenderer::DrawModifierVolumes(bool translucent, int first, int count
 void DX11OITRenderer::Resolve(ID3D11RenderTargetView *target, ID3D11ShaderResourceView *opaque)
 {
 	BindOIT(target, nullptr);
-	SetTexture(0, opaque, samplers->GetPointSampler());
+	SetTexture(0, opaque, dx11_sampler_point());
 	SetVS(oitShaders.GetFinalVertexShader());
 	SetPS(oitShaders.GetFinalPixelShader());
-	SetBlend(blendStates->Get(false));
-	SetDepthStencil(depthStencilStates.Get(false, false, 7));
+	SetBlend(blendState(false));
+	SetDepthStencil(depthState(false, false, 7));
 	SetCullMode(0);
 	SetScissor(D3D11_RECT{ 0, 0, (LONG)targetWidth, (LONG)targetHeight });
 	SetTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP);
-	context->SetInputLayout(nullptr);
+	dx11c_set_input_layout(nullptr);
 	deviceContext->Draw(4, 0);
 	// (the picture read from is drawn into next)
-	context->SetPSResource(0, nullptr);
-	context->SetInputLayout(oitInputLayout);
+	dx11c_set_ps_resource(0, nullptr);
+	dx11c_set_input_layout(oitInputLayout);
 }
 
 void DX11OITRenderer::DrawFrame()
 {
 	if (!MakePictures(targetWidth, targetHeight) || !UploadTrPolyParams() || !buffers.IsValid())
 		return;
-	context->SetViewport((float)targetWidth, (float)targetHeight);
+	dx11c_set_viewport((float)targetWidth, (float)targetHeight);
 
 	/* A framebuffer the game has not drawn to lately starts as the border
 	 * colour, which is what the OpenGL renderers clear it to (never a
@@ -755,8 +754,8 @@ void DX11OITRenderer::DrawFrame()
 			SetScissor(D3D11_RECT{ 0, 0, (LONG)targetWidth, (LONG)targetHeight });
 			DrawLastPicture(targetWidth, targetHeight);
 			// (the quad was drawn with its own)
-			context->SetViewport((float)targetWidth, (float)targetHeight);
-			context->SetInputLayout(oitInputLayout);
+			dx11c_set_viewport((float)targetWidth, (float)targetHeight);
+			dx11c_set_input_layout(oitInputLayout);
 			BindGeometry();
 		}
 

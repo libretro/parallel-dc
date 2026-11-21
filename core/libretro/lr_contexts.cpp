@@ -1,7 +1,4 @@
 /* The renderers' contexts as libretro.c has them: see lr_contexts.h */
-#ifdef HAVE_D3D11
-#include "rend/dx11/dx11context_lr.h"
-#endif
 #ifdef HAVE_D3D12
 #include "rend/dx12/dx12context_lr.h"
 #endif
@@ -71,23 +68,6 @@ const void *lr_vk_negotiation_interface(unsigned version)
       VkCreateDevice2,
    };
    return version >= 2 ? &negotiation_interface_v2 : &negotiation_interface_v1;
-}
-#endif
-
-#ifdef HAVE_D3D11
-bool lr_dx11_init(const void *iface)
-{
-   return DX11Context::Instance()->Init((const struct retro_hw_render_interface_d3d11 *)iface);
-}
-
-void lr_dx11_term(void)
-{
-   DX11Context::Instance()->Term();
-}
-
-void lr_dx11_present(void)
-{
-   DX11Context::Instance()->Present();
 }
 #endif
 
