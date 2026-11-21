@@ -67,10 +67,10 @@ public:
 			return false;
 
 		DX11Lock lock;
-		oitShaders.Init(device, dx11c.compile);
+		dx11_oit_shaders_init(device, dx11c.compile);
 		// (everything a frame can want, made now: AGENTS.md)
-		bool success = oitShaders.Start();
-		ID3DBlob *blob = oitShaders.GetVertexShaderBlob();
+		bool success = dx11_oit_shaders_start();
+		ID3DBlob *blob = dx11_oit_shaders_vs_blob();
 		success = success && blob != nullptr
 				&& SUCCEEDED(device->CreateInputLayout(OITLayout, ARRAY_SIZE(OITLayout), blob->GetBufferPointer(), blob->GetBufferSize(), oitInputLayout.put()));
 
@@ -111,7 +111,7 @@ public:
 			buffers.Term();
 			oitConstants.reset();
 			oitInputLayout.reset();
-			oitShaders.Term();
+			dx11_oit_shaders_term();
 		}
 		DX11Renderer::Term();
 	}
@@ -136,7 +136,7 @@ private:
 		float trilinearAlpha;
 		int pp_Number;
 		float palette_index;
-		u32 polyKey;	// the general pixel shader's: the polygon's key (DX11OITShaders)
+		u32 polyKey;	// the general pixel shader's: the polygon's key (dx11_oitshaders.h)
 
 		// two volume mode
 		int blend_mode1[4];
@@ -167,8 +167,8 @@ private:
 	{
 		dx11c_set_ps_resource(4, view);
 	}
-	void DrawPoly(u32 listType, bool autosort, DX11OITShaders::Pass pass, const PolyParam& poly, u32 first, u32 count);
-	void DrawList(u32 listType, bool autosort, DX11OITShaders::Pass pass, const List<PolyParam>& polys, u32 first, u32 last);
+	void DrawPoly(u32 listType, bool autosort, dx11_oit_pass pass, const PolyParam& poly, u32 first, u32 count);
+	void DrawList(u32 listType, bool autosort, dx11_oit_pass pass, const List<PolyParam>& polys, u32 first, u32 last);
 	void DrawModifierVolumes(bool translucent, int first, int count, const ModifierVolumeParam *params);
 	void Resolve(ID3D11RenderTargetView *target, ID3D11ShaderResourceView *opaque);
 	/* Every scissor rectangle the frame's draws set, cut to the band being
@@ -188,7 +188,6 @@ private:
 	}
 	u32 ChooseBands(bool rtt);
 
-	DX11OITShaders oitShaders;
 	DX11OITBuffers buffers;
 	ComPtr<ID3D11InputLayout> oitInputLayout;
 	ComPtr<ID3D11Buffer> oitConstants;
@@ -327,7 +326,7 @@ bool DX11OITRenderer::UploadTrPolyParams()
 	 * strips' numbers the decoder's) */
 	if (pvrrc.gpu)
 	{
-		const DX11TaDraw& gpu = taDecoder.Draw();
+		const dx11_ta_draw& gpu = *dx11_ta_get_draw();
 		dx11c_set_ps_resource(5, gpu.trParams);
 		dx11c_set_vertex_buffer(gpu.instances, sizeof(u32), 2);
 		return true;
@@ -407,7 +406,7 @@ bool DX11OITRenderer::UploadTrPolyParams()
 	return true;
 }
 
-void DX11OITRenderer::DrawPoly(u32 listType, bool autosort, DX11OITShaders::Pass pass, const PolyParam& poly, u32 first, u32 count)
+void DX11OITRenderer::DrawPoly(u32 listType, bool autosort, dx11_oit_pass pass, const PolyParam& poly, u32 first, u32 count)
 {
 	D3D11_RECT scissorRect;
 	TileClipping tileClip = SetTileClip(poly.tileclip, scissorRect);
@@ -424,7 +423,7 @@ void DX11OITRenderer::DrawPoly(u32 listType, bool autosort, DX11OITShaders::Pass
 	 * all the same: the colour pass draws it where its depth is the one
 	 * this pass wrote, to the last bit, and another shader is another
 	 * compiler's work, which need not come out the same to the last bit.) */
-	const bool depthOnly = pass == DX11OITShaders::Depth && listType != ListType_Punch_Through;
+	const bool depthOnly = pass == DX11OIT_DEPTH && listType != ListType_Punch_Through;
 	const bool insideClipTest = (poly.tileclip >> 28) == 3;
 
 	float trilinearAlpha = 1.f;
@@ -485,7 +484,7 @@ void DX11OITRenderer::DrawPoly(u32 listType, bool autosort, DX11OITShaders::Pass
 			SetTexture(3, ((const dx11_texture *)(uintptr_t)poly.texid1)->texture_view, dx11_sampler_get(poly.tsp1.full));
 	}
 
-	DX11OITShaders::FragmentShaderParams params = {};
+	dx11_oit_ps_params params = {};
 	params.alphaTest = listType == ListType_Punch_Through;
 	params.bumpmap = poly.tcw.PixelFmt == PixelBumpMap;
 	params.clamping = poly.tsp.ColorClamp;
@@ -501,10 +500,10 @@ void DX11OITRenderer::DrawPoly(u32 listType, bool autosort, DX11OITShaders::Pass
 	params.twoVolume = twoVolumes;
 	params.palette = palette;
 	bool general;
-	SetVS(oitShaders.GetVertexShader(poly.pcw.Gouraud));
-	SetPS(oitShaders.GetPixelShader(params, &general));
+	SetVS(dx11_oit_shaders_vs(poly.pcw.Gouraud));
+	SetPS(dx11_oit_shaders_ps(&params, &general));
 	// (the general shader's key is the polygon's: in its constants)
-	constants.polyKey = general ? params.hash() : 0u;
+	constants.polyKey = general ? dx11_oit_shaders_key(&params) : 0u;
 	if ((!depthOnly || insideClipTest || general)
 			&& (!lastConstantsValid || memcmp(&constants, &lastConstants, sizeof(constants))))
 	{
@@ -515,7 +514,7 @@ void DX11OITRenderer::DrawPoly(u32 listType, bool autosort, DX11OITShaders::Pass
 
 	// Depth and stencil
 	int depthFunc;
-	if (pass == DX11OITShaders::Color && !poly.isp.ZWriteDis && listType != ListType_Translucent)
+	if (pass == DX11OIT_COLOR && !poly.isp.ZWriteDis && listType != ListType_Translucent)
 		depthFunc = 2;	// equal
 	else if (listType == ListType_Punch_Through || autosort)
 		depthFunc = 6;	// greater or equal
@@ -527,9 +526,9 @@ void DX11OITRenderer::DrawPoly(u32 listType, bool autosort, DX11OITShaders::Pass
 	 * lists; the translucent polygons that are not sorted are drawn there,
 	 * in order, each tested against the depth the ones before it wrote, so
 	 * they still write. */
-	const bool colourPassWrites = pass == DX11OITShaders::Color && !autosort && listType == ListType_Translucent;
+	const bool colourPassWrites = pass == DX11OIT_COLOR && !autosort && listType == ListType_Translucent;
 	bool depthWrite;
-	if (pass != DX11OITShaders::Depth && !colourPassWrites)
+	if (pass != DX11OIT_DEPTH && !colourPassWrites)
 		depthWrite = false;
 	// Z Write Disable seems to be ignored for punch-through.
 	// Fixes Worms World Party, Bust-a-Move 4 and Re-Volt
@@ -538,13 +537,13 @@ void DX11OITRenderer::DrawPoly(u32 listType, bool autosort, DX11OITShaders::Pass
 	else
 		depthWrite = !poly.isp.ZWriteDis;
 
-	if (pass == DX11OITShaders::Depth && (listType == ListType_Opaque || listType == ListType_Punch_Through))
+	if (pass == DX11OIT_DEPTH && (listType == ListType_Opaque || listType == ListType_Punch_Through))
 		SetDepthStencil(depthState(true, depthWrite, depthFunc, DX11Stencil_Shadow), poly.pcw.Shadow != 0 ? 0x80 : 0);
 	else
 		SetDepthStencil(depthState(true, depthWrite, depthFunc));
 
 	// Apparently punch-through polys support blending, or at least some combinations
-	if (listType == ListType_Punch_Through || pass == DX11OITShaders::Color)
+	if (listType == ListType_Punch_Through || pass == DX11OIT_COLOR)
 		SetBlend(blendState(true, poly.tsp.SrcInstr, poly.tsp.DstInstr));
 	else
 		SetBlend(blendState(false, 1, 0, false));
@@ -562,7 +561,7 @@ void DX11OITRenderer::DrawPoly(u32 listType, bool autosort, DX11OITShaders::Pass
 	deviceContext->DrawIndexedInstanced(count, 1, indexBase + first, vertexBase, polyNumber);
 }
 
-void DX11OITRenderer::DrawList(u32 listType, bool autosort, DX11OITShaders::Pass pass, const List<PolyParam>& polys, u32 first, u32 last)
+void DX11OITRenderer::DrawList(u32 listType, bool autosort, dx11_oit_pass pass, const List<PolyParam>& polys, u32 first, u32 last)
 {
 	const PolyParam *pp_end = polys.head() + last;
 	for (const PolyParam *pp = polys.head() + first; pp != pp_end; pp++)
@@ -578,13 +577,13 @@ void DX11OITRenderer::DrawModifierVolumes(bool translucent, int first, int count
 	// (the modifier volumes' triangles are at vertex slot 1)
 	dx11c_set_input_layout(modVolInputLayout);
 	SetTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-	SetVS(oitShaders.GetModVolVertexShader());
+	SetVS(dx11_oit_shaders_modvol_vs());
 	SetBlend(blendState(false, 1, 0, false));
 	if (translucent)
 		// (the lists are marked by the shaders, and nothing else is tested or written)
 		SetDepthStencil(depthState(false, false, 7));
 	else
-		SetPS(oitShaders.GetModVolPixelShader());
+		SetPS(dx11_oit_shaders_modvol_ps());
 	SetScissor(baseScissor);
 
 	const ModifierVolumeParam* params = &modVolParams[first];
@@ -618,7 +617,7 @@ void DX11OITRenderer::DrawModifierVolumes(bool translucent, int first, int count
 		{
 			// OR'ing (open volume or quad)
 			if (translucent)
-				SetPS(oitShaders.GetTrModVolPixelShader(DX11OITShaders::Or));
+				SetPS(dx11_oit_shaders_tr_modvol_ps(DX11OIT_OR));
 			else
 				SetDepthStencil(depthState(true, false, 4, DX11Stencil_Or), 2);
 		}
@@ -626,7 +625,7 @@ void DX11OITRenderer::DrawModifierVolumes(bool translucent, int first, int count
 		{
 			// XOR'ing (closed volume)
 			if (translucent)
-				SetPS(oitShaders.GetTrModVolPixelShader(DX11OITShaders::Xor));
+				SetPS(dx11_oit_shaders_tr_modvol_ps(DX11OIT_XOR));
 			else
 				SetDepthStencil(depthState(true, false, 4, DX11Stencil_Xor), 2);
 		}
@@ -636,7 +635,7 @@ void DX11OITRenderer::DrawModifierVolumes(bool translucent, int first, int count
 		{
 			// Sum the area
 			if (translucent)
-				SetPS(oitShaders.GetTrModVolPixelShader(mv_mode == 1 ? DX11OITShaders::Inclusion : DX11OITShaders::Exclusion));
+				SetPS(dx11_oit_shaders_tr_modvol_ps(mv_mode == 1 ? DX11OIT_INCLUSION : DX11OIT_EXCLUSION));
 			else
 				SetDepthStencil(depthState(false, false, 7, mv_mode == 1 ? DX11Stencil_Inclusion : DX11Stencil_Exclusion), 1);
 			deviceContext->Draw((mvFirst + mvCount - mod_base) * 3, modVolBase + mod_base * 3);
@@ -654,8 +653,8 @@ void DX11OITRenderer::Resolve(ID3D11RenderTargetView *target, ID3D11ShaderResour
 {
 	BindOIT(target, nullptr);
 	SetTexture(0, opaque, dx11_sampler_point());
-	SetVS(oitShaders.GetFinalVertexShader());
-	SetPS(oitShaders.GetFinalPixelShader());
+	SetVS(dx11_oit_shaders_final_vs());
+	SetPS(dx11_oit_shaders_final_ps());
 	SetBlend(blendState(false));
 	SetDepthStencil(depthState(false, false, 7));
 	SetCullMode(0);
@@ -738,8 +737,8 @@ void DX11OITRenderer::DrawFrame()
 		SetT4(nullptr);
 		buffers.ResetCount(deviceContext);
 		BindOIT(pictures[cur].target, depthView);
-		DrawList(ListType_Opaque, false, DX11OITShaders::Depth, pvrrc.global_param_op, previous_pass.op_count, current_pass.op_count);
-		DrawList(ListType_Punch_Through, false, DX11OITShaders::Depth, pvrrc.global_param_pt, previous_pass.pt_count, current_pass.pt_count);
+		DrawList(ListType_Opaque, false, DX11OIT_DEPTH, pvrrc.global_param_op, previous_pass.op_count, current_pass.op_count);
+		DrawList(ListType_Punch_Through, false, DX11OIT_DEPTH, pvrrc.global_param_pt, previous_pass.pt_count, current_pass.pt_count);
 		DrawModifierVolumes(false, previous_pass.mvo_count, current_pass.mvo_count - previous_pass.mvo_count, pvrrc.global_param_mvo.head());
 
 		// Colour, the stencil read by the shaders
@@ -760,8 +759,8 @@ void DX11OITRenderer::DrawFrame()
 		}
 
 		// OP + PT
-		DrawList(ListType_Opaque, false, DX11OITShaders::Color, pvrrc.global_param_op, previous_pass.op_count, current_pass.op_count);
-		DrawList(ListType_Punch_Through, false, DX11OITShaders::Color, pvrrc.global_param_pt, previous_pass.pt_count, current_pass.pt_count);
+		DrawList(ListType_Opaque, false, DX11OIT_COLOR, pvrrc.global_param_op, previous_pass.op_count, current_pass.op_count);
+		DrawList(ListType_Punch_Through, false, DX11OIT_COLOR, pvrrc.global_param_pt, previous_pass.pt_count, current_pass.pt_count);
 
 		// TR
 		/* (In the first frame after the per-pixel lists are made, too: they
@@ -773,12 +772,12 @@ void DX11OITRenderer::DrawFrame()
 			SetT4(nullptr);
 			BindOIT(pictures[cur].target, depthViewReadOnly);
 			SetT4(depthSRV);
-			DrawList(ListType_Translucent, true, DX11OITShaders::OIT, pvrrc.global_param_tr, previous_pass.tr_count, current_pass.tr_count);
+			DrawList(ListType_Translucent, true, DX11OIT_OIT, pvrrc.global_param_tr, previous_pass.tr_count, current_pass.tr_count);
 			// how many pixels this band's pass asked for, copied out
 			buffers.CopyCount(deviceContext, countHead, countWord++);
 		}
 		else
-			DrawList(ListType_Translucent, false, DX11OITShaders::Color, pvrrc.global_param_tr, previous_pass.tr_count, current_pass.tr_count);
+			DrawList(ListType_Translucent, false, DX11OIT_COLOR, pvrrc.global_param_tr, previous_pass.tr_count, current_pass.tr_count);
 		SetT4(nullptr);
 
 		// The translucent modifier volumes, and the lists put together
@@ -794,7 +793,7 @@ void DX11OITRenderer::DrawFrame()
 		{
 			// The translucent polygons' depth, for the passes after this one
 			BindOIT(pictures[cur].target, depthView);
-			DrawList(ListType_Translucent, current_pass.autosort, DX11OITShaders::Depth, pvrrc.global_param_tr, previous_pass.tr_count, current_pass.tr_count);
+			DrawList(ListType_Translucent, current_pass.autosort, DX11OIT_DEPTH, pvrrc.global_param_tr, previous_pass.tr_count, current_pass.tr_count);
 			// the next pass draws on what this one put together
 			cur ^= 1;
 		}

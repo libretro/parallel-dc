@@ -89,7 +89,7 @@ protected:
 		float trilinearAlpha;
 		float paletteIndex;
 		float prepassAlpha;	// the depth prepass's least alpha (rend/sorter.h), 0 for the colour
-		u32 polyKey;		// the general pixel shader's: the polygon's key (DX11Shaders)
+		u32 polyKey;		// the general pixel shader's: the polygon's key (dx11_shaders.h)
 	};
 	struct ScreenTarget
 	{
@@ -111,12 +111,10 @@ protected:
 
 	ID3D11Device *device = nullptr;
 	ID3D11DeviceContext *deviceContext = nullptr;
-	DX11Shaders *shaders = nullptr;
 	dx11_depth_states depthStencilStates = {};
 	TransformMatrix<false> matrices;
 	/* GPU-side TA processing (dx11_ta_decoder.h): a frame it decodes is
 	 * drawn from its buffers, its draws' arguments the GPU's */
-	DX11TaDecoder taDecoder;
 	/* How a frame decoded on the GPU is drawn (ta_gpu_prepare()'s
 	 * TA_GPU_*); 0: none is - every frame is parsed */
 	virtual u32 TaFlags() const
@@ -126,7 +124,7 @@ protected:
 		 * are sorted from their vertices, which a frame decoded on the GPU
 		 * has there alone: such a frame is parsed */
 		return TA_GPU_DRAW | TA_GPU_PROVOKE | TA_GPU_SHADOWS
-				| (!settings.pvr.Emulation.AlphaSortMode && taDecoder.CanSort() ? TA_GPU_SORT : TA_GPU_NO_SORT);
+				| (!settings.pvr.Emulation.AlphaSortMode && dx11_ta_can_sort() ? TA_GPU_SORT : TA_GPU_NO_SORT);
 	}
 	/* Whether the decoder is to have room for sorted translucent triangles (TA_GPU_SORT) */
 	virtual bool TaSorts() const { return true; }
@@ -185,7 +183,6 @@ protected:
 	ScreenTarget extraTarget;
 	bool lastInExtra = false;		// the last picture is in it
 	// the chip's write-out (dx11_writeout.h), and whether the pictures were made for it
-	DX11WriteOut writeOut;
 	bool writeOutPictures = false;
 	u32 screenWidth = 0;
 	u32 screenHeight = 0;
@@ -263,7 +260,7 @@ protected:
 	{
 		if (pvrrc.gpu)
 		{
-			const DX11TaDraw& gpu = taDecoder.Draw();
+			const dx11_ta_draw& gpu = *dx11_ta_get_draw();
 			// (the volumes' triangles cut on the CPU, when the frame has them: in the geometry buffer)
 			dx11c_set_geometry2(gpu.vertices, sizeof(Vertex), pvrrc.mv_clip.used() != 0 ? (ID3D11Buffer *)geometry : (ID3D11Buffer *)gpu.modtrig,
 					sizeof(float) * 3, gpu.indices);

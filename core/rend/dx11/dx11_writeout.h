@@ -8,29 +8,24 @@
  * a frame, and a frame without a write-out does nothing. Needs typed loads of R8G8B8A8_UNORM from an
  * unordered access view (Direct3D 11.3's TypedUAVLoadAdditionalFormats). */
 #pragma once
+#include "rend/d3d_system.h"
+#include <windows.h>
 #include <d3d11.h>
 #include "types.h"
-#include "comptr.h"
 
-class DX11Shaders;
+#ifdef __cplusplus
+extern "C" {
+#endif
 
-class DX11WriteOut
-{
-public:
-	/* Made the first time (the renderer's start), whatever the option; true
-	 * if the option and the device have it used, and the pictures are to be
-	 * made for it (D3D11_BIND_UNORDERED_ACCESS) */
-	bool Init(ID3D11Device *device, ID3D11DeviceContext *deviceContext, DX11Shaders *shaders);
-	void Term();
-	bool Ready() const { return (bool)shader; }
-	/* The pass over the picture @uav, @width x @height, of the frame in
-	 * the registers now, when it has one; nothing bound is left bound */
-	void Record(ID3D11UnorderedAccessView *uav, u32 width, u32 height);
+/* Made the first time (the renderer's start), whatever the option; true if
+ * the option and the device have it used, and the pictures are to be made
+ * for it (D3D11_BIND_UNORDERED_ACCESS) */
+bool dx11_writeout_init(void);
+void dx11_writeout_term(void);
+/* The pass over the picture @uav, @width x @height, of the frame in the
+ * registers now, when it has one; nothing bound is left bound */
+void dx11_writeout_record(ID3D11UnorderedAccessView *uav, u32 width, u32 height);
 
-private:
-	bool Make(ID3D11Device *device, ID3D11DeviceContext *deviceContext, DX11Shaders *shaders);
-	bool tried = false;
-	ID3D11DeviceContext *deviceContext = nullptr;
-	ComPtr<ID3D11ComputeShader> shader;
-	ComPtr<ID3D11Buffer> constants;
-};
+#ifdef __cplusplus
+}
+#endif

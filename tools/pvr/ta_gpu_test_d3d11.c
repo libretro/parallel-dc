@@ -1,6 +1,6 @@
 /* ta_gpu_test_d3d11.exe DIR: GPU-side TA processing's decode in Direct3D 11,
  * on the decodes ta_gpu_test dumped to DIR (ta_gpu_test_replay.c), as the
- * Direct3D 11 renderers run it (rend/dx11/dx11_ta_decoder.cpp): the
+ * Direct3D 11 renderers run it (rend/dx11/dx11_ta_decoder.c): the
  * kernels as the core has them (rend/dx11/dx11_ta_dxbc.inc), typed views
  * of 32-bit words for every buffer, with the bindings the renderers give
  * them (vertex, index, indirect arguments), the frame's tables and data in
@@ -40,7 +40,7 @@ static ID3D11DeviceContext *dc;
 static ID3D11ComputeShader *kernels[TAG_KERNELS + 1];
 static ID3D11Buffer *bufs[B_COUNT], *input, *groups_cb, *readback, *sort_upload;
 /* (u0 to u7 bound, the polygon words and the sorted indices at u1 for the
- * kernel that writes them: see dx11_ta_decoder.cpp) */
+ * kernel that writes them: see dx11_ta_decoder.c) */
 enum { UAV_SLOTS = 8 };
 static ID3D11UnorderedAccessView *uavs[B_OUTPUTS], *sort_uav;
 static ID3D11ShaderResourceView *table_view, *ring_view;

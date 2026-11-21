@@ -106,7 +106,7 @@ if [ -f $H ]; then
          || bad "$H: $vs places its vertices without transformVertex()"
    done
 fi
-for f in $R/dx11/dx11_shaders.cpp $R/dx11/oit/dx11_oitshaders.cpp; do
+for f in $R/dx11/dx11_shaders.c $R/dx11/oit/dx11_oitshaders.c; do
    grep -q 'precise float4 pos *: *SV_POSITION' "$f" || bad "$f: the position is not precise"
 done
 

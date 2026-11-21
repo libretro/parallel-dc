@@ -17,7 +17,7 @@
     along with Flycast.  If not, see <https://www.gnu.org/licenses/>.
 */
 #include "dx11context_lr.h"
-#include "dx11_shaders_c.h"
+#include "dx11_shaders.h"
 #include "rend/hdr/hdr_output.h"
 #include <dxgi.h>
 #include <dxgi1_4.h>

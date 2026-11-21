@@ -20,7 +20,7 @@
 #
 #   core/rend/dx11/dx11_ta_dxbc.inc
 #                                 the same kernels for the Direct3D 11
-#                                 renderers (dx11/dx11_ta_decoder.cpp),
+#                                 renderers (dx11/dx11_ta_decoder.c),
 #                                 shader model 5.0, which Direct3D 11 takes:
 #                                 the HLSL above with the buffers typed
 #                                 views of 32-bit words, Buffer<uint> and
@@ -239,7 +239,7 @@ ta_source_of() {
 # (TAG_K_TRDRAW, TAG_K_PREPASS), which does not touch the modifier volume
 # triangles (u1, which TAG_K_UNPACK alone writes): in those two kernels
 # the two swap registers, so that the buffer is at u1, where the renderer
-# binds it for that kernel (dx11/dx11_ta_decoder.cpp)
+# binds it for that kernel (dx11/dx11_ta_decoder.c)
 TA_K_TRDRAW=$(awk '$1 == "#define" && $2 == "TAG_K_TRDRAW" { print $3 }' $TA_SRC)
 TA_K_PREPASS=$(awk '$1 == "#define" && $2 == "TAG_K_PREPASS" { print $3 }' $TA_SRC)
 ta11_source_of() {
@@ -533,7 +533,7 @@ make_ta11_inc() {
       echo "};"
       k=$((k + 1))
    done
-   echo "// by TAG_K_*: the bytes, and how many"
+   echo "/* by TAG_K_*: the bytes, and how many */"
    l="static const unsigned char * const dx11_ta_dxbc[] = { 0"
    z="static const size_t dx11_ta_dxbc_size[] = { 0"
    i=1

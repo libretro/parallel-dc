@@ -148,8 +148,8 @@ int main(int argc, char **argv)
 		printf("usage: dx12_pipelines_ahead_test DIR\\\n");
 		return 2;
 	}
-	dataDir = argv[1];
-	remove((dataDir + "d3d12_pipelines.bin").c_str());
+	snprintf(dataDir, sizeof(dataDir), "%s", argv[1]);
+	remove((std::string(dataDir) + "d3d12_pipelines.bin").c_str());
 	ID3D12Device *device = nullptr;
 	if (FAILED(D3D12CreateDevice(nullptr, D3D_FEATURE_LEVEL_11_0, __uuidof(ID3D12Device), (void **)&device)))
 	{

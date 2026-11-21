@@ -17,94 +17,63 @@
     along with Flycast.  If not, see <https://www.gnu.org/licenses/>.
 */
 #pragma once
-/* (Direct3D's headers before the emulator's: hw/pvr/pvr_regs.h has macros
- * with the names of some of their parameters) */
-#include "rend/d3d_system.h"
-#include <windows.h>
-#include <d3d11.h>
-#include <d3dcompiler.h>
-#include <unordered_map>
 #include "../dx11_shaders.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 /* The per-pixel renderer's shaders: the Vulkan one's (vulkan/oit/oit_shaders.cpp)
- * in HLSL. They need shader model 5 (feature level 11.0). */
-class DX11OITShaders : public DX11ShaderCompiler
+ * in HLSL. They need shader model 5 (feature level 11.0). Made, kept and
+ * compiled as dx11_shaders.h has it. */
+
+typedef enum { DX11OIT_DEPTH, DX11OIT_COLOR, DX11OIT_OIT } dx11_oit_pass;
+/* Their families (the file's numbers, kept) */
+enum { DX11OITF_VS, DX11OITF_PS, DX11OITF_MODVOL_VS, DX11OITF_MODVOL_PS, DX11OITF_TR_MODVOL_PS,
+	DX11OITF_FINAL_VS, DX11OITF_FINAL_PS, DX11OITF_GENERAL_PS };
+/* Must match the order of the modifier volume modes in the shader */
+typedef enum { DX11OIT_XOR, DX11OIT_OR, DX11OIT_INCLUSION, DX11OIT_EXCLUSION } dx11_oit_modvol_mode;
+
+typedef struct dx11_oit_ps_params
 {
-public:
-	enum Pass { Depth, Color, OIT };
-	/* Their families (DX11ShaderCompiler; the file's numbers, kept) */
-	enum { VS, PS, ModVolVS, ModVolPS, TrModVolPS, FinalVS, FinalPS, GeneralPS };
-	// Must match the order of the modifier volume modes in the shader
-	enum ModVolMode { Xor, Or, Inclusion, Exclusion };
+	bool alphaTest;
+	bool insideClipTest;
+	bool useAlpha;
+	bool texture;
+	bool ignoreTexAlpha;
+	int shaderInstr;
+	bool offset;
+	int fog;
+	bool twoVolume;
+	bool gouraud;
+	bool bumpmap;
+	bool clamping;
+	bool palette;
+	dx11_oit_pass pass;
+} dx11_oit_ps_params;
 
-	struct FragmentShaderParams
-	{
-		bool alphaTest;
-		bool insideClipTest;
-		bool useAlpha;
-		bool texture;
-		bool ignoreTexAlpha;
-		int shaderInstr;
-		bool offset;
-		int fog;
-		bool twoVolume;
-		bool gouraud;
-		bool bumpmap;
-		bool clamping;
-		bool palette;
-		Pass pass;
+u32 dx11_oit_shaders_key(const dx11_oit_ps_params *p);
 
-		u32 hash() const
-		{
-			return (u32)alphaTest | ((u32)insideClipTest << 1) | ((u32)useAlpha << 2)
-				| ((u32)texture << 3) | ((u32)ignoreTexAlpha << 4) | ((u32)shaderInstr << 5)
-				| ((u32)offset << 7) | ((u32)fog << 8) | ((u32)twoVolume << 10) | ((u32)gouraud << 11)
-				| ((u32)bumpmap << 12) | ((u32)clamping << 13) | ((u32)palette << 14) | ((u32)pass << 15);
-		}
-	};
+void dx11_oit_shaders_init(ID3D11Device *device, pD3DCompile compile);
+/* Everything a frame can want, made before the first: the vertex shaders,
+ * the ones of a kind, the general pixel shaders */
+bool dx11_oit_shaders_start(void);
+void dx11_oit_shaders_term(void);
+ID3D11VertexShader *dx11_oit_shaders_vs(bool gouraud);
+/* A polygon's own, or the general one while its own is made (*general):
+ * the polygon's key then in its constants */
+ID3D11PixelShader *dx11_oit_shaders_ps(const dx11_oit_ps_params *params, bool *general);
+ID3D11VertexShader *dx11_oit_shaders_modvol_vs(void);
+ID3D11PixelShader *dx11_oit_shaders_modvol_ps(void);
+ID3D11PixelShader *dx11_oit_shaders_tr_modvol_ps(dx11_oit_modvol_mode mode);
+ID3D11VertexShader *dx11_oit_shaders_final_vs(void);
+ID3D11PixelShader *dx11_oit_shaders_final_ps(void);
+ID3DBlob *dx11_oit_shaders_vs_blob(void);
+ID3DBlob *dx11_oit_shaders_modvol_vs_blob(void);
+/* (for the tests) */
+dx11_shader_compiler *dx11_oit_shaders_compiler(void);
+const dx11_shader_families *dx11_oit_shaders_families(void);
 
-	/* Everything a frame can want, made before the first: the vertex
-	 * shaders, the ones of a kind, the general pixel shaders */
-	bool Start();
-	void Term();
-	ID3D11VertexShader *GetVertexShader(bool gouraud);
-	/* A polygon's own, or the general one while its own is made
-	 * (*general): the polygon's key then in its constants */
-	ID3D11PixelShader *GetPixelShader(const FragmentShaderParams& params, bool *general);
-	ID3D11VertexShader *GetModVolVertexShader();
-	ID3D11PixelShader *GetModVolPixelShader();
-	ID3D11PixelShader *GetTrModVolPixelShader(ModVolMode mode);
-	ID3D11VertexShader *GetFinalVertexShader();
-	ID3D11PixelShader *GetFinalPixelShader();
-
-	ID3DBlob *GetVertexShaderBlob() { GetVertexShader(true); return vertexBlob; }
-	ID3DBlob *GetModVolVertexShaderBlob() { GetModVolVertexShader(); return modVolVertexBlob; }
-
-private:
-	ComPtr<ID3D11VertexShader> vertexShaders[2];
-	ComPtr<ID3DBlob> vertexBlob;
-	// by FragmentShaderParams::hash(), all of them: nothing allocated in play
-	static const u32 PixelKeys = 1u << 17;
-	std::vector<ComPtr<ID3D11PixelShader>> pixelShaders;
-	std::vector<u32> requested;		// a bit a key, asked of the thread
-	// by the pass, the interpolation (<< 2) and the two volumes (<< 3)
-	static const u32 GeneralCount = 16;
-	ComPtr<ID3D11PixelShader> generalShaders[GeneralCount];
-	ComPtr<ID3D11VertexShader> modVolVertexShader;
-	ComPtr<ID3DBlob> modVolVertexBlob;
-	ComPtr<ID3D11PixelShader> modVolPixelShader;
-	ComPtr<ID3D11PixelShader> trModVolShaders[4];
-	ComPtr<ID3D11VertexShader> finalVertexShader;
-	ComPtr<ID3D11PixelShader> finalPixelShader;
-
-protected:
-	bool Describe(u32 family, u32 variant, DX11ShaderDesc& d) const override;
-	void Adopt(u32 family, u32 variant, ID3D11PixelShader *shader) override;
-	const char *FileName() const override { return "d3d11_oit_shaders.bin"; }
-	void MakeSources() override;
-	bool PixelFamily(u32 family) const override
-	{
-		return family == PS || family == ModVolPS || family == TrModVolPS || family == FinalPS;
-	}
-	void Fixed(std::vector<d3d_warm_job_t>& jobs) const override;
-};
+#ifdef __cplusplus
+}
+#endif

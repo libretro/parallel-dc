@@ -96,21 +96,20 @@ bool DX11Renderer::Init()
 		WARN_LOG(RENDERER, "DX11: no device\n");
 		return false;
 	}
-	shaders = &dx11_shaders();
 
 	DX11Lock lock;
 	/* Everything a frame can want made now, before the first: no shader or
 	 * state is made on the draw path (AGENTS.md) */
-	bool success = shaders->Start();
+	bool success = dx11_shaders_start();
 	success = dx11_depth_states_make_all(&depthStencilStates) && success;
 	success = dx11_blend_make_all() && success;
 	success = dx11_samplers_make_all() && success;
 	// what a render read back takes, made now (dx11_rtt_init())
 	dx11_rtt_init();
-	ID3DBlob *blob = shaders->GetVertexShaderBlob();
+	ID3DBlob *blob = dx11_shaders_vs_blob();
 	success = success && blob != nullptr
 			&& SUCCEEDED(device->CreateInputLayout(MainLayout, ARRAY_SIZE(MainLayout), blob->GetBufferPointer(), blob->GetBufferSize(), mainInputLayout.put()));
-	blob = shaders->GetModVolVertexShaderBlob();
+	blob = dx11_shaders_modvol_vs_blob();
 	success = success && blob != nullptr
 			&& SUCCEEDED(device->CreateInputLayout(PositionLayout, ARRAY_SIZE(PositionLayout), blob->GetBufferPointer(), blob->GetBufferSize(), positionInputLayout.put()))
 			&& SUCCEEDED(device->CreateInputLayout(ModVolLayout, ARRAY_SIZE(ModVolLayout), blob->GetBufferPointer(), blob->GetBufferSize(), modVolInputLayout.put()));
@@ -157,11 +156,11 @@ bool DX11Renderer::Init()
 	// ...and the cache's room for them (rend/tex_map.h)
 	dx11_texcache_reserve_for(dx11_pool_made());
 	// the chip's write-out, and the pictures made for it (dx11_writeout.h)
-	writeOutPictures = writeOut.Init(device, deviceContext, shaders);
+	writeOutPictures = dx11_writeout_init();
 	dx11_textures_attach(dx11_texdec_ready(), true);
 	// GPU-side TA processing, if it is on: here, not in a frame
-	taDecoder.WantSort(TaSorts());
-	taDecoder.Setup(TaFlags() != 0 && ta_gpu_wanted());
+	dx11_ta_want_sort(TaSorts());
+	dx11_ta_setup(TaFlags() != 0 && ta_gpu_wanted());
 	return true;
 }
 
@@ -170,8 +169,8 @@ void DX11Renderer::OptionsChanged()
 	if (device == nullptr)
 		return;
 	DX11Lock lock;
-	taDecoder.WantSort(TaSorts());
-	taDecoder.Setup(TaFlags() != 0 && ta_gpu_wanted());
+	dx11_ta_want_sort(TaSorts());
+	dx11_ta_setup(TaFlags() != 0 && ta_gpu_wanted());
 }
 
 void DX11Renderer::Term()
@@ -185,7 +184,7 @@ void DX11Renderer::Term()
 		dx11c_unbind_ps_resources(4);
 	}
 	dx11c_set_frame(nullptr, nullptr);
-	taDecoder.Term();
+	dx11_ta_term();
 	ta_set_modvol_clip(false);
 	dx11_rtt_term();
 	dx11_texcache_clear();
@@ -195,8 +194,8 @@ void DX11Renderer::Term()
 	dx11_pool_term();
 	dx11_texdec_term();
 	dx11_overlay_term();
-	writeOut.Term();
-	if (shaders != nullptr)
+	dx11_writeout_term();
+	if (device != nullptr)
 		NOTICE_LOG(RENDERER, "DX11: %u depth-stencil, %u blend and %u sampler states made on the draw path\n",
 				depthStencilStates.draw_path, dx11_blends.draw_path, dx11_samplers.draw_path);
 	dx11_depth_states_term(&depthStencilStates);
@@ -241,7 +240,7 @@ void DX11Renderer::Resize(int w, int h)
 	if (device != nullptr && writeOutPictures != !compute_frame_scalers_off)
 	{
 		DX11Lock lock;
-		writeOutPictures = writeOut.Init(device, deviceContext, shaders);
+		writeOutPictures = dx11_writeout_init();
 		screenWidth = screenHeight = 0;
 	}
 }
@@ -339,10 +338,10 @@ bool DX11Renderer::ProcessLocked(TA_context* ctx)
 	 * drawn from the GPU's decode, in the full parse's place, which is run
 	 * now; or it is parsed as ever */
 	bool result;
-	if (!taDecoder.Ready() || !taDecoder.Prepare(ctx, TaFlags(), &result))
+	if (!dx11_ta_ready() || !dx11_ta_prepare(ctx, TaFlags(), &result))
 		result = ta_parse_vdrc(ctx);
 	else if (result)
-		taDecoder.Record(ctx);
+		dx11_ta_record(ctx);
 	// the textures the frame's polygons asked for that are made on the GPU, before the draws
 	dx11_texdec_flush();
 
@@ -611,7 +610,7 @@ void DX11Renderer::SetupFrame()
 		 * the depth's scale, copied in from the decode's words over what
 		 * the CPU put there - which is then not what the buffer has */
 		static_assert(offsetof(VertexConstants, depthScale) == 32, "the depth's scale after the scale and the offset");
-		taDecoder.CopyDepthScale(vtxConstants, offsetof(VertexConstants, depthScale));
+		dx11_ta_copy_depth_scale(vtxConstants, offsetof(VertexConstants, depthScale));
 		vtxUploadedValid = false;
 	}
 	FragmentConstants frag;
@@ -858,7 +857,7 @@ void DX11Renderer::EndScreen(bool writeOutPass)
 	if (writeOutPass && target.uav)
 	{
 		dx11c_set_targets(nullptr, nullptr);
-		writeOut.Record(target.uav, screenWidth, screenHeight);
+		dx11_writeout_record(target.uav, screenWidth, screenHeight);
 	}
 	// what goes over the picture, onto it (with the depth test off: whatever depth is bound is not looked at)
 	if (!dx11_overlay_empty())
@@ -1198,8 +1197,8 @@ void DX11Renderer::DrawPoly(u32 listType, bool sortTriangles, const PolyParam& p
 	params.palette = palette;
 	params.shadowed = shadowPass != ShadowPass::None;
 	bool general;
-	SetVS(shaders->GetVertexShader(poly.pcw.Gouraud));
-	SetPS(shaders->GetPixelShader(params, &general));
+	SetVS(dx11_shaders_vs(poly.pcw.Gouraud));
+	SetPS(dx11_shaders_ps(&params, &general));
 
 	// (the general shader's key is the polygon's: in its constants)
 	if (tileClip == TileClipping::Inside || trilinearAlpha != 1.f || palette || prepassDraw || general)
@@ -1209,7 +1208,7 @@ void DX11Renderer::DrawPoly(u32 listType, bool sortTriangles, const PolyParam& p
 			trilinearAlpha,
 			palette_index,
 			prepassDraw ? (PrepassAlwaysHides(&poly) ? -1.f : PREPASS_ALPHA_MIN) : 0.f,
-			general ? params.hash() : 0u
+			general ? dx11_shaders_key(&params) : 0u
 		};
 		SetPolyConstants(constants);
 	}
@@ -1283,11 +1282,11 @@ void DX11Renderer::DrawPoly(u32 listType, bool sortTriangles, const PolyParam& p
 
 void DX11Renderer::DrawGpu(u32 listType, bool shadow, u32 first, u32 count)
 {
-	const DX11TaDraw& gpu = taDecoder.Draw();
+	const dx11_ta_draw& gpu = *dx11_ta_get_draw();
 	const u32 stride = sizeof(D3D11_DRAW_INDEXED_INSTANCED_INDIRECT_ARGS);
 	if (listType == ListType_Translucent)
 		// its records after its count, as many as it has vertices at most: those past the count draw nothing
-		taDecoder.DrawRecords(first + 1, count);
+		dx11_ta_draw_records(first + 1, count);
 	else
 		deviceContext->DrawIndexedInstancedIndirect(gpu.commands, (shadow ? gpu.shadowCommands : 0) + first * stride);
 }
@@ -1316,7 +1315,7 @@ void DX11Renderer::DrawSorted(const SortTrigDrawParam *polys, u32 count, bool mu
 	{
 		if (count == 0)
 			return;
-		dx11c_set_index_buffer(taDecoder.Draw().sorted);
+		dx11c_set_index_buffer(dx11_ta_get_draw()->sorted);
 		gpuSorted = true;
 	}
 	for (u32 i = 0; i < count; i++)
@@ -1328,8 +1327,8 @@ void DX11Renderer::DrawSorted(const SortTrigDrawParam *polys, u32 count, bool mu
 		// a later render pass needs their depth (Cosmic Smash), it is written
 		// now, for those that do not have Z write disabled.
 		dx11c_set_input_layout(positionInputLayout);
-		SetVS(shaders->GetModVolVertexShader());
-		SetPS(shaders->GetModVolPixelShader());
+		SetVS(dx11_shaders_modvol_vs());
+		SetPS(dx11_shaders_modvol_ps());
 		SetBlend(blendState(false, 1, 0, false));
 		SetDepthStencil(depthState(true, true, 6));
 		SetTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
@@ -1347,7 +1346,7 @@ void DX11Renderer::DrawSorted(const SortTrigDrawParam *polys, u32 count, bool mu
 	}
 	if (pvrrc.gpu)
 	{
-		dx11c_set_index_buffer(taDecoder.Draw().indices);
+		dx11c_set_index_buffer(dx11_ta_get_draw()->indices);
 		gpuSorted = false;
 	}
 }
@@ -1364,7 +1363,7 @@ void DX11Renderer::DrawPrepass(const SortTrigDrawParam *polys, u32 count)
 	const u32 base = pvrrc.gpu ? 0 : pvrrc.idx.used();
 	if (pvrrc.gpu)
 	{
-		dx11c_set_index_buffer(taDecoder.Draw().sorted);
+		dx11c_set_index_buffer(dx11_ta_get_draw()->sorted);
 		gpuSorted = true;
 	}
 	prepassDraw = true;
@@ -1373,7 +1372,7 @@ void DX11Renderer::DrawPrepass(const SortTrigDrawParam *polys, u32 count)
 	prepassDraw = false;
 	if (pvrrc.gpu)
 	{
-		dx11c_set_index_buffer(taDecoder.Draw().indices);
+		dx11c_set_index_buffer(dx11_ta_get_draw()->indices);
 		gpuSorted = false;
 	}
 	if (savedValid)
@@ -1406,8 +1405,8 @@ void DX11Renderer::DrawModVols(int first, int count, const RenderPass& previous_
 	// (the modifier volumes' triangles are at vertex slot 1)
 	dx11c_set_input_layout(modVolInputLayout);
 	SetTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-	SetVS(shaders->GetModVolVertexShader());
-	SetPS(shaders->GetModVolPixelShader());
+	SetVS(dx11_shaders_modvol_vs());
+	SetPS(dx11_shaders_modvol_ps());
 	SetBlend(blendState(false, 1, 0, false));
 	SetScissor(baseScissor);
 
@@ -1475,8 +1474,8 @@ void DX11Renderer::DrawModVols(int first, int count, const RenderPass& previous_
 	// rectangle drawn: the first four vertices' positions.
 	dx11c_set_input_layout(positionInputLayout);
 	SetTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP);
-	SetVS(shaders->GetModVolVertexShader());
-	SetPS(shaders->GetModVolPixelShader());
+	SetVS(dx11_shaders_modvol_vs());
+	SetPS(dx11_shaders_modvol_ps());
 	SetBlend(dx11_blend_alpha());
 	SetDepthStencil(depthState(false, false, 7, DX11Stencil_Final), 0x81);
 	SetCullMode(0);

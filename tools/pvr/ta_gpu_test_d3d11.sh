@@ -2,7 +2,7 @@
 # GPU-side TA processing's decode in Direct3D 11 against the core's own
 # parse, byte for byte, on the frames a game draws: ta_gpu_test.sh's test
 # with the Direct3D 11 renderers' kernels (rend/dx11/dx11_ta_dxbc.inc) and
-# their way of running them (dx11/dx11_ta_decoder.cpp) for the device, as
+# their way of running them (dx11/dx11_ta_decoder.c) for the device, as
 # ta_gpu_test_d3d12.sh has it for Direct3D 12.
 #
 #   sh tools/pvr/ta_gpu_test_d3d11.sh CONTENT FRAMES [key=value ...]

@@ -8,4 +8,4 @@
 # until then - not on the draw path. Made at the start, it would be every
 # key's shader compiled before the first frame (kept on disk for the next
 # run: rend/d3d_shader_cache.h).
-d3d DX11ShaderCompiler::WarmBuild
+d3d dx11_warm_build

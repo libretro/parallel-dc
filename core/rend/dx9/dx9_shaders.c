@@ -16,7 +16,7 @@
     You should have received a copy of the GNU General Public License
     along with Flycast.  If not, see <https://www.gnu.org/licenses/>.
 */
-/* The Direct3D 11 renderer's shaders (dx11/dx11_shaders.cpp) in shader
+/* The Direct3D 11 renderer's shaders (dx11/dx11_shaders.c) in shader
  * model 3, which is what the Vulkan and OpenGL renderers do with a pixel,
  * with these differences of Direct3D 9's:
  *

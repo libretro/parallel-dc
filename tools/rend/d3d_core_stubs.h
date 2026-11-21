@@ -16,17 +16,17 @@
 */
 /* What the Direct3D renderers' tests on a device take from the core: its
  * log, where it writes, and libretro-common's files (with stdio). One
- * program's, included once. */
-#include <cstdarg>
-#include <cstdio>
-#include <cstdlib>
-#include <cstring>
-#include <string>
+ * program's, included once; C and C++ alike. */
+#include <stdarg.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 #include "paths.h"
 #include <streams/file_stream.h>
 #include "log/Log.h"
 
-static std::string dataDir;
+/* where the files are written: the directory, ending with its separator */
+static char dataDir[1024];
 
 /* the log's warnings and errors */
 static void RETRO_CALLCONV test_log(enum retro_log_level level, const char *fmt, ...)
@@ -44,25 +44,34 @@ retro_log_printf_t log_cb = test_log;
 /* (stdclass.h's get_writable_data_path() is made from it) */
 size_t writable_data_path(char *out, size_t size, const char *name)
 {
-	const std::string path = dataDir + name;
+	const size_t d = strlen(dataDir), l = d + strlen(name);
 	if (size)
 	{
-		size_t n = path.size() < size - 1 ? path.size() : size - 1;
-		memcpy(out, path.data(), n);
+		size_t n = l < size - 1 ? l : size - 1;
+		size_t a = d < n ? d : n;
+		memcpy(out, dataDir, a);
+		memcpy(out + a, name, n - a);
 		out[n] = '\0';
 	}
-	return path.size();
+	return l;
 }
 
 struct RFILE { FILE *f; };
 
 RFILE *filestream_open(const char *path, unsigned mode, unsigned hints)
 {
+	FILE *f;
+	RFILE *r;
 	(void)hints;
-	FILE *f = fopen(path, mode == RETRO_VFS_FILE_ACCESS_WRITE ? "wb" : "rb");
-	if (f == nullptr)
-		return nullptr;
-	RFILE *r = new RFILE;
+	f = fopen(path, mode == RETRO_VFS_FILE_ACCESS_WRITE ? "wb" : "rb");
+	if (f == NULL)
+		return NULL;
+	r = (RFILE *)malloc(sizeof(*r));
+	if (r == NULL)
+	{
+		fclose(f);
+		return NULL;
+	}
 	r->f = f;
 	return r;
 }
@@ -75,7 +84,7 @@ int64_t filestream_write(RFILE *r, const void *data, int64_t len)
 int filestream_close(RFILE *r)
 {
 	fclose(r->f);
-	delete r;
+	free(r);
 	return 0;
 }
 
@@ -92,15 +101,17 @@ int filestream_rename(const char *from, const char *to)
 int64_t filestream_read_file(const char *path, void **buf, int64_t *len)
 {
 	FILE *f = fopen(path, "rb");
-	*buf = nullptr;
+	long n;
+	void *p;
+	*buf = NULL;
 	*len = 0;
-	if (f == nullptr)
+	if (f == NULL)
 		return 0;
 	fseek(f, 0, SEEK_END);
-	long n = ftell(f);
+	n = ftell(f);
 	fseek(f, 0, SEEK_SET);
-	void *p = malloc((size_t)n + 1);
-	if (p == nullptr || fread(p, 1, (size_t)n, f) != (size_t)n)
+	p = malloc((size_t)n + 1);
+	if (p == NULL || fread(p, 1, (size_t)n, f) != (size_t)n)
 	{
 		free(p);
 		fclose(f);

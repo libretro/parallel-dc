@@ -1,8 +1,8 @@
 #!/bin/sh
 # The Direct3D 11 renderers' shaders made ahead and kept on disk, on a
-# device (tools/rend/dx11_shaders_ahead_test.cpp): built with mingw-w64
-# (CXX_WIN, default x86_64-w64-mingw32-g++) from the renderers' own
-# rend/dx11/dx11_shaders.cpp and rend/dx11/oit/dx11_oitshaders.cpp, run
+# device (tools/rend/dx11_shaders_ahead_test.c): built with mingw-w64
+# (CC_WIN, default x86_64-w64-mingw32-gcc) from the renderers' own
+# rend/dx11/dx11_shaders.c and rend/dx11/oit/dx11_oitshaders.c, run
 # under wine (WINE, default wine64, or /usr/lib/wine/wine64 where only that
 # is there; "" on Windows) and xvfb-run where this is not Windows.
 #
@@ -20,8 +20,7 @@ if [ -z "$WORK" ]; then
    trap 'rm -rf "$WORK"' EXIT
 fi
 mkdir -p "$WORK/data"
-CXX_WIN=${CXX_WIN:-x86_64-w64-mingw32-g++}
-CC_WIN=${CC_WIN:-$(echo "$CXX_WIN" | sed 's/g++$/gcc/')}
+CC_WIN=${CC_WIN:-x86_64-w64-mingw32-gcc}
 if [ -z "${WINE+x}" ]; then
    if command -v wine64 > /dev/null; then WINE=wine64
    elif [ -x /usr/lib/wine/wine64 ]; then WINE=/usr/lib/wine/wine64
@@ -34,10 +33,9 @@ DEFS="-D__LIBRETRO__ -DHAVE_THREADS -DHAVE_D3D11 -DNDEBUG"
 for f in core/rend/d3d_warm.c core/rend/d3d_shader_cache.c core/rend/tex_map.c $LRC/queues/retro_spsc.c $LRC/rthreads/rthreads.c $LRC/rthreads/retro_eventcount.c; do
    $CC_WIN -O1 $DEFS $INC -c -o "$WORK/$(basename "$f" .c).o" "$f"
 done
-$CXX_WIN -std=c++11 -O1 -fpermissive -fno-operator-names $DEFS $INC -o "$WORK/dx11_shaders_ahead_test.exe" \
-   tools/rend/dx11_shaders_ahead_test.cpp core/rend/dx11/dx11_shaders.cpp core/rend/dx11/dx11_writeout_text.cpp \
-   core/rend/dx11/oit/dx11_oitshaders.cpp \
-   "$WORK"/*.o -ld3d11 -ldxguid -static
+$CC_WIN -O1 -Wall $DEFS $INC -Itools/rend -o "$WORK/dx11_shaders_ahead_test.exe" \
+   tools/rend/dx11_shaders_ahead_test.c core/rend/dx11/dx11_shaders.c core/rend/dx11/oit/dx11_oitshaders.c \
+   "$WORK"/*.o -ld3d11 -static
 ARGS="Z:$(echo "$WORK/data/" | tr / '\\')"
 if [ -n "$D3DCOMPILER" ]; then
    cp "$D3DCOMPILER" "$WORK/compiler.dll"

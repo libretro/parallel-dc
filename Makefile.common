@@ -280,12 +280,7 @@ endif
 ifeq ($(HAVE_D3D11), 1)
 	SOURCES_CXX += \
 					$(CORE_DIR)/core/rend/dx11/dx11_renderer.cpp \
-					$(CORE_DIR)/core/rend/dx11/dx11_writeout.cpp \
-					$(CORE_DIR)/core/rend/dx11/dx11_writeout_text.cpp \
-					$(CORE_DIR)/core/rend/dx11/dx11_shaders.cpp \
-					$(CORE_DIR)/core/rend/dx11/dx11_ta_decoder.cpp \
-					$(CORE_DIR)/core/rend/dx11/oit/dx11_oitrenderer.cpp \
-					$(CORE_DIR)/core/rend/dx11/oit/dx11_oitshaders.cpp
+					$(CORE_DIR)/core/rend/dx11/oit/dx11_oitrenderer.cpp
 	SOURCES_C += \
 					$(CORE_DIR)/core/rend/dx11/dx11context_lr.c \
 					$(CORE_DIR)/core/rend/dx11/dx11_overlay.c \
@@ -293,6 +288,10 @@ ifeq ($(HAVE_D3D11), 1)
 					$(CORE_DIR)/core/rend/dx11/dx11_renderstate.c \
 					$(CORE_DIR)/core/rend/dx11/dx11_texdecoder.c \
 					$(CORE_DIR)/core/rend/dx11/dx11_texture.c \
+					$(CORE_DIR)/core/rend/dx11/dx11_shaders.c \
+					$(CORE_DIR)/core/rend/dx11/dx11_writeout.c \
+					$(CORE_DIR)/core/rend/dx11/dx11_ta_decoder.c \
+					$(CORE_DIR)/core/rend/dx11/oit/dx11_oitshaders.c \
 					$(CORE_DIR)/core/rend/hdr/hdr_encode_d3d11.c
 endif
 # (the video memory a DXGI adapter has: the Direct3D 11 and 12 renderers')

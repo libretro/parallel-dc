@@ -12,7 +12,7 @@
 # stencil, blend or sampler state either ("0 depth-stencil, 0 blend and 0
 # sampler states"). The polygons whose own shader was not there yet were
 # drawn with a general one: that it draws the same is
-# DX11_SHADER_TEST_GENERAL's (dx11_shaders.cpp) with tools/rend/d3d_same.sh.
+# DX11_SHADER_TEST_GENERAL's (dx11_shaders.c) with tools/rend/d3d_same.sh.
 # Nothing compiled at the start either ("0 compiled": every shader the start
 # makes is the core's bytecode, dx11_dxbc.inc, still the sources'), so both
 # renderers start whatever the compiler, and with none at all (the plain
