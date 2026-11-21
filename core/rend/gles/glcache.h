@@ -1,9 +1,8 @@
 #ifndef GLES_GLCACHE_H
 #define GLES_GLCACHE_H
 /* The OpenGL state the renderers set, as last set, so that what is set
- * again to what it is costs no call (glcache.c). C89, for C and C++
- * alike; C++ has it as glcache, a GLCache. Render thread only. The
- * OpenGL headers (glsm) come first. */
+ * again to what it is costs no call (glcache.c). C89. Render thread
+ * only. The OpenGL headers (glsm) come first. */
 #include <string.h>
 #include <retro_inline.h>
 #include "types.h"
@@ -224,34 +223,6 @@ static INLINE void glc_scissor(GLint x, GLint y, GLsizei width, GLsizei height)
 
 #ifdef __cplusplus
 }
-
-/* The cache as C++ has it: glcache.BindTexture() and the rest */
-class GLCache
-{
-public:
-	void BindTexture(GLenum target, GLuint texture) { glc_bind_texture(target, texture); }
-	void BlendFunc(GLenum sfactor, GLenum dfactor) { glc_blend_func(sfactor, dfactor); }
-	void ClearColor(GLclampf red, GLclampf green, GLclampf blue, GLclampf alpha) { glc_clear_color(red, green, blue, alpha); }
-	void CullFace(GLenum mode) { glc_cull_face(mode); }
-	void DeleteTextures(GLsizei n, const GLuint *textures) { glc_delete_textures(n, textures); }
-	void DepthFunc(GLenum func) { glc_depth_func(func); }
-	void DepthMask(GLboolean flag) { glc_depth_mask(flag); }
-	void Enable(GLenum cap) { glc_enable(cap); }
-	void Disable(GLenum cap) { glc_disable(cap); }
-	void UseProgram(GLuint program) { glc_use_program(program); }
-	void StencilFunc(GLenum func, GLint ref, GLuint mask) { glc_stencil_func(func, ref, mask); }
-	void StencilOp(GLenum sfail, GLenum dpfail, GLenum dppass) { glc_stencil_op(sfail, dpfail, dppass); }
-	void StencilMask(GLuint mask) { glc_stencil_mask(mask); }
-	void Scissor(GLint x, GLint y, GLsizei width, GLsizei height) { glc_scissor(x, y, width, height); }
-	void TexParameteri(GLenum target, GLenum pname, GLint param) { glc_tex_parameteri(target, pname, param); }
-	void TexParameterf(GLenum target, GLenum pname, GLfloat param) { glc_tex_parameterf(target, pname, param); }
-	GLuint GenTexture() { return glc_gen_texture(); }
-	void Reset() { glc_reset(); }
-	void DisableCache() { glc_disable_cache(); }
-	void EnableCache() { glc_enable_cache(); }
-};
-
-extern GLCache glcache;
 #endif
 
 #endif

@@ -1,22 +1,29 @@
-#pragma once
+/* The per-pixel OpenGL renderer (OpenGL 4.3): C89 */
+#ifndef GL4_GL4_H
+#define GL4_GL4_H
+
+#include <string.h>
 #include "rend/gles/gles.h"
 #include "rend/grow_buf.h"
-#include <unordered_map>
-#include <vector>
+#include "rend/tex_map.h"
+
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 void gl4DrawStrips(GLuint output_fbo, int width, int height);
 
-/* A frame drawn in horizontal bands (abuffer.cpp, gl4OitChooseBands()):
- * the band being drawn, in pixels of the framebuffer; no height when the
- * frame is drawn whole. Every scissor rectangle the frame's draws set is
- * cut to it: gl4Scissor() in place of glcache.Scissor(), gl4ScissorOff()
- * in place of turning the scissor test off. */
-struct gl4Band
+/* A frame drawn in horizontal bands (abuffer.c, gl4OitChooseBands()): the
+ * band being drawn, in pixels of the framebuffer; no height when the frame
+ * is drawn whole. Every scissor rectangle the frame's draws set is cut to
+ * it: gl4Scissor() in place of glc_scissor(), gl4ScissorOff() in place of
+ * turning the scissor test off. */
+typedef struct gl4Band
 {
 	int y, height;
-};
+} gl4Band;
 extern gl4Band gl4band;
-static inline void gl4Scissor(int x, int y, int width, int height)
+static INLINE void gl4Scissor(int x, int y, int width, int height)
 {
 	if (gl4band.height != 0)
 	{
@@ -25,62 +32,69 @@ static inline void gl4Scissor(int x, int y, int width, int height)
 		y = top;
 		height = bottom > top ? bottom - top : 0;
 	}
-	glcache.Enable(GL_SCISSOR_TEST);
-	glcache.Scissor(x, y, width, height);
+	glc_enable(GL_SCISSOR_TEST);
+	glc_scissor(x, y, width, height);
 }
-static inline void gl4ScissorOff()
+static INLINE void gl4ScissorOff(void)
 {
 	if (gl4band.height != 0)
 	{
-		glcache.Enable(GL_SCISSOR_TEST);
-		glcache.Scissor(0, gl4band.y, 0x7FFF, gl4band.height);
+		glc_enable(GL_SCISSOR_TEST);
+		glc_scissor(0, gl4band.y, 0x7FFF, gl4band.height);
 	}
 	else
-		glcache.Disable(GL_SCISSOR_TEST);
+		glc_disable(GL_SCISSOR_TEST);
 }
 /* The bands this frame (a render to a texture, or the screen's) is drawn
  * in: from the fragment counts of frames before, which nothing waits for */
 u32 gl4OitChooseBands(bool rtt);
 /* A band starts: its lists empty, its count at nothing; not before the
  * band before is on the picture */
-void gl4OitBandBegin();
+void gl4OitBandBegin(void);
 /* A band's translucent polygons are all drawn: its count copied out */
 void gl4OitBandEnd(u32 band);
 /* The frame's bands are drawn: a fence for their counts */
 void gl4OitFrameEnd(u32 bands, bool rtt);
 
-enum class Pass { Depth, Color, OIT };
+/* A program's pass */
+#define PASS_DEPTH 0
+#define PASS_COLOR 1
+#define PASS_OIT 2
 
 /* What a program's uniforms that change by the polygon were last set to:
- * set again only when another value is (gl4ShaderUniformsT::Set()). A
- * uniform is a program's, so every record drawn with the program has its
- * program's (gl4PipelineShader::uniforms); one made anew has none. */
-struct gl4UniformShadow
+ * set again only when another value is (gl4_uniforms_set()). A uniform is a
+ * program's, so every record drawn with the program has its program's
+ * (gl4PipelineShader's uniforms); one made anew has none. */
+enum
 {
-	enum { U_ALPHA_TEST, U_FOG_DENSITY, U_FOG_COL_RAM, U_FOG_COL_VERT, U_SHADE_SCALE, U_BLEND_MODE, U_USE_ALPHA, U_IGNORE_TEX_ALPHA,
-		U_SHADING_INSTR, U_FOG_CONTROL, U_PP_NUMBER, U_TRILINEAR_ALPHA, U_FOG_CLAMP_MIN, U_FOG_CLAMP_MAX, U_NORMAL_MATRIX,
-		U_PALETTE_INDEX, U_KEY_BITS, U_COUNT };
-	u32 set;            /* which of them have been set, a bit each */
-	u32 words[U_COUNT][16];
-
-	/* true, and @words kept, if @count words at @value are not what the
-	 * uniform was last set to (bit for bit: -0 is not 0) */
-	bool Changed(int which, const void *value, u32 count)
-	{
-		if ((set & (1u << which)) && memcmp(words[which], value, count * 4) == 0)
-			return false;
-		memcpy(words[which], value, count * 4);
-		set |= 1u << which;
-		return true;
-	}
+	GL4U_ALPHA_TEST, GL4U_FOG_DENSITY, GL4U_FOG_COL_RAM, GL4U_FOG_COL_VERT, GL4U_SHADE_SCALE, GL4U_BLEND_MODE, GL4U_USE_ALPHA,
+	GL4U_IGNORE_TEX_ALPHA, GL4U_SHADING_INSTR, GL4U_FOG_CONTROL, GL4U_PP_NUMBER, GL4U_TRILINEAR_ALPHA, GL4U_FOG_CLAMP_MIN,
+	GL4U_FOG_CLAMP_MAX, GL4U_NORMAL_MATRIX, GL4U_PALETTE_INDEX, GL4U_KEY_BITS, GL4U_COUNT
 };
+typedef struct gl4UniformShadow
+{
+	u32 set;            /* which of them have been set, a bit each */
+	u32 words[GL4U_COUNT][16];
+} gl4UniformShadow;
 
+/* true, and the words kept, if @count words at @value are not what uniform
+ * @which was last set to (bit for bit: -0 is not 0) */
+static INLINE bool gl4_uniform_changed(gl4UniformShadow *u, int which, const void *value, u32 count)
+{
+	if ((u->set & (1u << which)) && memcmp(u->words[which], value, count * 4) == 0)
+		return false;
+	memcpy(u->words[which], value, count * 4);
+	u->set |= 1u << which;
+	return true;
+}
+
+typedef struct gl4PipelineShader gl4PipelineShader;
 struct gl4PipelineShader
 {
 	GLuint program;
 	/* the program's uniforms as last set: its own, or the general program's
-	 * whose record it is drawn with (gl4PipelineLocations()) */
-	gl4UniformShadow *uniforms = nullptr;
+	 * whose record it is drawn with (gl4PipelineLocations()); NULL: none */
+	gl4UniformShadow *uniforms;
 	gl4UniformShadow ownUniforms;
 
 	GLint pp_ClipTest;
@@ -108,7 +122,7 @@ struct gl4PipelineShader
 	u32 pp_ShadInstr;
 	bool pp_Offset;
 	u32 pp_FogCtrl;
-	Pass pass;
+	int pass;		/* PASS_* */
 	bool pp_TwoVolumes;
 	bool pp_Gouraud;
 	bool pp_BumpMap;
@@ -126,8 +140,7 @@ struct gl4PipelineShader
 	GLint key_bits;
 };
 
-
-struct gl4_ctx
+typedef struct gl4_ctx
 {
 	struct
 	{
@@ -138,8 +151,8 @@ struct gl4_ctx
 
 	/* by key: room for them made with the renderer (rend/tex_map.h), a key
 	 * first drawn with taking none */
-	TexMap<gl4PipelineShader> shaders;
-	// The general programs (rend/gles/glprogram_cache.h), by pass and pp_Gouraud
+	tex_map_t shaders;
+	/* The general programs (rend/gles/glprogram_cache.h), by pass and pp_Gouraud */
 	gl4PipelineShader general[3][2];
 
 	struct
@@ -153,31 +166,31 @@ struct gl4_ctx
 	 * the CPU parsed, made here (see PolyParam in SHADER_HEADER) */
 	u32 trPolyMax;                  /* translucent polygons there is room for */
 	grow_buf_t trPolyWords;         /* their words where the buffer cannot be mapped */
-	// what the state manager (glsm) has no function for
+	/* what the state manager (glsm) has no function for */
 	void (APIENTRYP vertexAttribDivisor)(GLuint index, GLuint divisor);
 	void (APIENTRYP vertexAttribI4ui)(GLuint index, GLuint x, GLuint y, GLuint z, GLuint w);
-};
+} gl4_ctx;
 
 extern gl4_ctx gl4;
 
-extern "C" int screen_width;
-extern "C" int screen_height;
 extern int max_image_width;
 extern int max_image_height;
 
 GLuint gl4BindRTT(u32 addy, u32 fbw, u32 fbh, u32 channels, u32 fmt);
 void gl4DrawFramebuffer(float w, float h);
-void abufferDrawQuad();
+void abufferDrawQuad(void);
 
 extern const char *gl4PixelPipelineShader;
-bool gl4CompilePipelineShader(gl4PipelineShader* s, const char *pixel_source = gl4PixelPipelineShader, const char *vertex_source = NULL);
+/* @s's program, of @pixel_source (gl4PixelPipelineShader for a polygon's)
+ * and @vertex_source (NULL: the polygons'), made now */
+bool gl4CompilePipelineShader(gl4PipelineShader* s, const char *pixel_source, const char *vertex_source);
 /* A polygon's program (glprogram_cache.h) asked of the driver: its own, or
  * (@general) the general one of its pass and pp_Gouraud; and its uniforms
  * found, once it is there (the program bound) */
 GLuint gl4MakePipelineProgram(const gl4PipelineShader* s, bool general, bool background);
 void gl4PipelineLocations(gl4PipelineShader* s, bool general);
-// At the renderer's start: the general programs and those of the keys of earlier runs
-void gl4MakePrograms();
+/* At the renderer's start: the general programs and those of the keys of earlier runs */
+void gl4MakePrograms(void);
 
 extern GLuint stencilTexId;
 extern GLuint depthTexId;
@@ -189,6 +202,16 @@ extern GLuint depth_fbo;
 
 void gl4DrawVmuTexture(u8 vmu_screen_number);
 void gl4DrawGunCrosshair(u8 port);
+
+/* The translucent polygons' lists (abuffer.c): made with the renderer and
+ * for the size rendered at, put on the picture, taken down */
+void initABuffer(void);
+void reshapeABuffer(int w, int h);
+void termABuffer(void);
+void renderABuffer(void);
+void DrawTranslucentModVols(int first, int count, bool useOpaqueGeom);
+/* the working framebuffer's textures, @width by @height (gldraw.c) */
+void gl4CreateTextures(int width, int height);
 
 #define SHADER_HEADER "#version 430 \n\
 \n\
@@ -325,10 +348,11 @@ bool isTwoVolumes(const PolyParam pp) \n\
  \n\
 "
 
-// (the vertex and index buffers: 0, the renderer's own)
-void gl4SetupMainVBO(GLuint geometry = 0, GLuint idxs = 0);
-// (the volumes' triangles' buffer: 0, the renderer's own)
-void gl4SetupModvolVBO(GLuint modvols = 0);
+
+/* (the vertex and index buffers: 0, the renderer's own) */
+void gl4SetupMainVBO(GLuint geometry, GLuint idxs);
+/* (the volumes' triangles' buffer: 0, the renderer's own) */
+void gl4SetupModvolVBO(GLuint modvols);
 /* A frame decoded on the GPU (pvrrc.gpu, rend/gles/ta_decoder_gl.h): its
  * vertices, indices, modifier volume triangles and translucent polygons'
  * words bound in their places (the vertex arrays' and binding 1), and each
@@ -339,10 +363,10 @@ void gl4SetupModvolVBO(GLuint modvols = 0);
  * VMU screens, the crosshairs, the framebuffer). Nothing is done when they
  * are bound already; gl4ForgetFrameBuffers(): the decoder's buffers are
  * made again, and are bound the next time. */
-void gl4BindFrameBuffers(bool gpu, bool own = false);
-void gl4ForgetFrameBuffers();
+void gl4BindFrameBuffers(bool gpu, bool own);
+void gl4ForgetFrameBuffers(void);
 
-extern struct gl4ShaderUniforms_t
+typedef struct gl4ShaderUniforms_t
 {
 	float PT_ALPHA;
 	float fog_den_float;
@@ -350,10 +374,10 @@ extern struct gl4ShaderUniforms_t
 	float ps_FOG_COL_VERT[3];
 	int poly_number;
 	float trilinear_alpha;
-	TSP tsp0;
-	TSP tsp1;
-	TCW tcw0;
-	TCW tcw1;
+	u32 tsp0;
+	u32 tsp1;
+	u32 tcw0;
+	u32 tcw1;
 	float fog_clamp_min[4];
 	float fog_clamp_max[4];
 	float normal_mat[16];
@@ -366,103 +390,14 @@ extern struct gl4ShaderUniforms_t
 		int width;
 		int height;
 	} base_clipping;
+} gl4ShaderUniforms_t;
+extern gl4ShaderUniforms_t gl4ShaderUniforms;
 
-	void setUniformArray(GLint location, int v0, int v1)
-	{
-		int array[] = { v0, v1 };
-		glUniform1iv(location, 2, array);
-	}
-	void setUniformArray(gl4UniformShadow *u, int which, GLint location, int v0, int v1)
-	{
-		int array[] = { v0, v1 };
-		if (u->Changed(which, array, 2))
-			glUniform1iv(location, 2, array);
-	}
+/* The uniforms that change by the polygon given to @s, those that changed */
+void gl4_uniforms_set(gl4PipelineShader *s);
 
-	void Set(gl4PipelineShader* s)
-	{
-		gl4UniformShadow *u = s->uniforms;
-		/* (a record without one, as ever: every uniform set) */
-		gl4UniformShadow none;
-		if (u == nullptr)
-		{
-			none.set = 0;
-			u = &none;
-		}
-		typedef gl4UniformShadow U;
+#ifdef __cplusplus
+}
+#endif
 
-		if (s->cp_AlphaTestValue != -1 && u->Changed(U::U_ALPHA_TEST, &PT_ALPHA, 1))
-			glUniform1f(s->cp_AlphaTestValue, PT_ALPHA);
-
-		if (s->sp_FOG_DENSITY != -1 && u->Changed(U::U_FOG_DENSITY, &fog_den_float, 1))
-			glUniform1f( s->sp_FOG_DENSITY,fog_den_float);
-
-		if (s->sp_FOG_COL_RAM != -1 && u->Changed(U::U_FOG_COL_RAM, ps_FOG_COL_RAM, 3))
-			glUniform3fv( s->sp_FOG_COL_RAM, 1, ps_FOG_COL_RAM);
-
-		if (s->sp_FOG_COL_VERT != -1 && u->Changed(U::U_FOG_COL_VERT, ps_FOG_COL_VERT, 3))
-			glUniform3fv( s->sp_FOG_COL_VERT, 1, ps_FOG_COL_VERT);
-
-		if (s->shade_scale_factor != -1)
-		{
-			const float scale = FPU_SHAD_SCALE.scale_factor / 256.f;
-			if (u->Changed(U::U_SHADE_SCALE, &scale, 1))
-				glUniform1f(s->shade_scale_factor, scale);
-		}
-
-		if (s->blend_mode != -1) {
-			// The per-pixel pass drops a fragment whose blend would leave the
-			// pixel as it is. It cannot tell that when the source is the second
-			// accumulation buffer, or when the polygon has a second volume and
-			// which blend applies is known only when the lists are put
-			// together: those get a blend (8) that none of its cases take.
-			bool keep = tsp0.SrcSelect || tsp1.full != (u32)-1 || tcw1.full != (u32)-1;
-			u32 blend_mode[] = { keep ? 8u : (u32)tsp0.SrcInstr, keep ? 8u : (u32)tsp0.DstInstr, tsp1.SrcInstr, tsp1.DstInstr };
-			if (u->Changed(U::U_BLEND_MODE, blend_mode, 4))
-				glUniform2iv(s->blend_mode, 2, (GLint *)blend_mode);
-		}
-
-		if (s->use_alpha != -1)
-			setUniformArray(u, U::U_USE_ALPHA, s->use_alpha, tsp0.UseAlpha, tsp1.UseAlpha);
-
-		if (s->ignore_tex_alpha != -1)
-			setUniformArray(u, U::U_IGNORE_TEX_ALPHA, s->ignore_tex_alpha, tsp0.IgnoreTexA, tsp1.IgnoreTexA);
-
-		if (s->shading_instr != -1)
-			setUniformArray(u, U::U_SHADING_INSTR, s->shading_instr, tsp0.ShadInstr, tsp1.ShadInstr);
-
-		if (s->fog_control != -1)
-			setUniformArray(u, U::U_FOG_CONTROL, s->fog_control, tsp0.FogCtrl, tsp1.FogCtrl);
-
-		if (s->pp_Number != -1)
-		{
-			const GLint number = poly_number;
-			if (u->Changed(U::U_PP_NUMBER, &number, 1))
-				glUniform1i(s->pp_Number, number);
-		}
-
-		if (s->trilinear_alpha != -1 && u->Changed(U::U_TRILINEAR_ALPHA, &trilinear_alpha, 1))
-			glUniform1f(s->trilinear_alpha, trilinear_alpha);
-		
-		if (s->fog_clamp_min != -1 && u->Changed(U::U_FOG_CLAMP_MIN, fog_clamp_min, 4))
-			glUniform4fv(s->fog_clamp_min, 1, fog_clamp_min);
-		if (s->fog_clamp_max != -1 && u->Changed(U::U_FOG_CLAMP_MAX, fog_clamp_max, 4))
-			glUniform4fv(s->fog_clamp_max, 1, fog_clamp_max);
-
-		if (s->normal_matrix != -1 && u->Changed(U::U_NORMAL_MATRIX, normal_mat, 16))
-			glUniformMatrix4fv(s->normal_matrix, 1, GL_FALSE, normal_mat);
-
-		if (s->palette_index != -1 && u->Changed(U::U_PALETTE_INDEX, &palette_index, 1))
-			glUniform1f(s->palette_index, palette_index);
-
-		// (a polygon drawn with a general program: its key)
-		if (s->key_bits != -1)
-		{
-			const GLint key = (GLint)s->key;
-			if (u->Changed(U::U_KEY_BITS, &key, 1))
-				glUniform1i(s->key_bits, key);
-		}
-	}
-
-} gl4ShaderUniforms;
-
+#endif

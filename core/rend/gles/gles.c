@@ -1052,7 +1052,7 @@ void findGLVersion(void)
 	if (gl.depth_ubo != 0)
 		glDeleteBuffers(1, &gl.depth_ubo);
 	gl.depth_ubo = 0;
-	/* (the copy is OpenGL 3.1's too; without it the uniform, and no frame decoded on the GPU: GlTaDecoder needs 4.3) */
+	/* (the copy is OpenGL 3.1's too; without it the uniform, and no frame decoded on the GPU: gles/ta_decoder_gl.h needs 4.3) */
 	if (ubo && gl.copyBufferSubData != NULL)
 	{
 		glGenBuffers(1, &gl.depth_ubo);
@@ -1501,7 +1501,7 @@ static bool RenderFrame(void)
 		{
 			/* ...in the uniform buffer, and for a frame decoded on the GPU,
 			 * S from the decode's word of it, copied over the host's (the
-			 * copy is ordered after the decode's kernels: GlTaDecoder) */
+			 * copy is ordered after the decode's kernels: ta_decoder_gl.h) */
 			glBindBuffer(GL_UNIFORM_BUFFER, gl.depth_ubo);
 			glBufferSubData(GL_UNIFORM_BUFFER, 0, sizeof(ShaderUniforms.depth_coefs), ShaderUniforms.depth_coefs);
 			if (pvrrc.gpu)

@@ -19,12 +19,13 @@
 #define REND_OIT_SIZE_H
 
 #include "types.h"
+#include <retro_inline.h>
 
 #define OIT_FRAGMENT_BYTES 16u
 #define OIT_LAYERS 2u
 #define OIT_MIN_BYTES (32ull << 20)
 
-static inline u64 oit_buffer_bytes_of(u64 bytes, u32 available_kib, u64 most)
+static INLINE u64 oit_buffer_bytes_of(u64 bytes, u32 available_kib, u64 most)
 {
 	const u64 share = (u64)available_kib * 1024u / 2u;
 	if (bytes > share)
@@ -36,7 +37,7 @@ static inline u64 oit_buffer_bytes_of(u64 bytes, u32 available_kib, u64 most)
 	return bytes & ~(u64)(OIT_FRAGMENT_BYTES - 1u);
 }
 
-static inline u64 oit_buffer_bytes(u32 width, u32 height, u32 available_kib, u64 most)
+static INLINE u64 oit_buffer_bytes(u32 width, u32 height, u32 available_kib, u64 most)
 {
 	return oit_buffer_bytes_of((u64)width * height * OIT_LAYERS * OIT_FRAGMENT_BYTES, available_kib, most);
 }
@@ -47,7 +48,7 @@ static inline u64 oit_buffer_bytes(u32 width, u32 height, u32 available_kib, u64
  * so nothing is dropped - in place of OIT_LAYERS, which at a high internal
  * resolution is most of the video memory the renderer takes */
 #define OIT_FALLBACK_LAYER_SHIFT 2u
-static inline u64 oit_fallback_buffer_bytes(u32 width, u32 height, u32 available_kib, u64 most)
+static INLINE u64 oit_fallback_buffer_bytes(u32 width, u32 height, u32 available_kib, u64 most)
 {
 	return oit_buffer_bytes_of(((u64)width * height * OIT_FRAGMENT_BYTES) >> OIT_FALLBACK_LAYER_SHIFT, available_kib, most);
 }

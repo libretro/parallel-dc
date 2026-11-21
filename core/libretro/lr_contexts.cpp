@@ -34,7 +34,7 @@ void lr_rend_options_changed(void)
 
 bool lr_gl_ta_context_can_do(void)
 {
-   return GlTaDecoder::ContextCanDo();
+   return gltad_context_can_do();
 }
 
 #ifdef HAVE_VULKAN

@@ -112,8 +112,9 @@ typedef struct renderer_ops
 	void (*options_changed)(void);
 } renderer_ops;
 
-/* the per-triangle/strip OpenGL renderer (gles/gles.c) */
+/* the OpenGL renderers: per triangle or strip (gles/gles.c), per pixel (gl4/gles.c) */
 extern const renderer_ops gles_renderer_ops;
+extern const renderer_ops gl4_renderer_ops;
 
 #ifdef __cplusplus
 }

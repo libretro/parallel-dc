@@ -33,7 +33,7 @@
  * where the driver can (glGetProgramBinary), by its name and the text's.
  * OpenGL ES (the GLES builds) and OpenGL 2 convert on the CPU, as before.
  *
- * C89 (gl_texdecoder.c), for C and C++ alike; C++ has it as glTexDecoder. */
+ * C89 (gl_texdecoder.c). */
 #ifndef GLES_GL_TEXDECODER_H
 #define GLES_GL_TEXDECODER_H
 #include "types.h"
@@ -74,28 +74,6 @@ void gltd_flush(void);
 
 #ifdef __cplusplus
 }
-
-/* The decoder as C++ has it */
-class GLTexDecoder
-{
-public:
-	void Init() { gltd_init(); }
-	void Term() { gltd_term(); }
-	bool Ready() const { return gltd_ready(); }
-	bool Takes(TextureType type, u32 out) const { return gltd_takes((int)type, out); }
-	bool Native(TextureType type) const { return gltd_native((int)type); }
-	u8 *Begin(u32 bytes, u32 levels, u32 *offset) { return gltd_begin(bytes, levels, offset); }
-	u32 AddDecode(GLuint texture, TextureType type, const texd_plan& plan, u32 offset) { return gltd_add_decode(texture, (int)type, &plan, offset); }
-	u32 AddCopy(GLuint texture, TextureType type, u32 offset, u32 rowLength, u32 width, u32 height)
-	{
-		return gltd_add_copy(texture, (int)type, offset, rowLength, width, height);
-	}
-	u32 Serial() const { return gltd_serial(); }
-	void Cancel(u32 job, u32 serial) { gltd_cancel(job, serial); }
-	void Flush() { gltd_flush(); }
-};
-
-extern GLTexDecoder glTexDecoder;
 #endif
 
 #endif

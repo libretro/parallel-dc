@@ -33,7 +33,7 @@ CFLAGS_S="$COMMON -std=c89 -Wno-long-long -Werror=implicit-function-declaration 
 GL="$FLAGS -DHAVE_OPENGL"
 GLES="$FLAGS -DHAVE_OPENGLES -DHAVE_OPENGLES2 -DHAVE_GL3"
 # the renderers' sources, and what else draws with OpenGL
-FILES=$( (ls core/rend/gles/*.cpp core/rend/gl4/*.cpp
+FILES=$( (ls core/rend/gles/*.cpp core/rend/gl4/*.cpp 2>/dev/null
           grep -rlE '#include.*(gles\.h|gl4\.h|glcache\.h)' core --include=*.cpp) \
    | grep -v -E '^core/(deps|libretro-common)/' | sort -u)
 fails=0
@@ -45,6 +45,8 @@ for f in $CFILES; do
       echo "FAIL clang: $f"; grep -E 'error' /tmp/gl_shapes.$$ | head -5
       fails=$((fails + 1))
    fi
+   # (the per-pixel renderer is desktop OpenGL only: not on the Switch, nor OpenGL ES)
+   case $f in core/rend/gl4/*) continue ;; esac
    if ! $CC $CFLAGS_S -DHAVE_OPENGL -DHAVE_LIBNX -DTARGET_LIBNX "$f" > /tmp/gl_shapes.$$ 2>&1; then
       echo "FAIL libnx: $f"; grep -E 'error' /tmp/gl_shapes.$$ | head -5
       fails=$((fails + 1))

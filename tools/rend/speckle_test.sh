@@ -41,7 +41,7 @@
 #      - on a device, when CONTENT and STATE are given: the core is built
 #        again with RACE_TEST, which records the draws between two
 #        barriers a triangle at a time, the draws' triangles taken in turn
-#        (vulkan/oit/oit_drawer.cpp, gl4/abuffer.cpp, dx12/oit/
+#        (vulkan/oit/oit_drawer.cpp, gl4/abuffer.c, dx12/oit/
 #        dx12_oitrenderer.cpp: ListDraws), as a GPU may run them, and the
 #        picture it draws has to be the same, byte for byte, as the core's
 #        own - with Vulkan (lavapipe) and OpenGL 4 (llvmpipe), per-pixel
@@ -73,7 +73,7 @@ R=$ROOT/core/rend
 for f in $R/vulkan/shaders/*.frag $R/vulkan/shaders/*.glsl; do
    grep -q 'gl_FragDepth' "$f" && bad "$f writes gl_FragDepth"
 done
-for f in $R/gles/*.c $R/gles/*.cpp $R/gl4/*.cpp; do
+for f in $R/gles/*.c $R/gl4/*.c; do
    grep -Eq 'gl_FragDepth *=' "$f" && bad "$f writes gl_FragDepth"
 done
 for f in $R/dx11/*.cpp $R/dx11/oit/*.cpp $R/dx12/shaders/*.hlsl; do
@@ -94,9 +94,10 @@ if [ -f $R/vulkan/shaders/position.glsl ]; then
 else
    bad "no vulkan/shaders/position.glsl: the Vulkan vertex shaders do not share one position"
 fi
-# (gles.c has its shaders as C string literals, a line each)
-grep -q '^"invariant gl_Position;\\n"' $R/gles/gles.c || bad "$R/gles/gles.c: gl_Position not invariant"
-grep -q '^invariant gl_Position;' $R/gl4/gles.cpp || bad "$R/gl4/gles.cpp: gl_Position not invariant"
+# (the OpenGL renderers have their shaders as C string literals, a line each)
+for f in $R/gles/gles.c $R/gl4/gles.c; do
+   grep -q '^"invariant gl_Position;\\n"' "$f" || bad "$f: gl_Position not invariant"
+done
 H=$R/dx12/shaders/dx12_raster.hlsl
 if [ -f $H ]; then
    grep -q '^precise float4 transformVertex' $H || bad "$H: transformVertex() not precise"
@@ -116,15 +117,15 @@ done
 closing() {
    awk -v pick="$2" '
       $0 ~ pick { state = 1; if (barrier) before = 1; next }
-      state == 1 && /listDraws\.Draw\(/ { state = 2; next }
-      state == 2 && /listDraws\.Barrier\(\)/ { after = 1 }
+      state == 1 && /listDraws\.Draw\(|list_draws_draw\(/ { state = 2; next }
+      state == 2 && /listDraws\.Barrier\(\)|list_draws_barrier\(/ { after = 1 }
       state == 2 && /mod_base = -1/ { state = 3 }
-      /listDraws\.Barrier\(\)/ { barrier = 1 }
-      /listDraws\.Draw\(/ && state == 0 { barrier = 0 }
+      /listDraws\.Barrier\(\)|list_draws_barrier\(/ { barrier = 1 }
+      /(listDraws\.Draw|list_draws_draw)\(/ && state == 0 { barrier = 0 }
       END { exit !(before && after) }' "$1" || bad "$1: the translucent modifier volumes' closing draw has no barrier before and after it ($3)"
 }
 closing $R/vulkan/oit/oit_drawer.cpp 'GetTrModifierVolumePipeline[(]mv_mode == 1' Vulkan
-closing $R/gl4/abuffer.cpp 'g_abuffer_tr_modvol_shaders[[]mv_mode == 1' "OpenGL 4"
+closing $R/gl4/abuffer.c 'g_abuffer_tr_modvol_shaders[[]mv_mode == 1' "OpenGL 4"
 closing $R/dx12/oit/dx12_oitrenderer.cpp 'DX12_OF_MV_INCLUSION : DX12_OF_MV_EXCLUSION' "Direct3D 12"
 
 # ---- 3. the picture the frontend reads, in the sources ------------------
@@ -173,9 +174,10 @@ LVP=/usr/share/vulkan/icd.d/lvp_icd.json
 ${CC:-cc} -O2 -Icore/libretro-common/include -o "$WORK/lagmeter" tools/lag/lagmeter.c -ldl -lEGL -lGL
 # the core again, its per-pixel renderers' list draws recorded as a GPU may run them
 LINK=$(make -n platform=unix -W core/rend/vulkan/oit/oit_drawer.cpp 2>/dev/null | tail -1)
-for src in core/rend/vulkan/oit/oit_drawer core/rend/gl4/abuffer; do
+for file in core/rend/vulkan/oit/oit_drawer.cpp core/rend/gl4/abuffer.c; do
+   src=${file%.*}
    o=$WORK/$(basename $src)_race.o
-   line=$(make -n platform=unix -W $src.cpp $src.o 2>/dev/null | grep -m1 "$src.cpp")
+   line=$(make -n platform=unix -W $file $src.o 2>/dev/null | grep -m1 "$file")
    eval "$(echo "$line" | sed -e "s| -o $src.o| -o $o|" -e 's| -c | -DRACE_TEST -c |' -e 's| -MMD -MP||')"
    LINK=$(echo "$LINK" | sed "s| ./$src.o | $o |")
 done

@@ -32,9 +32,9 @@
  *   draws that read them in the order they were given.
  *
  * Off (TA processing: CPU), or in an OpenGL before 4.3 (and in OpenGL ES),
- * none of this exists, and Ready() says no.
+ * none of this exists, and gltad_ready() says no.
  *
- * C89 (ta_decoder_gl.c), for C and C++ alike; C++ has it as glTaDecoder. */
+ * C89 (ta_decoder_gl.c). */
 #ifndef GLES_TA_DECODER_GL_H
 #define GLES_TA_DECODER_GL_H
 #include <retro_inline.h>
@@ -143,35 +143,6 @@ static INLINE intptr_t gltad_bind_sorted(void) { return 0; }
 
 #ifdef __cplusplus
 }
-
-/* The decoder as C++ has it */
-class GlTaDecoder
-{
-public:
-	void Setup(bool wanted) { gltad_setup(wanted); }
-	void Term() { gltad_term(); }
-	bool Ready() const { return gltad_ready(); }
-	static bool ContextCanDo() { return gltad_context_can_do(); }
-	void BeginFrame() { gltad_begin_frame(); }
-	bool Prepare(TA_context *ctx, u32 flags, bool *rv) { return gltad_prepare(ctx, flags, rv); }
-	void Record(TA_context *ctx) { gltad_record(ctx); }
-	void EndFrame() { gltad_end_frame(); }
-	const GlTaDraw& Draw() const { return *gltad_draw(); }
-	void WantSort(bool on) { gltad_want_sort(on); }
-	bool CanSort() const { return gltad_can_sort(); }
-	void DrawGroup(u32 listType, u32 first, u32 count, bool shadows = false) { gltad_draw_group(listType, first, count, shadows); }
-	void BindGeometry() { gltad_bind_geometry(); }
-	void BindModVols() { gltad_bind_modvols(); }
-	void WriteSorted() { gltad_write_sorted(); }
-#ifdef HAVE_GL4
-	GLintptr BindSorted() { return gltad_bind_sorted(); }
-#else
-	intptr_t BindSorted() { return gltad_bind_sorted(); }
-#endif
-};
-
-/* the one both OpenGL renderers have (there is one renderer at a time) */
-extern GlTaDecoder glTaDecoder;
 #endif
 
 #endif
