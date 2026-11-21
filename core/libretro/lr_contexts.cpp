@@ -2,9 +2,6 @@
 #ifdef HAVE_D3D11
 #include "rend/dx11/dx11context_lr.h"
 #endif
-#ifdef HAVE_D3D9
-#include "rend/dx9/dx9context_lr.h"
-#endif
 #ifdef HAVE_D3D12
 #include "rend/dx12/dx12context_lr.h"
 #endif
@@ -91,23 +88,6 @@ void lr_dx11_term(void)
 void lr_dx11_present(void)
 {
    DX11Context::Instance()->Present();
-}
-#endif
-
-#ifdef HAVE_D3D9
-bool lr_dx9_init(const void *iface)
-{
-   return DX9Context::Instance()->Init((const struct retro_hw_render_interface_d3d9 *)iface);
-}
-
-void lr_dx9_term(void)
-{
-   DX9Context::Instance()->Term();
-}
-
-bool lr_dx9_present(void)
-{
-   return DX9Context::Instance()->Present();
 }
 #endif
 

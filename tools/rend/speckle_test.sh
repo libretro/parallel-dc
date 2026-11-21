@@ -80,7 +80,7 @@ for f in $R/dx11/*.cpp $R/dx11/oit/*.cpp $R/dx12/shaders/*.hlsl; do
    [ -f "$f" ] || continue
    grep -Eq ':[[:space:]]*SV_Depth' "$f" && bad "$f writes SV_Depth"
 done
-for f in $R/dx9/*.cpp; do
+for f in $R/dx9/*.c; do
    grep -Eq ':[[:space:]]*DEPTH[0-9]?\b' "$f" && bad "$f writes DEPTH"
 done
 if [ -f $R/vulkan/shaders/position.glsl ]; then

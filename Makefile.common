@@ -349,13 +349,13 @@ endif
 # Direct3D 9, on Windows: the frontend's device, every shader compiled when
 # the renderer is first set up
 ifeq ($(HAVE_D3D9), 1)
-	SOURCES_CXX += \
-					$(CORE_DIR)/core/rend/dx9/dx9context_lr.cpp \
-					$(CORE_DIR)/core/rend/dx9/dx9_overlay.cpp \
-					$(CORE_DIR)/core/rend/dx9/dx9_renderer.cpp \
-					$(CORE_DIR)/core/rend/dx9/dx9_shaders.cpp \
-					$(CORE_DIR)/core/rend/dx9/dx9_texture.cpp \
-					$(CORE_DIR)/core/rend/dx9/dx9_texdecoder.cpp
+	SOURCES_C += \
+					$(CORE_DIR)/core/rend/dx9/dx9context_lr.c \
+					$(CORE_DIR)/core/rend/dx9/dx9_overlay.c \
+					$(CORE_DIR)/core/rend/dx9/dx9_renderer.c \
+					$(CORE_DIR)/core/rend/dx9/dx9_shaders.c \
+					$(CORE_DIR)/core/rend/dx9/dx9_texture.c \
+					$(CORE_DIR)/core/rend/dx9/dx9_texdecoder.c
 endif
 
 SOURCES_C += $(CORE_DIR)/core/hw/naomi/systemsp.c

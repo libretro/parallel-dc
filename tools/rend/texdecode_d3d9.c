@@ -6,7 +6,7 @@
  * the plan, the bytes the GPU is handed, what the CPU made - to its
  * standard output; this reads that from its standard input, as
  * texdecode_d3d11.c does. Each texture is then made as
- * dx9/dx9_texdecoder.cpp makes it, with the shaders the core has
+ * dx9/dx9_texdecoder.c makes it, with the shaders the core has
  * (rend/texdecode_dx9.inc, from rend/texdecode_sm3.h): its bytes in a ring
  * texture of A8R8G8B8 texels, 1024 a row, and a draw for each level into
  * the level of a render target texture in the format the renderer samples
@@ -148,7 +148,7 @@ static size_t level_at(const struct texd_plan *plan, unsigned i)
 }
 
 /* What the CPU made, as the Direct3D 9 texture has it: 16-bit texels with
- * their bits turned (dx9_texture.cpp's copyRow), 32-bit ones blue first */
+ * their bits turned (dx9_texture.c's copyRow), 32-bit ones blue first */
 static void d3d_order(unsigned char *p, size_t texels, int type)
 {
    size_t i;

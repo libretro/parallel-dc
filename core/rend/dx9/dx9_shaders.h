@@ -23,9 +23,11 @@
 #include <windows.h>
 #include <d3d9.h>
 #include <d3dcompiler.h>
-#include <vector>
 #include "types.h"
-#include "rend/dx11/comptr.h"
+
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 /* The Direct3D 9 renderer's shaders, shader model 3.
  *
@@ -39,27 +41,27 @@
  *
  * What is compiled is kept: a new device after a lost one makes its
  * shaders from it again, without compiling anything. */
-enum DX9PixelShader
+enum
 {
-	DX9PS_Plain,		// no texture
+	DX9PS_Plain,		/* no texture */
 	DX9PS_Texture,
-	DX9PS_Palette,		// a texture of palette indexes
-	DX9PS_ModVol,		// the modifier volumes, and the depth alone
-	DX9PS_Quad,			// a picture drawn whole
+	DX9PS_Palette,		/* a texture of palette indexes */
+	DX9PS_ModVol,		/* the modifier volumes, and the depth alone */
+	DX9PS_Quad,			/* a picture drawn whole */
 	DX9PS_Count
 };
 
-enum DX9VertexShader
+enum
 {
 	DX9VS_Main,
-	DX9VS_ModVol,		// positions alone
+	DX9VS_ModVol,		/* positions alone */
 	DX9VS_Quad,
 	DX9VS_Count
 };
 
 /* The main pixel shader's flags: bit i is component i % 4 of constant
  * register c8 + i / 4, 0 or 1 */
-enum DX9ShaderBool
+enum
 {
 	DX9B_UseAlpha,
 	DX9B_IgnoreTexA,
@@ -69,54 +71,46 @@ enum DX9ShaderBool
 	DX9B_TriLinear,
 	DX9B_ClipInside,
 	DX9B_AlphaTest,
-	DX9B_Shadowed,		// drawn a second time where it is in a modifier volume: rend/shadows.h
-	DX9B_ShadInstr0,	// the shading instruction, 0 to 3
+	DX9B_Shadowed,		/* drawn a second time where it is in a modifier volume: rend/shadows.h */
+	DX9B_ShadInstr0,	/* the shading instruction, 0 to 3 */
 	DX9B_ShadInstr1,
-	DX9B_Fog0,			// the fog control, 0 to 3
+	DX9B_Fog0,			/* the fog control, 0 to 3 */
 	DX9B_Fog1,
-	DX9B_SwapRB,		// a texture that holds R G B A bytes (and the card reads B G R A)
+	DX9B_SwapRB,		/* a texture that holds R G B A bytes (and the card reads B G R A) */
 	DX9B_Count
 };
 
 /* The constant registers */
 enum
 {
-	// vertex shaders
+	/* vertex shaders */
 	DX9VC_NormalScale = 0,
 	DX9VC_NormalOffset = 1,
-	DX9VC_HalfPixel = 2,		// half a pixel of the viewport, in clip space
-	DX9VC_DepthScale = 3,		// 1/fZ_max, 1 / the normal matrix's z scale (rend/depth_scale.h)
-	// pixel shaders: the frame's, c0 to c4, and the polygon's, c5 and c6
+	DX9VC_HalfPixel = 2,		/* half a pixel of the viewport, in clip space */
+	DX9VC_DepthScale = 3,		/* 1/fZ_max, 1 / the normal matrix's z scale (rend/depth_scale.h) */
+	/* pixel shaders: the frame's, c0 to c4, and the polygon's, c5 and c6 */
 	DX9PC_ColorClampMin = 0,
 	DX9PC_ColorClampMax = 1,
 	DX9PC_FogColRam = 2,
 	DX9PC_FogColVert = 3,
-	DX9PC_FrameParams = 4,		// alpha test value, fog density, shadow scale
+	DX9PC_FrameParams = 4,		/* alpha test value, fog density, shadow scale */
 	DX9PC_ClipTest = 5,
-	DX9PC_PolyParams = 6,		// trilinear alpha, palette index
-	DX9PC_Flags = 8,			// c8 to c11: DX9ShaderBool
-	DX9PC_Quad = 7,				// the quad's colour multiplier
+	DX9PC_PolyParams = 6,		/* trilinear alpha, palette index */
+	DX9PC_Flags = 8,			/* c8 to c11: DX9B_* */
+	DX9PC_Quad = 7				/* the quad's colour multiplier */
 };
 
 /* Samplers: the polygon's texture, the palette, the fog table */
 enum { DX9S_Texture = 0, DX9S_Palette = 1, DX9S_Fog = 2 };
 
-class DX9Shaders
-{
-public:
-	/* Compiled, once for the life of the core; and made for @device */
-	bool Init(IDirect3DDevice9 *device, pD3DCompile compile);
-	/* The device's shaders released; what was compiled is kept */
-	void Term();
+/* Compiled, once for the life of the core; and made for @device */
+bool dx9_shaders_init(IDirect3DDevice9 *device, pD3DCompile compile);
+/* The device's shaders released; what was compiled is kept */
+void dx9_shaders_term(void);
+/* (DX9PS_*, DX9VS_*) */
+IDirect3DPixelShader9 *dx9_shaders_ps(int which);
+IDirect3DVertexShader9 *dx9_shaders_vs(int which);
 
-	IDirect3DPixelShader9 *GetPS(DX9PixelShader which) const { return ps[which]; }
-	IDirect3DVertexShader9 *GetVS(DX9VertexShader which) const { return vs[which]; }
-
-private:
-	bool Compile(pD3DCompile compile);
-	ComPtr<IDirect3DPixelShader9> ps[DX9PS_Count];
-	ComPtr<IDirect3DVertexShader9> vs[DX9VS_Count];
-	std::vector<DWORD> psCode[DX9PS_Count];
-	std::vector<DWORD> vsCode[DX9VS_Count];
-	bool compiled = false;
-};
+#ifdef __cplusplus
+}
+#endif

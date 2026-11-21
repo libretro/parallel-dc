@@ -2,8 +2,8 @@
  * each with its TEXD_SM3_KERNEL): made by tools/rend/kernels_dxbc.sh update
  * from it. Not to be edited.
  * d3dcompiler_47 60896937039e7c4a1c8485b750f820ab0dad62e5
- * kernel 1 vs_3_0 da22687b8ddf9781909fc93c2b31bf0400396863
- * kernel 2 ps_3_0 0114f6880bbbf98802d68db8e642ecef19ffab93
+ * kernel 1 vs_3_0 a88306be7cda8e57dd7a2aef21076354728042a1
+ * kernel 2 ps_3_0 54700dc3c262cc46abad8d772b074d8d7df94807
  */
 static const u32 texdecode_dx9_1[] = {
 0xfffe0300,0x0014fffe,0x42415443,0x0000001c,0x00000023,0xfffe0300,0x00000000,0x00000000,
@@ -543,5 +543,5 @@ static const u32 texdecode_dx9_2[] = {
 0x80e40002,0x04000004,0x80090005,0x80000004,0xa0e60010,0xa0a70010,0x04000058,0x800f0800,
 0x81000000,0x80e40005,0x80e40001,0x0000002b,0x0000002b,0x0000ffff,
 };
-// by TEXD_SM3_KERNEL: the words
+/* by TEXD_SM3_KERNEL: the words */
 static const u32 * const texdecode_dx9[] = { 0, texdecode_dx9_1, texdecode_dx9_2 };

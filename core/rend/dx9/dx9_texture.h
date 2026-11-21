@@ -17,136 +17,103 @@
     along with Flycast.  If not, see <https://www.gnu.org/licenses/>.
 */
 #pragma once
-/* (Direct3D's headers before the emulator's: hw/pvr/pvr_regs.h has macros
- * with the names of some of their parameters) */
 #include "rend/d3d_system.h"
 #include <windows.h>
 #include <d3d9.h>
 #include "rend/TexCache.h"
 #include "rend/texdecode.h"
 #include "rend/tex_pool.h"
-#include <string>
-#include <cstdio>
-#include "rend/dx11/comptr.h"
 
-class DX9Context;
-class DX9TexDecoder;
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 /* A texture of the texture pool's, and a surface of each of its levels
  * where it is drawn into */
-struct DX9PooledTexture : TexPoolEntry
+typedef struct dx9_pooled_texture dx9_pooled_texture;
+struct dx9_pooled_texture
 {
-	ComPtr<IDirect3DTexture9> texture;
-	ComPtr<IDirect3DSurface9> surfaces[TEXD_MAX_LEVELS];
-	u32 levels = 1;
-	DX9PooledTexture *all = nullptr;		// every one there is, for Term()
+	TexPoolEntry entry;
+	IDirect3DTexture9 *texture;
+	IDirect3DSurface9 *surfaces[TEXD_MAX_LEVELS];
+	u32 levels;
+	dx9_pooled_texture *all;		/* every one there is, for dx9_pool_term() */
 };
 
 /* The cache's textures (rend/tex_pool.h): made when the renderer starts,
  * and handed out to the textures that need one of their shape. Of three
  * kinds: the ones the processor writes (dynamic, as the renderer's own are:
- * the formats 0 to 4, by TextureType); the ones the pixel shader draws
- * into (render targets, DRAWN + TextureType), made only when it is to;
- * and the pictures rendered to (TARGET, A8R8G8B8). A texture is given back
- * as soon as it is done with: Direct3D sees to it that what the GPU still
- * has to do with it is done first. */
-class DX9TexturePool
-{
-public:
-	/* (the render targets of the formats @decoder draws into, if there is one) */
-	void Init(DX9Context *context, const DX9TexDecoder *decoder);
-	void Term();
-	enum { DRAWN = 5, TARGET = 10, FORMATS = 11 };
-	/* A texture of the pool's format @f, @width by @height, with its levels
-	 * or not: a free one of that shape, or one made now if there is none.
-	 * Null if the shape or the format is not one of the pool's. */
-	DX9PooledTexture *Take(u32 f, u32 width, u32 height, bool mips);
-	void Give(DX9PooledTexture *texture) { book.Give(texture); }
-	const TexPoolBook& Book() const { return book; }
-
-private:
-	DX9PooledTexture *Make(int cls, bool late);
-
-	TexPoolBook book;
-	DX9Context *context = nullptr;
-	bool ready = false;
-	bool usable[FORMATS] = {};
-	DX9PooledTexture *all = nullptr;
-};
+ * the formats 0 to 4, by TEX_TYPE_*); the ones the pixel shader draws
+ * into (render targets, DX9_POOL_DRAWN + TEX_TYPE_*), made only when it is
+ * to; and the pictures rendered to (DX9_POOL_TARGET, A8R8G8B8). A texture
+ * is given back as soon as it is done with: Direct3D sees to it that what
+ * the GPU still has to do with it is done first. */
+#define DX9_POOL_DRAWN 5
+#define DX9_POOL_TARGET 10
+#define DX9_POOL_FORMATS 11
+/* (the render targets of the formats the texture decoder draws into, if
+ * it is ready: dx9_texdecoder.h) */
+void dx9_pool_init(void);
+void dx9_pool_term(void);
+/* A texture of the pool's format @f, @width by @height, with its levels
+ * or not: a free one of that shape, or one made now if there is none.
+ * Null if the shape or the format is not one of the pool's. */
+dx9_pooled_texture *dx9_pool_take(u32 f, u32 width, u32 height, bool mips);
+void dx9_pool_give(dx9_pooled_texture *texture);
+/* how many it has made */
+u32 dx9_pool_made(void);
 
 /* A texture in video memory, written by the processor where it lies: a
  * dynamic texture (a managed one on a device without them), locked with
  * D3DLOCK_DISCARD, which the texture cache converts the console's texture
- * straight into when it can (UploadMemory()). */
-class DX9Texture : public TexCacheImpl<DX9Texture>
+ * straight into when it can (upload_memory). */
+typedef struct dx9_texture
 {
-public:
-	~DX9Texture() { ReleasePooled(); ReleaseSpare(); }
-	void UploadToGPU(int width, int height, u8 *data, bool mipmapped, bool mipmapsIncluded = false);
-	void *UploadMemory(u32 width, u32 height, size_t bytes, u32 pixel, bool mipmaps);
-	bool GpuDecode(const texd_plan& plan);
-	bool CopyRender(BaseTextureCacheData *from, u32 x, u32 y, u32 scale, u32 columns);
-	bool Delete();
-	/* The renderer's, while it has them */
-	static void SetDecoder(DX9TexDecoder *decoder) { DX9Texture::decoder = decoder; }
-	static void SetPool(DX9TexturePool *pool) { DX9Texture::pool = pool; }
-	bool Force32BitTexture(TextureType type) const;
-	void GetId(char *s, size_t n) { snprintf(s, n, "%p", (void *)this); }
-	u64 GetIntId() { return (u64)reinterpret_cast<uintptr_t>(this); }
-	bool IsNew() const { return !texture; }
-
-	ComPtr<IDirect3DTexture9> texture;
+	texcache_data base;
+	IDirect3DTexture9 *texture;
 	/* The texture holds R G B A bytes, which the card reads as B G R A:
 	 * the shader swaps them */
-	bool swapRB = false;
+	bool swap_rb;
 
 	/* A render to this texture is drawn into this other picture, and the
 	 * two change places when it is done (as the Direct3D 11 renderer's) */
-	ComPtr<IDirect3DTexture9> spare;
-	ComPtr<IDirect3DSurface9> spareSurface;
-	void SwapWithSpare()
-	{
-		// (the texture it had goes back to the pool, if it is the pool's: the spare is that now)
-		ReleasePooled();
-		pooled = sparePooled;
-		sparePooled = nullptr;
-		std::swap(texture, spare);
-		spareSurface.reset();
-		swapRB = false;
-	}
-	/* The spare, from the pool if it has one of this shape */
-	bool TakeSpare(u32 width, u32 height);
-	void ReleaseSpare();
+	IDirect3DTexture9 *spare;
+	IDirect3DSurface9 *spare_surface;
 
-private:
-	bool Prepare(u32 width, u32 height, u32 levels, DWORD usage, D3DFORMAT format);
-	/* The pool's texture of format @f and this shape, the one it has if it
-	 * is that; false if the pool has none */
-	bool TakePooled(u32 f, u32 width, u32 height, bool mips);
-	void ReleasePooled();
-	/* What was asked of the decoder for it is not done after all */
-	void CancelDecode();
-	/* Locked by UploadMemory() for the UploadToGPU() that follows */
-	void *lockedBits = nullptr;
-	DX9PooledTexture *pooled = nullptr;
-	DX9PooledTexture *sparePooled = nullptr;
-	u32 decodeJob = 0, decodeCount = 0, decodeSerial = 0;
-	static DX9TexDecoder *decoder;
-	static DX9TexturePool *pool;
-};
+	/* Locked by upload_memory for the upload_to_gpu that follows */
+	void *locked_bits;
+	dx9_pooled_texture *pooled;
+	dx9_pooled_texture *spare_pooled;
+	u32 decode_job, decode_count, decode_serial;
+} dx9_texture;
 
-class DX9TextureCache : public BaseTextureCache<DX9Texture>
-{
-public:
-	void Cleanup() { CollectCleanup(); }
-};
+/* The renderer's texture cache, by the textures' words (texcache_map_*) */
+dx9_texture *dx9_texcache_get(u32 tsp, u32 tcw, int area);
+void dx9_texcache_reserve_for(u32 images);
+void dx9_texcache_cleanup(void);
+void dx9_texcache_clear(void);
+/* ...and its room given back (after dx9_texcache_clear()) */
+void dx9_texcache_free(void);
+/* Whether the textures use the decoder and the pool: while the renderer
+ * has them */
+void dx9_textures_attach(bool decoder, bool pool);
+
+/* The spare made the texture, and the texture given back */
+void dx9_texture_swap_with_spare(dx9_texture *t);
+/* The spare, from the pool if it has one of this shape */
+bool dx9_texture_take_spare(dx9_texture *t, u32 width, u32 height);
+void dx9_texture_release_spare(dx9_texture *t);
 
 /* The renderer's side of rend/rtt_watch.h: a render to a texture stays in
  * the texture, and is brought to video memory when the game first touches
  * it there. */
 void dx9_rtt_supersede(u32 addr, u32 x0, u32 y0, u32 width, u32 height);
-void dx9_rtt_watch(DX9Texture *texture, u32 addr, u32 x0, u32 y0, u32 width, u32 height);
+void dx9_rtt_watch(dx9_texture *texture, u32 addr, u32 x0, u32 y0, u32 width, u32 height);
 void dx9_rtt_term(void);
 /* width by height pixels from the top left of a render target texture,
  * R G B A, top line first. Waits for the card. */
 bool dx9_read_picture(IDirect3DTexture9 *texture, u32 width, u32 height, u8 *rgba);
+
+#ifdef __cplusplus
+}
+#endif

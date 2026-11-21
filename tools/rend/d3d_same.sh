@@ -20,8 +20,12 @@
 # Direct3D 12 draws one draw at a time (D3DH_NO_INDIRECT; D3D_SAME_INDIRECT=1
 # to leave the core's ExecuteIndirect batches on): wine's vkd3d drops draws
 # of those batches, so two builds that batch differently would differ.
-# Needs mingw-w64, wine, Xvfb, python3 and a Vulkan driver (lavapipe will
-# do), as tools/hdr/d3d_hdr.sh.
+# Direct3D 9 on wine's OpenGL renderer: its Vulkan one leaves a shader
+# model 3 picture black, and two builds that drew nothing are the same;
+# a run whose last picture has a few colours at most fails, as one that
+# drew nothing.
+# Needs mingw-w64, wine, Xvfb with OpenGL (mesa), python3 and a Vulkan
+# driver (lavapipe will do), as tools/hdr/d3d_hdr.sh.
 set -e
 cd "$(dirname "$0")/../.."
 [ $# -eq 2 ] || { echo "usage: $0 before.dll after.dll" >&2; exit 2; }
@@ -51,11 +55,11 @@ FRAMES=100
 fails=0
 skipped=0
 
-# wine_run <log> <exe> <args...>: from nothing kept by an earlier run (the disc writes to the memory card)
+# wine_run <wined3d renderer> <log> <exe> <args...>: from nothing kept by an earlier run (the disc writes to the memory card)
 wine_run() {
-   log=$1; shift
+   renderer=$1; log=$2; shift 2
    rm -rf "$WORK/dir"; mkdir -p "$WORK/dir"
-   env -u TMPDIR DISPLAY=$DISPLAY_NO WINEDEBUG=-all WINE_D3D_CONFIG=renderer=vulkan VKD3D_CONFIG=virtual_heaps \
+   env -u TMPDIR DISPLAY=$DISPLAY_NO WINEDEBUG=-all WINE_D3D_CONFIG=renderer=$renderer VKD3D_CONFIG=virtual_heaps \
       WINEDLLOVERRIDES="$OVERRIDES" D3D9F_DIR="Z:$WORK/dir" D3DH_DIR="Z:$WORK/dir" \
       $( [ -n "${D3D_SAME_INDIRECT:-}" ] || echo D3DH_NO_INDIRECT=1 ) \
       timeout 600 wine "$@" > "$log" 2> "$log.err"
@@ -71,7 +75,7 @@ for d in plain atlas cull dma slant blend; do
       [ $skipped -eq 0 ] || continue
       for c in A B; do
          core=$A; [ $c = B ] && core=$B
-         wine_run "$WORK/$name.$c.log" "$WORK/d3d9_frames.exe" "Z:$core" "Z:$WORK/$d/$d.gdi" "Z:$WORK/$name.$c.raw" $FRAMES "$@" \
+         wine_run gl "$WORK/$name.$c.log" "$WORK/d3d9_frames.exe" "Z:$core" "Z:$WORK/$d/$d.gdi" "Z:$WORK/$name.$c.raw" $FRAMES "$@" \
             || true
       done
       if grep -q "DX9: no shaders" "$WORK/$name.A.log.err" "$WORK/$name.B.log.err"; then
@@ -81,6 +85,10 @@ for d in plain atlas cull dma slant blend; do
       fi
       n=$(grep -c "^frame [0-9]* [0-9]*x" "$WORK/$name.A.log" || true)
       if [ "$n" -gt 0 ] && cmp -s "$WORK/$name.A.log" "$WORK/$name.B.log"; then
+         if ! python3 tools/rend/raw_colours.py "$WORK/$name.B.raw" 16 > /dev/null; then
+            echo "  FAIL: $name: drew nothing (its last picture a few colours at most)"; fails=$((fails + 1))
+            continue
+         fi
          echo "same  $name ($n frames)"
       else
          echo "  FAIL: $name: not the same frames ($n read back)"; fails=$((fails + 1))
@@ -92,7 +100,7 @@ for d in plain atlas cull dma slant blend; do
          name=d3d$api-$d-$m
          for c in A B; do
             core=$A; [ $c = B ] && core=$B
-            D3DH_API=$api wine_run "$WORK/$name.$c.log" "$WORK/d3d_hdr.exe" "Z:$core" "Z:$WORK/$d/$d.gdi" "Z:$WORK/$name.$c.raw" $FRAMES "$@" \
+            D3DH_API=$api wine_run vulkan "$WORK/$name.$c.log" "$WORK/d3d_hdr.exe" "Z:$core" "Z:$WORK/$d/$d.gdi" "Z:$WORK/$name.$c.raw" $FRAMES "$@" \
                || { echo "  FAIL: $name ($c) did not run:"; tail -3 "$WORK/$name.$c.log.err"; fails=$((fails + 1)); }
          done
          if [ -s "$WORK/$name.A.raw" ] && cmp -s "$WORK/$name.A.raw" "$WORK/$name.B.raw"; then

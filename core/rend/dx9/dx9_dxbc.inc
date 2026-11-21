@@ -1,4 +1,4 @@
-/* The bytecode of the Direct3D 9 renderer's shaders (dx9_shaders.cpp's
+/* The bytecode of the Direct3D 9 renderer's shaders (dx9_shaders.c's
  * ShaderDescs), by the hash of what each is compiled from: made by
  * tools/rend/kernels_dx9.sh. Not to be
  * edited.

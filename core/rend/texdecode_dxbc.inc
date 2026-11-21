@@ -3708,6 +3708,6 @@ static const unsigned char texdecode_dxbc_4[] = {
 0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
 0x00,0x00,0x00,0x00,
 };
-// by TEXD_KERNEL_D3D: the bytes, and how many
+/* by TEXD_KERNEL_D3D: the bytes, and how many */
 static const unsigned char * const texdecode_dxbc[] = { 0, texdecode_dxbc_1, texdecode_dxbc_2, texdecode_dxbc_3, texdecode_dxbc_4 };
 static const size_t texdecode_dxbc_size[] = { 0, sizeof(texdecode_dxbc_1), sizeof(texdecode_dxbc_2), sizeof(texdecode_dxbc_3), sizeof(texdecode_dxbc_4) };

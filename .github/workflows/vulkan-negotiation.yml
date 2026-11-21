@@ -152,6 +152,7 @@ on:
       - 'tools/rend/d3d_parse_arena.sh'
       - 'tools/rend/d3d_dxil.sh'
       - 'tools/rend/d3d_draw_path.sh'
+      - 'tools/rend/raw_colours.py'
       - 'tools/rend/dx12_blend_fold_test.*'
       - 'tools/rend/clip_check.py'
       - 'tools/rend/channel_check.py'
@@ -249,6 +250,7 @@ on:
       - 'tools/rend/d3d_parse_arena.sh'
       - 'tools/rend/d3d_dxil.sh'
       - 'tools/rend/d3d_draw_path.sh'
+      - 'tools/rend/raw_colours.py'
       - 'tools/rend/dx12_blend_fold_test.*'
       - 'tools/rend/clip_check.py'
       - 'tools/rend/channel_check.py'
@@ -374,7 +376,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            build-essential mingw-w64 wine wine64 xvfb mesa-vulkan-drivers libvulkan1 python3
+            build-essential mingw-w64 wine wine64 xvfb mesa-vulkan-drivers libvulkan1 python3 libgl1-mesa-dri
       - name: Build the core for Windows
         run: make -j"$(nproc)" platform=win CC=x86_64-w64-mingw32-gcc CXX=x86_64-w64-mingw32-g++
       - name: The core's C as MSVC C89 takes it, with the Windows headers (AGENTS.md)

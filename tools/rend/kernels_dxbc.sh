@@ -8,7 +8,7 @@
 #                                 dx11/dx11_texdecoder.cpp)
 #   core/rend/texdecode_dx9.inc   the same for Direct3D 9, shader model 3
 #                                 (rend/texdecode_sm3.h with TEXD_SM3_KERNEL;
-#                                 dx9/dx9_texdecoder.cpp)
+#                                 dx9/dx9_texdecoder.c)
 #   core/rend/hdr/hdr_encode_dxbc.inc
 #                                 the HDR output's encode, one for Direct3D 11
 #                                 and 12 both (rend/hdr/hdr_encode.hlsl with
@@ -135,7 +135,7 @@ make_inc() {
       od -An -v -tx1 -w16 "$WORK/k$n.dxbc" | awk '{ s = ""; for (i = 1; i <= NF; i++) s = s "0x" $i ","; print s }'
       echo "};"
    done
-   echo "// by TEXD_KERNEL_D3D: the bytes, and how many"
+   echo "/* by TEXD_KERNEL_D3D: the bytes, and how many */"
    echo "static const unsigned char * const texdecode_dxbc[] = { 0, texdecode_dxbc_1, texdecode_dxbc_2, texdecode_dxbc_3, texdecode_dxbc_4 };"
    echo "static const size_t texdecode_dxbc_size[] = { 0, sizeof(texdecode_dxbc_1), sizeof(texdecode_dxbc_2), sizeof(texdecode_dxbc_3), sizeof(texdecode_dxbc_4) };"
 }
@@ -179,7 +179,7 @@ make_inc9() {
       od -An -v -w32 -tx4 --endian=little "$WORK/n$n.dxbc" | awk '{ s = ""; for (i = 1; i <= NF; i++) s = s "0x" $i ","; print s }'
       echo "};"
    done
-   echo "// by TEXD_SM3_KERNEL: the words"
+   echo "/* by TEXD_SM3_KERNEL: the words */"
    echo "static const u32 * const texdecode_dx9[] = { 0, texdecode_dx9_1, texdecode_dx9_2 };"
 }
 

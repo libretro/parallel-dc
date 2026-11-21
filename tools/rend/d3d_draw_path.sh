@@ -18,7 +18,8 @@
 # renderers start whatever the compiler, and with none at all (the plain
 # disc, d3dcompiler_47.dll taken away). Direct3D 9 the same: its shaders the
 # core's (dx9_dxbc.inc), none compiled, with a compiler and without
-# (tools/rend/d3d9_frames.c).
+# (tools/rend/d3d9_frames.c), on wine's OpenGL renderer, and a picture
+# drawn (more than a few colours: tools/rend/raw_colours.py).
 # And with Direct3D 12, the same discs and renderers: every pipeline a
 # frame drew with made before the first ("0 of them in a frame"; its
 # shaders are the core's bytecode, no compiler wanted).
@@ -29,8 +30,8 @@
 # D3DCOMPILER=path/to/d3dcompiler_47.dll: Microsoft's compiler used, not
 # wine's, which does not compile the per-pixel renderer's own shaders
 # (its polygons are then drawn with the general ones).
-# Needs mingw-w64, wine, Xvfb, python3 and a Vulkan driver (lavapipe:
-# VK_DRIVER_FILES=/usr/share/vulkan/icd.d/lvp_icd.json).
+# Needs mingw-w64, wine, Xvfb with OpenGL (mesa), python3 and a Vulkan
+# driver (lavapipe: VK_DRIVER_FILES=/usr/share/vulkan/icd.d/lvp_icd.json).
 set -e
 cd "$(dirname "$0")/../.."
 CORE=$(readlink -f "${1:-parallel_dc_libretro.dll}")
@@ -130,12 +131,14 @@ for c in wine none; do
    ov="$OVERRIDES"; [ $c = none ] && ov="winedbg.exe=d;d3dcompiler_47=d"
    name="d3d9-$c"
    rm -rf "$WORK/dir"; mkdir -p "$WORK/dir"
-   env -u TMPDIR DISPLAY=$DISPLAY_NO WINEDEBUG=-all WINE_D3D_CONFIG=renderer=vulkan WINEDLLOVERRIDES="$ov" \
+   # (wine's OpenGL renderer: its Vulkan one leaves a shader model 3 picture black)
+   env -u TMPDIR DISPLAY=$DISPLAY_NO WINEDEBUG=-all WINE_D3D_CONFIG=renderer=gl WINEDLLOVERRIDES="$ov" \
       D3D9F_VERBOSE=1 D3D9F_DIR="Z:$WORK/dir" timeout 600 wine "$WORK/d3d9_frames.exe" "Z:$CORE" \
-      "Z:$WORK/plain/plain.gdi" "Z:$WORK/$name.raw" 30 > "$WORK/$name.log" 2>&1 || true
+      "Z:$WORK/plain/plain.gdi" "Z:$WORK/$name.raw" 100 > "$WORK/$name.log" 2>&1 || true
    said=$(grep -o "DX9: [0-9]* shaders the core's, [0-9]* compiled" "$WORK/$name.log" || true)
    echo "$name: ${said#DX9: }"
-   if ! echo "$said" | grep -q ", 0 compiled$" || ! grep -q "^frame 29 " "$WORK/$name.log"; then
+   if ! echo "$said" | grep -q ", 0 compiled$" || ! grep -q "^frame 99 " "$WORK/$name.log" \
+         || ! python3 tools/rend/raw_colours.py "$WORK/$name.raw" 16 > /dev/null; then
       echo "  FAIL: Direct3D 9 compiled at its start (dx9_dxbc.inc not the sources': tools/rend/kernels_dx9.sh), or drew nothing"
       fails=$((fails + 1))
    fi

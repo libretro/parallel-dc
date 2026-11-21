@@ -28,7 +28,7 @@
 #define REND_TEXDECODE_SM3_H
 
 /* What a level is drawn with: four constants from c32, as the renderer sets
- * them (DX9TexDecoder) */
+ * them (dx9/dx9_texdecoder.c) */
 #define TEXD_SM3_CONSTANT 32
 /* The ring's texels a row */
 #define TEXD_SM3_RING_WIDTH 1024
@@ -49,7 +49,7 @@ float4 main(float4 pos : POSITION) : POSITION
 #elif defined(TEXD_SM3_KERNEL) && TEXD_SM3_KERNEL == 2
 
 sampler2D texd_ring : register(s0);
-float4 texd_c0 : register(c32);	// base (in words), data, pal, 1 / the ring's rows
+float4 texd_c0 : register(c32);	// base (in words), data, pal, 1 / the rows of the ring
 float4 texd_c1 : register(c33);	// width, height, stride, rows (of a planar texture)
 float4 texd_c2 : register(c34);	// format, layout, what it is made into, corner
 float4 texd_c3 : register(c35);	// log2 of the width and height laid out by, target, 0

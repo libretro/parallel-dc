@@ -17,38 +17,27 @@
     along with Flycast.  If not, see <https://www.gnu.org/licenses/>.
 */
 #pragma once
-/* (Direct3D's headers before the emulator's: hw/pvr/pvr_regs.h has macros
- * with the names of some of their parameters) */
 #include "rend/d3d_system.h"
 #include <windows.h>
 #include <d3d9.h>
 #include "types.h"
-#include "rend/dx11/comptr.h"
+
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 /* What goes over the picture: the VMUs' screens and the light guns'
  * crosshairs, where the core options put them (as the Vulkan renderers'
  * vulkan/vmu.cpp does it). */
-class DX9Overlay
-{
-public:
-	/* Before the frame: the textures of what has changed */
-	void Prepare();
-	/* Onto the target that is bound, @width by @height */
-	void Draw(int width, int height);
-	/* Nothing to draw */
-	bool IsEmpty() const
-	{
-		for (int i = 0; i < 4; i++)
-			if (vmus[i] || crosshairs[i])
-				return false;
-		return true;
-	}
-	void Term();
 
-private:
-	/* (B G R A, as the card reads it) */
-	bool Upload(ComPtr<IDirect3DTexture9>& texture, int width, int height, const u8 *bgra);
+/* Before the frame: the textures of what has changed */
+void dx9_overlay_prepare(void);
+/* Onto the target that is bound, @width by @height */
+void dx9_overlay_draw(int width, int height);
+/* Nothing to draw */
+bool dx9_overlay_empty(void);
+void dx9_overlay_term(void);
 
-	ComPtr<IDirect3DTexture9> vmus[4];
-	ComPtr<IDirect3DTexture9> crosshairs[4];
-};
+#ifdef __cplusplus
+}
+#endif

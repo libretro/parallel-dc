@@ -10,6 +10,10 @@
 	a header no longer compiles; read before, it is untouched by them.
 */
 #pragma once
+/* (C has the interfaces' calls as macros: IDirect3DDevice9_SetTexture(...)) */
+#if !defined(__cplusplus) && !defined(COBJMACROS)
+#define COBJMACROS
+#endif
 #include <windows.h>
 #if defined(HAVE_D3D9)
 #include <d3d9.h>
