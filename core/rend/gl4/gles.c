@@ -1111,15 +1111,6 @@ static bool gl4_init(void)
 	gltad_setup(ta_gpu_wanted());
 	gl4ForgetFrameBuffers();
 
-#ifdef HAVE_TEXUPSCALE
-	if (settings.rend.TextureUpscale > 1)
-	{
-		/* Trick to preload the tables used by xBRZ */
-		u32 src[4] = { 0x11111111, 0x22222222, 0x33333333, 0x44444444 };
-		u32 dst[16];
-		UpscalexBRZ(2, src, dst, 2, 2, false);
-	}
-#endif
 	palette_updated = true;
 	gl_texcache_clear();
 	/* the textures' pool and the decoder, all of them now (gles/gl_texdecoder.h) */
@@ -1231,7 +1222,7 @@ static void gl4_options_changed(void)
 	gl4ForgetFrameBuffers();
 }
 
-const renderer_ops gl4_renderer_ops =
+static const renderer_ops gl4_renderer_ops =
 {
 	gl4_init,
 	gl4_resize,
@@ -1240,8 +1231,18 @@ const renderer_ops gl4_renderer_ops =
 	gl4_render,
 	gl_keep_picture,
 	gl_get_texture,
-	gl4_options_changed
+	gl4_options_changed,
+	NULL,
+	NULL,
+	NULL,
+	NULL,
+	NULL
 };
+
+const renderer_ops *rend_GL4(void)
+{
+	return &gl4_renderer_ops;
+}
 
 static void gl4_uniform_pair(gl4UniformShadow *u, int which, GLint location, int v0, int v1)
 {

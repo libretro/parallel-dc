@@ -815,7 +815,7 @@ void DX11OITRenderer::DrawFrame()
 	 * binding another target) */
 }
 
-Renderer* rend_OITD3D11()
+const renderer_ops *rend_OITD3D11(void)
 {
-	return new DX11OITRenderer();
+	return &RendererClass<DX11OITRenderer>::ops;
 }

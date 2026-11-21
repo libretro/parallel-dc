@@ -1,7 +1,6 @@
 /* The renderers' contexts as libretro.c has them (lr_contexts.cpp): the
  * frontend's Vulkan, Direct3D 9, 11 and 12 devices handed to the C++ that
- * draws with them, and what libretro.c asks of the renderer. C89, for C
- * and C++ alike. */
+ * draws with them. C89, for C and C++ alike. */
 #ifndef LR_CONTEXTS_H
 #define LR_CONTEXTS_H
 #include <boolean.h>
@@ -9,16 +8,6 @@
 #include "types.h"
 
 RETRO_BEGIN_DECLS
-
-/* Whether the renderer there is has every pipeline a frame can want
- * (true without one) */
-bool lr_rend_ready(void);
-/* Whether there is a renderer */
-bool lr_rend_there(void);
-/* The core options were read again: the renderer there is told */
-void lr_rend_options_changed(void);
-/* Whether OpenGL's context can have GPU-side TA processing */
-bool lr_gl_ta_context_can_do(void);
 
 #ifdef HAVE_VULKAN
 /* @render_if: the frontend's struct retro_hw_render_interface_vulkan */

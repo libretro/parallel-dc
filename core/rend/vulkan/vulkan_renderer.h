@@ -18,7 +18,7 @@
 */
 #include "vulkan.h"
 #include "rend/upscaler.h"
-#include "hw/pvr/Renderer_if.h"
+#include "rend/renderer_class.h"
 #include "hw/pvr/ta.h"
 #include "commandpool.h"
 #include "pipeline.h"

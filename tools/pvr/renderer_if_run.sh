@@ -1,7 +1,7 @@
 #!/bin/sh
 # The renderer interface (core/hw/pvr/Renderer_if.c and
-# renderer_dispatch.cpp) by itself, with renderers that only say what they
-# are asked (renderer_if_shim.cpp).
+# renderer_dispatch.c) by itself, with renderers that only say what they
+# are asked (renderer_if_shim.cpp: C++ classes, rend/renderer_class.h).
 #
 #   sh tools/pvr/renderer_if_run.sh [extra flags]
 #
@@ -21,16 +21,16 @@ CCMD=$(make -n -B core/hw/pvr/Renderer_if.o 2>/dev/null | grep 'Renderer_if\.c' 
 [ -n "$CCMD" ] || { echo "cannot get the core's C compile flags from make" >&2; exit 1; }
 CCMD=${CCMD% -o *}
 CFLAGS_T=$(echo "$CCMD" | sed 's| [^ ]*Renderer_if\.c||; s/ -MMD -MP//')
-XCMD=$(make -n -B core/hw/pvr/renderer_dispatch.o 2>/dev/null | grep 'renderer_dispatch\.cpp' | tail -n 1)
+XCMD=$(make -n -B core/libretro/lr_contexts.o 2>/dev/null | grep 'lr_contexts\.cpp' | tail -n 1)
 [ -n "$XCMD" ] || { echo "cannot get the core's C++ compile flags from make" >&2; exit 1; }
 XCMD=${XCMD% -o *}
-CXXFLAGS_T=$(echo "$XCMD" | sed 's| [^ ]*renderer_dispatch\.cpp||; s/ -MMD -MP//; s/-DGIT_VERSION=[^ ]* [^ ]*//')
+CXXFLAGS_T=$(echo "$XCMD" | sed 's| [^ ]*lr_contexts\.cpp||; s/ -MMD -MP//; s/-DGIT_VERSION=[^ ]* [^ ]*//')
 CXX=${CXXFLAGS_T%% *}
 
-for SRC in core/hw/pvr/Renderer_if.c tools/pvr/renderer_if_test.c; do
+for SRC in core/hw/pvr/Renderer_if.c core/hw/pvr/renderer_dispatch.c tools/pvr/renderer_if_test.c; do
    eval "$CFLAGS_T $EXTRA \"$SRC\" -o \"$WORK/$(basename "$SRC" .c).o\""
 done
-for SRC in core/hw/pvr/renderer_dispatch.cpp tools/pvr/renderer_if_shim.cpp; do
+for SRC in tools/pvr/renderer_if_shim.cpp; do
    eval "$CXXFLAGS_T $EXTRA \"$SRC\" -o \"$WORK/$(basename "$SRC" .cpp).o\""
 done
 "$CXX" $EXTRA -o "$WORK/renderer_if_test" "$WORK/Renderer_if.o" "$WORK/renderer_if_test.o" \

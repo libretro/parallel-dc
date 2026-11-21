@@ -80,7 +80,8 @@ name: Headless
 # (tools/rend/vram_lock_run.sh), and the pictures rendered to textures
 # waiting in video memory, fetched, dropped and packed
 # (tools/rend/rtt_watch_run.sh), the temporal upscaler's matching of
-# strips from frame to frame (tools/rend/upscaler_run.sh), and the custom
+# strips from frame to frame (tools/rend/upscaler_run.sh), xBRZ against
+# what its C++ made (tools/rend/xbrz_run.sh), and the custom
 # textures' loader (tools/rend/custom_texture_run.sh), and the renderer
 # interface (tools/pvr/renderer_if_run.sh), and what is plugged into the
 # maple bus (tools/maple/maple_cfg_run.sh), and the NAOMI's JVS I/O boards
@@ -125,6 +126,7 @@ on:
       - 'tools/rend/vram_lock_*'
       - 'tools/rend/rtt_watch_*'
       - 'tools/rend/upscaler_*'
+      - 'tools/rend/xbrz_*'
       - 'tools/rend/custom_texture_*'
       - 'tools/rend/compute_frame_*'
       - 'tools/sh4/regalloc_*'
@@ -183,6 +185,7 @@ on:
       - 'tools/rend/vram_lock_*'
       - 'tools/rend/rtt_watch_*'
       - 'tools/rend/upscaler_*'
+      - 'tools/rend/xbrz_*'
       - 'tools/rend/custom_texture_*'
       - 'tools/rend/compute_frame_*'
       - 'tools/sh4/regalloc_*'
@@ -438,6 +441,10 @@ jobs:
         run: |
           sh tools/rend/upscaler_run.sh
           sh tools/rend/upscaler_run.sh -fsanitize=address,undefined -fno-sanitize-recover=all
+      - name: xBRZ - pictures of a few colours near and far apart, lines, blocks and noise, with and without alpha, scaled 2 to 6 times in slices of rows - against what its C++ made (and with the sanitizers)
+        run: |
+          sh tools/rend/xbrz_run.sh
+          sh tools/rend/xbrz_run.sh -fsanitize=address,undefined -fno-sanitize-recover=all
       - name: Custom textures - the game's directory, its pictures by hash, a texture's loaded under its names old and new while asked for again and again, the loader stopped with work waiting, the next game, the dumps (and with TSan and the sanitizers)
         run: |
           sh tools/rend/custom_texture_run.sh

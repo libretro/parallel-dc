@@ -1434,7 +1434,7 @@ bool DX12OITRenderer::RenderCompute()
 	return true;
 }
 
-Renderer* rend_OITD3D12()
+const renderer_ops *rend_OITD3D12(void)
 {
-	return new DX12OITRenderer();
+	return &RendererClass<DX12OITRenderer>::ops;
 }

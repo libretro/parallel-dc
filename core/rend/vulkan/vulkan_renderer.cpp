@@ -162,7 +162,7 @@ private:
 	TextureDrawer textureDrawer;
 };
 
-Renderer* rend_Vulkan()
+const renderer_ops *rend_Vulkan(void)
 {
-	return new VulkanRenderer();
+	return &RendererClass<VulkanRenderer>::ops;
 }

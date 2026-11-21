@@ -12,30 +12,7 @@
 #include "rend/vulkan/vulkan_context.h"
 #include "rend/vulkan/pso.h"
 #endif
-#include "hw/pvr/Renderer_if.h"
-#include "rend/gles/ta_decoder_gl.h"
 #include "lr_contexts.h"
-
-bool lr_rend_ready(void)
-{
-   return renderer == NULL || renderer->Ready();
-}
-
-bool lr_rend_there(void)
-{
-   return renderer != NULL;
-}
-
-void lr_rend_options_changed(void)
-{
-   if (renderer != NULL)
-      renderer->OptionsChanged();
-}
-
-bool lr_gl_ta_context_can_do(void)
-{
-   return gltad_context_can_do();
-}
 
 #ifdef HAVE_VULKAN
 static VulkanContext theVulkanContext;

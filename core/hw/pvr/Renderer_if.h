@@ -53,7 +53,7 @@ void rend_term_renderer(void);
 void rend_keep_picture(void);
 /* After a run that drew nothing to the screen: true if the frame handed to
  * the frontend is the picture kept across a change of renderer
- * (Renderer::PresentKeptPicture()), once after the change */
+ * (renderer_ops present_kept_picture), once after the change */
 bool rend_present_kept_picture(void);
 /* The size rendered at has changed and the context is the one there was. */
 void rend_resize(int width, int height);
@@ -77,7 +77,7 @@ void custom_texture_terminate(void);
  * (TexCache.c) */
 void texcache_scratch_free(void);
 
-/* The renderer in use, behind its C++ class (renderer_dispatch.cpp) */
+/* The renderer in use (renderer_dispatch.c) */
 /* The one the settings choose made, and the one to fall back to, if any */
 void renderer_create(void);
 /* Set up on the frontend's context, or the one to fall back to; false
@@ -95,11 +95,20 @@ bool renderer_process(TA_context *ctx);
 u64 renderer_get_texture(u32 tsp, u32 tcw, int area);
 bool renderer_render(void);
 void renderer_present(void);
+/* Whether every pipeline a frame can want is made (true with none): a
+ * renderer started in a frame (another one chosen while a game runs)
+ * hands them to its worker, and until they are, retro_run() shows the
+ * kept picture and does not run the machine (AGENTS.md: nothing made,
+ * nothing waited for, on the draw path) */
+bool renderer_ready(void);
+/* The core options were read again, between frames: what they ask the
+ * renderer to have is made, or taken down, now and not in the next frame */
+void renderer_options_changed(void);
 /* Draw the render that is queued (libretro.cpp, rend_start_render()) */
 bool rend_single_frame(void);
 
-/* A renderer of C's: what Renderer's methods do (renderer_dispatch.cpp
- * makes it one); NULL for what Renderer does by default */
+/* A renderer: NULL for what one does by default (nothing; Ready: true,
+ * PresentKeptPicture and GetTexture: none) */
 typedef struct renderer_ops
 {
 	bool (*init)(void);
@@ -110,75 +119,31 @@ typedef struct renderer_ops
 	void (*keep_picture)(void);
 	u64 (*get_texture)(u32 tsp, u32 tcw, int area);
 	void (*options_changed)(void);
+	/* Made in renderer_create(), given back after term() or an init()
+	 * that failed (a C++ class's: renderer_class.h) */
+	void (*create)(void);
+	void (*release)(void);
+	void (*present)(void);
+	/* The picture kept from another renderer handed to the frontend as
+	 * the frame (a run that drew nothing to the screen); false where
+	 * there is none */
+	bool (*present_kept_picture)(void);
+	bool (*ready)(void);
 } renderer_ops;
 
-/* the OpenGL renderers: per triangle or strip (gles/gles.c), per pixel (gl4/gles.c) */
-extern const renderer_ops gles_renderer_ops;
-extern const renderer_ops gl4_renderer_ops;
+/* The renderers renderer_create() chooses from: OpenGL per triangle or
+ * strip (gles/gles.c) and per pixel (gl4/gles.c); the others are C++
+ * classes (rend/renderer_class.h) */
+const renderer_ops *rend_GLES2(void);
+const renderer_ops *rend_GL4(void);
+const renderer_ops *rend_Vulkan(void);
+const renderer_ops *rend_OITVulkan(void);
+const renderer_ops *rend_D3D11(void);
+const renderer_ops *rend_OITD3D11(void);
+const renderer_ops *rend_D3D9(void);
+const renderer_ops *rend_D3D12(void);
+const renderer_ops *rend_OITD3D12(void);
 
 #ifdef __cplusplus
 }
-
-struct Renderer
-{
-	virtual ~Renderer() = default;
-
-	virtual bool Init()=0;
-	
-	virtual void Resize(int w, int h)=0;
-
-	virtual void Term()=0;
-
-	virtual bool Process(TA_context* ctx)=0;
-	virtual bool Render()=0;
-
-	virtual void Present()
-   {
-      /* Presentation only. Control returns to retro_run at the vblank boundary
-       * in os_DoEvents(), never here, so that a frame not being rendered (a
-       * static screen such as disc loading) can never stall control flow.
-       * Hardware renderers present via video_cb in retro_run; this base does
-       * nothing. */
-   }
-
-	virtual void DrawOSD() { }
-
-	/* The context is about to be destroyed: put the screen's last picture
-	 * in rend/last_picture.h. The renderer's first render to the screen
-	 * after that starts from what is there. */
-	virtual void KeepPicture() { }
-	/* A renderer made again in place of another, a run that drew nothing
-	 * to the screen: the picture kept from the other one handed to the
-	 * frontend as the frame, where the frontend had to let go of the old
-	 * renderer's own. False where there is none to hand over. */
-	virtual bool PresentKeptPicture() { return false; }
-	/* Whether every pipeline a frame can want is made: a renderer started
-	 * in a frame (another one chosen while a game runs) hands them to its
-	 * worker, and until they are, retro_run() shows the kept picture and
-	 * does not run the machine (AGENTS.md: nothing made, nothing waited
-	 * for, on the draw path) */
-	virtual bool Ready() { return true; }
-
-	/* @area: 1 for the texture of a polygon's second volume */
-	virtual u64 GetTexture(TSP tsp, TCW tcw, int area = 0) { return 0; }
-
-	/* The core options were read again, between frames: what they ask
-	 * the renderer to have is made, or taken down, now and not in the
-	 * next frame */
-	virtual void OptionsChanged() { }
-};
-
-extern Renderer* renderer;
-
-Renderer* rend_D3D11();
-Renderer* rend_OITD3D11();
-Renderer* rend_D3D9();
-Renderer* rend_D3D12();
-Renderer* rend_OITD3D12();
-Renderer* rend_GLES2();
-/* A renderer of C's as a Renderer (renderer_dispatch.cpp) */
-Renderer* renderer_from_ops(const renderer_ops *ops);
-Renderer* rend_GL4();
-Renderer* rend_Vulkan();
-Renderer* rend_OITVulkan();
 #endif

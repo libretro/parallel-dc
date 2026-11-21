@@ -1242,7 +1242,7 @@ void DX9Renderer::DrawFrame()
 	}
 }
 
-Renderer* rend_D3D9()
+const renderer_ops *rend_D3D9(void)
 {
-	return new DX9Renderer();
+	return &RendererClass<DX9Renderer>::ops;
 }

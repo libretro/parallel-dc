@@ -15,6 +15,7 @@
 #ifdef HAVE_TEXUPSCALE
 #include <features/features_cpu.h>
 #include "band_pool.h"
+#include "deps/xbrz/xbrz.h"
 
 /* The threads a texture scaled up is shared out to, by bands of rows
  * (band_pool.h): started with the cache's room (texcache_reserve()), NULL
@@ -48,35 +49,50 @@ void texcache_reserve(u32 textures)
 		texcache_scratch_largest();
 #ifdef HAVE_TEXUPSCALE
 	/* Textures scaled up: what the largest is converted into (not straight
-	 * into the renderer's memory) and scaled up into, the threads it is
-	 * shared out to, and xBRZ's table, which comes with its first texture,
-	 * made now */
+	 * into the renderer's memory) and scaled up into, and the threads it
+	 * is shared out to */
 	if (settings.rend.TextureUpscale > 1)
 	{
 		const size_t side = (size_t)settings.rend.MaxFilteredTextureSize;
-		/* (pixels of every colour apart: xBRZ makes its table the first
-		 * time it measures how far two are) */
-		u32 px[4 * 4], up[4 * 4 * 6 * 6];
-		u32 i;
 #if !defined(TARGET_NO_THREADS)
 		if (xbrz_pool == NULL)
 			xbrz_pool = band_pool_new(band_pool_threads_for(cpu_features_get_core_amount()));
 #endif
-		for (i = 0; i < 4 * 4; i++)
-			px[i] = 0xFF000000u | (i * 0x10F3A5u);
 		texcache_scratch(tex_buf_bytes((u32)side, (u32)side, false, sizeof(u32)) + 1024 * sizeof(u32));
 		texcache_upscaled(side * side * settings.rend.TextureUpscale * settings.rend.TextureUpscale * sizeof(u32));
-		if (settings.rend.TextureUpscale <= 6)
-			UpscalexBRZ(settings.rend.TextureUpscale, px, up, 4, 4, true);
 	}
 #endif
 	vramlock_reserve(textures);
 }
 
 #ifdef HAVE_TEXUPSCALE
+typedef struct xbrz_job
+{
+	int factor;
+	const u32 *source;
+	u32 *dest;
+	int width;
+	int height;
+	bool has_alpha;
+} xbrz_job;
+
+static void xbrz_rows(void *ctx, int first, int last)
+{
+	const xbrz_job *job = (const xbrz_job *)ctx;
+	xbrz_scale(job->factor, job->source, job->dest, job->width, job->height,
+			job->has_alpha, first, last);
+}
+
 void UpscalexBRZ(int factor, u32 *source, u32 *dest, int width, int height, bool has_alpha)
 {
-	texupscale_run(xbrz_pool, factor, source, dest, width, height, has_alpha);
+	xbrz_job job;
+	job.factor = factor;
+	job.source = source;
+	job.dest = dest;
+	job.width = width;
+	job.height = height;
+	job.has_alpha = has_alpha;
+	band_pool_run(xbrz_pool, xbrz_rows, &job, 0, height);
 }
 #endif
 

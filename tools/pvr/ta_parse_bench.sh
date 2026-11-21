@@ -20,11 +20,11 @@ FRAMES=${1:-160}
 WORK=${TMPDIR:-/tmp}/ta_parse_bench.$$
 mkdir -p "$WORK"
 [ -n "${KEEP:-}" ] || trap 'rm -rf "$WORK"' EXIT
-[ -f core/hw/pvr/renderer_dispatch.o ] || { echo "build the core first: core/hw/pvr/renderer_dispatch.o is not there" >&2; exit 1; }
+[ -f core/libretro/lr_contexts.o ] || { echo "build the core first: core/libretro/lr_contexts.o is not there" >&2; exit 1; }
 
-CORE_FLAGS=$(make -n platform=unix -W core/hw/pvr/renderer_dispatch.cpp core/hw/pvr/renderer_dispatch.o 2>/dev/null | grep -m1 'core/hw/pvr/renderer_dispatch.cpp' \
+CORE_FLAGS=$(make -n platform=unix -W core/libretro/lr_contexts.cpp core/libretro/lr_contexts.o 2>/dev/null | grep -m1 'core/libretro/lr_contexts.cpp' \
    | sed -e 's/^g++ //' -e 's/ -c / /' -e 's/ -MMD -MP .*$//' -e 's/-DGIT_VERSION=[^ ]* [^ ]*//')
-OBJS=$(make -n platform=unix -W core/hw/pvr/renderer_dispatch.cpp 2>/dev/null | tail -1 | tr ' ' '\n' | grep '\.o$' | grep -v 'glslang.js.o')
+OBJS=$(make -n platform=unix -W core/libretro/lr_contexts.cpp 2>/dev/null | tail -1 | tr ' ' '\n' | grep '\.o$' | grep -v 'glslang.js.o')
 ${CC:-cc} -O1 -c -o "$WORK/headless.o" tools/threads/headless.c
 ${CXX:-g++} $CORE_FLAGS -w -c -o "$WORK/bench.o" tools/pvr/ta_parse_bench.cpp
 ${CXX:-g++} -rdynamic -o "$WORK/ta_parse_bench" "$WORK/headless.o" "$WORK/bench.o" $OBJS \

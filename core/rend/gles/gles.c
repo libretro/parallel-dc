@@ -1967,15 +1967,6 @@ static bool gles_init(void)
 	glHint(GL_GENERATE_MIPMAP_HINT, GL_FASTEST);
 #endif
 
-#ifdef HAVE_TEXUPSCALE
-	if (settings.rend.TextureUpscale > 1)
-	{
-		/* Trick to preload the tables used by xBRZ */
-		u32 src[4] = { 0x11111111, 0x22222222, 0x33333333, 0x44444444 };
-		u32 dst[16];
-		UpscalexBRZ(2, src, dst, 2, 2, false);
-	}
-#endif
 	palette_updated = true;
 	gl_texcache_clear();
 	/* the textures' pool and the decoder, all of them now (gl_texdecoder.h) */
@@ -2052,7 +2043,7 @@ static void gles_options_changed(void)
 	gltad_setup(ta_gpu_wanted());
 }
 
-const renderer_ops gles_renderer_ops =
+static const renderer_ops gles_renderer_ops =
 {
 	gles_init,
 	gles_resize,
@@ -2061,5 +2052,15 @@ const renderer_ops gles_renderer_ops =
 	gles_render,
 	gl_keep_picture,
 	gl_get_texture,
-	gles_options_changed
+	gles_options_changed,
+	NULL,
+	NULL,
+	NULL,
+	NULL,
+	NULL
 };
+
+const renderer_ops *rend_GLES2(void)
+{
+	return &gles_renderer_ops;
+}

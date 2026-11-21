@@ -257,7 +257,7 @@ private:
 	ComputeDrawer computeDrawer;
 };
 
-Renderer* rend_OITVulkan()
+const renderer_ops *rend_OITVulkan(void)
 {
-	return new OITVulkanRenderer();
+	return &RendererClass<OITVulkanRenderer>::ops;
 }

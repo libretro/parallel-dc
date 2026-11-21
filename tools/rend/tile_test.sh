@@ -157,13 +157,13 @@ if [ $# -lt 2 ]; then
    echo "usage: $0 CONTENT FRAMES [key=value ...] | -f FRAME... | -g FRAME..." >&2
    exit 2
 fi
-[ -f core/hw/pvr/renderer_dispatch.o ] || { echo "build the core first: core/hw/pvr/renderer_dispatch.o is not there" >&2; exit 1; }
+[ -f core/libretro/lr_contexts.o ] || { echo "build the core first: core/libretro/lr_contexts.o is not there" >&2; exit 1; }
 
 # the frames: the frontend, the dump, and the core's objects, with
 # ta_parse_vdrc() and the frontend's dlopen() wrapped
-CORE_FLAGS=$(make -n platform=unix -W core/hw/pvr/renderer_dispatch.cpp core/hw/pvr/renderer_dispatch.o 2>/dev/null | grep -m1 'core/hw/pvr/renderer_dispatch.cpp' \
+CORE_FLAGS=$(make -n platform=unix -W core/libretro/lr_contexts.cpp core/libretro/lr_contexts.o 2>/dev/null | grep -m1 'core/libretro/lr_contexts.cpp' \
    | sed -e 's/^g++ //' -e 's/ -c / /' -e 's/ -MMD -MP .*$//' -e 's/-DGIT_VERSION=[^ ]* [^ ]*//')
-OBJS=$(make -n platform=unix -W core/hw/pvr/renderer_dispatch.cpp 2>/dev/null | tail -1 | tr ' ' '\n' | grep '\.o$' | grep -v 'glslang.js.o')
+OBJS=$(make -n platform=unix -W core/libretro/lr_contexts.cpp 2>/dev/null | tail -1 | tr ' ' '\n' | grep '\.o$' | grep -v 'glslang.js.o')
 ${CC:-cc} -O1 -c -o "$WORK/headless.o" tools/threads/headless.c
 ${CXX:-g++} $CORE_FLAGS -w -c -o "$WORK/dump.o" tools/rend/tile_dump.cpp
 ${CXX:-g++} -rdynamic -o "$WORK/tile_dump" "$WORK/headless.o" "$WORK/dump.o" $OBJS \

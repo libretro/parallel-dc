@@ -24,7 +24,7 @@
 #include <d3d11.h>
 #include <d3dcompiler.h>
 #include "types.h"
-#include "hw/pvr/Renderer_if.h"
+#include "rend/renderer_class.h"
 #include "hw/pvr/ta_ctx.h"
 #include "rend/sorter.h"
 #include "rend/tileclip.h"

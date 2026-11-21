@@ -65,6 +65,8 @@ char* strdup(const char *str)
 /* (rend/TexCache.h) */
 void texcache_scratch_largest(void);
 #include "lr_contexts.h"
+#include "hw/pvr/Renderer_if.h"
+#include "rend/gles/ta_decoder_gl.h"
 #include "rend/gles/glprogram_cache.h"
 #include "rend/last_picture.h"
 #include "rend/tile/compute_frame.h"
@@ -1495,7 +1497,7 @@ static bool ran_since_context = false;
 
 static void rend_made_again(void)
 {
-   if (lr_rend_ready())
+   if (renderer_ready())
       return;
    if (ran_since_context)
       rend_warming = true;
@@ -1542,27 +1544,27 @@ void retro_run (void)
        * again, GPU-side TA processing made or taken down - and not in the
        * frame drawn next. (Not without a renderer: then there is no
        * context either, and the next one sets it up.) */
-      if (lr_rend_there() && (settings.pvr.rend == 4 || settings.pvr.rend == 5))
+      if (renderer_exists() && (settings.pvr.rend == 4 || settings.pvr.rend == 5))
       {
          rend_prepare_renderer();
-         lr_rend_options_changed();
+         renderer_options_changed();
       }
 #endif
 #if defined(HAVE_D3D11) || defined(HAVE_D3D12)
       /* ...and so with Direct3D 12 and 11 */
-      if (lr_rend_there() && (settings.pvr.rend == 9 || settings.pvr.rend == 10 || settings.pvr.rend == 6 || settings.pvr.rend == 7))
+      if (renderer_exists() && (settings.pvr.rend == 9 || settings.pvr.rend == 10 || settings.pvr.rend == 6 || settings.pvr.rend == 7))
       {
          rend_prepare_renderer();
-         lr_rend_options_changed();
+         renderer_options_changed();
       }
 #endif
 #ifdef HAVE_GL4
       /* ...and so with OpenGL, its state bound for it */
-      if (lr_rend_there() && (settings.pvr.rend == 0 || settings.pvr.rend == 3))
+      if (renderer_exists() && (settings.pvr.rend == 0 || settings.pvr.rend == 3))
       {
          glsm_ctl(GLSM_CTL_STATE_BIND, NULL);
          rend_prepare_renderer();
-         lr_rend_options_changed();
+         renderer_options_changed();
          glsm_ctl(GLSM_CTL_STATE_UNBIND, NULL);
       }
 #endif
@@ -1591,7 +1593,7 @@ void retro_run (void)
    if (devices_need_refresh)
       refresh_devices(false);
 #if defined(HAVE_VULKAN) || defined(HAVE_D3D12)
-   if (rend_warming && lr_rend_there() && !lr_rend_ready())
+   if (rend_warming && renderer_exists() && !renderer_ready())
    {
       /* the kept picture handed over once, then repeated (none: the
        * frontend's last frame) */
@@ -1770,7 +1772,7 @@ static void context_reset(void)
     * made with it, when that is on. The machine is not running here. */
    glsm_ctl(GLSM_CTL_STATE_BIND, NULL);
    rend_prepare_renderer();
-   gl_ta_possible = lr_gl_ta_context_can_do() ? 1 : 0;
+   gl_ta_possible = gltad_context_can_do() ? 1 : 0;
    glsm_ctl(GLSM_CTL_STATE_UNBIND, NULL);
    set_variable_visibility();
 #endif

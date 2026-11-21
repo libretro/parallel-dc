@@ -1,4 +1,4 @@
-/* The renderer interface (core/hw/pvr/Renderer_if.c, renderer_dispatch.cpp)
+/* The renderer interface (core/hw/pvr/Renderer_if.c, renderer_dispatch.c)
  * by itself, every function of it called at random: renders the game
  * starts - to the screen, to a texture, of the framebuffer it wrote, kept
  * for another render, overrun, not to be shown - drawn where they start or

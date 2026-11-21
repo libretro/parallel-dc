@@ -2289,7 +2289,7 @@ void DX12Renderer::DrawFrame()
 	FlushBatch();
 }
 
-Renderer* rend_D3D12()
+const renderer_ops *rend_D3D12(void)
 {
-	return new DX12Renderer();
+	return &RendererClass<DX12Renderer>::ops;
 }

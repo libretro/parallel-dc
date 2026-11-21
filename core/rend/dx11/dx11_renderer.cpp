@@ -1536,7 +1536,7 @@ void DX11Renderer::DrawFrame()
 	}
 }
 
-Renderer* rend_D3D11()
+const renderer_ops *rend_D3D11(void)
 {
-	return new DX11Renderer();
+	return &RendererClass<DX11Renderer>::ops;
 }

@@ -1,7 +1,8 @@
 /* The renderers renderer_if_test.c has made: each call they get said into
  * its hash, Init() answering as it is told (fake_init_ok: 1 yes, 0 no, 2
- * yes for the one to fall back to only). */
-#include "hw/pvr/Renderer_if.h"
+ * yes for the one to fall back to only), as the core's C++ renderers are
+ * (RendererClass). */
+#include "rend/renderer_class.h"
 
 extern "C" {
 void mix(u32 v);
@@ -31,24 +32,26 @@ struct FakeRenderer : Renderer
 };
 
 /* (the renderer chosen, and the one to fall back to: its own class) */
-Renderer *rend_GLES2() { return new FakeRenderer(true); }
+template <int K, bool F> struct Fake : FakeRenderer { Fake() : FakeRenderer(F) { } };
+
+const renderer_ops *rend_GLES2(void) { return &RendererClass<Fake<0, true> >::ops; }
 #if defined(HAVE_GL4)
-Renderer *rend_GL4() { return new FakeRenderer(false); }
+const renderer_ops *rend_GL4(void) { return &RendererClass<Fake<3, false> >::ops; }
 #endif
 #ifdef HAVE_VULKAN
-Renderer *rend_Vulkan() { return new FakeRenderer(false); }
-Renderer *rend_OITVulkan() { return new FakeRenderer(false); }
+const renderer_ops *rend_Vulkan(void) { return &RendererClass<Fake<4, false> >::ops; }
+const renderer_ops *rend_OITVulkan(void) { return &RendererClass<Fake<5, false> >::ops; }
 #endif
 #ifdef HAVE_D3D11
-Renderer *rend_D3D11() { return new FakeRenderer(true); }
-Renderer *rend_OITD3D11() { return new FakeRenderer(false); }
+const renderer_ops *rend_D3D11(void) { return &RendererClass<Fake<6, true> >::ops; }
+const renderer_ops *rend_OITD3D11(void) { return &RendererClass<Fake<7, false> >::ops; }
 #endif
 #ifdef HAVE_D3D9
-Renderer *rend_D3D9() { return new FakeRenderer(false); }
+const renderer_ops *rend_D3D9(void) { return &RendererClass<Fake<8, false> >::ops; }
 #endif
 #ifdef HAVE_D3D12
-Renderer *rend_D3D12() { return new FakeRenderer(true); }
-Renderer *rend_OITD3D12() { return new FakeRenderer(false); }
+const renderer_ops *rend_D3D12(void) { return &RendererClass<Fake<9, true> >::ops; }
+const renderer_ops *rend_OITD3D12(void) { return &RendererClass<Fake<10, false> >::ops; }
 #endif
 
 #ifdef RENDERER_IF_TEST_OLD

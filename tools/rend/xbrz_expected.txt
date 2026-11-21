@@ -1,0 +1,10 @@
+rgb x2 3ab61560
+rgb x3 544becb4
+rgb x4 e0d30ff7
+rgb x5 e0830ca1
+rgb x6 f8bb6206
+argb x2 d3c1c5ec
+argb x3 1e446929
+argb x4 a7df098d
+argb x5 d12bf6d9
+argb x6 dc057a57

@@ -7,20 +7,8 @@ INCFLAGS    += -I$(CORE_DIR)/core/libretro \
 					-I$(LIBRETRO_COMM_DIR)/include
 
 SOURCES_C   ?=
-SOURCES_CXX := \
-					\
-					\
-					\
-					\
-					\
-					\
-					$(CORE_DIR)/core/hw/pvr/renderer_dispatch.cpp \
-					\
-					\
-					\
-					\
-					\
-					\
+SOURCES_CXX :=
+SOURCES_C += $(CORE_DIR)/core/hw/pvr/renderer_dispatch.c
 
 # CHD images are read by libretro-common's clean-room rchd reader. Its
 # FLAC and zstd hunk codecs come from the same tree; deflate and LZMA
@@ -230,7 +218,6 @@ endif
 endif
 
 ifeq ($(HAVE_GL), 1)
-	SOURCES_CXX += $(CORE_DIR)/core/rend/gles/gles_renderer.cpp
 	SOURCES_C += $(CORE_DIR)/core/rend/gles/gles.c \
 						$(CORE_DIR)/core/rend/gles/gltex.c \
 						$(CORE_DIR)/core/rend/gles/gl_writeout.c \
@@ -502,9 +489,8 @@ endif
 endif
 
 ifeq ($(HAVE_TEXUPSCALE), 1)
-	SOURCES_CXX += $(DEPS_DIR)/xbrz/xbrz.cpp $(CORE_DIR)/core/rend/texupscale.cpp
-	# (the threads xBRZ's rows are shared out to: rend/band_pool.h)
-	SOURCES_C += $(CORE_DIR)/core/rend/band_pool.c
+	# (with the threads xBRZ's rows are shared out to: rend/band_pool.h)
+	SOURCES_C += $(DEPS_DIR)/xbrz/xbrz.c $(CORE_DIR)/core/rend/band_pool.c
 endif
 
 ifeq ($(HAVE_CHD), 1)

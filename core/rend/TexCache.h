@@ -57,9 +57,6 @@ static INLINE u32 texcache_upscale_factor(void)
 /* xBRZ, @factor times, over the rows of @source, shared out to the
  * cache's threads */
 void UpscalexBRZ(int factor, u32 *source, u32 *dest, int width, int height, bool has_alpha);
-/* ...to @pool's (band_pool.h; NULL: here) (texupscale.cpp) */
-struct band_pool;
-void texupscale_run(struct band_pool *pool, int factor, u32 *source, u32 *dest, int width, int height, bool has_alpha);
 #endif
 
 /* (each size of texel's: tex_conv_fn, texconv.h) */
