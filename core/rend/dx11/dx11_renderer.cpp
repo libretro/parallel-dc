@@ -153,13 +153,12 @@ bool DX11Renderer::Init()
 	}
 	// textures made on the GPU, and the textures themselves, all of them now (rend/tex_pool.h)
 	dx11_texdec_init();
-	texPool.Init(device, dx11c.vram_budget);
+	dx11_pool_init();
 	// ...and the cache's room for them (rend/tex_map.h)
-	texCache.ReserveFor(texPool.Book().made);
+	dx11_texcache_reserve_for(dx11_pool_made());
 	// the chip's write-out, and the pictures made for it (dx11_writeout.h)
 	writeOutPictures = writeOut.Init(device, deviceContext, shaders);
-	DX11Texture::SetDecoder(dx11_texdec_ready());
-	DX11Texture::SetPool(&texPool);
+	dx11_textures_attach(dx11_texdec_ready(), true);
 	// GPU-side TA processing, if it is on: here, not in a frame
 	taDecoder.WantSort(TaSorts());
 	taDecoder.Setup(TaFlags() != 0 && ta_gpu_wanted());
@@ -189,11 +188,11 @@ void DX11Renderer::Term()
 	taDecoder.Term();
 	ta_set_modvol_clip(false);
 	dx11_rtt_term();
-	texCache.Clear();
+	dx11_texcache_clear();
 	// (what the cache's textures had is back in the pool by now)
-	DX11Texture::SetPool(nullptr);
-	DX11Texture::SetDecoder(false);
-	texPool.Term();
+	dx11_textures_attach(false, false);
+	dx11_texcache_free();
+	dx11_pool_term();
 	dx11_texdec_term();
 	dx11_overlay_term();
 	writeOut.Term();
@@ -249,17 +248,17 @@ void DX11Renderer::Resize(int w, int h)
 
 u64 DX11Renderer::GetTexture(TSP tsp, TCW tcw, int area)
 {
-	DX11Texture* tf = texCache.getTextureCacheData(tsp, tcw, area);
+	dx11_texture *tf = dx11_texcache_get(tsp.full, tcw.full, area);
 
-	if (tf->IsNew())
-		tf->Create();
+	if (tf->texture == nullptr)
+		texcache_create(&tf->base);
 	//update if needed
-	if (tf->NeedsUpdate())
-		tf->Update();
-	else if (tf->IsCustomTextureAvailable())
-		tf->CheckCustomTexture();
+	if (texcache_needs_update(&tf->base))
+		texcache_update(&tf->base);
+	else if (texcache_custom_available(&tf->base))
+		texcache_check_custom(&tf->base);
 
-	return tf->GetIntId();
+	return (u64)(uintptr_t)tf;
 }
 
 /* A picture kept from the context before: the first render to the screen
@@ -331,7 +330,7 @@ bool DX11Renderer::ProcessLocked(TA_context* ctx)
 	{
 		/* what was rendered to a texture and is not in video memory yet goes there before its picture does */
 		rtt_watch_flush();
-		texCache.Clear();
+		dx11_texcache_clear();
 	}
 
 	// the modifier volumes' triangles far off the screen cut before the GPU clips them (rend/modvol_clip.h)
@@ -347,7 +346,7 @@ bool DX11Renderer::ProcessLocked(TA_context* ctx)
 	// the textures the frame's polygons asked for that are made on the GPU, before the draws
 	dx11_texdec_flush();
 
-	texCache.Cleanup();
+	dx11_texcache_cleanup();
 
 	if (result)
 	{
@@ -938,9 +937,9 @@ bool DX11Renderer::BeginRTT()
 	for (tsp.TexU = 0; tsp.TexU <= 7 && (8u << tsp.TexU) < origWidth; tsp.TexU++);
 	for (tsp.TexV = 0; tsp.TexV <= 7 && (8u << tsp.TexV) < origHeight; tsp.TexV++);
 
-	rttTexture = texCache.getTextureCacheData(tsp, tcw);
-	if (rttTexture->IsNew())
-		rttTexture->Create();
+	rttTexture = dx11_texcache_get(tsp.full, tcw.full, 0);
+	if (rttTexture->texture == nullptr)
+		texcache_create(&rttTexture->base);
 
 	if (rttTexture->spare)
 	{
@@ -949,25 +948,26 @@ bool DX11Renderer::BeginRTT()
 		if (desc.Width != widthPow2 || desc.Height != heightPow2 || desc.Format != DXGI_FORMAT_R8G8B8A8_UNORM
 				|| (desc.BindFlags & D3D11_BIND_RENDER_TARGET) == 0 || desc.MipLevels != 1)
 		{
-			rttTexture->ReleaseSpare();
-			rttTexture->spareTarget.reset();
-			rttTexture->spareView.reset();
-			rttTexture->spare.reset();
+			dx11_texture_release_spare(rttTexture);
+			DX11_RELEASE(rttTexture->spare_target);
+			DX11_RELEASE(rttTexture->spare_view);
+			DX11_RELEASE(rttTexture->spare);
 		}
 	}
 	// (one of the pool's, made at the start, where it has one of this shape)
-	if (!rttTexture->spare && !rttTexture->TakeSpare(widthPow2, heightPow2)
-			&& !makeTexture(device, widthPow2, heightPow2, DXGI_FORMAT_R8G8B8A8_UNORM, D3D11_BIND_SHADER_RESOURCE | D3D11_BIND_RENDER_TARGET,
-					rttTexture->spare, rttTexture->spareView))
+	if (rttTexture->spare == nullptr && !dx11_texture_take_spare(rttTexture, widthPow2, heightPow2)
+			&& !dx11_make_texture(widthPow2, heightPow2, DXGI_FORMAT_R8G8B8A8_UNORM, D3D11_BIND_SHADER_RESOURCE | D3D11_BIND_RENDER_TARGET,
+					&rttTexture->spare, &rttTexture->spare_view, nullptr, 0))
 		return false;
-	if (!rttTexture->spareTarget
-			&& FAILED(device->CreateRenderTargetView(rttTexture->spare, nullptr, rttTexture->spareTarget.put())))
+	if (rttTexture->spare_target == nullptr
+			&& FAILED(device->CreateRenderTargetView(rttTexture->spare, nullptr, &rttTexture->spare_target)))
 	{
+		rttTexture->spare_target = nullptr;
 		WARN_LOG(RENDERER, "DX11: render to texture target creation failed\n");
 		return false;
 	}
 
-	targetView = rttTexture->spareTarget;
+	targetView = rttTexture->spare_target;
 	targetWidth = upscaledWidth;
 	targetHeight = upscaledHeight;
 
@@ -977,9 +977,9 @@ bool DX11Renderer::BeginRTT()
 	dx11c_set_ps_resource(3, nullptr);
 	if (BindsScreen())
 	{
-		dx11c_set_targets(rttTexture->spareTarget, depthView);
+		dx11c_set_targets(rttTexture->spare_target, depthView);
 		const float black[4] = { 0.f, 0.f, 0.f, 1.f };
-		deviceContext->ClearRenderTargetView(rttTexture->spareTarget, black);
+		deviceContext->ClearRenderTargetView(rttTexture->spare_target, black);
 		deviceContext->ClearDepthStencilView(depthView, D3D11_CLEAR_DEPTH | D3D11_CLEAR_STENCIL, 0.f, 0);
 		dx11c_set_viewport((float)upscaledWidth, (float)upscaledHeight);
 	}
@@ -993,12 +993,12 @@ void DX11Renderer::EndRTT()
 {
 	/* (left bound: whatever binds the texture to be read from binds
 	 * another target first) */
-	rttTexture->SwapWithSpare();
+	dx11_texture_swap_with_spare(rttTexture);
 
-	rttTexture->dirty = 0;
-	rttTexture->stride_read = 0;	// (rendered, not read)
-	rttTexture->made_type = 0;
-	libCore_vramlock_Lock(rttTexture->sa_tex, rttTexture->sa + rttTexture->size - 1, rttTexture);
+	rttTexture->base.dirty = 0;
+	rttTexture->base.stride_read = 0;	// (rendered, not read)
+	rttTexture->base.made_type = 0;
+	libCore_vramlock_Lock(rttTexture->base.sa_tex, rttTexture->base.sa + rttTexture->base.size - 1, &rttTexture->base);
 	/* video memory gets it when something first touches it there */
 	dx11_rtt_watch(rttTexture, rttAddr, pvrrc.fb_X_CLIP.min, pvrrc.fb_Y_CLIP.min,
 			pvrrc.fb_X_CLIP.max - pvrrc.fb_X_CLIP.min + 1, pvrrc.fb_Y_CLIP.max - pvrrc.fb_Y_CLIP.min + 1);
@@ -1216,8 +1216,8 @@ void DX11Renderer::DrawPoly(u32 listType, bool sortTriangles, const PolyParam& p
 
 	if (poly.pcw.Texture && poly.texid != 0)
 	{
-		DX11Texture *texture = (DX11Texture *)(uintptr_t)poly.texid;
-		SetTexture(0, texture->textureView, dx11_sampler_get(poly.tsp.full));
+		const dx11_texture *texture = (const dx11_texture *)(uintptr_t)poly.texid;
+		SetTexture(0, texture->texture_view, dx11_sampler_get(poly.tsp.full));
 	}
 
 	// Depth and stencil

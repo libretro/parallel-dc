@@ -37,6 +37,8 @@
 /* (the calls these bind with, as C has them, for the C++ that includes
  * this: the renderers not yet C) */
 #ifdef __cplusplus
+#define IUnknown_AddRef(This) (This)->AddRef()
+#define IUnknown_Release(This) (This)->Release()
 #define ID3D11DeviceContext_IASetInputLayout(This, a0) (This)->IASetInputLayout(a0)
 #define ID3D11DeviceContext_IASetIndexBuffer(This, a0,a1,a2) (This)->IASetIndexBuffer(a0,a1,a2)
 #define ID3D11DeviceContext_IASetVertexBuffers(This, a0,a1,a2,a3,a4) (This)->IASetVertexBuffers(a0,a1,a2,a3,a4)

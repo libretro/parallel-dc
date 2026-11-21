@@ -8,7 +8,7 @@
  * standard output; this reads that from its standard input. Each texture
  * is then made as dx11/dx11_texdecoder.c makes it, with the kernels the
  * core has (rend/texdecode_dxbc.inc), into a texture made as the texture
- * pool makes them (dx11/dx11_texture.cpp):
+ * pool makes them (dx11/dx11_texture.c):
  *   - 32-bit texels and palette indices by the compute kernels, through
  *     R8G8B8A8_UINT and R8_UINT views of typeless textures;
  *   - 16-bit texels drawn by the pixel shader into B5G6R5, B5G5R5A1 or
@@ -154,7 +154,7 @@ static size_t level_at(const struct texd_plan *plan, unsigned i)
 }
 
 /* What the CPU made, as the renderer uploads it: 16-bit texels with their
- * bits turned to Direct3D's order (dx11_texture.cpp's turnBits) */
+ * bits turned to Direct3D's order (dx11_texture.c's turnBits) */
 static void d3d_order(unsigned char *p, size_t texels, int type)
 {
    const unsigned by = type == 1 ? 1 : type == 2 ? 4 : 0;

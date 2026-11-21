@@ -22,143 +22,102 @@
 #include "rend/d3d_system.h"
 #include <windows.h>
 #include <d3d11.h>
-#include <d3dcompiler.h>
 #include "rend/TexCache.h"
 #include "rend/texdecode.h"
 #include "rend/tex_pool.h"
-#include <map>
-#include <string>
-#include <cstdio>
-#include "comptr.h"
 #include "dx11_texdecoder.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 /* A texture of the texture pool's: a view of it to sample, and of each
  * level for the decoder to write through - an unsigned integer view of
  * the 32-bit and 8-bit ones (made typeless for that), a render target view
  * of the 16-bit ones - where the decoder makes textures of its format */
-struct DX11PooledTexture : TexPoolEntry
+typedef struct dx11_pooled_texture dx11_pooled_texture;
+struct dx11_pooled_texture
 {
-	ComPtr<ID3D11Texture2D> texture;
-	ComPtr<ID3D11ShaderResourceView> view;
-	ComPtr<ID3D11UnorderedAccessView> uavs[TEXD_MAX_LEVELS];
-	ComPtr<ID3D11RenderTargetView> targets[TEXD_MAX_LEVELS];
-	u32 levels = 1;
-	bool writable = false;
-	DX11PooledTexture *all = nullptr;		// every one there is, for Term()
+	TexPoolEntry entry;
+	ID3D11Texture2D *texture;
+	ID3D11ShaderResourceView *view;
+	ID3D11UnorderedAccessView *uavs[TEXD_MAX_LEVELS];
+	ID3D11RenderTargetView *targets[TEXD_MAX_LEVELS];
+	u32 levels;
+	bool writable;
+	dx11_pooled_texture *all;		/* every one there is, for dx11_pool_term() */
 };
 
 /* The cache's textures (rend/tex_pool.h): made when the renderer starts,
  * and handed out to the textures that need one of their shape. The pool's
- * formats are the texture types, by their numbers, and TARGET: the
- * pictures rendered to, RGBA8 with a render target view (targets[0]). A
- * texture is given back as soon as it is done with: Direct3D sees to it
- * that what the GPU still has to do with it is done first. */
-class DX11TexturePool
+ * formats are the texture types, by their numbers, and DX11_POOL_TARGET:
+ * the pictures rendered to, RGBA8 with a render target view (targets[0]).
+ * A texture is given back as soon as it is done with: Direct3D sees to it
+ * that what the GPU still has to do with it is done first. The renderer's,
+ * one at a time. */
+#define DX11_POOL_FORMATS 6
+#define DX11_POOL_TARGET 5
+/* (the decoder's first, if it is to be used: dx11_texdecoder.h) */
+void dx11_pool_init(void);
+void dx11_pool_term(void);
+/* how many it has made */
+u32 dx11_pool_made(void);
+
+/* A texture in the cache (rend/TexCache.h) */
+typedef struct dx11_texture
 {
-public:
-	void Init(ID3D11Device *device, const VramBudget& budget);
-	void Term();
-	/* A texture of @type, @width by @height, with its levels or not: a
-	 * free one of that shape, or one made now if there is none. Null if
-	 * the shape is not one of the pool's. */
-	DX11PooledTexture *Take(TextureType type, u32 width, u32 height, bool mips);
-	/* A picture to render to, @width by @height; null if the pool has
-	 * none of that shape */
-	DX11PooledTexture *TakeTarget(u32 width, u32 height);
-	void Give(DX11PooledTexture *texture) { book.Give(texture); }
-	/* With textures scaled up (xBRZ): the 32-bit ones with levels have
-	 * them made on the card (GenerateMips()), as a texture scaled up does */
-	bool Generates() const { return generates; }
-	enum { FORMATS = 6, TARGET = 5 };
-	const TexPoolBook& Book() const { return book; }
-
-private:
-	DX11PooledTexture *Make(int cls, bool late);
-
-	TexPoolBook book;
-	ID3D11Device *device = nullptr;
-	bool ready = false;
-	bool usable[FORMATS] = {};
-	bool writable[FORMATS] = {};
-	bool generates = false;
-	DX11PooledTexture *all = nullptr;
-};
-
-class DX11Texture : public TexCacheImpl<DX11Texture>
-{
-public:
-	~DX11Texture() { ReleasePooled(); ReleaseSpare(); }
-	void UploadToGPU(int width, int height, u8 *data, bool mipmapped, bool mipmapsIncluded = false);
-	bool GpuDecode(const texd_plan& plan);
-	bool PartMemory(size_t bytes, void **memory);
-	void UploadPart(const TexRegion *regions, u32 count, u8 *data, const size_t *offset);
-	int GpuDecodePart(const texd_plan& plan, const TexRegion *regions, u32 count);
-	bool CopyRender(BaseTextureCacheData *from, u32 x, u32 y, u32 scale, u32 columns);
-	bool Delete();
-	/* The renderer's, while it has them */
-	static void SetDecoder(bool use) { DX11Texture::decoder = use; }
-	static void SetPool(DX11TexturePool *pool) { DX11Texture::pool = pool; }
-	bool Force32BitTexture(TextureType type) const;
-	void GetId(char *s, size_t n) { snprintf(s, n, "%p", (void *)this); }
-	u64 GetIntId() { return (u64)reinterpret_cast<uintptr_t>(this); }
-	bool IsNew() const { return !texture; }
-
-	ComPtr<ID3D11Texture2D> texture;
-	ComPtr<ID3D11ShaderResourceView> textureView;
+	texcache_data base;
+	ID3D11Texture2D *texture;
+	ID3D11ShaderResourceView *texture_view;
 
 	/* A render to this texture is drawn into this other picture, and the
 	 * two change places when it is done: the polygons of the render that
 	 * are drawn with the texture itself see the picture it had before, as
 	 * the other renderers' do, and no picture is made anew for every
 	 * render. */
-	ComPtr<ID3D11Texture2D> spare;
-	ComPtr<ID3D11ShaderResourceView> spareView;
-	ComPtr<ID3D11RenderTargetView> spareTarget;
-	void SwapWithSpare()
-	{
-		// (the texture it had goes back to the pool, if it is the pool's: the spare is that now)
-		ReleasePooled();
-		pooled = sparePooled;
-		sparePooled = nullptr;
-		std::swap(texture, spare);
-		std::swap(textureView, spareView);
-		spareTarget.reset();
-	}
-	/* The spare, from the pool if it has one of this shape */
-	bool TakeSpare(u32 width, u32 height);
-	void ReleaseSpare();
+	ID3D11Texture2D *spare;
+	ID3D11ShaderResourceView *spare_view;
+	ID3D11RenderTargetView *spare_target;
 
-private:
-	/* The pool's texture for this shape, the one it has if it is that;
-	 * false if the pool has none of this shape */
-	bool TakePooled(u32 width, u32 height, bool mips);
-	void ReleasePooled();
-	/* What was asked of the decoder for it is not done after all */
-	void CancelDecode();
-	bool PartReady() const;
+	dx11_pooled_texture *pooled;
+	dx11_pooled_texture *spare_pooled;
+	u32 decode_job, decode_count, decode_serial;
+} dx11_texture;
 
-	DX11PooledTexture *pooled = nullptr;
-	DX11PooledTexture *sparePooled = nullptr;
-	u32 decodeJob = 0, decodeCount = 0, decodeSerial = 0;
-	static bool decoder;		/* the renderer has the decoder (dx11_texdecoder.h) */
-	static DX11TexturePool *pool;
-};
+/* The renderer's texture cache, by the textures' words (texcache_map_*) */
+dx11_texture *dx11_texcache_get(u32 tsp, u32 tcw, int area);
+void dx11_texcache_reserve_for(u32 images);
+void dx11_texcache_cleanup(void);
+void dx11_texcache_clear(void);
+/* ...and its room given back (after dx11_texcache_clear()) */
+void dx11_texcache_free(void);
+/* Whether the textures use the decoder and the pool: while the renderer
+ * has them */
+void dx11_textures_attach(bool decoder, bool pool);
 
-class DX11TextureCache : public BaseTextureCache<DX11Texture>
-{
-public:
-	void Cleanup() { CollectCleanup(); }
-};
+/* The spare made the texture, and the texture given back */
+void dx11_texture_swap_with_spare(dx11_texture *t);
+/* The spare, from the pool if it has one of this shape */
+bool dx11_texture_take_spare(dx11_texture *t, u32 width, u32 height);
+void dx11_texture_release_spare(dx11_texture *t);
+
+/* A texture of one level and a view of it, with @data (rows @pitch bytes
+ * apart) or none: false, and both NULL, if they cannot be made */
+bool dx11_make_texture(u32 width, u32 height, DXGI_FORMAT format, UINT bind,
+		ID3D11Texture2D **texture, ID3D11ShaderResourceView **view, const void *data, UINT pitch);
 
 /* The Direct3D 11 renderers' side of rend/rtt_watch.h, as vulkan/rtt_read.h
  * is the Vulkan renderers': a render to a texture stays in the texture,
  * and is brought to video memory when the game first touches it there. */
 void dx11_rtt_supersede(u32 addr, u32 x0, u32 y0, u32 width, u32 height);
-void dx11_rtt_watch(DX11Texture *texture, u32 addr, u32 x0, u32 y0, u32 width, u32 height);
+void dx11_rtt_watch(dx11_texture *texture, u32 addr, u32 x0, u32 y0, u32 width, u32 height);
 void dx11_rtt_init(void);
 void dx11_rtt_term(void);
 /* width by height pixels of a picture of that size, R G B A, top line
  * first. Waits for the card. False if the frontend's context cannot be
  * read from. */
 bool dx11_read_picture(ID3D11Texture2D *texture, u32 width, u32 height, u8 *rgba);
+
+#ifdef __cplusplus
+}
+#endif

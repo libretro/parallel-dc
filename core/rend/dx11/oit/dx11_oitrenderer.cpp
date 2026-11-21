@@ -480,9 +480,9 @@ void DX11OITRenderer::DrawPoly(u32 listType, bool autosort, DX11OITShaders::Pass
 	if (poly.pcw.Texture && !depthOnly)
 	{
 		if (poly.texid != 0)
-			SetTexture(0, ((DX11Texture *)(uintptr_t)poly.texid)->textureView, dx11_sampler_get(poly.tsp.full));
+			SetTexture(0, ((const dx11_texture *)(uintptr_t)poly.texid)->texture_view, dx11_sampler_get(poly.tsp.full));
 		if (twoVolumes && poly.texid1 != 0)
-			SetTexture(3, ((DX11Texture *)(uintptr_t)poly.texid1)->textureView, dx11_sampler_get(poly.tsp1.full));
+			SetTexture(3, ((const dx11_texture *)(uintptr_t)poly.texid1)->texture_view, dx11_sampler_get(poly.tsp1.full));
 	}
 
 	DX11OITShaders::FragmentShaderParams params = {};

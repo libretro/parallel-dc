@@ -113,8 +113,6 @@ protected:
 	ID3D11DeviceContext *deviceContext = nullptr;
 	DX11Shaders *shaders = nullptr;
 	dx11_depth_states depthStencilStates = {};
-	DX11TexturePool texPool;		// (and give their textures back)
-	DX11TextureCache texCache;
 	TransformMatrix<false> matrices;
 	/* GPU-side TA processing (dx11_ta_decoder.h): a frame it decodes is
 	 * drawn from its buffers, its draws' arguments the GPU's */
@@ -216,7 +214,7 @@ protected:
 	void DrawLastPicture(u32 width, u32 height);
 
 	/* A render to a texture: the texture, where in video memory */
-	DX11Texture *rttTexture = nullptr;
+	dx11_texture *rttTexture = nullptr;
 	u32 rttAddr = 0;
 	/* What the frame is drawn into, and the size of what is drawn of it */
 	ID3D11RenderTargetView *targetView = nullptr;
