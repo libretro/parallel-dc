@@ -40,7 +40,7 @@
 
 /* The Direct3D 12 renderer: translucent polygons sorted by triangle or by
  * strip. What the game sees is what it sees with the Direct3D 11 renderer
- * (dx11/dx11_renderer.cpp), which this follows step for step - the same
+ * (dx11/dx11_renderer.c), which this follows step for step - the same
  * passes, the same shadows (rend/shadows.h), the same renders to textures
  * that stay on the card until the game touches them (rend/rtt_watch.h),
  * the picture kept across a new context (rend/last_picture.h) - with

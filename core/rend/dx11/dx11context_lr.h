@@ -34,30 +34,6 @@
 #include "rend/TexCache.h"
 #include "rend/hdr/hdr_encode_d3d11.h"
 
-/* (the calls these bind with, as C has them, for the C++ that includes
- * this: the renderers not yet C) */
-#ifdef __cplusplus
-#define IUnknown_AddRef(This) (This)->AddRef()
-#define IUnknown_Release(This) (This)->Release()
-#define ID3D11DeviceContext_IASetInputLayout(This, a0) (This)->IASetInputLayout(a0)
-#define ID3D11DeviceContext_IASetIndexBuffer(This, a0,a1,a2) (This)->IASetIndexBuffer(a0,a1,a2)
-#define ID3D11DeviceContext_IASetVertexBuffers(This, a0,a1,a2,a3,a4) (This)->IASetVertexBuffers(a0,a1,a2,a3,a4)
-#define ID3D11DeviceContext_IASetPrimitiveTopology(This, a0) (This)->IASetPrimitiveTopology(a0)
-#define ID3D11DeviceContext_VSSetShader(This, a0,a1,a2) (This)->VSSetShader(a0,a1,a2)
-#define ID3D11DeviceContext_PSSetShader(This, a0,a1,a2) (This)->PSSetShader(a0,a1,a2)
-#define ID3D11DeviceContext_VSSetConstantBuffers(This, a0,a1,a2) (This)->VSSetConstantBuffers(a0,a1,a2)
-#define ID3D11DeviceContext_PSSetConstantBuffers(This, a0,a1,a2) (This)->PSSetConstantBuffers(a0,a1,a2)
-#define ID3D11DeviceContext_PSSetShaderResources(This, a0,a1,a2) (This)->PSSetShaderResources(a0,a1,a2)
-#define ID3D11DeviceContext_PSSetSamplers(This, a0,a1,a2) (This)->PSSetSamplers(a0,a1,a2)
-#define ID3D11DeviceContext_RSSetState(This, a0) (This)->RSSetState(a0)
-#define ID3D11DeviceContext_RSSetViewports(This, a0,a1) (This)->RSSetViewports(a0,a1)
-#define ID3D11DeviceContext_RSSetScissorRects(This, a0,a1) (This)->RSSetScissorRects(a0,a1)
-#define ID3D11DeviceContext_OMSetBlendState(This, a0,a1,a2) (This)->OMSetBlendState(a0,a1,a2)
-#define ID3D11DeviceContext_OMSetDepthStencilState(This, a0,a1) (This)->OMSetDepthStencilState(a0,a1)
-#define ID3D11DeviceContext_OMSetRenderTargets(This, a0,a1,a2) (This)->OMSetRenderTargets(a0,a1,a2)
-#define ID3D11DeviceContext_OMSetRenderTargetsAndUnorderedAccessViews(This, a0,a1,a2,a3,a4,a5,a6) (This)->OMSetRenderTargetsAndUnorderedAccessViews(a0,a1,a2,a3,a4,a5,a6)
-#endif
-
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -496,14 +472,4 @@ void dx11c_wait_present_index(void);
 
 #ifdef __cplusplus
 }
-#endif
-
-#ifdef __cplusplus
-/* The context taken for as long as this lives (dx11c_lock()): the C++
- * renderers' */
-struct DX11Lock
-{
-	DX11Lock() { dx11c_lock(); }
-	~DX11Lock() { dx11c_unlock(); }
-};
 #endif

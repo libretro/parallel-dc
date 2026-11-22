@@ -7,8 +7,8 @@
  * - OIT_LAYERS fragments a pixel, of OIT_FRAGMENT_BYTES each. A frame
  *   that wants more than that is drawn in bands by the Vulkan renderer
  *   (OITDrawer::Draw()), the OpenGL 4 one (gl4DrawStrips()) and the
- *   Direct3D 11 one (DX11OITRenderer::DrawFrame()), so nothing is
- *   dropped.
+ *   Direct3D 11 one (oit_draw_frame() in dx11/oit/dx11_oitrenderer.c), so
+ *   nothing is dropped.
  * - no more than half of the budget that was left when the renderer
  *   started, and no more than @most, what the API can bind;
  * - and no less than OIT_MIN_BYTES, for a picture so small that the

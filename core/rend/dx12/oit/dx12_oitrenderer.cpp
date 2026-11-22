@@ -17,7 +17,7 @@
 */
 /* The per-pixel renderer: the translucent polygons' pixels are put in
  * lists, sorted by depth and blended at the end, as the Direct3D 11
- * per-pixel renderer does it (dx11/oit/dx11_oitrenderer.cpp), step for
+ * per-pixel renderer does it (dx11/oit/dx11_oitrenderer.c), step for
  * step:
  *
  *  - the opaque and punch-through polygons' depth, and the modifier

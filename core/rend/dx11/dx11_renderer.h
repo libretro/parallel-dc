@@ -22,29 +22,21 @@
 #include "rend/d3d_system.h"
 #include <windows.h>
 #include <d3d11.h>
-#include <d3dcompiler.h>
 #include "types.h"
-#include "rend/renderer_class.h"
+#include "hw/pvr/Renderer_if.h"
 #include "hw/pvr/ta_ctx.h"
 #include "rend/sorter.h"
-#include "rend/tileclip.h"
 #include "rend/transform_matrix.h"
-#include "dx11_writeout.h"
-#include "rend/shadows.h"
-#include "rend/depth_scale.h"
-#include "comptr.h"
 #include "dx11context_lr.h"
-#include "dx11_shaders.h"
-#include "dx11_texture.h"
 #include "dx11_renderstate.h"
-#include "dx11_overlay.h"
-#include "dx11_texdecoder.h"
-#include "dx11_ta_decoder.h"
-#include <vector>
-#include "rend/modvol_clip.h"
+
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 /* The Direct3D 11 renderers. This one sorts translucent polygons by
- * triangle or by strip; the per-pixel one (oit/) is made from it.
+ * triangle or by strip; the per-pixel one (oit/) is made from it: it has
+ * the frame drawn its own way (dx11_renderer_kind) and the rest this one's.
  *
  * Everything the game sees is what it sees with the Vulkan renderers,
  * which this follows step for step: the TA context and its render passes,
@@ -52,289 +44,178 @@
  * until the game touches them in video memory (rend/rtt_watch.h), the
  * picture kept across a new context or a new size (rend/last_picture.h).
  * The frame is a picture the frontend is handed (dx11c_set_frame()). */
-class DX11Renderer : public Renderer
+
+/* What the renderer that draws the frame has its own */
+typedef struct dx11_renderer_kind
 {
-public:
-	bool Init() override;
-	void Resize(int w, int h) override;
-	void Term() override;
-	bool Process(TA_context* ctx) override;
-	bool Render() override;
-	void KeepPicture() override;
-	u64 GetTexture(TSP tsp, TCW tcw, int area = 0) override;
-	// (TA processing switched on or off)
-	void OptionsChanged() override;
-
-protected:
-	struct VertexConstants
-	{
-		float scale[4];
-		float offset[4];
-		float depthScale[4];	// 1/fZ_max, 1 / the scale's z (rend/depth_scale.h)
-	};
-	struct FragmentConstants
-	{
-		float colorClampMin[4];
-		float colorClampMax[4];
-		float fogColRam[4];
-		float fogColVert[4];
-		float alphaTestValue;
-		float fogDensity;
-		float shadeScale;
-		float padding;
-	};
-	struct PolyConstants
-	{
-		float clipTest[4];
-		float trilinearAlpha;
-		float paletteIndex;
-		float prepassAlpha;	// the depth prepass's least alpha (rend/sorter.h), 0 for the colour
-		u32 polyKey;		// the general pixel shader's: the polygon's key (dx11_shaders.h)
-	};
-	struct ScreenTarget
-	{
-		ComPtr<ID3D11Texture2D> texture;
-		ComPtr<ID3D11RenderTargetView> target;
-		ComPtr<ID3D11ShaderResourceView> view;
-		ComPtr<ID3D11UnorderedAccessView> uav;	// for the chip's write-out (dx11_writeout.h)
-	};
-
-	/* The frame's polygons: into what Begin...() bound */
-	virtual void DrawFrame();
-	/* What is bound by the time DrawFrame() is called: the per-pixel
-	 * renderer puts the frame together in pictures of its own, and binds
-	 * the screen's only at the end */
-	virtual bool BindsScreen() const { return true; }
-	/* What the polygons' vertices are read with, and the polygon's constants are in */
-	virtual ID3D11InputLayout *PolyInputLayout() const { return mainInputLayout; }
-	virtual ID3D11Buffer *PolyConstantsBuffer() const { return polyConstants; }
-
-	ID3D11Device *device = nullptr;
-	ID3D11DeviceContext *deviceContext = nullptr;
-	dx11_depth_states depthStencilStates = {};
-	TransformMatrix<false> matrices;
-	/* GPU-side TA processing (dx11_ta_decoder.h): a frame it decodes is
-	 * drawn from its buffers, its draws' arguments the GPU's */
+	/* The frame's polygons: into what the render bound */
+	void (*draw_frame)(void);
+	/* What is bound by the time the frame is drawn: the per-pixel renderer
+	 * puts the frame together in pictures of its own, and binds the
+	 * screen's only at the end */
+	bool binds_screen;
+	/* Whether the sorted lists are drawn as sorted (and have a prepass) */
+	bool draws_sorted;
 	/* How a frame decoded on the GPU is drawn (ta_gpu_prepare()'s
 	 * TA_GPU_*); 0: none is - every frame is parsed */
-	virtual u32 TaFlags() const
-	{
-		/* sorted translucent triangles sorted from the frame's depths, as
-		 * GenSortedTo() sorts them (TA_GPU_SORT); sorted by strip, the polygons
-		 * are sorted from their vertices, which a frame decoded on the GPU
-		 * has there alone: such a frame is parsed */
-		return TA_GPU_DRAW | TA_GPU_PROVOKE | TA_GPU_SHADOWS
-				| (!settings.pvr.Emulation.AlphaSortMode && dx11_ta_can_sort() ? TA_GPU_SORT : TA_GPU_NO_SORT);
-	}
+	u32 (*ta_flags)(void);
 	/* Whether the decoder is to have room for sorted translucent triangles (TA_GPU_SORT) */
-	virtual bool TaSorts() const { return true; }
-	/* A draw group of a frame decoded on the GPU (pvrrc.gpu), drawn by its
-	 * arguments there: an opaque or punch-through one by its command (or,
-	 * @shadow, its second one, for shadows), a translucent one by its
-	 * records, @count of them at most */
-	void DrawGpu(u32 listType, bool shadow, u32 first, u32 count);
+	bool ta_sorts;
+	/* What the polygons' vertices are read with, and their constants are in */
+	ID3D11InputLayout *(*poly_input_layout)(void);
+	ID3D11Buffer *(*poly_constants)(void);
+} dx11_renderer_kind;
 
-	ComPtr<ID3D11InputLayout> mainInputLayout;
-	ComPtr<ID3D11InputLayout> positionInputLayout;	// the main vertices' positions alone
-	ComPtr<ID3D11InputLayout> modVolInputLayout;	// the modifier volumes', from vertex slot 1
+/* The screen's pictures: one for each of the frontend's sync indexes (as
+ * many as dx11c_present_count() can say) */
+#define DX11_SCREEN_SLOTS 32
+
+typedef struct dx11_screen_target
+{
+	ID3D11Texture2D *texture;
+	ID3D11RenderTargetView *target;
+	ID3D11ShaderResourceView *view;
+	ID3D11UnorderedAccessView *uav;	/* for the chip's write-out (dx11_writeout.h) */
+} dx11_screen_target;
+
+typedef struct dx11_renderer
+{
+	const dx11_renderer_kind *kind;
+	ID3D11Device *device;
+	ID3D11DeviceContext *ctx;
+	dx11_depth_states depth_states;
+	transform_matrix_t matrices;
+
+	ID3D11InputLayout *main_layout;
+	ID3D11InputLayout *position_layout;	/* the main vertices' positions alone */
+	ID3D11InputLayout *modvol_layout;	/* the modifier volumes', from vertex slot 1 */
 	/* A render's vertices, indexes and modifier volumes, one after the
 	 * other in one buffer, bound once (vertex slots 0 and 1, and the
 	 * indexes), each render's after the last one's, and the buffer started
 	 * again only when it is full: where this render's are in it */
-	ComPtr<ID3D11Buffer> geometry;
-	u32 geometrySize = 0;
-	u32 geometryUsed = 0;
-	INT vertexBase = 0;			// (in vertices)
-	UINT indexBase = 0;			// (in indexes)
-	UINT modVolBase = 0;		// (in modifier volume vertices)
-	bool haveModVols = false;
-	ComPtr<ID3D11Buffer> vtxConstants;
-	ComPtr<ID3D11Buffer> fragConstants;
-	ComPtr<ID3D11Buffer> polyConstants;
-	ComPtr<ID3D11RasterizerState> rasterizers[3];	// no culling, front, back
-	ComPtr<ID3D11Texture2D> fogTexture;
-	ComPtr<ID3D11ShaderResourceView> fogView;
-	u8 fogUploaded[256];
-	bool fogUploadedValid = false;
-	ComPtr<ID3D11Texture2D> paletteTexture;
-	ComPtr<ID3D11ShaderResourceView> paletteView;
+	ID3D11Buffer *geometry;
+	u32 geometry_size;
+	u32 geometry_used;
+	INT vertex_base;		/* (in vertices) */
+	UINT index_base;		/* (in indexes) */
+	UINT modvol_base;		/* (in modifier volume vertices) */
+	bool have_modvols;
+	ID3D11Buffer *vtx_constants;
+	ID3D11Buffer *frag_constants;
+	ID3D11Buffer *poly_constants;
+	ID3D11RasterizerState *rasterizers[3];	/* no culling, front, back */
+	ID3D11Texture2D *fog_texture;
+	ID3D11ShaderResourceView *fog_view;
+	u8 fog_uploaded[256];
+	bool fog_uploaded_valid;
+	ID3D11Texture2D *palette_texture;
+	ID3D11ShaderResourceView *palette_view;
 
 	/* The depth and stencil, for the screen and renders to textures: as
 	 * large as the largest of them so far. A view to draw with and, for
 	 * the per-pixel renderer, views that leave the stencil or both to be
 	 * read by the shaders as well. */
-	ComPtr<ID3D11Texture2D> depthTex;
-	ComPtr<ID3D11DepthStencilView> depthView;
-	ComPtr<ID3D11DepthStencilView> depthViewReadStencil;
-	ComPtr<ID3D11DepthStencilView> depthViewReadOnly;
-	ComPtr<ID3D11ShaderResourceView> depthSRV;
-	ComPtr<ID3D11ShaderResourceView> stencilSRV;
-	u32 depthWidth = 0;
-	u32 depthHeight = 0;
-	bool EnsureDepth(u32 width, u32 height);
-	static void CommonRender(u32 *width, u32 *height);
+	ID3D11Texture2D *depth_tex;
+	ID3D11DepthStencilView *depth_view;
+	ID3D11DepthStencilView *depth_view_read_stencil;
+	ID3D11DepthStencilView *depth_view_read_only;
+	ID3D11ShaderResourceView *depth_srv;
+	ID3D11ShaderResourceView *stencil_srv;
+	u32 depth_width;
+	u32 depth_height;
 
 	/* The screen: a picture for each of the frontend's sync indexes (one
 	 * with version 1), the size rendered at */
-	std::vector<ScreenTarget> screenTargets;
+	dx11_screen_target screens[DX11_SCREEN_SLOTS];
+	u32 screen_count;
 	/* ...and one to draw a second render to the screen in, in a frame whose
 	 * first one has been handed over (version 2) already: it takes the
 	 * place of the one handed over, which stays the frontend's */
-	ScreenTarget extraTarget;
-	bool lastInExtra = false;		// the last picture is in it
-	// the chip's write-out (dx11_writeout.h), and whether the pictures were made for it
-	bool writeOutPictures = false;
-	u32 screenWidth = 0;
-	u32 screenHeight = 0;
-	int screenIndex = 0;			// the one being drawn
-	int lastScreen = -1;			// the one the last picture is in
-	bool havePicture = false;
+	dx11_screen_target extra;
+	bool last_in_extra;		/* the last picture is in it */
+	/* the chip's write-out (dx11_writeout.h), and whether the pictures were made for it */
+	bool writeout_pictures;
+	u32 screen_width;
+	u32 screen_height;
+	int screen_index;		/* the one being drawn */
+	int last_screen;		/* the one the last picture is in */
+	bool have_picture;
 	/* ...or the picture kept from the context before (rend/last_picture.h),
-	 * or from the size before (Resize()) */
-	ComPtr<ID3D11ShaderResourceView> restoredPicture;
-	/* Whether the render starts from the last picture: it covers only part
-	 * of the screen, and the game has drawn to this framebuffer lately */
-	bool KeepsLastPicture() const
-	{
-		return !pvrrc.clearFramebuffer && matrices.IsClipped() && (havePicture || restoredPicture);
-	}
-	/* What it is drawn from */
-	ID3D11ShaderResourceView *LastPictureView() const
-	{
-		return havePicture ? (lastInExtra ? extraTarget.view.get() : screenTargets[lastScreen].view.get()) : restoredPicture.get();
-	}
-	ID3D11Texture2D *LastPictureTexture() const
-	{
-		return lastInExtra ? extraTarget.texture.get() : screenTargets[lastScreen].texture.get();
-	}
-	/* The last picture drawn whole onto what is bound */
-	void DrawLastPicture(u32 width, u32 height);
+	 * or from the size before (dx11_screen_ensure()) */
+	ID3D11ShaderResourceView *restored_picture;
 
 	/* A render to a texture: the texture, where in video memory */
-	dx11_texture *rttTexture = nullptr;
-	u32 rttAddr = 0;
+	struct dx11_texture *rtt_texture;
+	u32 rtt_addr;
 	/* What the frame is drawn into, and the size of what is drawn of it */
-	ID3D11RenderTargetView *targetView = nullptr;
-	u32 targetWidth = 0;
-	u32 targetHeight = 0;
+	ID3D11RenderTargetView *target_view;
+	u32 target_width;
+	u32 target_height;
+	D3D11_RECT base_scissor;
 
-	D3D11_RECT baseScissor{};
-	void SetScissor(const D3D11_RECT& rect) { dx11c_set_scissor(&rect); }
-	TileClipping SetTileClip(u32 val, D3D11_RECT& rect);
-	void SetBaseScissor();
-	void SetProvokingVertices();
-	void SetCullMode(int mode);
-	void SetPolyConstants(const PolyConstants& constants);
-	template<typename T>
-	void SetConstants(ID3D11Buffer *buffer, const T& constants)
-	{
-		// (the whole buffer: the constants are a whole number of 16-byte registers)
-		static_assert(sizeof(T) % 16 == 0, "constant buffer size");
-		deviceContext->UpdateSubresource(buffer, 0, nullptr, &constants, 0, 0);
-	}
-	/* ...when they are not what the buffer has already */
-	template<typename T>
-	void SetConstants(ID3D11Buffer *buffer, const T& constants, T& uploaded, bool& valid)
-	{
-		if (valid && !memcmp(&constants, &uploaded, sizeof(constants)))
-			return;
-		SetConstants(buffer, constants);
-		uploaded = constants;
-		valid = true;
-	}
-	VertexConstants vtxUploaded;
-	FragmentConstants fragUploaded;
-	PolyConstants polyUploaded;
-	bool vtxUploadedValid = false;
-	bool fragUploadedValid = false;
-	bool polyUploadedValid = false;
-	void MakeFragmentConstants(FragmentConstants& constants);
-	/* The polygons, the volumes and the indexes, and the sorted triangles'
-	 * indexes after those, sorted there, and the vertices'
-	 * colours made for the card (SetProvokingVertices()) */
-	bool UploadGeometry();
-	/* What every polygon of the frame is drawn with */
-	void SetupFrame();
-	/* The geometry buffer, bound; or a frame decoded on the GPU's buffers */
-	void BindGeometry()
-	{
-		if (pvrrc.gpu)
-		{
-			const dx11_ta_draw& gpu = *dx11_ta_get_draw();
-			// (the volumes' triangles cut on the CPU, when the frame has them: in the geometry buffer)
-			dx11c_set_geometry2(gpu.vertices, sizeof(Vertex), pvrrc.mv_clip.used() != 0 ? (ID3D11Buffer *)geometry : (ID3D11Buffer *)gpu.modtrig,
-					sizeof(float) * 3, gpu.indices);
-		}
-		else
-			dx11c_set_geometry(geometry, sizeof(Vertex), sizeof(float) * 3, geometry);
-	}
-
-	/* (the context's, which sets only what differs from what is bound) */
-	void SetVS(ID3D11VertexShader *vs) { dx11c_set_vs(vs); }
-	void SetPS(ID3D11PixelShader *ps) { dx11c_set_ps(ps); }
-	void SetBlend(ID3D11BlendState *blend) { dx11c_set_blend(blend, nullptr); }
-	void SetDepthStencil(ID3D11DepthStencilState *depth, UINT ref = 0) { dx11c_set_depth_stencil(depth, ref); }
-	ID3D11DepthStencilState *depthState(bool depthTest, bool depthWrite, int depthFunc, DX11Stencil stencil = DX11Stencil_None)
-	{
-		return dx11_depth_states_get(&depthStencilStates, depthTest, depthWrite, depthFunc, stencil);
-	}
-	ID3D11BlendState *blendState(bool enable, u32 src = 1, u32 dst = 0, bool writeColor = true)
-	{
-		return dx11_blend_get(enable, src, dst, writeColor);
-	}
-	void SetTexture(int slot, ID3D11ShaderResourceView *view, ID3D11SamplerState *sampler)
-	{
-		dx11c_set_ps_resource(slot, view);
-		dx11c_set_ps_sampler(slot, sampler);
-	}
-	void SetTopology(D3D11_PRIMITIVE_TOPOLOGY topology) { dx11c_set_topology(topology); }
-
-	/* The context taken by Process() and kept for the Render() after it */
-	bool heldFromProcess = false;
-
-	// Per-triangle sort results
-	grow_buf_t sortedPasses = GROW_BUF_INIT;	/* SortPasses(): a SortList a pass */
-	// (their indices: in the geometry buffer, sorted there by UploadGeometry())
-	u32 sortedIndexCount = 0;
-	// ...and the depth prepasses of the sorted lists (rend/sorter.h), their indexes after each pass's sorted ones
-	grow_buf_t prepassPasses = GROW_BUF_INIT;
-	void SortTriangles(u32 *out);
-	/* Whether the sorted lists are drawn as sorted (and have a prepass):
-	 * not by the per-pixel renderer */
-	virtual bool DrawsSorted() const { return true; }
-
-private:
-	bool ProcessLocked(TA_context* ctx);
-	bool BeginScreen();
-	/* (@writeOut: the chip's write-out over the picture first, a frame the
-	 * renderer drew: dx11_writeout.h) */
-	void EndScreen(bool writeOut = false);
-	bool BeginRTT();
-	void EndRTT();
-	bool EnsureScreen(u32 width, u32 height);
-	void CheckKeptPicture();
-	void CheckFogTexture();
-	void CheckPaletteTexture();
-	bool UploadFramebuffer();
-	void DrawFramebuffer();
-
-	enum class ShadowPass { None, LaterWins, EarlierWins };
-	void DrawPoly(u32 listType, bool sortTriangles, const PolyParam& poly, u32 first, u32 count,
-			ShadowPass shadowPass = ShadowPass::None, const D3D11_RECT *within = nullptr);
-	void DrawShadowed(u32 listType, const List<PolyParam>& polys, u32 first, u32 last,
-			const ScreenBounds& area, const D3D11_RECT& scissor);
-	void DrawSorted(const SortTrigDrawParam *polys, u32 count, bool multipass);
-	void DrawPrepass(const SortTrigDrawParam *polys, u32 count);
+	/* The context taken by process() and kept for the render() after it */
+	bool held_from_process;
+	/* Per-triangle sort results: a SortList a pass, their indices in the
+	 * geometry buffer (sorted there by the upload); and the depth prepasses
+	 * of the sorted lists (rend/sorter.h), their indexes after each pass's
+	 * sorted ones */
+	grow_buf_t sorted_passes;
+	u32 sorted_index_count;
+	grow_buf_t prepass_passes;
 	/* (a frame decoded on the GPU) the draws are of the sorted indices,
 	 * whose counts are the CPU's */
-	bool gpuSorted = false;
-	bool prepassDraw = false;	// DrawPoly() draws for the depth prepass
-	void DrawList(u32 listType, bool sortTriangles, const List<PolyParam>& polys, u32 first, u32 last);
-	void DrawModVols(int first, int count, const RenderPass& previous_pass, const RenderPass& current_pass, int render_pass);
+	bool gpu_sorted;
+	bool prepass_draw;	/* the polygons are drawn for the depth prepass */
 
 	/* The framebuffer the game wrote itself, for a frame that is that */
-	ComPtr<ID3D11Texture2D> fbTexture;
-	ComPtr<ID3D11ShaderResourceView> fbView;
-	int fbWidth = 0;
-	int fbHeight = 0;
-};
+	ID3D11Texture2D *fb_texture;
+	ID3D11ShaderResourceView *fb_view;
+	int fb_width;
+	int fb_height;
+} dx11_renderer;
+
+extern dx11_renderer dx11r;
+
+/* The base's: what the per-pixel renderer has of this one */
+bool dx11r_init(const dx11_renderer_kind *kind);
+void dx11r_term(void);
+void dx11r_resize(int w, int h);
+bool dx11r_process(TA_context *ctx);
+bool dx11r_render(void);
+void dx11r_keep_picture(void);
+u64 dx11r_get_texture(u32 tsp, u32 tcw, int area);
+void dx11r_options_changed(void);
+
+/* At least what a render of a screen to a texture is: 640x480 times
+ * Render To Texture Upscaling */
+void dx11r_common_render(u32 *width, u32 *height);
+bool dx11r_ensure_depth(u32 width, u32 height);
+/* TILECLIP_*: @rect the polygon's clip */
+int dx11r_set_tile_clip(u32 val, D3D11_RECT *rect);
+void dx11r_set_cull_mode(int mode);
+/* Whether the render starts from the last picture: it covers only part
+ * of the screen, and the game has drawn to this framebuffer lately */
+bool dx11r_keeps_last_picture(void);
+/* The last picture drawn whole onto what is bound */
+void dx11r_draw_last_picture(u32 width, u32 height);
+/* The geometry buffer, bound; or a frame decoded on the GPU's buffers */
+void dx11r_bind_geometry(void);
+/* A draw group of a frame decoded on the GPU (pvrrc.gpu), drawn by its
+ * arguments there: an opaque or punch-through one by its command (or,
+ * @shadow, its second one, for shadows), a translucent one by its
+ * records, @count of them at most */
+void dx11r_draw_gpu(u32 list_type, bool shadow, u32 first, u32 count);
+/* A constant buffer written whole (a whole number of 16-byte registers) */
+static INLINE void dx11r_set_constants(ID3D11Buffer *buffer, const void *constants)
+{
+	ID3D11DeviceContext_UpdateSubresource(dx11r.ctx, (ID3D11Resource *)buffer, 0, NULL, constants, 0, 0);
+}
+static INLINE void dx11r_set_texture(UINT slot, ID3D11ShaderResourceView *view, ID3D11SamplerState *sampler)
+{
+	dx11c_set_ps_resource(slot, view);
+	dx11c_set_ps_sampler(slot, sampler);
+}
+
+#ifdef __cplusplus
+}
+#endif
