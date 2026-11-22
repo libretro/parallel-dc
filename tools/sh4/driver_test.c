@@ -137,11 +137,24 @@ static u32 pc_of(u32 i)
 		return 0x8C0000E0;
 	return 0x8C010000 + (i % 64) * 0x40 + (i / 64) * 0x10000;
 }
+/* The lists of operations the blocks were made in (the one list lent to
+ * each, bm_BlockLendOps(), grown once to what these need), and whether a
+ * block was kept or relinked with one still. Not hashed. */
+static const shil_opcode *ops_seen;
+static u32 ops_lists, ops_kept;
 bool dec_DecodeBlock(RuntimeBlockInfo *rbi, u32 max_cycles)
 {
 	const u32 k = (rbi->addr * 2654435761u) >> 8;
+	shil_opcode op;
+	u32 i;
 	(void)max_cycles;
 	rbi->guest_opcodes = 1 + k % 20;
+	memset(&op, 0, sizeof(op));
+	for (i = 0; i < rbi->guest_opcodes; i++)
+	{
+		op.guest_offs = (u16)(i * 2);
+		*bm_OpPush(rbi) = op;
+	}
 	rbi->sh4_code_size = rbi->guest_opcodes * 2;
 	rbi->guest_cycles = rbi->guest_opcodes;
 	rbi->BlockType = (BlockEndType)block_ends[(k >> 8) % 8];
@@ -165,6 +178,13 @@ void AnalyseBlock(RuntimeBlockInfo *block) { mix(block->addr); }
 void ngen_Compile(RuntimeBlockInfo *block, bool force_checks, bool reset, bool staging, bool optimise)
 {
 	u32 n = 8 + (block->addr >> 2) % 64, i;
+	if (block->op_count != block->guest_opcodes || block->oplist[block->op_count - 1].guest_offs != (block->op_count - 1) * 2)
+		ops_kept++;
+	if (block->oplist != ops_seen)
+	{
+		ops_seen = block->oplist;
+		ops_lists++;
+	}
 	note_entry(block->addr);
 	block->code = (DynarecCodeEntryPtr)(uintptr_t)emit_GetCCPtr();
 	for (i = 0; i < n; i++)
@@ -180,6 +200,8 @@ void ngen_Compile(RuntimeBlockInfo *block, bool force_checks, bool reset, bool s
 }
 u32 ngen_Relink(RuntimeBlockInfo *block)
 {
+	if (block->oplist != NULL || block->op_count != 0 || block->op_room != 0)
+		ops_kept++;
 	mix(0x52454C4Bu);
 	mix(code_offs(block->code));
 	mix(block->pNextBlock != NULL ? code_offs(block->pNextBlock->code) : 0);
@@ -301,7 +323,31 @@ int main(int argc, char **argv)
 			rdv_BlockCheckFail(pc);
 		}
 	}
+	/* A block on the list of waits (four instructions, its code's hash
+	 * 0xB806EEE4), and not when a byte of it differs or it is longer. Not
+	 * hashed. */
+	{
+		static const u8 wait_code[8] = { 0x08, 0x7F, 0x26, 0x4F, 0x09, 0x00, 0x09, 0x00 };
+		RuntimeBlockInfo w;
+		bool listed, changed, longer;
+		memset(&w, 0, sizeof(w));
+		w.addr = 0x8C200000;
+		w.guest_opcodes = 4;
+		w.sh4_code_size = 8;
+		memcpy(GetMemPtr(w.addr, 8), wait_code, sizeof(wait_code));
+		listed = bm_BlockIsIdle(&w);
+		GetMemPtr(w.addr, 8)[2] ^= 1;
+		changed = bm_BlockIsIdle(&w);
+		GetMemPtr(w.addr, 8)[2] ^= 1;
+		w.guest_opcodes = 5;
+		w.sh4_code_size = 10;
+		longer = bm_BlockIsIdle(&w);
+		if (!listed || changed || longer)
+			printf("FAIL: the waits' list: %d for the one on it, %d changed, %d longer\n", listed, changed, longer);
+	}
 	cpu.Term();
+	if (ops_kept != 0 || ops_lists != 1)
+		printf("FAIL: the blocks' operations: %u blocks held them, %u lists made\n", ops_kept, ops_lists);
 	printf("%d steps, %08x\n", n, h);
 	free(code_room);
 	free(entries_set);

@@ -228,16 +228,15 @@ static void replace_by_mov32(shil_opcode *op)
 /* mov rd, rs, after the operation at s->opnum */
 static void insert_mov32(ssa_state *s, const shil_param *rd, const shil_param *rs)
 {
-	shil_opcode op2;
-	memcpy(&op2, &s->block->oplist[s->opnum], sizeof(op2));
-	op2.op = shop_mov32;
-	op2.rd = *rd;
-	op2.rd2 = shil_param_none();
-	op2.rs1 = *rs;
-	op2.rs2 = shil_param_none();
-	op2.rs3 = shil_param_none();
-
-	bm_OpInsert(s->block, s->opnum + 1, &op2);
+	/* (@rd and @rs are not in the list, which moves) */
+	shil_opcode *const op2 = bm_OpInsert(s->block, s->opnum + 1);
+	memcpy(op2, &s->block->oplist[s->opnum], sizeof(*op2));
+	op2->op = shop_mov32;
+	op2->rd = *rd;
+	op2->rd2 = shil_param_none();
+	op2->rs1 = *rs;
+	op2->rs2 = shil_param_none();
+	op2->rs3 = shil_param_none();
 	s->opnum++;
 }
 

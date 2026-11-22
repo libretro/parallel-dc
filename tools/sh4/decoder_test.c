@@ -32,18 +32,18 @@ static u32 rnd(void) { rng ^= rng << 13; rng ^= rng >> 17; rng ^= rng << 5; retu
 static u16 DYNACALL read16(u32 addr) { return code[((addr - code_base) / 2) & 0xffff]; }
 ReadMem16Func IReadMem16 = read16;
 bool Do_Exception(u32 epc, u32 expEvn, u32 CallVect) { (void)epc; (void)expEvn; (void)CallVect; return true; }
-const char *bm_BlockHash(RuntimeBlockInfo *block) { (void)block; return "-"; }
+bool bm_BlockIsIdle(RuntimeBlockInfo *block) { (void)block; return false; }
 void ngen_GetFeatures(ngen_features *dst) { *dst = features; }
 void os_DebugBreak(void) { fprintf(stderr, "verify failed\n"); abort(); }
 
-void bm_OpPush(RuntimeBlockInfo *block, const shil_opcode *op)
+shil_opcode *bm_OpPush(RuntimeBlockInfo *block)
 {
 	if (block->op_count == block->op_room)
 	{
 		block->op_room = block->op_room ? block->op_room * 2 : 64;
 		block->oplist = (shil_opcode *)realloc(block->oplist, block->op_room * sizeof(shil_opcode));
 	}
-	memcpy(&block->oplist[block->op_count++], op, sizeof(*op));
+	return &block->oplist[block->op_count++];
 }
 
 /* FNV-1a */

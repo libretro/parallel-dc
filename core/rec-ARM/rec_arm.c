@@ -417,15 +417,10 @@ u32 ngen_Relink(RuntimeBlockInfo *block)
 	case BET_Cond_0:
 	case BET_Cond_1:
 		{
-			/* the condition the last op leaves the flags as, where it is the
-			 * one that sets T */
-			int cc_set = A32_EQ, cc_clear = A32_NE, CC = A32_EQ;
-			const bool last_op_sets_flags = !block->has_jcond && !block->tail_flags_lost && block->op_count > 0
-				&& block->oplist[block->op_count - 1].rd._imm == reg_sr_T
-				&& cond_op(block->oplist[block->op_count - 1].op, &cc_set, &cc_clear);
+			int CC = A32_EQ;
 
-			if (last_op_sets_flags)
-				CC = (block->BlockType & 1) == 1 ? cc_set : cc_clear;
+			if (block->tail_cc != -1)
+				CC = block->tail_cc;
 			else
 			{
 				if (!block->has_jcond)
@@ -434,7 +429,7 @@ u32 ngen_Relink(RuntimeBlockInfo *block)
 						a32_mov(A32_R4, block->t_reg, AL);
 					else
 					{
-						INFO_LOG(DYNAREC, "SLOW COND PATH %d\n", (block->op_count == 0) ? -1 : (int)block->oplist[block->op_count - 1].op);
+						INFO_LOG(DYNAREC, "SLOW COND PATH %08x\n", block->vaddr);
 						LoadSh4Reg_mem(A32_R4, reg_sr_T, AL);
 					}
 				}
@@ -2177,6 +2172,8 @@ void ngen_Compile(RuntimeBlockInfo* block, bool force_checks, bool reset, bool s
 	u8* pEnd;
 	u32 cyc;
 	bool accurate;
+	/* (whether something that changes the flags is emitted after the last op) */
+	bool tail_flags_lost;
 	size_t i;
 
 	(void)reset;
@@ -2322,7 +2319,7 @@ void ngen_Compile(RuntimeBlockInfo* block, bool force_checks, bool reset, bool s
 	}
 	sh4_regalloc_cleanup(&ra);
 
-	block->tail_flags_lost = false;
+	tail_flags_lost = false;
 	if (accurate && block->BranchBlock <= block->vaddr
 			&& (block->BlockType == BET_StaticJump || block->BlockType == BET_StaticCall
 				|| block->BlockType == BET_Cond_0 || block->BlockType == BET_Cond_1))
@@ -2342,7 +2339,7 @@ void ngen_Compile(RuntimeBlockInfo* block, bool force_checks, bool reset, bool s
 			 * told to take T from where it is kept instead. (The registers
 			 * that can hold T, and r4 with a delayed branch's condition in
 			 * it, are ones a call leaves alone.) */
-			block->tail_flags_lost = true;
+			tail_flags_lost = true;
 			a32_mov32(A32_R0, (u32)(uintptr_t)&site->skip, AL);
 			a32_ls_imm(A32_LDR, A32_R1, A32_R0, 0, A32_OFFSET, AL);
 			a32_dp_imm(A32_SUB, true, A32_R1, A32_R1, 1, AL);
@@ -2356,6 +2353,18 @@ void ngen_Compile(RuntimeBlockInfo* block, bool force_checks, bool reset, bool s
 			a32_mov(CYC, A32_R0, AL);
 			patch_branch(branch, 0x5A000000);
 		}
+	}
+
+	/* The condition the tail goes by: the one the last op leaves the flags
+	 * as, where it is the one that sets T and nothing has changed them */
+	block->tail_cc = -1;
+	if ((block->BlockType == BET_Cond_0 || block->BlockType == BET_Cond_1) && !block->has_jcond
+			&& !tail_flags_lost && block->op_count > 0
+			&& block->oplist[block->op_count - 1].rd._imm == reg_sr_T)
+	{
+		int cc_set, cc_clear;
+		if (cond_op(block->oplist[block->op_count - 1].op, &cc_set, &cc_clear))
+			block->tail_cc = (block->BlockType & 1) == 1 ? cc_set : cc_clear;
 	}
 
 	/* Relink written bytes must be added to the count ! */

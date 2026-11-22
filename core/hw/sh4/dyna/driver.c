@@ -204,34 +204,67 @@ u32 emit_FreeSpace(void)
 }
 
 
-static char block_hash[1024];
-
-const char *bm_BlockHash(RuntimeBlockInfo *block)
+/* The blocks known to be a wait for something, by how many instructions
+ * they have and the hash of their code (bm_BlockIsIdle()) */
+static const struct
 {
-	u32 hash = 0;
-	u8 *ptr = GetMemPtr(block->addr, block->sh4_code_size);
+	u32 opcodes;
+	u32 hash;
+} idle_blocks[] =
+{
+	/* BIOS */
+	{ 0x05, 0x13B23363 },
+	{ 0x04, 0x2E23A33B },
+	{ 0x04, 0xFB498832 },
+	{ 0x0A, 0x50A249F9 },
 
-	if (ptr)
+	/* SC */
+	{ 0x0A, 0xB4E90338 },
+	{ 0x04, 0x11578A16 },
+	{ 0x04, 0xC281CC52 },
+
+	/* HH */
+	{ 0x07, 0x0757DC10 },
+	{ 0x04, 0x1476CC5E },
+
+	/* these look very suspicious, but I'm not sure about any of them */
+	/* cross testing w/ IKA makes them more suspects than not */
+	{ 0x0D, 0x8C2921FF },
+	{ 0x04, 0xB806EEE4 },
+
+	/*  Dead or Alive 2 */
+	{ 0x08, 0x0A37187A }
+};
+
+bool bm_BlockIsIdle(RuntimeBlockInfo *block)
+{
+	/* (on the stack: nothing allocated) */
+	xxh32_state_t state_room;
+	xxh32_state_t *state = &state_room;
+	const u8 *ptr;
+	u32 hash, i;
+	bool listed = false;
+
+	for (i = 0; i < sizeof(idle_blocks) / sizeof(idle_blocks[0]); i++)
+		if (idle_blocks[i].opcodes == block->guest_opcodes)
+			listed = true;
+	if (!listed)
+		return false;
+	ptr = GetMemPtr(block->addr, block->sh4_code_size);
+	if (ptr == NULL)
+		return false;
+	/* the first guest_opcodes bytes of its code, each as 16 bits */
+	xxh32_reset(state, 7);
+	for (i = 0; i < block->guest_opcodes; i++)
 	{
-		/* (on the stack: nothing allocated) */
-		xxh32_state_t state_room;
-		xxh32_state_t *state = &state_room;
-		u32 i;
-		xxh32_reset(state, 7);
-		for (i = 0; i < block->guest_opcodes; i++)
-		{
-			u16 data = ptr[i];
-			/* Do not count PC relative loads (relocated code) */
-			if ((ptr[i] >> 12) == 0xD)
-				data = 0xD000;
-			xxh32_update(state, &data, 2);
-		}
-		hash = xxh32_digest(state);
+		const u16 data = ptr[i];
+		xxh32_update(state, &data, 2);
 	}
-
-	sprintf(block_hash, ">:1:%02X:%08X", block->guest_opcodes, hash);
-
-	return block_hash;
+	hash = xxh32_digest(state);
+	for (i = 0; i < sizeof(idle_blocks) / sizeof(idle_blocks[0]); i++)
+		if (idle_blocks[i].opcodes == block->guest_opcodes && idle_blocks[i].hash == hash)
+			return true;
+	return false;
 }
 
 bool bm_BlockSetup(RuntimeBlockInfo *block, u32 rpc, fpscr_t rfpu_cfg)
@@ -318,9 +351,11 @@ DynarecCodeEntryPtr rdv_CompilePC(u32 blockcheck_failures)
 		recSh4_ClearCache();
 
 	rbi = bm_NewBlock();
+	bm_BlockLendOps(rbi);
 
 	if (!bm_BlockSetup(rbi, pc,fpscr))
 	{
+		bm_BlockTakeOps(rbi);
 		bm_BlockUnref(rbi);
 		return NULL;
 	}
@@ -341,6 +376,7 @@ DynarecCodeEntryPtr rdv_CompilePC(u32 blockcheck_failures)
 	block_check = rbi->read_only ? false : IsOnRam(rbi->addr);
 	ngen_Compile(rbi, block_check, (pc & 0xFFFFFF) == 0x08300 || (pc & 0xFFFFFF) == 0x10000, false, do_opts);
 	verify(rbi->code!=0);
+	bm_BlockTakeOps(rbi);
 
 	bm_AddBlock(rbi);
 

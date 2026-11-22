@@ -184,9 +184,9 @@ static RuntimeBlockInfo *make_block(void)
 		op.guest_offs = (u16)i;
 		op.op = (shilop)(rnd() % 8);
 		if (b->op_count != 0 && rnd() % 4 == 0)
-			bm_OpInsert(b, rnd() % b->op_count, &op);
+			*bm_OpInsert(b, rnd() % b->op_count) = op;
 		else
-			bm_OpPush(b, &op);
+			*bm_OpPush(b) = op;
 		if (b->op_count != 0 && rnd() % 6 == 0)
 			bm_OpErase(b, rnd() % b->op_count);
 	}

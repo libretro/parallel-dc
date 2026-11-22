@@ -35,18 +35,18 @@ static u32 rnd(void) { rng ^= rng << 13; rng ^= rng >> 17; rng ^= rng << 5; retu
 static u16 DYNACALL read16(u32 addr) { return code[((addr - code_base) / 2) & 0xffff]; }
 ReadMem16Func IReadMem16 = read16;
 bool Do_Exception(u32 epc, u32 expEvn, u32 CallVect) { (void)epc; (void)expEvn; (void)CallVect; return true; }
-const char *bm_BlockHash(RuntimeBlockInfo *block) { (void)block; return "-"; }
+bool bm_BlockIsIdle(RuntimeBlockInfo *block) { (void)block; return false; }
 void ngen_GetFeatures(ngen_features *dst) { *dst = features; }
 void os_DebugBreak(void) { fprintf(stderr, "verify failed\n"); abort(); }
 
-void bm_OpPush(RuntimeBlockInfo *block, const shil_opcode *op)
+shil_opcode *bm_OpPush(RuntimeBlockInfo *block)
 {
 	if (block->op_count == block->op_room)
 	{
 		block->op_room = block->op_room ? block->op_room * 2 : 64;
 		block->oplist = (shil_opcode *)realloc(block->oplist, block->op_room * sizeof(shil_opcode));
 	}
-	memcpy(&block->oplist[block->op_count++], op, sizeof(*op));
+	return &block->oplist[block->op_count++];
 }
 
 
@@ -61,12 +61,11 @@ f32_x2 sin_table[0x10000];
 retro_log_printf_t log_cb;
 u32 mmu_data_translation_r8(u32 va, u32 *rv) { *rv = va; return (va >> 12) & 1 ? MMU_ERROR_NONE : 1; }
 
-void bm_OpInsert(RuntimeBlockInfo *block, u32 at, const shil_opcode *op)
+shil_opcode *bm_OpInsert(RuntimeBlockInfo *block, u32 at)
 {
-	shil_opcode keep = *op;
-	bm_OpPush(block, op);
+	bm_OpPush(block);
 	memmove(&block->oplist[at + 1], &block->oplist[at], (block->op_count - 1 - at) * sizeof(shil_opcode));
-	block->oplist[at] = keep;
+	return &block->oplist[at];
 }
 void bm_OpErase(RuntimeBlockInfo *block, u32 at)
 {
@@ -139,7 +138,7 @@ static void copy_block(RuntimeBlockInfo *d, const RuntimeBlockInfo *s)
 	d->op_room = room;
 	d->op_count = 0;
 	for (i = 0; i < s->op_count; i++)
-		bm_OpPush(d, &s->oplist[i]);
+		*bm_OpPush(d) = s->oplist[i];
 }
 
 /* random code, with runs of the shapes the decoder looks for, constants
@@ -246,7 +245,7 @@ static void push_op(RuntimeBlockInfo *b, shilop o, shil_param rd, shil_param rs1
 	op.rd2 = op.rs3 = shil_param_none();
 	op.rs1 = rs1;
 	op.rs2 = rs2;
-	bm_OpPush(b, &op);
+	*bm_OpPush(b) = op;
 }
 
 /* Shapes the passes look for, seldom come by at random: copies of copies,
@@ -419,7 +418,7 @@ static void random_ops(RuntimeBlockInfo *b)
 		if ((r >> 26) % 8 == 0 && i < n - 1)
 			random_shape(b);
 		op.guest_offs = (u16)(2 * b->op_count);
-		bm_OpPush(b, &op);
+		*bm_OpPush(b) = op;
 	}
 	b->sh4_code_size = 2 * b->op_count;
 	b->read_only = (rnd() & 1) != 0;
@@ -488,18 +487,18 @@ static int division_of_constants(void)
 	op.op = shop_mov32;
 	op.rd = shil_param_reg(reg_r1);
 	op.rs1 = shil_param_imm(1000);
-	bm_OpPush(&b, &op);
+	*bm_OpPush(&b) = op;
 	op.rd = shil_param_reg(reg_r2);
 	op.rs1 = shil_param_imm(7);
-	bm_OpPush(&b, &op);
+	*bm_OpPush(&b) = op;
 	op.rd = shil_param_reg(reg_r3);
 	op.rs1 = shil_param_imm(0);
-	bm_OpPush(&b, &op);
+	*bm_OpPush(&b) = op;
 	op.op = shop_div32u;
 	op.rd = op.rs1 = shil_param_reg(reg_r1);
 	op.rs2 = shil_param_reg(reg_r2);
 	op.rd2 = op.rs3 = shil_param_reg(reg_r3);
-	bm_OpPush(&b, &op);
+	*bm_OpPush(&b) = op;
 	AnalyseBlock(&b);
 	for (i = 0; i < b.op_count; i++)
 	{

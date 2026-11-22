@@ -65,17 +65,17 @@ static u32 rnd(void) { rng ^= rng << 13; rng ^= rng >> 17; rng ^= rng << 5; retu
 
 static u16 DYNACALL read16(u32 addr) { return code[((addr - code_base) / 2) & 0xffff]; }
 ReadMem16Func IReadMem16 = read16;
-const char *bm_BlockHash(RuntimeBlockInfo *block) { (void)block; return "-"; }
+bool bm_BlockIsIdle(RuntimeBlockInfo *block) { (void)block; return false; }
 void os_DebugBreak(void) { fprintf(stderr, "verify failed %p\n", __builtin_return_address(0)); abort(); }
 
-void bm_OpPush(RuntimeBlockInfo *block, const shil_opcode *op)
+shil_opcode *bm_OpPush(RuntimeBlockInfo *block)
 {
 	if (block->op_count == block->op_room)
 	{
 		block->op_room = block->op_room ? block->op_room * 2 : 64;
 		block->oplist = (shil_opcode *)realloc(block->oplist, block->op_room * sizeof(shil_opcode));
 	}
-	memcpy(&block->oplist[block->op_count++], op, sizeof(*op));
+	return &block->oplist[block->op_count++];
 }
 
 
@@ -103,12 +103,11 @@ f32_x2 sin_table[0x10000];
 #endif
 retro_log_printf_t log_cb;
 
-void bm_OpInsert(RuntimeBlockInfo *block, u32 at, const shil_opcode *op)
+shil_opcode *bm_OpInsert(RuntimeBlockInfo *block, u32 at)
 {
-	shil_opcode keep = *op;
-	bm_OpPush(block, op);
+	bm_OpPush(block);
 	memmove(&block->oplist[at + 1], &block->oplist[at], (block->op_count - 1 - at) * sizeof(shil_opcode));
-	block->oplist[at] = keep;
+	return &block->oplist[at];
 }
 void bm_OpErase(RuntimeBlockInfo *block, u32 at)
 {
@@ -149,7 +148,7 @@ static void copy_block(RuntimeBlockInfo *d, const RuntimeBlockInfo *s)
 	d->op_room = room;
 	d->op_count = 0;
 	for (i = 0; i < s->op_count; i++)
-		bm_OpPush(d, &s->oplist[i]);
+		*bm_OpPush(d) = s->oplist[i];
 }
 
 /* random code, with runs of the shapes the decoder looks for, constants

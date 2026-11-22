@@ -26,30 +26,6 @@ const unsigned dec_state_size = sizeof(state_t);
 
 static RuntimeBlockInfo* blk;
 
-static const char idle_hash[] =
-	/* BIOS */
-       ">:1:05:13B23363"
-       ">:1:04:2E23A33B"
-       ">:1:04:FB498832"
-       ">:1:0A:50A249F9"
-
-	/* SC */
-       ">:1:0A:B4E90338"
-       ">:1:04:11578A16"
-       ">:1:04:C281CC52"
-
-	/* HH */
-       ">:1:07:0757DC10"
-       ">:1:04:1476CC5E"
-
-	/* these look very suspicious, but I'm not sure about any of them */
-	/* cross testing w/ IKA makes them more suspects than not */
-       ">:1:0D:8C2921FF"
-       ">:1:04:B806EEE4"
-
-       /*  Dead or Alive 2 */
-       ">:1:08:0A37187A";
-
 #define mk_imm(immv) shil_param_imm((u32)(immv))
 #define mk_reg(reg) shil_param_reg((u32)(reg))
 #define mk_regi(reg) shil_param_reg((u32)(reg))
@@ -60,37 +36,34 @@ static state_t state;
 static void Emit(shilop op, shil_param rd, shil_param rs1, shil_param rs2,
 		u32 flags, shil_param rs3, shil_param rd2)
 {
-	shil_opcode sp;
+	shil_opcode *const sp = bm_OpPush(blk);
 
-	memset(&sp, 0, sizeof(sp));
-	sp.flags=flags;
-	sp.op=op;
-	sp.rd=(rd);
-	sp.rd2=(rd2);
-	sp.rs1=(rs1);
-	sp.rs2=(rs2);
-	sp.rs3=(rs3);
-	sp.guest_offs=state.cpu.rpc-blk->vaddr;
-	sp.delay_slot = state.cpu.is_delayslot;
-
-	bm_OpPush(blk, &sp);
+	memset(sp, 0, sizeof(*sp));
+	sp->flags=flags;
+	sp->op=op;
+	sp->rd=(rd);
+	sp->rd2=(rd2);
+	sp->rs1=(rs1);
+	sp->rs2=(rs2);
+	sp->rs3=(rs3);
+	sp->guest_offs=state.cpu.rpc-blk->vaddr;
+	sp->delay_slot = state.cpu.is_delayslot;
 }
 
 static void dec_fallback(u32 op)
 {
-	shil_opcode opcd;
-	memset(&opcd, 0, sizeof(opcd));
-	opcd.rd = opcd.rd2 = shil_param_none();
-	opcd.op=shop_ifb;
+	shil_opcode *const opcd = bm_OpPush(blk);
+	memset(opcd, 0, sizeof(*opcd));
+	opcd->rd = opcd->rd2 = shil_param_none();
+	opcd->op=shop_ifb;
 
-	opcd.rs1=shil_param_imm(OPCODE_NEEDPC(OpDesc[op]->type));
+	opcd->rs1=shil_param_imm(OPCODE_NEEDPC(OpDesc[op]->type));
 
-	opcd.rs2=shil_param_imm(state.cpu.rpc+2);
-	opcd.rs3=shil_param_imm(op);
+	opcd->rs2=shil_param_imm(state.cpu.rpc+2);
+	opcd->rs3=shil_param_imm(op);
 
-	opcd.guest_offs = state.cpu.rpc - blk->vaddr;
-	opcd.delay_slot = state.cpu.is_delayslot;
-	bm_OpPush(blk, &opcd);
+	opcd->guest_offs = state.cpu.rpc - blk->vaddr;
+	opcd->delay_slot = state.cpu.is_delayslot;
 }
 
 static void dec_DynamicSet(u32 regbase,u32 offs)
@@ -1193,21 +1166,6 @@ _end:
 	blk->BlockType=state.BlockType;
 
 	verify(blk->op_count <= BLOCK_MAX_SH_OPS_HARD);
-	
-#if 0
-#ifdef _WIN32
-   switch(rbi->addr)
-   {
-      case 0x8C09ED16:
-      case 0x8C0BA50E:
-      case 0x8C0BA506:
-      case 0x8C0BA526:
-      case 0x8C224800:
-		INFO_LOG(DYNAREC, "HASH: %08X reloc %s\n",blk->addr,bm_BlockHash(blk));
-         break;
-   }
-#endif
-#endif
 
 	if (settings.dynarec.AccurateTiming)
 	{
@@ -1226,7 +1184,7 @@ _end:
 		 * blocks known to be in one, which this core has always had: with
 		 * the block's real cycles a game on it would spin its loop three
 		 * times as often as before. */
-		else if (!mmu_enabled() && strstr(idle_hash, bm_BlockHash(blk)))
+		else if (!mmu_enabled() && bm_BlockIsIdle(blk))
 			blk->guest_cycles = max_cycles;
 		else
 			blk->guest_cycles = blk->guest_cycles > 1 ? blk->guest_cycles : 1;
@@ -1236,9 +1194,8 @@ _end:
 
 	/* cycle tricks */
 	/* Experimental hash-id based idle skip */
-	if (!mmu_enabled() && strstr(idle_hash, bm_BlockHash(blk)))
+	if (!mmu_enabled() && bm_BlockIsIdle(blk))
 	{
-		/* printf("IDLESKIP: %08X reloc match %s\n",blk->addr,bm_BlockHash(blk)); */
 		blk->guest_cycles=max_cycles*100;
 	}
 	else

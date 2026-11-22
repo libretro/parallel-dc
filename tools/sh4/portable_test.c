@@ -180,24 +180,23 @@ DynarecCodeEntryPtr DYNACALL rdv_FailedToFindBlock(u32 pc)
 }
 
 DynarecCodeEntryPtr DYNACALL rdv_BlockCheckFail(u32 addr) { (void)addr; nothere("rdv_BlockCheckFail"); return NULL; }
-const char *bm_BlockHash(RuntimeBlockInfo *block) { (void)block; return "-"; }
+bool bm_BlockIsIdle(RuntimeBlockInfo *block) { (void)block; return false; }
 
-void bm_OpPush(RuntimeBlockInfo *block, const shil_opcode *op)
+shil_opcode *bm_OpPush(RuntimeBlockInfo *block)
 {
 	if (block->op_count == block->op_room)
 	{
 		block->op_room = block->op_room ? block->op_room * 2 : 64;
 		block->oplist = (shil_opcode *)realloc(block->oplist, block->op_room * sizeof(shil_opcode));
 	}
-	memcpy(&block->oplist[block->op_count++], op, sizeof(*op));
+	return &block->oplist[block->op_count++];
 }
 
-void bm_OpInsert(RuntimeBlockInfo *block, u32 at, const shil_opcode *op)
+shil_opcode *bm_OpInsert(RuntimeBlockInfo *block, u32 at)
 {
-	shil_opcode keep = *op;
-	bm_OpPush(block, op);
+	bm_OpPush(block);
 	memmove(&block->oplist[at + 1], &block->oplist[at], (block->op_count - 1 - at) * sizeof(shil_opcode));
-	block->oplist[at] = keep;
+	return &block->oplist[at];
 }
 
 void bm_OpErase(RuntimeBlockInfo *block, u32 at)

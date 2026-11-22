@@ -108,8 +108,8 @@ extern "C" {
 /* The block made ready to be decoded at @pc with @fpu_cfg (false: the SH4
  * took an exception on the way) */
 bool bm_BlockSetup(RuntimeBlockInfo *block, u32 pc, fpscr_t fpu_cfg);
-/* its code's hash, for the list of idle loops */
-const char *bm_BlockHash(RuntimeBlockInfo *block);
+/* whether it is one of the blocks known to be a wait for something */
+bool bm_BlockIsIdle(RuntimeBlockInfo *block);
 /* The recompiler's: the block's links made again, for its pNextBlock and
  * pBranchBlock as they are now (none: back to the main loop); the bytes of
  * code that come to */
@@ -169,8 +169,9 @@ struct RuntimeBlockInfo
 	/* (it, its lists and the lists blocks are kept in take their room from
 	 * the recompiler's pool, node_pool.h: compiling a block allocates
 	 * nothing once the pool is large enough) */
-	/* Its operations: op_count of them, in room for op_room, in the
-	 * recompiler's pool (bm_OpPush(), bm_OpInsert(), bm_OpErase()) */
+	/* Its operations while it is made: op_count of them, in room for
+	 * op_room (bm_OpPush(), bm_OpInsert(), bm_OpErase()), in the list
+	 * bm_BlockLendOps() lends it; none once it is made */
 	shil_opcode *oplist;
 	u32 op_count;
 	u32 op_room;
@@ -189,11 +190,11 @@ struct RuntimeBlockInfo
 	 * this one comes in (past the test of the address it is run at). */
 	u32 link_at[2];
 	u32 linked_entry;
-	/* 32-bit ARM: the host register T is in at the end (-1: none), and
-	 * whether the tail cannot go by the flags the last instruction left
-	 * (something that changes them is emitted in between) */
+	/* 32-bit ARM: the host register T is in at the end (-1: none), and the
+	 * condition the tail goes by where it goes by the flags the last
+	 * instruction left (-1: it compares T) */
 	int t_reg;
-	bool tail_flags_lost;
+	int tail_cc;
 
 	/* in the lists of the pages its code is in (read-only blocks), and in
 	 * the temporary blocks' (temp_block): links of their own, nothing
@@ -206,7 +207,6 @@ struct RuntimeBlockInfo
 #ifdef __cplusplus
 	/* (for the recompilers in C++) */
 	bool Setup(u32 pc, fpscr_t cfg) { return bm_BlockSetup(this, pc, cfg); }
-	const char *hash() { return bm_BlockHash(this); }
 	bool contains_code(const u8* ptr) const
 	{
 		return ((size_t)(ptr-(u8*)code)) < host_code_size;
@@ -228,11 +228,16 @@ static TYPES_INLINE bool bm_ContainsCode(const RuntimeBlockInfo *block, const u8
 #ifdef __cplusplus
 extern "C" {
 #endif
-/* An operation added at the end of @block's, put in at @at, taken out
- * from @at */
-void bm_OpPush(RuntimeBlockInfo *block, const shil_opcode *op);
-void bm_OpInsert(RuntimeBlockInfo *block, u32 at, const shil_opcode *op);
+/* Room for an operation at the end of @block's, room for one put in at
+ * @at (those from there on moved up), an operation taken out from @at: the
+ * room is the caller's to fill, where it is */
+shil_opcode *bm_OpPush(RuntimeBlockInfo *block);
+shil_opcode *bm_OpInsert(RuntimeBlockInfo *block, u32 at);
 void bm_OpErase(RuntimeBlockInfo *block, u32 at);
+/* The list of operations lent to @block while it is made, and taken back
+ * from it before it is kept or let go: one list for every block, kept */
+void bm_BlockLendOps(RuntimeBlockInfo *block);
+void bm_BlockTakeOps(RuntimeBlockInfo *block);
 
 /* A new block, held once (by whoever makes it): in the recompiler's pool */
 RuntimeBlockInfo *bm_NewBlock(void);

@@ -734,6 +734,30 @@ static void bm_ReleaseBlocks(void)
 }
 
 
+/* The operations of the block being made: one list, lent to each block in
+ * turn while it is decoded and compiled (bm_BlockLendOps()) and taken back
+ * after, grown when a block needs more and kept */
+static shil_opcode *lent_ops;
+static u32 lent_op_room;
+
+void bm_BlockLendOps(RuntimeBlockInfo *block)
+{
+	block->oplist = lent_ops;
+	block->op_room = lent_op_room;
+	block->op_count = 0;
+	lent_ops = NULL;
+	lent_op_room = 0;
+}
+
+void bm_BlockTakeOps(RuntimeBlockInfo *block)
+{
+	lent_ops = block->oplist;
+	lent_op_room = block->op_room;
+	block->oplist = NULL;
+	block->op_room = 0;
+	block->op_count = 0;
+}
+
 void bm_Term(void)
 {
 #ifdef DYNA_OPROF
@@ -743,6 +767,9 @@ void bm_Term(void)
 #endif
 	bm_ReleaseBlocks();
 	bm_Reset();
+	node_pool_free(lent_ops, lent_op_room * sizeof(*lent_ops));
+	lent_ops = NULL;
+	lent_op_room = 0;
 }
 
 
@@ -779,18 +806,18 @@ static void op_room(RuntimeBlockInfo *block, u32 count)
 	block->op_room = room;
 }
 
-void bm_OpPush(RuntimeBlockInfo *block, const shil_opcode *op)
+shil_opcode *bm_OpPush(RuntimeBlockInfo *block)
 {
 	op_room(block, block->op_count + 1);
-	memcpy((void *)&block->oplist[block->op_count++], op, sizeof(*op));
+	return &block->oplist[block->op_count++];
 }
 
-void bm_OpInsert(RuntimeBlockInfo *block, u32 at, const shil_opcode *op)
+shil_opcode *bm_OpInsert(RuntimeBlockInfo *block, u32 at)
 {
 	op_room(block, block->op_count + 1);
-	memmove((void *)&block->oplist[at + 1], &block->oplist[at], (block->op_count - at) * sizeof(*op));
-	memcpy((void *)&block->oplist[at], op, sizeof(*op));
+	memmove((void *)&block->oplist[at + 1], &block->oplist[at], (block->op_count - at) * sizeof(*block->oplist));
 	block->op_count++;
+	return &block->oplist[at];
 }
 
 void bm_OpErase(RuntimeBlockInfo *block, u32 at)
