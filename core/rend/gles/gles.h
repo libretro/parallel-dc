@@ -313,7 +313,7 @@ void gl_frame_drawn(void);
 void gl_frame_buffers_term(void);
 extern GLuint fogTextureId;
 extern GLuint paletteTextureId;
-void UpdateFogTexture(u8 *fog_table, GLenum texture_slot, GLint fog_image_format);
+void UpdateFogTexture(GLenum texture_slot, GLint fog_image_format);
 void UpdatePaletteTexture(GLenum texture_slot);
 void DoCleanup(void);
 

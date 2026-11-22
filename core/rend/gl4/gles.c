@@ -825,7 +825,7 @@ static bool RenderFrame(void)
 	gl4ShaderUniforms.fog_clamp_max[2] = ((pvrrc.fog_clamp_max >> 0) & 0xFF) / 255.0f;
 	gl4ShaderUniforms.fog_clamp_max[3] = ((pvrrc.fog_clamp_max >> 24) & 0xFF) / 255.0f;
 
-	UpdateFogTexture((u8 *)FOG_TABLE, GL_TEXTURE5, GL_RED);
+	UpdateFogTexture(GL_TEXTURE5, GL_RED);
 	if (palette_updated)
 	{
 		UpdatePaletteTexture(GL_TEXTURE6);

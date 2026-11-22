@@ -1260,7 +1260,7 @@ static bool gl_create_resources(void)
 	return true;
 }
 
-void UpdateFogTexture(u8 *fog_table, GLenum texture_slot, GLint fog_image_format)
+void UpdateFogTexture(GLenum texture_slot, GLint fog_image_format)
 {
 	/* The table is 256 bytes, so whether it needs uploading is decided by
 	 * looking at it: build the texture's contents from the registers this
@@ -1273,11 +1273,14 @@ void UpdateFogTexture(u8 *fog_table, GLenum texture_slot, GLint fog_image_format
 	 * taken: the renderer then uploaded the old table, cleared the flag,
 	 * and the new table was never uploaded. A game that rewrites the same
 	 * table every frame also no longer uploads it every frame. */
-	static u8 uploaded[256];
-	u8 temp_tex_buffer[256];
-	MakeFogTexture(temp_tex_buffer);
+	/* Two tables, taken in turn: the one the GPU has and the one built
+	 * now, which becomes the GPU's when it is uploaded */
+	static u8 tables[2][256];
+	static unsigned uploaded;
+	u8 *const table = tables[uploaded ^ 1];
+	MakeFogTexture(table);
 
-	if (fogTextureId != 0 && !memcmp(uploaded, temp_tex_buffer, sizeof(uploaded)))
+	if (fogTextureId != 0 && !memcmp(tables[uploaded], table, sizeof(tables[0])))
 		return;
 
 	glActiveTexture(texture_slot);
@@ -1298,9 +1301,9 @@ void UpdateFogTexture(u8 *fog_table, GLenum texture_slot, GLint fog_image_format
 		glc_bind_texture(GL_TEXTURE_2D, fogTextureId);
 
     glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
-	glTexImage2D(GL_TEXTURE_2D, 0, fog_image_format == GL_RED ? GL_R8 : fog_image_format, 128, 2, 0, fog_image_format, GL_UNSIGNED_BYTE, temp_tex_buffer);
+	glTexImage2D(GL_TEXTURE_2D, 0, fog_image_format == GL_RED ? GL_R8 : fog_image_format, 128, 2, 0, fog_image_format, GL_UNSIGNED_BYTE, table);
 	glCheck();
-	memcpy(uploaded, temp_tex_buffer, sizeof(uploaded));
+	uploaded ^= 1;
 
 	glActiveTexture(GL_TEXTURE0);
 }
@@ -1573,7 +1576,7 @@ static bool RenderFrame(void)
 	ShaderUniforms.fog_clamp_max[3] = ((pvrrc.fog_clamp_max >> 24) & 0xFF) / 255.0f;
 
 
-	UpdateFogTexture((u8 *)FOG_TABLE, GL_TEXTURE1, gl.single_channel_format);
+	UpdateFogTexture(GL_TEXTURE1, gl.single_channel_format);
 	if (palette_updated)
 	{
 		UpdatePaletteTexture(GL_TEXTURE2);
