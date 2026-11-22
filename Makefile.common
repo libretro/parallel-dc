@@ -253,9 +253,12 @@ ifeq ($(HAVE_VULKAN), 1)
 					$(CORE_DIR)/core/rend/vulkan/hdr_encode_vk.c \
 					$(CORE_DIR)/core/rend/vulkan/vk_context.c \
 					$(CORE_DIR)/core/rend/vulkan/vk_pso.c \
-					$(CORE_DIR)/core/rend/vulkan/vk_shaders.c
+					$(CORE_DIR)/core/rend/vulkan/vk_shaders.c \
+					$(CORE_DIR)/core/rend/vulkan/vk_buffer.c \
+					$(CORE_DIR)/core/rend/vulkan/vk_cmd_pool.c \
+					$(CORE_DIR)/core/rend/vulkan/vk_gpu_timer.c \
+					$(CORE_DIR)/core/rend/vulkan/vk_desc_cache.c
 	SOURCES_CXX += \
-					$(CORE_DIR)/core/rend/vulkan/buffer.cpp \
 					$(CORE_DIR)/core/rend/vulkan/drawer.cpp \
 					$(CORE_DIR)/core/rend/vulkan/motion_pass.cpp \
 					$(CORE_DIR)/core/rend/vulkan/writeout.cpp \

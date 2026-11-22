@@ -20,65 +20,53 @@
 */
 #pragma once
 #include "vulkan.h"
+#include "vk_buffer.h"
 #include "heap.h"
 
+/* The C++ renderers' view of a vk_buffer, until they are C too */
 struct BufferData
 {
-   BufferData(vk::DeviceSize size, const vk::BufferUsageFlags& usage,
-			const vk::MemoryPropertyFlags& propertyFlags = vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent);
-	~BufferData()
+	/* the buffer, as vk::UniqueBuffer was read */
+	struct Handle
 	{
-		buffer.reset();
-	}
-
-	void upload(u32 size, const void *data, u32 bufOffset = 0) const
+		vk::Buffer h;
+		const vk::Buffer& operator*() const { return h; }
+		const vk::Buffer& get() const { return h; }
+		explicit operator bool() const { return (bool)h; }
+	};
+	/* its memory, as Allocation was */
+	struct Memory
 	{
-		verify((m_propertyFlags & vk::MemoryPropertyFlagBits::eHostCoherent) && (m_propertyFlags & vk::MemoryPropertyFlagBits::eHostVisible));
-		verify(bufOffset + size <= bufferSize);
+		const vk_buffer *b;
+		void *MapMemory() const { return vk_buffer_map(b); }
+		VkMemoryPropertyFlags PropertyFlags() const { return vk_buffer_memory_flags(b); }
+	};
 
-		void* dataPtr = (u8 *)allocation.MapMemory() + bufOffset;
-		memcpy(dataPtr, data, size);
+	BufferData(vk::DeviceSize size, const vk::BufferUsageFlags& usage,
+			const vk::MemoryPropertyFlags& propertyFlags = vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent)
+	{
+		const VkResult res = vk_buffer_init(&b, size, (VkBufferUsageFlags)usage, (VkMemoryPropertyFlags)propertyFlags);
+		if (res != VK_SUCCESS)
+			throwResultException((vk::Result)res, "vk_buffer_init");
+		buffer.h = vk::Buffer(b.buffer);
+		bufferSize = size;
+		allocation.b = &b;
 	}
+	~BufferData() { vk_buffer_free(&b); }
+	BufferData(const BufferData&) = delete;
+	BufferData& operator=(const BufferData&) = delete;
 
+	void upload(u32 size, const void *data, u32 bufOffset = 0) const { vk_buffer_upload(&b, size, data, bufOffset); }
 	void upload(size_t count, u32 *sizes, const void **data, u32 bufOffset = 0) const
 	{
-		verify((m_propertyFlags & vk::MemoryPropertyFlagBits::eHostCoherent) && (m_propertyFlags & vk::MemoryPropertyFlagBits::eHostVisible));
-
-		u32 totalSize = 0;
-		for (int i = 0; i < count; i++)
-			totalSize += sizes[i];
-		verify(bufOffset + totalSize <= bufferSize);
-		void* dataPtr = (u8 *)allocation.MapMemory() + bufOffset;
-		for (int i = 0; i < count; i++)
-		{
-			if (data[i] != nullptr)
-				memcpy(dataPtr, data[i], sizes[i]);
-			dataPtr = (u8 *)dataPtr + sizes[i];
-		}
+		vk_buffer_upload_many(&b, count, sizes, data, bufOffset);
 	}
+	void download(u32 size, void *data, u32 bufOffset = 0) const { vk_buffer_download(&b, size, data, bufOffset); }
+	void *MapMemory() { return vk_buffer_map(&b); }
+	void UnmapMemory() {}
 
-	void download(u32 size, void *data, u32 bufOffset = 0) const
-	{
-		verify((m_propertyFlags & vk::MemoryPropertyFlagBits::eHostCoherent) && (m_propertyFlags & vk::MemoryPropertyFlagBits::eHostVisible));
-		verify(bufOffset + size <= bufferSize);
-
-		void* dataPtr = (u8 *)allocation.MapMemory() + bufOffset;
-		memcpy(data, dataPtr, size);
-	}
-
-	void *MapMemory()
-	{
-		return allocation.MapMemory();
-	}
-	void UnmapMemory()
-	{
-	}
-
-	vk::UniqueBuffer buffer;
+	vk_buffer b;
+	Handle buffer;
 	vk::DeviceSize bufferSize;
-	Allocation allocation;
-
-private:
-	vk::BufferUsageFlags    m_usage;
-	vk::MemoryPropertyFlags m_propertyFlags;
+	Memory allocation;
 };
