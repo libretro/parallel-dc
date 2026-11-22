@@ -349,6 +349,11 @@ void emit_Write32(u32 data)
 	}
 }
 #else
+#if REC_ARM64
+/* (the AArch64 one sets them aside around its main loop: never set here) */
+u32 *emit_ptr;
+u32 *emit_ptr_limit;
+#endif
 void *emit_GetCCPtr(void) { return cache_at; }
 void emit_Skip(u32 sz) { cache_at += sz; }
 #endif
@@ -1443,6 +1448,43 @@ static bool rotcr_check(RuntimeBlockInfo *a)
 }
 #endif
 
+#if REC_ARM64
+/* The code emptied as recSh4_ClearCache() empties it (back to the start of
+ * the cache, ngen_ResetBlocks()): the first block made after it goes after
+ * the main loop and its routines, made there again, and not over them. Not
+ * hashed. */
+static bool clear_check(RuntimeBlockInfo *a)
+{
+	fpscr_t cfg;
+
+	settings.dreamcast.FullMMU = false;
+	CCN_MMUCR.AT = 0;
+	code_base = 0x8C010000;
+	code[0] = 0xE001;	/* mov #1,r0 */
+	code[1] = 0x000B;	/* rts */
+	code[2] = 0x0009;	/* nop */
+	cfg.full = 0;
+	setup(a, code_base, cfg);
+	if (!dec_DecodeBlock(a, SH4_TIMESLICE / 2))
+	{
+		printf("FAIL: cache clear: the block does not decode\n");
+		return false;
+	}
+	copy_block(&compiled, a);
+	AnalyseBlock(&compiled);
+	compiled.addr = compiled.vaddr & 0x1FFFFFFF;
+	cache_at = cache_base = cache;
+	ngen_ResetBlocks();
+	ngen_Compile(&compiled, false, false, false, true);
+	if ((u8 *)(uintptr_t)compiled.code == cache)
+	{
+		printf("FAIL: cache clear: the block is over the main loop\n");
+		return false;
+	}
+	return true;
+}
+#endif
+
 int main(int argc, char **argv)
 {
 	int n = argc > 1 ? atoi(argv[1]) : 20000, t;
@@ -1541,6 +1583,10 @@ int main(int argc, char **argv)
 	printf("%d blocks, %u things reached, %08x\n", n, other_count, h);
 #if REC_ARM
 	if (!rotcr_check(&a))
+		return 1;
+#endif
+#if REC_ARM64
+	if (!clear_check(&a))
 		return 1;
 #endif
 	free(a.oplist);

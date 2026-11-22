@@ -209,8 +209,6 @@ static int (*arm64_intc_sched)(void);
 static void (*arm64_no_update)(void);
 
 static bool restarting;
-/* (driver.c: where the temporary cache ends while a block is made there) */
-extern u32 *emit_ptr_limit;
 
 static void generate_mainloop(void);
 
@@ -2480,12 +2478,10 @@ void ngen_Compile(RuntimeBlockInfo* block, bool force_checks, bool reset, bool s
 {
 	(void)reset;
 	(void)staging;
-	/* The main loop and its routines first, as ngen_AllocateBlock() had them
-	 * made before the C rewrite: a cache clear (recSh4_ClearCache(), which
-	 * puts the code back at its start) has ngen_ResetBlocks() drop them, and
-	 * a block made before they are made again would call where they were,
-	 * which the block itself is now written over. They go in the main cache
-	 * even when the block is for the temporary one. */
+	/* The main loop and its routines, gone with the cache (ngen_ResetBlocks()),
+	 * are made again before the first block after it, in the main cache even
+	 * for a temporary block. They go where they were and, with the MMU as it
+	 * was, come out the same: the code still to return into them finds them. */
 	if (mainloop == NULL)
 	{
 		u32 *const temp_ptr = emit_ptr;

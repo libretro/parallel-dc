@@ -53,6 +53,8 @@ extern "C" {
 
 /* alternative emit ptr, set to 0 to use the main buffer */
 extern u32* emit_ptr;
+/* where the alternative buffer ends */
+extern u32* emit_ptr_limit;
 
 void emit_Write32(u32 data);
 void emit_Skip(u32 sz);
