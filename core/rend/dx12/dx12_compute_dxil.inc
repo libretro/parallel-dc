@@ -18905,6 +18905,6 @@ static const u32 dx12_compute_dxil_8_0[] = {
 0xc7c86c04,0xcf90d888,0x80038188,0xfd341820,0xd1af1b51,0x1ea1621a,0xb40420c4,0x2c20cb31,
 0xc04b313e,0x00000020,0x00000000,
 };
-// by PVRC_K_* (the walk's sorted variant by SSAA_LOG2() of its samples, after the last, then its unsorted for 1, 2, 4 and 8): the words, and their size in bytes
+/* by PVRC_K_* (the walk's sorted variant by SSAA_LOG2() of its samples, after the last, then its unsorted for 1, 2, 4 and 8): the words, and their size in bytes */
 static const u32 * const dx12_compute_dxil[] = { 0, dx12_compute_dxil_1_0, dx12_compute_dxil_2_0, dx12_compute_dxil_3_0, dx12_compute_dxil_4_0, dx12_compute_dxil_5_1, dx12_compute_dxil_6_0, dx12_compute_dxil_7_0, dx12_compute_dxil_8_0, dx12_compute_dxil_5_2, dx12_compute_dxil_5_4, dx12_compute_dxil_5_8, dx12_compute_dxil_5_1u, dx12_compute_dxil_5_2u, dx12_compute_dxil_5_4u, dx12_compute_dxil_5_8u };
 static const size_t dx12_compute_dxil_size[] = { 0, sizeof(dx12_compute_dxil_1_0), sizeof(dx12_compute_dxil_2_0), sizeof(dx12_compute_dxil_3_0), sizeof(dx12_compute_dxil_4_0), sizeof(dx12_compute_dxil_5_1), sizeof(dx12_compute_dxil_6_0), sizeof(dx12_compute_dxil_7_0), sizeof(dx12_compute_dxil_8_0), sizeof(dx12_compute_dxil_5_2), sizeof(dx12_compute_dxil_5_4), sizeof(dx12_compute_dxil_5_8), sizeof(dx12_compute_dxil_5_1u), sizeof(dx12_compute_dxil_5_2u), sizeof(dx12_compute_dxil_5_4u), sizeof(dx12_compute_dxil_5_8u) };

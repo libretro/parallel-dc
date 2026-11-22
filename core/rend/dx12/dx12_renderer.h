@@ -28,6 +28,7 @@
 #include "rend/transform_matrix.h"
 #include "rend/shadows.h"
 #include "dx12context_lr.h"
+#include "rend/dx11/comptr.h"
 #include "parse_arena_d3d12.h"
 #include "dx12_overlay.h"
 #include "dx12_writeout.h"
@@ -108,7 +109,7 @@ public:
 	// (TA processing switched on or off)
 	void OptionsChanged() override;
 	// (its pipelines made: Renderer::Ready())
-	bool Ready() override { return context->Pipelines().Made(); }
+	bool Ready() override { return dx12_pso_made(); }
 
 protected:
 	virtual bool RenderFrame();
@@ -156,12 +157,11 @@ protected:
 		DX12Image image;
 	};
 
-	DX12Context *context = nullptr;
+	dx12_context *context = nullptr;	// (the context, while the renderer has it)
 	ID3D12Device *device = nullptr;
 	DX12TexDecoder texDecoder;		// (before the cache: textures going away tell it)
 	DX12TexturePool texPool;		// (and give their textures back)
 	DX12TextureCache texCache;
-	DX12Overlay overlay;
 	TransformMatrix<false> matrices;
 
 	/* GPU-side TA processing (dx12_ta_decoder.h): a frame it decodes is
@@ -234,7 +234,6 @@ protected:
 	 * (unordered access views of them): set before they are made */
 	bool storagePictures = false;
 	// ...or by the chip's write-out (dx12_writeout.h), as they were made
-	DX12WriteOut writeOut;
 	bool writeOutPictures = false;
 	bool lastInExtra = false;		// the last picture is in it
 	u32 screenWidth = 0;
@@ -395,7 +394,7 @@ protected:
 	};
 	struct DrawArgs
 	{
-		u32 constants[DX12Context::PolyConstantCount];
+		u32 constants[DX12C_POLY_CONSTANT_COUNT];
 		D3D12_DRAW_INDEXED_ARGUMENTS draw;
 	};
 	enum { BATCH_MAX = 4096 };

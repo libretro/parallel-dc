@@ -20344,6 +20344,6 @@ static const unsigned char dx12_ta_dxbc_15[] = {
 0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
 0x00,0x00,0x00,0x00,0x04,0x00,0x00,0x00,0x01,0x00,0x00,0x00,0x02,0x00,0x00,0x00,
 };
-// by TAG_K_*: the bytes, and how many
+/* by TAG_K_*: the bytes, and how many */
 static const unsigned char * const dx12_ta_dxbc[] = { 0, dx12_ta_dxbc_1, dx12_ta_dxbc_2, dx12_ta_dxbc_3, dx12_ta_dxbc_4, dx12_ta_dxbc_5, dx12_ta_dxbc_6, dx12_ta_dxbc_7, dx12_ta_dxbc_8, dx12_ta_dxbc_9, dx12_ta_dxbc_10, dx12_ta_dxbc_11, dx12_ta_dxbc_12, dx12_ta_dxbc_13, dx12_ta_dxbc_14, dx12_ta_dxbc_15 };
 static const size_t dx12_ta_dxbc_size[] = { 0, sizeof(dx12_ta_dxbc_1), sizeof(dx12_ta_dxbc_2), sizeof(dx12_ta_dxbc_3), sizeof(dx12_ta_dxbc_4), sizeof(dx12_ta_dxbc_5), sizeof(dx12_ta_dxbc_6), sizeof(dx12_ta_dxbc_7), sizeof(dx12_ta_dxbc_8), sizeof(dx12_ta_dxbc_9), sizeof(dx12_ta_dxbc_10), sizeof(dx12_ta_dxbc_11), sizeof(dx12_ta_dxbc_12), sizeof(dx12_ta_dxbc_13), sizeof(dx12_ta_dxbc_14), sizeof(dx12_ta_dxbc_15) };

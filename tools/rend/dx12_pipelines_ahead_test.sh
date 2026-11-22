@@ -1,8 +1,8 @@
 #!/bin/sh
 # The Direct3D 12 renderer's pipelines made ahead, on a device
-# (tools/rend/dx12_pipelines_ahead_test.cpp): built with mingw-w64
-# (CXX_WIN, default x86_64-w64-mingw32-g++) from the renderer's own
-# rend/dx12/dx12_pso.cpp and its shaders, run under wine (WINE, default
+# (tools/rend/dx12_pipelines_ahead_test.c): built with mingw-w64
+# (CC_WIN, default x86_64-w64-mingw32-gcc) from the renderer's own
+# rend/dx12/dx12_pso.c and its shaders, run under wine (WINE, default
 # wine64, or /usr/lib/wine/wine64 where only that is there; "" on Windows)
 # and xvfb-run where this is not Windows: wine's own vkd3d, with its
 # virtual heaps (VKD3D_CONFIG=virtual_heaps: the renderer's root signature
@@ -19,8 +19,7 @@ if [ -z "$WORK" ]; then
    trap 'rm -rf "$WORK"' EXIT
 fi
 mkdir -p "$WORK/data"
-CXX_WIN=${CXX_WIN:-x86_64-w64-mingw32-g++}
-CC_WIN=${CC_WIN:-$(echo "$CXX_WIN" | sed 's/g++$/gcc/')}
+CC_WIN=${CC_WIN:-x86_64-w64-mingw32-gcc}
 if [ -z "${WINE+x}" ]; then
    if command -v wine64 > /dev/null; then WINE=wine64
    elif [ -x /usr/lib/wine/wine64 ]; then WINE=/usr/lib/wine/wine64
@@ -34,11 +33,11 @@ fi
 LRC=core/libretro-common
 INC="-Icore -Icore/deps -I$LRC/include -Icore/libretro"
 DEFS="-D__LIBRETRO__ -DHAVE_THREADS -DHAVE_D3D12 -DNDEBUG"
-for f in core/rend/d3d_warm.c $LRC/encodings/encoding_xxh32.c $LRC/queues/retro_spsc.c $LRC/rthreads/rthreads.c $LRC/rthreads/retro_eventcount.c; do
+for f in core/rend/dx12/dx12_pso.c core/rend/dx12/dx12_shaders.c core/rend/d3d_warm.c $LRC/encodings/encoding_xxh32.c $LRC/queues/retro_spsc.c $LRC/rthreads/rthreads.c $LRC/rthreads/retro_eventcount.c; do
    $CC_WIN -O1 $DEFS $INC -c -o "$WORK/$(basename "$f" .c).o" "$f"
 done
-$CXX_WIN -std=c++11 -O1 -fpermissive -fno-operator-names $DEFS $INC -o "$WORK/dx12_pipelines_ahead_test.exe" \
-   tools/rend/dx12_pipelines_ahead_test.cpp core/rend/dx12/dx12_pso.cpp core/rend/dx12/dx12_shaders.cpp \
+$CC_WIN -O1 $DEFS $INC -Itools/rend -o "$WORK/dx12_pipelines_ahead_test.exe" \
+   tools/rend/dx12_pipelines_ahead_test.c \
    "$WORK"/*.o -ld3d12 -ldxguid -static
 ARGS="Z:$(echo "$WORK/data/" | tr / '\\')"
 cd "$WORK"

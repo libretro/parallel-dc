@@ -18123,6 +18123,6 @@ static const u32 dx12_compute_hdr_dxil_5_8u[] = {
 0x08f6e419,0x70cb60fa,0x07d047b7,0x3dbd065b,0x32d83e82,0xf411edf0,0x7e0196c1,0xb60fa08f,
 0x047bf50c,0xc065b07d,0x83e823df,0x1efe832d,0x00001f41,0x00000000,0x00000000,
 };
-// the sorted variant by SSAA_LOG2() of its samples, then the unsorted: the words, and their size in bytes
+/* the sorted variant by SSAA_LOG2() of its samples, then the unsorted: the words, and their size in bytes */
 static const u32 * const dx12_compute_hdr_dxil[] = { dx12_compute_hdr_dxil_5_1, dx12_compute_hdr_dxil_5_2, dx12_compute_hdr_dxil_5_4, dx12_compute_hdr_dxil_5_8, dx12_compute_hdr_dxil_5_1u, dx12_compute_hdr_dxil_5_2u, dx12_compute_hdr_dxil_5_4u, dx12_compute_hdr_dxil_5_8u };
 static const size_t dx12_compute_hdr_dxil_size[] = { sizeof(dx12_compute_hdr_dxil_5_1), sizeof(dx12_compute_hdr_dxil_5_2), sizeof(dx12_compute_hdr_dxil_5_4), sizeof(dx12_compute_hdr_dxil_5_8), sizeof(dx12_compute_hdr_dxil_5_1u), sizeof(dx12_compute_hdr_dxil_5_2u), sizeof(dx12_compute_hdr_dxil_5_4u), sizeof(dx12_compute_hdr_dxil_5_8u) };

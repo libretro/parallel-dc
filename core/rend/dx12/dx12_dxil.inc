@@ -9466,7 +9466,7 @@ static const unsigned char dx12_hdr_dxil_1[] = {
 0x04,0xa9,0xb0,0x65,0xa8,0x83,0x20,0x15,0xb6,0x0c,0xb9,0x10,0xa4,0x02,0x00,0x00,
 0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
 };
-// by DX12Shader and DX12HdrShader: the bytes, and how many
+/* by DX12Shader and DX12HdrShader: the bytes, and how many */
 static const unsigned char * const dx12_dxil[] = { 0, dx12_dxil_1, dx12_dxil_2, dx12_dxil_3, dx12_dxil_4, dx12_dxil_5, dx12_dxil_6, dx12_dxil_7, dx12_dxil_8, dx12_dxil_9, dx12_dxil_10, dx12_dxil_11, dx12_dxil_12, dx12_dxil_13, dx12_dxil_14, dx12_dxil_15, dx12_dxil_16, dx12_dxil_17, dx12_dxil_18, dx12_dxil_19, dx12_dxil_20, dx12_dxil_21, dx12_dxil_22, dx12_dxil_23, dx12_dxil_24, dx12_dxil_25, dx12_dxil_26, dx12_dxil_27, dx12_dxil_28, dx12_dxil_29 };
 static const size_t dx12_dxil_size[] = { 0, sizeof(dx12_dxil_1), sizeof(dx12_dxil_2), sizeof(dx12_dxil_3), sizeof(dx12_dxil_4), sizeof(dx12_dxil_5), sizeof(dx12_dxil_6), sizeof(dx12_dxil_7), sizeof(dx12_dxil_8), sizeof(dx12_dxil_9), sizeof(dx12_dxil_10), sizeof(dx12_dxil_11), sizeof(dx12_dxil_12), sizeof(dx12_dxil_13), sizeof(dx12_dxil_14), sizeof(dx12_dxil_15), sizeof(dx12_dxil_16), sizeof(dx12_dxil_17), sizeof(dx12_dxil_18), sizeof(dx12_dxil_19), sizeof(dx12_dxil_20), sizeof(dx12_dxil_21), sizeof(dx12_dxil_22), sizeof(dx12_dxil_23), sizeof(dx12_dxil_24), sizeof(dx12_dxil_25), sizeof(dx12_dxil_26), sizeof(dx12_dxil_27), sizeof(dx12_dxil_28), sizeof(dx12_dxil_29) };
 static const unsigned char * const dx12_hdr_dxil[] = { 0, dx12_hdr_dxil_1 };

@@ -10072,6 +10072,6 @@ static const unsigned char dx12_dxbc_29[] = {
 0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
 0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
 };
-// by DX12Shader: the bytes, and how many
+/* by DX12Shader: the bytes, and how many */
 static const unsigned char * const dx12_dxbc[] = { 0, dx12_dxbc_1, dx12_dxbc_2, dx12_dxbc_3, dx12_dxbc_4, dx12_dxbc_5, dx12_dxbc_6, dx12_dxbc_7, dx12_dxbc_8, dx12_dxbc_9, dx12_dxbc_10, dx12_dxbc_11, dx12_dxbc_12, dx12_dxbc_13, dx12_dxbc_14, dx12_dxbc_15, dx12_dxbc_16, dx12_dxbc_17, dx12_dxbc_18, dx12_dxbc_19, dx12_dxbc_20, dx12_dxbc_21, dx12_dxbc_22, dx12_dxbc_23, dx12_dxbc_24, dx12_dxbc_25, dx12_dxbc_26, dx12_dxbc_27, dx12_dxbc_28, dx12_dxbc_29 };
 static const size_t dx12_dxbc_size[] = { 0, sizeof(dx12_dxbc_1), sizeof(dx12_dxbc_2), sizeof(dx12_dxbc_3), sizeof(dx12_dxbc_4), sizeof(dx12_dxbc_5), sizeof(dx12_dxbc_6), sizeof(dx12_dxbc_7), sizeof(dx12_dxbc_8), sizeof(dx12_dxbc_9), sizeof(dx12_dxbc_10), sizeof(dx12_dxbc_11), sizeof(dx12_dxbc_12), sizeof(dx12_dxbc_13), sizeof(dx12_dxbc_14), sizeof(dx12_dxbc_15), sizeof(dx12_dxbc_16), sizeof(dx12_dxbc_17), sizeof(dx12_dxbc_18), sizeof(dx12_dxbc_19), sizeof(dx12_dxbc_20), sizeof(dx12_dxbc_21), sizeof(dx12_dxbc_22), sizeof(dx12_dxbc_23), sizeof(dx12_dxbc_24), sizeof(dx12_dxbc_25), sizeof(dx12_dxbc_26), sizeof(dx12_dxbc_27), sizeof(dx12_dxbc_28), sizeof(dx12_dxbc_29) };

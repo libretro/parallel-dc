@@ -17,6 +17,7 @@
 /* The compute renderer on Direct3D 12: see dx12_compute.h */
 #include "dx12_compute.h"
 #include "dx12context_lr.h"
+#include "dx12_writeout.h"
 #include "dx12_texture.h"
 #include "rend/ssaa_pattern.h"
 #include "rend/ta_gpu.h"
@@ -40,7 +41,7 @@ static_assert(sizeof(dx12_compute_hdr_dxil) / sizeof(dx12_compute_hdr_dxil[0]) =
  * then both with the channel sums */
 #include "dx12_compute_upscaler_dxil.inc"
 static_assert(sizeof(dx12_compute_upscaler_dxil) / sizeof(dx12_compute_upscaler_dxil[0]) == 4, "the walk's variants, without and with the sums");
-// (for the raster renderers' write-out: dx12_writeout.cpp)
+// (for the raster renderers' write-out: dx12_writeout.c)
 const void *dx12_compute_kernel(u32 kernel, size_t *size)
 {
 	*size = dx12_compute_dxil_size[kernel];
@@ -57,13 +58,13 @@ static_assert(PVRC_TEX_SLOTS <= 0x10000 && DX12_SRV_TABLE_SIZE <= 0x10000 && DX1
  * frame's every primitive (4 MiB), as Vulkan's */
 static const u32 PoolEntries = 2u << 20;
 /* The pieces of the ring: frames in flight at once */
-static const u32 Slots = DX12Context::ComputeTables;
+static const u32 Slots = DX12C_COMPUTE_TABLES;
 /* The kernels' views (the table's), in the order of their registers: the
  * buffers u0 to u9, then the picture (u0, space 2), the HDR output's
  * channel sums (u1, space 2: a null view but for its walks) and the
  * temporal upscaler's depth (u2, space 2: the same) */
 enum { V_FRAME, V_REC, V_BIN, V_VTX, V_IDX, V_MOD, V_CMD, V_TRD, V_DFRM, V_SLOTS, V_PICTURE, V_SUMS, V_DEPTH, V_COUNT };
-static_assert(V_COUNT == DX12Context::ComputeTableSize, "the context's tables have room for the views");
+static_assert(V_COUNT == DX12C_COMPUTE_TABLE_SIZE, "the context's tables have room for the views");
 /* (the translucent fragments the walk keeps at a time: what the kernels
  * were made for, pvrc_fragments_kept() of what every Direct3D 12 device
  * gives a workgroup) */
@@ -184,7 +185,7 @@ DX12ComputeDrawer::~DX12ComputeDrawer() { Term(); }
 
 const char *DX12ComputeDrawer::DeviceLacks()
 {
-	ID3D12Device *device = DX12Context::Instance()->GetDevice();
+	ID3D12Device *device = dx12c.device;
 	if (device == nullptr)
 		return "no device";
 	D3D12_FEATURE_DATA_SHADER_MODEL model{};
@@ -233,8 +234,7 @@ bool DX12ComputeDrawer::Init(u32 width, u32 height, u32 samples, bool depth)
 	Term();
 	if (failed)
 		return false;
-	DX12Context *context = DX12Context::Instance();
-	ID3D12Device *device = context->GetDevice();
+	ID3D12Device *device = dx12c.device;
 	this->width = width;
 	this->height = height;
 	this->samples = samples > 4 ? 8 : samples > 2 ? 4 : samples > 1 ? 2 : 1;
@@ -262,7 +262,7 @@ bool DX12ComputeDrawer::Init(u32 width, u32 height, u32 samples, bool depth)
 	r->pieceWords = r->frameWords + PVRC_TEX_SLOTS;
 	r->recordBytes = (u64)ComputeFrame::MaxPrims() * PVRC_REC_WORDS * 4;
 	const u64 deviceBytes = r->recordBytes + (u64)r->binWords * 4 + (u64)PVRC_B_POOL(r->runs) * 4 + (u64)width * height * 4;
-	if ((deviceBytes >> 10) > context->GetVramBudget().available_kib())
+	if ((deviceBytes >> 10) > dx12c.vram_budget.available_kib())
 		return fail("not enough video memory");
 
 	/* The root signature: the pictures' places in the table (b0); the table
@@ -321,7 +321,7 @@ bool DX12ComputeDrawer::Init(u32 width, u32 height, u32 samples, bool depth)
 	/* (the HDR output's: the walks that store the channel sums; with them
 	 * not made, the screen's walks are the others and the picture is
 	 * encoded as it is) */
-	if (context->HdrActive())
+	if (dx12c_hdr_active())
 	{
 		auto makeHdr = [&](u32 index, ComPtr<ID3D12PipelineState>& out) {
 			D3D12_COMPUTE_PIPELINE_STATE_DESC desc{};
@@ -404,10 +404,10 @@ bool DX12ComputeDrawer::Init(u32 width, u32 height, u32 samples, bool depth)
 	if (ok)
 	{
 		ok = dx12_make_texture(device, width, height, 1, DXGI_FORMAT_R8G8B8A8_UNORM, D3D12_RESOURCE_FLAG_NONE, r->startState, r->start);
-		r->startSrv = ok ? context->Srv().Alloc() : ~0u;
+		r->startSrv = ok ? dx12_heap_alloc(&dx12c.srv_heap) : ~0u;
 		ok = ok && r->startSrv != ~0u;
 		if (ok)
-			context->MakeSrv(r->start, DXGI_FORMAT_R8G8B8A8_UNORM, 1, r->startSrv);
+			dx12c_make_srv(r->start, DXGI_FORMAT_R8G8B8A8_UNORM, 1, r->startSrv);
 	}
 	if (!ok)
 		return fail("its buffers could not be made");
@@ -424,7 +424,7 @@ bool DX12ComputeDrawer::Init(u32 width, u32 height, u32 samples, bool depth)
 	 * when a frame of the decode's has the piece) */
 	for (u32 s = 0; s < Slots; s++)
 	{
-		const u32 table = DX12Context::ComputeFirst + s * DX12Context::ComputeTableSize;
+		const u32 table = DX12C_COMPUTE_FIRST + s * DX12C_COMPUTE_TABLE_SIZE;
 		auto view = [&](u32 v, ID3D12Resource *buffer, u64 firstWord, u64 words) {
 			D3D12_UNORDERED_ACCESS_VIEW_DESC desc{};
 			desc.Format = DXGI_FORMAT_UNKNOWN;
@@ -432,7 +432,7 @@ bool DX12ComputeDrawer::Init(u32 width, u32 height, u32 samples, bool depth)
 			desc.Buffer.FirstElement = firstWord;
 			desc.Buffer.NumElements = (UINT)words;
 			desc.Buffer.StructureByteStride = 4;
-			device->CreateUnorderedAccessView(buffer, nullptr, &desc, context->Srv().Cpu(table + v));
+			device->CreateUnorderedAccessView(buffer, nullptr, &desc, dx12_heap_cpu(&dx12c.srv_heap, table + v));
 		};
 		view(V_FRAME, r->ring, (u64)s * r->pieceWords, r->frameWords);
 		view(V_REC, r->records, 0, r->recordBytes / 4);
@@ -443,9 +443,9 @@ bool DX12ComputeDrawer::Init(u32 width, u32 height, u32 samples, bool depth)
 		D3D12_UNORDERED_ACCESS_VIEW_DESC sums{};
 		sums.Format = DXGI_FORMAT_R16G16B16A16_UINT;
 		sums.ViewDimension = D3D12_UAV_DIMENSION_TEXTURE2D;
-		device->CreateUnorderedAccessView(nullptr, nullptr, &sums, context->Srv().Cpu(table + V_SUMS));
+		device->CreateUnorderedAccessView(nullptr, nullptr, &sums, dx12_heap_cpu(&dx12c.srv_heap, table + V_SUMS));
 		sums.Format = DX12UpscalerDepthFormat;
-		device->CreateUnorderedAccessView(nullptr, nullptr, &sums, context->Srv().Cpu(table + V_DEPTH));
+		device->CreateUnorderedAccessView(nullptr, nullptr, &sums, dx12_heap_cpu(&dx12c.srv_heap, table + V_DEPTH));
 	}
 
 	ready = true;
@@ -470,13 +470,12 @@ void DX12ComputeDrawer::Term()
 					(unsigned long long)statWhy[ComputeFrame::Why_Room], (unsigned long long)statWhy[ComputeFrame::Why_Decode],
 					(unsigned long long)statBusy);
 		}
-		DX12Context *context = DX12Context::Instance();
 		/* (what a frame still on the GPU has goes once it is done with it) */
 		auto release = [&](ComPtr<ID3D12Resource>& b) {
 			if (b)
 			{
 				b->AddRef();
-				context->Release(b.get());
+				dx12c_release((IUnknown *)(b.get()));
 				b.reset();
 			}
 		};
@@ -493,12 +492,12 @@ void DX12ComputeDrawer::Term()
 		release(res->stats);
 		release(res->start);
 		if (res->startSrv != ~0u)
-			context->ReleaseSrv(res->startSrv);
+			dx12c_release_srv(res->startSrv);
 		auto releasePso = [&](ComPtr<ID3D12PipelineState>& pso) {
 			if (pso)
 			{
 				pso->AddRef();
-				context->Release(pso.get());
+				dx12c_release((IUnknown *)(pso.get()));
 				pso.reset();
 			}
 		};
@@ -516,13 +515,13 @@ void DX12ComputeDrawer::Term()
 		if (res->root)
 		{
 			res->root->AddRef();
-			context->Release(res->root.get());
+			dx12c_release((IUnknown *)(res->root.get()));
 			res->root.reset();
 		}
 		if (res->dispatch)
 		{
 			res->dispatch->AddRef();
-			context->Release(res->dispatch.get());
+			dx12c_release((IUnknown *)(res->dispatch.get()));
 			res->dispatch.reset();
 		}
 		delete res;
@@ -551,7 +550,6 @@ bool DX12ComputeDrawer::DepthStored() const
 void DX12ComputeDrawer::RingForDraw(D3D12_VERTEX_BUFFER_VIEW& vertices, D3D12_INDEX_BUFFER_VIEW& indices)
 {
 	Resources& r = *res;
-	DX12Context *context = DX12Context::Instance();
 	const u32 *words = r.ringMap + (size_t)r.slot * r.pieceWords;
 	const D3D12_GPU_VIRTUAL_ADDRESS piece = r.ring->GetGPUVirtualAddress() + (u64)r.slot * r.pieceWords * 4;
 	vertices.BufferLocation = piece + (u64)words[PVRC_F_O_VTX] * 4;
@@ -560,8 +558,7 @@ void DX12ComputeDrawer::RingForDraw(D3D12_VERTEX_BUFFER_VIEW& vertices, D3D12_IN
 	indices.BufferLocation = piece + (u64)words[PVRC_F_O_IDX] * 4;
 	indices.SizeInBytes = (r.frameWords - words[PVRC_F_O_IDX]) * 4;
 	indices.Format = DXGI_FORMAT_R32_UINT;
-	context->Transition(r.ring, r.ringState,
-			(D3D12_RESOURCE_STATES)(D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER | D3D12_RESOURCE_STATE_INDEX_BUFFER));
+	dx12c_transition_resource(r.ring, &r.ringState, (D3D12_RESOURCE_STATES)(D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER | D3D12_RESOURCE_STATE_INDEX_BUFFER), D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES);
 }
 
 bool DX12ComputeDrawer::SumsStored() const
@@ -577,10 +574,9 @@ u32 DX12ComputeDrawer::StartSrv() const
 void DX12ComputeDrawer::CopyStart(ID3D12Resource *from)
 {
 	Resources& r = *res;
-	DX12Context *context = DX12Context::Instance();
-	context->Transition(r.start, r.startState, D3D12_RESOURCE_STATE_COPY_DEST);
-	context->Cmd()->CopyResource(r.start, from);
-	context->Transition(r.start, r.startState, (D3D12_RESOURCE_STATES)(D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE | D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE));
+	dx12c_transition_resource(r.start, &r.startState, D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES);
+	dx12c_cmd()->CopyResource(r.start, from);
+	dx12c_transition_resource(r.start, &r.startState, (D3D12_RESOURCE_STATES)(D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE | D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE), D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES);
 }
 
 bool DX12ComputeDrawer::CanDraw() const
@@ -593,12 +589,11 @@ bool DX12ComputeDrawer::CanDraw() const
 bool DX12ComputeDrawer::Prepare(ComputeFrame& frame, u32 last, bool scaled, u32 rttWidth, u32 rttHeight)
 {
 	Resources& r = *res;
-	DX12Context *context = DX12Context::Instance();
 	/* The next piece of the ring, if the GPU is done with the frame that
 	 * had it (and the counts it left, read); else the per-pixel renderer
 	 * draws this one */
 	const u32 slot = (r.slot + 1) % Slots;
-	if (r.pieceFence[slot] > context->Completed())
+	if (r.pieceFence[slot] > dx12c_completed())
 	{
 		if (statBusy++ == 0)
 			NOTICE_LOG(RENDERER, "Direct3D 12 compute renderer: the GPU still has the piece of the ring this frame would take (an earlier frame's): the per-pixel renderer draws it (and others like it, not logged)\n");
@@ -653,15 +648,14 @@ bool DX12ComputeDrawer::Prepare(ComputeFrame& frame, u32 last, bool scaled, u32 
 void DX12ComputeDrawer::Record(ID3D12Resource *picture, ID3D12Resource *sums, ID3D12Resource *depth)
 {
 	Resources& r = *res;
-	DX12Context *context = DX12Context::Instance();
-	ID3D12Device *device = context->GetDevice();
-	ID3D12GraphicsCommandList *cmd = context->Cmd();
+	ID3D12Device *device = dx12c.device;
+	ID3D12GraphicsCommandList *cmd = dx12c_cmd();
 	const u32 slot = r.slot;
 	const u32 *words = r.ringMap + (size_t)slot * r.pieceWords;
-	const u32 table = DX12Context::ComputeFirst + slot * DX12Context::ComputeTableSize;
+	const u32 table = DX12C_COMPUTE_FIRST + slot * DX12C_COMPUTE_TABLE_SIZE;
 
 	// (the ring as the kernels read it, after a frame's motion vector pass read it as its buffers)
-	context->Transition(r.ring, r.ringState, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+	dx12c_transition_resource(r.ring, &r.ringState, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES);
 	/* The piece's views: the picture, and what the frame's vertices,
 	 * indices, volumes and the decode's words are read from - the ring's
 	 * piece, or the decode's buffers (views are a few words in the heap,
@@ -670,17 +664,17 @@ void DX12ComputeDrawer::Record(ID3D12Resource *picture, ID3D12Resource *sums, ID
 		D3D12_UNORDERED_ACCESS_VIEW_DESC desc{};
 		desc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
 		desc.ViewDimension = D3D12_UAV_DIMENSION_TEXTURE2D;
-		device->CreateUnorderedAccessView(picture, nullptr, &desc, context->Srv().Cpu(table + V_PICTURE));
+		device->CreateUnorderedAccessView(picture, nullptr, &desc, dx12_heap_cpu(&dx12c.srv_heap, table + V_PICTURE));
 		// (the HDR output's channel sums, a frame of the screen's: where its walks store them)
 		if (!r.walkSums || r.rtt)
 			sums = nullptr;
 		desc.Format = DXGI_FORMAT_R16G16B16A16_UINT;
-		device->CreateUnorderedAccessView(sums, nullptr, &desc, context->Srv().Cpu(table + V_SUMS));
+		device->CreateUnorderedAccessView(sums, nullptr, &desc, dx12_heap_cpu(&dx12c.srv_heap, table + V_SUMS));
 		// (the temporal upscaler's depth, a frame of the screen's at one sample: where its walks store it)
 		if (!r.walkDepth || r.rtt || (sums != nullptr && !r.walkDepthSums))
 			depth = nullptr;
 		desc.Format = DX12UpscalerDepthFormat;
-		device->CreateUnorderedAccessView(depth, nullptr, &desc, context->Srv().Cpu(table + V_DEPTH));
+		device->CreateUnorderedAccessView(depth, nullptr, &desc, dx12_heap_cpu(&dx12c.srv_heap, table + V_DEPTH));
 		auto view = [&](u32 v, ID3D12Resource *buffer, u64 firstWord, u64 count) {
 			D3D12_UNORDERED_ACCESS_VIEW_DESC d{};
 			d.Format = DXGI_FORMAT_UNKNOWN;
@@ -688,7 +682,7 @@ void DX12ComputeDrawer::Record(ID3D12Resource *picture, ID3D12Resource *sums, ID
 			d.Buffer.FirstElement = firstWord;
 			d.Buffer.NumElements = (UINT)count;
 			d.Buffer.StructureByteStride = 4;
-			device->CreateUnorderedAccessView(buffer, nullptr, &d, context->Srv().Cpu(table + v));
+			device->CreateUnorderedAccessView(buffer, nullptr, &d, dx12_heap_cpu(&dx12c.srv_heap, table + v));
 		};
 		if (r.gpu)
 		{
@@ -714,14 +708,14 @@ void DX12ComputeDrawer::Record(ID3D12Resource *picture, ID3D12Resource *sums, ID
 	{
 		DX12PooledTexture *t = r.slots.images[i];
 		if (t != nullptr && t->state != read)
-			context->Transition(t->resource, t->state, read);
+			dx12c_transition_resource(t->resource, &t->state, read, D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES);
 	}
 
 	/* The bins' counts and starts of this frame's runs, and the counts for
 	 * the log, 0; the pool is 0 after the frame before's clear */
 	const u32 used = (r.gpu ? r.chunks : words[PVRC_F_CHUNKS]) * words[PVRC_F_TILES_X] * words[PVRC_F_TILES_Y];
 	D3D12_RESOURCE_STATES binState = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
-	context->Transition(r.bins, binState, D3D12_RESOURCE_STATE_COPY_DEST);
+	dx12c_transition_resource(r.bins, &binState, D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES);
 	if (used >= r.runs)
 		cmd->CopyBufferRegion(r.bins, 0, r.zero, 0, (u64)PVRC_B_POOL(r.runs) * 4);
 	else
@@ -734,16 +728,16 @@ void DX12ComputeDrawer::Record(ID3D12Resource *picture, ID3D12Resource *sums, ID
 		}
 		cmd->CopyBufferRegion(r.bins, (u64)PVRC_B_STATS(r.runs) * 4, r.zero, 0, (u64)(PVRC_B_POOL(r.runs) - PVRC_B_STATS(r.runs)) * 4);
 	}
-	context->Transition(r.bins, binState, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+	dx12c_transition_resource(r.bins, &binState, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES);
 
-	ID3D12DescriptorHeap * const heaps[2] = { context->Srv().Heap(), context->Samplers().Heap() };
+	ID3D12DescriptorHeap * const heaps[2] = { dx12c.srv_heap.heap, dx12c.sampler_heap.heap };
 	cmd->SetDescriptorHeaps(2, heaps);
 	cmd->SetComputeRootSignature(r.root);
 	const u32 places[2] = { r.last != ~0u ? r.last : DX12_SRV_NONE, DX12_SRV_PALETTE };
 	cmd->SetComputeRoot32BitConstants(0, 2, places, 0);
-	cmd->SetComputeRootDescriptorTable(1, context->Srv().Gpu(table));
-	cmd->SetComputeRootDescriptorTable(2, context->Srv().Gpu(0));
-	cmd->SetComputeRootDescriptorTable(3, context->Samplers().Gpu(0));
+	cmd->SetComputeRootDescriptorTable(1, dx12_heap_gpu(&dx12c.srv_heap, table));
+	cmd->SetComputeRootDescriptorTable(2, dx12_heap_gpu(&dx12c.srv_heap, 0));
+	cmd->SetComputeRootDescriptorTable(3, dx12_heap_gpu(&dx12c.sampler_heap, 0));
 
 	auto barrier = [&]() {
 		D3D12_RESOURCE_BARRIER b{};
@@ -753,14 +747,14 @@ void DX12ComputeDrawer::Record(ID3D12Resource *picture, ID3D12Resource *sums, ID
 	// the bins' counts, as the GPU made them, to the dispatches' arguments
 	D3D12_RESOURCE_STATES argState = D3D12_RESOURCE_STATE_INDIRECT_ARGUMENT;
 	auto arguments = [&]() {
-		context->Transition(r.bins, binState, D3D12_RESOURCE_STATE_COPY_SOURCE);
-		context->Transition(r.args, argState, D3D12_RESOURCE_STATE_COPY_DEST);
+		dx12c_transition_resource(r.bins, &binState, D3D12_RESOURCE_STATE_COPY_SOURCE, D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES);
+		dx12c_transition_resource(r.args, &argState, D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES);
 		cmd->CopyBufferRegion(r.args, 0, r.bins, (u64)PVRC_B_STATS(r.runs) * 4, PVRC_ST_ARGS * 4);
 		const u64 across = ((words[PVRC_F_TILE_LOG2] - 5) * 4 + SSAA_LOG2(r.rtt ? 1u : samples)) * 4;
 		cmd->CopyBufferRegion(r.args, PVRC_ST_WALK_U_X * 4, r.across, across, 4);
 		cmd->CopyBufferRegion(r.args, PVRC_ST_WALK_S_X * 4, r.across, across, 4);
-		context->Transition(r.args, argState, D3D12_RESOURCE_STATE_INDIRECT_ARGUMENT);
-		context->Transition(r.bins, binState, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+		dx12c_transition_resource(r.args, &argState, D3D12_RESOURCE_STATE_INDIRECT_ARGUMENT, D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES);
+		dx12c_transition_resource(r.bins, &binState, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES);
 	};
 	// (a render to a texture is drawn at one sample a pixel)
 	const u32 n = r.rtt ? 1 : samples;
@@ -822,14 +816,14 @@ void DX12ComputeDrawer::Record(ID3D12Resource *picture, ID3D12Resource *sums, ID
 	r.depthStored = depth != nullptr;
 	indirect(PVRC_K_CLEAR, PVRC_ST_CLEAR_X);
 	// the counts, for when this piece comes round
-	context->Transition(r.bins, binState, D3D12_RESOURCE_STATE_COPY_SOURCE);
+	dx12c_transition_resource(r.bins, &binState, D3D12_RESOURCE_STATE_COPY_SOURCE, D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES);
 	cmd->CopyBufferRegion(r.stats, (u64)slot * PVRC_STATS * 4, r.bins, (u64)PVRC_B_STATS(r.runs) * 4, PVRC_STATS * 4);
-	context->Transition(r.bins, binState, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+	dx12c_transition_resource(r.bins, &binState, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES);
 	r.statsWritten[slot] = true;
 	// (the list this is in signals the next value when it is submitted)
-	r.pieceFence[slot] = context->LastSubmitted() + 1;
+	r.pieceFence[slot] = dx12c.fence_value + 1;
 	// (another root signature and table were bound for compute: the raster's are bound again when they are drawn with)
-	context->ForgetRaster();
+	dx12c_forget_raster();
 	statFrames++;
 	if (r.gpu)
 		statGpuFrames++;

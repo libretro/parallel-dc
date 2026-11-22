@@ -4,26 +4,24 @@
  * reicast_pvr2_scaler asks: the compute renderer's own pass
  * (pvr_compute.h's PVRC_K_YFILTER, the same DXIL), run in place over the
  * picture before what goes over it (the VMUs, the crosshairs). Made in
- * Init(), when the renderer starts; nothing is made in a frame, and a
+ * dx12_writeout_init(), when the renderer starts; nothing is made in a frame, and a
  * frame without a write-out records nothing. */
 #pragma once
 #include "dx12context_lr.h"
 
-class DX12WriteOut
-{
-public:
-	// whether the pictures are to be made for it (unordered access views of them)
-	static bool Wanted();
-	void Init(DX12Context *context);
-	void Term();
-	// the pass over @picture, which is left in D3D12_RESOURCE_STATE_UNORDERED_ACCESS if there was one
-	void Record(DX12Image& picture);
+#ifdef __cplusplus
+extern "C" {
+#endif
 
-private:
-	DX12Context *context = nullptr;
-	ComPtr<ID3D12RootSignature> root;
-	ComPtr<ID3D12PipelineState> pipeline;
-	ComPtr<ID3D12Resource> words;	// a slot of the frame's words for each picture the frontend can hold
-	u32 *mapped = nullptr;
-	u32 slot = 0;
-};
+/* whether the pictures are to be made for it (unordered access views of them) */
+bool dx12_writeout_wanted(void);
+void dx12_writeout_init(void);
+void dx12_writeout_term(void);
+/* the pass over @picture, which is left in D3D12_RESOURCE_STATE_UNORDERED_ACCESS if there was one */
+void dx12_writeout_record(dx12_image *picture);
+/* (dx12_compute.cpp has the kernels' DXIL) */
+const void *dx12_compute_kernel(u32 kernel, size_t *size);
+
+#ifdef __cplusplus
+}
+#endif

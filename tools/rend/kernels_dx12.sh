@@ -141,7 +141,7 @@ COUNT=29
 HDR_INC=core/rend/dx12/dx12_hdr_dxbc.inc
 # The same shaders, raster and HDR, as DXIL (shader model 6.0, HLSL 2018 as
 # the DXBC's source is written), for a device that takes it
-# (dx12_shaders.cpp): made by dxc, which signs them
+# (dx12_shaders.c): made by dxc, which signs them
 DXIL_INC=core/rend/dx12/dx12_dxil.inc
 HDR_SHADERS="1:ps_5_1:DX12_OIT_FINAL_PS,$S,DX12_MS_TABLE,DX12_OIT_SUMS"
 HDR_COUNT=1
@@ -368,7 +368,7 @@ make_compute_upscaler_inc() {
       od -An -v -w32 -tx4 --endian=little "$WORK/u$n.dxil" | awk '{ s = ""; for (i = 1; i <= NF; i++) s = s "0x" $i ","; print s }'
       echo "};"
    done
-   echo "// the sorted variant, the unsorted; then both with the sums: the words, and their size in bytes"
+   echo "/* the sorted variant, the unsorted; then both with the sums: the words, and their size in bytes */"
    l="static const u32 * const dx12_compute_upscaler_dxil[] = {"
    z="static const size_t dx12_compute_upscaler_dxil_size[] = {"
    c=
@@ -401,7 +401,7 @@ make_compute_hdr_inc() {
       od -An -v -w32 -tx4 --endian=little "$WORK/h$n.dxil" | awk '{ s = ""; for (i = 1; i <= NF; i++) s = s "0x" $i ","; print s }'
       echo "};"
    done
-   echo "// the sorted variant by SSAA_LOG2() of its samples, then the unsorted: the words, and their size in bytes"
+   echo "/* the sorted variant by SSAA_LOG2() of its samples, then the unsorted: the words, and their size in bytes */"
    l="static const u32 * const dx12_compute_hdr_dxil[] = {"
    z="static const size_t dx12_compute_hdr_dxil_size[] = {"
    c=
@@ -432,7 +432,7 @@ make_compute_inc() {
       od -An -v -w32 -tx4 --endian=little "$WORK/c$n.dxil" | awk '{ s = ""; for (i = 1; i <= NF; i++) s = s "0x" $i ","; print s }'
       echo "};"
    done
-   echo "// by PVRC_K_* (the walk's sorted variant by SSAA_LOG2() of its samples, after the last, then its unsorted for 1, 2, 4 and 8): the words, and their size in bytes"
+   echo "/* by PVRC_K_* (the walk's sorted variant by SSAA_LOG2() of its samples, after the last, then its unsorted for 1, 2, 4 and 8): the words, and their size in bytes */"
    l="static const u32 * const dx12_compute_dxil[] = { 0"
    z="static const size_t dx12_compute_dxil_size[] = { 0"
    for k in $COMPUTE_KERNELS; do
@@ -498,7 +498,7 @@ make_ta_inc() {
       echo "};"
       k=$((k + 1))
    done
-   echo "// by TAG_K_*: the bytes, and how many"
+   echo "/* by TAG_K_*: the bytes, and how many */"
    l="static const unsigned char * const dx12_ta_dxbc[] = { 0"
    z="static const size_t dx12_ta_dxbc_size[] = { 0"
    i=1
@@ -579,7 +579,7 @@ make_inc() {
       od -An -v -tx1 -w16 "$WORK/k$n.dxbc" | awk '{ s = ""; for (i = 1; i <= NF; i++) s = s "0x" $i ","; print s }'
       echo "};"
    done
-   echo "// by DX12Shader: the bytes, and how many"
+   echo "/* by DX12Shader: the bytes, and how many */"
    l="static const unsigned char * const dx12_dxbc[] = { 0"
    z="static const size_t dx12_dxbc_size[] = { 0"
    i=1
@@ -596,7 +596,7 @@ hdr_sums() {
    done
 }
 
-# The raster renderers' root signature (dx12/dx12context_lr.cpp's, as it
+# The raster renderers' root signature (dx12/dx12context_lr.c's, as it
 # has it), which dxc holds each raster shader's DXIL bindings to
 # (-verifyrootsignature): the polygon's constants, the vertex and fragment
 # constants, the bindless textures and samplers, the per-pixel renderer's
@@ -663,7 +663,7 @@ make_dxil_inc() {
       od -An -v -tx1 -w16 "$WORK/y$n.dxil" | awk '{ s = ""; for (i = 1; i <= NF; i++) s = s "0x" $i ","; print s }'
       echo "};"
    done
-   echo "// by DX12Shader and DX12HdrShader: the bytes, and how many"
+   echo "/* by DX12Shader and DX12HdrShader: the bytes, and how many */"
    l="static const unsigned char * const dx12_dxil[] = { 0"
    z="static const size_t dx12_dxil_size[] = { 0"
    i=1
@@ -694,7 +694,7 @@ make_hdr_inc() {
       od -An -v -tx1 -w16 "$WORK/h$n.dxbc" | awk '{ s = ""; for (i = 1; i <= NF; i++) s = s "0x" $i ","; print s }'
       echo "};"
    done
-   echo "// by DX12HdrShader: the bytes, and how many"
+   echo "/* by DX12HdrShader: the bytes, and how many */"
    l="static const unsigned char * const dx12_hdr_dxbc[] = { 0"
    z="static const size_t dx12_hdr_dxbc_size[] = { 0"
    i=1

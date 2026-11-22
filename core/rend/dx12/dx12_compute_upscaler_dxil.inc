@@ -7081,6 +7081,6 @@ static const u32 dx12_compute_upscaler_dxil_5_1uds[] = {
 0x1168d032,0x0196c1fc,0x0fe08b47,0x5a3a0cb6,0x65b07f04,0xf822d1e0,0x00000003,0x00000000,
 0x00000000,
 };
-// the sorted variant, the unsorted; then both with the sums: the words, and their size in bytes
+/* the sorted variant, the unsorted; then both with the sums: the words, and their size in bytes */
 static const u32 * const dx12_compute_upscaler_dxil[] = { dx12_compute_upscaler_dxil_5_1d, dx12_compute_upscaler_dxil_5_1ud, dx12_compute_upscaler_dxil_5_1ds, dx12_compute_upscaler_dxil_5_1uds };
 static const size_t dx12_compute_upscaler_dxil_size[] = { sizeof(dx12_compute_upscaler_dxil_5_1d), sizeof(dx12_compute_upscaler_dxil_5_1ud), sizeof(dx12_compute_upscaler_dxil_5_1ds), sizeof(dx12_compute_upscaler_dxil_5_1uds) };

@@ -44,15 +44,16 @@
 #include "types.h"
 #include "rend/texdecode.h"
 #include "rend/TexCache.h"
+#include "dx12context_lr.h"
 
-class DX12Context;
+
 struct DX12PooledTexture;
 
 class DX12TexDecoder
 {
 public:
 	/* Everything made; nothing is done here when the device cannot */
-	void Init(DX12Context *context);
+	void Init(dx12_context *context);
 	void Term();
 	bool Ready() const { return ready; }
 
@@ -95,7 +96,7 @@ private:
 
 	bool ready = false;
 	bool takes[5] = {};
-	DX12Context *context = nullptr;
+	dx12_context *context = nullptr;
 	ComPtr<ID3D12PipelineState> kernel32, kernel8;
 	ComPtr<ID3D12PipelineState> drawn[3];	// 565, 5551, 4444
 

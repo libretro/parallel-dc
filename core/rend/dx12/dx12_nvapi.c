@@ -17,8 +17,8 @@
 #include "dx12_nvapi.h"
 #include <gfx/nvidia/nvapi_loader.h>
 #include "types.h"
-#include <cstddef>
-#include <cstring>
+#include <stddef.h>
+#include <string.h>
 
 /* From the NVAPI SDK (github.com/NVIDIA/nvapi), which NVIDIA publishes
  * under the MIT licence:
@@ -29,46 +29,48 @@
  * NVAPI_D3D12_PSO_RASTERIZER_STATE_DESC_V1, packed to 8 bytes as the
  * header packs them). A structure's version word is its size with the
  * revision in the high half, as MAKE_NVAPI_VERSION makes it. */
-static const unsigned NvId_D3D12_CreateGraphicsPipelineState = 0x2fc28856;
-static const int NvPsoRasterExtension = 0;		// NV_PSO_RASTER_EXTENSION
+#define NvId_D3D12_CreateGraphicsPipelineState 0x2fc28856u
+#define NvPsoRasterExtension 0		/* NV_PSO_RASTER_EXTENSION */
 
 #pragma pack(push, 8)
-struct NvPsoExtensionDesc
+typedef struct NvPsoExtensionDesc
 {
 	u32 baseVersion;
-	int psoExtension;			// NV_PSO_EXTENSION
-};
+	int psoExtension;			/* NV_PSO_EXTENSION */
+} NvPsoExtensionDesc;
 
-// (the header's derives from the other; the same layout, as its first member)
-struct NvPsoRasterizerStateDesc
+/* (the header's derives from the other; the same layout, as its first member;
+ * its bools a byte each, as C++'s) */
+typedef struct NvPsoRasterizerStateDesc
 {
 	NvPsoExtensionDesc base;
 	u32 version;
-	bool ProgrammableSamplePositionsEnable;
-	bool InterleavedSamplingEnable;
+	u8 ProgrammableSamplePositionsEnable;
+	u8 InterleavedSamplingEnable;
 	u8 SampleCount;
 	u8 SamplePositionsX[16];
 	u8 SamplePositionsY[16];
-	int QuadFillMode;			// NVAPI_QUAD_FILLMODE, 0: disabled
-	bool PostZCoverageEnable;
-	bool CoverageToColorEnable;
+	int QuadFillMode;			/* NVAPI_QUAD_FILLMODE, 0: disabled */
+	u8 PostZCoverageEnable;
+	u8 CoverageToColorEnable;
 	u8 CoverageToColorRTIndex;
-	bool TargetIndepentRasterWithDepth;	// (revision 2)
-	u8 ForcedSampleCount;		// (revision 2)
+	u8 TargetIndepentRasterWithDepth;	/* (revision 2) */
+	u8 ForcedSampleCount;		/* (revision 2) */
 	u8 reserved[62];
-};
+} NvPsoRasterizerStateDesc;
 #pragma pack(pop)
 
-static_assert(sizeof(NvPsoExtensionDesc) == 8, "NVAPI_D3D12_PSO_EXTENSION_DESC_V1");
-static_assert(offsetof(NvPsoRasterizerStateDesc, version) == 8, "NVAPI_D3D12_PSO_RASTERIZER_STATE_DESC_V1");
-static_assert(offsetof(NvPsoRasterizerStateDesc, SamplePositionsY) == 31, "NVAPI_D3D12_PSO_RASTERIZER_STATE_DESC_V1");
-static_assert(offsetof(NvPsoRasterizerStateDesc, QuadFillMode) == 48, "NVAPI_D3D12_PSO_RASTERIZER_STATE_DESC_V1");
-static_assert(offsetof(NvPsoRasterizerStateDesc, PostZCoverageEnable) == 52, "NVAPI_D3D12_PSO_RASTERIZER_STATE_DESC_V1");
-static_assert(sizeof(NvPsoRasterizerStateDesc) == 120, "NVAPI_D3D12_PSO_RASTERIZER_STATE_DESC_V1");
+#define NV_CHECK(name, c) typedef char nv_check_##name[(c) ? 1 : -1]
+NV_CHECK(ext, sizeof(NvPsoExtensionDesc) == 8);
+NV_CHECK(version, offsetof(NvPsoRasterizerStateDesc, version) == 8);
+NV_CHECK(positions, offsetof(NvPsoRasterizerStateDesc, SamplePositionsY) == 31);
+NV_CHECK(quad, offsetof(NvPsoRasterizerStateDesc, QuadFillMode) == 48);
+NV_CHECK(postz, offsetof(NvPsoRasterizerStateDesc, PostZCoverageEnable) == 52);
+NV_CHECK(size, sizeof(NvPsoRasterizerStateDesc) == 120);
 
-// NV_PSO_EXTENSION_DESC_VER; NV_RASTERIZER_PSO_EXTENSION_DESC_VER_1, which every driver with the function takes
-static const u32 NvPsoExtensionDescVer = (u32)sizeof(NvPsoExtensionDesc) | (1u << 16);
-static const u32 NvRasterizerDescVer1 = (u32)sizeof(NvPsoRasterizerStateDesc) | (1u << 16);
+/* NV_PSO_EXTENSION_DESC_VER; NV_RASTERIZER_PSO_EXTENSION_DESC_VER_1, which every driver with the function takes */
+#define NvPsoExtensionDescVer ((u32)sizeof(NvPsoExtensionDesc) | (1u << 16))
+#define NvRasterizerDescVer1 ((u32)sizeof(NvPsoRasterizerStateDesc) | (1u << 16))
 
 typedef int (__cdecl *NvCreateGraphicsPipelineState)(ID3D12Device *device, const D3D12_GRAPHICS_PIPELINE_STATE_DESC *desc,
 		u32 extensionCount, const NvPsoExtensionDesc **extensions, ID3D12PipelineState **pso);
@@ -76,34 +78,35 @@ typedef int (__cdecl *NvCreateGraphicsPipelineState)(ID3D12Device *device, const
 static NvCreateGraphicsPipelineState nvCreateGraphicsPipelineState;
 static bool probed;
 
-bool dx12_nvapi_post_z_available()
+bool dx12_nvapi_post_z_available(void)
 {
 	if (!probed)
 	{
 		probed = true;
 		nvCreateGraphicsPipelineState = (NvCreateGraphicsPipelineState)nvapi_query(NvId_D3D12_CreateGraphicsPipelineState);
 	}
-	return nvCreateGraphicsPipelineState != nullptr;
+	return nvCreateGraphicsPipelineState != NULL;
 }
 
 bool dx12_nvapi_create_post_z_pipeline(ID3D12Device *device, const D3D12_GRAPHICS_PIPELINE_STATE_DESC *desc,
 		ID3D12PipelineState **out)
 {
-	*out = nullptr;
+	NvPsoRasterizerStateDesc raster;
+	const NvPsoExtensionDesc *extensions[1];
+	*out = NULL;
 	if (!dx12_nvapi_post_z_available())
 		return false;
-	NvPsoRasterizerStateDesc raster;
 	memset(&raster, 0, sizeof(raster));
 	raster.base.baseVersion = NvPsoExtensionDescVer;
 	raster.base.psoExtension = NvPsoRasterExtension;
 	raster.version = NvRasterizerDescVer1;
-	// (the render target's: what the header asks for without target-independent rasterization)
+	/* (the render target's: what the header asks for without target-independent rasterization) */
 	raster.SampleCount = (u8)desc->SampleDesc.Count;
-	raster.PostZCoverageEnable = true;
-	const NvPsoExtensionDesc *extensions[] = { &raster.base };
-	if (nvCreateGraphicsPipelineState(device, desc, 1, extensions, out) != NVAPI_OK || *out == nullptr)
+	raster.PostZCoverageEnable = 1;
+	extensions[0] = &raster.base;
+	if (nvCreateGraphicsPipelineState(device, desc, 1, extensions, out) != NVAPI_OK || *out == NULL)
 	{
-		*out = nullptr;
+		*out = NULL;
 		return false;
 	}
 	return true;

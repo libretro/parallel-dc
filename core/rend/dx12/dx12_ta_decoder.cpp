@@ -101,8 +101,7 @@ static bool makeBuffer(ID3D12Device *device, const D3D12_HEAP_PROPERTIES& props,
 
 bool DX12TaDecoder::Init()
 {
-	DX12Context *context = DX12Context::Instance();
-	ID3D12Device *device = context->GetDevice();
+	ID3D12Device *device = dx12c.device;
 	if (device == nullptr)
 		return false;
 #ifdef MSB_FIRST
@@ -123,7 +122,7 @@ bool DX12TaDecoder::Init()
 	 * more: a frame that finds them all taken is drawn from the CPU's parse,
 	 * in a context of its own memory (tactx_gpu_pool_attach() makes one) */
 	r->slice = ta_data_size();
-	const u64 budget = (u64)context->GetVramBudget().available_kib() * 1024 / 32;
+	const u64 budget = (u64)dx12c.vram_budget.available_kib() * 1024 / 32;
 	const u32 spares = (u32)std::min<u64>(budget / r->slice, 4);
 	r->slices = std::min<u32>(TABLE_PIECES + 4 + spares, 16);
 	r->tableWords = (sz.table_words + 63) & ~63u;
@@ -282,7 +281,7 @@ bool DX12TaDecoder::Init()
 	 * numbers: through the ring once, now */
 	const u32 frm0Bytes = TAG_O_WORDS * 4, instBytes = (u32)r->sizes[B_INST];
 	DX12Upload up;
-	if (!context->Upload(frm0Bytes + instBytes, 16, up))
+	if (!dx12c_upload(frm0Bytes + instBytes, 16, &up))
 	{
 		INFO_LOG(RENDERER, "DX12: TA processing stays on the CPU (the upload ring is too small)\n");
 		ta_set_gpu_processing(false);
@@ -296,7 +295,7 @@ bool DX12TaDecoder::Init()
 	words[TAG_O_ZMAX] = 0x3F800000u;	// fZ_max starts at 1
 	for (u32 i = 0; i < sz.list[2]; i++)
 		words[TAG_O_WORDS + i] = i;
-	ID3D12GraphicsCommandList *cmd = context->Cmd();
+	ID3D12GraphicsCommandList *cmd = dx12c_cmd();
 	cmd->CopyBufferRegion(r->buffers[B_FRM0], 0, up.buffer, up.offset, frm0Bytes);
 	cmd->CopyBufferRegion(r->buffers[B_INST], 0, up.buffer, up.offset + frm0Bytes, instBytes);
 	D3D12_RESOURCE_BARRIER barriers[3]{};
@@ -314,7 +313,7 @@ bool DX12TaDecoder::Init()
 	}
 	cmd->ResourceBarrier(3, barriers);
 	r->states[B_ZERO] = D3D12_RESOURCE_STATE_COPY_DEST;
-	context->Transition(r->buffers[B_ZERO], r->states[B_ZERO], D3D12_RESOURCE_STATE_COPY_SOURCE);
+	dx12c_transition_resource(r->buffers[B_ZERO], &r->states[B_ZERO], D3D12_RESOURCE_STATE_COPY_SOURCE, D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES);
 
 	// (without the CPU's room to sort in, a frame with a sorted pass is parsed and sorted as ever)
 	if (r->sortSlot != 0 && !ta_gpu_sort_reserve(true))
@@ -364,15 +363,14 @@ void DX12TaDecoder::Term()
 	// (the renderer is done with the GPU, or the context goes: the frames in the pool go on in memory of their own)
 	ta_set_gpu_processing(false);
 	tactx_gpu_pool_detach();
-	DX12Context *context = DX12Context::Instance();
 	/* the buffers go once the GPU is done with them */
-	if (context->GetDevice() != nullptr)
+	if (dx12c.device != nullptr)
 	{
-		auto later = [context](IUnknown *object) {
+		auto later = [](IUnknown *object) {
 			if (object != nullptr)
 			{
 				object->AddRef();
-				context->Release(object);
+				dx12c_release((IUnknown *)(object));
 			}
 		};
 		later(res->pool);
@@ -415,7 +413,7 @@ void DX12TaDecoder::BeginFrame()
 		return;
 	prepared = false;
 	// every list up to the one the fence has reached is done, and the frames it read
-	tactx_gpu_done((u32)DX12Context::Instance()->Completed());
+	tactx_gpu_done((u32)dx12c_completed());
 }
 
 bool DX12TaDecoder::Prepare(TA_context *ctx, u32 want, bool *rv)
@@ -430,9 +428,8 @@ bool DX12TaDecoder::Prepare(TA_context *ctx, u32 want, bool *rv)
 	}
 	/* This frame's piece of the tables, if the GPU is done with the frame
 	 * that last read it; if not, the frame is parsed (never waited for) */
-	DX12Context *context = DX12Context::Instance();
 	index = res->serial % TABLE_PIECES;
-	if (res->pieceFence[index] > context->Completed())
+	if (res->pieceFence[index] > dx12c_completed())
 	{
 		statSkipped++;
 		statBusy++;
@@ -504,10 +501,10 @@ void DX12TaDecoder::States(bool decoding)
 		sortedBarrier.Transition.StateBefore = res->sortedState;
 		sortedBarrier.Transition.StateAfter = sortedTo;
 		res->sortedState = sortedTo;
-		DX12Context::Instance()->Cmd()->ResourceBarrier(1, &sortedBarrier);
+		dx12c_cmd()->ResourceBarrier(1, &sortedBarrier);
 	}
 	if (n != 0)
-		DX12Context::Instance()->Cmd()->ResourceBarrier(n, barriers);
+		dx12c_cmd()->ResourceBarrier(n, barriers);
 }
 
 void DX12TaDecoder::Record(TA_context *ctx)
@@ -516,8 +513,7 @@ void DX12TaDecoder::Record(TA_context *ctx)
 		return;
 	prepared = false;
 	Resources& r = *res;
-	DX12Context *context = DX12Context::Instance();
-	ID3D12GraphicsCommandList *cmd = context->Cmd();
+	ID3D12GraphicsCommandList *cmd = dx12c_cmd();
 	/* The outputs are one copy: whatever read the last frame's (its draws)
 	 * is done before they are written again - the transitions say so */
 	States(true);
@@ -631,9 +627,9 @@ void DX12TaDecoder::Record(TA_context *ctx)
 	// for whatever draws from them
 	States(false);
 	// (the pipeline bound is not one the context knows)
-	context->ForgetPipeline();
+	dx12c_forget_pipeline();
 	// the context's slice and this piece of the tables are read until this list is done
-	const u64 list = context->LastSubmitted() + 1;
+	const u64 list = dx12c.fence_value + 1;
 	ctx->gpu_serial = (u32)list;
 	r.pieceFence[index] = list;
 	if (++statFrames % 600 == 0)
@@ -642,5 +638,5 @@ void DX12TaDecoder::Record(TA_context *ctx)
 
 void DX12TaDecoder::CopyDepthScale(ID3D12Resource *dst, u64 offset)
 {
-	DX12Context::Instance()->Cmd()->CopyBufferRegion(dst, offset, res->buffers[B_FRM], TAG_O_ZSCALE * 4, 4);
+	dx12c_cmd()->CopyBufferRegion(dst, offset, res->buffers[B_FRM], TAG_O_ZSCALE * 4, 4);
 }

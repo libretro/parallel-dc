@@ -23,24 +23,24 @@
 // the 16-bit formats the kernel draws into, by TEXD_D3D_565, 5551, 4444
 static const DXGI_FORMAT drawnFormats[3] = { DXGI_FORMAT_B5G6R5_UNORM, DXGI_FORMAT_B5G5R5A1_UNORM, DXGI_FORMAT_B4G4R4A4_UNORM };
 
-void DX12TexDecoder::Init(DX12Context *context)
+void DX12TexDecoder::Init(dx12_context *context)
 {
 	Term();
-	ID3D12Device *device = context->GetDevice();
+	ID3D12Device *device = dx12c.device;
 	if (device == nullptr)
 		return;
 	this->context = context;
 
-	takes[(int)TextureType::_8888] = context->CanWriteUAV(DXGI_FORMAT_R8G8B8A8_UINT);
-	takes[(int)TextureType::_8] = context->CanWriteUAV(DXGI_FORMAT_R8_UINT);
-	takes[(int)TextureType::_565] = context->IsFormatSupported(TextureType::_565) && context->CanRenderTo(DXGI_FORMAT_B5G6R5_UNORM);
-	takes[(int)TextureType::_5551] = context->IsFormatSupported(TextureType::_5551) && context->CanRenderTo(DXGI_FORMAT_B5G5R5A1_UNORM);
-	takes[(int)TextureType::_4444] = context->IsFormatSupported(TextureType::_4444) && context->CanRenderTo(DXGI_FORMAT_B4G4R4A4_UNORM);
+	takes[(int)TextureType::_8888] = dx12c_can_write_uav(DXGI_FORMAT_R8G8B8A8_UINT);
+	takes[(int)TextureType::_8] = dx12c_can_write_uav(DXGI_FORMAT_R8_UINT);
+	takes[(int)TextureType::_565] = dx12c_format_supported((int)(TextureType::_565)) && dx12c_can_render_to(DXGI_FORMAT_B5G6R5_UNORM);
+	takes[(int)TextureType::_5551] = dx12c_format_supported((int)(TextureType::_5551)) && dx12c_can_render_to(DXGI_FORMAT_B5G5R5A1_UNORM);
+	takes[(int)TextureType::_4444] = dx12c_format_supported((int)(TextureType::_4444)) && dx12c_can_render_to(DXGI_FORMAT_B4G4R4A4_UNORM);
 
 	// every pipeline there is, now: none is made while a game runs
 	bool ok = true;
 	D3D12_COMPUTE_PIPELINE_STATE_DESC cs{};
-	cs.pRootSignature = context->DecodeRootSignature();
+	cs.pRootSignature = dx12c.decode_root;
 	cs.CS = dx12_texdecode_kernel(1);
 	ok = ok && SUCCEEDED(device->CreateComputePipelineState(&cs, __uuidof(ID3D12PipelineState), (void **)kernel32.put()));
 	cs.CS = dx12_texdecode_kernel(2);
@@ -50,7 +50,7 @@ void DX12TexDecoder::Init(DX12Context *context)
 		if (!takes[f])
 			continue;
 		D3D12_GRAPHICS_PIPELINE_STATE_DESC desc{};
-		desc.pRootSignature = context->DecodeRootSignature();
+		desc.pRootSignature = dx12c.decode_root;
 		desc.VS = dx12_texdecode_kernel(3);
 		desc.PS = dx12_texdecode_kernel(4);
 		desc.BlendState.RenderTarget[0].RenderTargetWriteMask = D3D12_COLOR_WRITE_ENABLE_ALL;
@@ -95,12 +95,12 @@ void DX12TexDecoder::Term()
 u8 *DX12TexDecoder::Begin(u32 bytes, u32 levels, u32 *base)
 {
 	bytes = (bytes + 15) & ~15u;
-	if (!ready || bytes > context->UploadRingSize() || levels > MAX_JOBS)
+	if (!ready || bytes > dx12c.ring_size || levels > MAX_JOBS)
 		return nullptr;
 	if (jobCount + levels > MAX_JOBS)
 		Flush();
 	DX12Upload upload;
-	if (!context->Upload(bytes, 16, upload))
+	if (!dx12c_upload(bytes, 16, &upload))
 		return nullptr;
 	*base = (u32)(upload.offset / 4);
 	statBytes += bytes;
@@ -129,26 +129,26 @@ void DX12TexDecoder::Cancel(u32 job, u32 count, u32 serial)
 u32 DX12TexDecoder::TakeUav()
 {
 	// what the lists done have used is free again
-	const u64 done = context->Completed();
+	const u64 done = dx12c_completed();
 	while (uavMarkCount != 0 && uavMarks[uavMarkFirst].fence <= done)
 	{
 		uavTail = uavMarks[uavMarkFirst].head;
 		uavMarkFirst = (uavMarkFirst + 1) % UAV_MARKS;
 		uavMarkCount--;
 	}
-	while (uavHead - uavTail >= DX12Context::UavCount)
+	while (uavHead - uavTail >= DX12C_UAV_COUNT)
 	{
 		/* every place is a list's the GPU has not done: as many lists
 		 * behind as there are marks */
 		if (uavMarkCount == 0)
 			break;
-		context->WaitFor(uavMarks[uavMarkFirst].fence);
+		dx12c_wait_for(uavMarks[uavMarkFirst].fence);
 		uavTail = uavMarks[uavMarkFirst].head;
 		uavMarkFirst = (uavMarkFirst + 1) % UAV_MARKS;
 		uavMarkCount--;
-		context->statStalls++;
+		dx12c.stat_stalls++;
 	}
-	return DX12Context::UavFirst + (uavHead++ % DX12Context::UavCount);
+	return DX12C_UAV_FIRST + (uavHead++ % DX12C_UAV_COUNT);
 }
 
 void DX12TexDecoder::Flush()
@@ -156,8 +156,8 @@ void DX12TexDecoder::Flush()
 	if (jobCount == 0)
 		return;
 	serial++;
-	ID3D12Device *device = context->GetDevice();
-	ID3D12GraphicsCommandList *cmd = context->Cmd();
+	ID3D12Device *device = dx12c.device;
+	ID3D12GraphicsCommandList *cmd = dx12c_cmd();
 
 	// each texture written: into the state its levels are made in
 	for (u32 i = 0; i < jobCount; i++)
@@ -166,7 +166,7 @@ void DX12TexDecoder::Flush()
 		if (t == nullptr)
 			continue;
 		const bool wide = ((jobs[i].pc[5] >> 6) & 3) != TEXD_OUT16;
-		context->Transition(t->resource, t->state, wide ? D3D12_RESOURCE_STATE_UNORDERED_ACCESS : D3D12_RESOURCE_STATE_RENDER_TARGET);
+		dx12c_transition_resource(t->resource, &t->state, wide ? D3D12_RESOURCE_STATE_UNORDERED_ACCESS : D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES);
 	}
 
 	// the compute kernels: the 32-bit levels, then the 8-bit ones
@@ -189,8 +189,8 @@ void DX12TexDecoder::Flush()
 				continue;
 			if (!computeBound)
 			{
-				cmd->SetComputeRootSignature(context->DecodeRootSignature());
-				cmd->SetComputeRootShaderResourceView(1, context->UploadRingGpu());
+				cmd->SetComputeRootSignature(dx12c.decode_root);
+				cmd->SetComputeRootShaderResourceView(1, dx12c.ring_gpu);
 				computeBound = true;
 			}
 			if (!bound)
@@ -203,9 +203,9 @@ void DX12TexDecoder::Flush()
 			view.Format = out == TEXD_OUT32 ? DXGI_FORMAT_R8G8B8A8_UINT : DXGI_FORMAT_R8_UINT;
 			view.ViewDimension = D3D12_UAV_DIMENSION_TEXTURE2D;
 			view.Texture2D.MipSlice = job.level;
-			device->CreateUnorderedAccessView(job.texture->resource, nullptr, &view, context->Srv().Cpu(uav));
+			device->CreateUnorderedAccessView(job.texture->resource, nullptr, &view, dx12_heap_cpu(&dx12c.srv_heap, uav));
 			cmd->SetComputeRoot32BitConstants(0, 8, job.pc, 0);
-			cmd->SetComputeRootDescriptorTable(2, context->Srv().Gpu(uav));
+			cmd->SetComputeRootDescriptorTable(2, dx12_heap_gpu(&dx12c.srv_heap, uav));
 			cmd->Dispatch(((job.pc[3] & 0xFFFF) + 7) / 8, ((job.pc[3] >> 16) + 7) / 8, 1);
 		}
 		if (out == TEXD_OUT8)
@@ -214,7 +214,7 @@ void DX12TexDecoder::Flush()
 	if (computeBound)
 	{
 		// (the pipeline bound is not one the context knows)
-		context->ForgetPipeline();
+		dx12c_forget_pipeline();
 		// the places used are the list's until it is done
 		if (uavMarkCount == UAV_MARKS)
 		{
@@ -222,17 +222,17 @@ void DX12TexDecoder::Flush()
 			uavMarkFirst = (uavMarkFirst + 1) % UAV_MARKS;
 			uavMarkCount--;
 		}
-		uavMarks[(uavMarkFirst + uavMarkCount) % UAV_MARKS] = { context->LastSubmitted() + 1, uavHead };
+		uavMarks[(uavMarkFirst + uavMarkCount) % UAV_MARKS] = { dx12c.fence_value + 1, uavHead };
 		uavMarkCount++;
 	}
 
 	// the 16-bit levels, drawn
 	if (drawnAny)
 	{
-		cmd->SetGraphicsRootSignature(context->DecodeRootSignature());
-		cmd->SetGraphicsRootShaderResourceView(1, context->UploadRingGpu());
-		context->ForgetRaster();
-		context->SetTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+		cmd->SetGraphicsRootSignature(dx12c.decode_root);
+		cmd->SetGraphicsRootShaderResourceView(1, dx12c.ring_gpu);
+		dx12c_forget_raster();
+		dx12c_set_topology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 		for (u32 i = 0; i < jobCount; i++)
 		{
 			const Job& job = jobs[i];
@@ -241,23 +241,23 @@ void DX12TexDecoder::Flush()
 			const u32 f = (job.pc[5] >> 20) & 3;
 			if (f > 2 || !drawn[f])
 				continue;
-			context->SetPipeline(drawn[f]);
-			const u32 rtv = context->TransientRtv();
+			dx12c_set_pipeline(drawn[f]);
+			const u32 rtv = dx12c_transient_rtv();
 			D3D12_RENDER_TARGET_VIEW_DESC view{};
 			view.Format = drawnFormats[f];
 			view.ViewDimension = D3D12_RTV_DIMENSION_TEXTURE2D;
 			view.Texture2D.MipSlice = job.level;
-			device->CreateRenderTargetView(job.texture->resource, &view, context->Rtv().Cpu(rtv));
-			context->SetTargets(rtv, ~0u);
+			device->CreateRenderTargetView(job.texture->resource, &view, dx12_heap_cpu(&dx12c.rtv_heap, rtv));
+			dx12c_set_targets(rtv, ~0u, 0);
 			const float w = (float)(job.pc[3] & 0xFFFF), h = (float)(job.pc[3] >> 16);
-			context->SetViewport(w, h);
+			dx12c_set_viewport(w, h);
 			const D3D12_RECT scissor = { 0, 0, (LONG)w, (LONG)h };
-			context->SetScissor(scissor);
+			dx12c_set_scissor(&scissor);
 			cmd->SetGraphicsRoot32BitConstants(0, 8, job.pc, 0);
 			cmd->DrawInstanced(3, 1, 0, 0);
 		}
-		context->SetTargets(~0u, ~0u);
-		context->ForgetRootConstants();
+		dx12c_set_targets(~0u, ~0u, 0);
+		dx12c_forget_root_constants();
 	}
 
 	// to be sampled
@@ -265,7 +265,7 @@ void DX12TexDecoder::Flush()
 	{
 		DX12PooledTexture *t = jobs[i].texture;
 		if (t != nullptr)
-			context->Transition(t->resource, t->state, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
+			dx12c_transition_resource(t->resource, &t->state, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES);
 	}
 	jobCount = 0;
 }

@@ -16,7 +16,6 @@
     along with Flycast.  If not, see <https://www.gnu.org/licenses/>.
 */
 #include "dx12_renderer.h"
-#include "dx12_quad.h"
 #include "hw/pvr/ta.h"
 #include "hw/pvr/pvr_mem.h"
 #include "rend/rtt_watch.h"
@@ -34,34 +33,33 @@ extern "C" int screen_width, screen_height;
  * made of it too, for the compute renderer to draw into */
 static bool makeImage(DX12Image& image, u32 width, u32 height, DXGI_FORMAT format, bool target, u32 srv = ~0u, bool storage = false)
 {
-	DX12Context *context = DX12Context::Instance();
-	image = DX12Image();
+	dx12_image_reset(&image);
 	image.width = width;
 	image.height = height;
 	image.state = target ? D3D12_RESOURCE_STATE_RENDER_TARGET : D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
 	D3D12_RESOURCE_FLAGS flags = target ? D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET : D3D12_RESOURCE_FLAG_NONE;
 	if (storage)
 		flags |= D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS;
-	if (!dx12_make_texture(context->GetDevice(), width, height, 1, format, flags, image.state, image.resource))
+	if (!dx12_make_texture(dx12c.device, width, height, 1, format, flags, image.state, image.resource))
 		return false;
-	image.srv = srv != ~0u ? srv : context->Srv().Alloc();
+	image.srv = srv != ~0u ? srv : dx12_heap_alloc(&dx12c.srv_heap);
 	if (image.srv == ~0u)
 	{
-		image.resource.reset();
+		DX12_RELEASE(image.resource);
 		return false;
 	}
-	context->MakeSrv(image.resource, format, 1, image.srv);
+	dx12c_make_srv(image.resource, format, 1, image.srv);
 	if (target)
 	{
-		image.rtv = context->Rtv().Alloc();
+		image.rtv = dx12_heap_alloc(&dx12c.rtv_heap);
 		if (image.rtv == ~0u)
 		{
 			if (srv == ~0u)
-				context->Srv().Free(image.srv);
-			image = DX12Image();
+				dx12_heap_free(&dx12c.srv_heap, image.srv);
+			dx12_image_reset(&image);
 			return false;
 		}
-		context->GetDevice()->CreateRenderTargetView(image.resource, nullptr, context->Rtv().Cpu(image.rtv));
+		dx12c.device->CreateRenderTargetView(image.resource, nullptr, dx12_heap_cpu(&dx12c.rtv_heap, image.rtv));
 	}
 	return true;
 }
@@ -72,9 +70,8 @@ static bool makeImage(DX12Image& image, u32 width, u32 height, DXGI_FORMAT forma
  * stencil, with no views (DX12Renderer::SetupSsaa() makes those) */
 static bool makeSamples(DX12Image& image, u32 width, u32 height, u32 samples, bool depthStencil)
 {
-	DX12Context *context = DX12Context::Instance();
-	ID3D12Device *device = context->GetDevice();
-	image = DX12Image();
+	ID3D12Device *device = dx12c.device;
+	dx12_image_reset(&image);
 	image.width = width;
 	image.height = height;
 	image.state = depthStencil ? D3D12_RESOURCE_STATE_DEPTH_WRITE : D3D12_RESOURCE_STATE_RENDER_TARGET;
@@ -100,33 +97,32 @@ static bool makeSamples(DX12Image& image, u32 width, u32 height, u32 samples, bo
 		clear.Color[3] = 1.f;
 	}
 	if (FAILED(device->CreateCommittedResource(&heap, D3D12_HEAP_FLAG_NONE, &desc, image.state, &clear,
-			__uuidof(ID3D12Resource), (void **)image.resource.put())))
+			__uuidof(ID3D12Resource), (void **)&image.resource)))
 	{
 		WARN_LOG(RENDERER, "DX12: SSAA picture creation failed (%d x %d, %d samples)\n", width, height, samples);
-		image = DX12Image();
+		dx12_image_reset(&image);
 		return false;
 	}
 	if (depthStencil)
 		return true;
-	image.srv = context->Srv().Alloc();
-	image.rtv = context->Rtv().Alloc();
+	image.srv = dx12_heap_alloc(&dx12c.srv_heap);
+	image.rtv = dx12_heap_alloc(&dx12c.rtv_heap);
 	if (image.srv == ~0u || image.rtv == ~0u)
 		return false;
 	D3D12_SHADER_RESOURCE_VIEW_DESC view{};
 	view.Format = DX12FrameFormat;
 	view.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2DMS;
 	view.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
-	device->CreateShaderResourceView(image.resource, &view, context->Srv().Cpu(image.srv));
-	device->CreateRenderTargetView(image.resource, nullptr, context->Rtv().Cpu(image.rtv));
+	device->CreateShaderResourceView(image.resource, &view, dx12_heap_cpu(&dx12c.srv_heap, image.srv));
+	device->CreateRenderTargetView(image.resource, nullptr, dx12_heap_cpu(&dx12c.rtv_heap, image.rtv));
 	return true;
 }
 
 /* Room in the ring for @image's rows, at the pitch a copy to a texture wants */
 static u8 *reserveImage(DX12Upload& upload, u32 width, u32 height, u32 bpp, u32 *pitch)
 {
-	DX12Context *context = DX12Context::Instance();
 	*pitch = (width * bpp + D3D12_TEXTURE_DATA_PITCH_ALIGNMENT - 1) & ~(D3D12_TEXTURE_DATA_PITCH_ALIGNMENT - 1);
-	if (!context->Upload(*pitch * height, D3D12_TEXTURE_DATA_PLACEMENT_ALIGNMENT, upload))
+	if (!dx12c_upload(*pitch * height, D3D12_TEXTURE_DATA_PLACEMENT_ALIGNMENT, &upload))
 		return nullptr;
 	return upload.cpu;
 }
@@ -134,8 +130,7 @@ static u8 *reserveImage(DX12Upload& upload, u32 width, u32 height, u32 bpp, u32 
 /* The rows written to @upload into @image, which is left to be sampled */
 static void recordImage(DX12Image& image, const DX12Upload& upload, u32 width, u32 height, u32 pitch)
 {
-	DX12Context *context = DX12Context::Instance();
-	context->Transition(image, D3D12_RESOURCE_STATE_COPY_DEST);
+	dx12c_transition(&image, D3D12_RESOURCE_STATE_COPY_DEST);
 	D3D12_TEXTURE_COPY_LOCATION dst{};
 	dst.pResource = image.resource;
 	dst.Type = D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX;
@@ -149,8 +144,8 @@ static void recordImage(DX12Image& image, const DX12Upload& upload, u32 width, u
 	src.PlacedFootprint.Footprint.Height = height;
 	src.PlacedFootprint.Footprint.Depth = 1;
 	src.PlacedFootprint.Footprint.RowPitch = pitch;
-	context->Cmd()->CopyTextureRegion(&dst, 0, 0, 0, &src, nullptr);
-	context->Transition(image, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
+	dx12c_cmd()->CopyTextureRegion(&dst, 0, 0, 0, &src, nullptr);
+	dx12c_transition(&image, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
 }
 
 /* Rows into the ring and then into @image, which is left to be sampled */
@@ -177,15 +172,15 @@ void DX12Renderer::DropImage(DX12Image& image)
 	if (image.resource)
 	{
 		image.resource->AddRef();
-		context->Release(image.resource.get());
-		image.resource.reset();
+		dx12c_release((IUnknown *)(image.resource));
+		DX12_RELEASE(image.resource);
 	}
 	// (the fog's and the palette's places are theirs for good)
 	if (image.srv >= DX12_SRV_FIRST_FREE)
-		context->ReleaseSrv(image.srv);
+		dx12c_release_srv(image.srv);
 	if (image.rtv != ~0u)
-		context->Rtv().Free(image.rtv);
-	image = DX12Image();
+		dx12_heap_free(&dx12c.rtv_heap, image.rtv);
+	dx12_image_reset(&image);
 }
 
 bool DX12Renderer::Init()
@@ -193,8 +188,8 @@ bool DX12Renderer::Init()
 	/* (the passes' sorted draws: room before the first frame) */
 	SortPassesReserve(&sortedPasses);
 	SortPassesReserve(&prepassPasses);
-	context = DX12Context::Instance();
-	device = context->GetDevice();
+	context = &dx12c;
+	device = dx12c.device;
 	if (device == nullptr)
 	{
 		WARN_LOG(RENDERER, "DX12: no device\n");
@@ -209,7 +204,7 @@ bool DX12Renderer::Init()
 	palette_updated = true;
 	// the depth, for the screen at least: made now and not in the first frame
 	success = success && EnsureDepth(std::max(screen_width, 640), std::max(screen_height, 480));
-	success = success && overlay.Init();
+	success = success && dx12_overlay_init();
 	if (batch == nullptr)
 		batch = new DrawArgs[BATCH_MAX];
 	batchCount = 0;
@@ -229,10 +224,10 @@ bool DX12Renderer::Init()
 	// textures made on the GPU, and the textures themselves, all of them now (rend/tex_pool.h)
 	texDecoder.Init(context);
 	// (what the decoder has been asked for goes into the list a readback submits early)
-	context->SetBeforeSubmit([](void *decoder) { ((DX12TexDecoder *)decoder)->Flush(); }, &texDecoder);
+	dx12c_set_before_submit([](void *decoder) { ((DX12TexDecoder *)decoder)->Flush(); }, &texDecoder);
 	// (the pictures rendered to: drawn into by the compute renderer too, when it is wanted)
 	texPool.SetTargetStorage(storagePictures);
-	texPool.Init(context->GetVramBudget(), &texDecoder);
+	texPool.Init(dx12c.vram_budget, &texDecoder);
 	// ...and the cache's room for them (rend/tex_map.h)
 	texCache.ReserveFor(texPool.Book().made);
 	DX12Texture::SetDecoder(texDecoder.Ready() ? &texDecoder : nullptr);
@@ -242,8 +237,8 @@ bool DX12Renderer::Init()
 	// the pipelines, and SSAA's pictures and pipelines made from them
 	PreparePipelines();
 	// the chip's write-out, and the pictures made for it (dx12_writeout.h)
-	writeOut.Init(context);
-	writeOutPictures = DX12WriteOut::Wanted();
+	dx12_writeout_init();
+	writeOutPictures = dx12_writeout_wanted();
 	SetupSsaa(screen_width, screen_height);
 	// where frames are parsed when the card can draw them from there: made once
 	if (!parseArena.ready)
@@ -251,7 +246,7 @@ bool DX12Renderer::Init()
 		size_t room[PARSE_ARENA_PARTS];
 		TA_context::ArenaRooms(room);
 		arenaMissed = false;
-		if (parse_arena_d3d12_init(&parseArena, device, context->GetFence(), room, 4))
+		if (parse_arena_d3d12_init(&parseArena, device, dx12c.fence, room, 4))
 			NOTICE_LOG(RENDERER, "DX12: renders parsed where the card reads them, not copied there\n");
 		else
 			INFO_LOG(RENDERER, "DX12: renders copied to the card (its memory is not the processor's, cache-coherent)\n");
@@ -295,11 +290,11 @@ void DX12Renderer::Term()
 		return;
 	FlushBatch();
 	DropSsaa();
-	writeOut.Term();
+	dx12_writeout_term();
 	ta_set_flat_strips(false);
 	ta_set_modvol_clip(false);
-	context->SetFrame(nullptr);
-	context->SetBeforeSubmit(nullptr, nullptr);
+	dx12c_set_frame(nullptr);
+	dx12c_set_before_submit(nullptr, nullptr);
 	dx12_rtt_term();
 	texCache.Clear();
 	// (what the cache's textures had is back in the pool by now)
@@ -311,13 +306,13 @@ void DX12Renderer::Term()
 	if (gpuVtxConstants)
 	{
 		gpuVtxConstants->AddRef();
-		context->Release(gpuVtxConstants.get());
+		dx12c_release((IUnknown *)(gpuVtxConstants.get()));
 		gpuVtxConstants.reset();
 	}
 	gpuVtxConstantsState = D3D12_RESOURCE_STATE_COPY_DEST;
 	// (let go once the frames drawn from it are done)
-	parse_arena_d3d12_term(&parseArena, [](void *c, IUnknown *object) { ((DX12Context *)c)->Release(object); }, context);
-	overlay.Term();
+	parse_arena_d3d12_term(&parseArena, [](void *c, IUnknown *object) { (void)c; dx12c_release(object); }, context);
+	dx12_overlay_term();
 	DropImage(fbTexture);
 	DropRestored();
 	for (ScreenTarget& t : screenTargets)
@@ -329,18 +324,18 @@ void DX12Renderer::Term()
 	if (depth.resource)
 	{
 		depth.resource->AddRef();
-		context->Release(depth.resource.get());
-		context->Dsv().Free(depth.rtv);
-		context->Dsv().Free(dsvReadStencil);
-		context->Dsv().Free(dsvReadOnly);
+		dx12c_release((IUnknown *)(depth.resource));
+		dx12_heap_free(&dx12c.dsv_heap, depth.rtv);
+		dx12_heap_free(&dx12c.dsv_heap, dsvReadStencil);
+		dx12_heap_free(&dx12c.dsv_heap, dsvReadOnly);
 	}
-	depth = DX12Image();
+	dx12_image_reset(&depth);
 	dsvReadStencil = dsvReadOnly = ~0u;
 	DropImage(paletteTexture);
 	DropImage(fogTexture);
 	delete [] batch;
 	batch = nullptr;
-	NOTICE_LOG(RENDERER, "DX12: %u draws in %u batches; %u submits, %u stalls\n", statBatched, statBatches, context->statSubmits, context->statStalls);
+	NOTICE_LOG(RENDERER, "DX12: %u draws in %u batches; %u submits, %u stalls\n", statBatched, statBatches, dx12c.stat_submits, dx12c.stat_stalls);
 	device = nullptr;
 	context = nullptr;
 }
@@ -359,10 +354,10 @@ void DX12Renderer::Resize(int w, int h)
 	}
 	/* (a change of the write-out option is one of size: the pictures are
 	 * made again, for it to write or not) */
-	if (device != nullptr && writeOutPictures != DX12WriteOut::Wanted())
+	if (device != nullptr && writeOutPictures != dx12_writeout_wanted())
 	{
-		writeOut.Init(context);
-		writeOutPictures = DX12WriteOut::Wanted();
+		dx12_writeout_init();
+		writeOutPictures = dx12_writeout_wanted();
 		screenWidth = screenHeight = 0;
 	}
 }
@@ -374,8 +369,7 @@ void DX12Renderer::SetupSsaa(u32 width, u32 height)
 	u32 samples = 1;
 	// (the upscaler is the anti-aliasing then, and reads the depth, which SSAA's samples are not)
 	if (settings.rend.Ssaa > 1 && width != 0 && height != 0 && !upscaler_active())
-		samples = context->SsaaSamples(settings.rend.Ssaa, ssaa_per_sample_kib(width, height, 4 * SsaaColorImages() + 8),
-				SsaaFixedKib(width, height), BindsScreen() ? "DX12 per-triangle renderer" : "DX12 per-pixel renderer");
+		samples = dx12c_ssaa_samples(settings.rend.Ssaa, ssaa_per_sample_kib(width, height, 4 * SsaaColorImages() + 8), SsaaFixedKib(width, height), BindsScreen() ? "DX12 per-triangle renderer" : "DX12 per-pixel renderer");
 	if (samples == ssaaSamples && (samples == 1 || (width == ssaaWidth && height == ssaaHeight)))
 		return;
 	DropSsaa();
@@ -388,9 +382,9 @@ void DX12Renderer::SetupSsaa(u32 width, u32 height)
 	if (ok)
 	{
 		otherDepth.stencilState = D3D12_RESOURCE_STATE_DEPTH_WRITE;
-		otherDepth.image.rtv = context->Dsv().Alloc();
-		otherDepth.dsvReadStencil = context->Dsv().Alloc();
-		otherDepth.dsvReadOnly = context->Dsv().Alloc();
+		otherDepth.image.rtv = dx12_heap_alloc(&dx12c.dsv_heap);
+		otherDepth.dsvReadStencil = dx12_heap_alloc(&dx12c.dsv_heap);
+		otherDepth.dsvReadOnly = dx12_heap_alloc(&dx12c.dsv_heap);
 		ok = otherDepth.image.rtv != ~0u && otherDepth.dsvReadStencil != ~0u && otherDepth.dsvReadOnly != ~0u;
 	}
 	if (!ok)
@@ -402,24 +396,24 @@ void DX12Renderer::SetupSsaa(u32 width, u32 height)
 	D3D12_DEPTH_STENCIL_VIEW_DESC view{};
 	view.Format = DX12DepthFormat;
 	view.ViewDimension = D3D12_DSV_DIMENSION_TEXTURE2DMS;
-	device->CreateDepthStencilView(otherDepth.image.resource, &view, context->Dsv().Cpu(otherDepth.image.rtv));
+	device->CreateDepthStencilView(otherDepth.image.resource, &view, dx12_heap_cpu(&dx12c.dsv_heap, otherDepth.image.rtv));
 	view.Flags = D3D12_DSV_FLAG_READ_ONLY_STENCIL;
-	device->CreateDepthStencilView(otherDepth.image.resource, &view, context->Dsv().Cpu(otherDepth.dsvReadStencil));
+	device->CreateDepthStencilView(otherDepth.image.resource, &view, dx12_heap_cpu(&dx12c.dsv_heap, otherDepth.dsvReadStencil));
 	view.Flags = D3D12_DSV_FLAG_READ_ONLY_STENCIL | D3D12_DSV_FLAG_READ_ONLY_DEPTH;
-	device->CreateDepthStencilView(otherDepth.image.resource, &view, context->Dsv().Cpu(otherDepth.dsvReadOnly));
+	device->CreateDepthStencilView(otherDepth.image.resource, &view, dx12_heap_cpu(&dx12c.dsv_heap, otherDepth.dsvReadOnly));
 	// the per-pixel renderer's views of its samples' stencil and depth (its shaders read them)
 	D3D12_SHADER_RESOURCE_VIEW_DESC srv{};
 	srv.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2DMS;
 	srv.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
 	srv.Format = DXGI_FORMAT_X32_TYPELESS_G8X24_UINT;
-	device->CreateShaderResourceView(otherDepth.image.resource, &srv, context->Srv().Cpu(DX12Context::OitSsaaFirst + 3));
+	device->CreateShaderResourceView(otherDepth.image.resource, &srv, dx12_heap_cpu(&dx12c.srv_heap, DX12C_OIT_SSAA_FIRST + 3));
 	srv.Format = DXGI_FORMAT_R32_FLOAT_X8X24_TYPELESS;
-	device->CreateShaderResourceView(otherDepth.image.resource, &srv, context->Srv().Cpu(DX12Context::OitSsaaFirst + 4));
+	device->CreateShaderResourceView(otherDepth.image.resource, &srv, dx12_heap_cpu(&dx12c.srv_heap, DX12C_OIT_SSAA_FIRST + 4));
 	ssaaSamples = samples;
 	ssaaLog2 = SSAA_LOG2(samples);
 	ssaaWidth = width;
 	ssaaHeight = height;
-	context->Pipelines().MakeForSamples(ssaaLog2, context->HdrActive());
+	dx12_pso_make_for_samples(ssaaLog2, dx12c_hdr_active());
 }
 
 void DX12Renderer::DropSsaa()
@@ -432,12 +426,12 @@ void DX12Renderer::DropSsaa()
 	if (otherDepth.image.resource)
 	{
 		otherDepth.image.resource->AddRef();
-		context->Release(otherDepth.image.resource.get());
+		dx12c_release((IUnknown *)(otherDepth.image.resource));
 	}
 	for (u32 dsv : { otherDepth.image.rtv, otherDepth.dsvReadStencil, otherDepth.dsvReadOnly })
 		if (dsv != ~0u)
-			context->Dsv().Free(dsv);
-	otherDepth.image = DX12Image();
+			dx12_heap_free(&dx12c.dsv_heap, dsv);
+	dx12_image_reset(&otherDepth.image);
 	otherDepth.dsvReadStencil = otherDepth.dsvReadOnly = ~0u;
 	ssaaSamples = 1;
 	ssaaLog2 = 0;
@@ -461,14 +455,14 @@ void DX12Renderer::SsaaResolve(u32 srv)
 	key.kind = DX12_PSO_SSAA_RESOLVE;
 	key.writeColor = true;
 	key.depthFunc = 7;
-	ID3D12PipelineState *pso = context->Pipelines().Get(key);
+	ID3D12PipelineState *pso = dx12_pso_get(&key);
 	if (pso == nullptr)
 		return;
-	context->SetPipeline(pso);
-	context->SetTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP);
+	dx12c_set_pipeline(pso);
+	dx12c_set_topology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP);
 	const u32 constants[2] = { srv, ssaaLog2 };
-	context->SetRootConstants(constants, 2);
-	context->Cmd()->DrawInstanced(4, 1, 0, 0);
+	dx12c_set_root_constants(constants, 2);
+	dx12c_cmd()->DrawInstanced(4, 1, 0, 0);
 }
 
 u64 DX12Renderer::GetTexture(TSP tsp, TCW tcw, int area)
@@ -534,7 +528,7 @@ bool DX12Renderer::Process(TA_context* ctx)
 	 * emulation waiting too. */
 	const bool keep = ctx->rend.isRTT || !settings.rend.ThreadedRendering;
 	if (keep && !ctx->rend.isRTT)
-		context->WaitPresentIndex();
+		dx12c_wait_present_index();
 	const bool result = ProcessLocked(ctx);
 	heldFromProcess = keep && result;
 	return result;
@@ -544,7 +538,7 @@ bool DX12Renderer::ProcessLocked(TA_context* ctx)
 {
 	taDecoder.BeginFrame();
 	if (!ctx->rend.isRTT)
-		overlay.Prepare();
+		dx12_overlay_prepare();
 	if (!ctx->rend.isRTT && !ctx->rend.isRenderFramebuffer)
 		CheckKeptPicture();
 
@@ -711,7 +705,7 @@ bool DX12Renderer::UploadGeometry()
 		if (pvrrc.mv_clip.used() != 0)
 		{
 			DX12Upload upload;
-			if (!context->Upload(pvrrc.mv_clip.bytes(), 64, upload))
+			if (!dx12c_upload(pvrrc.mv_clip.bytes(), 64, &upload))
 			{
 				WARN_LOG(RENDERER, "DX12: the render's volumes do not fit the upload ring (%u bytes)\n", pvrrc.mv_clip.bytes());
 				return false;
@@ -757,7 +751,7 @@ bool DX12Renderer::UploadGeometry()
 	const u32 modVols = (indexes + indexBytes + 11) / 12 * 12;
 	const u32 total = modVols + modVolBytes;
 	DX12Upload upload;
-	if (!context->Upload(total, 64, upload))
+	if (!dx12c_upload(total, 64, &upload))
 	{
 		WARN_LOG(RENDERER, "DX12: the render's geometry does not fit the upload ring (%u bytes)\n", total);
 		// (as it was before: the vertices made for the card, once)
@@ -802,7 +796,7 @@ bool DX12Renderer::UploadConstants()
 	MakeFragmentConstants(frag);
 	DX12Upload c;
 	// (two whole 256-byte registers: a constant buffer is read by the register)
-	if (!context->Upload(2 * D3D12_CONSTANT_BUFFER_DATA_PLACEMENT_ALIGNMENT, D3D12_CONSTANT_BUFFER_DATA_PLACEMENT_ALIGNMENT, c))
+	if (!dx12c_upload(2 * D3D12_CONSTANT_BUFFER_DATA_PLACEMENT_ALIGNMENT, D3D12_CONSTANT_BUFFER_DATA_PLACEMENT_ALIGNMENT, &c))
 		return false;
 	memcpy(c.cpu, &vtx, sizeof(vtx));
 	memcpy(c.cpu + D3D12_CONSTANT_BUFFER_DATA_PLACEMENT_ALIGNMENT, &frag, sizeof(frag));
@@ -815,14 +809,14 @@ bool DX12Renderer::UploadConstants()
 		 * scale (scale[3]) from the decode's words: three copies that do not
 		 * overlap, which the transitions put after the last frame's draws
 		 * and before this one's. */
-		ID3D12GraphicsCommandList *cmd = context->Cmd();
+		ID3D12GraphicsCommandList *cmd = dx12c_cmd();
 		ID3D12Resource *dst = gpuVtxConstants;
-		context->Transition(dst, gpuVtxConstantsState, D3D12_RESOURCE_STATE_COPY_DEST);
+		dx12c_transition_resource(dst, &gpuVtxConstantsState, D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES);
 		static_assert(offsetof(VertexConstants, scale) == 0 && sizeof(VertexConstants) == 32, "the scale's fourth word is the depth's");
 		cmd->CopyBufferRegion(dst, 0, c.buffer, c.offset, 12);
 		taDecoder.CopyDepthScale(dst, 12);
 		cmd->CopyBufferRegion(dst, 16, c.buffer, c.offset + 16, 16);
-		context->Transition(dst, gpuVtxConstantsState, D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER);
+		dx12c_transition_resource(dst, &gpuVtxConstantsState, D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER, D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES);
 		vtxConstantsGpu = dst->GetGPUVirtualAddress();
 	}
 	return true;
@@ -868,12 +862,12 @@ void DX12Renderer::MakeFragmentConstants(FragmentConstants& constants)
 
 void DX12Renderer::SetupFrame()
 {
-	context->BindRaster();
-	ID3D12GraphicsCommandList *cmd = context->Cmd();
+	dx12c_bind_raster();
+	ID3D12GraphicsCommandList *cmd = dx12c_cmd();
 	cmd->SetGraphicsRootConstantBufferView(1, vtxConstantsGpu);
 	cmd->SetGraphicsRootConstantBufferView(2, fragConstantsGpu);
-	context->SetVertexBuffer(vertexView);
-	context->SetIndexBuffer(indexView);
+	dx12c_set_vertex_buffer(&vertexView);
+	dx12c_set_index_buffer(&indexView);
 }
 
 bool DX12Renderer::EnsureDepth(u32 width, u32 height)
@@ -890,9 +884,9 @@ bool DX12Renderer::EnsureDepth(u32 width, u32 height)
 	if (depth.resource)
 	{
 		depth.resource->AddRef();
-		context->Release(depth.resource.get());
+		dx12c_release((IUnknown *)(depth.resource));
 	}
-	depth = DX12Image();
+	dx12_image_reset(&depth);
 	D3D12_CLEAR_VALUE clear{};
 	clear.Format = DX12DepthFormat;
 	clear.DepthStencil.Depth = 0.f;
@@ -906,50 +900,50 @@ bool DX12Renderer::EnsureDepth(u32 width, u32 height)
 	}
 	if (dsv == ~0u)
 	{
-		dsv = context->Dsv().Alloc();
-		dsvReadStencil = context->Dsv().Alloc();
-		dsvReadOnly = context->Dsv().Alloc();
+		dsv = dx12_heap_alloc(&dx12c.dsv_heap);
+		dsvReadStencil = dx12_heap_alloc(&dx12c.dsv_heap);
+		dsvReadOnly = dx12_heap_alloc(&dx12c.dsv_heap);
 	}
 	if (dsv == ~0u || dsvReadStencil == ~0u || dsvReadOnly == ~0u)
 	{
-		depth = DX12Image();
+		dx12_image_reset(&depth);
 		return false;
 	}
 	D3D12_DEPTH_STENCIL_VIEW_DESC view{};
 	view.Format = DX12DepthFormat;
 	view.ViewDimension = D3D12_DSV_DIMENSION_TEXTURE2D;
-	device->CreateDepthStencilView(depth.resource, &view, context->Dsv().Cpu(dsv));
+	device->CreateDepthStencilView(depth.resource, &view, dx12_heap_cpu(&dx12c.dsv_heap, dsv));
 	view.Flags = D3D12_DSV_FLAG_READ_ONLY_STENCIL;
-	device->CreateDepthStencilView(depth.resource, &view, context->Dsv().Cpu(dsvReadStencil));
+	device->CreateDepthStencilView(depth.resource, &view, dx12_heap_cpu(&dx12c.dsv_heap, dsvReadStencil));
 	view.Flags = D3D12_DSV_FLAG_READ_ONLY_STENCIL | D3D12_DSV_FLAG_READ_ONLY_DEPTH;
-	device->CreateDepthStencilView(depth.resource, &view, context->Dsv().Cpu(dsvReadOnly));
+	device->CreateDepthStencilView(depth.resource, &view, dx12_heap_cpu(&dx12c.dsv_heap, dsvReadOnly));
 	depth.rtv = dsv;
 	depth.width = width;
 	depth.height = height;
 	// (the view is read when a command is recorded: what is bound is bound to the old one)
-	context->ForgetTargets();
+	dx12c_forget_targets();
 	return true;
 }
 
 void DX12Renderer::DepthStates(D3D12_RESOURCE_STATES depthPlane, D3D12_RESOURCE_STATES stencilPlane)
 {
 	// (the planes are the subresources: the depth 0, the stencil 1)
-	context->Transition(depth.resource, depth.state, depthPlane, 0);
-	context->Transition(depth.resource, stencilState, stencilPlane, 1);
+	dx12c_transition_resource(depth.resource, &depth.state, depthPlane, 0);
+	dx12c_transition_resource(depth.resource, &stencilState, stencilPlane, 1);
 }
 
 /* ---- The screen ---- */
 
 void DX12Renderer::ClearTarget(const DX12Image& image, const float color[4])
 {
-	context->Cmd()->ClearRenderTargetView(context->Rtv().Cpu(image.rtv), color, 0, nullptr);
+	dx12c_cmd()->ClearRenderTargetView(dx12_heap_cpu(&dx12c.rtv_heap, image.rtv), color, 0, nullptr);
 }
 
 bool DX12Renderer::MakeScreenTarget(ScreenTarget& target, u32 width, u32 height)
 {
 	if (!makeImage(target.image, width, height, DX12FrameFormat, true, ~0u, storagePictures || writeOutPictures))
 	{
-		target.image = DX12Image();
+		dx12_image_reset(&target.image);
 		return false;
 	}
 	const float black[4] = { 0.f, 0.f, 0.f, 1.f };
@@ -959,7 +953,7 @@ bool DX12Renderer::MakeScreenTarget(ScreenTarget& target, u32 width, u32 height)
 
 bool DX12Renderer::EnsureScreen(u32 width, u32 height)
 {
-	const unsigned count = context->GetPresentCount();
+	const unsigned count = dx12c_present_count();
 
 	if (width != screenWidth || height != screenHeight)
 	{
@@ -971,12 +965,12 @@ bool DX12Renderer::EnsureScreen(u32 width, u32 height)
 		if (havePicture && lastInExtra)
 		{
 			restoredPicture = extraTarget.image;
-			extraTarget.image = DX12Image();
+			dx12_image_init(&extraTarget.image);
 		}
 		else if (havePicture && lastScreen >= 0 && (size_t)lastScreen < screenTargets.size())
 		{
 			restoredPicture = screenTargets[lastScreen].image;
-			screenTargets[lastScreen].image = DX12Image();
+			dx12_image_init(&screenTargets[lastScreen].image);
 		}
 		for (ScreenTarget& t : screenTargets)
 			DropImage(t.image);
@@ -1002,7 +996,7 @@ bool DX12Renderer::EnsureScreen(u32 width, u32 height)
 			if (havePicture)
 			{
 				restoredPicture = screenTargets[lastScreen].image;
-				screenTargets[lastScreen].image = DX12Image();
+				dx12_image_init(&screenTargets[lastScreen].image);
 			}
 			havePicture = false;
 			lastScreen = -1;
@@ -1016,7 +1010,7 @@ bool DX12Renderer::EnsureScreen(u32 width, u32 height)
 	ScreenTarget& target = screenTargets[screenIndex];
 	if (!target.image.resource && !MakeScreenTarget(target, width, height))
 		return false;
-	if (context->IsHandedOver(&target.image))
+	if (dx12c_is_handed_over(&target.image))
 	{
 		/* A render to the screen after one this frame has handed over
 		 * already: this one goes to the extra picture, which takes the
@@ -1042,16 +1036,16 @@ void DX12Renderer::DrawLastPicture(u32 width, u32 height)
 	DX12Image *image = LastPictureImage();
 	if (image == nullptr)
 		return;
-	context->SetViewport((float)width, (float)height);
+	dx12c_set_viewport((float)width, (float)height);
 	const D3D12_RECT whole = { 0, 0, (LONG)width, (LONG)height };
-	context->SetScissor(whole);
+	dx12c_set_scissor(&whole);
 	/* (the picture kept from another context can be of another size) */
-	DX12Quad::Draw(image->srv, !havePicture, -1.f, -1.f, 2.f, 2.f);
+	dx12c_draw_quad_at(image->srv, !havePicture, -1.f, -1.f, 2.f, 2.f, 0.f, 0.f, 1.f, 1.f, DX12_BLEND_KEY, nullptr);
 }
 
 bool DX12Renderer::BeginScreen()
 {
-	screenIndex = (int)context->GetPresentIndex();
+	screenIndex = (int)dx12c_present_index();
 	// (SSAA: drawn into the samples, with their depth, when they are the screen's size)
 	SsaaDepth(ssaaSamples > 1 && ssaaWidth == (u32)screen_width && ssaaHeight == (u32)screen_height);
 	if (!EnsureScreen(screen_width, screen_height))
@@ -1070,7 +1064,7 @@ bool DX12Renderer::BeginScreen()
 	if (!BindsScreen())
 	{
 		// (the per-pixel renderer clears and binds its own pictures, and this one at the end)
-		context->Transition(target.image, D3D12_RESOURCE_STATE_RENDER_TARGET);
+		dx12c_transition(&target.image, D3D12_RESOURCE_STATE_RENDER_TARGET);
 		SetBaseScissor();
 		return true;
 	}
@@ -1092,32 +1086,32 @@ bool DX12Renderer::BeginScreen()
 		 * frontend has (version 2) is left in the state it was handed over
 		 * in, which is one to copy from with the frontends there are;
 		 * drawn otherwise. */
-		const bool handedOver = context->IsHandedOver(last);
+		const bool handedOver = dx12c_is_handed_over(last);
 		if (havePicture && (!handedOver || last->state == D3D12_RESOURCE_STATE_COPY_SOURCE))
 		{
-			context->Transition(*last, D3D12_RESOURCE_STATE_COPY_SOURCE);
-			context->Transition(target.image, D3D12_RESOURCE_STATE_COPY_DEST);
-			context->Cmd()->CopyResource(target.image.resource, last->resource);
-			context->Transition(target.image, D3D12_RESOURCE_STATE_RENDER_TARGET);
-			context->SetTargets(target.image.rtv, depth.rtv);
+			dx12c_transition(last, D3D12_RESOURCE_STATE_COPY_SOURCE);
+			dx12c_transition(&target.image, D3D12_RESOURCE_STATE_COPY_DEST);
+			dx12c_cmd()->CopyResource(target.image.resource, last->resource);
+			dx12c_transition(&target.image, D3D12_RESOURCE_STATE_RENDER_TARGET);
+			dx12c_set_targets(target.image.rtv, depth.rtv, 0);
 		}
 		else
 		{
-			context->Transition(target.image, D3D12_RESOURCE_STATE_RENDER_TARGET);
-			context->SetTargets(target.image.rtv, depth.rtv);
+			dx12c_transition(&target.image, D3D12_RESOURCE_STATE_RENDER_TARGET);
+			dx12c_set_targets(target.image.rtv, depth.rtv, 0);
 			const float black[4] = { 0.f, 0.f, 0.f, 1.f };
 			ClearTarget(target.image, black);
 			if (!handedOver || last->state == D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE)
 			{
-				context->Transition(*last, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
+				dx12c_transition(last, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
 				DrawLastPicture(screenWidth, screenHeight);
 			}
 		}
 	}
 	else
 	{
-		context->Transition(target.image, D3D12_RESOURCE_STATE_RENDER_TARGET);
-		context->SetTargets(target.image.rtv, depth.rtv);
+		dx12c_transition(&target.image, D3D12_RESOURCE_STATE_RENDER_TARGET);
+		dx12c_set_targets(target.image.rtv, depth.rtv, 0);
 		if (!KeepsLastPicture())
 		{
 			float color[4] = { 0.f, 0.f, 0.f, 1.f };
@@ -1130,8 +1124,8 @@ bool DX12Renderer::BeginScreen()
 			ClearTarget(target.image, color);
 		}
 	}
-	context->Cmd()->ClearDepthStencilView(context->Dsv().Cpu(depth.rtv), D3D12_CLEAR_FLAG_DEPTH | D3D12_CLEAR_FLAG_STENCIL, 0.f, 0, 0, nullptr);
-	context->SetViewport((float)screenWidth, (float)screenHeight);
+	dx12c_cmd()->ClearDepthStencilView(dx12_heap_cpu(&dx12c.dsv_heap, depth.rtv), D3D12_CLEAR_FLAG_DEPTH | D3D12_CLEAR_FLAG_STENCIL, 0.f, 0, 0, nullptr);
+	dx12c_set_viewport((float)screenWidth, (float)screenHeight);
 	SetBaseScissor();
 	return true;
 }
@@ -1142,8 +1136,8 @@ bool DX12Renderer::BeginScreen()
 void DX12Renderer::BeginScreenSsaa(ScreenTarget& target)
 {
 	DX12Image& samples = ssaaColor[0];
-	context->Transition(samples, D3D12_RESOURCE_STATE_RENDER_TARGET);
-	context->SetTargets(samples.rtv, depth.rtv, ssaaLog2);
+	dx12c_transition(&samples, D3D12_RESOURCE_STATE_RENDER_TARGET);
+	dx12c_set_targets(samples.rtv, depth.rtv, ssaaLog2);
 	float color[4] = { 0.f, 0.f, 0.f, 1.f };
 	const bool keep = KeepsLastPicture();
 	if (!keep && pvrrc.clearFramebuffer)
@@ -1160,28 +1154,28 @@ void DX12Renderer::BeginScreenSsaa(ScreenTarget& target)
 		 * frontend has (version 2), left in the state it was handed over
 		 * in, is copied into this frame's picture first, which the resolve
 		 * writes all of later */
-		const bool handedOver = context->IsHandedOver(last);
+		const bool handedOver = dx12c_is_handed_over(last);
 		DX12Image *from = nullptr;
 		if (!handedOver || last->state == D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE)
 			from = last;
 		else if (havePicture && last->state == D3D12_RESOURCE_STATE_COPY_SOURCE && last->width == target.image.width
 				&& last->height == target.image.height)
 		{
-			context->Transition(target.image, D3D12_RESOURCE_STATE_COPY_DEST);
-			context->Cmd()->CopyResource(target.image.resource, last->resource);
+			dx12c_transition(&target.image, D3D12_RESOURCE_STATE_COPY_DEST);
+			dx12c_cmd()->CopyResource(target.image.resource, last->resource);
 			from = &target.image;
 		}
 		if (from != nullptr)
 		{
-			context->Transition(*from, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
-			context->SetViewport((float)screenWidth, (float)screenHeight);
+			dx12c_transition(from, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
+			dx12c_set_viewport((float)screenWidth, (float)screenHeight);
 			const D3D12_RECT whole = { 0, 0, (LONG)screenWidth, (LONG)screenHeight };
-			context->SetScissor(whole);
-			DX12Quad::Draw(from->srv, !havePicture, -1.f, -1.f, 2.f, 2.f);
+			dx12c_set_scissor(&whole);
+			dx12c_draw_quad_at(from->srv, !havePicture, -1.f, -1.f, 2.f, 2.f, 0.f, 0.f, 1.f, 1.f, DX12_BLEND_KEY, nullptr);
 		}
 	}
-	context->Cmd()->ClearDepthStencilView(context->Dsv().Cpu(depth.rtv), D3D12_CLEAR_FLAG_DEPTH | D3D12_CLEAR_FLAG_STENCIL, 0.f, 0, 0, nullptr);
-	context->SetViewport((float)screenWidth, (float)screenHeight);
+	dx12c_cmd()->ClearDepthStencilView(dx12_heap_cpu(&dx12c.dsv_heap, depth.rtv), D3D12_CLEAR_FLAG_DEPTH | D3D12_CLEAR_FLAG_STENCIL, 0.f, 0, 0, nullptr);
+	dx12c_set_viewport((float)screenWidth, (float)screenHeight);
 	SetBaseScissor();
 }
 
@@ -1193,65 +1187,63 @@ void DX12Renderer::EndScreen(bool writeOutPass)
 	/* the HDR output takes the samples' exact average where the picture is
 	 * their resolve (not on a frame the chip's write-out changes after,
 	 * nor where the per-pixel renderer resolved them itself): kept till then */
-	const bool hdrSamples = ssaa && BindsScreen() && context->HdrActive() && !(writeOutPass && writeOutPictures);
+	const bool hdrSamples = ssaa && BindsScreen() && dx12c_hdr_active() && !(writeOutPass && writeOutPictures);
 	if (ssaa)
 	{
 		/* The samples resolved into the picture, all of it. Their contents
 		 * are not wanted after that: discarded, which a tiler need not
 		 * store (the next frame clears them). */
 		DepthStates(D3D12_RESOURCE_STATE_DEPTH_WRITE, D3D12_RESOURCE_STATE_DEPTH_WRITE);
-		context->Cmd()->DiscardResource(depth.resource, nullptr);
+		dx12c_cmd()->DiscardResource(depth.resource, nullptr);
 		SsaaDepth(false);
 		// (the per-pixel renderer resolves them itself, as it puts its lists together)
 		if (BindsScreen())
 		{
-			context->Transition(ssaaColor[0], D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
-			context->Transition(target.image, D3D12_RESOURCE_STATE_RENDER_TARGET);
-			context->SetTargets(target.image.rtv, ~0u);
-			context->SetViewport((float)screenWidth, (float)screenHeight);
+			dx12c_transition(&ssaaColor[0], D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
+			dx12c_transition(&target.image, D3D12_RESOURCE_STATE_RENDER_TARGET);
+			dx12c_set_targets(target.image.rtv, ~0u, 0);
+			dx12c_set_viewport((float)screenWidth, (float)screenHeight);
 			const D3D12_RECT whole = { 0, 0, (LONG)screenWidth, (LONG)screenHeight };
-			context->SetScissor(whole);
+			dx12c_set_scissor(&whole);
 			SsaaResolve(ssaaColor[0].srv);
 		}
 		for (u32 i = hdrSamples ? 1 : 0; i < SsaaColorImages() && i < 2; i++)
 		{
-			context->Transition(ssaaColor[i], D3D12_RESOURCE_STATE_RENDER_TARGET);
-			context->Cmd()->DiscardResource(ssaaColor[i].resource, nullptr);
+			dx12c_transition(&ssaaColor[i], D3D12_RESOURCE_STATE_RENDER_TARGET);
+			dx12c_cmd()->DiscardResource(ssaaColor[i].resource, nullptr);
 		}
 	}
 	if (writeOutPass && writeOutPictures)
 	{
-		context->SetTargets(~0u, ~0u);
-		writeOut.Record(target.image);
-		if (!overlay.IsEmpty())
-			context->Transition(target.image, D3D12_RESOURCE_STATE_RENDER_TARGET);
+		dx12c_set_targets(~0u, ~0u, 0);
+		dx12_writeout_record(&target.image);
+		if (!dx12_overlay_empty())
+			dx12c_transition(&target.image, D3D12_RESOURCE_STATE_RENDER_TARGET);
 	}
 	// what goes over the picture, onto it (with the depth test off: whatever depth is bound is not looked at)
-	if (!overlay.IsEmpty())
+	if (!dx12_overlay_empty())
 	{
 		// (with SSAA, none: the depth of one sample may be smaller than the screen)
-		context->SetTargets(target.image.rtv, ssaa ? ~0u : depth.rtv);
-		context->SetViewport((float)screenWidth, (float)screenHeight);
+		dx12c_set_targets(target.image.rtv, ssaa ? ~0u : depth.rtv, 0);
+		dx12c_set_viewport((float)screenWidth, (float)screenHeight);
 		const D3D12_RECT whole = { 0, 0, (LONG)screenWidth, (LONG)screenHeight };
-		context->SetScissor(whole);
-		overlay.Draw(screenWidth, screenHeight);
+		dx12c_set_scissor(&whole);
+		dx12_overlay_draw(screenWidth, screenHeight);
 	}
 	// the motion vectors over the depth the frame left, and the depth, for the upscaler
 	if (upscaled)
 		RecordMotionPass();
-	context->SetTargets(~0u, ~0u);
+	dx12c_set_targets(~0u, ~0u, 0);
 	// as the frontend wants it - or encoded for its HDR output, which it is handed instead - and off to the GPU
-	const bool hdr = context->EncodeHdr(target.image, target.image.width, target.image.height,
-			hdrSamples ? &ssaaColor[0] : nullptr, ssaaLog2,
-			!(writeOutPass && writeOutPictures) ? HdrSums() : nullptr);
+	const bool hdr = dx12c_encode_hdr(&target.image, target.image.width, target.image.height, hdrSamples ? &ssaaColor[0] : nullptr, ssaaLog2, !(writeOutPass && writeOutPictures) ? HdrSums() : nullptr);
 	if (!hdr)
-		context->Transition(target.image, context->RequiredState());
+		dx12c_transition(&target.image, dx12c.required_state);
 	if (hdrSamples)
 	{
-		context->Transition(ssaaColor[0], D3D12_RESOURCE_STATE_RENDER_TARGET);
-		context->Cmd()->DiscardResource(ssaaColor[0].resource, nullptr);
+		dx12c_transition(&ssaaColor[0], D3D12_RESOURCE_STATE_RENDER_TARGET);
+		dx12c_cmd()->DiscardResource(ssaaColor[0].resource, nullptr);
 	}
-	context->Submit();
+	dx12c_submit();
 	// (before the picture: the frontend takes them with it)
 	if (upscaled)
 		SubmitUpscaler(hdr);
@@ -1260,7 +1252,7 @@ void DX12Renderer::EndScreen(bool writeOutPass)
 	lastScreen = screenIndex;
 	lastInExtra = false;
 	DropRestored();
-	context->SetFrame(&target.image);
+	dx12c_set_frame(&target.image);
 }
 
 void DX12Renderer::KeepPicture()
@@ -1288,7 +1280,7 @@ void DX12Renderer::SetupUpscaler()
 	key.writeColor = true;
 	key.pass = 1;
 	key.depthFunc = 7;
-	context->Pipelines().Prepare(key);
+	dx12_pso_prepare(&key);
 	key.pass = 0;
 	key.depthFunc = 0;
 	for (u32 cull = 0; cull < 3; cull++)
@@ -1297,11 +1289,11 @@ void DX12Renderer::SetupUpscaler()
 		key.depthBound = true;
 		key.depthTest = true;
 		key.depthFunc = 6;
-		context->Pipelines().Prepare(key);
+		dx12_pso_prepare(&key);
 		key.depthBound = false;
 		key.depthTest = false;
 		key.depthFunc = 0;
-		context->Pipelines().Prepare(key);
+		dx12_pso_prepare(&key);
 	}
 }
 
@@ -1314,7 +1306,7 @@ void DX12Renderer::DropUpscaler()
 	}
 	upscalerSlots.clear();
 	if (depthCopySrv != ~0u)
-		context->ReleaseSrv(depthCopySrv);
+		dx12c_release_srv(depthCopySrv);
 	depthCopySrv = ~0u;
 	depthCopyViewed = nullptr;
 	upscaled = false;
@@ -1355,7 +1347,7 @@ bool DX12Renderer::UpscalerMatch()
 	// the frame's strips matched with the frame before's: where each vertex was, in the ring
 	const u32 bytes = (u32)std::max<size_t>((size_t)pvrrc.verts.used() * 2 * sizeof(float), 2 * sizeof(float));
 	DX12Upload upload;
-	if (!context->Upload(bytes, 16, upload))
+	if (!dx12c_upload(bytes, 16, &upload))
 		return false;
 	/* (written where the GPU reads them: the upload ring) */
 	upscaler_match(&pvrrc, (float *)upload.cpu);
@@ -1368,37 +1360,37 @@ bool DX12Renderer::UpscalerMatch()
 
 void DX12Renderer::RecordMotionPass()
 {
-	ID3D12GraphicsCommandList *cmd = context->Cmd();
+	ID3D12GraphicsCommandList *cmd = dx12c_cmd();
 	UpscalerSlot& slot = upscalerSlots[screenIndex];
-	context->Transition(slot.motion, D3D12_RESOURCE_STATE_RENDER_TARGET);
+	dx12c_transition(&slot.motion, D3D12_RESOURCE_STATE_RENDER_TARGET);
 	if (motionSampled)
 	{
 		// the vectors over the depth the walk stored, a texture the shader tests
-		context->Transition(slot.depth, (D3D12_RESOURCE_STATES)(D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE | D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE));
-		context->SetTargets(slot.motion.rtv, ~0u);
+		dx12c_transition(&slot.depth, (D3D12_RESOURCE_STATES)(D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE | D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE));
+		dx12c_set_targets(slot.motion.rtv, ~0u, 0);
 	}
 	else
 	{
 		// the vectors drawn over the depth the frame left: tested, not written
 		DepthStates(D3D12_RESOURCE_STATE_DEPTH_READ, D3D12_RESOURCE_STATE_DEPTH_READ);
-		context->SetTargets(slot.motion.rtv, dsvReadOnly);
+		dx12c_set_targets(slot.motion.rtv, dsvReadOnly, 0);
 	}
 	const float still[4] = { 0.f, 0.f, 0.f, 0.f };
-	cmd->ClearRenderTargetView(context->Rtv().Cpu(slot.motion.rtv), still, 0, nullptr);
-	context->SetViewport((float)screenWidth, (float)screenHeight);
-	context->SetScissor(baseScissor);
-	context->BindRaster();
+	cmd->ClearRenderTargetView(dx12_heap_cpu(&dx12c.rtv_heap, slot.motion.rtv), still, 0, nullptr);
+	dx12c_set_viewport((float)screenWidth, (float)screenHeight);
+	dx12c_set_scissor(&baseScissor);
+	dx12c_bind_raster();
 	cmd->SetGraphicsRootConstantBufferView(1, vtxConstantsGpu);
 	// (the vectors in pixels: the size, as the shader's constants; and the depth's place, where the shader tests it)
 	const float size[2] = { (float)screenWidth, (float)screenHeight };
 	u32 constants[3];
 	memcpy(constants, size, sizeof(size));
 	constants[2] = slot.depth.srv;
-	context->SetRootConstants(constants, 3);
-	context->SetVertexBuffer(motionSampled ? motionVertexView : vertexView);
+	dx12c_set_root_constants(constants, 3);
+	dx12c_set_vertex_buffer(&(motionSampled ? motionVertexView : vertexView));
 	cmd->IASetVertexBuffers(1, 1, &prevXyView);
-	context->SetIndexBuffer(motionSampled ? motionIndexView : indexView);
-	context->SetTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP);
+	dx12c_set_index_buffer(&(motionSampled ? motionIndexView : indexView));
+	dx12c_set_topology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP);
 	DX12PsoKey key{};
 	key.kind = DX12_PSO_MOTION;
 	key.writeColor = true;
@@ -1417,10 +1409,10 @@ void DX12Renderer::RecordMotionPass()
 			if (cull != bound)
 			{
 				key.cull = cull;
-				ID3D12PipelineState *pso = context->Pipelines().Get(key);
+				ID3D12PipelineState *pso = dx12_pso_get(&key);
 				if (pso == nullptr)
 					break;
-				context->SetPipeline(pso);
+				dx12c_set_pipeline(pso);
 				bound = cull;
 			}
 			cmd->DrawIndexedInstanced(pp.count, 1, pp.first, 0, 0);
@@ -1428,24 +1420,24 @@ void DX12Renderer::RecordMotionPass()
 	// (the next frame's draws bind the one stream they have: the pass's second is theirs to ignore)
 	if (motionSampled)
 	{
-		context->Transition(slot.motion, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
-		context->SetTargets(~0u, ~0u);
+		dx12c_transition(&slot.motion, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+		dx12c_set_targets(~0u, ~0u, 0);
 		return;
 	}
 	/* the depth buffer's first plane drawn whole into the slot's picture of
 	 * floats, for the upscaler to read as it likes (a copy between the two
 	 * formats is not one every Direct3D 12 there is takes) */
-	if (depthCopyViewed != depth.resource.get())
+	if (depthCopyViewed != depth.resource)
 	{
 		if (depthCopySrv != ~0u)
-			context->ReleaseSrv(depthCopySrv);
-		depthCopySrv = context->Srv().Alloc();
+			dx12c_release_srv(depthCopySrv);
+		depthCopySrv = dx12_heap_alloc(&dx12c.srv_heap);
 		if (depthCopySrv == ~0u)
 		{
 			upscaled = false;
-			context->Transition(slot.motion, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+			dx12c_transition(&slot.motion, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
 			DepthStates(D3D12_RESOURCE_STATE_DEPTH_WRITE, D3D12_RESOURCE_STATE_DEPTH_WRITE);
-			context->SetTargets(~0u, ~0u);
+			dx12c_set_targets(~0u, ~0u, 0);
 			return;
 		}
 		D3D12_SHADER_RESOURCE_VIEW_DESC view{};
@@ -1453,48 +1445,48 @@ void DX12Renderer::RecordMotionPass()
 		view.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
 		view.Texture2D.MipLevels = 1;
 		view.Format = DXGI_FORMAT_R32_FLOAT_X8X24_TYPELESS;
-		device->CreateShaderResourceView(depth.resource, &view, context->Srv().Cpu(depthCopySrv));
-		depthCopyViewed = depth.resource.get();
+		device->CreateShaderResourceView(depth.resource, &view, dx12_heap_cpu(&dx12c.srv_heap, depthCopySrv));
+		depthCopyViewed = depth.resource;
 	}
 	DepthStates((D3D12_RESOURCE_STATES)(D3D12_RESOURCE_STATE_DEPTH_READ | D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE), D3D12_RESOURCE_STATE_DEPTH_READ);
-	context->Transition(slot.depth, D3D12_RESOURCE_STATE_RENDER_TARGET);
-	context->SetTargets(slot.depth.rtv, ~0u);
+	dx12c_transition(&slot.depth, D3D12_RESOURCE_STATE_RENDER_TARGET);
+	dx12c_set_targets(slot.depth.rtv, ~0u, 0);
 	const D3D12_RECT whole = { 0, 0, (LONG)screenWidth, (LONG)screenHeight };
-	context->SetScissor(whole);
+	dx12c_set_scissor(&whole);
 	key = DX12PsoKey{};
 	key.kind = DX12_PSO_MOTION;
 	key.pass = 1;
 	key.writeColor = true;
 	key.depthFunc = 7;
-	if (ID3D12PipelineState *pso = context->Pipelines().Get(key))
+	if (ID3D12PipelineState *pso = dx12_pso_get(&key))
 	{
-		context->SetPipeline(pso);
+		dx12c_set_pipeline(pso);
 		// (the quad's constants: the whole target, the plane's place in the table)
 		const float rect[8] = { -1.f, -1.f, 2.f, 2.f, 0.f, 0.f, 1.f, 1.f };
 		u32 quad[10];
 		memcpy(quad, rect, sizeof(rect));
 		quad[8] = depthCopySrv;
 		quad[9] = 0;
-		context->SetRootConstants(quad, 10);
+		dx12c_set_root_constants(quad, 10);
 		cmd->DrawInstanced(4, 1, 0, 0);
 	}
-	context->Transition(slot.depth, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
-	context->Transition(slot.motion, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+	dx12c_transition(&slot.depth, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+	dx12c_transition(&slot.motion, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
 	DepthStates(D3D12_RESOURCE_STATE_DEPTH_WRITE, D3D12_RESOURCE_STATE_DEPTH_WRITE);
-	context->SetTargets(~0u, ~0u);
+	dx12c_set_targets(~0u, ~0u, 0);
 }
 
 void DX12Renderer::SubmitUpscaler(bool hdr)
 {
 	const UpscalerSlot& slot = upscalerSlots[screenIndex];
 	struct retro_hw_upscaler_image motion, depth;
-	motion.image  = (uint64_t)(uintptr_t)slot.motion.resource.get();
+	motion.image  = (uint64_t)(uintptr_t)slot.motion.resource;
 	motion.view   = 0;
 	motion.format = (unsigned)DX12MotionFormat;
 	motion.state  = (unsigned)slot.motion.state;
 	motion.width  = screenWidth;
 	motion.height = screenHeight;
-	depth.image   = (uint64_t)(uintptr_t)slot.depth.resource.get();
+	depth.image   = (uint64_t)(uintptr_t)slot.depth.resource;
 	depth.view    = 0;
 	depth.format  = (unsigned)DX12UpscalerDepthFormat;
 	depth.state   = (unsigned)slot.depth.state;
@@ -1590,15 +1582,15 @@ bool DX12Renderer::BeginRTT()
 	targetWidth = upscaledWidth;
 	targetHeight = upscaledHeight;
 
-	context->Transition(spare->resource, spare->state, D3D12_RESOURCE_STATE_RENDER_TARGET);
+	dx12c_transition_resource(spare->resource, &spare->state, D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES);
 	if (BindsScreen())
 	{
-		context->SetTargets(spare->rtv, depth.rtv);
+		dx12c_set_targets(spare->rtv, depth.rtv, 0);
 		const float black[4] = { 0.f, 0.f, 0.f, 1.f };
-		context->Cmd()->ClearRenderTargetView(context->Rtv().Cpu(spare->rtv), black, 0, nullptr);
-		context->Cmd()->ClearDepthStencilView(context->Dsv().Cpu(depth.rtv), D3D12_CLEAR_FLAG_DEPTH | D3D12_CLEAR_FLAG_STENCIL, 0.f, 0, 0, nullptr);
+		dx12c_cmd()->ClearRenderTargetView(dx12_heap_cpu(&dx12c.rtv_heap, spare->rtv), black, 0, nullptr);
+		dx12c_cmd()->ClearDepthStencilView(dx12_heap_cpu(&dx12c.dsv_heap, depth.rtv), D3D12_CLEAR_FLAG_DEPTH | D3D12_CLEAR_FLAG_STENCIL, 0.f, 0, 0, nullptr);
 	}
-	context->SetViewport((float)upscaledWidth, (float)upscaledHeight);
+	dx12c_set_viewport((float)upscaledWidth, (float)upscaledHeight);
 	// only the pixel clip is written
 	baseScissor = D3D12_RECT{ (LONG)(clipX * scale), (LONG)(clipY * scale),
 			(LONG)((clipX + clipWidth) * scale), (LONG)((clipY + clipHeight) * scale) };
@@ -1608,11 +1600,11 @@ bool DX12Renderer::BeginRTT()
 void DX12Renderer::EndRTT()
 {
 	FlushBatch();
-	context->SetTargets(~0u, ~0u);
+	dx12c_set_targets(~0u, ~0u, 0);
 	DX12PooledTexture *spare = rttTexture->Spare();
 	// to be drawn with, and off to the GPU
-	context->Transition(spare->resource, spare->state, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
-	context->Submit();
+	dx12c_transition_resource(spare->resource, &spare->state, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES);
+	dx12c_submit();
 	rttTexture->SwapWithSpare();
 
 	rttTexture->dirty = 0;
@@ -1659,25 +1651,23 @@ bool DX12Renderer::UploadFramebuffer()
  * renderers draw it */
 void DX12Renderer::DrawFramebuffer()
 {
-	screenIndex = (int)context->GetPresentIndex();
+	screenIndex = (int)dx12c_present_index();
 	if (!EnsureScreen(screen_width, screen_height))
 		return;
 	ScreenTarget& target = screenTargets[screenIndex];
 	matrices.CalcMatrices(&pvrrc);
-	context->Transition(target.image, D3D12_RESOURCE_STATE_RENDER_TARGET);
-	context->SetTargets(target.image.rtv, ~0u);
+	dx12c_transition(&target.image, D3D12_RESOURCE_STATE_RENDER_TARGET);
+	dx12c_set_targets(target.image.rtv, ~0u, 0);
 	const float black[4] = { 0.f, 0.f, 0.f, 1.f };
 	ClearTarget(target.image, black);
-	context->SetViewport((float)screenWidth, (float)screenHeight);
+	dx12c_set_viewport((float)screenWidth, (float)screenHeight);
 	const D3D12_RECT whole = { 0, 0, (LONG)screenWidth, (LONG)screenHeight };
-	context->SetScissor(whole);
+	dx12c_set_scissor(&whole);
 
 	const xform& viewport = matrices.GetViewportMatrix();
 	const float x0 = xform_x(&viewport, 0.f), x1 = xform_x(&viewport, 640.f);
 	const float y0 = xform_y(&viewport, 0.f), y1 = xform_y(&viewport, 480.f);
-	DX12Quad::Draw(fbTexture.srv, true,
-			x0 * 2.f / screenWidth - 1.f, 1.f - y1 * 2.f / screenHeight,
-			(x1 - x0) * 2.f / screenWidth, (y1 - y0) * 2.f / screenHeight);
+	dx12c_draw_quad_at(fbTexture.srv, true, x0 * 2.f / screenWidth - 1.f, 1.f - y1 * 2.f / screenHeight, (x1 - x0) * 2.f / screenWidth, (y1 - y0) * 2.f / screenHeight, 0.f, 0.f, 1.f, 1.f, DX12_BLEND_KEY, nullptr);
 	EndScreen();
 }
 
@@ -1688,7 +1678,7 @@ bool DX12Renderer::Render()
 	const bool rv = RenderFrame();
 	/* (the commands that draw it: submitted already, or in the list the next
 	 * submission executes) */
-	parse_arena_d3d12_drawn(&parseArena, context->IsRecording() ? context->LastSubmitted() + 1 : context->LastSubmitted());
+	parse_arena_d3d12_drawn(&parseArena, dx12c.recording ? dx12c.fence_value + 1 : dx12c.fence_value);
 	return rv;
 }
 
@@ -1709,7 +1699,7 @@ bool DX12Renderer::RenderFrame()
 	/* the frontend may still be showing what is in the screen's next
 	 * picture: it is waited for, if Process() has not */
 	if (!held && !pvrrc.isRTT)
-		context->WaitPresentIndex();
+		dx12c_wait_present_index();
 
 	SsaaDepth(false);
 	if (pvrrc.isRenderFramebuffer)
@@ -1726,7 +1716,7 @@ bool DX12Renderer::RenderFrame()
 	// (sorted into the ring, and the provoking vertices set: UploadGeometry())
 	if (!UploadGeometry())
 	{
-		context->SetTargets(~0u, ~0u);
+		dx12c_set_targets(~0u, ~0u, 0);
 		SsaaDepth(false);
 		rttTexture = nullptr;
 		return false;
@@ -1769,26 +1759,26 @@ void DX12Renderer::FlushBatch()
 	batchCount = 0;
 	if (batchState.pso == nullptr)
 		return;
-	context->SetPipeline(batchState.pso);
-	context->SetScissor(batchState.scissor);
-	context->SetStencilRef(batchState.stencilRef);
-	context->SetTopology(batchState.topology);
-	ID3D12GraphicsCommandList *cmd = context->Cmd();
+	dx12c_set_pipeline(batchState.pso);
+	dx12c_set_scissor(&batchState.scissor);
+	dx12c_set_stencil_ref(batchState.stencilRef);
+	dx12c_set_topology(batchState.topology);
+	ID3D12GraphicsCommandList *cmd = dx12c_cmd();
 	statBatches++;
 	statBatched += count;
-	ID3D12CommandSignature *signature = context->DrawSignature();
+	ID3D12CommandSignature *signature = dx12c.draw_signature;
 	DX12Upload upload;
-	if (count > 1 && signature != nullptr && context->Upload(count * sizeof(DrawArgs), 16, upload))
+	if (count > 1 && signature != nullptr && dx12c_upload(count * sizeof(DrawArgs), 16, &upload))
 	{
 		memcpy(upload.cpu, batch, (size_t)count * sizeof(DrawArgs));
 		cmd->ExecuteIndirect(signature, count, upload.buffer, upload.offset, nullptr, 0);
-		context->ForgetRootConstants();
+		dx12c_forget_root_constants();
 		return;
 	}
 	for (u32 i = 0; i < count; i++)
 	{
 		const DrawArgs& args = batch[i];
-		context->SetRootConstants(args.constants, DX12Context::PolyConstantCount);
+		dx12c_set_root_constants(args.constants, DX12C_POLY_CONSTANT_COUNT);
 		cmd->DrawIndexedInstanced(args.draw.IndexCountPerInstance, 1, args.draw.StartIndexLocation, 0, 0);
 	}
 }
@@ -1828,12 +1818,12 @@ DX12PsoKey DX12Renderer::PolyKey(u32 listType, bool sortTriangles, bool prepass,
 		 * marked may be drawn over is what tells the two kinds apart. */
 		key.depthWrite = false;
 		key.depthFunc = 2;
-		key.stencil = shadowPass == ShadowPass::LaterWins ? DX12Stencil::ShadowLaterWins : DX12Stencil::ShadowEarlierWins;
+		key.stencil = shadowPass == ShadowPass::LaterWins ? DX12Stencil_ShadowLaterWins : DX12Stencil_ShadowEarlierWins;
 	}
 	else if (listType == ListType_Opaque || listType == ListType_Punch_Through)
-		key.stencil = DX12Stencil::Shadow;
+		key.stencil = DX12Stencil_Shadow;
 	else
-		key.stencil = DX12Stencil::None;
+		key.stencil = DX12Stencil_None;
 
 	// Apparently punch-through polys support blending, or at least some combinations
 	// An opaque polygon is blended by its instructions too when it is in a
@@ -1874,9 +1864,9 @@ void DX12Renderer::PreparePipelines()
 					for (u32 src = 0; src < 8; src++)
 						for (u32 dst = 0; dst < 8; dst++)
 							if ((dx12_src_folds(src) && dx12_dst_folds(dst)) != (rare != 0))
-								keys.push_back(PolyKey(d.list, d.sorted, d.prepass, d.shadow, mode, zwd != 0, src, dst).Pack());
+								keys.push_back(dx12_pso_key_pack(dx12_pso_key_ref(PolyKey(d.list, d.sorted, d.prepass, d.shadow, mode, zwd != 0, src, dst))));
 	// (each made once, where it first comes: Want())
-	context->Pipelines().Prepare(keys);
+	dx12_pso_prepare_many(keys.data(), keys.size());
 }
 
 void DX12Renderer::DrawPoly(u32 listType, bool sortTriangles, const PolyParam& poly, u32 first, u32 count,
@@ -1969,9 +1959,9 @@ void DX12Renderer::DrawPoly(u32 listType, bool sortTriangles, const PolyParam& p
 	DX12PsoKey key = PolyKey(listType, sortTriangles, prepassDraw, shadowPass,
 			poly.isp.DepthMode, poly.isp.ZWriteDis, poly.tsp.SrcInstr, poly.tsp.DstInstr);
 	key.gouraud = poly.pcw.Gouraud;
-	state.stencilRef = key.stencil == DX12Stencil::ShadowLaterWins ? 0xC1
-			: key.stencil == DX12Stencil::ShadowEarlierWins ? 0x81
-			: key.stencil == DX12Stencil::Shadow && poly.pcw.Shadow != 0 ? 0x80 : 0;
+	state.stencilRef = key.stencil == DX12Stencil_ShadowLaterWins ? 0xC1
+			: key.stencil == DX12Stencil_ShadowEarlierWins ? 0x81
+			: key.stencil == DX12Stencil_Shadow && poly.pcw.Shadow != 0 ? 0x80 : 0;
 	if (key.blend)
 	{
 		// (the factors the shader applies, and the pipeline has as one and its second colour)
@@ -1986,15 +1976,15 @@ void DX12Renderer::DrawPoly(u32 listType, bool sortTriangles, const PolyParam& p
 	if (key.gouraud)
 		constants.flags |= DX12_PF_GOURAUD;
 	// SSAA: shaded at each sample, or once a pixel
-	key.samples = context->TargetSamples();
+	key.samples = dx12c_target_samples();
 	if (key.samples != 0)
 		key.rate = SsaaSingleRate(poly) ? DX12_RATE_PIXEL : DX12_RATE_SAMPLE;
-	state.pso = context->Pipelines().Get(key);
+	state.pso = dx12_pso_get(&key);
 	state.topology = prepassDraw || (sortTriangles && !settings.pvr.Emulation.AlphaSortMode)
 			? D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST : D3D_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP;
 
-	static_assert(sizeof(PolyConstants) == DX12Context::PolyConstantCount * 4, "the polygon's root constants");
-	u32 words[DX12Context::PolyConstantCount];
+	static_assert(sizeof(PolyConstants) == DX12C_POLY_CONSTANT_COUNT * 4, "the polygon's root constants");
+	u32 words[DX12C_POLY_CONSTANT_COUNT];
 	memcpy(words, &constants, sizeof(words));
 	// (a frame decoded on the GPU: a draw group by its arguments there)
 	if (pvrrc.gpu && !gpuSorted)
@@ -2008,14 +1998,14 @@ void DX12Renderer::DrawGpu(const DrawState& state, const u32 *constants, u32 lis
 	FlushBatch();
 	if (state.pso == nullptr)
 		return;
-	context->SetPipeline(state.pso);
-	context->SetScissor(state.scissor);
-	context->SetStencilRef(state.stencilRef);
-	context->SetTopology(state.topology);
-	context->SetRootConstants(constants, DX12Context::PolyConstantCount);
+	dx12c_set_pipeline(state.pso);
+	dx12c_set_scissor(&state.scissor);
+	dx12c_set_stencil_ref(state.stencilRef);
+	dx12c_set_topology(state.topology);
+	dx12c_set_root_constants(constants, DX12C_POLY_CONSTANT_COUNT);
 	const DX12TaDraw& gpu = taDecoder.Draw();
 	const u64 stride = sizeof(D3D12_DRAW_INDEXED_ARGUMENTS);
-	ID3D12GraphicsCommandList *cmd = context->Cmd();
+	ID3D12GraphicsCommandList *cmd = dx12c_cmd();
 	statBatches++;
 	statBatched++;
 	if (listType == ListType_Translucent)
@@ -2051,8 +2041,8 @@ ID3D12PipelineState *DX12Renderer::ModVolPipeline(bool depthTest, bool depthWrit
 	key.cull = cull;
 	key.writeColor = writeColor;
 	key.special = special;
-	key.samples = context->TargetSamples();
-	return context->Pipelines().Get(key);
+	key.samples = dx12c_target_samples();
+	return dx12_pso_get(&key);
 }
 
 void DX12Renderer::DrawSorted(const SortTrigDrawParam *polys, u32 count, bool multipass)
@@ -2065,7 +2055,7 @@ void DX12Renderer::DrawSorted(const SortTrigDrawParam *polys, u32 count, bool mu
 		if (count == 0)
 			return;
 		FlushBatch();
-		context->SetIndexBuffer(taDecoder.Draw().sorted);
+		dx12c_set_index_buffer(&(taDecoder.Draw().sorted));
 		gpuSorted = true;
 	}
 	for (u32 i = 0; i < count; i++)
@@ -2077,27 +2067,27 @@ void DX12Renderer::DrawSorted(const SortTrigDrawParam *polys, u32 count, bool mu
 		// a later render pass needs their depth (Cosmic Smash), it is written
 		// now, for those that do not have Z write disabled.
 		FlushBatch();
-		ID3D12GraphicsCommandList *cmd = context->Cmd();
-		context->SetTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+		ID3D12GraphicsCommandList *cmd = dx12c_cmd();
+		dx12c_set_topology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 		for (u32 i = 0; i < count; i++)
 		{
 			const SortTrigDrawParam& param = polys[i];
 			if (param.count <= 2 || param.ppid->isp.ZWriteDis)
 				continue;
 			D3D12_RECT scissorRect;
-			context->SetScissor(SetTileClip(param.ppid->tileclip, scissorRect) == TileClipping::Outside ? scissorRect : baseScissor);
+			dx12c_set_scissor(&(SetTileClip(param.ppid->tileclip, scissorRect) == TileClipping::Outside ? scissorRect : baseScissor));
 			const u32 cull = param.ppid->isp.CullMode == 3 ? 2 : param.ppid->isp.CullMode == 2 ? 1 : 0;
-			ID3D12PipelineState *pso = ModVolPipeline(true, true, 6, DX12Stencil::None, cull, false, DX12_BLEND_KEY);
+			ID3D12PipelineState *pso = ModVolPipeline(true, true, 6, DX12Stencil_None, cull, false, DX12_BLEND_KEY);
 			if (pso == nullptr)
 				continue;
-			context->SetPipeline(pso);
+			dx12c_set_pipeline(pso);
 			cmd->DrawIndexedInstanced(param.count, 1, base + param.first, 0, 0);
 		}
 	}
 	if (pvrrc.gpu)
 	{
 		FlushBatch();
-		context->SetIndexBuffer(indexView);
+		dx12c_set_index_buffer(&indexView);
 		gpuSorted = false;
 	}
 }
@@ -2112,7 +2102,7 @@ void DX12Renderer::DrawPrepass(const SortTrigDrawParam *polys, u32 count)
 	if (pvrrc.gpu)
 	{
 		FlushBatch();
-		context->SetIndexBuffer(taDecoder.Draw().sorted);
+		dx12c_set_index_buffer(&(taDecoder.Draw().sorted));
 		gpuSorted = true;
 	}
 	prepassDraw = true;
@@ -2122,7 +2112,7 @@ void DX12Renderer::DrawPrepass(const SortTrigDrawParam *polys, u32 count)
 	if (pvrrc.gpu)
 	{
 		FlushBatch();
-		context->SetIndexBuffer(indexView);
+		dx12c_set_index_buffer(&indexView);
 		gpuSorted = false;
 	}
 }
@@ -2148,12 +2138,12 @@ void DX12Renderer::DrawModVols(int first, int count, const RenderPass& previous_
 	if (count == 0 || !haveModVols)
 		return;
 	FlushBatch();
-	ID3D12GraphicsCommandList *cmd = context->Cmd();
+	ID3D12GraphicsCommandList *cmd = dx12c_cmd();
 
 	// the modifier volumes' triangles, a position each
-	context->SetVertexBuffer(modVolView);
-	context->SetTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-	context->SetScissor(baseScissor);
+	dx12c_set_vertex_buffer(&modVolView);
+	dx12c_set_topology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+	dx12c_set_scissor(&baseScissor);
 
 	ModifierVolumeParam* params = &pvrrc.global_param_mvo.head()[first];
 
@@ -2174,9 +2164,9 @@ void DX12Renderer::DrawModVols(int first, int count, const RenderPass& previous_
 		{
 			D3D12_RECT clipRect;
 			if (SetTileClip(param.tileclip, clipRect) == TileClipping::Outside)
-				context->SetScissor(clipRect);
+				dx12c_set_scissor(&clipRect);
 			else
-				context->SetScissor(baseScissor);
+				dx12c_set_scissor(&baseScissor);
 		}
 
 		if (mod_base == -1)
@@ -2185,31 +2175,31 @@ void DX12Renderer::DrawModVols(int first, int count, const RenderPass& previous_
 		const u32 cull = param.isp.CullMode == 3 ? 2 : param.isp.CullMode == 2 ? 1 : 0;
 		ID3D12PipelineState *pso;
 		if (!param.isp.VolumeLast && mv_mode > 0)
-			pso = ModVolPipeline(true, false, 4, DX12Stencil::Or, cull, false, DX12_BLEND_KEY);	// OR'ing (open volume or quad)
+			pso = ModVolPipeline(true, false, 4, DX12Stencil_Or, cull, false, DX12_BLEND_KEY);	// OR'ing (open volume or quad)
 		else
-			pso = ModVolPipeline(true, false, 4, DX12Stencil::Xor, cull, false, DX12_BLEND_KEY);	// XOR'ing (closed volume)
+			pso = ModVolPipeline(true, false, 4, DX12Stencil_Xor, cull, false, DX12_BLEND_KEY);	// XOR'ing (closed volume)
 		if (pso != nullptr)
 		{
-			context->SetPipeline(pso);
-			context->SetStencilRef(2);
+			dx12c_set_pipeline(pso);
+			dx12c_set_stencil_ref(2);
 			cmd->DrawInstanced(mvCount * 3, 1, mvFirst * 3, 0);
 		}
 
 		if (mv_mode == 1 || mv_mode == 2)
 		{
 			// Sum the area
-			pso = ModVolPipeline(false, false, 7, mv_mode == 1 ? DX12Stencil::Inclusion : DX12Stencil::Exclusion, cull, false, DX12_BLEND_KEY);
+			pso = ModVolPipeline(false, false, 7, mv_mode == 1 ? DX12Stencil_Inclusion : DX12Stencil_Exclusion, cull, false, DX12_BLEND_KEY);
 			if (pso != nullptr)
 			{
-				context->SetPipeline(pso);
-				context->SetStencilRef(1);
+				dx12c_set_pipeline(pso);
+				dx12c_set_stencil_ref(1);
 				cmd->DrawInstanced((mvFirst + mvCount - mod_base) * 3, 1, mod_base * 3, 0);
 			}
 			mod_base = -1;
 		}
 	}
-	context->SetScissor(baseScissor);
-	context->SetVertexBuffer(vertexView);
+	dx12c_set_scissor(&baseScissor);
+	dx12c_set_vertex_buffer(&vertexView);
 
 	/* The polygons that take shadows, again, where they are in a volume
 	 * (whose bounds the header pass has worked out for a frame decoded on
@@ -2224,17 +2214,17 @@ void DX12Renderer::DrawModVols(int first, int count, const RenderPass& previous_
 		DrawShadowed(ListType_Opaque, pvrrc.global_param_op, previous_pass.op_count, current_pass.op_count, area, scissor);
 		DrawShadowed(ListType_Punch_Through, pvrrc.global_param_pt, previous_pass.pt_count, current_pass.pt_count, area, scissor);
 		FlushBatch();
-		context->SetScissor(baseScissor);
+		dx12c_set_scissor(&baseScissor);
 	}
 
 	// What is left: darkened as it is. The background polygon is the
 	// rectangle drawn: the first four vertices' positions.
-	ID3D12PipelineState *pso = ModVolPipeline(false, false, 7, DX12Stencil::Final, 0, true, DX12_BLEND_ALPHA);
+	ID3D12PipelineState *pso = ModVolPipeline(false, false, 7, DX12Stencil_Final, 0, true, DX12_BLEND_ALPHA);
 	if (pso != nullptr)
 	{
-		context->SetPipeline(pso);
-		context->SetTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP);
-		context->SetStencilRef(0x81);
+		dx12c_set_pipeline(pso);
+		dx12c_set_topology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP);
+		dx12c_set_stencil_ref(0x81);
 		cmd->DrawIndexedInstanced(4, 1, 0, 0, 0);
 	}
 }

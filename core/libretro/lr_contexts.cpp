@@ -74,21 +74,21 @@ const void *lr_vk_negotiation_interface(unsigned version)
 #ifdef HAVE_D3D12
 bool lr_dx12_init(const void *iface)
 {
-   return DX12Context::Instance()->Init((const struct retro_hw_render_interface_d3d12 *)iface);
+   return dx12c_init((const struct retro_hw_render_interface_d3d12 *)iface);
 }
 
 void lr_dx12_term(void)
 {
-   DX12Context::Instance()->Term();
+   dx12c_term();
 }
 
 void lr_dx12_present(void)
 {
-   DX12Context::Instance()->Present();
+   dx12c_present();
 }
 
 void lr_dx12_wait_pipelines(void)
 {
-   DX12Context::Instance()->Pipelines().WaitMade();
+   dx12_pso_wait_made();
 }
 #endif

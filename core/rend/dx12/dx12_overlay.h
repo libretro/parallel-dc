@@ -23,37 +23,23 @@
 #include "types.h"
 #include "dx12context_lr.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 /* What goes over the picture: the VMUs' screens and the light guns'
  * crosshairs, where the core options put them (as the Vulkan renderers'
  * vulkan/vmu.cpp does it). The eight pictures are made when the renderer
  * starts, and written through the upload ring when they change. */
-class DX12Overlay
-{
-public:
-	bool Init();
-	/* Before the frame: the pictures of what has changed */
-	void Prepare();
-	/* Onto the target that is bound, @width by @height */
-	void Draw(int width, int height);
-	/* Nothing to draw */
-	bool IsEmpty() const
-	{
-		for (int i = 0; i < 4; i++)
-			if (vmus[i].shown || crosshairs[i].shown)
-				return false;
-		return true;
-	}
-	void Term();
+bool dx12_overlay_init(void);
+/* Before the frame: the pictures of what has changed */
+void dx12_overlay_prepare(void);
+/* Onto the target that is bound, @width by @height */
+void dx12_overlay_draw(int width, int height);
+/* Nothing to draw */
+bool dx12_overlay_empty(void);
+void dx12_overlay_term(void);
 
-private:
-	struct Picture
-	{
-		DX12Image image;
-		bool shown = false;
-	};
-	bool Make(Picture& picture, u32 width, u32 height);
-	bool Upload(Picture& picture, int width, int height, const u8 *rgba);
-
-	Picture vmus[4];
-	Picture crosshairs[4];
-};
+#ifdef __cplusplus
+}
+#endif

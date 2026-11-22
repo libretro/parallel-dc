@@ -26,57 +26,61 @@
 #include <d3d12.h>
 #include "types.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 /* By their number in dx12_dxbc.inc. Smooth and flat shading are one
  * shader (DX12_PF_GOURAUD). */
-enum class DX12Shader
+enum
 {
-	PolyVS = 1,
-	PolyPS = 2,
-	ModVolVS = 3,
-	ModVolPS = 4,
-	QuadVS = 5,
-	QuadPS = 6,
-	// the per-pixel renderer's
-	OITVS = 7,
-	OITDepthPS = 8,		// DX12_PASS_DEPTH; then the colour pass's, then the lists'
-	OITColorPS = 9,
-	OITListPS = 10,
-	OITFinalVS = 11,
-	OITFinalPS = 12,
-	OITModVolPS = 13,
+	DX12S_PolyVS = 1,
+	DX12S_PolyPS = 2,
+	DX12S_ModVolVS = 3,
+	DX12S_ModVolPS = 4,
+	DX12S_QuadVS = 5,
+	DX12S_QuadPS = 6,
+	/* the per-pixel renderer's */
+	DX12S_OITVS = 7,
+	DX12S_OITDepthPS = 8,		/* DX12_PASS_DEPTH; then the colour pass's, then the lists' */
+	DX12S_OITColorPS = 9,
+	DX12S_OITListPS = 10,
+	DX12S_OITFinalVS = 11,
+	DX12S_OITFinalPS = 12,
+	DX12S_OITModVolPS = 13,
 	/* SSAA's (DX12_SSAA): each of these three at each sample, then once a
 	 * pixel */
-	SsaaPolyPS = 14,
-	SsaaOITDepthPS = 16,
-	SsaaOITColorPS = 18,
-	SsaaOITListPS = 20,			// once a pixel
-	SsaaOITFinalPS = 21,		// the lists put together and the samples resolved
-	SsaaOITFinalSamplePS = 22,	// ...put together into each sample
-	SsaaOITModVolPS = 23,
-	SsaaResolvePS = 24,
+	DX12S_SsaaPolyPS = 14,
+	DX12S_SsaaOITDepthPS = 16,
+	DX12S_SsaaOITColorPS = 18,
+	DX12S_SsaaOITListPS = 20,			/* once a pixel */
+	DX12S_SsaaOITFinalPS = 21,		/* the lists put together and the samples resolved */
+	DX12S_SsaaOITFinalSamplePS = 22,	/* ...put together into each sample */
+	DX12S_SsaaOITModVolPS = 23,
+	DX12S_SsaaResolvePS = 24,
 	/* the lists' once a pixel, taking SV_Coverage for the samples the depth
 	 * test passed: for pipelines made with NVIDIA's post-depth coverage
 	 * (dx12_nvapi.h) */
-	SsaaOITListPostZPS = 25,
+	DX12S_SsaaOITListPostZPS = 25,
 	/* the temporal upscaler's motion vector pass (dx12_renderer.h) */
-	MotionVS = 26,
-	MotionPS = 27,
-	MotionSampledPS = 28,	// testing the depth the compute renderer stored itself
-	DepthCopyPS = 29,		// the depth buffer copied into the upscaler's picture of it
+	DX12S_MotionVS = 26,
+	DX12S_MotionPS = 27,
+	DX12S_MotionSampledPS = 28,	/* testing the depth the compute renderer stored itself */
+	DX12S_DepthCopyPS = 29		/* the depth buffer copied into the upscaler's picture of it */
 };
 
-D3D12_SHADER_BYTECODE dx12_shader(DX12Shader shader);
+D3D12_SHADER_BYTECODE dx12_shader(int shader);
 
 /* The HDR output's, by their number in dx12_hdr_dxbc.inc (made by
  * tools/rend/kernels_dx12.sh update-hdr) */
-enum class DX12HdrShader
+enum
 {
 	/* SsaaOITFinalPS that stores the samples' channel sums as well, for
 	 * the encode (DX12_OIT_SUMS) */
-	SsaaOITFinalSumsPS = 1,
+	DX12HS_SsaaOITFinalSumsPS = 1
 };
 
-D3D12_SHADER_BYTECODE dx12_hdr_shader(DX12HdrShader shader);
+D3D12_SHADER_BYTECODE dx12_hdr_shader(int shader);
 /* rend/texdecode.h's, by TEXD_KERNEL_D3D (1 to 4) */
 D3D12_SHADER_BYTECODE dx12_texdecode_kernel(int kernel);
 /* Whether the raster and HDR shaders above are DXIL (shader model 6.0,
@@ -84,5 +88,9 @@ D3D12_SHADER_BYTECODE dx12_texdecode_kernel(int kernel);
  * pipeline is made with them. */
 bool dx12_shaders_choose(ID3D12Device *device);
 /* A sum of all of the bytecode above, as chosen: a pipeline kept on disk was
- * made with it only if it is the same (dx12_pso.cpp) */
-u32 dx12_shaders_hash();
+ * made with it only if it is the same (dx12_pso.c) */
+u32 dx12_shaders_hash(void);
+
+#ifdef __cplusplus
+}
+#endif

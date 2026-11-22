@@ -18,7 +18,6 @@
 #include "dx12_texture.h"
 #include "dx12context_lr.h"
 #include "dx12_texdecoder.h"
-#include "dx12_quad.h"
 #include "rend/rtt_watch.h"
 #include "hw/pvr/pvr_regs.h"
 #include "hw/pvr/pvr_mem.h"
@@ -41,10 +40,10 @@ static const u32 poolTexel[DX12TexturePool::FORMATS] = { 2, 2, 2, 4, 1, 4 };
 /* Rows of @bytes each, @rows of them, into the upload ring at Direct3D's
  * pitch (a multiple of 256), for CopyTextureRegion. False if the ring
  * cannot hold them. */
-static bool uploadRows(DX12Context *context, const u8 *src, u32 srcPitch, u32 bytes, u32 rows, DX12Upload& out, u32& pitch)
+static bool uploadRows(const u8 *src, u32 srcPitch, u32 bytes, u32 rows, DX12Upload& out, u32& pitch)
 {
 	pitch = (bytes + D3D12_TEXTURE_DATA_PITCH_ALIGNMENT - 1) & ~(D3D12_TEXTURE_DATA_PITCH_ALIGNMENT - 1);
-	if (!context->Upload(pitch * rows, D3D12_TEXTURE_DATA_PLACEMENT_ALIGNMENT, out))
+	if (!dx12c_upload(pitch * rows, D3D12_TEXTURE_DATA_PLACEMENT_ALIGNMENT, &out))
 		return false;
 	if (src != nullptr)
 	{
@@ -58,7 +57,7 @@ static bool uploadRows(DX12Context *context, const u8 *src, u32 srcPitch, u32 by
 }
 
 /* The copy of what uploadRows() put in the ring into @level of @texture */
-static void copyToLevel(DX12Context *context, DX12PooledTexture *texture, u32 level, u32 width, u32 height, DXGI_FORMAT format,
+static void copyToLevel(DX12PooledTexture *texture, u32 level, u32 width, u32 height, DXGI_FORMAT format,
 		const DX12Upload& upload, u32 pitch)
 {
 	D3D12_TEXTURE_COPY_LOCATION dst{};
@@ -74,7 +73,7 @@ static void copyToLevel(DX12Context *context, DX12PooledTexture *texture, u32 le
 	src.PlacedFootprint.Footprint.Height = height;
 	src.PlacedFootprint.Footprint.Depth = 1;
 	src.PlacedFootprint.Footprint.RowPitch = pitch;
-	context->Cmd()->CopyTextureRegion(&dst, 0, 0, 0, &src, nullptr);
+	dx12c_cmd()->CopyTextureRegion(&dst, 0, 0, 0, &src, nullptr);
 }
 
 void DX12TexturePool::Init(const VramBudget& budget, const DX12TexDecoder *decoder)
@@ -88,7 +87,7 @@ void DX12TexturePool::Init(const VramBudget& budget, const DX12TexDecoder *decod
 	u32 have[FORMATS];
 	for (int f = 0; f < FORMATS; f++)
 	{
-		usable[f] = f == TARGET || DX12Context::Instance()->IsFormatSupported((TextureType)f);
+		usable[f] = f == TARGET || dx12c_format_supported((int)((TextureType)f));
 		writable[f] = f != TARGET && usable[f] && decoder != nullptr && decoder->Takes((TextureType)f);
 		have[f] = usable[f] ? poolTexel[f] : 0;
 	}
@@ -113,14 +112,13 @@ void DX12TexturePool::Term()
 	if (!ready)
 		return;
 	book.Summary("DX12");
-	DX12Context *context = DX12Context::Instance();
 	while (all != nullptr)
 	{
 		DX12PooledTexture *next = all->all;
 		if (all->srv != ~0u)
-			context->Srv().Free(all->srv);
+			dx12_heap_free(&dx12c.srv_heap, all->srv);
 		if (all->rtv != ~0u)
-			context->Rtv().Free(all->rtv);
+			dx12_heap_free(&dx12c.rtv_heap, all->rtv);
 		delete all;
 		all = next;
 	}
@@ -130,7 +128,6 @@ void DX12TexturePool::Term()
 
 bool DX12TexturePool::MakeResource(DX12PooledTexture *t, u32 f, u32 width, u32 height, u32 levels)
 {
-	DX12Context *context = DX12Context::Instance();
 	const bool wide = f == (u32)TextureType::_8888 || f == (u32)TextureType::_8;
 	t->width = width;
 	t->height = height;
@@ -146,27 +143,27 @@ bool DX12TexturePool::MakeResource(DX12PooledTexture *t, u32 f, u32 width, u32 h
 	if (f == TARGET && targetStorage)
 		flags |= D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS;
 	t->state = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE;
-	if (!dx12_make_texture(context->GetDevice(), width, height, levels, format, flags, t->state, t->resource))
+	if (!dx12_make_texture(dx12c.device, width, height, levels, format, flags, t->state, t->resource))
 		return false;
-	t->srv = context->Srv().Alloc();
+	t->srv = dx12_heap_alloc(&dx12c.srv_heap);
 	if (t->srv == ~0u)
 	{
 		WARN_LOG(RENDERER, "DX12: the bindless table is full\n");
 		t->resource.reset();
 		return false;
 	}
-	context->MakeSrv(t->resource, poolFormats[f], levels, t->srv);
+	dx12c_make_srv(t->resource, poolFormats[f], levels, t->srv);
 	if (f == TARGET)
 	{
-		t->rtv = context->Rtv().Alloc();
+		t->rtv = dx12_heap_alloc(&dx12c.rtv_heap);
 		if (t->rtv == ~0u)
 		{
-			context->Srv().Free(t->srv);
+			dx12_heap_free(&dx12c.srv_heap, t->srv);
 			t->srv = ~0u;
 			t->resource.reset();
 			return false;
 		}
-		context->GetDevice()->CreateRenderTargetView(t->resource, nullptr, context->Rtv().Cpu(t->rtv));
+		dx12c.device->CreateRenderTargetView(t->resource, nullptr, dx12_heap_cpu(&dx12c.rtv_heap, t->rtv));
 	}
 	return true;
 }
@@ -217,16 +214,15 @@ void DX12TexturePool::Give(DX12PooledTexture *texture)
 		return;
 	}
 	// one made for one texture: goes once the GPU is done with it
-	DX12Context *context = DX12Context::Instance();
 	if (texture->resource)
 	{
 		texture->resource->AddRef();
-		context->Release(texture->resource.get());
+		dx12c_release((IUnknown *)(texture->resource));
 		texture->resource.reset();
 	}
-	context->ReleaseSrv(texture->srv);
+	dx12c_release_srv(texture->srv);
 	if (texture->rtv != ~0u)
-		context->Rtv().Free(texture->rtv);
+		dx12_heap_free(&dx12c.rtv_heap, texture->rtv);
 	delete texture;
 }
 
@@ -311,24 +307,23 @@ void DX12Texture::CancelDecode()
  * into, which a no leaves for the CPU's upload to take. */
 bool DX12Texture::GpuDecode(const texd_plan& plan)
 {
-	DX12Context *context = DX12Context::Instance();
-	if (context->GetDevice() == nullptr || pool == nullptr)
+	if (dx12c.device == nullptr || pool == nullptr)
 		return false;
 	if (plan.native)
 	{
 		/* A planar 16-bit texture: the PowerVR's texels are Direct3D's
 		 * as they are, and its rows go from video memory to the texture */
-		if (tex_type == TextureType::_8888 || tex_type == TextureType::_8 || !context->IsFormatSupported(tex_type)
+		if (tex_type == TextureType::_8888 || tex_type == TextureType::_8 || !dx12c_format_supported((int)(tex_type))
 				|| !TakePooled(plan.width, plan.height, false))
 			return false;
 		CancelDecode();
 		DX12Upload upload;
 		u32 pitch;
-		if (!uploadRows(context, &vram[plan.src + plan.level[0].data], (plan.level[0].sr & 0xFFFF) * 2, plan.width * 2, plan.height, upload, pitch))
+		if (!uploadRows(&vram[plan.src + plan.level[0].data], (plan.level[0].sr & 0xFFFF) * 2, plan.width * 2, plan.height, upload, pitch))
 			return false;
-		context->Transition(pooled->resource, pooled->state, D3D12_RESOURCE_STATE_COPY_DEST);
-		copyToLevel(context, pooled, 0, plan.width, plan.height, pooled->format, upload, pitch);
-		context->Transition(pooled->resource, pooled->state, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
+		dx12c_transition_resource(pooled->resource, &pooled->state, D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES);
+		copyToLevel(pooled, 0, plan.width, plan.height, pooled->format, upload, pitch);
+		dx12c_transition_resource(pooled->resource, &pooled->state, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES);
 		return true;
 	}
 	if (decoder == nullptr || !decoder->Takes(tex_type)
@@ -385,12 +380,11 @@ static const u16 *turnBits(u8 *data, size_t texels, unsigned by, bool inPlace)
 void *DX12Texture::UploadMemory(u32 width, u32 height, size_t bytes, u32 pixel, bool mipmaps)
 {
 	uploadCpu = nullptr;
-	DX12Context *context = DX12Context::Instance();
-	if (context->GetDevice() == nullptr || pool == nullptr || mipmaps || (width * pixel) % D3D12_TEXTURE_DATA_PITCH_ALIGNMENT != 0
+	if (dx12c.device == nullptr || pool == nullptr || mipmaps || (width * pixel) % D3D12_TEXTURE_DATA_PITCH_ALIGNMENT != 0
 			|| bytes != (size_t)width * height * pixel || tex_type == TextureType::_5551 || tex_type == TextureType::_4444
 			|| TexPoolBook::Class((u32)tex_type, width, height, false) < 0)
 		return nullptr;
-	if (!context->Upload((u32)bytes, D3D12_TEXTURE_DATA_PLACEMENT_ALIGNMENT, uploadPiece))
+	if (!dx12c_upload((u32)bytes, D3D12_TEXTURE_DATA_PLACEMENT_ALIGNMENT, &uploadPiece))
 		return nullptr;
 	uploadCpu = uploadPiece.cpu;
 	uploadPitch = width * pixel;
@@ -399,8 +393,7 @@ void *DX12Texture::UploadMemory(u32 width, u32 height, size_t bytes, u32 pixel, 
 
 void DX12Texture::UploadToGPU(int width, int height, u8 *data, bool mipmapped, bool mipmapsIncluded)
 {
-	DX12Context *context = DX12Context::Instance();
-	if (context->GetDevice() == nullptr || pool == nullptr)
+	if (dx12c.device == nullptr || pool == nullptr)
 		return;
 	// what the decoder was to make of it this frame is this now
 	CancelDecode();
@@ -460,11 +453,11 @@ void DX12Texture::UploadToGPU(int width, int height, u8 *data, bool mipmapped, b
 		data = (u8 *)turnBits(data, texels, turn, !settings.rend.DumpTextures);
 	}
 
-	context->Transition(pooled->resource, pooled->state, D3D12_RESOURCE_STATE_COPY_DEST);
+	dx12c_transition_resource(pooled->resource, &pooled->state, D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES);
 	if (data == inRing && inRing != nullptr)
 	{
 		// converted into the ring already (UploadMemory())
-		copyToLevel(context, pooled, 0, width, height, pooled->format, uploadPiece, uploadPitch);
+		copyToLevel(pooled, 0, width, height, pooled->format, uploadPiece, uploadPitch);
 	}
 	else if (mipmapsIncluded)
 	{
@@ -474,8 +467,8 @@ void DX12Texture::UploadToGPU(int width, int height, u8 *data, bool mipmapped, b
 			const u32 dim = 1 << i;
 			DX12Upload upload;
 			u32 pitch;
-			if (uploadRows(context, data, dim * bpp, dim * bpp, dim, upload, pitch))
-				copyToLevel(context, pooled, levels - i - 1, dim, dim, pooled->format, upload, pitch);
+			if (uploadRows(data, dim * bpp, dim * bpp, dim, upload, pitch))
+				copyToLevel(pooled, levels - i - 1, dim, dim, pooled->format, upload, pitch);
 			data += (size_t)dim * dim * bpp;
 		}
 	}
@@ -483,15 +476,15 @@ void DX12Texture::UploadToGPU(int width, int height, u8 *data, bool mipmapped, b
 	{
 		DX12Upload upload;
 		u32 pitch;
-		if (uploadRows(context, data, width * bpp, width * bpp, height, upload, pitch))
-			copyToLevel(context, pooled, 0, width, height, pooled->format, upload, pitch);
+		if (uploadRows(data, width * bpp, width * bpp, height, upload, pitch))
+			copyToLevel(pooled, 0, width, height, pooled->format, upload, pitch);
 	}
-	context->Transition(pooled->resource, pooled->state, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
+	dx12c_transition_resource(pooled->resource, &pooled->state, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES);
 }
 
 /* The copy of what uploadRows() put in the ring into @level of @texture,
  * at @x, @y of it */
-static void copyToRegion(DX12Context *context, DX12PooledTexture *texture, u32 level, u32 x, u32 y, u32 width, u32 height,
+static void copyToRegion(DX12PooledTexture *texture, u32 level, u32 x, u32 y, u32 width, u32 height,
 		const DX12Upload& upload, u32 pitch)
 {
 	D3D12_TEXTURE_COPY_LOCATION dst{};
@@ -507,14 +500,14 @@ static void copyToRegion(DX12Context *context, DX12PooledTexture *texture, u32 l
 	src.PlacedFootprint.Footprint.Height = height;
 	src.PlacedFootprint.Footprint.Depth = 1;
 	src.PlacedFootprint.Footprint.RowPitch = pitch;
-	context->Cmd()->CopyTextureRegion(&dst, x, y, 0, &src, nullptr);
+	dx12c_cmd()->CopyTextureRegion(&dst, x, y, 0, &src, nullptr);
 }
 
 /* The image the last whole update made, and nothing the decoder still has
  * to do to it */
 bool DX12Texture::PartReady() const
 {
-	if (made_type != (u8)tex_type + 1 || pooled == nullptr || (unsigned)tex_type >= 5 || DX12Context::Instance()->GetDevice() == nullptr
+	if (made_type != (u8)tex_type + 1 || pooled == nullptr || (unsigned)tex_type >= 5 || dx12c.device == nullptr
 			|| (decodeCount != 0 && decoder != nullptr && decodeSerial == decoder->Serial()))
 		return false;
 	return pooled->width == w && pooled->height == h && pooled->format == poolFormats[(int)tex_type]
@@ -531,12 +524,11 @@ bool DX12Texture::PartMemory(size_t bytes, void **memory)
 
 void DX12Texture::UploadPart(const TexRegion *regions, u32 count, u8 *data, const size_t *offset)
 {
-	DX12Context *context = DX12Context::Instance();
 	const u32 bpp = tex_type == TextureType::_8888 ? 4 : tex_type == TextureType::_8 ? 1 : 2;
 	const unsigned turn = tex_type == TextureType::_5551 ? 1 : tex_type == TextureType::_4444 ? 4 : 0;
 	u32 i;
 
-	context->Transition(pooled->resource, pooled->state, D3D12_RESOURCE_STATE_COPY_DEST);
+	dx12c_transition_resource(pooled->resource, &pooled->state, D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES);
 	for (i = 0; i < count; i++)
 	{
 		const TexRegion& r = regions[i];
@@ -544,40 +536,39 @@ void DX12Texture::UploadPart(const TexRegion *regions, u32 count, u8 *data, cons
 		u32 pitch;
 		if (turn != 0)
 			turnBits(data + offset[i], (size_t)r.w * r.h, turn, true);
-		if (uploadRows(context, data + offset[i], r.w * bpp, r.w * bpp, r.h, upload, pitch))
-			copyToRegion(context, pooled, r.level, r.x, r.y, r.w, r.h, upload, pitch);
+		if (uploadRows(data + offset[i], r.w * bpp, r.w * bpp, r.h, upload, pitch))
+			copyToRegion(pooled, r.level, r.x, r.y, r.w, r.h, upload, pitch);
 	}
-	context->Transition(pooled->resource, pooled->state, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
+	dx12c_transition_resource(pooled->resource, &pooled->state, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES);
 }
 
 /* A planar 16-bit texture's rows go from video memory to the image as
  * they are (GpuDecode()); the decoder's textures are made whole */
 int DX12Texture::GpuDecodePart(const texd_plan& plan, const TexRegion *regions, u32 count)
 {
-	DX12Context *context = DX12Context::Instance();
 	const u32 stride = plan.level[0].sr & 0xFFFF;
 	u32 i;
 
 	if (!plan.native)
 		return decoder == nullptr || !decoder->Takes(tex_type) ? TEXP_CPU : TEXP_WHOLE;
-	if (tex_type == TextureType::_8888 || tex_type == TextureType::_8 || !context->IsFormatSupported(tex_type) || !PartReady())
+	if (tex_type == TextureType::_8888 || tex_type == TextureType::_8 || !dx12c_format_supported((int)(tex_type)) || !PartReady())
 		return TEXP_WHOLE;
-	context->Transition(pooled->resource, pooled->state, D3D12_RESOURCE_STATE_COPY_DEST);
+	dx12c_transition_resource(pooled->resource, &pooled->state, D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES);
 	for (i = 0; i < count; i++)
 	{
 		const TexRegion& r = regions[i];
 		DX12Upload upload;
 		u32 pitch;
-		if (uploadRows(context, &vram[plan.src + plan.level[0].data + r.y * stride * 2], stride * 2, plan.width * 2, r.h, upload, pitch))
-			copyToRegion(context, pooled, 0, 0, r.y, plan.width, r.h, upload, pitch);
+		if (uploadRows(&vram[plan.src + plan.level[0].data + r.y * stride * 2], stride * 2, plan.width * 2, r.h, upload, pitch))
+			copyToRegion(pooled, 0, 0, r.y, plan.width, r.h, upload, pitch);
 	}
-	context->Transition(pooled->resource, pooled->state, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
+	dx12c_transition_resource(pooled->resource, &pooled->state, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES);
 	return TEXP_DONE;
 }
 
 bool DX12Texture::Force32BitTexture(TextureType type) const
 {
-	return !DX12Context::Instance()->IsFormatSupported(type);
+	return !dx12c_format_supported((int)(type));
 }
 
 bool DX12Texture::Delete()
@@ -593,8 +584,7 @@ bool DX12Texture::Delete()
 
 void dx12_make_samplers()
 {
-	DX12Context *context = DX12Context::Instance();
-	ID3D12Device *device = context->GetDevice();
+	ID3D12Device *device = dx12c.device;
 	if (device == nullptr)
 		return;
 	for (u32 i = 0; i < DX12_SAMPLER_TABLE_SIZE; i++)
@@ -618,7 +608,7 @@ void dx12_make_samplers()
 		desc.ComparisonFunc = D3D12_COMPARISON_FUNC_NEVER;
 		desc.MinLOD = 0.f;
 		desc.MaxLOD = D3D12_FLOAT32_MAX;
-		device->CreateSampler(&desc, context->Samplers().Cpu(i));
+		device->CreateSampler(&desc, dx12_heap_cpu(&dx12c.sampler_heap, i));
 	}
 }
 
@@ -631,9 +621,8 @@ void dx12_make_samplers()
 static bool readBack(ID3D12Resource *texture, D3D12_RESOURCE_STATES& state, u32 x, u32 y, u32 width, u32 height, u8 *rgba,
 		const RttWatch *watch = nullptr, RttWatchTake take = nullptr)
 {
-	DX12Context *context = DX12Context::Instance();
 	const u32 pitch = (width * 4 + D3D12_TEXTURE_DATA_PITCH_ALIGNMENT - 1) & ~(D3D12_TEXTURE_DATA_PITCH_ALIGNMENT - 1);
-	ID3D12Resource *buffer = context->ReadbackBuffer((u64)pitch * height);
+	ID3D12Resource *buffer = dx12c_readback_buffer((u64)pitch * height);
 	if (buffer == nullptr || texture == nullptr)
 	{
 		if (take != nullptr)
@@ -643,7 +632,7 @@ static bool readBack(ID3D12Resource *texture, D3D12_RESOURCE_STATES& state, u32 
 		return false;
 	}
 	const D3D12_RESOURCE_STATES was = state;
-	context->Transition(texture, state, D3D12_RESOURCE_STATE_COPY_SOURCE);
+	dx12c_transition_resource(texture, &state, D3D12_RESOURCE_STATE_COPY_SOURCE, D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES);
 	D3D12_TEXTURE_COPY_LOCATION dst{};
 	dst.pResource = buffer;
 	dst.Type = D3D12_TEXTURE_COPY_TYPE_PLACED_FOOTPRINT;
@@ -656,10 +645,10 @@ static bool readBack(ID3D12Resource *texture, D3D12_RESOURCE_STATES& state, u32 
 	src.pResource = texture;
 	src.Type = D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX;
 	const D3D12_BOX box = { x, y, 0, x + width, y + height, 1 };
-	context->Cmd()->CopyTextureRegion(&dst, 0, 0, 0, &src, &box);
-	context->Transition(texture, state, was);
-	const u64 done = context->Submit();
-	context->WaitFor(done);
+	dx12c_cmd()->CopyTextureRegion(&dst, 0, 0, 0, &src, &box);
+	dx12c_transition_resource(texture, &state, was, D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES);
+	const u64 done = dx12c_submit();
+	dx12c_wait_for(done);
 	const D3D12_RANGE range = { 0, (SIZE_T)pitch * height };
 	void *p = nullptr;
 	if (FAILED(buffer->Map(0, &range, &p)))
@@ -725,11 +714,10 @@ static u32 rtt_pitch(u32 w)
  * once the card has written them) - never in the fault handler */
 static bool rtt_ring(u64 bytes)
 {
-	DX12Context *context = DX12Context::Instance();
 
 	if (bytes <= rttRingSize)
 		return true;
-	if (context->GetDevice() == nullptr)
+	if (dx12c.device == nullptr)
 		return false;
 	if (rttRingSize != 0 && !rttSaidLarger)
 	{
@@ -738,8 +726,8 @@ static bool rtt_ring(u64 bytes)
 	}
 	/* (made larger twice before the card is past the first: waited for, the
 	 * once) */
-	if (rttRingOld && context->Completed() < rttRingOldValue)
-		context->WaitFor(rttRingOldValue);
+	if (rttRingOld && dx12c_completed() < rttRingOldValue)
+		dx12c_wait_for(rttRingOldValue);
 	rttRingOld.reset();
 	for (Dx12RttCopy& c : rttCopies)
 	{
@@ -749,7 +737,7 @@ static bool rtt_ring(u64 bytes)
 	if (rttRing)
 	{
 		rttRingOld = std::move(rttRing);
-		rttRingOldValue = context->LastSubmitted();
+		rttRingOldValue = dx12c.fence_value;
 	}
 	rttRing.reset();
 	rttRingSize = rttRingHead = 0;
@@ -763,7 +751,7 @@ static bool rtt_ring(u64 bytes)
 	desc.MipLevels = 1;
 	desc.SampleDesc.Count = 1;
 	desc.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
-	if (FAILED(context->GetDevice()->CreateCommittedResource(&heap, D3D12_HEAP_FLAG_NONE, &desc,
+	if (FAILED(dx12c.device->CreateCommittedResource(&heap, D3D12_HEAP_FLAG_NONE, &desc,
 			D3D12_RESOURCE_STATE_COPY_DEST, nullptr, __uuidof(ID3D12Resource), (void **)rttRing.put())))
 	{
 		WARN_LOG(RENDERER, "DX12: readback buffer creation failed (%u KB)\n", (u32)(bytes / 1024));
@@ -829,13 +817,12 @@ static Dx12RttCopy *rtt_copy_free(u64 since, u64 len)
  * buffer, recorded */
 static bool rtt_record_copy(Dx12RttCopy& c, ID3D12Resource *texture, D3D12_RESOURCE_STATES& state, u32 x0, u32 y0, u32 w, u32 h)
 {
-	DX12Context *context = DX12Context::Instance();
 	const u32 pitch = rtt_pitch(w);
 
 	if (!rttRing || (u64)pitch * h > c.len)
 		return false;
 	const D3D12_RESOURCE_STATES was = state;
-	context->Transition(texture, state, D3D12_RESOURCE_STATE_COPY_SOURCE);
+	dx12c_transition_resource(texture, &state, D3D12_RESOURCE_STATE_COPY_SOURCE, D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES);
 	D3D12_TEXTURE_COPY_LOCATION dst{};
 	dst.pResource = rttRing;
 	dst.Type = D3D12_TEXTURE_COPY_TYPE_PLACED_FOOTPRINT;
@@ -849,8 +836,8 @@ static bool rtt_record_copy(Dx12RttCopy& c, ID3D12Resource *texture, D3D12_RESOU
 	src.pResource = texture;
 	src.Type = D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX;
 	const D3D12_BOX box = { x0, y0, 0, x0 + w, y0 + h, 1 };
-	context->Cmd()->CopyTextureRegion(&dst, 0, 0, 0, &src, &box);
-	context->Transition(texture, state, was);
+	dx12c_cmd()->CopyTextureRegion(&dst, 0, 0, 0, &src, &box);
+	dx12c_transition_resource(texture, &state, was, D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES);
 	c.w = w;
 	c.h = h;
 	c.pitch = pitch;
@@ -863,14 +850,13 @@ static bool rtt_record_copy(Dx12RttCopy& c, ID3D12Resource *texture, D3D12_RESOU
  * clip's part of the texture drawn onto one of the pool's pictures). */
 static bool rtt_record(const RttWatch *watch, Dx12RttCopy& c)
 {
-	DX12Context *context = DX12Context::Instance();
 	DX12Texture *texture = (DX12Texture *)watch->tex;
 	DX12PooledTexture *image = texture->Image();
 	const u32 w = watch->w, h = watch->h, scale = watch->scale > 1 ? watch->scale : 1;
 	const u32 x0 = watch->x0 * scale, y0 = watch->y0 * scale;
 	bool done;
 
-	if (context->GetDevice() == nullptr || image == nullptr || !image->resource)
+	if (dx12c.device == nullptr || image == nullptr || !image->resource)
 		return false;
 	if (scale == 1)
 		done = rtt_record_copy(c, image->resource, image->state, x0, y0, w, h);
@@ -888,15 +874,13 @@ static bool rtt_record(const RttWatch *watch, Dx12RttCopy& c)
 			WARN_LOG(RENDERER, "Render to texture read back: no %ux%u picture\n", pw, ph);
 			return false;
 		}
-		context->Transition(small->resource, small->state, D3D12_RESOURCE_STATE_RENDER_TARGET);
-		context->SetTargets(small->rtv, ~0u);
-		context->SetViewport((float)w, (float)h);
+		dx12c_transition_resource(small->resource, &small->state, D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES);
+		dx12c_set_targets(small->rtv, ~0u, 0);
+		dx12c_set_viewport((float)w, (float)h);
 		const D3D12_RECT scissor = { 0, 0, (LONG)w, (LONG)h };
-		context->SetScissor(scissor);
-		DX12Quad::Draw(image->srv, true, -1.f, -1.f, 2.f, 2.f,
-				(float)x0 / image->width, (float)y0 / image->height,
-				(float)(x0 + w * scale) / image->width, (float)(y0 + h * scale) / image->height);
-		context->SetTargets(~0u, ~0u);
+		dx12c_set_scissor(&scissor);
+		dx12c_draw_quad_at(image->srv, true, -1.f, -1.f, 2.f, 2.f, (float)x0 / image->width, (float)y0 / image->height, (float)(x0 + w * scale) / image->width, (float)(y0 + h * scale) / image->height, DX12_BLEND_KEY, nullptr);
+		dx12c_set_targets(~0u, ~0u, 0);
 		done = rtt_record_copy(c, small->resource, small->state, 0, 0, w, h);
 		/* (back to the pool: whatever draws on it next comes after the copy
 		 * on the queue) */
@@ -914,7 +898,6 @@ static bool rtt_record(const RttWatch *watch, Dx12RttCopy& c)
  * submitted together; the fence value they wait for, 0 if none was */
 static u64 rtt_copies(const RttWatch *const *watches, unsigned count)
 {
-	DX12Context *context = DX12Context::Instance();
 	Dx12RttCopy *recorded[RTT_COPIES];
 	unsigned n = 0;
 	const u64 since = rttStamp;
@@ -934,7 +917,7 @@ static u64 rtt_copies(const RttWatch *const *watches, unsigned count)
 	}
 	if (n == 0)
 		return 0;
-	const u64 value = context->Submit();
+	const u64 value = dx12c_submit();
 	for (unsigned i = 0; i < n; i++)
 		recorded[i]->value = value;
 	return value;
@@ -946,7 +929,7 @@ static void dx12_rtt_prefetch(const RttWatch *const *watches, unsigned count)
 {
 	u64 most = 0;
 
-	if (DX12Context::Instance()->GetDevice() == nullptr)
+	if (dx12c.device == nullptr)
 		return;
 	for (unsigned i = 0; i < count; i++)
 		most = std::max<u64>(most, (u64)rtt_pitch(watches[i]->w) * watches[i]->h);
@@ -959,9 +942,8 @@ static void dx12_rtt_prefetch(const RttWatch *const *watches, unsigned count)
  * now - or from one recorded here and waited for. */
 static void dx12_rtt_read(const RttWatch *watch, u8 *, RttWatchTake take)
 {
-	DX12Context *context = DX12Context::Instance();
 
-	if (context->GetDevice() == nullptr)
+	if (dx12c.device == nullptr)
 	{
 		take(watch, nullptr, 0);
 		return;
@@ -972,7 +954,7 @@ static void dx12_rtt_read(const RttWatch *watch, u8 *, RttWatchTake take)
 		if (rtt_copies(&watch, 1) == 0)
 		{
 			/* every copy is being written: all of them waited for */
-			context->WaitFor(context->LastSubmitted());
+			dx12c_wait_for(dx12c.fence_value);
 			rtt_copies(&watch, 1);
 		}
 		c = rtt_copy_of(watch);
@@ -982,8 +964,8 @@ static void dx12_rtt_read(const RttWatch *watch, u8 *, RttWatchTake take)
 			return;
 		}
 	}
-	if (context->Completed() < c->value)
-		context->WaitFor(c->value);
+	if (dx12c_completed() < c->value)
+		dx12c_wait_for(c->value);
 	const D3D12_RANGE range = { (SIZE_T)c->at, (SIZE_T)(c->at + (u64)c->pitch * c->h) };
 	void *p = nullptr;
 	if (FAILED(rttRing->Map(0, &range, &p)))
@@ -1029,10 +1011,9 @@ static void covered(u32& addr, u32 x0, u32 y0, u32& width, u32 height, u32& stri
  * list, after the render and before what draws with this. */
 bool DX12Texture::CopyRender(BaseTextureCacheData *from, u32 x, u32 y, u32 scale, u32 columns)
 {
-	DX12Context *context = DX12Context::Instance();
 	DX12PooledTexture *image = static_cast<DX12Texture *>(from)->Image();
 
-	if (context->GetDevice() == nullptr || pool == nullptr || from == this || image == nullptr || !image->resource
+	if (dx12c.device == nullptr || pool == nullptr || from == this || image == nullptr || !image->resource
 			|| image->format != DXGI_FORMAT_R8G8B8A8_UNORM || columns == 0 || columns > w)
 		return false;
 	if (scale < 1)
@@ -1048,22 +1029,20 @@ bool DX12Texture::CopyRender(BaseTextureCacheData *from, u32 x, u32 y, u32 scale
 	ReleasePooled();
 	pooled = t;
 	tex_type = TextureType::_8888;
-	context->Transition(t->resource, t->state, D3D12_RESOURCE_STATE_RENDER_TARGET);
+	dx12c_transition_resource(t->resource, &t->state, D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES);
 	if (columns < w)
 	{
 		// (the rest of each row a narrower stride leaves)
 		const float clear[4] = { 0.f, 0.f, 0.f, ClearOpaque() ? 1.f : 0.f };
-		context->Cmd()->ClearRenderTargetView(context->Rtv().Cpu(t->rtv), clear, 0, nullptr);
+		dx12c_cmd()->ClearRenderTargetView(dx12_heap_cpu(&dx12c.rtv_heap, t->rtv), clear, 0, nullptr);
 	}
-	context->SetTargets(t->rtv, ~0u);
-	context->SetViewport((float)columns, (float)h);
+	dx12c_set_targets(t->rtv, ~0u, 0);
+	dx12c_set_viewport((float)columns, (float)h);
 	const D3D12_RECT scissor = { 0, 0, (LONG)columns, (LONG)h };
-	context->SetScissor(scissor);
-	DX12Quad::Draw(image->srv, scale > 1, -1.f, -1.f, 2.f, 2.f,
-			(float)(x * scale) / image->width, (float)(y * scale) / image->height,
-			(float)((x + columns) * scale) / image->width, (float)((y + h) * scale) / image->height);
-	context->SetTargets(~0u, ~0u);
-	context->Transition(t->resource, t->state, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
+	dx12c_set_scissor(&scissor);
+	dx12c_draw_quad_at(image->srv, scale > 1, -1.f, -1.f, 2.f, 2.f, (float)(x * scale) / image->width, (float)(y * scale) / image->height, (float)((x + columns) * scale) / image->width, (float)((y + h) * scale) / image->height, DX12_BLEND_KEY, nullptr);
+	dx12c_set_targets(~0u, ~0u, 0);
+	dx12c_transition_resource(t->resource, &t->state, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES);
 	return true;
 }
 
@@ -1099,12 +1078,11 @@ void dx12_rtt_watch(DX12Texture *texture, u32 addr, u32 x0, u32 y0, u32 width, u
 
 void dx12_rtt_term(void)
 {
-	DX12Context *context = DX12Context::Instance();
 
 	rtt_watch_term();
 	/* (the card may still be writing it) */
-	if ((rttRing || rttRingOld) && context->GetDevice() != nullptr && context->Completed() < context->LastSubmitted())
-		context->WaitFor(context->LastSubmitted());
+	if ((rttRing || rttRingOld) && dx12c.device != nullptr && dx12c_completed() < dx12c.fence_value)
+		dx12c_wait_for(dx12c.fence_value);
 	rttRingOld.reset();
 	for (Dx12RttCopy& c : rttCopies)
 	{
