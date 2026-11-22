@@ -1,6 +1,6 @@
 /* The bindings the Direct3D 12 compute renderer's DXIL kernels declare,
  * from their containers' PSV0 parts (what the runtime takes them from),
- * held to what dx12/dx12_compute.cpp binds: each of the HDR output's
+ * held to what dx12/dx12_compute.c binds: each of the HDR output's
  * walks (dx12_compute_hdr_dxil.inc) binds what the walk it stands for
  * (dx12_compute_dxil.inc) does and the channel sums (u1 of space 2, a
  * typed UAV of a 2D texture) besides, and is signed; no other kernel binds

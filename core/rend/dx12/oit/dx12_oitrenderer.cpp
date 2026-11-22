@@ -77,6 +77,9 @@
 class DX12OITRenderer final : public DX12Renderer
 {
 public:
+	// (the compute renderer's, which is this renderer's: tried again by the next one)
+	~DX12OITRenderer() { dx12_compute_reset(); }
+
 	bool Init() override
 	{
 		/* (Rendering Method: Compute draws into the screen's pictures, which
@@ -126,7 +129,7 @@ public:
 
 	void Term() override
 	{
-		compute.Term();
+		dx12_compute_term();
 		if (context != nullptr)
 		{
 			for (DX12Image& picture : pictures)
@@ -176,17 +179,16 @@ private:
 	 * The frames it can draw are drawn into the screen's pictures by it, and
 	 * the others below; made with SSAA's samples, when the renderer starts
 	 * and when the screen changes size */
-	DX12ComputeDrawer compute;
 	void InitCompute()
 	{
 		if (rend_compute_wanted && device != nullptr)
 		{
-			compute.SetGpuDraw(true);
+			dx12_compute_set_gpu_draw(true);
 			// (for the temporal upscaler, with the walks that store the depth)
-			compute.Init((u32)std::max(screen_width, 1), (u32)std::max(screen_height, 1), ssaaSamples, upscaler_active() && ssaaSamples == 1);
+			dx12_compute_init((u32)std::max(screen_width, 1), (u32)std::max(screen_height, 1), ssaaSamples, upscaler_active() && ssaaSamples == 1);
 		}
 		else
-			compute.Term();
+			dx12_compute_term();
 	}
 	/* The frame in pvrrc drawn by it into the screen's picture, and shown;
 	 * false if it is not (nothing recorded then) */
@@ -194,26 +196,33 @@ private:
 	// ...a render to a texture, into its texture
 	bool RenderComputeRtt();
 	/* The frame's words by the per-pixel renderer's own rules */
-	struct ComputeRules : public ComputeFrame
+	static const xform *ComputeBegin(void *self)
 	{
-		DX12OITRenderer *renderer = nullptr;
-		const xform& Begin() override
-		{
-			renderer->matrices.CalcMatrices(&pvrrc);
-			return renderer->matrices.GetViewportMatrix();
-		}
-		void BaseScissor(int& x, int& y, int& width, int& height) override
-		{
-			renderer->SetBaseScissor();
-			const D3D12_RECT& r = renderer->baseScissor;
-			x = r.left;
-			y = r.top;
-			width = r.right - r.left;
-			height = r.bottom - r.top;
-		}
-		void ProvokingVertices() override { renderer->SetProvokingVertices(); }
-	};
-	ComputeRules computeRules;
+		DX12OITRenderer *renderer = (DX12OITRenderer *)self;
+		renderer->matrices.CalcMatrices(&pvrrc);
+		return &renderer->matrices.GetViewportMatrix();
+	}
+	static void ComputeBaseScissor(void *self, int *x, int *y, int *width, int *height)
+	{
+		DX12OITRenderer *renderer = (DX12OITRenderer *)self;
+		renderer->SetBaseScissor();
+		const D3D12_RECT& r = renderer->baseScissor;
+		*x = r.left;
+		*y = r.top;
+		*width = r.right - r.left;
+		*height = r.bottom - r.top;
+	}
+	static void ComputeProvokingVertices(void *self) { ((DX12OITRenderer *)self)->SetProvokingVertices(); }
+	compute_frame_renderer ComputeRules()
+	{
+		compute_frame_renderer r;
+		r.self = this;
+		r.slot = nullptr;	// (dx12_compute_prepare()'s own)
+		r.begin = ComputeBegin;
+		r.base_scissor = ComputeBaseScissor;
+		r.provoking_vertices = ComputeProvokingVertices;
+		return r;
+	}
 
 	enum { COUNT_SLOTS = 4, COUNT_WORDS = 256 };
 	struct Buffer
@@ -1314,13 +1323,13 @@ void DX12OITRenderer::DrawFrame()
 bool DX12OITRenderer::RenderFrame()
 {
 	/* (a render to a texture with an empty pixel clip writes nothing: Render()'s) */
-	if (compute.Ready() && device != nullptr && !pvrrc.isRenderFramebuffer
+	if (dx12_compute_ready() && device != nullptr && !pvrrc.isRenderFramebuffer
 			&& !(pvrrc.isRTT && (pvrrc.fb_X_CLIP.max < pvrrc.fb_X_CLIP.min || pvrrc.fb_Y_CLIP.max < pvrrc.fb_Y_CLIP.min)))
 	{
 		if (pvrrc.isRTT && !dx12_pool_targets_storable())
-			compute.Fallback(ComputeFrame::Why_Rtt);
-		else if (!compute.CanDraw())
-			compute.Fallback(ComputeFrame::Why_Decode);
+			dx12_compute_fallback(CF_WHY_RTT);
+		else if (!dx12_compute_can_draw())
+			dx12_compute_fallback(CF_WHY_DECODE);
 		else if (pvrrc.isRTT ? RenderComputeRtt() : RenderCompute())
 			return !pvrrc.isRTT;
 	}
@@ -1331,8 +1340,8 @@ bool DX12OITRenderer::RenderComputeRtt()
 {
 	u32 width, height;
 	RttSize(width, height);
-	computeRules.renderer = this;
-	if (!compute.Prepare(computeRules, ~0u, false, width, height))
+	const compute_frame_renderer rules = ComputeRules();
+	if (!dx12_compute_prepare(&rules, ~0u, false, width, height))
 		return false;
 	// (the frame's textures were looked at; the texture drawn into is taken now, which can be one of them)
 	if (!BeginRTT())
@@ -1343,7 +1352,7 @@ bool DX12OITRenderer::RenderComputeRtt()
 	dx12_pooled_texture *spare = rttTexture->spare;
 	dx12c_transition(&paletteTexture, (D3D12_RESOURCE_STATES)(D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE | D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE));
 	dx12c_transition_resource(spare->resource, &spare->state, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES);
-	compute.Record(spare->resource);
+	dx12_compute_record(spare->resource, nullptr, nullptr);
 	EndRTT();
 	return true;
 }
@@ -1362,14 +1371,14 @@ bool DX12OITRenderer::RenderCompute()
 		return false;
 	ScreenTarget& target = screenTargets[screenIndex];
 	// (made for the screen's size: Resize() makes it again)
-	if (compute.Width() != screenWidth || compute.Height() != screenHeight)
+	if (dx12_compute_width() != screenWidth || dx12_compute_height() != screenHeight)
 	{
-		compute.Fallback(ComputeFrame::Why_Room);
+		dx12_compute_fallback(CF_WHY_ROOM);
 		return false;
 	}
 	matrices.CalcMatrices(&pvrrc);
 	// the frame drawn under this frame's jitter, where the walks store the depth for the upscaler
-	const bool forUpscaler = compute.DepthOn() && UpscalerJitter();
+	const bool forUpscaler = dx12_compute_depth_on() && UpscalerJitter();
 	/* The picture to start from, where the render covers only part of the
 	 * screen: read where it is; or copied first where it cannot be - this
 	 * frame's own picture (the frontend's one picture, version 1), or one
@@ -1383,45 +1392,45 @@ bool DX12OITRenderer::RenderCompute()
 	{
 		const bool handedOver = dx12c_is_handed_over(image);
 		copy = image == &target.image || handedOver;
-		if (copy && (!havePicture || image->width != compute.Width() || image->height != compute.Height()
+		if (copy && (!havePicture || image->width != dx12_compute_width() || image->height != dx12_compute_height()
 				|| (handedOver && image->state != D3D12_RESOURCE_STATE_COPY_SOURCE)))
 		{
-			compute.Fallback(ComputeFrame::Why_Picture);
+			dx12_compute_fallback(CF_WHY_PICTURE);
 			return false;
 		}
-		last = copy ? compute.StartSrv() : image->srv;
+		last = copy ? dx12_compute_start_srv() : image->srv;
 		// (the picture kept from another context or size: filtered over this one, as BeginScreen() draws it)
 		scaled = !havePicture;
 	}
-	computeRules.renderer = this;
-	if (!compute.Prepare(computeRules, last, scaled))
+	const compute_frame_renderer rules = ComputeRules();
+	if (!dx12_compute_prepare(&rules, last, scaled, 0, 0))
 		return false;
 	// (the upscaler's strips matched once the frame is this renderer's: the raster path matches its own)
 	UpscalerSlot *slot = forUpscaler && UpscalerMatch() ? &upscalerSlots[screenIndex] : nullptr;
 	if (image != nullptr && copy)
 	{
 		dx12c_transition(image, D3D12_RESOURCE_STATE_COPY_SOURCE);
-		compute.CopyStart(image->resource);
+		dx12_compute_copy_start(image->resource);
 	}
 	else if (image != nullptr)
 		dx12c_transition(image, (D3D12_RESOURCE_STATES)(D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE | D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE));
 	dx12c_transition(&paletteTexture, (D3D12_RESOURCE_STATES)(D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE | D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE));
 	dx12c_transition(&target.image, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
 	// (the HDR output's channel sums, stored by the walk: the per-pixel renderer's image of them)
-	const bool withSums = compute.SumsOn() && MakeSums(screenWidth, screenHeight);
+	const bool withSums = dx12_compute_sums_on() && MakeSums(screenWidth, screenHeight);
 	if (withSums)
 		dx12c_transition(&sums, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
 	if (slot != nullptr)
 		dx12c_transition(&slot->depth, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
-	compute.Record(target.image.resource, withSums ? sums.resource : nullptr, slot != nullptr ? slot->depth.resource : nullptr);
-	sumsStored = withSums && compute.SumsStored();
+	dx12_compute_record(target.image.resource, withSums ? sums.resource : nullptr, slot != nullptr ? slot->depth.resource : nullptr);
+	sumsStored = withSums && dx12_compute_sums_stored();
 	/* the motion vector pass at the end of the frame, over the depth the
 	 * walk stored, from the frame's vertices where the walk read them (with
 	 * the constants and scissor the pass draws with: the raster path's) */
-	if (slot != nullptr && compute.DepthStored() && UploadConstants())
+	if (slot != nullptr && dx12_compute_depth_stored() && UploadConstants())
 	{
 		SetBaseScissor();
-		compute.RingForDraw(motionVertexView, motionIndexView);
+		dx12_compute_ring_for_draw(&motionVertexView, &motionIndexView);
 		motionSampled = true;
 	}
 	else

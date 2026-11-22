@@ -19,8 +19,6 @@ void dx12_writeout_init(void);
 void dx12_writeout_term(void);
 /* the pass over @picture, which is left in D3D12_RESOURCE_STATE_UNORDERED_ACCESS if there was one */
 void dx12_writeout_record(dx12_image *picture);
-/* (dx12_compute.cpp has the kernels' DXIL) */
-const void *dx12_compute_kernel(u32 kernel, size_t *size);
 
 #ifdef __cplusplus
 }

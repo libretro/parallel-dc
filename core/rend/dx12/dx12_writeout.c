@@ -2,6 +2,7 @@
 #include "dx12_writeout.h"
 #include <string.h>
 #include "rend/tile/compute_frame.h"
+#include "dx12_compute.h"
 
 /* a slot of words: the frame's PVRC_F_WIDTH to PVRC_F_FLAGS */
 #define SLOT_WORDS 64

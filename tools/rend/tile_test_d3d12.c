@@ -2,7 +2,7 @@
  * kernels as HLSL (tools/rend/kernels_dx12.sh compute-test: test mode,
  * nothing fused, DXIL) against the reference on the CPU, on the frames
  * tile_dump wrote, recorded as the Direct3D 12 renderers record them
- * (rend/dx12/dx12_compute.cpp): the same root signature - the buffers as
+ * (rend/dx12/dx12_compute.c): the same root signature - the buffers as
  * root unordered access views, the walk's textures a bindless table and
  * a sampler table, the picture a view of its own - the frame's words in
  * write-combined memory of a custom heap the kernels read in place, the
@@ -220,7 +220,7 @@ static void init(const char *dir, int validate)
    CHECK(ID3D12Device_CreateCommandList(device, 0, D3D12_COMMAND_LIST_TYPE_DIRECT, alloc, NULL, &IID_ID3D12GraphicsCommandList, (void **)&cl));
    CHECK(ID3D12Device_CreateFence(device, 0, D3D12_FENCE_FLAG_NONE, &IID_ID3D12Fence, (void **)&fence));
 
-   /* the renderer's root signature (dx12_compute.cpp): the pictures'
+   /* the renderer's root signature (dx12_compute.c): the pictures'
     * places (b0); a table of the buffers (u0 to u9: views, so that what
     * is read past a buffer's end is 0, and what is written there goes
     * nowhere, as in Vulkan's robust buffers) and the picture drawn (u0,

@@ -35,7 +35,7 @@
 #                                 the compute renderer's kernels
 #                                 (rend/tile/pvr_compute.h, after the shared
 #                                 rules' headers, with PVRC_SHADER_HLSL and
-#                                 its PVRC_KERNEL; dx12/dx12_compute.cpp):
+#                                 its PVRC_KERNEL; dx12/dx12_compute.c):
 #                                 the header's GLSL kernels made HLSL of the
 #                                 same way (compute_source_of()), the walk
 #                                 for 1, 2, 4 and 8 samples a pixel, in its
@@ -79,7 +79,7 @@
 #   sh tools/rend/kernels_dx12.sh update-compute-upscaler  only the upscaler's DXIL made again
 #   sh tools/rend/kernels_dx12.sh check    whether all are the sources' still
 #   sh tools/rend/kernels_dx12.sh bindings what the compute kernels bind, from
-#        their DXIL, as dx12/dx12_compute.cpp binds it (tools/rend/dxil_bindings.c)
+#        their DXIL, as dx12/dx12_compute.c binds it (tools/rend/dxil_bindings.c)
 #   sh tools/rend/kernels_dx12.sh compute-test DIR SAMPLES KEEP
 #        the compute kernels for tools/rend/tile_test (TILE_DEVICE=d3d12):
 #        test mode, nothing fused (PVRC_TEST, PVRC_EXACT), the walk for
@@ -314,8 +314,8 @@ compute_sums() {
    done
 }
 
-# The compute renderer's root signature (dx12/dx12_compute.cpp's Init(), as
-# it has it), which dxc holds each kernel's bindings to (-verifyrootsignature)
+# The compute renderer's root signature (dx12_compute_init()'s in
+# dx12/dx12_compute.c, as it has it), which dxc holds each kernel's bindings to (-verifyrootsignature)
 COMPUTE_ROOT="RootConstants(num32BitConstants=2, b0), DescriptorTable(UAV(u0, numDescriptors=10), UAV(u0, space=2, numDescriptors=3)), DescriptorTable(SRV(t0, space=1, numDescriptors=unbounded)), DescriptorTable(Sampler(s0, space=1, numDescriptors=unbounded)), StaticSampler(s0, filter=FILTER_MIN_MAG_LINEAR_MIP_POINT, addressU=TEXTURE_ADDRESS_CLAMP, addressV=TEXTURE_ADDRESS_CLAMP, addressW=TEXTURE_ADDRESS_CLAMP, comparisonFunc=COMPARISON_NEVER)"
 compute_root() {
    [ -f "$WORK/root.bin" ] && return
