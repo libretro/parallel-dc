@@ -76,6 +76,9 @@ bool mem_region_lock(void *start, size_t len)
 
 #ifdef HAVE_LIBNX
     size_t inlen;
+	Result rc;
+	uintptr_t start_addr;
+	uintptr_t addr;
     len += inpage;
 
     inlen = len & PAGE_MASK;
@@ -83,9 +86,7 @@ bool mem_region_lock(void *start, size_t len)
     if(inlen)
         len = (len + PAGE_SIZE) & (~(PAGE_SIZE-1));
 
-	Result rc;
-	uintptr_t start_addr = ((uintptr_t)start - inpage);
-	uintptr_t addr;
+	start_addr = (uintptr_t)start - inpage;
 	for(addr = start_addr; addr < (start_addr + len); addr += PAGE_SIZE)
 	{
 		rc = svcSetMemoryPermission((void*)addr, PAGE_SIZE, Perm_R);
@@ -108,6 +109,9 @@ bool mem_region_unlock(void *start, size_t len)
 
 #ifdef HAVE_LIBNX
     size_t inlen;
+	Result rc;
+	uintptr_t start_addr;
+	uintptr_t addr;
     len += inpage;
 
     inlen = len & PAGE_MASK;
@@ -115,9 +119,7 @@ bool mem_region_unlock(void *start, size_t len)
     if(inlen)
         len = (len + PAGE_SIZE) & (~(PAGE_SIZE-1));
         
-	Result rc;
-	uintptr_t start_addr = ((uintptr_t)start - inpage);
-	uintptr_t addr;
+	start_addr = (uintptr_t)start - inpage;
 	for(addr = start_addr; addr < (start_addr + len); addr += PAGE_SIZE)
 	{
 		rc = svcSetMemoryPermission((void*)addr, PAGE_SIZE, Perm_Rw);
@@ -171,10 +173,26 @@ bool mem_region_set_exec(void *start, size_t len)
 	return true;
 }
 
+#ifdef HAVE_LIBNX
+/* A slice of the address space found and kept from the rest of libnx's
+ * finds: in the ASLR region, or (@code) where svcMapProcessCodeMemory()
+ * maps */
+static void *nx_reserve(size_t len, bool code)
+{
+	void *p;
+	virtmemLock();
+	p = code ? virtmemFindCodeMemory(len, 0) : virtmemFindAslr(len, 0);
+	if (p != NULL && virtmemAddReservation(p, len) == NULL)
+		p = NULL;
+	virtmemUnlock();
+	return p;
+}
+#endif /* HAVE_LIBNX */
+
 void *mem_region_reserve(void *start, size_t len)
 {
 #ifdef HAVE_LIBNX
-	return virtmemReserve(len);
+	return nx_reserve(len, false);
 #else
 	void *p = mmap(start, len, PROT_NONE, MAP_PRIVATE | MAP_ANON, -1, 0);
 	if (p == MAP_FAILED)
@@ -280,7 +298,7 @@ VMemType vmem_platform_init(void **vmem_base_addr, void **sh4rcb_addr) {
 	if (vmem_fd_page < 0)
 		return MemTypeError;
 
-	vmem_fd_codememory = (uintptr_t)virtmemReserve(size_aligned);
+	vmem_fd_codememory = (uintptr_t)nx_reserve(size_aligned, true);
 	
 	if(R_FAILED(svcMapProcessCodeMemory(envGetOwnProcessHandle(), (u64) vmem_fd_codememory, (u64) vmem_fd_page, size_aligned)))
 		printf("Failed to Map memory (platform_int)...\n");
@@ -451,7 +469,7 @@ bool vmem_platform_prepare_jit_block_rw(void *code_area, unsigned size, void **c
 	ptr_rw = mmap(NULL, size, PROT_READ | PROT_WRITE,
 	                    MAP_SHARED | MAP_NOSYNC, shmem_fd2, 0);
 #else
-	ptr_rw = virtmemReserve(size_aligned);
+	ptr_rw = nx_reserve(size_aligned, false);
 	if(R_FAILED(svcMapProcessMemory(ptr_rw, envGetOwnProcessHandle(), (u64)code_area, size_aligned)))
 		printf("Failed to map jit rw block...\n");
 #endif /* HAVE_LIBNX */
