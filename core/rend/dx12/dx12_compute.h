@@ -79,8 +79,8 @@ public:
 	 * or null) */
 	static const char *DeviceLacks();
 	bool Ready() const { return ready; }
-	// what a frame decoded on the GPU is read from (pvrrc.gpu)
-	void SetGpuDraw(DX12TaDecoder *decoder) { this->decoder = decoder; }
+	// whether a frame decoded on the GPU (pvrrc.gpu) is read from dx12_ta_get_draw()
+	void SetGpuDraw(bool on) { gpuDraw = on; }
 	u32 GetSamples() const { return samples; }
 	// the screen's size it is made for
 	u32 Width() const { return width; }
@@ -149,5 +149,5 @@ private:
 	bool failed = false;
 	u32 samples = 1;
 	u32 width = 0, height = 0;
-	DX12TaDecoder *decoder = nullptr;
+	bool gpuDraw = false;
 };

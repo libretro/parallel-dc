@@ -33,80 +33,47 @@
  *  - A planar 16-bit texture needs no kernel: the PowerVR's texels are
  *    Direct3D's B5G6R5, B5G5R5A1 and B4G4R4A4 as they are, and its rows go
  *    from video memory to the texture through the ring, with a copy.
- * What a frame asks for is recorded at the end of Process(), before the
- * frame's draws, into the same command list: nothing waits for the GPU,
- * and nothing is allocated or compiled while a game runs - the pipelines
- * are made when the renderer starts. */
+ * What a frame asks for is recorded at the end of Process()
+ * (dx12_texdec_flush()), before the frame's draws, into the same command
+ * list: nothing waits for the GPU, and nothing is allocated or compiled
+ * while a game runs - the pipelines are made when the renderer starts. */
 #include "rend/d3d_system.h"
 #include <windows.h>
 #include <d3d12.h>
-#include "rend/dx11/comptr.h"
 #include "types.h"
 #include "rend/texdecode.h"
 #include "rend/TexCache.h"
 #include "dx12context_lr.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
 
-struct DX12PooledTexture;
+struct dx12_pooled_texture;
 
-class DX12TexDecoder
-{
-public:
-	/* Everything made; nothing is done here when the device cannot */
-	void Init(dx12_context *context);
-	void Term();
-	bool Ready() const { return ready; }
+/* Everything made; nothing is done here when the device cannot */
+void dx12_texdec_init(void);
+void dx12_texdec_term(void);
+bool dx12_texdec_ready(void);
+/* Whether a texture of @type (TEX_TYPE_*) can be made by the kernels */
+bool dx12_texdec_takes(int type);
+/* A texture of @levels levels to be made from @bytes: where they go in
+ * the ring (a multiple of 16 of them), and where that is in words.
+ * Null if a texture that large never fits. */
+u8 *dx12_texdec_begin(u32 bytes, u32 levels, u32 *base);
+/* A level of @texture, made with the six words of rend/texdecode.h */
+void dx12_texdec_add(struct dx12_pooled_texture *texture, u32 level, const u32 pc[6]);
+/* Where the next level added goes, and the serial of what is not
+ * recorded yet: for dx12_texdec_cancel() */
+u32 dx12_texdec_next(void);
+u32 dx12_texdec_serial(void);
+/* The @count levels from @job on, added under @serial, are not made
+ * after all: the texture is made another way, or goes */
+void dx12_texdec_cancel(u32 job, u32 count, u32 serial);
+/* What was asked for, recorded: the kernels run, the textures left to
+ * be sampled */
+void dx12_texdec_flush(void);
 
-	/* Whether a texture of @type can be made by the kernels */
-	bool Takes(TextureType type) const { return ready && (unsigned)type < 5 && takes[(int)type]; }
-
-	/* A texture of @levels levels to be made from @bytes: where they go in
-	 * the ring (a multiple of 16 of them), and where that is in words.
-	 * Null if a texture that large never fits. */
-	u8 *Begin(u32 bytes, u32 levels, u32 *base);
-	/* A level of @texture, made with the six words of rend/texdecode.h */
-	void Add(DX12PooledTexture *texture, u32 level, const u32 pc[6]);
-	/* Where the next level added goes, and the serial of what is not
-	 * recorded yet: for Cancel() */
-	u32 Next() const { return jobCount; }
-	u32 Serial() const { return serial; }
-	/* The @count levels from @job on, added under @serial, are not made
-	 * after all: the texture is made another way, or goes */
-	void Cancel(u32 job, u32 count, u32 serial);
-
-	/* What was asked for, recorded: the kernels run, the textures left to
-	 * be sampled */
-	void Flush();
-
-	// what has been done so far, for measuring
-	u64 statBytes = 0;
-	u64 statLevels = 0;
-
-private:
-	enum { MAX_JOBS = 2048 };
-	struct Job
-	{
-		DX12PooledTexture *texture;
-		u32 level;
-		u32 pc[8];		// (eight root constants)
-	};
-	/* The unordered access views' places: a ring, a place used again only
-	 * once the GPU is done with the list it was made for */
-	u32 TakeUav();
-
-	bool ready = false;
-	bool takes[5] = {};
-	dx12_context *context = nullptr;
-	ComPtr<ID3D12PipelineState> kernel32, kernel8;
-	ComPtr<ID3D12PipelineState> drawn[3];	// 565, 5551, 4444
-
-	Job jobs[MAX_JOBS];
-	u32 jobCount = 0;
-	u32 serial = 0;
-
-	u32 uavHead = 0, uavTail = 0;			// positions, modulo UavCount for the place
-	enum { UAV_MARKS = 16 };
-	struct UavMark { u64 fence; u32 head; };
-	UavMark uavMarks[UAV_MARKS];
-	u32 uavMarkFirst = 0, uavMarkCount = 0;
-};
+#ifdef __cplusplus
+}
+#endif

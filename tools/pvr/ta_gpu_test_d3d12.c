@@ -1,6 +1,6 @@
 /* ta_gpu_test_d3d12.exe DIR: GPU-side TA processing's decode in Direct3D 12,
  * on the decodes ta_gpu_test dumped to DIR (ta_gpu_test_replay.c), as the
- * Direct3D 12 renderers record it (rend/dx12/dx12_ta_decoder.cpp): the
+ * Direct3D 12 renderers record it (rend/dx12/dx12_ta_decoder.c): the
  * kernels as the core has them (rend/dx12/dx12_ta_dxbc.inc), root
  * descriptors, the frame's data in host-cached memory of a custom heap,
  * the dispatches' arguments copied out of the frame's words, the sorted
@@ -181,7 +181,7 @@ static void init(const char *dir)
    CHECK(ID3D12Device_CreateCommandList(device, 0, D3D12_COMMAND_LIST_TYPE_DIRECT, alloc, NULL, &IID_ID3D12GraphicsCommandList, (void **)&cl));
    CHECK(ID3D12Device_CreateFence(device, 0, D3D12_FENCE_FLAG_NONE, &IID_ID3D12Fence, (void **)&fence));
 
-   // the renderer's root signature (dx12_ta_decoder.cpp)
+   // the renderer's root signature (dx12_ta_decoder.c)
    memset(params, 0, sizeof(params));
    params[0].ParameterType = D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS;
    params[0].Constants.Num32BitValues = 1;
@@ -281,7 +281,7 @@ static void init(const char *dir)
    run();
 }
 
-/* One decode: as DX12TaDecoder::Record() does it */
+/* One decode: as dx12_ta_record() does it */
 static void decode(const unsigned *head, const unsigned char *ta, const unsigned *table, const unsigned *srt)
 {
    const unsigned trd = head[2], srt_words = head[3], checks = head[4];

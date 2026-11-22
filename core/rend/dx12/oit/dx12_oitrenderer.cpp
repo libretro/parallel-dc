@@ -92,7 +92,7 @@ public:
 		}
 		/* The translucent polygons' numbers past the root constant's, an
 		 * instance's: 0 for every draw but a frame decoded on the GPU's
-		 * translucent ones (DX12TaDraw::instances) */
+		 * translucent ones (dx12_ta_draw::instances) */
 		u32 *zero = nullptr;
 		if (!MakeBuffer(noInstance, 256, D3D12_HEAP_TYPE_UPLOAD, D3D12_RESOURCE_FLAG_NONE, D3D12_RESOURCE_STATE_GENERIC_READ)
 				|| FAILED(noInstance.resource->Map(0, nullptr, (void **)&zero)))
@@ -181,7 +181,7 @@ private:
 	{
 		if (rend_compute_wanted && device != nullptr)
 		{
-			compute.SetGpuDraw(&taDecoder);
+			compute.SetGpuDraw(true);
 			// (for the temporal upscaler, with the walks that store the depth)
 			compute.Init((u32)std::max(screen_width, 1), (u32)std::max(screen_height, 1), ssaaSamples, upscaler_active() && ssaaSamples == 1);
 		}
@@ -535,7 +535,7 @@ bool DX12OITRenderer::UploadTrPolyParams()
 	 * strips' numbers the instances' buffer's) */
 	if (pvrrc.gpu)
 	{
-		const DX12TaDraw& gpu = taDecoder.Draw();
+		const dx12_ta_draw& gpu = *dx12_ta_get_draw();
 		dx12c_cmd()->SetGraphicsRootShaderResourceView(6, gpu.trParams);
 		dx12c_cmd()->IASetVertexBuffers(1, 1, &gpu.instances);
 		return true;
@@ -821,12 +821,12 @@ void DX12OITRenderer::DrawPoly(u32 listType, bool autosort, u32 pass, const Poly
 	if (poly.pcw.Texture)
 	{
 		if (poly.texid != 0)
-			constants.texture = ((DX12Texture *)(uintptr_t)poly.texid)->Srv();
+			constants.texture = dx12_texture_srv((const dx12_texture *)(uintptr_t)poly.texid);
 		if (twoVolumes && poly.texid1 != 0)
-			constants.texture1 = ((DX12Texture *)(uintptr_t)poly.texid1)->Srv();
+			constants.texture1 = dx12_texture_srv((const dx12_texture *)(uintptr_t)poly.texid1);
 	}
-	constants.sampler = dx12_sampler_index(poly.tsp);
-	constants.sampler1 = dx12_sampler_index(poly.tsp1);
+	constants.sampler = dx12_sampler_index(poly.tsp.full);
+	constants.sampler1 = dx12_sampler_index(poly.tsp1.full);
 	// (of a frame decoded on the GPU, the strip's number is its draw record's: the instance's)
 	constants.polyNumber = listType == ListType_Translucent && !pvrrc.gpu ? (u32)(&poly - pvrrc.global_param_tr.head()) : 0;
 
@@ -1317,7 +1317,7 @@ bool DX12OITRenderer::RenderFrame()
 	if (compute.Ready() && device != nullptr && !pvrrc.isRenderFramebuffer
 			&& !(pvrrc.isRTT && (pvrrc.fb_X_CLIP.max < pvrrc.fb_X_CLIP.min || pvrrc.fb_Y_CLIP.max < pvrrc.fb_Y_CLIP.min)))
 	{
-		if (pvrrc.isRTT && !texPool.TargetsStorable())
+		if (pvrrc.isRTT && !dx12_pool_targets_storable())
 			compute.Fallback(ComputeFrame::Why_Rtt);
 		else if (!compute.CanDraw())
 			compute.Fallback(ComputeFrame::Why_Decode);
@@ -1340,7 +1340,7 @@ bool DX12OITRenderer::RenderComputeRtt()
 		rttTexture = nullptr;
 		return false;
 	}
-	DX12PooledTexture *spare = rttTexture->Spare();
+	dx12_pooled_texture *spare = rttTexture->spare;
 	dx12c_transition(&paletteTexture, (D3D12_RESOURCE_STATES)(D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE | D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE));
 	dx12c_transition_resource(spare->resource, &spare->state, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES);
 	compute.Record(spare->resource);

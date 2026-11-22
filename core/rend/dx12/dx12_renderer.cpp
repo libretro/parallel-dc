@@ -222,16 +222,15 @@ bool DX12Renderer::Init()
 	}
 	dx12_make_samplers();
 	// textures made on the GPU, and the textures themselves, all of them now (rend/tex_pool.h)
-	texDecoder.Init(context);
+	dx12_texdec_init();
 	// (what the decoder has been asked for goes into the list a readback submits early)
-	dx12c_set_before_submit([](void *decoder) { ((DX12TexDecoder *)decoder)->Flush(); }, &texDecoder);
+	dx12c_set_before_submit([](void *) { dx12_texdec_flush(); }, nullptr);
 	// (the pictures rendered to: drawn into by the compute renderer too, when it is wanted)
-	texPool.SetTargetStorage(storagePictures);
-	texPool.Init(dx12c.vram_budget, &texDecoder);
+	dx12_pool_set_target_storage(storagePictures);
+	dx12_pool_init();
 	// ...and the cache's room for them (rend/tex_map.h)
-	texCache.ReserveFor(texPool.Book().made);
-	DX12Texture::SetDecoder(texDecoder.Ready() ? &texDecoder : nullptr);
-	DX12Texture::SetPool(&texPool);
+	dx12_texcache_reserve_for(dx12_pool_made());
+	dx12_textures_attach(dx12_texdec_ready(), true);
 	// what a render read back takes, made now (dx12_rtt_init())
 	dx12_rtt_init();
 	// the pipelines, and SSAA's pictures and pipelines made from them
@@ -271,15 +270,15 @@ bool DX12Renderer::Init()
 				__uuidof(ID3D12Resource), (void **)gpuVtxConstants.put())))
 			gpuVtxConstants.reset();
 	}
-	taDecoder.WantSort(TaSorts());
-	taDecoder.Setup(TaFlags() != 0 && gpuVtxConstants && ta_gpu_wanted());
+	dx12_ta_want_sort(TaSorts());
+	dx12_ta_setup(TaFlags() != 0 && gpuVtxConstants && ta_gpu_wanted());
 	return true;
 }
 
 void DX12Renderer::OptionsChanged()
 {
 	if (context != nullptr)
-		taDecoder.Setup(TaFlags() != 0 && gpuVtxConstants && ta_gpu_wanted());
+		dx12_ta_setup(TaFlags() != 0 && gpuVtxConstants && ta_gpu_wanted());
 }
 
 void DX12Renderer::Term()
@@ -296,13 +295,13 @@ void DX12Renderer::Term()
 	dx12c_set_frame(nullptr);
 	dx12c_set_before_submit(nullptr, nullptr);
 	dx12_rtt_term();
-	texCache.Clear();
+	dx12_texcache_clear();
 	// (what the cache's textures had is back in the pool by now)
-	DX12Texture::SetPool(nullptr);
-	DX12Texture::SetDecoder(nullptr);
-	texPool.Term();
-	texDecoder.Term();
-	taDecoder.Term();
+	dx12_textures_attach(false, false);
+	dx12_texcache_free();
+	dx12_pool_term();
+	dx12_texdec_term();
+	dx12_ta_term();
 	if (gpuVtxConstants)
 	{
 		gpuVtxConstants->AddRef();
@@ -467,17 +466,17 @@ void DX12Renderer::SsaaResolve(u32 srv)
 
 u64 DX12Renderer::GetTexture(TSP tsp, TCW tcw, int area)
 {
-	DX12Texture* tf = texCache.getTextureCacheData(tsp, tcw, area);
+	dx12_texture *tf = dx12_texcache_get(tsp.full, tcw.full, area);
 
-	if (tf->IsNew())
-		tf->Create();
-	//update if needed
-	if (tf->NeedsUpdate())
-		tf->Update();
-	else if (tf->IsCustomTextureAvailable())
-		tf->CheckCustomTexture();
+	if (tf->pooled == nullptr)
+		texcache_create(&tf->base);
+	// update if needed
+	if (texcache_needs_update(&tf->base))
+		texcache_update(&tf->base);
+	else if (texcache_custom_available(&tf->base))
+		texcache_check_custom(&tf->base);
 
-	return tf->GetIntId();
+	return (u64)(uintptr_t)tf;
 }
 
 void DX12Renderer::DropRestored()
@@ -536,7 +535,7 @@ bool DX12Renderer::Process(TA_context* ctx)
 
 bool DX12Renderer::ProcessLocked(TA_context* ctx)
 {
-	taDecoder.BeginFrame();
+	dx12_ta_begin_frame();
 	if (!ctx->rend.isRTT)
 		dx12_overlay_prepare();
 	if (!ctx->rend.isRTT && !ctx->rend.isRenderFramebuffer)
@@ -549,7 +548,7 @@ bool DX12Renderer::ProcessLocked(TA_context* ctx)
 	{
 		/* what was rendered to a texture and is not in video memory yet goes there before its picture does */
 		rtt_watch_flush();
-		texCache.Clear();
+		dx12_texcache_clear();
 	}
 
 	/* SSAA draws flat strips at a single rate: the parse looks for them
@@ -561,7 +560,7 @@ bool DX12Renderer::ProcessLocked(TA_context* ctx)
 	 * drawn from the GPU's decode, in the full parse's place, which is
 	 * recorded now; or it is parsed as ever */
 	bool result;
-	if (!taDecoder.Ready() || !taDecoder.Prepare(ctx, TaFlags(), &result))
+	if (!dx12_ta_ready() || !dx12_ta_prepare(ctx, TaFlags(), &result))
 	{
 		/* into a slice of the memory the card reads, where there is one
 		 * free: the draws read it there, uncopied (with the background
@@ -579,11 +578,11 @@ bool DX12Renderer::ProcessLocked(TA_context* ctx)
 			parse_arena_d3d12_cancel(&parseArena);
 	}
 	else if (result)
-		taDecoder.Record(ctx);
+		dx12_ta_record(ctx);
 	// the textures the frame's polygons asked for that are made on the GPU, before the draws
-	texDecoder.Flush();
+	dx12_texdec_flush();
 
-	texCache.Cleanup();
+	dx12_texcache_cleanup();
 
 	if (result)
 	{
@@ -695,7 +694,7 @@ bool DX12Renderer::UploadGeometry()
 		/* (the decode's, on the GPU, its sorted passes sorted already and
 		 * their indices in the decoder's room for them: see TA_GPU_SORT) */
 		sortedIndexCount = 0;
-		const DX12TaDraw& gpu = taDecoder.Draw();
+		const dx12_ta_draw& gpu = *dx12_ta_get_draw();
 		vertexView = gpu.vertices;
 		indexView = gpu.indices;
 		modVolView = gpu.modtrig;
@@ -814,7 +813,7 @@ bool DX12Renderer::UploadConstants()
 		dx12c_transition_resource(dst, &gpuVtxConstantsState, D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES);
 		static_assert(offsetof(VertexConstants, scale) == 0 && sizeof(VertexConstants) == 32, "the scale's fourth word is the depth's");
 		cmd->CopyBufferRegion(dst, 0, c.buffer, c.offset, 12);
-		taDecoder.CopyDepthScale(dst, 12);
+		dx12_ta_copy_depth_scale(dst, 12);
 		cmd->CopyBufferRegion(dst, 16, c.buffer, c.offset + 16, 16);
 		dx12c_transition_resource(dst, &gpuVtxConstantsState, D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER, D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES);
 		vtxConstantsGpu = dst->GetGPUVirtualAddress();
@@ -1261,7 +1260,7 @@ void DX12Renderer::KeepPicture()
 		return;
 	DX12Image *image = LastPictureImage();
 	u8 *pixels = last_picture_keep(screenWidth, screenHeight);
-	if (pixels != nullptr && (image == nullptr || !dx12_read_picture(image->resource, image->state, screenWidth, screenHeight, pixels)))
+	if (pixels != nullptr && (image == nullptr || !dx12_read_picture(image->resource, &image->state, screenWidth, screenHeight, pixels)))
 		last_picture_drop();
 }
 
@@ -1558,25 +1557,25 @@ bool DX12Renderer::BeginRTT()
 	for (tsp.TexU = 0; tsp.TexU <= 7 && (8u << tsp.TexU) < origWidth; tsp.TexU++);
 	for (tsp.TexV = 0; tsp.TexV <= 7 && (8u << tsp.TexV) < origHeight; tsp.TexV++);
 
-	rttTexture = texCache.getTextureCacheData(tsp, tcw);
-	if (rttTexture->IsNew())
-		rttTexture->Create();
+	rttTexture = dx12_texcache_get(tsp.full, tcw.full, 0);
+	if (rttTexture->pooled == nullptr)
+		texcache_create(&rttTexture->base);
 
-	DX12PooledTexture *spare = rttTexture->Spare();
+	dx12_pooled_texture *spare = rttTexture->spare;
 	if (spare != nullptr && (spare->width != widthPow2 || spare->height != heightPow2 || spare->rtv == ~0u))
 	{
-		rttTexture->ReleaseSpare();
+		dx12_texture_release_spare(rttTexture);
 		spare = nullptr;
 	}
 	// (one of the pool's, made at the start, where it has one of this shape)
-	if (spare == nullptr && !rttTexture->TakeSpare(widthPow2, heightPow2))
+	if (spare == nullptr && !dx12_texture_take_spare(rttTexture, widthPow2, heightPow2))
 	{
-		DX12PooledTexture *own = texPool.MakeOwn(DX12TexturePool::TARGET, widthPow2, heightPow2, 1);
+		dx12_pooled_texture *own = dx12_pool_make_own(DX12_POOL_TARGET, widthPow2, heightPow2, 1);
 		if (own == nullptr)
 			return false;
-		rttTexture->SetSpare(own);
+		dx12_texture_set_spare(rttTexture, own);
 	}
-	spare = rttTexture->Spare();
+	spare = rttTexture->spare;
 
 	targetRtv = spare->rtv;
 	targetWidth = upscaledWidth;
@@ -1601,16 +1600,16 @@ void DX12Renderer::EndRTT()
 {
 	FlushBatch();
 	dx12c_set_targets(~0u, ~0u, 0);
-	DX12PooledTexture *spare = rttTexture->Spare();
+	dx12_pooled_texture *spare = rttTexture->spare;
 	// to be drawn with, and off to the GPU
 	dx12c_transition_resource(spare->resource, &spare->state, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES);
 	dx12c_submit();
-	rttTexture->SwapWithSpare();
+	dx12_texture_swap_with_spare(rttTexture);
 
-	rttTexture->dirty = 0;
-	rttTexture->stride_read = 0;	// (rendered, not read)
-	rttTexture->made_type = 0;
-	libCore_vramlock_Lock(rttTexture->sa_tex, rttTexture->sa + rttTexture->size - 1, rttTexture);
+	rttTexture->base.dirty = 0;
+	rttTexture->base.stride_read = 0;	// (rendered, not read)
+	rttTexture->base.made_type = 0;
+	libCore_vramlock_Lock(rttTexture->base.sa_tex, rttTexture->base.sa + rttTexture->base.size - 1, &rttTexture->base);
 	/* video memory gets it when something first touches it there */
 	dx12_rtt_watch(rttTexture, rttAddr, pvrrc.fb_X_CLIP.min, pvrrc.fb_Y_CLIP.min,
 			pvrrc.fb_X_CLIP.max - pvrrc.fb_X_CLIP.min + 1, pvrrc.fb_Y_CLIP.max - pvrrc.fb_Y_CLIP.min + 1);
@@ -1952,8 +1951,8 @@ void DX12Renderer::DrawPoly(u32 listType, bool sortTriangles, const PolyParam& p
 	constants.flags = flags;
 	constants.texture = DX12_SRV_NONE;
 	if (poly.pcw.Texture && poly.texid != 0)
-		constants.texture = ((DX12Texture *)(uintptr_t)poly.texid)->Srv();
-	constants.sampler = dx12_sampler_index(poly.tsp);
+		constants.texture = dx12_texture_srv((const dx12_texture *)(uintptr_t)poly.texid);
+	constants.sampler = dx12_sampler_index(poly.tsp.full);
 
 	// Depth, stencil and blend
 	DX12PsoKey key = PolyKey(listType, sortTriangles, prepassDraw, shadowPass,
@@ -2003,7 +2002,7 @@ void DX12Renderer::DrawGpu(const DrawState& state, const u32 *constants, u32 lis
 	dx12c_set_stencil_ref(state.stencilRef);
 	dx12c_set_topology(state.topology);
 	dx12c_set_root_constants(constants, DX12C_POLY_CONSTANT_COUNT);
-	const DX12TaDraw& gpu = taDecoder.Draw();
+	const dx12_ta_draw& gpu = *dx12_ta_get_draw();
 	const u64 stride = sizeof(D3D12_DRAW_INDEXED_ARGUMENTS);
 	ID3D12GraphicsCommandList *cmd = dx12c_cmd();
 	statBatches++;
@@ -2055,7 +2054,7 @@ void DX12Renderer::DrawSorted(const SortTrigDrawParam *polys, u32 count, bool mu
 		if (count == 0)
 			return;
 		FlushBatch();
-		dx12c_set_index_buffer(&(taDecoder.Draw().sorted));
+		dx12c_set_index_buffer(&dx12_ta_get_draw()->sorted);
 		gpuSorted = true;
 	}
 	for (u32 i = 0; i < count; i++)
@@ -2102,7 +2101,7 @@ void DX12Renderer::DrawPrepass(const SortTrigDrawParam *polys, u32 count)
 	if (pvrrc.gpu)
 	{
 		FlushBatch();
-		dx12c_set_index_buffer(&(taDecoder.Draw().sorted));
+		dx12c_set_index_buffer(&dx12_ta_get_draw()->sorted);
 		gpuSorted = true;
 	}
 	prepassDraw = true;

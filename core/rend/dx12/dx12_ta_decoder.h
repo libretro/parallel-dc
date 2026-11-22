@@ -38,14 +38,15 @@
  * - The kernels are DXBC made when the core is built
  *   (rend/dx12/dx12_ta_dxbc.inc, tools/rend/kernels_dx12.sh); every buffer
  *   (sized for the largest frame the machine has) and the kernels'
- *   pipelines are made in Setup(), when the renderer is set up or the
+ *   pipelines are made in dx12_ta_setup(), when the renderer is set up or the
  *   option changes: nothing is allocated or compiled while a game runs.
  * - The outputs are on the GPU, one copy: the context's one queue runs a
  *   frame's decode after whatever read the last one's, the buffers'
  *   transitions between the kernels' writes and the draws' reads keeping
  *   them in order.
  *
- * Off (TA processing: CPU), none of this exists, and Ready() says no. */
+ * Off (TA processing: CPU), none of this exists, and dx12_ta_ready() says
+ * no. */
 #pragma once
 #include "rend/d3d_system.h"
 #include <windows.h>
@@ -53,104 +54,78 @@
 #include "types.h"
 #include "hw/pvr/ta.h"
 #include "hw/pvr/ta_ctx.h"
-#include "rend/dx11/comptr.h"
+
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 /* What a frame decoded on the GPU is drawn from (rend_context::gpu), as
  * vulkan/ta_decoder.h's TaGpuDraw has it */
-struct DX12TaDraw
+typedef struct dx12_ta_draw
 {
 	/* the vertices (a Vertex each), the indices, the modifier volume
 	 * triangles (three positions each) */
-	D3D12_VERTEX_BUFFER_VIEW vertices{};
-	D3D12_INDEX_BUFFER_VIEW indices{};
-	D3D12_VERTEX_BUFFER_VIEW modtrig{};
-	// ...and their buffers (the compute renderer reads them through views of its own)
-	ID3D12Resource *vertexResource = nullptr;
-	ID3D12Resource *indexResource = nullptr;
-	ID3D12Resource *modtrigResource = nullptr;
+	D3D12_VERTEX_BUFFER_VIEW vertices;
+	D3D12_INDEX_BUFFER_VIEW indices;
+	D3D12_VERTEX_BUFFER_VIEW modtrig;
+	/* ...and their buffers (the compute renderer reads them through views of its own) */
+	ID3D12Resource *vertexResource;
+	ID3D12Resource *indexResource;
+	ID3D12Resource *modtrigResource;
 	/* The opaque and punch-through draw groups' commands, a draw's
 	 * arguments each, at their slot (PolyParam::first); the second ones for
 	 * shadows (TA_GPU_SHADOWS) this many bytes on */
-	ID3D12Resource *commands = nullptr;
-	u64 shadowCommands = 0;
+	ID3D12Resource *commands;
+	u64 shadowCommands;
 	/* The translucent draw records: each translucent draw group's at its
 	 * place (PolyParam::first): its count, then at most PolyParam::count
 	 * draws (ExecuteIndirect with that count) */
-	ID3D12Resource *trDraws = nullptr;
+	ID3D12Resource *trDraws;
 	/* The translucent polygon parameters' words of the per-pixel renderer */
-	D3D12_GPU_VIRTUAL_ADDRESS trParams = 0;
+	D3D12_GPU_VIRTUAL_ADDRESS trParams;
 	/* (TA_GPU_INSTANCE) a word for each translucent strip, its number, as
 	 * a vertex attribute of one an instance, which a draw record's
 	 * StartInstanceLocation picks */
-	D3D12_VERTEX_BUFFER_VIEW instances{};
+	D3D12_VERTEX_BUFFER_VIEW instances;
 	/* the frame's words (TAG_O_*): 1/fZ_max at TAG_O_ZSCALE, which the
 	 * renderers copy into their vertex constants (rend/depth_scale.h) */
-	ID3D12Resource *frame = nullptr;
+	ID3D12Resource *frame;
 	/* ExecuteIndirect of a draw's arguments alone */
-	ID3D12CommandSignature *drawIndexed = nullptr;
+	ID3D12CommandSignature *drawIndexed;
 	/* (TA_GPU_SORT) this frame's sorted translucent triangles' indices
-	 * (ta_gpu_sorted_write(), written by Record()), to draw them with */
-	D3D12_INDEX_BUFFER_VIEW sorted{};
-};
+	 * (ta_gpu_sorted_write(), written by dx12_ta_record()), to draw them with */
+	D3D12_INDEX_BUFFER_VIEW sorted;
+} dx12_ta_draw;
 
-class DX12TaDecoder
-{
-public:
-	DX12TaDecoder();
-	~DX12TaDecoder();
+/* Made, or taken down, as the option says (@wanted): when the renderer
+ * is set up and when the options change, never while a frame is drawn.
+ * Off, or where it cannot be made, nothing of it exists. */
+void dx12_ta_setup(bool wanted);
+void dx12_ta_term(void);
+bool dx12_ta_ready(void);
+/* At the start of each Process(): the GPU's progress, polled, told to
+ * the TA contexts' pool; nothing is made here */
+void dx12_ta_begin_frame(void);
+/* The frame's tables, and with TA_GPU_DRAW (in @flags, TA_GPU_*) its
+ * render context made ready to draw in the full parse's place; whether
+ * it is decoded, and then (@rv) whether it has something to draw */
+bool dx12_ta_prepare(TA_context *ctx, u32 flags, bool *rv);
+/* ...and its decode recorded into the context's command list, the
+ * outputs left in the states the draws read them in */
+void dx12_ta_record(TA_context *ctx);
+const dx12_ta_draw *dx12_ta_get_draw(void);
+/* The outputs into the state compute kernels read them in (unordered
+ * access: the compute renderer's, dx12_compute.h), for a frame drawn
+ * from them by kernels and not by draws */
+void dx12_ta_for_kernels(void);
+/* The per-triangle renderer's: room for the translucent triangles it
+ * sorts (TA_GPU_SORT), made with the rest; and whether there is */
+void dx12_ta_want_sort(bool on);
+bool dx12_ta_can_sort(void);
+/* The frame's 1/fZ_max copied from the decode's words to @dst at
+ * @offset bytes, which is in COPY_DEST (a constant buffer's word) */
+void dx12_ta_copy_depth_scale(ID3D12Resource *dst, u64 offset);
 
-	/* Made, or taken down, as the option says (@wanted): when the renderer
-	 * is set up and when the options change, never while a frame is drawn.
-	 * Off, or where it cannot be made, nothing of it exists. */
-	void Setup(bool wanted);
-	void Term();
-	bool Ready() const { return ready; }
-	/* At the start of each Process(): the GPU's progress, polled, told to
-	 * the TA contexts' pool; nothing is made here */
-	void BeginFrame();
-	/* The frame's tables, and with TA_GPU_DRAW (in @flags, TA_GPU_*) its
-	 * render context made ready to draw in the full parse's place; whether
-	 * it is decoded, and then (@rv) whether it has something to draw */
-	bool Prepare(TA_context *ctx, u32 flags, bool *rv);
-	/* ...and its decode recorded into the context's command list, the
-	 * outputs left in the states the draws read them in */
-	void Record(TA_context *ctx);
-	const DX12TaDraw& Draw() const { return draw; }
-	/* The outputs into the state compute kernels read them in (unordered
-	 * access: the compute renderer's, dx12_compute.h), for a frame drawn
-	 * from them by kernels and not by draws */
-	void ForKernels() { States(true); }
-	/* The per-triangle renderer's: room for the translucent triangles it
-	 * sorts (TA_GPU_SORT), made with the rest; and whether there is */
-	void WantSort(bool on) { sortWanted = on; }
-	bool CanSort() const { return sortable; }
-	/* The frame's 1/fZ_max copied from the decode's words to @dst at
-	 * @offset bytes, which is in COPY_DEST (a constant buffer's word) */
-	void CopyDepthScale(ID3D12Resource *dst, u64 offset);
-
-	// for measuring
-	u64 statFrames = 0;		// decoded
-	u64 statSkipped = 0;		// left to the CPU
-	u64 statBusy = 0;		// ...of them, because the GPU still had this frame's piece of the tables
-	u64 statWhy[TA_GPU_WHY_COUNT] = {};
-	u64 statShadowed = 0;
-	u64 statSorted = 0;		// decoded with a sorted pass, sorted on this side
-
-private:
-	bool Init();
-	void Log(const char *when);
-	void States(bool decoding);
-
-	struct Resources;
-	Resources *res = nullptr;
-	bool ready = false;
-	bool failed = false;		// could not be made on this device: not tried again
-	bool prepared = false;
-	bool sortWanted = false;
-	bool sortable = false;
-	bool decoding = true;		// the outputs are in the kernels' state (unordered access)
-	u32 index = 0;			// this frame's piece of the tables
-	u32 flags = 0;
-	TaGpuFrame frame;
-	DX12TaDraw draw;
-};
+#ifdef __cplusplus
+}
+#endif

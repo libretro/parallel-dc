@@ -12,7 +12,7 @@
 #   core/rend/dx12/dx12_ta_dxbc.inc
 #                                 GPU-side TA processing's kernels
 #                                 (rend/ta_gpu.h with TAG_SHADER_HLSL and
-#                                 its TAG_KERNEL; dx12/dx12_ta_decoder.cpp):
+#                                 its TAG_KERNEL; dx12/dx12_ta_decoder.c):
 #                                 the header's GLSL kernels, which its
 #                                 TAG_SHADER_HLSL words make HLSL of, with
 #                                 what the preprocessor cannot change

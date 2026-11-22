@@ -159,15 +159,10 @@ protected:
 
 	dx12_context *context = nullptr;	// (the context, while the renderer has it)
 	ID3D12Device *device = nullptr;
-	DX12TexDecoder texDecoder;		// (before the cache: textures going away tell it)
-	DX12TexturePool texPool;		// (and give their textures back)
-	DX12TextureCache texCache;
 	TransformMatrix<false> matrices;
 
 	/* GPU-side TA processing (dx12_ta_decoder.h): a frame it decodes is
-	 * drawn from its buffers, its draws' arguments the GPU's */
-	DX12TaDecoder taDecoder;
-	/* How a frame decoded on the GPU is drawn (ta_gpu_prepare()'s
+	 * drawn from its buffers, its draws' arguments the GPU's. How a frame decoded on the GPU is drawn (ta_gpu_prepare()'s
 	 * TA_GPU_*); 0: none is - every frame is parsed */
 	virtual u32 TaFlags() const
 	{
@@ -176,7 +171,7 @@ protected:
 		 * are sorted from their vertices, which a frame decoded on the GPU
 		 * has there alone: such a frame is parsed */
 		return TA_GPU_DRAW | TA_GPU_PROVOKE | TA_GPU_SHADOWS
-				| (!settings.pvr.Emulation.AlphaSortMode && taDecoder.CanSort() ? TA_GPU_SORT : TA_GPU_NO_SORT);
+				| (!settings.pvr.Emulation.AlphaSortMode && dx12_ta_can_sort() ? TA_GPU_SORT : TA_GPU_NO_SORT);
 	}
 	/* Whether the decoder is to have room for sorted translucent triangles (TA_GPU_SORT) */
 	virtual bool TaSorts() const { return true; }
@@ -262,7 +257,7 @@ protected:
 	void DrawLastPicture(u32 width, u32 height);
 
 	/* A render to a texture: the texture, where in video memory */
-	DX12Texture *rttTexture = nullptr;
+	dx12_texture *rttTexture = nullptr;
 	u32 rttAddr = 0;
 	/* What the frame is drawn into, and the size of what is drawn of it */
 	u32 targetRtv = ~0u;

@@ -85,7 +85,7 @@ struct DX12SlotTable : public ComputeFrame::Slots
 	};
 	Entry entries[Size];
 	u32 *words = nullptr;		// this frame's piece of the ring: a word a slot
-	DX12PooledTexture *images[PVRC_TEX_SLOTS];
+	dx12_pooled_texture *images[PVRC_TEX_SLOTS];
 	u32 gen = 0;
 	u32 used = 0;
 
@@ -102,7 +102,7 @@ struct DX12SlotTable : public ComputeFrame::Slots
 	}
 	u32 Slot(u64 texid, TSP tsp) override
 	{
-		const u32 sampler = dx12_sampler_index(tsp);
+		const u32 sampler = dx12_sampler_index(tsp.full);
 		u32 h = (u32)(texid >> 4) * 2654435761u ^ sampler * 40503u;
 		for (u32 i = 0; i < Size; i++)
 		{
@@ -115,9 +115,9 @@ struct DX12SlotTable : public ComputeFrame::Slots
 				e.texid = texid;
 				e.sampler = sampler;
 				e.slot = used;
-				const DX12Texture *texture = texid != 0 ? (const DX12Texture *)(uintptr_t)texid : nullptr;
-				images[used] = texture != nullptr ? texture->Image() : nullptr;
-				words[used] = (texture != nullptr ? texture->Srv() : DX12_SRV_NONE) | (sampler << 16);
+				const dx12_texture *texture = texid != 0 ? (const dx12_texture *)(uintptr_t)texid : nullptr;
+				images[used] = texture != nullptr ? texture->pooled : nullptr;
+				words[used] = (texture != nullptr ? dx12_texture_srv(texture) : DX12_SRV_NONE) | (sampler << 16);
 				return used++;
 			}
 			if (e.texid == texid && e.sampler == sampler)
@@ -581,7 +581,7 @@ void DX12ComputeDrawer::CopyStart(ID3D12Resource *from)
 
 bool DX12ComputeDrawer::CanDraw() const
 {
-	if (!ready || pvrrc.isRenderFramebuffer || (pvrrc.gpu && (decoder == nullptr || !decoder->Ready())))
+	if (!ready || pvrrc.isRenderFramebuffer || (pvrrc.gpu && (!gpuDraw || !dx12_ta_ready())))
 		return false;
 	return true;
 }
@@ -686,7 +686,7 @@ void DX12ComputeDrawer::Record(ID3D12Resource *picture, ID3D12Resource *sums, ID
 		};
 		if (r.gpu)
 		{
-			const DX12TaDraw& draw = decoder->Draw();
+			const dx12_ta_draw& draw = *dx12_ta_get_draw();
 			view(V_VTX, draw.vertexResource, 0, draw.vertices.SizeInBytes / 4);
 			view(V_IDX, draw.indexResource, 0, draw.indices.SizeInBytes / 4);
 			view(V_MOD, draw.modtrigResource, 0, draw.modtrig.SizeInBytes / 4);
@@ -694,7 +694,7 @@ void DX12ComputeDrawer::Record(ID3D12Resource *picture, ID3D12Resource *sums, ID
 			view(V_TRD, draw.trDraws, 0, draw.trDraws->GetDesc().Width / 4);
 			view(V_DFRM, draw.frame, 0, draw.frame->GetDesc().Width / 4);
 			// the decode's outputs where the kernels read them
-			decoder->ForKernels();
+			dx12_ta_for_kernels();
 		}
 		else
 			for (u32 v = V_VTX; v <= V_DFRM; v++)
@@ -706,7 +706,7 @@ void DX12ComputeDrawer::Record(ID3D12Resource *picture, ID3D12Resource *sums, ID
 	const D3D12_RESOURCE_STATES read = (D3D12_RESOURCE_STATES)(D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE | D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
 	for (u32 i = 0; i < r.slots.used; i++)
 	{
-		DX12PooledTexture *t = r.slots.images[i];
+		dx12_pooled_texture *t = r.slots.images[i];
 		if (t != nullptr && t->state != read)
 			dx12c_transition_resource(t->resource, &t->state, read, D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES);
 	}
