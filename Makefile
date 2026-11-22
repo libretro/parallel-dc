@@ -1095,10 +1095,13 @@ endif
 # only. It is built wherever the core is built for desktop OpenGL 3 and up.
 # Whether it is used is up to the Alpha Sorting core option: set to
 # per-pixel, the core asks the frontend for a 4.3 context, and goes back to
-# the per-triangle renderer if there is none to be had.
+# the per-triangle renderer if there is none to be had. Not on macOS, whose
+# OpenGL (and its headers) stops at 4.1.
 ifeq ($(HAVE_GL3), 1)
 	ifneq ($(GLES), 1)
-		HAVE_GL4 = 1
+		ifeq (,$(findstring osx,$(platform)))
+			HAVE_GL4 = 1
+		endif
 	endif
 endif
 
