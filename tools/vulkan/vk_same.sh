@@ -5,11 +5,14 @@
 # culling, DMA over renders to textures, a Gouraud-shaded triangle, seldom
 # blends and depth modes), each renderer - per triangle, per strip, per
 # pixel, per pixel with SSAA 4x, compute - and per triangle with threaded
-# rendering off and with TA processing on the GPU. For a change that
+# rendering off, with TA processing on the GPU and with the PowerVR2's
+# write-out (the scaler, flicker filter and dither). For a change that
 # should draw nothing differently (the renderer made C, say), against the
 # build before it, as tools/rend/d3d_same.sh is for Direct3D.
 #
 #   sh tools/vulkan/vk_same.sh before.so after.so
+#
+# MODES="tri pix" for some of them only.
 #
 # KEEP=1: the logs and pictures are kept, in $TMPDIR/vk_same.<pid>. A run
 # whose last picture has a few colours at most fails, as one that drew
@@ -40,7 +43,7 @@ STRIP="reicast_alpha_sorting=per-strip (fast, least accurate)"
 PIX="reicast_alpha_sorting=per-pixel (accurate)"
 fails=0
 for d in plain atlas cull dma slant blend; do
-   for m in tri strip pix pix-ssaa compute tri-nothread tri-gpu; do
+   for m in ${MODES:-tri strip pix pix-ssaa compute tri-nothread tri-gpu tri-scaler}; do
       case $m in
       tri) set -- "$TRI";;
       strip) set -- "$STRIP";;
@@ -49,6 +52,7 @@ for d in plain atlas cull dma slant blend; do
       compute) set -- "$PIX" reicast_rendering_method=compute;;
       tri-nothread) set -- "$TRI" reicast_threaded_rendering=disabled;;
       tri-gpu) set -- "$TRI" reicast_ta_processing=gpu;;
+      tri-scaler) set -- "$TRI" reicast_pvr2_scaler=enabled;;
       esac
       name=vk-$d-$m
       for c in A B; do

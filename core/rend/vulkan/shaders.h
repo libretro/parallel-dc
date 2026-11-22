@@ -37,6 +37,17 @@ extern "C" {
 const u32 *RasterSpvWords(int id, size_t *size);
 VkShaderModule vk_raster_module(int id);
 
+/* The modules a renderer draws with, all made by vk_raster_modules_make():
+ * they are only read after, from any thread */
+typedef struct vk_raster_modules
+{
+	VkShaderModule m[RSPV_COUNT];
+} vk_raster_modules;
+
+/* those of [first, last] not made yet; false if one could not be */
+bool vk_raster_modules_make(vk_raster_modules *r, int first, int last);
+void vk_raster_modules_term(vk_raster_modules *r);
+
 #ifdef __cplusplus
 }
 
@@ -56,27 +67,26 @@ static inline vk::UniqueShaderModule MakeRasterModule(RasterSpv id)
 			vk::ObjectDestroy<vk::Device, vk::DispatchLoaderStatic>(vk::Device(vkc.device)));
 }
 
-/* The modules a renderer draws with, all made in Make(): they are only
- * read after, from any thread */
+/* The C++ renderers' view of a vk_raster_modules */
 class RasterModules
 {
 public:
+	RasterModules() { memset(&r, 0, sizeof(r)); }
+	~RasterModules() { vk_raster_modules_term(&r); }
+	RasterModules(const RasterModules&) = delete;
+	RasterModules& operator=(const RasterModules&) = delete;
 	/* [first, last] */
 	void Make(RasterSpv first, RasterSpv last)
 	{
-		for (int i = first; i <= last; i++)
-			if (!modules[i])
-				modules[i] = MakeRasterModule((RasterSpv)i);
+		if (!vk_raster_modules_make(&r, first, last))
+			throwResultException(vk::Result::eErrorInitializationFailed, "vkCreateShaderModule");
 	}
-	vk::ShaderModule Get(RasterSpv id) const { return *modules[id]; }
-	void Term()
-	{
-		for (auto& module : modules)
-			module.reset();
-	}
+	vk::ShaderModule Get(RasterSpv id) const { return vk::ShaderModule(r.m[id]); }
+	void Term() { vk_raster_modules_term(&r); }
+	vk_raster_modules *Raw() { return &r; }
 
 private:
-	vk::UniqueShaderModule modules[RSPV_COUNT];
+	vk_raster_modules r;
 };
 
 /* A pipeline's specialization constants (pso_key.h): the key, -1 for
@@ -208,6 +218,7 @@ public:
 	{
 		modules.Term();
 	}
+	vk_raster_modules *Raw() { return modules.Raw(); }
 
 private:
 	RasterModules modules;

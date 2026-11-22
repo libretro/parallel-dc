@@ -261,7 +261,7 @@ public:
 		finalColorAttachments.clear();
 		carriedPicture.reset();
 		restoredPicture = nullptr;
-		lastPicture = QuadDrawer();
+		lastPicture.Term();
 		havePicture = false;
 		OITDrawer::Term();
 	}

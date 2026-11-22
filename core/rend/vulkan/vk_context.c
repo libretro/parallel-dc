@@ -897,6 +897,26 @@ void vkc_save_pipeline_cache(void)
 	free(file);
 }
 
+VkDescriptorSet vkc_alloc_desc_set(VkDescriptorSetLayout layout)
+{
+	VkDescriptorSetAllocateInfo info;
+	VkDescriptorSet set = VK_NULL_HANDLE;
+	memset(&info, 0, sizeof(info));
+	info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+	info.descriptorPool = vkc.descriptorPool;
+	info.descriptorSetCount = 1;
+	info.pSetLayouts = &layout;
+	if (vkAllocateDescriptorSets(vkc.device, &info, &set) != VK_SUCCESS)
+		return VK_NULL_HANDLE;
+	return set;
+}
+
+void vkc_free_desc_set(VkDescriptorSet set)
+{
+	if (set != VK_NULL_HANDLE)
+		vkFreeDescriptorSets(vkc.device, vkc.descriptorPool, 1, &set);
+}
+
 static PFN_vkVoidFunction device_proc(const char *name)
 {
 	return vkGetDeviceProcAddr(vkc.device, name);

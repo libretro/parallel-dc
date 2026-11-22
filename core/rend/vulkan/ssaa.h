@@ -33,45 +33,33 @@ static inline vk::PipelineMultisampleStateCreateInfo SsaaMultisample(u32 samples
 	return info;
 }
 
-/* The resolve of an attachment of N samples into the subpass's single
- * sample colour attachment, as its input attachment 0: a triangle over
- * the whole framebuffer. Everything made in Init() but its pipeline, which
- * Init() hands to the pipeline thread (pso.h); the first Draw() takes it,
- * or makes it there and fails there as Init() did when the device cannot. */
-class SsaaResolve : public PsoBuilder
+#include "vk_quad.h"
+
+/* The C++ renderers' view of a vk_ssaa_resolve (vk_quad.h) */
+class SsaaResolve
 {
 public:
-	SsaaResolve();
-	~SsaaResolve() override { Drop(); }
-	void Init(vk::RenderPass renderPass, u32 subpass, u32 samples, vk::ImageView samplesView);
-	void Draw(vk::CommandBuffer cmd, vk::Extent2D extent) const;
-	bool Ready() const { return (bool)descSet; }
-	/* The attachment of samples made again: a new descriptor set for it, the
-	 * old one kept until the frames that use it are done */
-	void SetSamplesView(vk::ImageView samplesView, CommandPool *commandPool);
-	void Term()
+	SsaaResolve() { vk_ssaa_resolve_construct(&r); }
+	~SsaaResolve() { vk_ssaa_resolve_term(&r); }
+	SsaaResolve(const SsaaResolve&) = delete;
+	SsaaResolve& operator=(const SsaaResolve&) = delete;
+	void Init(vk::RenderPass renderPass, u32 subpass, u32 samples, vk::ImageView samplesView)
 	{
-		Drop();
-		descSet.reset();
-		pipelineLayout.reset();
-		setLayout.reset();
-		vertexShader.reset();
-		fragmentShader.reset();
-		samples = 0;
+		if (!vk_ssaa_resolve_init(&r, (VkRenderPass)renderPass, subpass, samples, (VkImageView)samplesView))
+			throwResultException(vk::Result::eErrorInitializationFailed, "vk_ssaa_resolve_init");
 	}
-	VkPipeline BuildPipeline(u64 key, vk::PipelineCache cache) override;
+	void Draw(vk::CommandBuffer cmd, vk::Extent2D extent) const
+	{
+		if (!vk_ssaa_resolve_draw(&r, (VkCommandBuffer)cmd, extent.width, extent.height))
+			throwResultException(vk::Result::eErrorInitializationFailed, "vkCreateGraphicsPipelines");
+	}
+	bool Ready() const { return r.descSet != VK_NULL_HANDLE; }
+	void SetSamplesView(vk::ImageView samplesView, CommandPool *commandPool)
+	{
+		vk_ssaa_resolve_set_samples_view(&r, (VkImageView)samplesView, &commandPool->p);
+	}
+	void Term() { vk_ssaa_resolve_term(&r); }
 
 private:
-	VkPipeline Create(vk::PipelineCache cache, bool orThrow) const;
-	void Drop();
-
-	vk::UniqueDescriptorSetLayout setLayout;
-	vk::UniquePipelineLayout pipelineLayout;
-	vk::UniqueDescriptorSet descSet;
-	vk::UniqueShaderModule vertexShader;
-	vk::UniqueShaderModule fragmentShader;
-	vk::RenderPass renderPass;
-	u32 subpass = 0;
-	mutable PsoSlot slot;	// (Draw() may make it)
-	u32 samples = 0;
+	mutable vk_ssaa_resolve r;	/* (a draw may make its pipeline) */
 };

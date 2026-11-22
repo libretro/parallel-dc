@@ -9,7 +9,7 @@
 set -e
 cd "$(dirname "$0")/../.."
 CXX_I686=${CXX_I686:-i686-w64-mingw32-g++}
-FLAGS=$(make -s -n -B platform=win64 CC=XCC CXX=XCXX core/rend/vulkan/quad.o 2>/dev/null | sed -n 's/^XCXX //p' | head -1 \
+FLAGS=$(make -s -n -B platform=win64 CC=XCC CXX=XCXX core/rend/vulkan/drawer.o 2>/dev/null | sed -n 's/^XCXX //p' | head -1 \
    | sed 's/ -c .*//; s/ -o [^ ]*//; s/-DHOST_CPU=[^ ]*//g; s/-DGIT_VERSION=[^ ]* [^ ]*//')
 [ -n "$FLAGS" ] || { echo "vk_i686: no flags from the Makefile"; exit 1; }
 fails=0

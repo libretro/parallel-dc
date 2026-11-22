@@ -23,157 +23,109 @@
 #include "buffer.h"
 #include "shaders.h"
 #include "pso.h"
+#include "vk_quad.h"
 
-struct QuadVertex
+/* The C++ renderers' view of vk_quad.h, until they are C too */
+static inline vk::PipelineVertexInputStateCreateInfo GetQuadInputStateCreateInfo(bool uv)
 {
-	f32 pos[3];
-	f32 uv[2];
-};
-
-vk::PipelineVertexInputStateCreateInfo GetQuadInputStateCreateInfo(bool uv);
-
-/* A picture of the console's drawn at @from (widescreen or not: the
- * console's 4:3 in the middle of a wider one) over one of size @to, its
- * 4:3 where the other's is, and the rest of a wider one's not drawn: the
- * quad's vertices into @v, and true; false when the two have the same
- * shape, which the whole quad draws */
-static inline bool QuadGameArea(QuadVertex v[4], vk::Extent2D from, vk::Extent2D to)
-{
-	if (from.width == 0 || from.height == 0 || to.width == 0 || to.height == 0)
-		return false;
-	// (how much of each one's width the 4:3 is)
-	const float f = from.width * 3.f > from.height * 4.f ? from.height * 4.f / (from.width * 3.f) : 1.f;
-	const float t = to.width * 3.f > to.height * 4.f ? to.height * 4.f / (to.width * 3.f) : 1.f;
-	if (f == t)
-		return false;
-	const float u0 = 0.5f - f / 2.f, u1 = 0.5f + f / 2.f;
-	const QuadVertex quad[4] = {
-		{ { -t, -1.f, 0.f }, { u0, 0.f } },
-		{ {  t, -1.f, 0.f }, { u1, 0.f } },
-		{ { -t,  1.f, 0.f }, { u0, 1.f } },
-		{ {  t,  1.f, 0.f }, { u1, 1.f } },
-	};
-	for (int i = 0; i < 4; i++)
-		v[i] = quad[i];
-	return true;
+	VkPipelineVertexInputStateCreateInfo info;
+	vk_quad_input_state(&info, uv);
+	return vk::PipelineVertexInputStateCreateInfo(info);
 }
 
+static inline bool QuadGameArea(QuadVertex v[4], vk::Extent2D from, vk::Extent2D to)
+{
+	return vk_quad_game_area(v, from.width, from.height, to.width, to.height);
+}
+
+/* Four vertices of a quad, the whole framebuffer's unless given others */
 class QuadBuffer
 {
 public:
 	QuadBuffer()
 	{
-		buffer = std::unique_ptr<BufferData>(new BufferData(sizeof(QuadVertex) * 4, vk::BufferUsageFlagBits::eVertexBuffer));
+		const VkResult res = vk_buffer_init(&b, sizeof(QuadVertex) * 4, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+				VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+		if (res != VK_SUCCESS)
+			throwResultException((vk::Result)res, "vk_buffer_init");
 	}
-
+	~QuadBuffer() { vk_buffer_free(&b); }
+	QuadBuffer(const QuadBuffer&) = delete;
+	QuadBuffer& operator=(const QuadBuffer&) = delete;
 	void Bind(vk::CommandBuffer commandBuffer)
 	{
-		const vk::DeviceSize zero = 0;
-		commandBuffer.bindVertexBuffers(0, 1, &buffer->buffer.get(), &zero);
+		const VkDeviceSize zero = 0;
+		vkCmdBindVertexBuffers((VkCommandBuffer)commandBuffer, 0, 1, &b.buffer, &zero);
 	}
-	void Draw(vk::CommandBuffer commandBuffer)
-	{
-		commandBuffer.draw(4, 1, 0, 0);
-	}
-
+	void Draw(vk::CommandBuffer commandBuffer) { vkCmdDraw((VkCommandBuffer)commandBuffer, 4, 1, 0, 0); }
 	void Update(QuadVertex vertices[] = nullptr)
 	{
-		if (vertices == nullptr)
-		{
-			static QuadVertex defaultVtx[] = {
-				{ { -1.f, -1.f, 0.f }, { 0.f, 0.f } },
-				{ {  1.f, -1.f, 0.f }, { 1.f, 0.f } },
-				{ { -1.f,  1.f, 0.f }, { 0.f, 1.f } },
-				{ {  1.f,  1.f, 0.f }, { 1.f, 1.f } },
-			};
-			vertices = defaultVtx;
+		static const QuadVertex whole[4] = {
+			{ { -1.f, -1.f, 0.f }, { 0.f, 0.f } },
+			{ {  1.f, -1.f, 0.f }, { 1.f, 0.f } },
+			{ { -1.f,  1.f, 0.f }, { 0.f, 1.f } },
+			{ {  1.f,  1.f, 0.f }, { 1.f, 1.f } },
 		};
-		buffer->upload(sizeof(QuadVertex) * 4, vertices);
+		vk_buffer_upload(&b, sizeof(QuadVertex) * 4, vertices != nullptr ? vertices : whole, 0);
 	}
+
 private:
-	std::unique_ptr<BufferData> buffer;
+	vk_buffer b;
 };
 
-/* Its two pipelines are handed to the pipeline thread by Init() (pso.h): a
- * draw takes one made, or makes it there and then. One the device cannot
- * make is made again where it is drawn, and fails there as it always did. */
-class QuadPipeline : public PsoBuilder
+class QuadPipeline
 {
 public:
-	QuadPipeline();
-	~QuadPipeline() override { Drop(); }
-	// @samples: of the subpass's attachments (SSAA)
-	void Init(ShaderManager *shaderManager, vk::RenderPass renderPass, int subpass = 0, u32 samples = 1);
-	/* Before the shader manager's Term(): the pipeline thread may be making
-	 * one of them with its modules */
-	void Term() {
-		Forget();
-		linearSampler.reset();
-		nearestSampler.reset();
-		pipelineLayout.reset();
-		descSetLayout.reset();
-	}
-	/* Its pipelines dropped, to be made again for whatever render pass the
-	 * next Init() names (one destroyed may have the same handle) */
-	void Forget()
+	QuadPipeline() { vk_quad_pipeline_construct(&p); }
+	~QuadPipeline() { vk_quad_pipeline_term(&p); }
+	QuadPipeline(const QuadPipeline&) = delete;
+	QuadPipeline& operator=(const QuadPipeline&) = delete;
+	/* @samples: of the subpass's attachments (SSAA) */
+	void Init(ShaderManager *shaderManager, vk::RenderPass renderPass, int subpass = 0, u32 samples = 1)
 	{
-		Drop();
-		renderPass = nullptr;
+		if (!vk_quad_pipeline_init(&p, shaderManager->Raw(), (VkRenderPass)renderPass, subpass, samples))
+			throwResultException(vk::Result::eErrorInitializationFailed, "vk_quad_pipeline_init");
 	}
-	void BindPipeline(vk::CommandBuffer commandBuffer, bool alpha = false) { commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, GetPipeline(alpha)); }
-	vk::DescriptorSetLayout GetDescSetLayout() const { return *descSetLayout; }
-	vk::PipelineLayout GetPipelineLayout() const { return *pipelineLayout; }
-	vk::Sampler GetLinearSampler() const { return *linearSampler; }
-	vk::Sampler GetNearestSampler() const { return *nearestSampler; }
-	// the pipeline thread's: @key 1 the alpha-blended one
-	VkPipeline BuildPipeline(u64 key, vk::PipelineCache cache) override;
-
-private:
-	vk::Pipeline GetPipeline(bool alpha)
+	void Term() { vk_quad_pipeline_term(&p); }
+	void Forget() { vk_quad_pipeline_forget(&p); }
+	void BindPipeline(vk::CommandBuffer commandBuffer, bool alpha = false)
 	{
-		const VkPipeline made = PsoGet(slots[alpha ? 1 : 0]);
-		return made != VK_NULL_HANDLE ? vk::Pipeline(made) : MakeHere(alpha);
+		const VkPipeline pipeline = vk_quad_pipeline_get(&p, alpha);
+		if (pipeline == VK_NULL_HANDLE)
+			throwResultException(vk::Result::eErrorInitializationFailed, "vkCreateGraphicsPipelines");
+		vkCmdBindPipeline((VkCommandBuffer)commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
 	}
-	vk::Pipeline MakeHere(bool alpha);
-	VkPipeline Create(bool alpha, vk::PipelineCache cache, bool orThrow);
-	void Drop();
+	vk::DescriptorSetLayout GetDescSetLayout() const { return vk::DescriptorSetLayout(p.descSetLayout); }
+	vk::PipelineLayout GetPipelineLayout() const { return vk::PipelineLayout(p.pipelineLayout); }
+	vk::Sampler GetLinearSampler() const { return vk::Sampler(p.linearSampler); }
+	vk::Sampler GetNearestSampler() const { return vk::Sampler(p.nearestSampler); }
 
-	vk::RenderPass renderPass;
-	int subpass = 0;
-	u32 samples = 1;
-	PsoSlot slots[2];
-	vk::UniqueSampler linearSampler;
-	vk::UniqueSampler nearestSampler;
-	vk::UniquePipelineLayout pipelineLayout;
-	vk::UniqueDescriptorSetLayout descSetLayout;
-	ShaderManager *shaderManager;
+	vk_quad_pipeline p;
 };
-class CommandPool;
 
 class QuadDrawer
 {
 public:
-	void Init(QuadPipeline *pipeline);
+	QuadDrawer() { memset(&d, 0, sizeof(d)); }
+	~QuadDrawer() { vk_quad_drawer_term(&d); }
+	QuadDrawer(const QuadDrawer&) = delete;
+	QuadDrawer& operator=(const QuadDrawer&) = delete;
+	/* its sets and buffer given back */
+	void Term() { vk_quad_drawer_term(&d); }
+	void Init(QuadPipeline *pipeline)
+	{
+		if (!vk_quad_drawer_init(&d, &pipeline->p))
+			throwResultException(vk::Result::eErrorOutOfDeviceMemory, "vk_quad_drawer_init");
+	}
 	/* commandPool: the pool commandBuffer is of. A descriptor set that has to
 	 * be replaced is left with it, to be destroyed once the frames that can
 	 * be using it are done. */
-	void Draw(vk::CommandBuffer commandBuffer, vk::ImageView imageView, QuadVertex vertices[], bool nearestFilter, CommandPool *commandPool);
-private:
-	/* For each of the frontend's images, a few descriptor sets, what the
-	 * one drawn with was last written with, and the frame each was last
-	 * drawn in: a set whose frames the GPU is done with is written again
-	 * when the picture changes, none made or given back. (More images than
-	 * there are slots share them.) */
-	enum { SLOTS = 16, SETS = 3 };
-	struct Slot
+	template<typename Pool>
+	void Draw(vk::CommandBuffer commandBuffer, vk::ImageView imageView, QuadVertex vertices[], bool nearestFilter, Pool *commandPool)
 	{
-		vk::UniqueDescriptorSet set[SETS];
-		u64 used[SETS] = {};
-		u32 current = 0;
-		vk::ImageView view;
-		vk::Sampler sampler;
-	};
-	QuadPipeline *pipeline = nullptr;
-	std::unique_ptr<QuadBuffer> buffer;
-	Slot slots[SLOTS];
+		vk_quad_drawer_draw(&d, (VkCommandBuffer)commandBuffer, (VkImageView)imageView, vertices, nearestFilter, &commandPool->p);
+	}
+
+private:
+	vk_quad_drawer d;
 };

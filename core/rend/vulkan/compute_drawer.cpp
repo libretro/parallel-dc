@@ -1,6 +1,7 @@
 #define PVR_REGS_FOR_RENDERER	// see hw/pvr/pvr_regs.h
 /* The compute renderer on Vulkan: see compute_drawer.h */
 #include "compute_drawer.h"
+#include "writeout.h"
 #include "motion_pass.h"
 #include "vulkan_context.h"
 #include "ssaa.h"

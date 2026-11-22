@@ -23,3 +23,23 @@ VkShaderModule vk_raster_module(int id)
 		return VK_NULL_HANDLE;
 	return module;
 }
+
+bool vk_raster_modules_make(vk_raster_modules *r, int first, int last)
+{
+	int i;
+	for (i = first; i <= last; i++)
+		if (r->m[i] == VK_NULL_HANDLE && (r->m[i] = vk_raster_module(i)) == VK_NULL_HANDLE)
+			return false;
+	return true;
+}
+
+void vk_raster_modules_term(vk_raster_modules *r)
+{
+	int i;
+	for (i = 0; i < RSPV_COUNT; i++)
+		if (r->m[i] != VK_NULL_HANDLE)
+		{
+			vkDestroyShaderModule(vkc.device, r->m[i], NULL);
+			r->m[i] = VK_NULL_HANDLE;
+		}
+}

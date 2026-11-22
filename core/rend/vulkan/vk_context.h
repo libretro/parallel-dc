@@ -136,6 +136,11 @@ static INLINE void vkc_heap_trim_soon(void)
 	vkc.trimIn = 32;
 }
 
+/* One descriptor set of @layout from the context's pool, given back with
+ * vkc_free_desc_set(); VK_NULL_HANDLE if the pool has no room */
+VkDescriptorSet vkc_alloc_desc_set(VkDescriptorSetLayout layout);
+void vkc_free_desc_set(VkDescriptorSet set);
+
 /* The negotiation interface's (libretro_vulkan.h) */
 const VkApplicationInfo *VkGetApplicationInfo(void);
 bool VkCreateDevice(struct retro_vulkan_context *context, VkInstance instance, VkPhysicalDevice gpu,

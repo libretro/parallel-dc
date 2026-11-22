@@ -4,7 +4,7 @@
  * reicast_pvr2_scaler asks: the compute renderer's own pass over its
  * picture (pvr_compute.h's PVRC_K_YFILTER, the same SPIR-V), run in place
  * on the raster renderer's after the frame's render pass. Its pipeline is
- * asked of the pipeline thread (pso.h) by the first Init(), as the
+ * asked of the pipeline thread (pso.h) by the first vk_writeout_init(), as the
  * renderer starts, whether the option is on or not, and kept: a change of
  * size (a change of the option is one) makes only the pictures' sets,
  * slots and framebuffers again. Nothing is made in a frame, and a frame
@@ -12,50 +12,98 @@
  * the picture (the VMUs, the crosshairs) is drawn after it, as on the
  * console: the frame's render pass is ended, the pass run, and they are
  * drawn in a render pass of their own that loads the picture
- * (BeginOverlay()), made in Init() too. */
-#pragma once
-#include "vulkan.h"
-#include "buffer.h"
+ * (vk_writeout_begin_overlay()), made in vk_writeout_init() too. */
+#ifndef VK_WRITEOUT_H
+#define VK_WRITEOUT_H
+
+#include "vk_context.h"
+#include "vk_buffer.h"
 #include "pso.h"
 #include "rend/tile/compute_frame.h"
 
-#include <memory>
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+/* (compute_drawer.cpp has the kernels' SPIR-V) */
+const u32 *vk_compute_kernel(u32 kernel, size_t *size);
+
+typedef struct vk_writeout
+{
+	vk_pso_builder builder;
+	VkDescriptorSetLayout setLayout;
+	VkPipelineLayout pipelineLayout;
+	VkShaderModule module;
+	PsoSlot slot;
+	/* what the pictures of a size have */
+	VkDescriptorPool pool;
+	VkDescriptorSet *sets;
+	u32 count;
+	vk_buffer words;
+	u32 *mapped;
+	VkRenderPass overlayPass;
+	VkFramebuffer *overlayFramebuffers;
+	VkExtent2D extent;
+} vk_writeout;
+
+/* whether the pictures are to be made for it (VK_IMAGE_USAGE_STORAGE_BIT) */
+static INLINE bool vk_writeout_wanted(void)
+{
+	return !compute_frame_scalers_off;
+}
+
+void vk_writeout_construct(vk_writeout *w);
+/* the @count pictures @views, @width x @height: a set, a slot of words and
+ * a framebuffer of the overlay's for each. False if one could not be made. */
+bool vk_writeout_init(vk_writeout *w, const VkImageView *views, u32 count, u32 width, u32 height);
+/* everything, the pipeline too (the renderer's end) */
+void vk_writeout_term(vk_writeout *w);
+
+/* whether the frame in the registers has a write-out, to be recorded */
+static INLINE bool vk_writeout_runs(const vk_writeout *w, u32 height)
+{
+	return w->count != 0 && PVRC_FF_YLINES(compute_frame_write_out(height)) != 0;
+}
+
+/* the overlay's render pass begun on picture @index, after record() */
+void vk_writeout_begin_overlay(vk_writeout *w, VkCommandBuffer cmd, u32 index);
+/* The pass over picture @index, @image, @width x @height, which the
+ * render pass left in VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, and leaves
+ * so; nothing when the frame in the registers has no write-out */
+void vk_writeout_record(vk_writeout *w, VkCommandBuffer cmd, u32 index, VkImage image, VkImageView view, u32 width, u32 height);
+
+#ifdef __cplusplus
+}
+
 #include <vector>
 
-class VulkanWriteOut : public PsoBuilder
+/* The C++ renderers' view of a vk_writeout */
+class VulkanWriteOut
 {
 public:
-	VulkanWriteOut();
-	// whether the pictures are to be made for it (vk::ImageUsageFlagBits::eStorage)
-	static bool Wanted() { return !compute_frame_scalers_off; }
-	// the pictures @views, @extent: a set, a slot of words and a framebuffer of the overlay's for each
-	void Init(const std::vector<vk::ImageView>& views, vk::Extent2D extent);
-	// everything, the pipeline too (the renderer's end)
-	void Term();
-	// whether the frame in the registers has a write-out, to be recorded
-	bool Runs(u32 height) const { return !sets.empty() && PVRC_FF_YLINES(ComputeFrame::WriteOut(height)) != 0; }
-	VkPipeline BuildPipeline(u64 key, vk::PipelineCache cache) override;
-	// the render pass of what goes over the picture after the pass (null when none was made)
-	vk::RenderPass OverlayPass() const { return *overlayPass; }
-	// ...begun on picture @index, after Record()
-	void BeginOverlay(vk::CommandBuffer cmd, u32 index);
-	/* The pass over picture @index, @image, @width x @height, which the
-	 * render pass left in eShaderReadOnlyOptimal, and leaves so; nothing
-	 * when the frame in the registers has no write-out */
-	void Record(vk::CommandBuffer cmd, u32 index, vk::Image image, vk::ImageView view, u32 width, u32 height);
+	VulkanWriteOut() { vk_writeout_construct(&w); }
+	~VulkanWriteOut() { vk_writeout_term(&w); }
+	VulkanWriteOut(const VulkanWriteOut&) = delete;
+	VulkanWriteOut& operator=(const VulkanWriteOut&) = delete;
+	static bool Wanted() { return vk_writeout_wanted(); }
+	void Init(const std::vector<vk::ImageView>& views, vk::Extent2D extent)
+	{
+		if (!vk_writeout_init(&w, reinterpret_cast<const VkImageView *>(views.data()), (u32)views.size(), extent.width, extent.height))
+			throwResultException(vk::Result::eErrorInitializationFailed, "vk_writeout_init");
+	}
+	void Term() { vk_writeout_term(&w); }
+	bool Runs(u32 height) const { return vk_writeout_runs(&w, height); }
+	/* (null when none was made) */
+	vk::RenderPass OverlayPass() const { return vk::RenderPass(w.overlayPass); }
+	void BeginOverlay(vk::CommandBuffer cmd, u32 index) { vk_writeout_begin_overlay(&w, (VkCommandBuffer)cmd, index); }
+	void Record(vk::CommandBuffer cmd, u32 index, vk::Image image, vk::ImageView view, u32 width, u32 height)
+	{
+		vk_writeout_record(&w, (VkCommandBuffer)cmd, index, (VkImage)image, (VkImageView)view, width, height);
+	}
 
 private:
-	// what the pictures of a size have
-	void DropSized();
-	vk::UniqueDescriptorSetLayout setLayout;
-	vk::UniquePipelineLayout pipelineLayout;
-	vk::UniqueShaderModule module;
-	PsoSlot slot;
-	vk::UniqueDescriptorPool pool;
-	std::vector<vk::DescriptorSet> sets;
-	std::unique_ptr<BufferData> words;
-	u32 *mapped = nullptr;
-	vk::UniqueRenderPass overlayPass;
-	std::vector<vk::UniqueFramebuffer> overlayFramebuffers;
-	vk::Extent2D extent;
+	vk_writeout w;
 };
+#endif
+
+#endif

@@ -257,14 +257,14 @@ ifeq ($(HAVE_VULKAN), 1)
 					$(CORE_DIR)/core/rend/vulkan/vk_buffer.c \
 					$(CORE_DIR)/core/rend/vulkan/vk_cmd_pool.c \
 					$(CORE_DIR)/core/rend/vulkan/vk_gpu_timer.c \
-					$(CORE_DIR)/core/rend/vulkan/vk_desc_cache.c
+					$(CORE_DIR)/core/rend/vulkan/vk_desc_cache.c \
+					$(CORE_DIR)/core/rend/vulkan/vk_quad.c \
+					$(CORE_DIR)/core/rend/vulkan/vk_writeout.c
 	SOURCES_CXX += \
 					$(CORE_DIR)/core/rend/vulkan/drawer.cpp \
 					$(CORE_DIR)/core/rend/vulkan/motion_pass.cpp \
-					$(CORE_DIR)/core/rend/vulkan/writeout.cpp \
 					$(CORE_DIR)/core/rend/vulkan/rtt_read.cpp \
 					$(CORE_DIR)/core/rend/vulkan/pipeline.cpp \
-					$(CORE_DIR)/core/rend/vulkan/quad.cpp \
 					$(CORE_DIR)/core/rend/vulkan/texture.cpp \
 					$(CORE_DIR)/core/rend/vulkan/tex_decoder.cpp \
 					$(CORE_DIR)/core/rend/vulkan/ta_decoder.cpp \
