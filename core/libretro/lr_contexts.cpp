@@ -3,47 +3,44 @@
 #include "rend/dx12/dx12context_lr.h"
 #endif
 #ifdef HAVE_VULKAN
-#include "rend/vulkan/vulkan_context.h"
-#include "rend/vulkan/pso.h"
+#include "rend/vulkan/vk_context.h"
 #endif
 #include "lr_contexts.h"
 
 #ifdef HAVE_VULKAN
-static VulkanContext theVulkanContext;
-
 bool lr_vk_init(void *render_if)
 {
-   return theVulkanContext.Init((retro_hw_render_interface_vulkan *)render_if);
+   return vkc_init((struct retro_hw_render_interface_vulkan *)render_if);
 }
 
 void lr_vk_term(void)
 {
-   theVulkanContext.Term();
+   vkc_term();
 }
 
 void lr_vk_set_window_size(u32 width, u32 height)
 {
-   theVulkanContext.SetWindowSize(width, height);
+   vkc_set_window_size(width, height);
 }
 
 u32 lr_vk_presented_width(void)
 {
-   return theVulkanContext.PresentedWidth();
+   return vkc.presentedWidth;
 }
 
 u32 lr_vk_presented_height(void)
 {
-   return theVulkanContext.PresentedHeight();
+   return vkc.presentedHeight;
 }
 
 void lr_vk_save_pipeline_cache(void)
 {
-   theVulkanContext.SavePipelineCache();
+   vkc_save_pipeline_cache();
 }
 
 void lr_vk_wait_pipelines(void)
 {
-   VkPsoWorker::Instance().WaitBatch();
+   vk_pso_worker_wait_batch();
 }
 
 /* Version 2 where the frontend has it: the device is then made through

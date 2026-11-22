@@ -48,7 +48,7 @@ public:
 		texCommandPool.Init();
 		MakeCompute();
 		NOTICE_LOG(RENDERER, "Vulkan per-pixel renderer: with SSAA, a translucent fragment takes the samples %s\n",
-				GetContext()->postDepthCoverage ? "the depth test passed (VK_EXT_post_depth_coverage)" : "its own depth test passes, at each sample");
+				GetContext()->SupportsPostDepthCoverage() ? "the depth test passed (VK_EXT_post_depth_coverage)" : "its own depth test passes, at each sample");
 		textureDrawer.SetCommandPool(&texCommandPool);
 		textureDrawer.Init(&samplerManager, &rttShaderManager, &textureCache, &oitBuffers);
 		/* (renders to a texture drawn by the compute renderer go to the

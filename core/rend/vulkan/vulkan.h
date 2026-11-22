@@ -27,6 +27,7 @@
 extern PFN_vkGetInstanceProcAddr vulkan_symbol_wrapper_vkGetInstanceProcAddr;
 #define vkGetInstanceProcAddr vulkan_symbol_wrapper_vkGetInstanceProcAddr
 
+#ifdef __cplusplus
 #undef VK_NO_PROTOTYPES
 #include "vulkan/vulkan.hpp"
 
@@ -42,5 +43,6 @@ static inline vk::UniqueDescriptorSet vk_alloc_desc_set(vk::Device device, vk::D
 		return vk::UniqueDescriptorSet();
 	return vk::UniqueDescriptorSet(set, vk::PoolFree<vk::Device, vk::DescriptorPool, vk::DispatchLoaderDefault>(device, pool, dispatch));
 }
+#endif
 
-//#define VK_DEBUG
+/* #define VK_DEBUG */

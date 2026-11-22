@@ -72,7 +72,7 @@ public:
 		modules.Make(RSPV_MODVOL_VERT, RSPV_MODVOL_VERT);
 		modules.Make(RSPV_OIT_VERT_G0, RSPV_OIT_FRAG_G1_P2_R2);
 		// (SSAA's lists taking the samples the depth test passed: only where the device has that)
-		postDepthCoverage = VulkanContext::Instance()->postDepthCoverage;
+		postDepthCoverage = VulkanContext::Instance()->SupportsPostDepthCoverage();
 		if (postDepthCoverage)
 			modules.Make(RSPV_OIT_FRAG_G0_P2_R2_PDC, RSPV_OIT_FRAG_G1_P2_R2_PDC);
 		modules.Make(RSPV_OIT_MODVOL_FRAG, RSPV_OIT_FINAL_VERT);

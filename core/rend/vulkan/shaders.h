@@ -18,25 +18,50 @@
     You should have received a copy of the GNU General Public License
     along with Flycast.  If not, see <https://www.gnu.org/licenses/>.
 */
-#pragma once
+#ifndef VK_SHADERS_H
+#define VK_SHADERS_H
 
 #include "vulkan.h"
 #include "pso_key.h"
 #include "raster_spv.inc"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 /* The raster renderers' shaders are SPIR-V made when the core is built
  * (raster_spv.inc, from vulkan/shaders/ by tools/rend/kernels_spv.sh):
- * nothing is compiled when it runs. A module is made from its words. */
-vk::UniqueShaderModule MakeRasterModule(RasterSpv id);
-/* ...and its words, for what makes its modules in C (hdr_encode_vk.c) */
-const u32 *RasterSpvWords(RasterSpv id, size_t *size);
+ * nothing is compiled when it runs. A module's words, by enum RasterSpv;
+ * and the module made of them on the context's device, VK_NULL_HANDLE if
+ * it could not be. */
+const u32 *RasterSpvWords(int id, size_t *size);
+VkShaderModule vk_raster_module(int id);
+
+#ifdef __cplusplus
+}
+
+#include "vk_context.h"
+#include "rend/sorter.h"
+
+/* (both cast: on 32-bit x86, whose x87 keeps floats wider, the literal is
+ * otherwise compared at the wider precision) */
+static_assert((float)PREPASS_ALPHA_MIN == (float)PREPASS_ALPHA_MIN_GLSL, "the prepass's alpha, in shaders/prepass.frag (pso_key.h)");
+
+static inline vk::UniqueShaderModule MakeRasterModule(RasterSpv id)
+{
+	const VkShaderModule module = vk_raster_module(id);
+	if (module == VK_NULL_HANDLE)
+		throwResultException(vk::Result::eErrorInitializationFailed, "vkCreateShaderModule");
+	return vk::UniqueShaderModule(vk::ShaderModule(module),
+			vk::ObjectDestroy<vk::Device, vk::DispatchLoaderStatic>(vk::Device(vkc.device)));
+}
 
 /* The modules a renderer draws with, all made in Make(): they are only
  * read after, from any thread */
 class RasterModules
 {
 public:
-	// [first, last]
+	/* [first, last] */
 	void Make(RasterSpv first, RasterSpv last)
 	{
 		for (int i = first; i <= last; i++)
@@ -84,7 +109,7 @@ struct VertexShaderParams
 	bool gouraud;
 };
 
-// alpha test, clip test, use alpha, texture, ignore alpha, shader instr, offset, fog, gouraud, bump, clamp, trilinear
+/* alpha test, clip test, use alpha, texture, ignore alpha, shader instr, offset, fog, gouraud, bump, clamp, trilinear */
 struct FragmentShaderParams
 {
 	bool alphaTest;
@@ -100,11 +125,11 @@ struct FragmentShaderParams
 	bool clamping;
 	bool trilinear;
 	bool palette;
-	bool shadowed;	// base and offset colours scaled: a pixel in a modifier volume
-	int sampleRate;	// SSAA: shaded at each sample (1), or once a pixel at its centre (2); 0 without SSAA
-	int samples;	// SSAA's (with sampleRate 2), 1 without
+	bool shadowed;	/* base and offset colours scaled: a pixel in a modifier volume */
+	int sampleRate;	/* SSAA: shaded at each sample (1), or once a pixel at its centre (2); 0 without SSAA */
+	int samples;	/* SSAA's (with sampleRate 2), 1 without */
 
-	// what the shader is specialized for (pso_key.h): all but gouraud, sampleRate and samples
+	/* what the shader is specialized for (pso_key.h): all but gouraud, sampleRate and samples */
 	s32 key() const
 	{
 		return ((s32)alphaTest << TRI_SC_ALPHA_TEST) | ((s32)insideClipTest << TRI_SC_CLIP_INSIDE)
@@ -122,7 +147,7 @@ struct PrepassShaderParams
 {
 	bool texture;
 	bool gouraud;
-	int sampleRate;	// as FragmentShaderParams
+	int sampleRate;	/* as FragmentShaderParams */
 	int samples;
 };
 
@@ -133,17 +158,17 @@ struct VertexShaderUniforms
 {
 	float normal_matrix[16];
 	float depth_scale;
-	float depth_mul;	// 1 / what the matrix scales z by
+	float depth_mul;	/* 1 / what the matrix scales z by */
 	float pad[2];
 };
 
-// std140 alignment required
+/* std140 alignment required */
 struct FragmentShaderUniforms
 {
 	float colorClampMin[4];
 	float colorClampMax[4];
-	float sp_FOG_COL_RAM[4];	// Only using 3 elements but easier for std140
-	float sp_FOG_COL_VERT[4];	// same comment
+	float sp_FOG_COL_RAM[4];	/* Only using 3 elements but easier for std140 */
+	float sp_FOG_COL_VERT[4];	/* same comment */
 	float cp_AlphaTestValue;
 	float sp_FOG_DENSITY;
 	float shade_scale_factor;
@@ -162,7 +187,7 @@ public:
 	{
 		return modules.Get(params.gouraud ? RSPV_TRI_VERT_G1 : RSPV_TRI_VERT_G0);
 	}
-	// the module of @params' interpolation and sample rate: the rest is its key()
+	/* the module of @params' interpolation and sample rate: the rest is its key() */
 	vk::ShaderModule GetFragmentShader(const FragmentShaderParams& params) const
 	{
 		return modules.Get((RasterSpv)(RSPV_TRI_FRAG_G0_R0 + (params.gouraud ? 3 : 0) + params.sampleRate));
@@ -187,3 +212,6 @@ public:
 private:
 	RasterModules modules;
 };
+#endif
+
+#endif

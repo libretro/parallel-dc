@@ -23,15 +23,23 @@
  *
  * Nothing here takes a lock: a slot's state is an atomic the worker
  * publishes the pipeline with; the worker's requests are an intrusive list
- * (cMpscList), and it sleeps on an eventcount. The worker has a pipeline
+ * (lock-free, intrusive), and it sleeps on an eventcount. The worker has a pipeline
  * cache of its own, merged into the context's when that is saved. Every
  * table is made when its renderer is; nothing is allocated in a frame. */
-#pragma once
-#include "vulkan.h"
-#include "lockfree.h"
-#include "stdclass.h"
+#ifndef VK_PSO_H
+#define VK_PSO_H
 
-class PsoBuilder;
+#include <stddef.h>
+#include <retro_atomic.h>
+#include "vulkan.h"
+#include "log/Log.h"
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+typedef struct vk_pso_builder vk_pso_builder;
+typedef struct PsoSlot PsoSlot;
 
 /* BUILDING: taken by one thread to make - the worker or a draw - so that it
  * is made once */
@@ -40,102 +48,76 @@ enum PsoState { PSO_EMPTY, PSO_QUEUED, PSO_READY, PSO_FAILED, PSO_BUILDING };
 struct PsoSlot
 {
 	u64 key;
-	PsoBuilder *owner;
-	retro_atomic_int_t state;	// PsoState: the worker publishes READY or FAILED
-	int gen;					// the owner's generation it was asked for in
+	vk_pso_builder *owner;
+	retro_atomic_int_t state;	/* PsoState: the worker publishes READY or FAILED */
+	int gen;					/* the owner's generation it was asked for in */
 	VkPipeline pipeline;
-	PsoSlot *next;				// the worker's lists
+	PsoSlot *next;				/* the worker's lists */
 };
 
 /* What makes the pipelines of its slots' keys: a renderer's pipeline
- * manager. BuildPipeline() is called from the worker thread too, and reads
- * only what the manager does not change while it has slots asked for
- * (Reset() waits for the worker first). */
-class PsoBuilder
+ * manager. build() is called from the worker thread too, and reads only
+ * what the manager does not change while it has slots asked for (Reset()
+ * waits for the worker first). It returns VK_NULL_HANDLE if the pipeline
+ * could not be made. */
+struct vk_pso_builder
 {
-public:
-	virtual ~PsoBuilder() = default;
-	// VK_NULL_HANDLE if it could not be made
-	virtual VkPipeline BuildPipeline(u64 key, vk::PipelineCache cache) = 0;
-	int Generation() const { return retro_atomic_load_acquire_int(&generation); }
-
-protected:
-	PsoBuilder() { retro_atomic_int_init(&generation, 0); }
-	// what has been asked for so far is not to be made any more
-	void NewGeneration() { retro_atomic_fetch_add_int(&generation, 1); }
-
-private:
+	VkPipeline (*build)(vk_pso_builder *self, u64 key, VkPipelineCache cache);
 	retro_atomic_int_t generation;
 };
 
+static INLINE int vk_pso_builder_generation(const vk_pso_builder *b)
+{
+	return retro_atomic_load_acquire_int(&((vk_pso_builder *)b)->generation);
+}
+
+/* what has been asked for so far is not to be made any more */
+static INLINE void vk_pso_builder_new_generation(vk_pso_builder *b)
+{
+	retro_atomic_fetch_add_int(&b->generation, 1);
+}
+
 /* A manager's pipelines by key: open addressing, made once. Only the
  * thread that draws looks keys up and adds them. */
-class PsoTable
+typedef struct vk_pso_table
 {
-public:
-	~PsoTable() { delete [] slots; }
-	void Init(u32 capacity, PsoBuilder *owner);
-	PsoSlot *Find(u64 key) const
-	{
-		for (u32 i = Hash(key);; i = (i + 1) & mask)
-		{
-			PsoSlot& s = slots[i];
-			if (!s.owner)
-				return nullptr;
-			if (s.key == key)
-				return &s;
-		}
-	}
-	// nullptr when the table is full
-	PsoSlot *Insert(u64 key);
-	/* The pipelines destroyed and the table emptied. Nothing of it may be
-	 * with the worker (VkPsoWorker::WaitIdle()). */
-	void Clear(vk::Device device);
-	u32 Used() const { return used; }
-	template<typename F>
-	void ForEach(F f) const
-	{
-		for (u32 i = 0; i <= mask; i++)
-			if (slots[i].owner)
-				f(slots[i]);
-	}
+	PsoSlot *slots;
+	vk_pso_builder *owner;
+	u32 mask;
+	u32 used;
+} vk_pso_table;
 
-private:
-	u32 Hash(u64 key) const { return (u32)((key * 0x9E3779B97F4A7C15ull) >> 40) & mask; }
+void vk_pso_table_init(vk_pso_table *t, u32 capacity, vk_pso_builder *owner);
+void vk_pso_table_free(vk_pso_table *t);
 
-	PsoSlot *slots = nullptr;
-	PsoBuilder *owner = nullptr;
-	u32 mask = 0;
-	u32 used = 0;
-};
-
-// a graphics pipeline, or VK_NULL_HANDLE (and a line in the log) if the device could not make it
-static inline VkPipeline PsoCreate(vk::Device device, vk::PipelineCache cache, const vk::GraphicsPipelineCreateInfo& info)
+static INLINE u32 vk_pso_table_hash(const vk_pso_table *t, u64 key)
 {
-	VkPipeline pipeline = VK_NULL_HANDLE;
-	const VkResult res = vkCreateGraphicsPipelines((VkDevice)device, (VkPipelineCache)cache, 1,
-			reinterpret_cast<const VkGraphicsPipelineCreateInfo *>(&info), nullptr, &pipeline);
-	if (res != VK_SUCCESS)
-	{
-		WARN_LOG(RENDERER, "Vulkan: a pipeline could not be made (%d)\n", (int)res);
-		return VK_NULL_HANDLE;
-	}
-	return pipeline;
+	return (u32)((key * 0x9E3779B97F4A7C15ull) >> 40) & t->mask;
 }
 
-// a compute pipeline, or VK_NULL_HANDLE (and a line in the log)
-static inline VkPipeline PsoCreateCompute(vk::Device device, vk::PipelineCache cache, const vk::ComputePipelineCreateInfo& info)
+static INLINE PsoSlot *vk_pso_table_find(const vk_pso_table *t, u64 key)
 {
-	VkPipeline pipeline = VK_NULL_HANDLE;
-	const VkResult res = vkCreateComputePipelines((VkDevice)device, (VkPipelineCache)cache, 1,
-			reinterpret_cast<const VkComputePipelineCreateInfo *>(&info), nullptr, &pipeline);
-	if (res != VK_SUCCESS)
+	u32 i;
+	for (i = vk_pso_table_hash(t, key);; i = (i + 1) & t->mask)
 	{
-		WARN_LOG(RENDERER, "Vulkan: a pipeline could not be made (%d)\n", (int)res);
-		return VK_NULL_HANDLE;
+		PsoSlot *s = &t->slots[i];
+		if (!s->owner)
+			return NULL;
+		if (s->key == key)
+			return s;
 	}
-	return pipeline;
 }
+
+/* NULL when the table is full */
+PsoSlot *vk_pso_table_insert(vk_pso_table *t, u64 key);
+/* The pipelines destroyed and the table emptied. Nothing of it may be
+ * with the worker (vk_pso_worker_wait_idle()). */
+void vk_pso_table_clear(vk_pso_table *t, VkDevice device);
+
+/* a graphics pipeline, or VK_NULL_HANDLE (and a line in the log) if the device could not make it */
+VkPipeline vk_pso_create(VkDevice device, VkPipelineCache cache, const VkGraphicsPipelineCreateInfo *info);
+/* a compute pipeline, or VK_NULL_HANDLE (and a line in the log) */
+VkPipeline vk_pso_create_compute(VkDevice device, VkPipelineCache cache, const VkComputePipelineCreateInfo *info);
 
 /* The most general pipelines a manager makes at its start, for a device
  * without the dynamic states (PipelineManager::Prepare()) */
@@ -144,198 +126,137 @@ enum { PSO_GENERAL_AT_START = 1024 };
 /* (tests: every polygon drawn with the general pipelines, to see they draw
  * what the polygons' own ones do) */
 #ifdef VK_PSO_TEST_GENERAL
-static const bool PsoTestGeneral = true;
+#define PsoTestGeneral 1
 #else
-static const bool PsoTestGeneral = false;
+#define PsoTestGeneral 0
 #endif
 
-static inline bool PsoReady(const PsoSlot *slot)
+static INLINE bool PsoReady(const PsoSlot *slot)
 {
-	return slot != nullptr && retro_atomic_load_acquire_int(&slot->state) == PSO_READY;
+	return slot != NULL && retro_atomic_load_acquire_int(&((PsoSlot *)slot)->state) == PSO_READY;
 }
 
 /* The keys of the pipelines made, kept with the pipeline cache from one run
- * to the next (VulkanContext): at its start a renderer asks the worker for
+ * to the next (vk_context.h): at its start a renderer asks the worker for
  * all of them that fit how it draws now. @who: which manager's. */
-class PsoKeyLog
+enum { VK_PSO_KEYS_CAPACITY = 8192 };
+
+typedef struct vk_pso_keys
 {
-public:
-	enum { CAPACITY = 8192 };
-	void Init();
-	void Term();
-	void Record(u32 who, u64 key)
-	{
-		if (count < CAPACITY)
-			keys[count++] = ((u64)who << 60) | key;
-	}
-	template<typename F>
-	void ForEach(u32 who, F f) const
-	{
-		for (u32 i = 0; i < count; i++)
-			if ((keys[i] >> 60) == who)
-				f(keys[i] & ~(15ull << 60));
-	}
-	// read from / written to the cache file: the keys, sorted, each once
-	const u64 *Keys(u32& n);
-	void Load(const u64 *keys, u32 n);
+	u64 *keys;
+	u32 count;
+} vk_pso_keys;
 
-private:
-	u64 *keys = nullptr;
-	u32 count = 0;
-};
+void vk_pso_keys_init(vk_pso_keys *k);
+void vk_pso_keys_term(vk_pso_keys *k);
 
-/* The worker thread */
-class VkPsoWorker
+static INLINE void vk_pso_keys_record(vk_pso_keys *k, u32 who, u64 key)
 {
-public:
-	static VkPsoWorker& Instance() { return instance; }
+	if (k->count < VK_PSO_KEYS_CAPACITY)
+		k->keys[k->count++] = ((u64)who << 60) | key;
+}
 
-	/* @initialData: the pipeline cache's, given to the worker's cache too;
-	 * @externallySynced: its caches are made with
-	 * VK_PIPELINE_CACHE_CREATE_EXTERNALLY_SYNCHRONIZED_BIT (no driver lock) */
-	void Start(vk::Device device, const void *initialData, size_t size, bool externallySynced);
-	// the thread joined; its cache merged into @into and destroyed
-	void Stop(vk::PipelineCache into);
-	/* Without it (a build without threads) nothing is asked of it: the
-	 * polygons are drawn with the general pipelines */
-	bool Running() const { return thread != nullptr; }
+/* read from / written to the cache file: the keys, sorted, each once */
+const u64 *vk_pso_keys_sorted(vk_pso_keys *k, u32 *n);
+void vk_pso_keys_load(vk_pso_keys *k, const void *keys, u32 n);
 
-	// the drawing thread: @slot is a new one of its table; made soon
-	void Request(PsoSlot *slot) { Ask(slot, urgent); }
-	// made when nothing more pressing is asked
-	void Prefetch(PsoSlot *slot) { Ask(slot, background); }
-	/* @n slots given to the worker to make before anything else, not waited
-	 * for: a draw takes each with PsoGet(). (Without the worker: made now,
-	 * with @cache.) Slots stay the batch's until EndBatch(). */
-	void BuildSoon(PsoSlot *const *slots, u32 n, vk::PipelineCache cache);
-	/* The batch done with, before @owner's slots go: what is left of @owner's
-	 * is dropped, what is left of the others' made now with the draw cache
-	 * (@owner nullptr: everything left dropped); back when the worker has
-	 * left the batch. */
-	void EndBatch(const PsoBuilder *owner);
-	/* The cache a draw that makes a fixed pipeline itself makes it with: the
-	 * context's (only the drawing thread uses it) */
-	void SetDrawCache(vk::PipelineCache cache) { drawCache = cache; }
-	/* A slot of the batch not made yet, for a draw: made now on this thread
-	 * if the worker has not taken it, else waited for. Its pipeline, or
-	 * VK_NULL_HANDLE if it was never asked for or could not be made. */
-	static VkPipeline Need(PsoSlot *slot);
-	// until all that was asked so far is made or dropped
-	void WaitIdle();
-	/* Until every slot of the batch is made (by the worker: this thread
-	 * only waits). The start's, before the first frame: a draw then takes
-	 * them made, and never makes one itself. */
-	void WaitBatch();
-	// whether every slot of the batch is made, without waiting
-	bool BatchReady() const { return thread == nullptr || batch == nullptr || BatchMade(); }
-	// the worker's cache merged into @into (the worker idle)
-	void MergeInto(vk::PipelineCache into);
-
-	/* One slot's pipeline made with @cache, and published. (All of the
-	 * renderers' graphics pipelines are made here: one place to count.) */
-	static void Build(PsoSlot *slot, vk::PipelineCache cache);
-	/* A draw that cannot go without @slot's pipeline: made on this thread
-	 * now. The slot is not one the worker has. */
-	static void BuildSync(PsoSlot *slot, vk::PipelineCache cache);
-
-	u32 Built() const { return (u32)retro_atomic_load_relaxed_int(&built); }
-	u32 SyncBuilt() const { return syncBuilt; }
-
-private:
-	typedef cMpscList<PsoSlot, &PsoSlot::next> List;
-
-	void Ask(PsoSlot *slot, List& list);
-	static void Entry(void *p) { ((VkPsoWorker *)p)->Loop(); }
-	void Loop();
-	bool HelpBatch();
-	int ClaimIndex();
-	bool BatchWaiting() const;
-	void Wait(bool (VkPsoWorker::*done)() const);
-	bool AllAnswered() const;
-	bool BatchLeft() const;
-	bool NotBuilding() const;
-	bool BatchMade() const;
-
-	static VkPsoWorker instance;
-
-	sthread_t *thread = nullptr;
-	vk::Device device;
-	VkPipelineCache cache = VK_NULL_HANDLE;
-	List urgent;
-	List background;
-#ifndef TARGET_NO_THREADS
-	cEventCount work;	// the worker sleeps here
-	cEventCount idle;	// and who waits for it, here
-#endif
-	retro_atomic_int_t stop;
-	retro_atomic_int_t requested;	// written by the drawing thread only
-	retro_atomic_int_t answered;
-	retro_atomic_int_t built;
-	u32 syncBuilt = 0;
-
-	/* BuildSoon()'s slots, shared out between the two
-	 * threads: entries [0, batchSize) are published (the drawing thread
-	 * appends them), [batchNext, batchSize) not taken yet */
-	enum { BATCH_CAPACITY = 4096 };
-	PsoSlot **batch = nullptr;
-	retro_atomic_int_t batchSize;
-	retro_atomic_int_t batchActive;
-	retro_atomic_int_t batchNext;
-	retro_atomic_int_t batchInside;
-	vk::PipelineCache drawCache;
-	PsoSlot *waitingFor = nullptr;	// Need()'s, for NotBuilding()
-
-public:
-	VkPsoWorker();
-};
+/* The worker thread.
+ * start: @initial_data, the pipeline cache's, given to the worker's cache
+ * too; @externally_synced: its caches are made with
+ * VK_PIPELINE_CACHE_CREATE_EXTERNALLY_SYNCHRONIZED_BIT (no driver lock).
+ * stop: the thread joined; its cache merged into @into and destroyed. */
+void vk_pso_worker_start(VkDevice device, const void *initial_data, size_t size, bool externally_synced);
+void vk_pso_worker_stop(VkPipelineCache into);
+/* Without it (a build without threads) nothing is asked of it: the
+ * polygons are drawn with the general pipelines */
+bool vk_pso_worker_running(void);
+/* the drawing thread: @slot is a new one of its table; made soon */
+void vk_pso_worker_request(PsoSlot *slot);
+/* made when nothing more pressing is asked */
+void vk_pso_worker_prefetch(PsoSlot *slot);
+/* @n slots given to the worker to make before anything else, not waited
+ * for: a draw takes each with PsoGet(). (Without the worker: made now,
+ * with @cache.) Slots stay the batch's until vk_pso_worker_end_batch(). */
+void vk_pso_worker_build_soon(PsoSlot *const *slots, u32 n, VkPipelineCache cache);
+/* The batch done with, before @owner's slots go: what is left of @owner's
+ * is dropped, what is left of the others' made now with the draw cache
+ * (@owner NULL: everything left dropped); back when the worker has left
+ * the batch. */
+void vk_pso_worker_end_batch(const vk_pso_builder *owner);
+/* The cache a draw that makes a fixed pipeline itself makes it with: the
+ * context's (only the drawing thread uses it) */
+void vk_pso_worker_set_draw_cache(VkPipelineCache cache);
+/* A slot of the batch not made yet, for a draw: made now on this thread
+ * if the worker has not taken it, else waited for. Its pipeline, or
+ * VK_NULL_HANDLE if it was never asked for or could not be made. */
+VkPipeline vk_pso_worker_need(PsoSlot *slot);
+/* until all that was asked so far is made or dropped */
+void vk_pso_worker_wait_idle(void);
+/* Until every slot of the batch is made (by the worker: this thread only
+ * waits). The start's, before the first frame: a draw then takes them
+ * made, and never makes one itself. */
+void vk_pso_worker_wait_batch(void);
+/* whether every slot of the batch is made, without waiting */
+bool vk_pso_worker_batch_ready(void);
+/* the worker's cache merged into @into (the worker idle) */
+void vk_pso_worker_merge_into(VkPipelineCache into);
+/* One slot's pipeline made with @cache, and published. (All of the
+ * renderers' graphics pipelines are made here: one place to count.) */
+void vk_pso_worker_build(PsoSlot *slot, VkPipelineCache cache);
+/* A draw that cannot go without @slot's pipeline: made on this thread
+ * now. The slot is not one the worker has. */
+void vk_pso_worker_build_sync(PsoSlot *slot, VkPipelineCache cache);
+u32 vk_pso_worker_built(void);
+u32 vk_pso_worker_sync_built(void);
 
 /* Slots of a builder's own, not a table's: the device's utility pipelines
  * (quad.h, ssaa.h, tex_decoder.h, compute_drawer.cpp), handed to the worker
- * with BuildSoon() where the device made them before. Init: @n of them,
- * empty, keyed 0 to @n - 1. Drop: what the worker has of them dropped, the
- * pipelines destroyed, empty again (nothing done if they are). Made: a
- * pipeline the drawing thread made itself, published. */
-void PsoOwnInit(PsoBuilder *owner, PsoSlot *slots, u32 n);
-void PsoOwnDrop(PsoBuilder *owner, PsoSlot *slots, u32 n, vk::Device device);
-VkPipeline PsoOwnMade(PsoSlot& slot, VkPipeline pipeline);
+ * with vk_pso_worker_build_soon() where the device made them before. Init:
+ * @n of them, empty, keyed 0 to @n - 1. Drop: what the worker has of them
+ * dropped, the pipelines destroyed, empty again (nothing done if they are).
+ * Made: a pipeline the drawing thread made itself, published. */
+void PsoOwnInit(vk_pso_builder *owner, PsoSlot *slots, u32 n);
+void PsoOwnDrop(vk_pso_builder *owner, PsoSlot *slots, u32 n, VkDevice device);
+VkPipeline PsoOwnMade(PsoSlot *slot, VkPipeline pipeline);
 
-/* A fixed slot's pipeline for a draw (VkPsoWorker::BuildSoon()): once it is
- * made, an acquire load and a compare more than reading it */
-static inline VkPipeline PsoGet(PsoSlot& slot)
+/* A fixed slot's pipeline for a draw (vk_pso_worker_build_soon()): once it
+ * is made, an acquire load and a compare more than reading it */
+static INLINE VkPipeline vk_pso_get(PsoSlot *slot)
 {
-	if (retro_atomic_load_acquire_int(&slot.state) == PSO_READY)
-		return slot.pipeline;
-	return VkPsoWorker::Need(&slot);
+	if (retro_atomic_load_acquire_int(&slot->state) == PSO_READY)
+		return slot->pipeline;
+	return vk_pso_worker_need(slot);
 }
 
 /* Device functions of VK_EXT_extended_dynamic_state and _state3 the general
- * pipelines are drawn with (VulkanContext has them when the device does);
+ * pipelines are drawn with (vk_context.h has them when the device does);
  * the Vulkan headers here are older than both */
-namespace pso_ext {
-enum : int
+enum
 {
-	DYNAMIC_STATE_CULL_MODE = 1000267000,
-	DYNAMIC_STATE_PRIMITIVE_TOPOLOGY = 1000267002,
-	DYNAMIC_STATE_DEPTH_TEST_ENABLE = 1000267006,
-	DYNAMIC_STATE_DEPTH_WRITE_ENABLE = 1000267007,
-	DYNAMIC_STATE_DEPTH_COMPARE_OP = 1000267008,
-	DYNAMIC_STATE_STENCIL_TEST_ENABLE = 1000267010,
-	DYNAMIC_STATE_STENCIL_OP = 1000267011,
-	DYNAMIC_STATE_COLOR_BLEND_ENABLE = 1000455010,
-	DYNAMIC_STATE_COLOR_BLEND_EQUATION = 1000455011,
-	DYNAMIC_STATE_COLOR_WRITE_MASK = 1000455012,
-	STRUCTURE_TYPE_EDS_FEATURES = 1000267000,
-	STRUCTURE_TYPE_EDS3_FEATURES = 1000455000,
-	STRUCTURE_TYPE_CACHE_CONTROL_FEATURES = 1000297000,
-	PIPELINE_CACHE_CREATE_EXTERNALLY_SYNCHRONIZED = 1,
+	VK_PSO_DYNAMIC_STATE_CULL_MODE = 1000267000,
+	VK_PSO_DYNAMIC_STATE_PRIMITIVE_TOPOLOGY = 1000267002,
+	VK_PSO_DYNAMIC_STATE_DEPTH_TEST_ENABLE = 1000267006,
+	VK_PSO_DYNAMIC_STATE_DEPTH_WRITE_ENABLE = 1000267007,
+	VK_PSO_DYNAMIC_STATE_DEPTH_COMPARE_OP = 1000267008,
+	VK_PSO_DYNAMIC_STATE_STENCIL_TEST_ENABLE = 1000267010,
+	VK_PSO_DYNAMIC_STATE_STENCIL_OP = 1000267011,
+	VK_PSO_DYNAMIC_STATE_COLOR_BLEND_ENABLE = 1000455010,
+	VK_PSO_DYNAMIC_STATE_COLOR_BLEND_EQUATION = 1000455011,
+	VK_PSO_DYNAMIC_STATE_COLOR_WRITE_MASK = 1000455012,
+	VK_PSO_STRUCTURE_TYPE_EDS_FEATURES = 1000267000,
+	VK_PSO_STRUCTURE_TYPE_EDS3_FEATURES = 1000455000,
+	VK_PSO_STRUCTURE_TYPE_CACHE_CONTROL_FEATURES = 1000297000,
+	VK_PSO_PIPELINE_CACHE_CREATE_EXTERNALLY_SYNCHRONIZED = 1
 };
-struct EdsFeatures
+
+typedef struct vk_pso_eds_features
 {
 	int sType;
 	void *pNext;
 	VkBool32 extendedDynamicState;
-};
-struct Eds3Features
+} vk_pso_eds_features;
+
+typedef struct vk_pso_eds3_features
 {
 	int sType;
 	void *pNext;
@@ -346,14 +267,16 @@ struct Eds3Features
 		lineStippleEnable, depthClipNegativeOneToOne, viewportWScalingEnable, viewportSwizzle,
 		coverageToColorEnable, coverageToColorLocation, coverageModulationMode, coverageModulationTableEnable,
 		coverageModulationTable, coverageReductionMode, representativeFragmentTestEnable, shadingRateImageEnable;
-};
-struct CacheControlFeatures
+} vk_pso_eds3_features;
+
+typedef struct vk_pso_cache_control_features
 {
 	int sType;
 	void *pNext;
 	VkBool32 pipelineCreationCacheControl;
-};
-struct ColorBlendEquation
+} vk_pso_cache_control_features;
+
+typedef struct vk_pso_blend_equation
 {
 	VkBlendFactor srcColorBlendFactor;
 	VkBlendFactor dstColorBlendFactor;
@@ -361,8 +284,9 @@ struct ColorBlendEquation
 	VkBlendFactor srcAlphaBlendFactor;
 	VkBlendFactor dstAlphaBlendFactor;
 	VkBlendOp alphaBlendOp;
-};
-struct Functions
+} vk_pso_blend_equation;
+
+typedef struct vk_pso_dyn
 {
 	void (VKAPI_PTR *CmdSetCullMode)(VkCommandBuffer, VkCullModeFlags);
 	void (VKAPI_PTR *CmdSetPrimitiveTopology)(VkCommandBuffer, VkPrimitiveTopology);
@@ -372,19 +296,18 @@ struct Functions
 	void (VKAPI_PTR *CmdSetStencilTestEnable)(VkCommandBuffer, VkBool32);
 	void (VKAPI_PTR *CmdSetStencilOp)(VkCommandBuffer, VkStencilFaceFlags, VkStencilOp, VkStencilOp, VkStencilOp, VkCompareOp);
 	void (VKAPI_PTR *CmdSetColorBlendEnable)(VkCommandBuffer, uint32_t, uint32_t, const VkBool32 *);
-	void (VKAPI_PTR *CmdSetColorBlendEquation)(VkCommandBuffer, uint32_t, uint32_t, const ColorBlendEquation *);
+	void (VKAPI_PTR *CmdSetColorBlendEquation)(VkCommandBuffer, uint32_t, uint32_t, const vk_pso_blend_equation *);
 	void (VKAPI_PTR *CmdSetColorWriteMask)(VkCommandBuffer, uint32_t, uint32_t, const VkColorComponentFlags *);
-	bool depthStencil;	// VK_EXT_extended_dynamic_state: cull, topology, depth, stencil
-	bool blend;			// VK_EXT_extended_dynamic_state3: blend enable, equation, write mask
-};
-}
+	bool depthStencil;	/* VK_EXT_extended_dynamic_state: cull, topology, depth, stencil */
+	bool blend;			/* VK_EXT_extended_dynamic_state3: blend enable, equation, write mask */
+} vk_pso_dyn;
 
 /* The cull mode of the fixed pipelines made with it dynamic: the modifier
  * volumes' and the depth prepass's, where the device has
  * VK_EXT_extended_dynamic_state (one pipeline then for the three modes).
  * PsoCullIndex(): a polygon's ISP cull mode as 0 none, 1 front, 2 back,
  * which is VkCullModeFlags too. */
-static inline u32 PsoCullIndex(u32 ispCullMode)
+static INLINE u32 PsoCullIndex(u32 ispCullMode)
 {
 	return ispCullMode >= 2 ? ispCullMode - 1 : 0;
 }
@@ -394,25 +317,192 @@ static inline u32 PsoCullIndex(u32 ispCullMode)
  * pipelines set their own). @set null (the device has no dynamic cull
  * mode, and the pipelines one each): it never sets any - the same compare,
  * never true. */
-class PsoCull
+typedef struct vk_pso_cull
 {
-public:
-	PsoCull(vk::CommandBuffer cmd, void (VKAPI_PTR *set)(VkCommandBuffer, VkCullModeFlags))
-		: cmd((VkCommandBuffer)cmd), set(set), mask(set != nullptr ? 3 : 0), last(set != nullptr ? ~0u : 0) {}
-	// @cull: PsoCullIndex()'s
-	void Set(u32 cull)
-	{
-		const u32 c = cull & mask;
-		if (c != last)
-		{
-			last = c;
-			set(cmd, (VkCullModeFlags)c);
-		}
-	}
-
-private:
 	VkCommandBuffer cmd;
 	void (VKAPI_PTR *set)(VkCommandBuffer, VkCullModeFlags);
 	u32 mask;
 	u32 last;
+} vk_pso_cull;
+
+static INLINE void vk_pso_cull_init(vk_pso_cull *c, VkCommandBuffer cmd, void (VKAPI_PTR *set)(VkCommandBuffer, VkCullModeFlags))
+{
+	c->cmd = cmd;
+	c->set = set;
+	c->mask = set != NULL ? 3 : 0;
+	c->last = set != NULL ? ~0u : 0;
+}
+
+/* @cull: PsoCullIndex()'s */
+static INLINE void vk_pso_cull_set(vk_pso_cull *c, u32 cull)
+{
+	const u32 m = cull & c->mask;
+	if (m != c->last)
+	{
+		c->last = m;
+		c->set(c->cmd, (VkCullModeFlags)m);
+	}
+}
+
+#ifdef __cplusplus
+}
+
+/* The C++ renderers' view of the above, until they are C too */
+class PsoBuilder : public vk_pso_builder
+{
+public:
+	virtual ~PsoBuilder() {}
+	/* VK_NULL_HANDLE if it could not be made */
+	virtual VkPipeline BuildPipeline(u64 key, vk::PipelineCache cache) = 0;
+	int Generation() const { return vk_pso_builder_generation(this); }
+
+protected:
+	PsoBuilder()
+	{
+		build = Thunk;
+		retro_atomic_int_init(&generation, 0);
+	}
+	void NewGeneration() { vk_pso_builder_new_generation(this); }
+
+private:
+	/* (nothing thrown goes through the C worker) */
+	static VkPipeline Thunk(vk_pso_builder *self, u64 key, VkPipelineCache cache)
+	{
+		try
+		{
+			return static_cast<PsoBuilder *>(self)->BuildPipeline(key, vk::PipelineCache(cache));
+		}
+		catch (...)
+		{
+			WARN_LOG(RENDERER, "Vulkan: a pipeline could not be made\n");
+			return VK_NULL_HANDLE;
+		}
+	}
 };
+
+class PsoTable
+{
+public:
+	PsoTable() { t.slots = nullptr; t.owner = nullptr; t.mask = 0; t.used = 0; }
+	~PsoTable() { vk_pso_table_free(&t); }
+	void Init(u32 capacity, PsoBuilder *owner) { vk_pso_table_init(&t, capacity, owner); }
+	PsoSlot *Find(u64 key) const { return vk_pso_table_find(&t, key); }
+	PsoSlot *Insert(u64 key) { return vk_pso_table_insert(&t, key); }
+	void Clear(vk::Device device) { vk_pso_table_clear(&t, (VkDevice)device); }
+	u32 Used() const { return t.used; }
+	template<typename F>
+	void ForEach(F f) const
+	{
+		for (u32 i = 0; t.slots != nullptr && i <= t.mask; i++)
+			if (t.slots[i].owner)
+				f(t.slots[i]);
+	}
+
+private:
+	PsoTable(const PsoTable&);
+	PsoTable& operator=(const PsoTable&);
+	vk_pso_table t;
+};
+
+static inline VkPipeline PsoCreate(vk::Device device, vk::PipelineCache cache, const vk::GraphicsPipelineCreateInfo& info)
+{
+	return vk_pso_create((VkDevice)device, (VkPipelineCache)cache, reinterpret_cast<const VkGraphicsPipelineCreateInfo *>(&info));
+}
+
+static inline VkPipeline PsoCreateCompute(vk::Device device, vk::PipelineCache cache, const vk::ComputePipelineCreateInfo& info)
+{
+	return vk_pso_create_compute((VkDevice)device, (VkPipelineCache)cache, reinterpret_cast<const VkComputePipelineCreateInfo *>(&info));
+}
+
+class PsoKeyLog
+{
+public:
+	enum { CAPACITY = VK_PSO_KEYS_CAPACITY };
+	void Record(u32 who, u64 key) { vk_pso_keys_record(&k, who, key); }
+	template<typename F>
+	void ForEach(u32 who, F f) const
+	{
+		for (u32 i = 0; i < k.count; i++)
+			if ((k.keys[i] >> 60) == who)
+				f(k.keys[i] & ~(15ull << 60));
+	}
+
+	vk_pso_keys k;
+};
+
+class VkPsoWorker
+{
+public:
+	static VkPsoWorker& Instance() { static VkPsoWorker w; return w; }
+
+	bool Running() const { return vk_pso_worker_running(); }
+	void Request(PsoSlot *slot) { vk_pso_worker_request(slot); }
+	void Prefetch(PsoSlot *slot) { vk_pso_worker_prefetch(slot); }
+	void BuildSoon(PsoSlot *const *slots, u32 n, vk::PipelineCache cache) { vk_pso_worker_build_soon(slots, n, (VkPipelineCache)cache); }
+	void EndBatch(const PsoBuilder *owner) { vk_pso_worker_end_batch(owner); }
+	static VkPipeline Need(PsoSlot *slot) { return vk_pso_worker_need(slot); }
+	void WaitIdle() { vk_pso_worker_wait_idle(); }
+	void WaitBatch() { vk_pso_worker_wait_batch(); }
+	bool BatchReady() const { return vk_pso_worker_batch_ready(); }
+	static void Build(PsoSlot *slot, vk::PipelineCache cache) { vk_pso_worker_build(slot, (VkPipelineCache)cache); }
+	static void BuildSync(PsoSlot *slot, vk::PipelineCache cache) { vk_pso_worker_build_sync(slot, (VkPipelineCache)cache); }
+	u32 Built() const { return vk_pso_worker_built(); }
+	u32 SyncBuilt() const { return vk_pso_worker_sync_built(); }
+};
+
+static inline void PsoOwnDrop(PsoBuilder *owner, PsoSlot *slots, u32 n, vk::Device device)
+{
+	PsoOwnDrop(static_cast<vk_pso_builder *>(owner), slots, n, (VkDevice)device);
+}
+
+static inline VkPipeline PsoOwnMade(PsoSlot& slot, VkPipeline pipeline)
+{
+	return PsoOwnMade(&slot, pipeline);
+}
+
+static inline VkPipeline PsoGet(PsoSlot& slot)
+{
+	return vk_pso_get(&slot);
+}
+
+namespace pso_ext {
+enum : int
+{
+	DYNAMIC_STATE_CULL_MODE = VK_PSO_DYNAMIC_STATE_CULL_MODE,
+	DYNAMIC_STATE_PRIMITIVE_TOPOLOGY = VK_PSO_DYNAMIC_STATE_PRIMITIVE_TOPOLOGY,
+	DYNAMIC_STATE_DEPTH_TEST_ENABLE = VK_PSO_DYNAMIC_STATE_DEPTH_TEST_ENABLE,
+	DYNAMIC_STATE_DEPTH_WRITE_ENABLE = VK_PSO_DYNAMIC_STATE_DEPTH_WRITE_ENABLE,
+	DYNAMIC_STATE_DEPTH_COMPARE_OP = VK_PSO_DYNAMIC_STATE_DEPTH_COMPARE_OP,
+	DYNAMIC_STATE_STENCIL_TEST_ENABLE = VK_PSO_DYNAMIC_STATE_STENCIL_TEST_ENABLE,
+	DYNAMIC_STATE_STENCIL_OP = VK_PSO_DYNAMIC_STATE_STENCIL_OP,
+	DYNAMIC_STATE_COLOR_BLEND_ENABLE = VK_PSO_DYNAMIC_STATE_COLOR_BLEND_ENABLE,
+	DYNAMIC_STATE_COLOR_BLEND_EQUATION = VK_PSO_DYNAMIC_STATE_COLOR_BLEND_EQUATION,
+	DYNAMIC_STATE_COLOR_WRITE_MASK = VK_PSO_DYNAMIC_STATE_COLOR_WRITE_MASK,
+	STRUCTURE_TYPE_EDS_FEATURES = VK_PSO_STRUCTURE_TYPE_EDS_FEATURES,
+	STRUCTURE_TYPE_EDS3_FEATURES = VK_PSO_STRUCTURE_TYPE_EDS3_FEATURES,
+	STRUCTURE_TYPE_CACHE_CONTROL_FEATURES = VK_PSO_STRUCTURE_TYPE_CACHE_CONTROL_FEATURES,
+	PIPELINE_CACHE_CREATE_EXTERNALLY_SYNCHRONIZED = VK_PSO_PIPELINE_CACHE_CREATE_EXTERNALLY_SYNCHRONIZED,
+};
+typedef vk_pso_eds_features EdsFeatures;
+typedef vk_pso_eds3_features Eds3Features;
+typedef vk_pso_cache_control_features CacheControlFeatures;
+typedef vk_pso_blend_equation ColorBlendEquation;
+typedef vk_pso_dyn Functions;
+}
+
+class PsoCull
+{
+public:
+	PsoCull(vk::CommandBuffer cmd, void (VKAPI_PTR *set)(VkCommandBuffer, VkCullModeFlags))
+	{
+		vk_pso_cull_init(&c, (VkCommandBuffer)cmd, set);
+	}
+	/* @cull: PsoCullIndex()'s */
+	void Set(u32 cull) { vk_pso_cull_set(&c, cull); }
+
+private:
+	vk_pso_cull c;
+};
+#endif
+
+#endif

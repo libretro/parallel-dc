@@ -9,7 +9,7 @@
 #                                (rend/texdecode.h; vulkan/tex_decoder.cpp)
 #   core/rend/vulkan/raster_spv.inc
 #                                the raster renderers' shaders
-#                                (vulkan/shaders/; vulkan/shaders.cpp)
+#                                (vulkan/shaders/; vulkan/vk_shaders.c)
 #   core/rend/vulkan/compute_spv.inc
 #                                the compute renderer's kernels
 #                                (rend/tile/pvr_compute.h, after the shared

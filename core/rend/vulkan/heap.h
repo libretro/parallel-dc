@@ -15,15 +15,10 @@
     along with Flycast.  If not, see <https://www.gnu.org/licenses/>.
 */
 #pragma once
-#include "vulkan.h"
-#include "vk_heap.h"
+#include "vk_context.h"
 
-/* The renderer's device memory. The allocator itself is vk_heap.c, in C;
- * this is what the renderer's classes hold on to. */
-
-class VulkanHeap;
-
-/* A piece of device memory that goes back to the heap when this does. */
+/* The C++ renderers' view of the context's heap (vk_context.h), until
+ * they are C too */
 class Allocation
 {
 public:
@@ -48,11 +43,11 @@ public:
 	bool IsHostVisible() const {
 		return heap != nullptr && alloc.mapped != nullptr;
 	}
-	// The memory, mapped for the life of the allocation. NULL if it is not host visible.
+	/* The memory, mapped for the life of the allocation. NULL if it is not host visible. */
 	void *MapMemory() const {
 		return heap != nullptr ? alloc.mapped : nullptr;
 	}
-	// What kind of memory it is (VkMemoryPropertyFlags)
+	/* What kind of memory it is (VkMemoryPropertyFlags) */
 	VkMemoryPropertyFlags PropertyFlags() const {
 		return heap != nullptr ? heap->props.memoryTypes[heap->blocks[alloc.block].type].propertyFlags : 0;
 	}
@@ -69,44 +64,24 @@ private:
 class VulkanHeap
 {
 public:
-	void Init(vk::PhysicalDevice physicalDevice, vk::Device device);
-	void Term();
+	void TrimSoon() { vkc_heap_trim_soon(); }
 
-	/* What was large has become small - the renderer has changed size -
-	 * and what it had before goes back to the heap over the next frames,
-	 * as the frames that used it are done with. TrimSoon() is said then;
-	 * Frame(), called once a frame, gives the blocks that have come empty
-	 * back to the driver when those frames are long past, all but the
-	 * last of each kind. */
-	void TrimSoon() { trimIn = 32; }
-	void Frame()
+	Allocation AllocateForImage(vk::Image image, bool linear, bool hostVisible, bool transient = false)
 	{
-		if (trimIn != 0 && --trimIn == 0)
-			TrimSpare();
+		vk_heap_alloc_t alloc;
+		if (!vkc_heap_alloc_image((VkImage)image, linear, hostVisible, transient, &alloc))
+			throwResultException((vk::Result)vkc_heap_error(), "vk_heap_alloc failed");
+		return Allocation(&vkc.heap, alloc);
 	}
 
-	/* Memory for an image, bound to it. With hostVisible it is memory the
-	 * CPU writes the image into; otherwise it is on the device. linear is
-	 * the image's tiling. transient is an attachment that never needs
-	 * backing memory if the device can do without. */
-	Allocation AllocateForImage(vk::Image image, bool linear, bool hostVisible, bool transient = false);
+	Allocation AllocateForBuffer(vk::Buffer buffer, bool hostVisible, bool readBack)
+	{
+		vk_heap_alloc_t alloc;
+		if (!vkc_heap_alloc_buffer((VkBuffer)buffer, hostVisible, readBack, &alloc))
+			throwResultException((vk::Result)vkc_heap_error(), "vk_heap_alloc failed");
+		return Allocation(&vkc.heap, alloc);
+	}
 
-	/* Memory for a buffer, bound to it. With hostVisible the CPU writes
-	 * it, or reads it back when readBack is set; otherwise it is on the
-	 * device. */
-	Allocation AllocateForBuffer(vk::Buffer buffer, bool hostVisible, bool readBack);
-
-	// the heap itself, for what allocates from it in C (hdr_encode_vk.c)
-	vk_heap_t *Raw() { return &heap; }
-
-private:
-	void TrimSpare();
-	vk::Result AllocError() const;
-	Allocation Allocate(const vk::MemoryRequirements& requirements, VkMemoryPropertyFlags required,
-			VkMemoryPropertyFlags preferred, bool linear);
-
-	vk_heap_t heap;
-	vk::Device device;
-	bool ready = false;
-	u32 trimIn = 0;		// frames until the trim, 0 if none is due
+	/* the heap itself, for what allocates from it in C */
+	vk_heap_t *Raw() { return &vkc.heap; }
 };

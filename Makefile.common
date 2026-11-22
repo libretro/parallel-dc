@@ -250,19 +250,18 @@ ifeq ($(HAVE_VULKAN), 1)
 	SOURCES_C += $(LIBRETRO_COMM_DIR)/vulkan/vulkan_symbol_wrapper.c \
 					$(CORE_DIR)/core/rend/vulkan/vk_heap.c \
 					$(CORE_DIR)/core/rend/vulkan/parse_arena_vk.c \
-					$(CORE_DIR)/core/rend/vulkan/hdr_encode_vk.c
+					$(CORE_DIR)/core/rend/vulkan/hdr_encode_vk.c \
+					$(CORE_DIR)/core/rend/vulkan/vk_context.c \
+					$(CORE_DIR)/core/rend/vulkan/vk_pso.c \
+					$(CORE_DIR)/core/rend/vulkan/vk_shaders.c
 	SOURCES_CXX += \
-					$(CORE_DIR)/core/rend/vulkan/vulkan_context.cpp \
-					$(CORE_DIR)/core/rend/vulkan/heap.cpp \
 					$(CORE_DIR)/core/rend/vulkan/buffer.cpp \
 					$(CORE_DIR)/core/rend/vulkan/drawer.cpp \
 					$(CORE_DIR)/core/rend/vulkan/motion_pass.cpp \
 					$(CORE_DIR)/core/rend/vulkan/writeout.cpp \
 					$(CORE_DIR)/core/rend/vulkan/rtt_read.cpp \
 					$(CORE_DIR)/core/rend/vulkan/pipeline.cpp \
-					$(CORE_DIR)/core/rend/vulkan/pso.cpp \
 					$(CORE_DIR)/core/rend/vulkan/quad.cpp \
-					$(CORE_DIR)/core/rend/vulkan/shaders.cpp \
 					$(CORE_DIR)/core/rend/vulkan/texture.cpp \
 					$(CORE_DIR)/core/rend/vulkan/tex_decoder.cpp \
 					$(CORE_DIR)/core/rend/vulkan/ta_decoder.cpp \

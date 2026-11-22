@@ -19,258 +19,126 @@
     along with Flycast.  If not, see <https://www.gnu.org/licenses/>.
 */
 #pragma once
-#include "vulkan.h"
+#include "vk_context.h"
 #include "heap.h"
 #include "quad.h"
 #include "rend/TexCache.h"
-#include "rend/vram_budget.h"
-#include "libretro_vulkan.h"
-#include "pso.h"
-#include "hdr_encode_vk.h"
 
-extern "C" int screen_width, screen_height;
-
-class CommandPool;
-
-#define VENDOR_AMD 0x1022
-#define VENDOR_ARM 0x13B5
-#define VENDOR_INTEL 0x8086
-#define VENDOR_NVIDIA 0x10DE
-#define VENDOR_QUALCOMM 0x5143
-
+/* The C++ renderers' view of the context (vk_context.h), until they are C
+ * too: what they called it by, on the one there is */
 class VulkanContext
 {
 public:
-	VulkanContext() { verify(contextInstance == nullptr); contextInstance = this; }
-	~VulkanContext() { verify(contextInstance == this); contextInstance = nullptr; }
+	static VulkanContext *Instance() { return reinterpret_cast<VulkanContext *>(&vkc); }
 
-	bool Init(retro_hw_render_interface_vulkan *render_if);
-	void Term();
-
-	u32 GetGraphicsQueueFamilyIndex() const { return retro_render_if->queue_index; }
-	void SetWindowSize(u32 width, u32 height) { this->width = screen_width = width; this->height = screen_height = height; }
+	u32 GetGraphicsQueueFamilyIndex() const { return vkc.iface->queue_index; }
 	/* @hdr: the image is the HDR output's (HdrEncode(), the HDR subpass) */
-	void PresentFrame(vk::Image image, vk::ImageView imageView, vk::Offset2D extent, bool hdr = false);
-	/* the size of the picture last handed over (@extent of PresentFrame()),
-	 * as the frontend is told it: a framebuffer read from the game's memory
-	 * is handed over at its own size; 0 x 0 before the first */
-	u32 PresentedWidth() const { return presentedWidth; }
-	u32 PresentedHeight() const { return presentedHeight; }
-
-	/* ---- The HDR output (Color Format; hdr_encode_vk.h) ----
-	 * Recorded into the frame's command buffers, from the frame's command
-	 * pool, and submitted with them: nothing of its own is submitted. */
-	bool HdrActive() const { return hdr != nullptr; }
-	// the HDR output's post effects on: its encode a pass of its own (hdr_vk_post_active())
-	bool HdrPostActive() const;
-	vk::Format GetHdrFormat() const { return (vk::Format)hdrFormat; }
-	/* The frame's transform, from a command buffer of @pool's this frame,
-	 * outside a render pass: before the render pass whose last subpass
-	 * encodes (HdrSubpassDraw()) */
-	void HdrPrepare(CommandPool& pool, vk::CommandBuffer cmd);
-	/* The encode as subpass @subpass of @renderPass: the picture its input
-	 * attachment 0, the HDR image its colour attachment 0 */
-	// (@samples: SSAA's, above 1 when the subpass also has them as its input attachment 1)
-	vk::UniquePipeline HdrSubpassPipeline(vk::RenderPass renderPass, u32 subpass, u32 samples = 1);
-	// (@samples: those the picture was resolved from, with such a pipeline; null without)
-	void HdrSubpassDraw(CommandPool& pool, vk::CommandBuffer cmd, vk::Pipeline pipeline, vk::ImageView picture,
-			vk::ImageView samples, vk::Extent2D extent);
-	/* The picture (@image, @view, shader-readable, @size) encoded in a pass
-	 * of its own, in a command buffer of @pool's, before the pool's
-	 * EndFrame(); @image and @view become the HDR image's. False, both as
-	 * they were, without the HDR output or when it could not be.
-	 * @sums: the channel sums of the samples the picture was resolved
-	 * from (hdr_vk_encode()'s: the per-pixel renderer's, OITBuffers, and
-	 * the compute renderer's), after HdrSumsReady() */
-	bool HdrEncode(CommandPool& pool, vk::Image& image, vk::ImageView& view, vk::Extent2D size,
-			vk::ImageView sums = vk::ImageView());
-	/* The HDR output, and HdrEncode() able to take the channel sums: made
-	 * ready, before the frames */
-	bool HdrSumsReady();
-
-	vk::PhysicalDevice GetPhysicalDevice() const { return physicalDevice; }
-	vk::Device GetDevice() const { return device; }
-	vk::PipelineCache GetPipelineCache() const { return pipelineCache; }
-	vk::DescriptorPool GetDescriptorPool() const { return *descriptorPool; }
-	vk::Extent2D GetViewPort() const { return { width, height }; }
-	/* How many frames the renderer keeps in its rings (command pools,
-	 * buffers, attachments), as the frontend's swap chain was when the
-	 * context was made. The frontend can make its chain longer later (when
-	 * fast-forward changes how it presents): the rings were made at this
-	 * size and stay at it. What is kept per frontend frame index
-	 * (GetCurrentImageIndex) grows with the index instead. */
-	int GetSwapChainSize() const { return swapChainSize; }
-	int GetCurrentImageIndex() const { return retro_render_if->get_sync_index(retro_render_if->handle); }
-	// FIXME that's not quite correct
-	void WaitIdle() const { retro_render_if->wait_sync_index(retro_render_if->handle); }
-	/* Before the pictures handed to the frontend are destroyed: when the
-	 * renderer is taken down (another one, or the context going) */
-	void ReleasePicture();
-	/* Everything submitted to the queue the frontend and the core share
-	 * done: for a renderer taken down or resized, never in a frame */
-	void WaitQueueIdle();
-	void SubmitCommandBuffers(u32 bufferCount, vk::CommandBuffer *buffers, vk::Fence fence) {
-		retro_render_if->lock_queue(retro_render_if->handle);
-		queue.submit(vk::SubmitInfo(0, nullptr, nullptr, bufferCount, buffers, 0, nullptr), fence);
-		retro_render_if->unlock_queue(retro_render_if->handle);
-	}
-	vk::DeviceSize GetUniformBufferAlignment() const { return uniformBufferAlignment; }
-	vk::DeviceSize GetStorageBufferAlignment() const { return storageBufferAlignment; }
-	bool IsFormatSupported(TextureType textureType)
+	void PresentFrame(vk::Image image, vk::ImageView imageView, vk::Offset2D extent, bool hdr = false)
 	{
-		switch (textureType)
+		vkc_present_frame((VkImage)image, (VkImageView)imageView, extent.x, extent.y, hdr);
+	}
+
+	bool HdrActive() const { return vkc.hdr != nullptr; }
+	bool HdrPostActive() const { return vkc_hdr_post_active(); }
+	vk::Format GetHdrFormat() const { return (vk::Format)vkc.hdrFormat; }
+	/* the HDR output's work of the frame, before any of it is encoded
+	 * (HdrSubpassDraw()); @pool a CommandPool */
+	template<typename Pool>
+	void HdrPrepare(Pool& pool, vk::CommandBuffer cmd)
+	{
+		vkc_hdr_prepare(&pool, (unsigned)pool.GetIndex(), pool.GetFrames(), (VkCommandBuffer)cmd);
+	}
+	vk::UniquePipeline HdrSubpassPipeline(vk::RenderPass renderPass, u32 subpass, u32 samples = 1)
+	{
+		if (vkc.hdr == nullptr)
+			return vk::UniquePipeline();
+		return vk::UniquePipeline(vk::Pipeline(vkc_hdr_subpass_pipeline((VkRenderPass)renderPass, subpass, samples)),
+				vk::ObjectDestroy<vk::Device, vk::DispatchLoaderStatic>(vk::Device(vkc.device)));
+	}
+	template<typename Pool>
+	void HdrSubpassDraw(Pool& pool, vk::CommandBuffer cmd, vk::Pipeline pipeline, vk::ImageView picture,
+			vk::ImageView samples, vk::Extent2D extent)
+	{
+		vkc_hdr_subpass_draw(&pool, (unsigned)pool.GetIndex(), (VkCommandBuffer)cmd, (VkPipeline)pipeline,
+				(VkImageView)picture, (VkImageView)samples, extent.width, extent.height);
+	}
+	/* The picture encoded into the HDR output's image, in a command buffer
+	 * of @pool's: @image and @view then that image's. False with no HDR
+	 * output. @sums: the channel sums the picture's samples were resolved
+	 * to (the compute renderer's), after HdrSumsReady() */
+	template<typename Pool>
+	bool HdrEncode(Pool& pool, vk::Image& image, vk::ImageView& view, vk::Extent2D size,
+			vk::ImageView sums = vk::ImageView())
+	{
+		if (vkc.hdr == nullptr)
+			return false;
+		VkImage i = (VkImage)image;
+		VkImageView v = (VkImageView)view;
+		vk::CommandBuffer cmd = pool.Allocate();
+		cmd.begin(vk::CommandBufferBeginInfo(vk::CommandBufferUsageFlagBits::eOneTimeSubmit));
+		const bool done = vkc_hdr_encode(&pool, (unsigned)pool.GetIndex(), pool.GetFrames(), (VkCommandBuffer)cmd,
+				&i, &v, size.width, size.height, (VkImageView)sums);
+		cmd.end();
+		if (done)
 		{
-		case TextureType::_4444:
-			return optimalTilingSupported4444;
-		case TextureType::_565:
-			return optimalTilingSupported565;
-		case TextureType::_5551:
-			return optimalTilingSupported1555;
-		default:
-			return true;
+			image = vk::Image(i);
+			view = vk::ImageView(v);
 		}
+		return done;
 	}
-	std::string GetDriverName() const { vk::PhysicalDeviceProperties props; physicalDevice.getProperties(&props); return props.deviceName; }
-	std::string GetDriverVersion() const {
-		vk::PhysicalDeviceProperties props;
-		physicalDevice.getProperties(&props);
+	/* The HDR output, and HdrEncode() able to take the channel sums: made
+	 * once the output has had a frame */
+	bool HdrSumsReady() { return vkc_hdr_sums_ready(); }
 
-		return std::to_string(VK_VERSION_MAJOR(props.driverVersion))
-			+ "." + std::to_string(VK_VERSION_MINOR(props.driverVersion))
-			+ "." + std::to_string(VK_VERSION_PATCH(props.driverVersion));
+	vk::PhysicalDevice GetPhysicalDevice() const { return vk::PhysicalDevice(vkc.gpu); }
+	vk::Device GetDevice() const { return vk::Device(vkc.device); }
+	vk::PipelineCache GetPipelineCache() const { return vk::PipelineCache(vkc.pipelineCache); }
+	vk::DescriptorPool GetDescriptorPool() const { return vk::DescriptorPool(vkc.descriptorPool); }
+	vk::Extent2D GetViewPort() const { return vk::Extent2D(vkc.width, vkc.height); }
+	int GetSwapChainSize() const { return vkc.swapChainSize; }
+	int GetCurrentImageIndex() const { return vkc_current_image_index(); }
+	void WaitIdle() const { vkc.iface->wait_sync_index(vkc.iface->handle); }
+	void ReleasePicture() { vkc_release_picture(); }
+	void WaitQueueIdle() { vkc_wait_queue_idle(); }
+	void SubmitCommandBuffers(u32 bufferCount, vk::CommandBuffer *buffers, vk::Fence fence)
+	{
+		vkc_submit(bufferCount, reinterpret_cast<const VkCommandBuffer *>(buffers), (VkFence)fence);
 	}
-	vk::Format GetColorFormat() const { return colorFormat; }
-	vk::Format GetDepthFormat() const { return depthFormat; }
-	static VulkanContext *Instance() { return contextInstance; }
-	bool SupportsSamplerAnisotropy() const { return samplerAnisotropy; }
-	bool SupportsShaderInt64() const { return shaderInt64; }
-	bool SupportsSampledImageArrayIndexing() const { return sampledImageArrayIndexing; }
-	bool SupportsNonUniformTextureIndexing() const { return nonUniformTextureIndexing; }
-	bool SupportsSubgroupBallotCompute() const { return subgroupBallotCompute; }
-	bool SupportsStorageImageExtendedFormats() const { return storageImageExtendedFormats; }
-	u32 GetApiVersion() const { return apiVersion; }
-	bool SupportsDedicatedAllocation() const { return dedicatedAllocationSupported; }
-	VulkanHeap& GetHeap() { return heap; }
-	vk::DeviceSize GetMaxMemoryAllocationSize() const { return maxMemoryAllocationSize; }
-	u32 GetMaxStorageBufferRange() const { return maxStorageBufferRange; }
-	f32 GetMaxSamplerAnisotropy() const { return samplerAnisotropy ? maxSamplerAnisotropy : 1.f; }
-	u32 GetVendorID() const { return vendorID; }
-	// what video memory there was to use when the context was set up
-	const VramBudget& GetVramBudget() const { return vramBudget; }
-	/* Indirect draws, as the device was made with them: several draws in
-	 * one (the most a call can take), firstInstance in their arguments, and
-	 * the count read from a buffer (vkCmdDrawIndexedIndirectCountKHR(),
-	 * null without it) */
-	bool SupportsMultiDrawIndirect() const { return multiDrawIndirect; }
-	u32 GetMaxDrawIndirectCount() const { return multiDrawIndirect ? maxDrawIndirectCount : 1; }
-	bool SupportsDrawIndirectFirstInstance() const { return drawIndirectFirstInstance; }
-	PFN_vkCmdDrawIndexedIndirectCountKHR GetDrawIndexedIndirectCount() const { return cmdDrawIndexedIndirectCount; }
-	/* SSAA: the samples a pixel gets of the @requested, at most what the
-	 * device can draw with, and what fits in the video memory budget with
-	 * @perSampleKib for each sample after @fixedKib of other pools - none
-	 * where the attachments are @transient and the device has memory that
-	 * is only backed when used; 1 for none. One line in the log, for @what. */
-	u32 SsaaSamples(u32 requested, u32 perSampleKib, u32 fixedKib, bool transient, const char *what) const;
-	// bytes a pixel of the depth and stencil attachments, at most
-	u32 GetDepthBytes() const;
-	bool HasLazyMemory() const { return lazyMemory; }
-	/* The video memory budget read again, and logged: what is in use now */
-	void LogVramUsage() { QueryVramBudget(); }
-	/* The dynamic states the general pipelines are drawn with, as the
-	 * device was made with them (pso.h) */
-	const pso_ext::Functions& DynamicState() const { return dynamicState; }
-	// the keys of the pipelines made, kept with the pipeline cache
-	PsoKeyLog& PsoKeys() { return psoKeys; }
-	/* The pipeline cache written to the system directory, with the
-	 * worker's merged in, if pipelines were made since it last was */
-	void SavePipelineCache();
+	vk::DeviceSize GetUniformBufferAlignment() const { return vkc.uniformBufferAlignment; }
+	vk::DeviceSize GetStorageBufferAlignment() const { return vkc.storageBufferAlignment; }
+	bool IsFormatSupported(TextureType textureType) { return vkc_format_supported((int)textureType); }
+	vk::Format GetColorFormat() const { return (vk::Format)vkc.colorFormat; }
+	vk::Format GetDepthFormat() const { return (vk::Format)vkc.depthFormat; }
+	bool SupportsSamplerAnisotropy() const { return vkc.samplerAnisotropy; }
+	bool SupportsShaderInt64() const { return vkc.shaderInt64; }
+	bool SupportsSampledImageArrayIndexing() const { return vkc.sampledImageArrayIndexing; }
+	bool SupportsNonUniformTextureIndexing() const { return vkc.nonUniformTextureIndexing; }
+	bool SupportsSubgroupBallotCompute() const { return vkc.subgroupBallotCompute; }
+	bool SupportsStorageImageExtendedFormats() const { return vkc.storageImageExtendedFormats; }
+	bool SupportsPostDepthCoverage() const { return vkc.postDepthCoverage; }
+	u32 GetApiVersion() const { return vkc.apiVersion; }
+	bool SupportsDedicatedAllocation() const { return vkc.dedicatedAllocationSupported; }
+	VulkanHeap& GetHeap() { static VulkanHeap heap; return heap; }
+	vk::DeviceSize GetMaxMemoryAllocationSize() const { return vkc.maxMemoryAllocationSize; }
+	u32 GetMaxStorageBufferRange() const { return vkc.maxStorageBufferRange; }
+	f32 GetMaxSamplerAnisotropy() const { return vkc.samplerAnisotropy ? vkc.maxSamplerAnisotropy : 1.f; }
+	u32 GetVendorID() const { return vkc.vendorID; }
+	const VramBudget& GetVramBudget() const { return vkc.vramBudget; }
+	bool SupportsMultiDrawIndirect() const { return vkc.multiDrawIndirect; }
+	u32 GetMaxDrawIndirectCount() const { return vkc.multiDrawIndirect ? vkc.maxDrawIndirectCount : 1; }
+	bool SupportsDrawIndirectFirstInstance() const { return vkc.drawIndirectFirstInstance; }
+	PFN_vkCmdDrawIndexedIndirectCountKHR GetDrawIndexedIndirectCount() const { return vkc.cmdDrawIndexedIndirectCount; }
+	u32 SsaaSamples(u32 requested, u32 perSampleKib, u32 fixedKib, bool transient, const char *what) const
+	{
+		return vkc_ssaa_samples(requested, perSampleKib, fixedKib, transient, what);
+	}
+	u32 GetDepthBytes() const { return vkc_depth_bytes(); }
+	bool HasLazyMemory() const { return vkc.lazyMemory; }
+	void LogVramUsage() { vkc_log_vram_usage(); }
+	const pso_ext::Functions& DynamicState() const { return vkc.dynamicState; }
+	PsoKeyLog& PsoKeys() { return *reinterpret_cast<PsoKeyLog *>(&vkc.psoKeys); }
+	void SavePipelineCache() { vkc_save_pipeline_cache(); }
 
 private:
-	vk::Format FindDepthFormat();
-	void QueryVramBudget();
-
-	VulkanHeap heap;
-	int swapChainSize = 1;
-	u32 width = 0;
-	u32 height = 0;
-
-	vk::DeviceSize uniformBufferAlignment = 0;
-	vk::DeviceSize storageBufferAlignment = 0;
-	u32 maxStorageBufferRange = 0;
-	vk::DeviceSize maxMemoryAllocationSize = 0;
-	bool optimalTilingSupported565 = false;
-	bool optimalTilingSupported1555 = false;
-	bool optimalTilingSupported4444 = false;
-public:
-	bool samplerAnisotropy = false;
-	/* 16- and 8-bit storage images (R16_UINT, R8_UINT), for texture decoding:
-	 * enabled on the device when the core made it and the GPU has them */
-	bool storageImageExtendedFormats = false;
-	f32 maxSamplerAnisotropy = 0.f;
-	bool dedicatedAllocationSupported = false;
-	/* enabled on the device when the core made it and the GPU has them;
-	 * a device the frontend made has none of them */
-	bool multiDrawIndirect = false;
-	bool drawIndirectFirstInstance = false;
-	bool drawIndirectCount = false;		// VK_KHR_draw_indirect_count
-	bool sampleRateShading = false;
-	bool postDepthCoverage = false;		// VK_EXT_post_depth_coverage: SSAA's per-pixel lists (vulkan/shaders/oit_sample_depth.glsl)
-	bool shaderInt64 = false;		// enabled on the device when it has it
-	bool sampledImageArrayIndexing = false;	// ...and this, shaderSampledImageArrayDynamicIndexing
-	bool nonUniformTextureIndexing = false;	// ...and shaderSampledImageArrayNonUniformIndexing (VK_EXT_descriptor_indexing)
-	bool subgroupBallotCompute = false;	// Vulkan 1.1's subgroup ballot in compute shaders
-	/* VK_EXT_extended_dynamic_state and _state3 (pso.h), and
-	 * VK_EXT_pipeline_creation_cache_control: caches without a lock */
-	bool extendedDynamicState = false;
-	bool extendedDynamicState3 = false;
-	bool pipelineCacheControl = false;
-private:
-	void LoadPipelineCache();
-	pso_ext::Functions dynamicState = {};
-	PsoKeyLog psoKeys;
-	u32 savedBuilt = 0;
-	u32 maxDrawIndirectCount = 1;
-	PFN_vkCmdDrawIndexedIndirectCountKHR cmdDrawIndexedIndirectCount = nullptr;
-	u32 vendorID = 0;
-	u32 apiVersion = 0;	// the device's
-	VramBudget vramBudget;
-	u32 ssaaSampleCounts = 1;	// VkSampleCountFlags
-	bool lazyMemory = false;
-	vk::Format colorFormat = vk::Format::eR8G8B8A8Unorm;
-
-	vk::UniqueDescriptorPool descriptorPool;
-
-	vk::Format depthFormat = vk::Format::eUndefined;
-
-	vk::PipelineCache pipelineCache;
-
-	retro_hw_render_interface_vulkan *retro_render_if = nullptr;
-	vk::Instance instance;
-	vk::PhysicalDevice physicalDevice;
-	vk::Device device;
-	vk::Queue queue;
-
-	retro_vulkan_image retro_image;
-	u32 presentedWidth = 0;
-	u32 presentedHeight = 0;
-	/* the HDR output (Color Format), when the frontend took it: what every
-	 * picture is encoded through on the way to the frontend */
-	hdr_vk_t *hdr = nullptr;
-	VkFormat hdrFormat = VK_FORMAT_UNDEFINED;
-	// the command pools the encode has kept a frame's things by, a ring each
-	CommandPool *hdrPools[4] = {};
-	u32 HdrRing(CommandPool& pool);
-
-	static VulkanContext *contextInstance;
+	VulkanContext();
 };
-
-const VkApplicationInfo* VkGetApplicationInfo();
-bool VkCreateDevice(retro_vulkan_context* context, VkInstance instance, VkPhysicalDevice gpu,
-                         VkSurfaceKHR surface, PFN_vkGetInstanceProcAddr get_instance_proc_addr,
-                         const char** required_device_extensions,
-                         unsigned num_required_device_extensions,
-                         const char** required_device_layers, unsigned num_required_device_layers,
-                         const VkPhysicalDeviceFeatures* required_features);
-bool VkCreateDevice2(retro_vulkan_context* context, VkInstance instance, VkPhysicalDevice gpu,
-                         VkSurfaceKHR surface, PFN_vkGetInstanceProcAddr get_instance_proc_addr,
-                         retro_vulkan_create_device_wrapper_t create_device_wrapper, void *opaque);
