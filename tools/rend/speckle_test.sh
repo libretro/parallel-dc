@@ -42,7 +42,7 @@
 #        again with RACE_TEST, which records the draws between two
 #        barriers a triangle at a time, the draws' triangles taken in turn
 #        (vulkan/oit/oit_drawer.cpp, gl4/abuffer.c, dx12/oit/
-#        dx12_oitrenderer.cpp: ListDraws), as a GPU may run them, and the
+#        dx12_oitrenderer.c: list_draws_*()), as a GPU may run them, and the
 #        picture it draws has to be the same, byte for byte, as the core's
 #        own - with Vulkan (lavapipe) and OpenGL 4 (llvmpipe), per-pixel
 #        sorting, TA processing on the CPU and on the GPU, SSAA off and at
@@ -76,7 +76,7 @@ done
 for f in $R/gles/*.c $R/gl4/*.c; do
    grep -Eq 'gl_FragDepth *=' "$f" && bad "$f writes gl_FragDepth"
 done
-for f in $R/dx11/*.cpp $R/dx11/oit/*.cpp $R/dx12/shaders/*.hlsl; do
+for f in $R/dx11/*.c $R/dx11/oit/*.c $R/dx12/shaders/*.hlsl; do
    [ -f "$f" ] || continue
    grep -Eq ':[[:space:]]*SV_Depth' "$f" && bad "$f writes SV_Depth"
 done
@@ -126,7 +126,7 @@ closing() {
 }
 closing $R/vulkan/oit/oit_drawer.cpp 'GetTrModifierVolumePipeline[(]mv_mode == 1' Vulkan
 closing $R/gl4/abuffer.c 'g_abuffer_tr_modvol_shaders[[]mv_mode == 1' "OpenGL 4"
-closing $R/dx12/oit/dx12_oitrenderer.cpp 'DX12_OF_MV_INCLUSION : DX12_OF_MV_EXCLUSION' "Direct3D 12"
+closing $R/dx12/oit/dx12_oitrenderer.c 'DX12_OF_MV_INCLUSION : DX12_OF_MV_EXCLUSION' "Direct3D 12"
 
 # ---- 3. the picture the frontend reads, in the sources ------------------
 # (the screen's render pass clears and draws into an image the frontend was

@@ -340,6 +340,4 @@ static INLINE ID3D12PipelineState *dx12_pso_get(const DX12PsoKey *key)
 
 #ifdef __cplusplus
 }
-/* (a key made by a call, packed: the C++ renderers') */
-static inline const DX12PsoKey *dx12_pso_key_ref(const DX12PsoKey& key) { return &key; }
 #endif

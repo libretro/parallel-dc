@@ -51,7 +51,7 @@
 
 #ifdef __cplusplus
 /* (the calls the inline setters below make, as C has them, for the C++
- * that includes this: the renderers not yet C) */
+ * that includes this: core/libretro/lr_contexts.cpp) */
 #define IUnknown_AddRef(This) (This)->AddRef()
 #define IUnknown_Release(This) (This)->Release()
 #define ID3D12GraphicsCommandList_SetPipelineState(This, a) (This)->SetPipelineState(a)
@@ -79,9 +79,6 @@ typedef struct dx12_image
 	u32 rtv;		/* in the render target heap, if it has one */
 	u32 width;
 	u32 height;
-#ifdef __cplusplus
-	dx12_image() : resource(nullptr), state(D3D12_RESOURCE_STATE_COMMON), srv(~0u), rtv(~0u), width(0), height(0) { }
-#endif
 } dx12_image;
 
 /* An image with nothing: no resource, no places */
@@ -584,20 +581,5 @@ bool dx12_make_texture(ID3D12Device *device, u32 width, u32 height, u32 levels, 
 D3D12_RESOURCE_DESC dx12_resource_desc(ID3D12Resource *resource);
 
 #ifdef __cplusplus
-}
-/* (the C++ renderers' names for them) */
-typedef dx12_image DX12Image;
-typedef dx12_upload DX12Upload;
-/* (and the C++ renderers' way of making one: into a pointer they hold) */
-static inline bool dx12_make_texture(ID3D12Device *device, u32 width, u32 height, u32 levels, DXGI_FORMAT format,
-		D3D12_RESOURCE_FLAGS flags, D3D12_RESOURCE_STATES state, ID3D12Resource *&out, const D3D12_CLEAR_VALUE *clear = nullptr)
-{
-	return dx12_make_texture(device, width, height, levels, format, flags, state, &out, clear);
-}
-template<typename P>
-static inline bool dx12_make_texture(ID3D12Device *device, u32 width, u32 height, u32 levels, DXGI_FORMAT format,
-		D3D12_RESOURCE_FLAGS flags, D3D12_RESOURCE_STATES state, P& out, const D3D12_CLEAR_VALUE *clear = nullptr)
-{
-	return dx12_make_texture(device, width, height, levels, format, flags, state, out.put(), clear);
 }
 #endif

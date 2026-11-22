@@ -47,8 +47,8 @@
  *   per-pixel renderer (never waited for).
  * - A render to a texture is drawn the same way, at one sample a pixel as
  *   the per-pixel renderer draws it, into the very texture that renderer
- *   would have drawn it in (DX12Renderer::BeginRTT(), whose pool's
- *   pictures are made for unordered access then): the size of the frame
+ *   would have drawn it in (dx12r_begin_rtt(), whose pool's pictures are
+ *   made for unordered access then): the size of the frame
  *   from its first pixel to the pixel clip's last, in powers of two, times
  *   Render To Texture Upscaling, cleared outside the clip. Its bins are made
  *   for the largest such texture.
