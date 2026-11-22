@@ -2478,6 +2478,20 @@ void ngen_Compile(RuntimeBlockInfo* block, bool force_checks, bool reset, bool s
 {
 	(void)reset;
 	(void)staging;
+	/* The main loop and its routines, gone with the cache (ngen_ResetBlocks()),
+	 * are made again before the first block after it, in the main cache even
+	 * for a temporary block. They go where they were and, with the MMU as it
+	 * was, come out the same: the code still to return into them finds them. */
+	if (mainloop == NULL)
+	{
+		u32 *const temp_ptr = emit_ptr;
+		u32 *const temp_limit = emit_ptr_limit;
+		emit_ptr = NULL;
+		emit_ptr_limit = NULL;
+		generate_mainloop();
+		emit_ptr = temp_ptr;
+		emit_ptr_limit = temp_limit;
+	}
 	verify(emit_FreeSpace() >= CODE_MARGIN);
 
 	vmem_jit_write_begin();
