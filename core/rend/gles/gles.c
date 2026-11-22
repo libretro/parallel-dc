@@ -968,7 +968,8 @@ void findGLVersion(void)
 		if (gl.gl_major >= 3)
 		{
 			gl.gl_version = "GL3";
-			gl.glsl_version_header = "#version 130";
+			/* GLSL 1.50 from 3.2 up: a core profile (macOS) refuses 1.30 */
+			gl.glsl_version_header = (gl.gl_major > 3 || gl.gl_minor >= 2) ? "#version 150" : "#version 130";
 			gl.single_channel_format = GL_RED;
 			gl.single_channel_internal = GL_RED;
 		}
