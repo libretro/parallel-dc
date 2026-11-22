@@ -722,6 +722,9 @@ else ifneq (,$(findstring osx,$(platform)))
 	SINGLE_PREC_FLAGS=1
 	PLATCFLAGS += -D__MACOSX__ -DOSX
 	GL_LIB := -framework OpenGL
+	ifneq ($(HAVE_GL2), 1)
+		HAVE_GL3 = 1
+	endif
 	PLATFORM_EXT := unix
 	# Vulkan through the frontend's MoltenVK
 	HAVE_VULKAN = 1
