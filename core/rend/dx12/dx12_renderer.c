@@ -347,6 +347,7 @@ bool dx12r_init(const dx12_renderer_kind *kind, bool storage)
 		size_t room[PARSE_ARENA_PARTS];
 		tactx_arena_rooms(room);
 		dx12r.arena_missed = false;
+		dx12r.arena_here = dx12r.arena_busy = dx12r.arena_other = 0;
 		if (parse_arena_d3d12_init(&dx12r.parse_arena, device, dx12c.fence, room, 4))
 			NOTICE_LOG(RENDERER, "DX12: renders parsed where the card reads them, not copied there\n");
 		else
@@ -421,6 +422,9 @@ void dx12r_term(void)
 	dx12_ta_term();
 	let_go(&dx12r.gpu_vtx_constants);
 	dx12r.gpu_vtx_constants_state = D3D12_RESOURCE_STATE_COPY_DEST;
+	if (dx12r.parse_arena.ready)
+		NOTICE_LOG(RENDERER, "DX12: %u renders parsed where the card reads them, %u copied there with no slice free, %u copied otherwise\n",
+				dx12r.arena_here, dx12r.arena_busy, dx12r.arena_other);
 	/* (let go once the frames drawn from it are done) */
 	parse_arena_d3d12_term(&dx12r.parse_arena, release_later, NULL);
 	dx12_overlay_term();
@@ -681,12 +685,22 @@ static bool process_locked(TA_context *ctx)
 		 * polygon's four vertices FillBGP() wrote, at the head of the list
 		 * the parse empties and takes them back in) */
 		ta_list_t *lists[PARSE_ARENA_PARTS];
+		int attached;
 		tactx_arena_lists(ctx, lists);
-		if (!parse_arena_d3d12_attach(&dx12r.parse_arena, lists, 4 * sizeof(Vertex)) && dx12r.parse_arena.ready && !dx12r.arena_missed)
+		attached = parse_arena_d3d12_attach(&dx12r.parse_arena, lists, 4 * sizeof(Vertex));
+		if (attached > 0)
+			dx12r.arena_here++;
+		else if (attached < 0)
 		{
-			dx12r.arena_missed = true;
-			NOTICE_LOG(RENDERER, "DX12: a render copied to the card, no slice of the parse's free\n");
+			dx12r.arena_busy++;
+			if (!dx12r.arena_missed)
+			{
+				dx12r.arena_missed = true;
+				NOTICE_LOG(RENDERER, "DX12: a render copied to the card, no slice of the parse's free\n");
+			}
 		}
+		else if (dx12r.parse_arena.ready && dx12r.arena_other++ == 0)
+			NOTICE_LOG(RENDERER, "DX12: a render copied to the card, its lists not of the parse's rooms\n");
 		result = ta_parse_vdrc(ctx);
 		if (!result)
 			parse_arena_d3d12_cancel(&dx12r.parse_arena);

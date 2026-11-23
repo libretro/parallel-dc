@@ -206,6 +206,9 @@ typedef struct dx12_renderer
 	 * machine whose memory is the processor's (parse_arena_d3d12.h) */
 	parse_arena_d3d12_t parse_arena;
 	bool arena_missed;	/* (said once: a render copied, no slice free) */
+	/* renders parsed into the arena; copied, no slice free; copied, the
+	 * arena made but the lists not of its rooms (said at the end) */
+	u32 arena_here, arena_busy, arena_other;
 
 	/* A frame decoded on the GPU's vertex constants, with the GPU's
 	 * 1/fZ_max copied in: in a buffer of the default heap, which the

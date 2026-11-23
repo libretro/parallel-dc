@@ -41,8 +41,10 @@ void parse_arena_d3d12_term(parse_arena_d3d12_t *a, void (*release)(void *arg, I
 
 /* The frame whose lists these are (@lists, by PARSE_ARENA_*; @vert_head as
  * parse_arena_attach()'s) parsed into a free slice, till
- * parse_arena_d3d12_drawn() or parse_arena_d3d12_cancel(); false where
- * none is free or the lists are not of the arena's rooms */
+ * parse_arena_d3d12_drawn() or parse_arena_d3d12_cancel(): 1. -1 where
+ * every slice is still the card's (as the fence says, which can lag behind
+ * the card); 0 where the arena is not made or the lists are not of its
+ * rooms. */
 int parse_arena_d3d12_attach(parse_arena_d3d12_t *a, ta_list_t *const *lists, size_t vert_head);
 /* ...drawn by the commands the fence's @value is signalled after: its
  * slice the card's till then, and its lists its own again */

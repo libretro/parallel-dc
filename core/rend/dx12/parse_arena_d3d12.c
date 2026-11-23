@@ -94,7 +94,7 @@ int parse_arena_d3d12_attach(parse_arena_d3d12_t *a, ta_list_t *const *lists, si
       a->next = (s + 1) % a->arena.slices;
       return 1;
    }
-   return 0;
+   return -1;
 }
 
 void parse_arena_d3d12_drawn(parse_arena_d3d12_t *a, UINT64 value)

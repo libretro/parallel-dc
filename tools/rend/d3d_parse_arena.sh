@@ -9,7 +9,8 @@
 # the lists copied (D3DH_EVERY), as an adapter of its own has it (D3DH_NOT_UMA) - the
 # test discs' plain one, heavy one (a volume far off the screen among it),
 # DMA one and the one with modifier volumes, with each renderer, threaded
-# rendering on and off.
+# rendering on and off. (A render the card is still reading every slice
+# for, by the fence, is copied: no more than a tenth of them.)
 #
 #   sh tools/rend/d3d_parse_arena.sh [core.dll]
 #
@@ -44,7 +45,7 @@ run() {
    run_disc=$1; run_name=$2; shift 2
    rm -rf "$WORK/dir"; mkdir -p "$WORK/dir"
    env -u TMPDIR DISPLAY=$DISPLAY_NO WINEDEBUG=-all WINE_D3D_CONFIG=renderer=vulkan VKD3D_CONFIG=virtual_heaps \
-      D3DH_EVERY=1 D3DH_VERBOSE=1 D3DH_API=12 D3DH_FRONTEND=sdr D3DH_DIR="Z:$WORK/dir" WINEDLLOVERRIDES="winedbg.exe=d" \
+      D3DH_EVERY=1 D3DH_VERBOSE=1 D3DH_UNLOAD=1 D3DH_API=12 D3DH_FRONTEND=sdr D3DH_DIR="Z:$WORK/dir" WINEDLLOVERRIDES="winedbg.exe=d" \
       timeout 600 wine "$WORK/d3d_hdr.exe" "Z:$CORE" "Z:$WORK/$run_disc/test.gdi" "Z:$WORK/$run_name.raw" 100 "$@" \
       > "$WORK/$run_name.log" 2>&1 || { echo "  FAIL: the $run_name run failed:"; tail -5 "$WORK/$run_name.log"; return 1; }
 }
@@ -61,9 +62,14 @@ for disc in plain heavy dma cull; do
          run $disc "$name" "$@" reicast_threaded_rendering=$threaded || { fails=$((fails + 1)); continue; }
          D3DH_NOT_UMA=1 run $disc "$name-copied" "$@" reicast_threaded_rendering=$threaded \
             || { fails=$((fails + 1)); continue; }
-         if ! grep -q "renders parsed where the card reads them" "$WORK/$name.log" \
-               || grep -q "a render copied to the card" "$WORK/$name.log"; then
-            echo "  FAIL: not every render parsed where the card reads it"
+         # (a render is copied when every slice is still the card's as its
+         # fence says - which, behind vkd3d's fence thread, lags the card on
+         # a busy machine - but no more than a tenth of them, and for no
+         # other reason)
+         counts=$(sed -n 's/.*DX12: \([0-9]*\) renders parsed where the card reads them, \([0-9]*\) copied there with no slice free, \([0-9]*\) copied otherwise.*/\1 \2 \3/p' "$WORK/$name.log")
+         here=${counts%% *}; rest=${counts#* }; busy=${rest%% *}; other=${rest#* }
+         if [ -z "$counts" ] || [ "$here" = 0 ] || [ "$other" != 0 ] || [ $((busy * 10)) -gt "$here" ]; then
+            echo "  FAIL: not every render parsed where the card reads it (parsed there, copied with no slice free, copied otherwise: ${counts:-none said})"
             fails=$((fails + 1))
          fi
          if grep -q "renders parsed where the card reads them" "$WORK/$name-copied.log"; then
