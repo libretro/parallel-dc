@@ -26,126 +26,6 @@
 #include <algorithm>
 #include <memory>
 
-void setImageLayout(vk::CommandBuffer const& commandBuffer, vk::Image image, vk::Format format, u32 mipmapLevels, vk::ImageLayout oldImageLayout, vk::ImageLayout newImageLayout)
-{
-	vk::AccessFlags sourceAccessMask;
-	switch (oldImageLayout)
-	{
-	case vk::ImageLayout::eTransferDstOptimal:
-		sourceAccessMask = vk::AccessFlagBits::eTransferWrite;
-		break;
-	case vk::ImageLayout::eTransferSrcOptimal:
-		sourceAccessMask = vk::AccessFlagBits::eTransferRead;
-		break;
-	case vk::ImageLayout::ePreinitialized:
-		sourceAccessMask = vk::AccessFlagBits::eHostWrite;
-		break;
-	case vk::ImageLayout::eGeneral:     // sourceAccessMask is empty
-	case vk::ImageLayout::eUndefined:
-		break;
-	case vk::ImageLayout::eShaderReadOnlyOptimal:
-		sourceAccessMask = vk::AccessFlagBits::eShaderRead;
-		break;
-	default:
-		verify(false);
-		break;
-	}
-
-	vk::PipelineStageFlags sourceStage;
-	switch (oldImageLayout)
-	{
-	case vk::ImageLayout::eGeneral:
-	case vk::ImageLayout::ePreinitialized:
-		sourceStage = vk::PipelineStageFlagBits::eHost;
-		break;
-	case vk::ImageLayout::eTransferDstOptimal:
-	case vk::ImageLayout::eTransferSrcOptimal:
-		sourceStage = vk::PipelineStageFlagBits::eTransfer;
-		break;
-	case vk::ImageLayout::eUndefined:
-		sourceStage = vk::PipelineStageFlagBits::eTopOfPipe;
-		break;
-	case vk::ImageLayout::eShaderReadOnlyOptimal:
-		sourceStage = vk::PipelineStageFlagBits::eFragmentShader;
-		break;
-	default:
-		verify(false);
-		break;
-	}
-
-	vk::AccessFlags destinationAccessMask;
-	switch (newImageLayout)
-	{
-	case vk::ImageLayout::eColorAttachmentOptimal:
-		destinationAccessMask = vk::AccessFlagBits::eColorAttachmentWrite;
-		break;
-	case vk::ImageLayout::eDepthStencilAttachmentOptimal:
-		destinationAccessMask = vk::AccessFlagBits::eDepthStencilAttachmentRead | vk::AccessFlagBits::eDepthStencilAttachmentWrite;
-		break;
-	case vk::ImageLayout::eGeneral:   // empty destinationAccessMask
-		break;
-	case vk::ImageLayout::eShaderReadOnlyOptimal:
-		destinationAccessMask = vk::AccessFlagBits::eShaderRead;
-		break;
-	case vk::ImageLayout::eTransferSrcOptimal:
-		destinationAccessMask = vk::AccessFlagBits::eTransferRead;
-		break;
-	case vk::ImageLayout::eTransferDstOptimal:
-		destinationAccessMask = vk::AccessFlagBits::eTransferWrite;
-		break;
-	case vk::ImageLayout::eDepthStencilReadOnlyOptimal:
-		destinationAccessMask = vk::AccessFlagBits::eDepthStencilAttachmentRead;
-		break;
-	default:
-		verify(false);
-		break;
-	}
-
-	vk::PipelineStageFlags destinationStage;
-	switch (newImageLayout)
-	{
-	case vk::ImageLayout::eColorAttachmentOptimal:
-		destinationStage = vk::PipelineStageFlagBits::eColorAttachmentOutput;
-		break;
-	case vk::ImageLayout::eDepthStencilAttachmentOptimal:
-		destinationStage = vk::PipelineStageFlagBits::eEarlyFragmentTests;
-		break;
-	case vk::ImageLayout::eGeneral:
-		destinationStage = vk::PipelineStageFlagBits::eHost;
-		break;
-	case vk::ImageLayout::eShaderReadOnlyOptimal:
-		destinationStage = vk::PipelineStageFlagBits::eFragmentShader;
-		break;
-	case vk::ImageLayout::eTransferDstOptimal:
-	case vk::ImageLayout::eTransferSrcOptimal:
-		destinationStage = vk::PipelineStageFlagBits::eTransfer;
-		break;
-	case vk::ImageLayout::eDepthStencilReadOnlyOptimal:
-		destinationStage = vk::PipelineStageFlagBits::eEarlyFragmentTests | vk::PipelineStageFlagBits::eLateFragmentTests;
-		break;
-	default:
-		verify(false);
-		break;
-	}
-
-	vk::ImageAspectFlags aspectMask;
-	if (newImageLayout == vk::ImageLayout::eDepthStencilAttachmentOptimal || newImageLayout == vk::ImageLayout::eDepthStencilReadOnlyOptimal)
-	{
-		aspectMask = vk::ImageAspectFlagBits::eDepth;
-		if (format == vk::Format::eD32SfloatS8Uint || format == vk::Format::eD24UnormS8Uint || format == vk::Format::eD16UnormS8Uint)
-		{
-			aspectMask |= vk::ImageAspectFlagBits::eStencil;
-		}
-	}
-	else
-	{
-		aspectMask = vk::ImageAspectFlagBits::eColor;
-	}
-
-	vk::ImageSubresourceRange imageSubresourceRange(aspectMask, 0, mipmapLevels, 0, 1);
-	vk::ImageMemoryBarrier imageMemoryBarrier(sourceAccessMask, destinationAccessMask, oldImageLayout, newImageLayout, VK_QUEUE_FAMILY_IGNORED, VK_QUEUE_FAMILY_IGNORED, image, imageSubresourceRange);
-	commandBuffer.pipelineBarrier(sourceStage, destinationStage, {}, nullptr, nullptr, imageMemoryBarrier);
-}
 
 #include "rend/upload_layout.h"
 #include "tex_decoder.h"
@@ -154,7 +34,6 @@ void setImageLayout(vk::CommandBuffer const& commandBuffer, vk::Image image, vk:
 
 TexDecoder *Texture::decoder;
 TexturePool *Texture::pool;
-u64 Texture::viewSerials;
 
 Texture::~Texture()
 {
@@ -162,183 +41,6 @@ Texture::~Texture()
 	/* (a cache's texture goes when nothing has drawn with it for long, or
 	 * when the renderer does: its image is free at once) */
 	ReleasePooled(true);
-}
-
-/* ---- The texture pool ---- */
-
-/* The formats the pool has images of, by its numbers for them: the
- * converters' five, the two the decoder copies planar textures into, and
- * the pictures rendered to */
-static const vk::Format poolFormats[] = {
-	vk::Format::eR5G5B5A1UnormPack16, vk::Format::eR5G6B5UnormPack16, vk::Format::eR4G4B4A4UnormPack16,
-	vk::Format::eR8G8B8A8Unorm, vk::Format::eR8Unorm,
-	vk::Format::eA1R5G5B5UnormPack16, vk::Format::eB4G4R4A4UnormPack16,
-	vk::Format::eR8G8B8A8Unorm,
-};
-static const char * const poolFormatNames[] = { "5551", "565", "4444", "8888", "8-bit", "1555", "4444 (planar)", "8888 rendered to" };
-// what the pictures rendered to are used for (the drawers' renderTargetUsage, and to be written as a texture after)
-static const vk::ImageUsageFlags baseTargetUsage = vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eSampled
-		| vk::ImageUsageFlagBits::eTransferSrc | vk::ImageUsageFlagBits::eTransferDst;
-
-int TexturePool::FormatIndex(vk::Format format)
-{
-	for (int i = 0; i < FORMATS; i++)
-		if (poolFormats[i] == format)
-			return i;
-	return -1;
-}
-
-void TexturePool::Init(const TexDecoder *decoder)
-{
-	if (ready)
-		return;
-	VulkanContext *context = VulkanContext::Instance();
-	const vk::PhysicalDevice physicalDevice = context->GetPhysicalDevice();
-	this->decoder = decoder;
-	book.Reset(TexPoolBook::MAX_FRAMES);
-
-	static const u32 texel[FORMATS] = { 2, 2, 2, 4, 1, 2, 2, 4 };
-	// how much games use them, in eighths of what they use 565
-	static const u32 use[FORMATS] = { 6, 8, 6, 4, 2, 1, 1, 0 };
-	static const u8 kind[FORMATS] = { 0, 0, 0, 0, 0, 0, 0, TexPoolBook::TARGETS };
-	u32 have[FORMATS];
-	for (int f = 0; f < FORMATS; f++)
-	{
-		formats[f] = poolFormats[f];
-		const vk::FormatProperties props = physicalDevice.getFormatProperties(formats[f]);
-		const vk::FormatFeatureFlags needed = vk::FormatFeatureFlagBits::eSampledImage | vk::FormatFeatureFlagBits::eTransferDst
-				| vk::FormatFeatureFlagBits::eTransferSrc;
-		usable[f] = (props.optimalTilingFeatures & needed) == needed;
-		if (f == TARGET)
-		{
-			usable[f] = usable[f] && (props.optimalTilingFeatures & vk::FormatFeatureFlagBits::eColorAttachment);
-			// (the compute renderer writes them as storage images: SetTargetStorage())
-			if (!(props.optimalTilingFeatures & vk::FormatFeatureFlagBits::eStorageImage))
-				targetStorage = false;
-			targetUsage = baseTargetUsage | (targetStorage ? vk::ImageUsageFlagBits::eStorage : vk::ImageUsageFlags());
-		}
-		// the 16-bit ones the device cannot sample are converted to 32 bits (Force32BitTexture())
-		if (f < 3 && !context->IsFormatSupported((TextureType)(f == 0 ? TextureType::_5551 : f == 1 ? TextureType::_565 : TextureType::_4444)))
-			usable[f] = false;
-		if (f >= 5 && f != TARGET)
-			usable[f] = usable[f] && decoder != nullptr && decoder->NativeFormat(f == 5 ? TextureType::_5551 : TextureType::_4444) == formats[f];
-		storable[f] = f < 5 && f != TARGET && decoder != nullptr && decoder->Ready() && decoder->Takes(formats[f]);
-		have[f] = usable[f] ? texel[f] : 0;
-	}
-	u32 counts[TexPoolBook::CLASSES];
-	const u64 bytes = TexPoolBook::Plan(context->GetVramBudget(), have, use, kind, FORMATS, counts,
-			texcache_upscale_factor(), (u32)settings.rend.MaxFilteredTextureSize,
-			settings.rend.RenderToTextureUpscale > 1 ? (u32)settings.rend.RenderToTextureUpscale : 1u);
-	ready = true;
-	for (int c = 0; c < TexPoolBook::CLASSES; c++)
-		for (u32 i = 0; i < counts[c]; i++)
-		{
-			PooledImage *image = Make(c, false);
-			if (image == nullptr)
-				break;
-			book.Give(image);
-		}
-	NOTICE_LOG(RENDERER, "Vulkan: texture pool of %u images, %u MB (planned %u MB)\n", book.made, (u32)(book.bytesMade >> 20), (u32)(bytes >> 20));
-}
-
-void TexturePool::Term()
-{
-	if (!ready)
-		return;
-	book.Summary("Vulkan");
-	while (all != nullptr)
-	{
-		PooledImage *next = all->all;
-		delete all;
-		all = next;
-	}
-	book.Reset(TexPoolBook::MAX_FRAMES);
-	ready = false;
-	decoder = nullptr;
-}
-
-PooledImage *TexturePool::Make(int cls, bool late)
-{
-	const vk::Device device = VulkanContext::Instance()->GetDevice();
-	const u32 f = TexPoolBook::Format(cls);
-	const u32 width = TexPoolBook::Width(cls), height = TexPoolBook::Height(cls);
-	const vk::Format format = formats[f];
-	PooledImage *pi = new PooledImage();
-
-	pi->format = format;
-	pi->levels = TexPoolBook::Mips(cls) ? 1 + bitscanrev(std::max(width, height)) : 1;
-	pi->storage = storable[f];
-	pi->usage = vk::ImageUsageFlagBits::eSampled | vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eTransferSrc;
-	if (f == TARGET)
-		pi->usage = targetUsage;
-	vk::ImageCreateFlags flags;
-	if (pi->storage)
-	{
-		/* written through views of a format of integers of the same size:
-		 * the 16- and 8-bit formats cannot be storage images themselves */
-		pi->usage |= vk::ImageUsageFlagBits::eStorage;
-		flags = vk::ImageCreateFlagBits::eMutableFormat;
-		if (format != vk::Format::eR8G8B8A8Unorm)
-			flags |= vk::ImageCreateFlagBits::eExtendedUsage;
-	}
-	pi->image = device.createImageUnique(vk::ImageCreateInfo(flags, vk::ImageType::e2D, format, vk::Extent3D(width, height, 1), pi->levels, 1,
-			vk::SampleCountFlagBits::e1, vk::ImageTiling::eOptimal, pi->usage, vk::SharingMode::eExclusive, 0, nullptr, vk::ImageLayout::eUndefined));
-	pi->allocation = VulkanContext::Instance()->GetHeap().AllocateForImage(*pi->image, false, false);
-
-	/* A 4444 texture copied as it is: the PowerVR has alpha, red, green
-	 * and blue from the top, which this format calls blue, green, red and
-	 * alpha */
-	const vk::ComponentMapping components = format == vk::Format::eB4G4R4A4UnormPack16
-			? vk::ComponentMapping(vk::ComponentSwizzle::eG, vk::ComponentSwizzle::eR, vk::ComponentSwizzle::eA, vk::ComponentSwizzle::eB)
-			: vk::ComponentMapping();
-	vk::ImageViewCreateInfo viewInfo(vk::ImageViewCreateFlags(), *pi->image, vk::ImageViewType::e2D, format, components,
-			vk::ImageSubresourceRange(vk::ImageAspectFlagBits::eColor, 0, pi->levels, 0, 1));
-	// (sampled only: the image's other uses are through views of other formats)
-	const vk::ImageViewUsageCreateInfo viewUsage(pi->usage & ~vk::ImageUsageFlagBits::eStorage);
-	if (flags & vk::ImageCreateFlagBits::eExtendedUsage)
-		viewInfo.pNext = &viewUsage;
-	pi->view = device.createImageViewUnique(viewInfo);
-	pi->viewSerial = Texture::NewViewSerial();
-	if (pi->storage)
-	{
-		const vk::Format viewFormat = format == vk::Format::eR8G8B8A8Unorm ? vk::Format::eR32Uint
-				: format == vk::Format::eR8Unorm ? vk::Format::eR8Uint : vk::Format::eR16Uint;
-		const vk::ImageViewUsageCreateInfo storageUsage(vk::ImageUsageFlagBits::eStorage);
-		for (u32 level = 0; level < pi->levels; level++)
-		{
-			vk::ImageViewCreateInfo info(vk::ImageViewCreateFlags(), *pi->image, vk::ImageViewType::e2D, viewFormat, vk::ComponentMapping(),
-					vk::ImageSubresourceRange(vk::ImageAspectFlagBits::eColor, level, 1, 0, 1));
-			info.pNext = &storageUsage;
-			pi->storageViews[level] = device.createImageViewUnique(info);
-		}
-	}
-	book.Made(pi, cls, TexPoolBook::Bytes(cls, f == 3 || f == TARGET ? 4 : f == 4 ? 1 : 2), late, poolFormatNames[f]);
-	pi->all = all;
-	all = pi;
-	return pi;
-}
-
-PooledImage *TexturePool::Take(vk::Format format, u32 width, u32 height, bool mips)
-{
-	const int f = FormatIndex(format);
-	if (!ready || f < 0 || !usable[f])
-		return nullptr;
-	const int cls = TexPoolBook::Class((u32)f, width, height, mips);
-	if (cls < 0)
-		return nullptr;
-	TexPoolEntry *e = book.Take(cls);
-	return e != nullptr ? static_cast<PooledImage *>(e) : Make(cls, true);
-}
-
-PooledImage *TexturePool::TakeTarget(u32 width, u32 height, const vk::ImageUsageFlags& usage)
-{
-	if (!ready || !usable[TARGET] || (usage & targetUsage) != usage)
-		return nullptr;
-	const int cls = TexPoolBook::Class(TARGET, width, height, false);
-	if (cls < 0)
-		return nullptr;
-	TexPoolEntry *e = book.Take(cls);
-	return e != nullptr ? static_cast<PooledImage *>(e) : Make(cls, true);
 }
 
 u32 Texture::outsideCleared;
@@ -379,7 +81,7 @@ void Texture::CreateRenderTarget(const vk::ImageUsageFlags& usage)
 	// (a texture of the cache's, whose image is the pool's to take back)
 	cached = true;
 	mipmapLevels = 1;
-	imageUsage = pi->usage;
+	imageUsage = vk::ImageUsageFlags(pi->usage);
 	storage = false;
 	fresh = true;
 	debugPath = DBG_TARGET;
@@ -403,7 +105,7 @@ bool Texture::TakePooled(u32 width, u32 height, bool mipmapped)
 	allocation = Allocation();
 	pooled = pi;
 	mipmapLevels = pi->levels;
-	imageUsage = pi->usage;
+	imageUsage = vk::ImageUsageFlags(pi->usage);
 	storage = pi->storage;
 	needsStaging = true;
 	// nothing in it is kept: whatever was drawn into it is another texture's
@@ -437,98 +139,6 @@ UploadRing& Texture::Ring()
 {
 	static UploadRing ring;
 	return ring;
-}
-
-void UploadRing::Init(size_t bytes, CommandPool *pool)
-{
-	this->pool = pool;
-	if (mapped != nullptr && size == (u64)bytes)
-		return;
-	Term();
-	this->pool = pool;
-	buffer = std::unique_ptr<BufferData>(new BufferData(bytes, vk::BufferUsageFlagBits::eTransferSrc));
-	mapped = (u8 *)buffer->MapMemory();
-	size = bytes;
-	head = tail = 0;
-	current = 0;
-	for (u32 i = 0; i < MAX_FRAMES; i++)
-		frameLive[i] = false;
-	INFO_LOG(RENDERER, "Vulkan: upload ring of %u KB\n", (u32)(bytes >> 10));
-}
-
-void UploadRing::Term()
-{
-	if (mapped != nullptr)
-		NOTICE_LOG(RENDERER, "Vulkan: upload ring: %u MB handed out, %u frames found done before their turn, %u textures put off for want of room\n",
-				(u32)(head >> 20), (u32)statPolled, (u32)statFull);
-	mapped = nullptr;
-	buffer.reset();
-	size = head = tail = 0;
-	for (u32 i = 0; i < MAX_FRAMES; i++)
-		frameLive[i] = false;
-}
-
-void UploadRing::SetCurrentIndex(int index)
-{
-	if (mapped == nullptr)
-		return;
-	// where the frame that ends here ends; then this place's last frame is done
-	frameEnd[current % MAX_FRAMES] = head;
-	frameLive[current % MAX_FRAMES] = true;
-	current = (u32)index;
-	if (frameLive[current % MAX_FRAMES])
-	{
-		tail = std::max(tail, frameEnd[current % MAX_FRAMES]);
-		frameLive[current % MAX_FRAMES] = false;
-	}
-}
-
-u8 *UploadRing::Allocate(size_t bytes, vk::Buffer *buffer, vk::DeviceSize *offset)
-{
-	if (mapped == nullptr)
-		return nullptr;
-	bytes = (bytes + 15) & ~(size_t)15;
-	if (bytes > size)
-	{
-		statFull++;
-		return nullptr;
-	}
-	for (;;)
-	{
-		const u64 at = head % size;
-		// (a piece is never split: from the start again if it would be)
-		const u64 skip = at + bytes > size ? size - at : 0;
-		if (head + skip + bytes - tail <= size)
-		{
-			head += skip;
-			u8 *memory = mapped + head % size;
-			*buffer = this->buffer->buffer.get();
-			*offset = head % size;
-			head += bytes;
-			return memory;
-		}
-		/* Full: the oldest frame still out, if its fence says it is done
-		 * (the frames are done in the order they went) */
-		const int frames = pool != nullptr ? std::min(pool->GetSize(), (int)MAX_FRAMES) : 0;
-		bool freed = false;
-		for (int k = 1; k < frames && !freed; k++)
-		{
-			const u32 slot = (current + (u32)k) % (u32)frames;
-			if (!frameLive[slot])
-				continue;
-			if (!pool->IsDone((int)slot))
-				break;
-			tail = std::max(tail, frameEnd[slot]);
-			frameLive[slot] = false;
-			statPolled++;
-			freed = true;
-		}
-		if (!freed)
-		{
-			statFull++;
-			return nullptr;
-		}
-	}
 }
 
 /* Makes the image what a texture of this size and kind needs, if it is not
@@ -1151,39 +761,6 @@ void Texture::GenerateMipmaps()
 	barrier.srcAccessMask = vk::AccessFlagBits::eTransferWrite;
 	barrier.dstAccessMask = vk::AccessFlagBits::eShaderRead;
 	commandBuffer.pipelineBarrier(vk::PipelineStageFlagBits::eTransfer, vk::PipelineStageFlagBits::eFragmentShader, {}, nullptr, nullptr, barrier);
-}
-
-void FramebufferAttachment::Init(u32 width, u32 height, vk::Format format, const vk::ImageUsageFlags& usage, bool readable,
-		vk::SampleCountFlagBits samples)
-{
-	this->format = format;
-	this->extent = vk::Extent2D { width, height };
-	bool depth = format == vk::Format::eD32SfloatS8Uint || format == vk::Format::eD24UnormS8Uint || format == vk::Format::eD16UnormS8Uint;
-
-	if (readable && (usage & vk::ImageUsageFlagBits::eTransferSrc))
-	{
-		stagingBufferData = std::unique_ptr<BufferData>(new BufferData(width * height * 4,
-				vk::BufferUsageFlagBits::eTransferSrc | vk::BufferUsageFlagBits::eTransferDst));
-	}
-	vk::ImageCreateInfo imageCreateInfo(vk::ImageCreateFlags(), vk::ImageType::e2D, format, vk::Extent3D(extent, 1), 1, 1, samples,
-			vk::ImageTiling::eOptimal, usage,
-			vk::SharingMode::eExclusive, 0, nullptr, vk::ImageLayout::eUndefined);
-	image = device.createImageUnique(imageCreateInfo);
-
-	allocation = VulkanContext::Instance()->GetHeap().AllocateForImage(*image, false, false,
-			(bool)(usage & vk::ImageUsageFlagBits::eTransientAttachment));
-
-	vk::ImageViewCreateInfo imageViewCreateInfo(vk::ImageViewCreateFlags(), image.get(), vk::ImageViewType::e2D,
-			format, vk::ComponentMapping(),	vk::ImageSubresourceRange(depth ? vk::ImageAspectFlagBits::eDepth : vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1));
-	imageView = device.createImageViewUnique(imageViewCreateInfo);
-	viewSerial = Texture::NewViewSerial();
-
-	if ((usage & vk::ImageUsageFlagBits::eDepthStencilAttachment) && (usage & vk::ImageUsageFlagBits::eInputAttachment))
-	{
-		// Also create an imageView for the stencil
-		imageViewCreateInfo.subresourceRange = vk::ImageSubresourceRange(vk::ImageAspectFlagBits::eStencil, 0, 1, 0, 1);
-		stencilView = device.createImageViewUnique(imageViewCreateInfo);
-	}
 }
 
 void TextureCache::Cleanup()

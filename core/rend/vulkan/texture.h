@@ -25,6 +25,8 @@
 #include "rend/TexCache.h"
 #include "rend/texdecode.h"
 #include "rend/tex_pool.h"
+#include "vk_image.h"
+#include "tex_decoder.h"
 #include "hw/pvr/Renderer_if.h"
 
 #include <algorithm>
@@ -33,7 +35,12 @@
 #include <string>
 #include <vector>
 
-void setImageLayout(vk::CommandBuffer const& commandBuffer, vk::Image image, vk::Format format, u32 mipmapLevels, vk::ImageLayout oldImageLayout, vk::ImageLayout newImageLayout);
+static inline void setImageLayout(vk::CommandBuffer const& commandBuffer, vk::Image image, vk::Format format, u32 mipmapLevels,
+		vk::ImageLayout oldImageLayout, vk::ImageLayout newImageLayout)
+{
+	vk_set_image_layout((VkCommandBuffer)commandBuffer, (VkImage)image, (VkFormat)format, mipmapLevels,
+			(VkImageLayout)oldImageLayout, (VkImageLayout)newImageLayout);
+}
 
 class CommandPool;
 class TexDecoder;
@@ -60,49 +67,33 @@ class CommandPool;
 class UploadRing
 {
 public:
-	/* The ring, @bytes of it, for the frames of @pool */
-	void Init(size_t bytes, CommandPool *pool);
-	/* @index is the current frame's from here on: whatever was handed out
-	 * under it the last time is free again */
-	void SetCurrentIndex(int index);
-	/* @bytes of mapped memory, and where they are: in @buffer at @offset,
-	 * a multiple of 16; null if the ring has no room */
-	u8 *Allocate(size_t bytes, vk::Buffer *buffer, vk::DeviceSize *offset);
-	void Term();
-	bool Ready() const { return mapped != nullptr; }
-
-	// what has been done so far, for measuring
-	u64 statFull = 0;		// pieces there was no room for
-	u64 statPolled = 0;		// frames found done before their turn
+	template<typename Pool>
+	void Init(size_t bytes, Pool *pool)
+	{
+		if (!vk_upload_ring_init(r(), bytes, &pool->p))
+			throwResultException(vk::Result::eErrorOutOfDeviceMemory, "vk_upload_ring_init");
+	}
+	void SetCurrentIndex(int index) { vk_upload_ring_set_current_index(r(), index); }
+	u8 *Allocate(size_t bytes, vk::Buffer *buffer, vk::DeviceSize *offset)
+	{
+		VkBuffer b = VK_NULL_HANDLE;
+		VkDeviceSize o = 0;
+		u8 *memory = vk_upload_ring_allocate(r(), bytes, &b, &o);
+		*buffer = vk::Buffer(b);
+		*offset = o;
+		return memory;
+	}
+	void Term() { vk_upload_ring_term(r()); }
+	bool Ready() const { return vk_upload_ring_get()->mapped != nullptr; }
 
 private:
-	enum { MAX_FRAMES = 8 };
-	std::unique_ptr<BufferData> buffer;
-	u8 *mapped = nullptr;
-	u64 size = 0;
-	u64 head = 0, tail = 0;			// bytes handed out and given back, ever
-	u64 frameEnd[MAX_FRAMES] = {};	// where each place's last frame ended,
-	bool frameLive[MAX_FRAMES] = {};	// while it may be on the GPU
-	u32 current = 0;
-	CommandPool *pool = nullptr;
+	static vk_upload_ring *r() { return vk_upload_ring_get(); }
 };
 
 /* An image of the texture pool's: optimal, sampled, copied to and from,
  * and written by the decoding kernel too where the decoder takes its
  * format, with a storage view of each level for that */
-struct PooledImage : TexPoolEntry
-{
-	vk::UniqueImage image;
-	Allocation allocation;
-	vk::UniqueImageView view;
-	u64 viewSerial = 0;     /* view's (Texture::ReadOnlyViewSerial()) */
-	vk::UniqueImageView storageViews[TEXD_MAX_LEVELS];
-	vk::ImageUsageFlags usage;
-	vk::Format format = vk::Format::eUndefined;
-	u32 levels = 1;
-	bool storage = false;
-	PooledImage *all = nullptr;		// every image there is, for Term()
-};
+typedef vk_pooled_image PooledImage;
 
 /* The cache's textures' images (rend/tex_pool.h): made when the renderer
  * starts, in the device memory's large blocks, and handed out to the
@@ -111,45 +102,30 @@ struct PooledImage : TexPoolEntry
 class TexturePool
 {
 public:
-	/* (again with the renderer's next start, or a new size: nothing is done
-	 * if it is made already) */
-	void Init(const TexDecoder *decoder);
-	void Term();
-	bool Ready() const { return ready; }
-	/* An image for a texture of @format, @width by @height, with its
-	 * levels or not: a free one of that shape, or one made now if there is
-	 * none. Null if the shape is not one of the pool's. */
-	PooledImage *Take(vk::Format format, u32 width, u32 height, bool mips);
-	/* An image to render to, @width by @height, with @usage */
-	PooledImage *TakeTarget(u32 width, u32 height, const vk::ImageUsageFlags& usage);
-	/* Before Init(): the images rendered to are also to be written by
-	 * compute shaders (the compute renderer's renders to a texture) */
-	void SetTargetStorage(bool on) { if (!ready) targetStorage = on; }
-	/* ...and, after it, whether they are: the device can have it (an
-	 * image made outside the pool for a render is made with the usage the
-	 * drawer asks for, which then has it too) */
-	bool TargetsStorable() const { return ready && targetStorage; }
-	/* Free again now; or when the frames that may still use it are done */
-	void Give(PooledImage *image) { book.Give(image); }
-	void Retire(PooledImage *image) { book.Retire(image); }
-	// (the texture command pool's frame index)
-	void Frame(u32 index) { if (ready) book.Frame(index); }
-	const TexPoolBook& Book() const { return book; }
+	TexturePool() { vk_tex_pool_construct(&p); }
+	~TexturePool() { vk_tex_pool_term(&p); }
+	TexturePool(const TexturePool&) = delete;
+	TexturePool& operator=(const TexturePool&) = delete;
+	void Init(const TexDecoder *decoder) { vk_tex_pool_init(&p, decoder != nullptr ? decoder->Raw() : nullptr); }
+	void Term() { vk_tex_pool_term(&p); }
+	bool Ready() const { return p.ready; }
+	PooledImage *Take(vk::Format format, u32 width, u32 height, bool mips)
+	{
+		return vk_tex_pool_take(&p, (VkFormat)format, width, height, mips);
+	}
+	PooledImage *TakeTarget(u32 width, u32 height, const vk::ImageUsageFlags& usage)
+	{
+		return vk_tex_pool_take_target(&p, width, height, (VkImageUsageFlags)usage);
+	}
+	void SetTargetStorage(bool on) { vk_tex_pool_set_target_storage(&p, on); }
+	bool TargetsStorable() const { return vk_tex_pool_targets_storable(&p); }
+	void Give(PooledImage *image) { vk_tex_pool_give(&p, image); }
+	void Retire(PooledImage *image) { vk_tex_pool_retire(&p, image); }
+	void Frame(u32 index) { vk_tex_pool_frame(&p, index); }
+	const tex_pool_book_t& Book() const { return p.book; }
 
 private:
-	enum { FORMATS = 8, TARGET = 7 };
-	static int FormatIndex(vk::Format format);
-	PooledImage *Make(int cls, bool late);
-
-	TexPoolBook book;
-	bool ready = false;
-	const TexDecoder *decoder = nullptr;
-	vk::Format formats[FORMATS];
-	bool storable[FORMATS] = {};
-	bool usable[FORMATS] = {};
-	bool targetStorage = false;
-	vk::ImageUsageFlags targetUsage;	// of the images rendered to
-	PooledImage *all = nullptr;
+	vk_tex_pool p;
 };
 
 class Texture : public TexCacheImpl<Texture>
@@ -174,9 +150,9 @@ public:
 	u64 GetIntId() { return (u64)reinterpret_cast<uintptr_t>(this); }
 	void GetId(char *s, size_t n) { snprintf(s, n, "%p", (void *)this); }
 	bool IsNew() const { return !image.get() && pooled == nullptr; }
-	vk::ImageView GetImageView() const { return pooled != nullptr ? *pooled->view : *imageView; }
+	vk::ImageView GetImageView() const { return pooled != nullptr ? vk::ImageView(pooled->view) : *imageView; }
 	u64 GetViewSerial() const { return pooled != nullptr ? pooled->viewSerial : ownSerial; }
-	vk::Image GetImage() const { return pooled != nullptr ? *pooled->image : *image; }
+	vk::Image GetImage() const { return pooled != nullptr ? vk::Image(pooled->image) : *image; }
 	vk::ImageView GetReadOnlyImageView() const { return readOnlyImageView ? readOnlyImageView : GetImageView(); }
 	/* Which view GetReadOnlyImageView() is, of every one made: a number no
 	 * other view ever has, which a handle - made again at the same value
@@ -185,7 +161,7 @@ public:
 	/* The view the frames in flight sample, kept while a new image is made */
 	void KeepReadOnlyView() { readOnlyImageView = GetImageView(); readOnlySerial = pooled != nullptr ? pooled->viewSerial : ownSerial; }
 	/* A serial for a view just made */
-	static u64 NewViewSerial() { return ++viewSerials; }
+	static u64 NewViewSerial() { return vk_new_view_serial(); }
 	void SetCommandBuffer(vk::CommandBuffer commandBuffer) { this->commandBuffer = commandBuffer; }
 	/* Where a command buffer comes from when an upload needs one: a
 	 * texture made on the GPU records nothing of its own */
@@ -214,7 +190,7 @@ private:
 	/* The pool's image given back: when the frames that may use it are
 	 * done, or now */
 	void ReleasePooled(bool now);
-	vk::ImageView StorageView(u32 level) const { return pooled != nullptr ? *pooled->storageViews[level] : *storageViews[level]; }
+	vk::ImageView StorageView(u32 level) const { return pooled != nullptr ? vk::ImageView(pooled->storageViews[level]) : *storageViews[level]; }
 	/* The image rendered to, extent by extent, with @usage: the pool's, or
 	 * one made (CreateImage()) where the pool has none of that shape */
 	void CreateRenderTarget(const vk::ImageUsageFlags& usage);
@@ -287,7 +263,6 @@ private:
 	 * lists have it: TextureCache */
 	u32 inFlightSlots = 0;
 	u64 readOnlySerial = 0;     /* readOnlyImageView's */
-	static u64 viewSerials;
 
 	vk::PhysicalDevice physicalDevice;
 	vk::Device device;
@@ -304,106 +279,41 @@ private:
 class SamplerManager
 {
 public:
-	SamplerManager() { memset(samplers, 0, sizeof(samplers)); }
-	~SamplerManager() { Term(); }
-
-	void Init()
-	{
-		u32 i;
-		Term();
-		for (i = 0; i < SAMPLERS; i++)
-			samplers[i] = Make(i);
-	}
-	vk::Sampler GetSampler(TSP tsp)
-	{
-		const u32 i = Index(tsp);
-		/* (one asked for before Init(): made now) */
-		if (!samplers[i])
-			samplers[i] = Make(i);
-		return vk::Sampler(samplers[i]);
-	}
-	void Term()
-	{
-		u32 i;
-		for (i = 0; i < SAMPLERS; i++)
-			if (samplers[i] != VK_NULL_HANDLE)
-			{
-				VulkanContext::Instance()->GetDevice().destroySampler(vk::Sampler(samplers[i]));
-				samplers[i] = VK_NULL_HANDLE;
-			}
-	}
-	static const u32 TSP_Mask = 0x7ef00;
+	SamplerManager() { memset(&s, 0, sizeof(s)); }
+	~SamplerManager() { vk_samplers_term(&s); }
+	SamplerManager(const SamplerManager&) = delete;
+	SamplerManager& operator=(const SamplerManager&) = delete;
+	void Init() { vk_samplers_init(&s); }
+	vk::Sampler GetSampler(TSP tsp) { return vk::Sampler(vk_samplers_get(&s, tsp.full)); }
+	void Term() { vk_samplers_term(&s); }
+	static const u32 TSP_Mask = VK_SAMPLER_TSP_MASK;
 
 private:
-	enum { SAMPLERS = 16 * 2 * 3 * 3 };
-
-	/* an axis: clamped, mirrored or repeated */
-	static u32 Axis(u32 clamp, u32 flip) { return clamp ? 0 : flip ? 1 : 2; }
-	static u32 Index(TSP tsp)
-	{
-		return ((tsp.MipMapD * 2 + (tsp.FilterMode != 0 ? 1 : 0)) * 3 + Axis(tsp.ClampU, tsp.FlipU)) * 3
-				+ Axis(tsp.ClampV, tsp.FlipV);
-	}
-	static vk::SamplerAddressMode Mode(u32 axis)
-	{
-		return axis == 0 ? vk::SamplerAddressMode::eClampToEdge : axis == 1 ? vk::SamplerAddressMode::eMirroredRepeat
-				: vk::SamplerAddressMode::eRepeat;
-	}
-	static VkSampler Make(u32 i)
-	{
-		VulkanContext *context = VulkanContext::Instance();
-		const vk::SamplerAddressMode vRepeat = Mode(i % 3);
-		const vk::SamplerAddressMode uRepeat = Mode(i / 3 % 3);
-		const vk::Filter filter = i / 9 % 2 ? vk::Filter::eLinear : vk::Filter::eNearest;
-		const u32 mipMapD = i / 18;
-		const bool anisotropicFiltering = settings.rend.AnisotropicFiltering > 1 && context->SupportsSamplerAnisotropy()
-				&& filter == vk::Filter::eLinear;
-		const vk::SamplerCreateInfo info(vk::SamplerCreateFlags(), filter, filter,
-				vk::SamplerMipmapMode::eNearest, uRepeat, vRepeat, vk::SamplerAddressMode::eClampToEdge, D_Adjust_LoD_Bias[mipMapD],
-				anisotropicFiltering, std::min((float)settings.rend.AnisotropicFiltering, context->GetMaxSamplerAnisotropy()),
-				false, vk::CompareOp::eNever,
-				0.0f, 256.0f, vk::BorderColor::eFloatOpaqueBlack);
-		vk::Sampler sampler;
-		if (context->GetDevice().createSampler(&info, nullptr, &sampler) != vk::Result::eSuccess)
-			return VK_NULL_HANDLE;
-		return (VkSampler)sampler;
-	}
-
-	VkSampler samplers[SAMPLERS];
+	vk_samplers s;
 };
 
 class FramebufferAttachment
 {
 public:
-	FramebufferAttachment(vk::PhysicalDevice physicalDevice, vk::Device device)
-		: format(vk::Format::eUndefined), physicalDevice(physicalDevice), device(device)
-		{}
-   /* @readable: with memory this side can read, to copy the image into (it is as large as the image) */
-   void Init(u32 width, u32 height, vk::Format format, const vk::ImageUsageFlags& usage, bool readable = true,
-		   vk::SampleCountFlagBits samples = vk::SampleCountFlagBits::e1);
-	void Reset() { image.reset(); imageView.reset(); }
-
-	vk::ImageView GetImageView() const { return *imageView; }
-	vk::Image GetImage() const { return *image; }
-	const BufferData* GetBufferData() const { return stagingBufferData.get(); }
-	vk::ImageView GetStencilView() const { return *stencilView; }
-	vk::Extent2D getExtent() const { return extent; }
-	/* GetImageView()'s serial (Texture::ReadOnlyViewSerial()) */
-	u64 GetViewSerial() const { return viewSerial; }
+	FramebufferAttachment(vk::PhysicalDevice, vk::Device) { memset(&a, 0, sizeof(a)); }
+	~FramebufferAttachment() { vk_attachment_free(&a); }
+	FramebufferAttachment(const FramebufferAttachment&) = delete;
+	FramebufferAttachment& operator=(const FramebufferAttachment&) = delete;
+	void Init(u32 width, u32 height, vk::Format format, const vk::ImageUsageFlags& usage, bool readable = true,
+			vk::SampleCountFlagBits samples = vk::SampleCountFlagBits::e1)
+	{
+		if (!vk_attachment_init(&a, width, height, (VkFormat)format, (VkImageUsageFlags)usage, readable, (VkSampleCountFlagBits)samples))
+			throwResultException(vk::Result::eErrorOutOfDeviceMemory, "vk_attachment_init");
+	}
+	void Reset() { vk_attachment_free(&a); }
+	vk::ImageView GetImageView() const { return vk::ImageView(a.view); }
+	vk::Image GetImage() const { return vk::Image(a.image); }
+	vk::ImageView GetStencilView() const { return vk::ImageView(a.stencilView); }
+	vk::Extent2D getExtent() const { return vk::Extent2D(a.extent.width, a.extent.height); }
+	u64 GetViewSerial() const { return a.viewSerial; }
 
 private:
-	vk::Format format;
-	vk::Extent2D extent;
-
-	std::unique_ptr<BufferData> stagingBufferData;
-	Allocation allocation;
-	vk::UniqueImage image;
-	vk::UniqueImageView imageView;
-	vk::UniqueImageView stencilView;
-	u64 viewSerial = 0;
-
-	vk::PhysicalDevice physicalDevice;
-	vk::Device device;
+	vk_attachment a;
 };
 
 /* A framebuffer kept for the attachments it was made of, known by their
@@ -412,31 +322,34 @@ private:
 class KeptFramebuffer
 {
 public:
+	KeptFramebuffer() { memset(&k, 0, sizeof(k)); }
+	~KeptFramebuffer() { vk_kept_framebuffer_free(&k); }
+	KeptFramebuffer(const KeptFramebuffer&) = delete;
+	KeptFramebuffer& operator=(const KeptFramebuffer&) = delete;
+	/* (the drawers' are in a vector: moved, the framebuffer goes with it) */
+	KeptFramebuffer(KeptFramebuffer&& o) noexcept { k = o.k; memset(&o.k, 0, sizeof(o.k)); }
+	KeptFramebuffer& operator=(KeptFramebuffer&& o) noexcept
+	{
+		if (this != &o)
+		{
+			vk_kept_framebuffer_free(&k);
+			k = o.k;
+			memset(&o.k, 0, sizeof(o.k));
+		}
+		return *this;
+	}
 	vk::Framebuffer Get(vk::RenderPass pass, u32 count, const vk::ImageView *views, const u64 *serials, u32 width, u32 height)
 	{
-		bool same = framebuffer && pass == this->pass && count == this->count && width == this->width && height == this->height;
-		for (u32 i = 0; same && i < count; i++)
-			same = serials[i] == this->serials[i] && serials[i] != 0;
-		if (!same)
-		{
-			framebuffer = VulkanContext::Instance()->GetDevice().createFramebufferUnique(vk::FramebufferCreateInfo(
-					vk::FramebufferCreateFlags(), pass, count, views, width, height, 1));
-			this->pass = pass;
-			this->count = count;
-			this->width = width;
-			this->height = height;
-			for (u32 i = 0; i < count && i < 3; i++)
-				this->serials[i] = serials[i];
-		}
-		return *framebuffer;
+		const VkFramebuffer f = vk_kept_framebuffer_get(&k, (VkRenderPass)pass, count, reinterpret_cast<const VkImageView *>(views),
+				serials, width, height);
+		if (f == VK_NULL_HANDLE)
+			throwResultException(vk::Result::eErrorOutOfDeviceMemory, "vkCreateFramebuffer");
+		return vk::Framebuffer(f);
 	}
-	vk::Framebuffer Handle() const { return *framebuffer; }
+	vk::Framebuffer Handle() const { return vk::Framebuffer(k.framebuffer); }
 
 private:
-	vk::UniqueFramebuffer framebuffer;
-	vk::RenderPass pass;
-	u32 count = 0, width = 0, height = 0;
-	u64 serials[3] = {};
+	vk_kept_framebuffer k;
 };
 
 class TextureCache : public BaseTextureCache<Texture>

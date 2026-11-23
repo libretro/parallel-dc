@@ -260,7 +260,8 @@ ifeq ($(HAVE_VULKAN), 1)
 					$(CORE_DIR)/core/rend/vulkan/vk_desc_cache.c \
 					$(CORE_DIR)/core/rend/vulkan/vk_quad.c \
 					$(CORE_DIR)/core/rend/vulkan/vk_writeout.c \
-					$(CORE_DIR)/core/rend/vulkan/vk_tex_decoder.c
+					$(CORE_DIR)/core/rend/vulkan/vk_tex_decoder.c \
+					$(CORE_DIR)/core/rend/vulkan/vk_image.c
 	SOURCES_CXX += \
 					$(CORE_DIR)/core/rend/vulkan/drawer.cpp \
 					$(CORE_DIR)/core/rend/vulkan/motion_pass.cpp \
