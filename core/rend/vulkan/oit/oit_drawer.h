@@ -512,8 +512,8 @@ public:
 	{
 		if (drewShared + drewOwn != 0)
 			NOTICE_LOG(RENDERER, "Renders to textures: %u drawn with the screen's attachments, %u with their own; %u cleared outside\n",
-					drewShared, drewOwn, Texture::outsideCleared);
-		Texture::outsideCleared = 0;
+					drewShared, drewOwn, vk_texture_outside_cleared);
+		vk_texture_outside_cleared = 0;
 		drewShared = drewOwn = 0;
 		framebuffers.clear();
 		rttPipelineManager.reset();

@@ -450,7 +450,7 @@ void vk_rtt_watch(Texture *texture, u32 addr, u32 x0, u32 y0, u32 width, u32 hei
 	watch.alpha_threshold = FB_W_CTRL.fb_alpha_threshold;
 	watch.dither = FB_W_CTRL.fb_dither;
 	watch.tex = (uintptr_t)texture;
-	watch.target = texture;
+	watch.target = &texture->tc;
 	watch.scale = settings.rend.RenderToTextureUpscale > 1 ? settings.rend.RenderToTextureUpscale : 1;
 	if (watch.bytes == 0)
 		return;

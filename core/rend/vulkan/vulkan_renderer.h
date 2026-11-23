@@ -312,9 +312,9 @@ protected:
 		if (pixels == nullptr)
 			return;
 		keptPicture = std::unique_ptr<Texture>(new Texture());
-		keptPicture->tex_type = TextureType::_8888;
-		keptPicture->tcw.full = 0;
-		keptPicture->tsp.full = 0;
+		keptPicture->tc.tex_type = TextureType::_8888;
+		keptPicture->tc.tcw.full = 0;
+		keptPicture->tc.tsp.full = 0;
 		keptPicture->SetPhysicalDevice(GetContext()->GetPhysicalDevice());
 		keptPicture->SetDevice(GetContext()->GetDevice());
 		keptPicture->SetCommandBuffer(texCommandPool.Allocate());
@@ -385,10 +385,10 @@ protected:
 		if (!curTexture)
 		{
 			curTexture = std::unique_ptr<Texture>(new Texture());
-			curTexture->tex_type = TextureType::_8888;
+			curTexture->tc.tex_type = TextureType::_8888;
 			curTexture->presented = true;
-			curTexture->tcw.full = 0;
-			curTexture->tsp.full = 0;
+			curTexture->tc.tcw.full = 0;
+			curTexture->tc.tsp.full = 0;
 			curTexture->SetPhysicalDevice(GetContext()->GetPhysicalDevice());
 			curTexture->SetDevice(GetContext()->GetDevice());
 		}
@@ -402,7 +402,7 @@ protected:
 			fogTexture = std::unique_ptr<Texture>(new Texture());
 			fogTexture->SetPhysicalDevice(GetContext()->GetPhysicalDevice());
 			fogTexture->SetDevice(GetContext()->GetDevice());
-			fogTexture->tex_type = TextureType::_8;
+			fogTexture->tc.tex_type = TextureType::_8;
 			fogUploadedValid = false;
 		}
 		// Uploaded when it differs from what the GPU has: see UpdateFogTexture() in gles/gles.c
@@ -426,7 +426,7 @@ protected:
 			paletteTexture = std::unique_ptr<Texture>(new Texture());
 			paletteTexture->SetPhysicalDevice(GetContext()->GetPhysicalDevice());
 			paletteTexture->SetDevice(GetContext()->GetDevice());
-			paletteTexture->tex_type = TextureType::_8888;
+			paletteTexture->tc.tex_type = TextureType::_8888;
 			palette_updated = true;
 		}
 		if (!palette_updated)

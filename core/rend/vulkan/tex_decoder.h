@@ -67,6 +67,7 @@ public:
 	bool Cancel(int job) { return vk_tex_decoder_cancel(&d, job); }
 	u32 Serial() const { return d.serial; }
 	const vk_tex_decoder *Raw() const { return &d; }
+	vk_tex_decoder *Raw() { return &d; }
 	template<typename Pool>
 	void Flush(Pool& pool)
 	{

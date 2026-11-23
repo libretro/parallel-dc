@@ -51,7 +51,7 @@ const std::vector<vk::CommandBuffer>* VulkanOSD::PrepareOSD(CommandPool *command
 		else if (!lcd_changed && !vmu_screen_param.vmu_screen_needs_update)
 			continue;
 
-		texture->tex_type = TextureType::_8888;
+		texture->tc.tex_type = TextureType::_8888;
 		texture->SetDevice(context->GetDevice());
 		texture->SetPhysicalDevice(context->GetPhysicalDevice());
 		/* (made straight in the upload ring's piece for it, which the
@@ -103,7 +103,7 @@ const std::vector<vk::CommandBuffer>* VulkanOSD::PrepareOSD(CommandPool *command
 		else if (!lightgun_params[i].dirty)
 			continue;
 
-		texture->tex_type = TextureType::_8888;
+		texture->tc.tex_type = TextureType::_8888;
 		texture->SetDevice(context->GetDevice());
 		texture->SetPhysicalDevice(context->GetPhysicalDevice());
 		// (as the VMUs')

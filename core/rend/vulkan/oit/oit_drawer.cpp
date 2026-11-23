@@ -945,11 +945,12 @@ vk::ImageLayout OITTextureDrawer::TakeTexture(const Size& size, const vk::ImageU
 	const vk::ImageUsageFlags renderTargetUsage = vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eSampled
 			| vk::ImageUsageFlagBits::eTransferSrc	// read back when the game touches it in video memory
 			| storageUsage | usage;
-	if (texture->format != vk::Format::eR8G8B8A8Unorm || texture->extent.width != widthPow2 || texture->extent.height != heightPow2
-			|| (texture->imageUsage & renderTargetUsage) != renderTargetUsage)
+	if (texture->format != VK_FORMAT_R8G8B8A8_UNORM || texture->extent.width != widthPow2 || texture->extent.height != heightPow2
+			|| (vk::ImageUsageFlags(texture->imageUsage) & renderTargetUsage) != renderTargetUsage)
 	{
-		texture->extent = vk::Extent2D(widthPow2, heightPow2);
-		texture->format = vk::Format::eR8G8B8A8Unorm;
+		texture->extent.width = widthPow2;
+		texture->extent.height = heightPow2;
+		texture->format = VK_FORMAT_R8G8B8A8_UNORM;
 		texture->needsStaging = true;
 		texture->CreateRenderTarget(renderTargetUsage);
 		colorImageCurrentLayout = vk::ImageLayout::eUndefined;
@@ -1067,10 +1068,10 @@ void OITTextureDrawer::EndFrame()
 
 void OITTextureDrawer::Watch()
 {
-	texture->dirty = 0;
-	texture->stride_read = 0;	// (rendered, not read)
-	texture->made_type = 0;
-   libCore_vramlock_Lock(texture->sa_tex, texture->sa + texture->size - 1, texture);
+	texture->tc.dirty = 0;
+	texture->tc.stride_read = 0;	// (rendered, not read)
+	texture->tc.made_type = 0;
+   libCore_vramlock_Lock(texture->tc.sa_tex, texture->tc.sa + texture->tc.size - 1, &texture->tc);
 	/* video memory gets it when something first touches it there */
 	vk_rtt_watch(texture, textureAddr, pvrrc.fb_X_CLIP.min, pvrrc.fb_Y_CLIP.min,
 			pvrrc.fb_X_CLIP.max - pvrrc.fb_X_CLIP.min + 1, pvrrc.fb_Y_CLIP.max - pvrrc.fb_Y_CLIP.min + 1);

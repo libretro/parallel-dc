@@ -337,7 +337,7 @@ struct image
    unsigned nlevels;
 };
 
-/* As the renderer makes an image for the kernel (vulkan/texture.cpp): or,
+/* As the renderer makes an image for the kernel (vulkan/vk_texture.c): or,
  * @storage_view 0, one to be copied into */
 static struct image make_image(VkFormat format, VkFormat storage_view, unsigned w, unsigned h, unsigned nlevels, VkComponentMapping swizzle)
 {

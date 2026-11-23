@@ -27,6 +27,7 @@
 #include "rend/tex_pool.h"
 #include "vk_image.h"
 #include "tex_decoder.h"
+#include "vk_texture.h"
 #include "hw/pvr/Renderer_if.h"
 
 #include <algorithm>
@@ -123,153 +124,73 @@ public:
 	void Retire(PooledImage *image) { vk_tex_pool_retire(&p, image); }
 	void Frame(u32 index) { vk_tex_pool_frame(&p, index); }
 	const tex_pool_book_t& Book() const { return p.book; }
+	vk_tex_pool *Raw() { return &p; }
 
 private:
 	vk_tex_pool p;
 };
 
-class Texture : public TexCacheImpl<Texture>
+/* The C++ renderers' view of a vk_texture (vk_texture.h), until they are C
+ * too: no data of its own, so that the cache's textures are views too */
+struct Texture : public vk_texture
 {
-public:
-	~Texture();
-	void UploadToGPU(int width, int height, u8 *data, bool mipmapped, bool mipmapsIncluded = false);
-	void *UploadMemory(u32 width, u32 height, size_t bytes, u32 pixel, bool mipmaps);
-	bool GpuDecode(const texd_plan& plan);
-	bool PartMemory(size_t bytes, void **memory);
-	void UploadPart(const TexRegion *regions, u32 count, u8 *data, const size_t *offset);
-	int GpuDecodePart(const texd_plan& plan, const TexRegion *regions, u32 count);
-	bool CopyRender(BaseTextureCacheData *from, u32 x, u32 y, u32 scale, u32 columns);
-	static UploadRing& Ring();
+	Texture() { vk_texture_construct(this); }
+	~Texture() { vk_texture_destroy(this); }
+	Texture(const Texture&) = delete;
+	Texture& operator=(const Texture&) = delete;
+
+	void UploadToGPU(int width, int height, u8 *data, bool mipmapped, bool mipmapsIncluded = false)
+	{
+		vk_texture_upload_to_gpu(this, width, height, data, mipmapped, mipmapsIncluded);
+	}
+	void *UploadMemory(u32 width, u32 height, size_t bytes, u32 pixel, bool mipmaps)
+	{
+		return vk_texture_upload_memory(this, width, height, bytes, pixel, mipmaps);
+	}
+	static UploadRing& Ring() { static UploadRing ring; return ring; }
 	/* The renderer's, while it has one */
-	static void SetDecoder(TexDecoder *decoder) { Texture::decoder = decoder; }
-	static void SetPool(TexturePool *pool) { Texture::pool = pool; }
-	static TexturePool *Pool() { return pool; }
+	static void SetDecoder(TexDecoder *decoder) { vk_texture_decoder = decoder != nullptr ? decoder->Raw() : nullptr; }
+	static void SetPool(TexturePool *pool) { vk_texture_pool = pool != nullptr ? pool->Raw() : nullptr; }
 	/* A texture of the cache's: its images come from the pool. (Not the
 	 * renderer's own pictures, which go when it says.) */
 	void SetCached() { cached = true; }
 	u64 GetIntId() { return (u64)reinterpret_cast<uintptr_t>(this); }
-	void GetId(char *s, size_t n) { snprintf(s, n, "%p", (void *)this); }
-	bool IsNew() const { return !image.get() && pooled == nullptr; }
-	vk::ImageView GetImageView() const { return pooled != nullptr ? vk::ImageView(pooled->view) : *imageView; }
-	u64 GetViewSerial() const { return pooled != nullptr ? pooled->viewSerial : ownSerial; }
-	vk::Image GetImage() const { return pooled != nullptr ? vk::Image(pooled->image) : *image; }
-	vk::ImageView GetReadOnlyImageView() const { return readOnlyImageView ? readOnlyImageView : GetImageView(); }
-	/* Which view GetReadOnlyImageView() is, of every one made: a number no
-	 * other view ever has, which a handle - made again at the same value
-	 * once its view is gone - is not. What a descriptor set is kept by. */
-	u64 ReadOnlyViewSerial() const { return readOnlyImageView ? readOnlySerial : pooled != nullptr ? pooled->viewSerial : ownSerial; }
-	/* The view the frames in flight sample, kept while a new image is made */
-	void KeepReadOnlyView() { readOnlyImageView = GetImageView(); readOnlySerial = pooled != nullptr ? pooled->viewSerial : ownSerial; }
+	bool IsNew() const { return vk_texture_is_new(this); }
+	vk::ImageView GetImageView() const { return vk::ImageView(vk_texture_view(this)); }
+	u64 GetViewSerial() const { return vk_texture_view_serial(this); }
+	vk::Image GetImage() const { return vk::Image(vk_texture_image(this)); }
+	vk::ImageView GetReadOnlyImageView() const { return vk::ImageView(vk_texture_read_only_view(this)); }
+	u64 ReadOnlyViewSerial() const { return vk_texture_read_only_serial(this); }
+	void KeepReadOnlyView() { vk_texture_keep_read_only_view(this); }
 	/* A serial for a view just made */
 	static u64 NewViewSerial() { return vk_new_view_serial(); }
-	void SetCommandBuffer(vk::CommandBuffer commandBuffer) { this->commandBuffer = commandBuffer; }
+	void SetCommandBuffer(vk::CommandBuffer cmd) { commandBuffer = (VkCommandBuffer)cmd; }
+	void SetCommandBuffer(std::nullptr_t) { commandBuffer = VK_NULL_HANDLE; }
 	/* Where a command buffer comes from when an upload needs one: a
 	 * texture made on the GPU records nothing of its own */
-	void SetCommandPool(CommandPool *commandPool) { this->commandPool = commandPool; }
-	bool Force32BitTexture(TextureType type) const { return !VulkanContext::Instance()->IsFormatSupported(type); }
+	template<typename Pool>
+	void SetCommandPool(Pool *pool) { commandPool = pool != nullptr ? &pool->p : nullptr; }
+	void SetCommandPool(std::nullptr_t) { commandPool = nullptr; }
+	void SetPhysicalDevice(vk::PhysicalDevice) {}
+	void SetDevice(vk::Device) {}
+	void CreateRenderTarget(const vk::ImageUsageFlags& usage)
+	{
+		if (!vk_texture_create_render_target(this, (VkImageUsageFlags)usage))
+			throwResultException(vk::Result::eErrorOutOfDeviceMemory, "vk_texture_create_render_target");
+	}
+	void ClearOutside(vk::CommandBuffer cmd, u32 width, u32 height, vk::ImageLayout& layout)
+	{
+		VkImageLayout l = (VkImageLayout)layout;
+		vk_texture_clear_outside(this, (VkCommandBuffer)cmd, width, height, &l);
+		layout = (vk::ImageLayout)l;
+	}
 
-	void SetPhysicalDevice(vk::PhysicalDevice physicalDevice) { this->physicalDevice = physicalDevice; }
-	void SetDevice(vk::Device device) { this->device = device; }
-
-private:
-	/* What an image is made for: written by the CPU as before; by the
-	 * decoding kernel; by a copy of the texture's texels as they are */
-	enum Maker { CPU, KERNEL, COPY };
-	void Init(u32 width, u32 height, vk::Format format ,u32 dataSize, bool mipmapped, bool mipmapsIncluded, Maker maker = CPU);
-	bool PartReady(vk::Format format) const;
-	bool Prepare(int width, int height, bool mipmapped, bool mipmapsIncluded, Maker maker = CPU, vk::Format native = vk::Format::eUndefined);
-	void SetImage(u32 size, void *data, bool isNew, bool genMipmaps);
-   void CreateImage(vk::ImageTiling tiling, const vk::ImageUsageFlags& usage, vk::ImageLayout initialLayout,
-			const vk::ImageAspectFlags& aspectMask, vk::ImageCreateFlags flags = vk::ImageCreateFlags());
-	/* The job this texture has with the decoder this frame is not done
-	 * after all: it is made another way, or goes */
-	void CancelDecode();
-	/* The image from the pool, for one of this shape; false if the pool
-	 * has no such shape */
-	bool TakePooled(u32 width, u32 height, bool mipmapped);
-	/* The pool's image given back: when the frames that may use it are
-	 * done, or now */
-	void ReleasePooled(bool now);
-	vk::ImageView StorageView(u32 level) const { return pooled != nullptr ? vk::ImageView(pooled->storageViews[level]) : *storageViews[level]; }
-	/* The image rendered to, extent by extent, with @usage: the pool's, or
-	 * one made (CreateImage()) where the pool has none of that shape */
-	void CreateRenderTarget(const vk::ImageUsageFlags& usage);
-	/* No room in the upload ring: the texture is made with the next frame,
-	 * and until then its image is left as it is */
-	void Defer(bool isNew);
-	/* what the image was made to be used for */
-	vk::ImageUsageFlags imageUsage;
-	/* A render to a texture draws its own pixels, @width by @height from
-	 * the first (Render To Texture Upscaling's), not the whole image, a
-	 * power of two: the rest is black, as it was when the render pass
-	 * cleared the whole image. Said before the render pass, with the
-	 * image's @layout, which is the one it is in after: cleared when it is
-	 * not black already - the image new, or written since by another
-	 * render, or anything else. */
-	void ClearOutside(vk::CommandBuffer cmd, u32 width, u32 height, vk::ImageLayout& layout);
-	/* (the last render's pixels, width << 16 | height, outside which the
-	 * image is black; 0 once anything else writes it) */
-	u32 rttArea = 0;
-	static u32 outsideCleared;	// (how many times: said with the renders to textures, tools/vulkan/vk_vram.sh)
-	void GenerateMipmaps();
-
-	vk::Format format = vk::Format::eUndefined;
-	vk::Extent2D extent;
-	u32 mipmapLevels = 1;
-	bool needsStaging = false;
-public:
-	// handed to the frontend as its frame: copied from as well (a frontend may read it back)
-	bool presented = false;
-private:
-	/* the piece of the upload ring the texture was converted into, between
-	 * UploadMemory() and the UploadToGPU() that follows; and whether the
-	 * image was made anew for it */
-	u8 *slot = nullptr;
-	vk::Buffer slotBuffer;
-	vk::DeviceSize slotOffset = 0;
-	/* the piece PartMemory() handed out, for the UploadPart() that follows */
-	u8 *partSlot = nullptr;
-	vk::Buffer partBuffer;
-	vk::DeviceSize partOffset = 0;
-	bool prepared = false;
-	bool preparedNew = false;
-	vk::CommandBuffer commandBuffer;
-	CommandPool *commandPool = nullptr;
-	/* the image has never been written: it is made from nothing */
-	bool fresh = false;
-	/* made for the kernel to write, with a view for each level */
-	bool storage = false;
-	vk::UniqueImageView storageViews[TEXD_MAX_LEVELS];
-	int decodeJob = -1;
-	u32 decodeSerial = 0;
-	/* For the texture debug log (settings.rend.TextureDebug): how the image
-	 * was last written (DebugPath), and the checksums of what was uploaded,
-	 * by image level, where the CPU made it */
-	enum DebugPath : u8 { DBG_NONE, DBG_STAGED, DBG_LINEAR, DBG_KERNEL, DBG_COPY, DBG_TARGET };
-	u8 debugPath = DBG_NONE;
-	u8 debugLevels = 0;	// how many levels debugSum has, from level 0
-	u32 debugSum[TEXD_MAX_LEVELS];
-	static TexDecoder *decoder;
-	static TexturePool *pool;
-	PooledImage *pooled = nullptr;
-	bool cached = false;
-
-	Allocation allocation;
-	vk::UniqueImage image;
-	vk::UniqueImageView imageView;
-	u64 ownSerial = 0;          /* imageView's */
-	vk::ImageView readOnlyImageView;
-	/* The frames (the command pool's places, bit by bit) whose in-flight
-	 * lists have it: TextureCache */
-	u32 inFlightSlots = 0;
-	u64 readOnlySerial = 0;     /* readOnlyImageView's */
-
-	vk::PhysicalDevice physicalDevice;
-	vk::Device device;
-
-	friend class TextureDrawer;
-	friend class OITTextureDrawer;
-	friend class TextureCache;
+	/* the cache's (rend/TexCache.h) */
+	void Create() { texcache_create(&tc); }
+	bool NeedsUpdate() { return texcache_needs_update(&tc); }
+	void Update() { texcache_update(&tc); }
+	bool IsCustomTextureAvailable() const { return texcache_custom_available(&tc); }
+	void CheckCustomTexture() { texcache_check_custom(&tc); }
 };
 
 /* The polygons' samplers, every one a TSP can ask for made before the
@@ -352,196 +273,28 @@ private:
 	vk_kept_framebuffer k;
 };
 
-class TextureCache : public BaseTextureCache<Texture>
+/* The C++ renderers' view of a vk_texcache (vk_texture.h) */
+class TextureCache
 {
 public:
-	TextureCache() = default;
+	TextureCache() { vk_texcache_construct(&c); }
+	~TextureCache() { vk_texcache_free(&c); }
 	TextureCache(const TextureCache&) = delete;
 	TextureCache& operator=(const TextureCache&) = delete;
-	~TextureCache()
+
+	void ReserveFor(u32 images) { vk_texcache_reserve_for(&c, images); }
+	Texture *getTextureCacheData(TSP tsp, TCW tcw, int area = 0)
 	{
-		for (u32 i = 0; i < inFlightCount; i++)
-			grow_buf_free(&((InFlightList *)inFlightLists.data)[i].textures);
-		grow_buf_free(&inFlightLists);
+		return static_cast<Texture *>(vk_texcache_get(&c, tsp.full, tcw.full, area));
 	}
-
-	void SetCurrentIndex(int index) {
-		InFlightList *lists = (InFlightList *)inFlightLists.data;
-		if (currentIndex < inFlightCount)
-		{
-			Texture **list = InFlight(currentIndex);
-			if (settings.rend.TextureDebug)
-				DebugLog(list, lists[currentIndex].count);
-			for (u32 i = 0; i < lists[currentIndex].count; i++)
-				if (list[i] != nullptr)
-					list[i]->readOnlyImageView = vk::ImageView();
-		}
-		currentIndex = index;
-		Texture::Ring().SetCurrentIndex(index);
-		if (Texture::Pool() != nullptr)
-			Texture::Pool()->Frame(index);
-		/* the textures this place had: in no frame now but those after it */
-		if (GrowInFlight(currentIndex + 1))
-			EmptyInFlight(currentIndex);
-		EmptyTrash(trashedImageViews);
-		EmptyTrash(trashedImages);
-		EmptyTrash(trashedMem);
-	}
-
-	bool IsInFlight(Texture *texture)
-	{
-		return (texture->inFlightSlots & ~SlotBit(currentIndex)) != 0;
-	}
-
-	void SetInFlight(Texture *texture)
-	{
-		const u32 bit = SlotBit(currentIndex);
-		if ((texture->inFlightSlots & bit) != 0 || !GrowInFlight(currentIndex + 1))
-			return;
-		InFlightList& l = ((InFlightList *)inFlightLists.data)[currentIndex];
-		Texture **list = (Texture **)grow_buf_reserve_keep(&l.textures, (l.count + 1) * sizeof(Texture *));
-		if (list == nullptr)
-			return;
-		list[l.count++] = texture;
-		texture->inFlightSlots |= bit;
-	}
-
-	void DestroyLater(Texture *texture)
-	{
-		if (texture->pooled != nullptr)
-		{
-			texture->ReleasePooled(false);
-			texture->format = vk::Format::eUndefined;
-			return;
-		}
-		if (!texture->image)
-			return;
-		texture->CancelDecode();
-		trashedImages[currentIndex].push_back(std::move(texture->image));
-		trashedImageViews[currentIndex].push_back(std::move(texture->imageView));
-		if (texture->storage)
-			for (auto& view : texture->storageViews)
-				if (view)
-					trashedImageViews[currentIndex].push_back(std::move(view));
-		texture->storage = false;
-		trashedMem[currentIndex].push_back(std::move(texture->allocation));
-		texture->format = vk::Format::eUndefined;
-	}
-
-	void Cleanup();
-
-	/* Empties the cache between two frames. The frames before this one can
-	 * still be on their way through the GPU, drawing with these textures, so
-	 * the images are not destroyed here: they are retired, as a texture that
-	 * is replaced is, and destroyed once those frames are done. */
-	void ClearLater()
-	{
-		cache.Each([this](u64, Texture& texture) {
-			DestroyLater(&texture);
-			return true;
-		});
-		EmptyAllInFlight();
-		BaseTextureCache::Clear();
-	}
-
-	/* Empties the cache and destroys everything now, what was retired too.
-	 * For when the renderer is going away and nothing is drawing any more. */
-	void Clear()
-	{
-		EmptyAllInFlight();
-		BaseTextureCache::Clear();
-		for (u32 i = 0; i < inFlightCount; i++)
-			grow_buf_free(&((InFlightList *)inFlightLists.data)[i].textures);
-		grow_buf_free(&inFlightLists);
-		inFlightCount = 0;
-		for (auto& v : trashedImageViews)
-			v.clear();
-		for (auto& v : trashedImages)
-			v.clear();
-		for (auto& v : trashedMem)
-			v.clear();
-		Texture::Ring().Term();
-	}
+	void SetCurrentIndex(int index) { vk_texcache_set_current_index(&c, index); }
+	bool IsInFlight(Texture *texture) { return vk_texcache_is_in_flight(&c, texture); }
+	void SetInFlight(Texture *texture) { vk_texcache_set_in_flight(&c, texture); }
+	void DestroyLater(Texture *texture) { vk_texcache_destroy_later(&c, texture); }
+	void Cleanup() { vk_texcache_cleanup(&c); }
+	void ClearLater() { vk_texcache_clear_later(&c); }
+	void Clear() { vk_texcache_clear(&c); }
 
 private:
-	/* The texture debug log (texture.cpp): the textures of the frame drawn
-	 * last, now and then */
-	void DebugLog(Texture *const *textures, u32 count);
-	bool clearTexture(Texture *tex)
-	{
-		/* (out of the lists that have it: a texture gone is not seen there again) */
-		for (u32 s = 0; s < inFlightCount && tex->inFlightSlots != 0; s++)
-		{
-			if ((tex->inFlightSlots & SlotBit(s)) == 0)
-				continue;
-			Texture **list = InFlight(s);
-			const u32 n = ((InFlightList *)inFlightLists.data)[s].count;
-			for (u32 i = 0; i < n; i++)
-				if (list[i] == tex)
-					list[i] = nullptr;
-			tex->inFlightSlots &= ~SlotBit(s);
-		}
-
-		return tex->Delete();
-	}
-
-	/* The textures each frame (the command pool's place @s) draws with, once
-	 * each: a list that grows, and a texture's bit for the place */
-	struct InFlightList
-	{
-		grow_buf_t textures;	/* Texture *; nullptr where one has gone */
-		u32 count;
-	};
-	/* (a swap chain has a few images: past 31 places, which none has, the last bit is shared) */
-	static u32 SlotBit(u32 s)
-	{
-		return s < 32 ? 1u << s : 0x80000000u;
-	}
-	Texture **InFlight(u32 s)
-	{
-		return (Texture **)((InFlightList *)inFlightLists.data)[s].textures.data;
-	}
-	/* @n places at least, the new ones empty */
-	bool GrowInFlight(u32 n)
-	{
-		if (n <= inFlightCount)
-			return true;
-		if (grow_buf_reserve_keep(&inFlightLists, n * sizeof(InFlightList)) == nullptr)
-			return false;
-		memset((InFlightList *)inFlightLists.data + inFlightCount, 0, (n - inFlightCount) * sizeof(InFlightList));
-		inFlightCount = n;
-		return true;
-	}
-	void EmptyInFlight(u32 s)
-	{
-		InFlightList& l = ((InFlightList *)inFlightLists.data)[s];
-		Texture **list = (Texture **)l.textures.data;
-		for (u32 i = 0; i < l.count; i++)
-			if (list[i] != nullptr)
-				list[i]->inFlightSlots &= ~SlotBit(s);
-		l.count = 0;
-	}
-	void EmptyAllInFlight()
-	{
-		for (u32 s = 0; s < inFlightCount; s++)
-			EmptyInFlight(s);
-	}
-	/* (each frame's lists with room for a game's textures of its own,
-	 * those no image of the pool's has the shape of, retired in a frame:
-	 * made with the frame's place, before the first, and kept) */
-	template<typename T>
-	void EmptyTrash(T& v)
-	{
-		if (v.size() < currentIndex + 1)
-			v.resize(currentIndex + 1);
-		v[currentIndex].clear();
-		if (v[currentIndex].capacity() < 64)
-			v[currentIndex].reserve(64);
-	}
-	grow_buf_t inFlightLists = GROW_BUF_INIT;	/* InFlightList, a place each */
-	u32 inFlightCount = 0;
-	std::vector<std::vector<vk::UniqueImageView>> trashedImageViews;
-	std::vector<std::vector<vk::UniqueImage>> trashedImages;
-	std::vector<std::vector<Allocation>> trashedMem;
-	u32 currentIndex = 0;
+	vk_texcache c;
 };
