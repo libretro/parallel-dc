@@ -19,52 +19,34 @@
     along with Flycast.  If not, see <https://www.gnu.org/licenses/>.
 */
 #pragma once
-#include <array>
-#include <memory>
 #include "quad.h"
 #include "commandpool.h"
+#include "vk_osd.h"
 
-class Texture;
-#define VMU_COUNT 4
-#define XHAIR_COUNT (ARRAY_SIZE(lightgun_params))
-
+/* The C++ renderers' view of a vk_osd, until they are C too */
 class VulkanOSD
 {
 public:
-	~VulkanOSD();
-	void Init(QuadPipeline *pipeline) {
-		this->pipeline = pipeline;
-		for (auto& drawer : drawers)
-		{
-			drawer = std::unique_ptr<QuadDrawer>(new QuadDrawer());
-			drawer->Init(pipeline);
-		}
-		for (auto& drawer : xhairDrawers)
-		{
-			drawer = std::unique_ptr<QuadDrawer>(new QuadDrawer());
-			drawer->Init(pipeline);
-		}
-	}
-	const std::vector<vk::CommandBuffer>* PrepareOSD(CommandPool *commandPool);
-	// commandPool: the pool commandBuffer is of; @with, a pipeline of another render pass's to draw with (the same layout)
-	void DrawOSD(vk::CommandBuffer commandBuffer, vk::Extent2D viewport, CommandPool *commandPool, QuadPipeline *with = nullptr);
-	// whether DrawOSD() has anything to draw
-	bool Drawing() const
+	VulkanOSD() { vk_osd_construct(&o); }
+	~VulkanOSD() { vk_osd_term(&o); }
+	VulkanOSD(const VulkanOSD&) = delete;
+	VulkanOSD& operator=(const VulkanOSD&) = delete;
+	void Init(QuadPipeline *pipeline)
 	{
-		for (const auto& t : vmuTextures)
-			if (t)
-				return true;
-		for (const auto& t : xhairTextures)
-			if (t)
-				return true;
-		return false;
+		if (!vk_osd_init(&o, &pipeline->p))
+			throwResultException(vk::Result::eErrorOutOfDeviceMemory, "vk_osd_init");
 	}
+	void PrepareOSD(CommandPool *commandPool) { vk_osd_prepare(&o, &commandPool->p); }
+	/* commandPool: the pool commandBuffer is of; @with, a pipeline of another render pass's to draw with (the same layout) */
+	void DrawOSD(vk::CommandBuffer commandBuffer, vk::Extent2D viewport, CommandPool *commandPool, QuadPipeline *with = nullptr)
+	{
+		if (!vk_osd_draw(&o, (VkCommandBuffer)commandBuffer, viewport.width, viewport.height, &commandPool->p,
+				with != nullptr ? &with->p : nullptr))
+			throwResultException(vk::Result::eErrorInitializationFailed, "vkCreateGraphicsPipelines");
+	}
+	/* whether DrawOSD() has anything to draw */
+	bool Drawing() const { return vk_osd_drawing(&o); }
 
 private:
-	std::array<std::unique_ptr<Texture>, VMU_COUNT> vmuTextures;
-	std::array<std::unique_ptr<Texture>, XHAIR_COUNT> xhairTextures;
-	std::vector<std::vector<vk::CommandBuffer>> commandBuffers;
-	std::array<std::unique_ptr<QuadDrawer>, VMU_COUNT> drawers;
-	std::array<std::unique_ptr<QuadDrawer>, XHAIR_COUNT> xhairDrawers;
-	QuadPipeline *pipeline = nullptr;
+	vk_osd o;
 };

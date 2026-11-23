@@ -29,7 +29,7 @@ extern "C" {
 
 /* What goes over the picture: the VMUs' screens and the light guns'
  * crosshairs, where the core options put them (as the Vulkan renderers'
- * vulkan/vmu.cpp does it). The eight pictures are made when the renderer
+ * vulkan/vk_osd.c does it). The eight pictures are made when the renderer
  * starts, and written through the upload ring when they change. */
 bool dx12_overlay_init(void);
 /* Before the frame: the pictures of what has changed */

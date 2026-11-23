@@ -28,7 +28,7 @@ extern "C" {
 
 /* What goes over the picture: the VMUs' screens and the light guns'
  * crosshairs, where the core options put them (as the Vulkan renderers'
- * vulkan/vmu.cpp does it). The renderer's, one at a time. */
+ * vulkan/vk_osd.c does it). The renderer's, one at a time. */
 
 /* Before the frame: the textures of what has changed */
 void dx11_overlay_prepare(void);

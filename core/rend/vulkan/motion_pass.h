@@ -18,81 +18,52 @@
 */
 #pragma once
 #include "vulkan.h"
-#include "buffer.h"
 #include "texture.h"
 #include "commandpool.h"
-#include "pso.h"
-#include "rend/upscaler.h"
-#include <memory>
+#include "vk_motion_pass.h"
 #include <vector>
 
-/* The temporal upscaler's motion vector pass (rend/upscaler.h), for
- * the screen drawers: a render pass of its own after the frame's, over
- * the depth the frame left (loaded, tested, not written, kept for the
- * upscaler), into the vectors' image, which the upscaler reads as the
- * colour. The vectors are of the strips rend/upscaler.c matched with
- * the frame before's. The pipelines are made with the drawer's layout,
- * whose per-frame descriptor set (the vertex uniforms) is bound when
- * Record() is called. Its three pipelines are asked of the pipeline
- * thread when it is made (pso.h): the first Record() takes them, or makes
- * them there and fails there as Init() did when the device cannot. */
-class MotionVectorPass : public PsoBuilder
+/* The C++ renderers' view of a vk_motion_pass (vk_motion_pass.h), until they are C too */
+class MotionVectorPass
 {
 public:
-	MotionVectorPass() { PsoOwnInit(this, pipelines, 3); }
-	~MotionVectorPass() override { Term(nullptr); }
-	/* Made for a size and the frame's depth images (one a frame slot,
-	 * which the vectors' images are too), in the layout the frame leaves
-	 * them in; made again when any of that changes */
+	MotionVectorPass() { vk_motion_pass_construct(&m); }
+	~MotionVectorPass() { vk_motion_pass_term(&m, nullptr); }
+	MotionVectorPass(const MotionVectorPass&) = delete;
+	MotionVectorPass& operator=(const MotionVectorPass&) = delete;
 	void Init(vk::Extent2D size, vk::Format depthFormat, vk::ImageLayout depthLayout,
 			const std::vector<vk::ImageView>& depthViews, vk::PipelineLayout pipelineLayout,
-			vk::ShaderModule vertexShader, vk::ShaderModule fragmentShader, CommandPool *commandPool);
-	/* The same over a depth stored by the compute renderer, which is no
-	 * attachment but an image sampled (mv_depth.frag tests against it):
-	 * the pass has a layout of its own then, with the vertex uniforms
-	 * @uniformBuffers (one a frame slot, the drawer's) and the depth */
+			vk::ShaderModule vertexShader, vk::ShaderModule fragmentShader, CommandPool *commandPool)
+	{
+		if (!vk_motion_pass_init(&m, size, (VkFormat)depthFormat, (VkImageLayout)depthLayout,
+				reinterpret_cast<const VkImageView *>(depthViews.data()), (u32)depthViews.size(), (VkPipelineLayout)pipelineLayout,
+				(VkShaderModule)vertexShader, (VkShaderModule)fragmentShader, commandPool != nullptr ? &commandPool->p : nullptr))
+			throwResultException(vk::Result::eErrorOutOfDeviceMemory, "vk_motion_pass_init");
+	}
 	void InitSampled(vk::Extent2D size, const std::vector<vk::ImageView>& depthViews,
 			const std::vector<vk::Buffer>& uniformBuffers, vk::DeviceSize uniformBytes,
-			vk::ShaderModule vertexShader, vk::ShaderModule fragmentShader, CommandPool *commandPool);
-	// what was made goes once the frames that could use it have gone by
-	void Term(CommandPool *commandPool);
-
-	/* Before the frame is drawn, under its jitter: whether this frame's
-	 * vectors are drawn (the frame's strips are needed: not a GPU-parsed
-	 * one); matches the strips and uploads where each vertex was */
-	bool Begin(int image);
-	// (the vertices and indices in @vertexBuffer, at their offsets)
+			vk::ShaderModule vertexShader, vk::ShaderModule fragmentShader, CommandPool *commandPool)
+	{
+		if (!vk_motion_pass_init_sampled(&m, size, reinterpret_cast<const VkImageView *>(depthViews.data()), (u32)depthViews.size(),
+				reinterpret_cast<const VkBuffer *>(uniformBuffers.data()), uniformBytes,
+				(VkShaderModule)vertexShader, (VkShaderModule)fragmentShader, commandPool != nullptr ? &commandPool->p : nullptr))
+			throwResultException(vk::Result::eErrorOutOfDeviceMemory, "vk_motion_pass_init_sampled");
+	}
+	void Term(CommandPool *commandPool) { vk_motion_pass_term(&m, commandPool != nullptr ? &commandPool->p : nullptr); }
+	bool Begin(int image) { return vk_motion_pass_begin(&m, image); }
 	void Record(vk::CommandBuffer commandBuffer, int image, vk::Buffer vertexBuffer, vk::DeviceSize indexOffset,
-			const vk::Rect2D& scissor, vk::DeviceSize vertexOffset = 0);
-	// the vectors and the frame's depth, to the upscaler
-	void Submit(int image, vk::Image depthImage, vk::ImageView depthView, vk::Format depthFormat);
-	bool Recorded() const { return recorded; }
-	// the pipeline thread's: @key the cull mode's
-	VkPipeline BuildPipeline(u64 key, vk::PipelineCache cache) override { return Make((int)key, cache, false); }
+			const vk::Rect2D& scissor, vk::DeviceSize vertexOffset = 0)
+	{
+		if (!vk_motion_pass_record(&m, (VkCommandBuffer)commandBuffer, image, (VkBuffer)vertexBuffer, indexOffset,
+				reinterpret_cast<const VkRect2D *>(&scissor), vertexOffset))
+			throwResultException(vk::Result::eErrorInitializationFailed, "vkCreateGraphicsPipelines");
+	}
+	void Submit(int image, vk::Image depthImage, vk::ImageView depthView, vk::Format depthFormat)
+	{
+		vk_motion_pass_submit(&m, image, (VkImage)depthImage, (VkImageView)depthView, (VkFormat)depthFormat);
+	}
+	bool Recorded() const { return m.recorded; }
 
 private:
-	vk::Extent2D size;
-	vk::ImageLayout depthLayout = vk::ImageLayout::eUndefined;
-	vk::UniqueRenderPass renderPass;
-	PsoSlot pipelines[3];	// by cull mode
-	// what they are made of
-	vk::PipelineLayout pipelineLayout;
-	vk::ShaderModule vertexShader, fragmentShader;
-	bool depthTest = false;
-	std::vector<std::unique_ptr<FramebufferAttachment>> attachments;
-	std::vector<vk::UniqueFramebuffer> framebuffers;
-	std::vector<std::unique_ptr<BufferData>> prevXyBuffers;
-	bool recorded = false;
-	// the sampled-depth mode's own layout and sets
-	bool sampled = false;
-	vk::UniqueDescriptorSetLayout setLayout;
-	vk::UniquePipelineLayout ownLayout;
-	vk::UniqueDescriptorPool descriptorPool;
-	std::vector<vk::DescriptorSet> sets;
-	vk::UniqueSampler depthSampler;
-
-	void MakePipelines(vk::PipelineLayout pipelineLayout, vk::ShaderModule vertexShader, vk::ShaderModule fragmentShader, bool depthTest);
-	// @orThrow: as vulkan.hpp does when the device cannot make it, else VK_NULL_HANDLE
-	VkPipeline Make(int cull, vk::PipelineCache cache, bool orThrow) const;
-	vk::Pipeline Pipeline(int cull);
+	vk_motion_pass m;
 };
