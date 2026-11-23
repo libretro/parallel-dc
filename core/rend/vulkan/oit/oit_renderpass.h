@@ -19,124 +19,46 @@
     along with Flycast.  If not, see <https://www.gnu.org/licenses/>.
 */
 #pragma once
+/* The C++ renderers' view of vk_oit_renderpass.h, until they are C too */
 #include "../vulkan_context.h"
+#include "vk_oit_renderpass.h"
 
 class RenderPasses
 {
 public:
-	/* @depthWrites: the colour subpass may write depth. It reads the depth
-	 * buffer as an input, so the buffer is normally in a read-only layout
-	 * there, which forbids writing; translucent polygons that are not
-	 * sorted are drawn in that subpass and do write. For a frame that has
-	 * such polygons the buffer is in the general layout instead, which
-	 * allows both. The two kinds of render pass differ in nothing else and
-	 * a pipeline made for one works with the other.
-	 * @resumed: a band of a frame drawn in bands (OITDrawer::Draw()) after
-	 * the first. The picture's attachment holds the bands drawn before, and
-	 * is loaded, not cleared and not taken from an undefined layout, which
-	 * would let the device drop all of it. Again a pipeline made for one
-	 * render pass works with the other. */
+	RenderPasses() { vk_oit_passes_construct(&p, false); }
+	RenderPasses(const RenderPasses&) = delete;
+	RenderPasses& operator=(const RenderPasses&) = delete;
+	~RenderPasses() { Reset(); }
+
 	vk::RenderPass GetRenderPass(bool initial, bool last, bool depthWrites = false, bool resumed = false)
 	{
-		size_t index = (initial ? 1 : 0) | (last ? 2 : 0) | (depthWrites ? 4 : 0) | (resumed ? 8 : 0);
-		if (!renderPasses[index])
-			renderPasses[index] = MakeRenderPass(initial, last, depthWrites, resumed);
-		return *renderPasses[index];
+		const VkRenderPass renderPass = vk_oit_passes_get(&p, initial, last, depthWrites, resumed);
+		if (renderPass == VK_NULL_HANDLE)
+			throwResultException(vk::Result::eErrorInitializationFailed, "vkCreateRenderPass");
+		return vk::RenderPass(renderPass);
 	}
-	/* Every kind of render pass made now, when the renderer starts or the
-	 * picture changes size: the ones for drawing in bands (@resumed) are
-	 * first needed while a game runs, and nothing is made then */
 	void MakeAll()
 	{
-		for (size_t index = 0; index < renderPasses.size(); index++)
-			GetRenderPass(index & 1, index & 2, index & 4, index & 8);
+		if (!vk_oit_passes_make_all(&p))
+			throwResultException(vk::Result::eErrorInitializationFailed, "vkCreateRenderPass");
 	}
-	// The layout the depth buffer is in while the colour subpass reads it
-	static vk::ImageLayout DepthInputLayout(bool depthWrites)
-	{
-		return depthWrites ? vk::ImageLayout::eGeneral : vk::ImageLayout::eDepthStencilReadOnlyOptimal;
-	}
-	void Reset()
-	{
-		for (auto& renderPass : renderPasses)
-			renderPass.reset();
-	}
-	/* SSAA's samples a pixel (1: off): the render passes made for another
-	 * count are dropped. See MakeSsaaRenderPass(). */
-	void SetSamples(u32 samples)
-	{
-		if (samples != this->samples)
-		{
-			Reset();
-			this->samples = samples;
-		}
-	}
-	u32 GetSamples() const { return samples; }
-	/* The depth left by the frame's last render pass stored (the temporal
-	 * upscaler reads it, rend/upscaler.h): the render passes made the
-	 * other way are dropped */
-	void SetKeepDepth(bool keep)
-	{
-		if (keep != keepDepth)
-		{
-			Reset();
-			keepDepth = keep;
-		}
-	}
-	bool KeepsDepth() const { return keepDepth; }
-	/* The subpasses with SSAA: 0 depth and stencil, 1 colour and the
-	 * translucent lists, 2 the translucent modifier volumes (and, in a
-	 * render pass that is not the last, each sample put together, and the
-	 * translucent depth for the next), 3 the picture put together and
-	 * resolved. Without, 2 does all that 2 and 3 do. */
-	static constexpr int SsaaFinalSubpass = 3;
-	int GetFinalSubpass() const { return samples > 1 ? SsaaFinalSubpass : 2; }
-	virtual ~RenderPasses() = default;
+	static vk::ImageLayout DepthInputLayout(bool depthWrites) { return (vk::ImageLayout)vk_oit_depth_input_layout(depthWrites); }
+	void Reset() { vk_oit_passes_reset(&p); }
+	void SetSamples(u32 samples) { vk_oit_passes_set_samples(&p, samples); }
+	u32 GetSamples() const { return p.samples; }
+	void SetKeepDepth(bool keep) { vk_oit_passes_set_keep_depth(&p, keep); }
+	bool KeepsDepth() const { return p.keepDepth; }
+	static constexpr int SsaaFinalSubpass = VK_OIT_SSAA_FINAL_SUBPASS;
+	int GetFinalSubpass() const { return vk_oit_final_subpass(&p); }
 
 protected:
-	VulkanContext *GetContext() const { return VulkanContext::Instance(); }
-	vk::UniqueRenderPass MakeRenderPass(bool initial, bool last, bool depthWrites, bool resumed);
-	vk::UniqueRenderPass MakeSsaaRenderPass(bool initial, bool last, bool depthWrites, bool resumed);
-	virtual vk::AttachmentDescription GetAttachment0Description(bool initial, bool last) const
-	{
-		return vk::AttachmentDescription(vk::AttachmentDescriptionFlags(), GetContext()->GetColorFormat(), vk::SampleCountFlagBits::e1,
-				vk::AttachmentLoadOp::eClear, vk::AttachmentStoreOp::eStore, vk::AttachmentLoadOp::eDontCare, vk::AttachmentStoreOp::eDontCare,
-				vk::ImageLayout::eUndefined, vk::ImageLayout::eShaderReadOnlyOptimal);
-	}
-	virtual vk::Format GetColorFormat() const { return GetContext()->GetColorFormat(); }
-	virtual std::vector<vk::SubpassDependency> GetSubpassDependencies() const
-	{
-		std::vector<vk::SubpassDependency> deps;
-		// (the frontend reads the picture anywhere: not by region, see drawer.cpp)
-		deps.emplace_back(2, VK_SUBPASS_EXTERNAL, vk::PipelineStageFlagBits::eColorAttachmentOutput,
-				vk::PipelineStageFlagBits::eFragmentShader | vk::PipelineStageFlagBits::eComputeShader | vk::PipelineStageFlagBits::eTransfer,
-				vk::AccessFlagBits::eColorAttachmentWrite, vk::AccessFlagBits::eShaderRead | vk::AccessFlagBits::eTransferRead);
-		return deps;
-	}
-
-private:
-	std::array<vk::UniqueRenderPass, 16> renderPasses;
-	u32 samples = 1;
-	bool keepDepth = false;
+	vk_oit_passes p;
 };
 
+/* renders to a texture's: an R8G8B8A8 picture, sampled after */
 class RttRenderPasses : public RenderPasses
 {
-protected:
-	virtual vk::AttachmentDescription GetAttachment0Description(bool initial, bool last) const override
-	{
-		return vk::AttachmentDescription(vk::AttachmentDescriptionFlags(), vk::Format::eR8G8B8A8Unorm, vk::SampleCountFlagBits::e1,
-				vk::AttachmentLoadOp::eClear, vk::AttachmentStoreOp::eStore,
-				vk::AttachmentLoadOp::eDontCare, vk::AttachmentStoreOp::eDontCare,
-				vk::ImageLayout::eUndefined,
-				vk::ImageLayout::eShaderReadOnlyOptimal);
-	}
-	virtual vk::Format GetColorFormat() const override { return vk::Format::eR8G8B8A8Unorm; }
-	virtual std::vector<vk::SubpassDependency> GetSubpassDependencies() const override
-	{
-		std::vector<vk::SubpassDependency> deps;
-		deps.emplace_back(2, VK_SUBPASS_EXTERNAL, vk::PipelineStageFlagBits::eColorAttachmentOutput, vk::PipelineStageFlagBits::eFragmentShader,
-				vk::AccessFlagBits::eColorAttachmentWrite, vk::AccessFlagBits::eShaderRead);
-		return deps;
-	}
+public:
+	RttRenderPasses() { p.rtt = true; }
 };

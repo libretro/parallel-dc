@@ -4,7 +4,7 @@
 # glslangValidator:
 #
 #   core/rend/ta_gpu_spv.inc     GPU-side TA processing's decode
-#                                (rend/ta_gpu.h; vulkan/ta_decoder.cpp)
+#                                (rend/ta_gpu.h; vulkan/vk_ta_decoder.c)
 #   core/rend/texdecode_spv.inc  textures made on the GPU
 #                                (rend/texdecode.h; vulkan/vk_tex_decoder.c)
 #   core/rend/vulkan/raster_spv.inc

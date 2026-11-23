@@ -144,8 +144,7 @@ awk '
 # (and no render pass's dependency out to what reads its pictures after it
 # is by region: that reader is in another render pass, or a copy, and reads
 # anywhere; by region it may read tiles not drawn yet)
-for f in $R/vulkan/drawer.cpp $R/vulkan/pipeline.h $R/vulkan/pipeline.cpp $R/vulkan/oit/oit_renderpass.h \
-      $R/vulkan/oit/oit_renderpass.cpp; do
+for f in $R/vulkan/drawer.cpp $R/vulkan/pipeline.h $R/vulkan/pipeline.cpp; do
    [ -f "$f" ] || continue
    awk '
       /(emplace_back|SubpassDependency)\( *[0-9a-z]+, *VK_SUBPASS_EXTERNAL *,/ { on = 1; text = "" }
@@ -153,7 +152,15 @@ for f in $R/vulkan/drawer.cpp $R/vulkan/pipeline.h $R/vulkan/pipeline.cpp $R/vul
       on && /\)[,;][[:space:]]*$/ { on = 0; if (text ~ /eByRegion/) bad = 1 }
       END { exit bad }' "$f" || bad "$f: a dependency out of a render pass to what reads its picture is by region"
 done
-# (the passes made in C: none of their dependencies is by region)
+# (the per-pixel renderer's, made in C: its dependencies are dep() calls)
+f=$R/vulkan/oit/vk_oit_renderpass.c
+awk '
+   /dep\(d, *[0-9a-z]+, *VK_SUBPASS_EXTERNAL *,/ { on = 1; text = "" }
+   on { text = text $0 }
+   on && /\);[[:space:]]*$/ { on = 0; if (text ~ /VK_DEPENDENCY_BY_REGION_BIT/) bad = 1 }
+   END { exit bad }' "$f" || bad "$f: a dependency out of a render pass to what reads its picture is by region"
+grep -q 'dep(d, 2, VK_SUBPASS_EXTERNAL' "$f" || bad "$f: the dependencies out of its render passes are not where this test looks"
+# (the other passes made in C: none of their dependencies is by region)
 for f in $R/vulkan/vk_motion_pass.c $R/vulkan/vk_writeout.c; do
    [ -f "$f" ] || continue
    ! grep -q VK_DEPENDENCY_BY_REGION_BIT "$f" || bad "$f: a dependency out of a render pass to what reads its picture is by region"
