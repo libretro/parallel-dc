@@ -6,7 +6,7 @@
 #   core/rend/ta_gpu_spv.inc     GPU-side TA processing's decode
 #                                (rend/ta_gpu.h; vulkan/ta_decoder.cpp)
 #   core/rend/texdecode_spv.inc  textures made on the GPU
-#                                (rend/texdecode.h; vulkan/tex_decoder.cpp)
+#                                (rend/texdecode.h; vulkan/vk_tex_decoder.c)
 #   core/rend/vulkan/raster_spv.inc
 #                                the raster renderers' shaders
 #                                (vulkan/shaders/; vulkan/vk_shaders.c)
