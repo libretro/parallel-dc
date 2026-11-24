@@ -158,7 +158,7 @@ public:
 				computeDrawer.Fallback(ComputeFrame::Why_Rtt);
 			else if (!computeDrawer.CanDraw())
 				computeDrawer.Fallback(ComputeFrame::Why_Decode);
-			else if (computeDrawer.Prepare(false, false, paletteTexture.get(), OITTextureDrawer::ComputeSize()))
+			else if (computeDrawer.Prepare(false, false, PaletteTexture(), OITTextureDrawer::ComputeSize()))
 			{
 				const OITTextureDrawer::ComputeTarget target = textureDrawer.ComputeBegin();
 				computeDrawer.Record(target.image, target.view, vk::ImageView());
@@ -175,7 +175,7 @@ public:
 				computeDrawer.Fallback(ComputeFrame::Why_Osd);
 			else if (!screenDrawer.ComputeCanStart(&last, &scaled))
 				computeDrawer.Fallback(ComputeFrame::Why_Picture);
-			else if (computeDrawer.Prepare(last, scaled, paletteTexture.get()))
+			else if (computeDrawer.Prepare(last, scaled, PaletteTexture()))
 			{
 				// (the upscaler's strips matched once the frame is this renderer's: the raster drawer matches its own)
 				screenDrawer.ComputeMotionBegin(computeDrawer.Slot());
@@ -194,7 +194,7 @@ public:
 			drawer = &screenDrawer;
 
 		SetParsed(*drawer);
-		drawer->Draw(fogTexture.get(), paletteTexture.get());
+		drawer->Draw(FogTexture(), PaletteTexture());
 
 		if (!pvrrc.isRTT)
 		{

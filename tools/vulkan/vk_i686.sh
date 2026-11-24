@@ -9,11 +9,12 @@
 set -e
 cd "$(dirname "$0")/../.."
 CXX_I686=${CXX_I686:-i686-w64-mingw32-g++}
-FLAGS=$(make -s -n -B platform=win64 CC=XCC CXX=XCXX core/rend/vulkan/vulkan_renderer.o 2>/dev/null | sed -n 's/^XCXX //p' | head -1 \
+FLAGS=$(make -s -n -B platform=win64 CC=XCC CXX=XCXX core/rend/vulkan/oit/oit_renderer.o 2>/dev/null | sed -n 's/^XCXX //p' | head -1 \
    | sed 's/ -c .*//; s/ -o [^ ]*//; s/-DHOST_CPU=[^ ]*//g; s/-DGIT_VERSION=[^ ]* [^ ]*//')
 [ -n "$FLAGS" ] || { echo "vk_i686: no flags from the Makefile"; exit 1; }
 fails=0
 for f in core/rend/vulkan/*.cpp core/rend/vulkan/oit/*.cpp; do
+   [ -f "$f" ] || continue
    $CXX_I686 -fsyntax-only $FLAGS -DHOST_CPU=0x20000001 '-DGIT_VERSION="i686"' "$f" || { echo "  FAIL: $f"; fails=$((fails + 1)); }
 done
 [ $fails -eq 0 ] || { echo "vk_i686: $fails failed"; exit 1; }

@@ -131,9 +131,8 @@ typedef struct renderer_ops
 	bool (*ready)(void);
 } renderer_ops;
 
-/* The renderers renderer_create() chooses from: OpenGL per triangle or
- * strip (gles/gles.c) and per pixel (gl4/gles.c); the others are C++
- * classes (rend/renderer_class.h) */
+/* The renderers renderer_create() chooses from: C, but the Vulkan per-pixel
+ * renderer, a C++ class (rend/renderer_class.h) */
 const renderer_ops *rend_GLES2(void);
 const renderer_ops *rend_GL4(void);
 const renderer_ops *rend_Vulkan(void);

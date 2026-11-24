@@ -31,445 +31,79 @@
 #include "rend/last_picture.h"
 #include "parse_arena_vk.h"
 #include "drawer.h"
+#include "vk_renderer.h"
 #include <memory>
 #include <vector>
 
+/* The C++ renderers' view of a vk_renderer (vk_renderer.h): the per-pixel
+ * renderer's, until it is C too */
 class BaseVulkanRenderer : public Renderer
 {
 public:
-	/* The quads' pipelines dropped (what the pipeline thread still has of
-	 * them, finished or dropped): first in a derived Term(), before the
-	 * render passes they are made for go with the drawers */
-	void DropQuads()
-	{
-		quadPipeline.Forget();
-		overlayQuadPipeline.Forget();
-	}
-	bool Ready() override { return VkPsoWorker::Instance().BatchReady(); }
-	virtual void Term() override
-	{
-		ta_set_flat_strips(false);
-		ta_set_modvol_clip(false);
-		// (the quad pipelines before the modules they may be being made with)
-		quadPipeline.Term();
-		overlayQuadPipeline.Term();
-		shaderManager.Term();
-		vmus.reset();
-		vk_rtt_term();
-		textureCache.Clear();
-		Texture::SetDecoder(nullptr);
-		texDecoder.Term();
-		taDecoder.Term();
-		/* (the derived renderers waited for the card's frames: WaitAll()) */
-		if (parseArenaOk)
-		{
-			NOTICE_LOG(RENDERER, "Vulkan: %u renders parsed where the card reads them, %u copied there\n",
-					parsedHere, parsedCopied);
-			parse_arena_vk_term(&parseArena);
-			parseArenaOk = false;
-		}
-		keptPicture = nullptr;
-		fogTexture = nullptr;
-		paletteTexture = nullptr;
-		texCommandPool.Term();
-		framebufferTextures.clear();
-		// (what the cache's textures had is back in the pool by now)
-		Texture::SetPool(nullptr);
-		texPool.Term();
-	}
+	BaseVulkanRenderer() { vk_renderer_construct(&v, Kind(), this); }
+	~BaseVulkanRenderer() { vk_renderer_free(&v); }
+	BaseVulkanRenderer(const BaseVulkanRenderer&) = delete;
+	BaseVulkanRenderer& operator=(const BaseVulkanRenderer&) = delete;
 
-	/* The frontend let go of the old renderer's picture before it went
-	 * (VulkanContext::ReleasePicture()) and would show none until this one
-	 * draws: the picture kept from it (rend/last_picture.h) is handed over,
-	 * as a framebuffer read from the game's memory is. Once, after the
-	 * change of renderer. */
-	bool PresentKeptPicture() override
-	{
-		int width, height;
-		const u8 *pixels = last_picture(&width, &height);
-		if (pixels == nullptr)
-			return false;
-		// (as Process() begins a frame)
-		texCommandPool.BeginFrame();
-		textureCache.SetCurrentIndex(texCommandPool.GetIndex());
-		texDecoder.BeginFrame(texCommandPool.GetIndex());
-		taDecoder.BeginFrame(texCommandPool);
-		std::unique_ptr<Texture>& curTexture = FramebufferTexture();
-		curTexture->SetCommandBuffer(texCommandPool.Allocate());
-		curTexture->UploadToGPU(width, height, (u8 *)pixels, false);
-		curTexture->SetCommandBuffer(nullptr);
-		PresentTexture(*curTexture, width, height, { width, height });
-		return true;
-	}
-
-	// (TA processing switched on or off)
-	virtual void OptionsChanged() override
-	{
-		taDecoder.Setup(texCommandPool, ta_gpu_wanted());
-	}
-
-	virtual u64 GetTexture(TSP tsp, TCW tcw, int area = 0) override
-	{
-		Texture* tf = textureCache.getTextureCacheData(tsp, tcw, area);
-
-		if (tf->IsNew())
-		{
-			tf->Create();
-			tf->SetPhysicalDevice(GetContext()->GetPhysicalDevice());
-			tf->SetDevice(GetContext()->GetDevice());
-			tf->SetCached();
-		}
-
-		//update if needed
-		if (tf->NeedsUpdate())
-		{
-			// This kills performance when a frame is skipped and lots of texture updated each frame
-			//if (textureCache.IsInFlight(tf))
-			//	textureCache.DestroyLater(tf);
-			/* a command buffer of its own if it is uploaded from here; one
-			 * made on the GPU is recorded with the others (Process()) */
-			tf->SetCommandPool(&texCommandPool);
-			tf->Update();
-		}
-		else if (tf->IsCustomTextureAvailable())
-		{
-			textureCache.DestroyLater(tf);
-			tf->SetCommandPool(&texCommandPool);
-			tf->CheckCustomTexture();
-		}
-		tf->SetCommandBuffer(nullptr);
-		tf->SetCommandPool(nullptr);
-		textureCache.SetInFlight(tf);
-
-		return tf->GetIntId();
-	}
-
-	virtual bool Process(TA_context* ctx) override
-	{
-		texCommandPool.BeginFrame();
-		textureCache.SetCurrentIndex(texCommandPool.GetIndex());
-		texDecoder.BeginFrame(texCommandPool.GetIndex());
-		taDecoder.BeginFrame(texCommandPool);
-
-      if (!ctx->rend.isRTT)
-         vmus->PrepareOSD(&texCommandPool);
-      if (!ctx->rend.isRTT && !ctx->rend.isRenderFramebuffer)
-         CheckKeptPicture();
-
-		if (ctx->rend.isRenderFramebuffer)
-			return RenderFramebuffer();
-
-		if (KillTex)
-		{
-			/* what was rendered to a texture and is not in video memory yet goes there before its picture does */
-			rtt_watch_flush();
-			textureCache.ClearLater();
-		}
-
-		/* SSAA draws flat strips at a single rate: the parse and the GPU's
-		 * decode's header pass look for them then, and only then */
-		ta_set_flat_strips(samples > 1);
-		/* the modifier volumes' triangles far off the screen cut before the
-		 * GPU clips them (rend/modvol_clip.h) */
-		ta_set_modvol_clip(true);
-		/* GPU-side TA processing: the header pass makes the frame ready to
-		 * be drawn from the GPU's decode, in the full parse's place; or it
-		 * is parsed as ever */
-		bool result;
-		// (the upscaler's motion vectors are matched from the parse's strips: rend/upscaler.h)
-		if (!taDecoder.Ready() || upscaler_active() || !taDecoder.Prepare(ctx, TaFlags(), &result))
-		{
-			/* into this frame's slice of the memory the card reads, where
-			 * there is one: the draws read it there, uncopied (with the
-			 * background polygon's four vertices FillBGP() wrote, at the
-			 * head of the list the parse empties and takes them back in) */
-			ta_list_t *lists[PARSE_ARENA_PARTS];
-			ctx->ArenaLists(lists);
-			if (parseArenaOk && parse_arena_attach(&parseArena.arena, (unsigned)texCommandPool.GetIndex(),
-					lists, 4 * sizeof(Vertex)))
-				parsedSlot = texCommandPool.GetIndex();
-			result = ta_parse_vdrc(ctx);
-			if (!result)
-				DetachParse();
-		}
-		else if (result)
-			taDecoder.Record(ctx, texCommandPool);
-		// the textures the frame's polygons asked for that are made on the GPU, before the draws
-		texDecoder.Flush(texCommandPool);
-
-		textureCache.Cleanup();
-
-		if (result)
-		{
-			CheckFogTexture();
-			CheckPaletteTexture();
-		}
-		else
-			texCommandPool.EndFrame();
-
-		return result;
-	}
-
-	/* The frame drawn (RenderFrame()), and its lists its own again before
-	 * it goes back to the TA: what the parse wrote stays in its slice for
-	 * the card, till the slot's next frame (BeginFrame() waits) */
-	bool Render() override
-	{
-		const bool rv = RenderFrame();
-		DetachParse();
-		return rv;
-	}
+	void DropQuads() { vk_renderer_drop_quads(&v); }
+	bool Ready() override { return vk_pso_worker_batch_ready(); }
+	virtual void Term() override { vk_renderer_term(&v); }
+	bool PresentKeptPicture() override { return vk_renderer_present_kept_picture(&v); }
+	virtual void OptionsChanged() override { vk_renderer_options_changed(&v); }
+	virtual u64 GetTexture(TSP tsp, TCW tcw, int area = 0) override { return vk_renderer_get_texture(&v, tsp.full, tcw.full, area); }
+	virtual bool Process(TA_context* ctx) override { return vk_renderer_process(&v, ctx); }
+	bool Render() override { return vk_renderer_render(&v); }
 
 protected:
 	virtual bool RenderFrame() = 0;
 	VulkanContext *GetContext() const { return VulkanContext::Instance(); }
-
-	/* What @drawer draws this frame from: the slice the parse wrote, or
-	 * (nothing) the main buffer it copies the lists into */
-	void SetParsed(BaseDrawer& drawer) { SetParsed(drawer.Base()); }
-	void SetParsed(vk_base_drawer *drawer)
-	{
-		vk_parsed parsed = {};
-		if (parsedSlot >= 0 && parsedSlot == texCommandPool.GetIndex())
-		{
-			const parse_arena_t& a = parseArena.arena;
-			parsed.buffer = parseArena.buffer;
-			parsed.vertices = parse_arena_offset(&a, (unsigned)parsedSlot, PARSE_ARENA_VERTS);
-			parsed.indices = parse_arena_offset(&a, (unsigned)parsedSlot, PARSE_ARENA_IDX);
-			parsed.sortRoom = (u32)(a.space[PARSE_ARENA_IDX] - pvrrc.idx.bytes());
-			// (the volumes' triangles drawn: those cut where there are, rend/modvol_clip.h)
-			parsed.modVols = parse_arena_offset(&a, (unsigned)parsedSlot,
-					pvrrc.mv_clip.used() != 0 ? PARSE_ARENA_MV_CLIP : PARSE_ARENA_MODTRIG);
-			if (parsedHere++ == 0)
-				NOTICE_LOG(RENDERER, "Vulkan: renders parsed where the card reads them, not copied there\n");
-		}
-		else if (!pvrrc.gpu && parsedCopied++ == 0 && parseArenaOk)
-			WARN_LOG(RENDERER, "Vulkan: a render copied to the card though its memory has the parse's room\n");
-		drawer->parsed = parsed;
-	}
-	void DetachParse()
-	{
-		if (parsedSlot >= 0)
-			parse_arena_detach(&parseArena.arena);
-		parsedSlot = -1;
-	}
+	void SetParsed(BaseDrawer& drawer) { vk_renderer_set_parsed(&v, drawer.Base()); }
 	// how the drawers draw a frame decoded on the GPU (ta_gpu_prepare()'s TA_GPU_*)
 	virtual u32 TaFlags() const = 0;
-
 	bool BaseInit(vk::RenderPass renderPass, int subpass = 0)
 	{
-		texCommandPool.Init();
-		vk_rtt_init();
-		/* where the frame's lists are parsed into, one slice a frame in
-		 * flight, where the card can read them as they are: memory the CPU
-		 * reads back fast too, as the parse and the sort do (a machine
-		 * whose video memory is the CPU's) - or none, and they are copied.
-		 * (Made once: a change of size comes back here, the frames on the
-		 * card done, and keeps it while it has as many slices as there are
-		 * slots, of the machine's lists' room.) */
-		size_t room[PARSE_ARENA_PARTS];
-		TA_context::ArenaRooms(room);
-		if (parseArenaOk && (parseArena.arena.slices != (unsigned)texCommandPool.GetSize()
-				|| memcmp(parseArena.arena.room, room, sizeof(room)) != 0))
-		{
-			parse_arena_vk_term(&parseArena);
-			parseArenaOk = false;
-		}
-		if (!parseArenaOk)
-		{
-			parseArenaOk = parse_arena_vk_init(&parseArena, (VkDevice)GetContext()->GetDevice(),
-					GetContext()->GetHeap().Raw(), room, (unsigned)texCommandPool.GetSize()) != 0;
-			parsedHere = parsedCopied = 0;
-		}
-		DetachParse();
-		/* where the textures converted on the CPU go to the GPU through: one
-		 * buffer, a share of the video memory, between 16 and 64 MB */
-		Texture::Ring().Init((size_t)std::min<u64>(std::max<u64>((u64)GetContext()->GetVramBudget().available_kib() * 1024 / 32,
-				16ull << 20), 64ull << 20), &texCommandPool);
-		texDecoder.Init();
-		Texture::SetDecoder(&texDecoder);
-		// the textures' images, all of them now (rend/tex_pool.h)
-		texPool.Init(&texDecoder);
-		Texture::SetPool(&texPool);
-		// ...and the cache's room for them (rend/tex_map.h)
-		textureCache.ReserveFor(texPool.Book().made);
-		quadPipeline.Init(&shaderManager, renderPass, subpass);
-		vmus = std::unique_ptr<VulkanOSD>(new VulkanOSD());
-		vmus->Init(&quadPipeline);
-		// GPU-side TA processing, if it is on: here, not in a frame
-		taDecoder.Setup(texCommandPool, ta_gpu_wanted());
-
+		if (!vk_renderer_base_init(&v, (VkRenderPass)renderPass, subpass))
+			throwResultException(vk::Result::eErrorInitializationFailed, "vk_renderer_base_init");
 		return true;
 	}
-
 	/* In a new context, the picture kept from the old one (rend/last_picture.h)
 	 * is made a texture, and the screen's drawer starts its first frame from it. */
 	virtual void SetRestoredPicture(vk::ImageView view, vk::Extent2D size) = 0;
-
-	void CheckKeptPicture()
-	{
-		int width, height;
-		const u8 *pixels = last_picture(&width, &height);
-		if (pixels == nullptr)
-			return;
-		keptPicture = std::unique_ptr<Texture>(new Texture());
-		keptPicture->tc.tex_type = TextureType::_8888;
-		keptPicture->tc.tcw.full = 0;
-		keptPicture->tc.tsp.full = 0;
-		keptPicture->SetPhysicalDevice(GetContext()->GetPhysicalDevice());
-		keptPicture->SetDevice(GetContext()->GetDevice());
-		keptPicture->SetCommandBuffer(texCommandPool.Allocate());
-		keptPicture->UploadToGPU(width, height, (u8 *)pixels, false);
-		keptPicture->SetCommandBuffer(nullptr);
-		SetRestoredPicture(keptPicture->GetImageView(), vk::Extent2D((u32)width, (u32)height));
-	}
-
-	bool RenderFramebuffer()
-	{
-		if (FB_R_SIZE.fb_x_size == 0 || FB_R_SIZE.fb_y_size == 0)
-		{
-			/* Process() began a frame on the texture command pool and
-			 * reset its fence; only a submit signals it again. Leave
-			 * without one and BeginFrame() waits on that fence for ever
-			 * when the pool comes round to this slot. */
-			texCommandPool.EndFrame();
-			return false;
-		}
-
-		FramebufferRead fb;
-		ReadFramebufferGeometry(&fb);
-		const int width = fb.width;
-		const int height = fb.height;
-		const size_t bytes = (size_t)width * height * 4;
-
-		std::unique_ptr<Texture>& curTexture = FramebufferTexture();
-		curTexture->SetCommandBuffer(texCommandPool.Allocate());
-		/* converted where the copy to the image reads it: the upload ring */
-		u8 *pixels = (u8 *)curTexture->UploadMemory(width, height, bytes, 4, false);
-		PixelBuffer<u32> pb;
-		if (pixels != nullptr)
-			ReadFramebufferTo(&fb, pixels, (size_t)width * 4);
-		else
-		{
-			// (no room in the ring, or an image written where it is)
-			int w;
-			int h;
-			ReadFramebuffer(pb, w, h);
-			pixels = (u8 *)pb.data();
-		}
-		curTexture->UploadToGPU(width, height, pixels, false);
-		curTexture->SetCommandBuffer(nullptr);
-		PresentTexture(*curTexture, width, height, { width, height });
-
-		return true;
-	}
-
-	/* The frame submitted and @texture (@width x @height) handed over as
-	 * @extent: with the HDR output, encoded first, in the same submission
-	 * (VulkanContext::HdrEncode()) */
-	void PresentTexture(Texture& texture, int width, int height, vk::Offset2D extent)
-	{
-		vk::Image image = texture.GetImage();
-		vk::ImageView view = texture.GetImageView();
-		const bool hdr = GetContext()->HdrEncode(texCommandPool, image, view, vk::Extent2D(width, height));
-		texCommandPool.EndFrame();
-		GetContext()->PresentFrame(image, view, extent, hdr);
-	}
-
-	// the texture a picture of the CPU's is handed to the frontend in, for the frontend's frame index
-	std::unique_ptr<Texture>& FramebufferTexture()
-	{
-		const size_t imageIndex = GetContext()->GetCurrentImageIndex();
-		if (framebufferTextures.size() <= imageIndex)
-			framebufferTextures.resize(std::max((size_t)GetContext()->GetSwapChainSize(), imageIndex + 1));
-		std::unique_ptr<Texture>& curTexture = framebufferTextures[imageIndex];
-		if (!curTexture)
-		{
-			curTexture = std::unique_ptr<Texture>(new Texture());
-			curTexture->tc.tex_type = TextureType::_8888;
-			curTexture->presented = true;
-			curTexture->tc.tcw.full = 0;
-			curTexture->tc.tsp.full = 0;
-			curTexture->SetPhysicalDevice(GetContext()->GetPhysicalDevice());
-			curTexture->SetDevice(GetContext()->GetDevice());
-		}
-		return curTexture;
-	}
-
-	void CheckFogTexture()
-	{
-		if (!fogTexture)
-		{
-			fogTexture = std::unique_ptr<Texture>(new Texture());
-			fogTexture->SetPhysicalDevice(GetContext()->GetPhysicalDevice());
-			fogTexture->SetDevice(GetContext()->GetDevice());
-			fogTexture->tc.tex_type = TextureType::_8;
-			fogUploadedValid = false;
-		}
-		// Uploaded when it differs from what the GPU has: see UpdateFogTexture() in gles/gles.c
-		u8 texData[256];
-		MakeFogTexture(texData);
-		if (fogUploadedValid && !memcmp(fogUploaded, texData, sizeof(fogUploaded)))
-			return;
-		memcpy(fogUploaded, texData, sizeof(fogUploaded));
-		fogUploadedValid = true;
-		fogTexture->SetCommandBuffer(texCommandPool.Allocate());
-
-		fogTexture->UploadToGPU(128, 2, texData, false);
-
-		fogTexture->SetCommandBuffer(nullptr);
-	}
-
-	void CheckPaletteTexture()
-	{
-		if (!paletteTexture)
-		{
-			paletteTexture = std::unique_ptr<Texture>(new Texture());
-			paletteTexture->SetPhysicalDevice(GetContext()->GetPhysicalDevice());
-			paletteTexture->SetDevice(GetContext()->GetDevice());
-			paletteTexture->tc.tex_type = TextureType::_8888;
-			palette_updated = true;
-		}
-		if (!palette_updated)
-			return;
-		palette_updated = false;
-
-		paletteTexture->SetCommandBuffer(texCommandPool.Allocate());
-
-		paletteTexture->UploadToGPU(1024, 1, (u8 *)palette32_ram, false);
-
-		paletteTexture->SetCommandBuffer(nullptr);
-	}
-
-	u32 samples = 1;	// SSAA's, a pixel (1: off)
-	ShaderManager shaderManager;
-	std::unique_ptr<Texture> fogTexture;
-	u8 fogUploaded[256];
-	bool fogUploadedValid = false;
-	std::unique_ptr<Texture> paletteTexture;
-	CommandPool texCommandPool;
-	std::vector<std::unique_ptr<Texture>> framebufferTextures;
-	TexDecoder texDecoder;		// (before the cache: textures going away tell it)
-	TexturePool texPool;		// (and they give their images back)
-	TaDecoder taDecoder;
-	TextureCache textureCache;
-	std::unique_ptr<Texture> keptPicture;
-	QuadPipeline quadPipeline;
-	// the VMUs' and crosshairs' after the chip's write-out, in the screen drawer's overlay render pass (writeout.h)
-	QuadPipeline overlayQuadPipeline;
-	// ...made now, for @pass (none: there is no write-out)
+	// the overlay's quad pipeline, for @pass (none: there is no write-out)
 	void InitOverlay(vk::RenderPass pass)
 	{
-		overlayQuadPipeline.Forget();
-		if (pass)
-		{
-			overlayQuadPipeline.Init(&shaderManager, pass, 0);
-		}
+		if (!vk_renderer_init_overlay(&v, (VkRenderPass)pass))
+			throwResultException(vk::Result::eErrorInitializationFailed, "vk_quad_pipeline_init");
 	}
-	std::unique_ptr<VulkanOSD> vmus;
-	parse_arena_vk_t parseArena;
-	bool parseArenaOk = false;
-	int parsedSlot = -1;
-	u32 parsedHere = 0, parsedCopied = 0;
-};
+	Texture *FogTexture() const { return static_cast<Texture *>(v.fogTexture); }
+	Texture *PaletteTexture() const { return static_cast<Texture *>(v.paletteTexture); }
 
+	vk_renderer v;
+	/* (its members, as the C++ renderers name them) */
+	u32& samples = v.samples;
+	ShaderManager& shaderManager = reinterpret_cast<ShaderManager&>(v.modules);
+	CommandPool& texCommandPool = reinterpret_cast<CommandPool&>(v.texCommandPool);
+	TexturePool& texPool = reinterpret_cast<TexturePool&>(v.texPool);
+	TaDecoder& taDecoder = reinterpret_cast<TaDecoder&>(v.taDecoder);
+	TextureCache& textureCache = reinterpret_cast<TextureCache&>(v.textureCache);
+	QuadPipeline& quadPipeline = reinterpret_cast<QuadPipeline&>(v.quadPipeline);
+	QuadPipeline& overlayQuadPipeline = reinterpret_cast<QuadPipeline&>(v.overlayQuadPipeline);
+	VulkanOSD *const vmus = reinterpret_cast<VulkanOSD *>(&v.osd);
+
+private:
+	static bool RenderFrameOf(void *self) { return static_cast<BaseVulkanRenderer *>(self)->RenderFrame(); }
+	static u32 TaFlagsOf(void *self) { return static_cast<BaseVulkanRenderer *>(self)->TaFlags(); }
+	static void SetRestoredPictureOf(void *self, VkImageView view, u32 width, u32 height)
+	{
+		static_cast<BaseVulkanRenderer *>(self)->SetRestoredPicture(vk::ImageView(view), vk::Extent2D(width, height));
+	}
+	static const vk_renderer_kind *Kind()
+	{
+		static const vk_renderer_kind kind = { RenderFrameOf, TaFlagsOf, SetRestoredPictureOf };
+		return &kind;
+	}
+};
+static_assert(sizeof(ShaderManager) == sizeof(vk_raster_modules) && sizeof(CommandPool) == sizeof(vk_cmd_pool)
+		&& sizeof(TexturePool) == sizeof(vk_tex_pool) && sizeof(TaDecoder) == sizeof(vk_ta_decoder)
+		&& sizeof(TextureCache) == sizeof(vk_texcache) && sizeof(QuadPipeline) == sizeof(vk_quad_pipeline)
+		&& sizeof(VulkanOSD) == sizeof(vk_osd), "the C++ views are their C structs");
