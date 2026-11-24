@@ -19,6 +19,7 @@
     along with Flycast.  If not, see <https://www.gnu.org/licenses/>.
 */
 #pragma once
+/* The C++ renderers' view of vk_pipeline.h, until they are C too */
 #include "vulkan.h"
 #include "shaders.h"
 #include "texture.h"
@@ -28,386 +29,108 @@
 #include "ssaa.h"
 #include "pso.h"
 #include "desc_cache.h"
+#include "vk_pipeline.h"
 
 class DescriptorSets
 {
 public:
+	DescriptorSets() { vk_desc_sets_construct(&d); }
+	~DescriptorSets() { vk_desc_sets_term(&d); }
+	DescriptorSets(const DescriptorSets&) = delete;
+	DescriptorSets& operator=(const DescriptorSets&) = delete;
+	/* (the frame slots' are in a vector: moved, the sets go with it) */
+	DescriptorSets(DescriptorSets&& o) noexcept { d = o.d; vk_desc_sets_construct(&o.d); }
+	DescriptorSets& operator=(DescriptorSets&& o) noexcept
+	{
+		if (this != &o)
+		{
+			vk_desc_sets_term(&d);
+			d = o.d;
+			vk_desc_sets_construct(&o.d);
+		}
+		return *this;
+	}
+
 	void Init(SamplerManager* samplerManager, vk::PipelineLayout pipelineLayout, vk::DescriptorSetLayout perFrameLayout, vk::DescriptorSetLayout perPolyLayout)
 	{
-		this->samplerManager = samplerManager;
-		this->pipelineLayout = pipelineLayout;
-		this->perFrameLayout = perFrameLayout;
-		this->perPolyLayout = perPolyLayout;
-		perPoly.SetLayout(perPolyLayout);
-		// (made now, with the drawer: one that first draws while the game runs - a render to a texture - makes none then)
-		if (!perFrameDescSet)
-			perFrameDescSet = vk_alloc_desc_set(GetContext()->GetDevice(), GetContext()->GetDescriptorPool(), perFrameLayout);
-		if (!noTextureDescSet)
-			noTextureDescSet = vk_alloc_desc_set(GetContext()->GetDevice(), GetContext()->GetDescriptorPool(), perPolyLayout);
+		vk_desc_sets_init(&d, samplerManager->Raw(), (VkPipelineLayout)pipelineLayout, (VkDescriptorSetLayout)perFrameLayout,
+				(VkDescriptorSetLayout)perPolyLayout);
 	}
-	// (the vertex uniforms are a buffer of their own: BaseDrawer::WriteVertexUniforms())
 	void UpdateUniforms(vk::Buffer vertexUniformBuffer, vk::Buffer buffer, u32 fragmentUniformOffset, vk::ImageView fogImageView, vk::ImageView paletteImageView)
 	{
-		if (!perFrameDescSet)
-		{
-			perFrameDescSet = vk_alloc_desc_set(GetContext()->GetDevice(), GetContext()->GetDescriptorPool(), perFrameLayout);
-		}
-		const vk::DescriptorBufferInfo bufferInfos[2] = {
-			vk::DescriptorBufferInfo(vertexUniformBuffer, 0, sizeof(VertexShaderUniforms)),
-			vk::DescriptorBufferInfo(buffer, fragmentUniformOffset, sizeof(FragmentShaderUniforms)),
-		};
-
-		/* (on the stack: nothing allocated for them) */
-		vk::WriteDescriptorSet writeDescriptorSets[12];
-		u32 writes = 0;
-		writeDescriptorSets[writes++] = (vk::WriteDescriptorSet(*perFrameDescSet, 0, 0, 1, vk::DescriptorType::eUniformBuffer, nullptr, &bufferInfos[0], nullptr));
-		writeDescriptorSets[writes++] = (vk::WriteDescriptorSet(*perFrameDescSet, 1, 0, 1, vk::DescriptorType::eUniformBuffer, nullptr, &bufferInfos[1], nullptr));
-		if (fogImageView)
-		{
-			TSP fogTsp = {};
-			// single entries, read at the middle of their texels: see UpdateFogTexture() in gles/gles.c
-			fogTsp.FilterMode = 0;
-			fogTsp.ClampU = 1;
-			fogTsp.ClampV = 1;
-			vk::Sampler fogSampler = samplerManager->GetSampler(fogTsp);
-			static vk::DescriptorImageInfo imageInfo;
-			imageInfo = { fogSampler, fogImageView, vk::ImageLayout::eShaderReadOnlyOptimal };
-			writeDescriptorSets[writes++] = (vk::WriteDescriptorSet(*perFrameDescSet, 2, 0, 1, vk::DescriptorType::eCombinedImageSampler, &imageInfo, nullptr, nullptr));
-			/* What an untextured polygon has as its texture: the general
-			 * pipelines read one only for a textured polygon, but have it in
-			 * their shader (pso.h) */
-			if (!noTextureDescSet)
-				noTextureDescSet = vk_alloc_desc_set(GetContext()->GetDevice(), GetContext()->GetDescriptorPool(), perPolyLayout);
-			if (noTextureView != fogImageView)
-			{
-				noTextureView = fogImageView;
-				writeDescriptorSets[writes++] = (vk::WriteDescriptorSet(*noTextureDescSet, 0, 0, 1, vk::DescriptorType::eCombinedImageSampler, &imageInfo, nullptr, nullptr));
-			}
-		}
-		if (paletteImageView)
-		{
-			TSP palTsp = {};
-			palTsp.FilterMode = 0;
-			palTsp.ClampU = 1;
-			palTsp.ClampV = 1;
-			vk::Sampler palSampler = samplerManager->GetSampler(palTsp);
-			static vk::DescriptorImageInfo imageInfo;
-			imageInfo = { palSampler, paletteImageView, vk::ImageLayout::eShaderReadOnlyOptimal };
-			writeDescriptorSets[writes++] = (vk::WriteDescriptorSet(*perFrameDescSet, 3, 0, 1, vk::DescriptorType::eCombinedImageSampler, &imageInfo, nullptr, nullptr));
-		}
-		GetContext()->GetDevice().updateDescriptorSets(writes, writeDescriptorSets, 0, nullptr);
+		vk_desc_sets_update_uniforms(&d, (VkBuffer)vertexUniformBuffer, (VkBuffer)buffer, fragmentUniformOffset,
+				(VkImageView)fogImageView, (VkImageView)paletteImageView);
 	}
-
-	/* The set a polygon with this texture is drawn with: written once, and
-	 * kept while it is drawn with (desc_cache.h) */
-	vk::DescriptorSet SetTexture(u64 textureId, TSP tsp)
-	{
-		Texture *texture = reinterpret_cast<Texture *>(textureId);
-		const TexDescKey key = { texture->ReadOnlyViewSerial(), 0, tsp.full & SamplerManager::TSP_Mask, 0 };
-		vk::DescriptorSet set = perPoly.Find(key);
-		if (set)
-			return set;
-		set = perPoly.Add(key);
-		const vk::DescriptorImageInfo imageInfo(samplerManager->GetSampler(tsp), texture->GetReadOnlyImageView(), vk::ImageLayout::eShaderReadOnlyOptimal);
-		const vk::WriteDescriptorSet write(set, 0, 0, 1, vk::DescriptorType::eCombinedImageSampler, &imageInfo, nullptr, nullptr);
-		GetContext()->GetDevice().updateDescriptorSets(1, &write, 0, nullptr);
-		return set;
-	}
-
-	void BindPerFrameDescriptorSets(vk::CommandBuffer cmdBuffer)
-	{
-		cmdBuffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, pipelineLayout, 0, 1, &perFrameDescSet.get(), 0, nullptr);
-		// (a texture's replaces it; until one does, an untextured polygon has this)
-		if (noTextureDescSet)
-			cmdBuffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, pipelineLayout, 1, 1, &noTextureDescSet.get(), 0, nullptr);
-	}
-
+	vk::DescriptorSet SetTexture(u64 textureId, TSP tsp) { return vk::DescriptorSet(vk_desc_sets_set_texture(&d, textureId, tsp.full)); }
+	void BindPerFrameDescriptorSets(vk::CommandBuffer cmdBuffer) { vk_desc_sets_bind_per_frame(&d, (VkCommandBuffer)cmdBuffer); }
 	void BindPerPolyDescriptorSets(vk::CommandBuffer cmdBuffer, vk::DescriptorSet set)
 	{
-		cmdBuffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, pipelineLayout, 1, 1, &set, 0, nullptr);
+		vk_desc_sets_bind_per_poly(&d, (VkCommandBuffer)cmdBuffer, (VkDescriptorSet)set);
 	}
-
-	void Reset()
-	{
-		perPoly.NextUse();
-	}
+	void Reset() { vk_desc_sets_reset(&d); }
 
 private:
-	VulkanContext *GetContext() const { return VulkanContext::Instance(); }
-
-	vk::DescriptorSetLayout perFrameLayout;
-	vk::DescriptorSetLayout perPolyLayout;
-	vk::PipelineLayout pipelineLayout;
-
-	vk::UniqueDescriptorSet perFrameDescSet;
-	vk::UniqueDescriptorSet noTextureDescSet;
-	vk::ImageView noTextureView;
-	TexDescCache perPoly;
-
-	SamplerManager* samplerManager;
+	vk_desc_sets d;
 };
 
-/* What a draw is made with: its pipeline, and whether that is the general
- * one (pso.h), which is then told the key's bits with the push constants
- * and its dynamic states with SetDynamicState() */
-struct PsoChoice
-{
-	VkPipeline pipeline;
-	u64 key;
-	bool general;
-};
-
-/* The per-triangle renderer's pipelines (pso.h). A polygon's is kept under
- * a key of everything it is made of: its shader's bits (pso_key.h), the
- * module it takes, and its depth, stencil, cull, topology and blend states
- * as they are made, so two polygons that differ in nothing a pipeline has
- * share one. */
-class PipelineManager : public PsoBuilder
+class PipelineManager
 {
 public:
-	~PipelineManager() override { Reset(); }
+	PipelineManager() { vk_pipeline_mgr_construct(&m, 1); }
+	~PipelineManager() { vk_pipeline_mgr_term(&m); }
+	PipelineManager(const PipelineManager&) = delete;
+	PipelineManager& operator=(const PipelineManager&) = delete;
 
-	/* @samples: of the render pass's polygon subpass (SSAA; 1 without).
-	 * The general pipelines and the modifier volumes' are made here. */
 	void Init(ShaderManager *shaderManager, vk::RenderPass renderPass, u32 samples = 1)
 	{
-		this->shaderManager = shaderManager;
-		shaderManager->Init();
-
-		if (!perFrameLayout)
-		{
-			// Descriptor set and pipeline layout
-			vk::DescriptorSetLayoutBinding perFrameBindings[] = {
-					{ 0, vk::DescriptorType::eUniformBuffer, 1, vk::ShaderStageFlagBits::eVertex },			// vertex uniforms
-					{ 1, vk::DescriptorType::eUniformBuffer, 1, vk::ShaderStageFlagBits::eFragment },		// fragment uniforms
-					{ 2, vk::DescriptorType::eCombinedImageSampler, 1, vk::ShaderStageFlagBits::eFragment },// fog texture
-					{ 3, vk::DescriptorType::eCombinedImageSampler, 1, vk::ShaderStageFlagBits::eFragment },// palette texture
-			};
-			vk::DescriptorSetLayoutBinding perPolyBindings[] = {
-					{ 0, vk::DescriptorType::eCombinedImageSampler, 1, vk::ShaderStageFlagBits::eFragment },// texture
-			};
-			perFrameLayout = GetContext()->GetDevice().createDescriptorSetLayoutUnique(
-					vk::DescriptorSetLayoutCreateInfo(vk::DescriptorSetLayoutCreateFlags(), ARRAY_SIZE(perFrameBindings), perFrameBindings));
-			perPolyLayout = GetContext()->GetDevice().createDescriptorSetLayoutUnique(
-					vk::DescriptorSetLayoutCreateInfo(vk::DescriptorSetLayoutCreateFlags(), ARRAY_SIZE(perPolyBindings), perPolyBindings));
-			vk::DescriptorSetLayout layouts[] = { *perFrameLayout, *perPolyLayout };
-			// (six floats, then the general pipelines' key: pso_key.h)
-			vk::PushConstantRange pushConstant(vk::ShaderStageFlagBits::eFragment, 0, TRI_PUSH_KEY_OFFSET + 4);
-			pipelineLayout = GetContext()->GetDevice().createPipelineLayoutUnique(
-					vk::PipelineLayoutCreateInfo(vk::PipelineLayoutCreateFlags(), ARRAY_SIZE(layouts), layouts, 1, &pushConstant));
-			pipelines.Init(4096, this);
-			general.Init(4096, this);
-		}
-
-		if (this->renderPass != renderPass || this->samples != samples)
-		{
-			Reset();
-			this->renderPass = renderPass;
-			this->samples = samples;
-			Prepare();
-		}
+		if (!vk_pipeline_mgr_init(&m, shaderManager->Raw(), (VkRenderPass)renderPass, samples))
+			throwResultException(vk::Result::eErrorInitializationFailed, "vk_pipeline_mgr_init");
 	}
 
-	// What a polygon is being drawn for: itself, or a second time for the part
-	// of it that is in a modifier volume (see rend/shadows.h), in which case
-	// which of two polygons at the same depth is left showing matters.
-	enum class ShadowPass { None, LaterWins, EarlierWins };
+	enum class ShadowPass { None = VK_SHADOW_NONE, LaterWins = VK_SHADOW_LATER_WINS, EarlierWins = VK_SHADOW_EARLIER_WINS };
 
 	PsoChoice GetPipeline(u32 listType, bool sortTriangles, const PolyParam& pp, ShadowPass shadowPass = ShadowPass::None)
 	{
-		return Choose(Key(listType, sortTriangles, pp, shadowPass));
+		return vk_pipeline_mgr_get(&m, listType, sortTriangles, &pp, (int)shadowPass);
 	}
-	// the dynamic states of a general pipeline's draw, after it is bound
-	void SetDynamicState(vk::CommandBuffer cmdBuffer, u64 key) const;
-
-	/* @cullMode: the ISP's. With the cull mode dynamic (CullSetter()) one
-	 * pipeline draws them all, the cull mode set with PsoCull. */
-	vk::Pipeline GetModifierVolumePipeline(ModVolMode mode, int cullMode) const
+	void SetDynamicState(vk::CommandBuffer cmdBuffer, u64 key) const
 	{
-		return vk::Pipeline(PsoGet(modVolSlots[(u32)mode * 3 + (PsoCullIndex(cullMode) & cullKept)]));
+		vk_pipeline_mgr_set_dynamic_state(&m, (VkCommandBuffer)cmdBuffer, key);
 	}
-	// what sets the cull mode of the modifier volumes' and prepass's pipelines (PsoCull), or null
-	void (VKAPI_PTR *CullSetter() const)(VkCommandBuffer, VkCullModeFlags) { return cullSetter; }
-
-	/* The depth prepass of a sorted translucent list (rend/sorter.h): the
-	 * pipeline a polygon is drawn with there. They are all made with the
-	 * render pass, none in the middle of a frame: textured or not, flat or
-	 * Gouraud, each culling, and each SSAA rate. */
-	vk::Pipeline GetPrepassPipeline(const PolyParam& pp) const
+	vk::Pipeline GetModifierVolumePipeline(ModVolMode mode, int cullMode)
 	{
-		const bool sampleRate = samples > 1 && !SsaaSingleRate(pp);
-		return vk::Pipeline(PsoGet(prepassSlots[pp.pcw.Texture][pp.pcw.Gouraud][PsoCullIndex(pp.isp.CullMode) & cullKept][sampleRate]));
+		return vk::Pipeline(vk_pipeline_mgr_modvol(&m, (int)mode, (u32)cullMode));
 	}
+	void (VKAPI_PTR *CullSetter() const)(VkCommandBuffer, VkCullModeFlags) { return m.cullSetter; }
+	vk::Pipeline GetPrepassPipeline(const PolyParam& pp) { return vk::Pipeline(vk_pipeline_mgr_prepass(&m, &pp)); }
+	void Reset() { vk_pipeline_mgr_reset(&m); }
 
-	/* Everything made dropped: what the worker has of it first. (A new
-	 * render pass or count of samples.) */
-	void Reset();
-
-	vk::PipelineLayout GetPipelineLayout() const { return *pipelineLayout; }
-	vk::DescriptorSetLayout GetPerFrameDSLayout() const { return *perFrameLayout; }
-	vk::DescriptorSetLayout GetPerPolyDSLayout() const { return *perPolyLayout; }
-	vk::RenderPass GetRenderPass() const { return renderPass; }
-
-	VkPipeline BuildPipeline(u64 key, vk::PipelineCache cache) override;
-
-	/* The key's fields. Bits 0 to 14 are the shader's (pso_key.h); 56 to 59
-	 * say what kind of pipeline it is, 60 to 63 are PsoKeyLog's. */
-	enum : u64
-	{
-		KEY_GOURAUD = 15,
-		KEY_RATE = 16,		// 2 bits: 0 without SSAA, 1 at each sample, 2 once a pixel
-		KEY_CULL = 18,		// 2 bits: none, front, back
-		KEY_LIST = 20,		// a triangle list, not strips
-		KEY_ZWRITE = 21,
-		KEY_DEPTH_OP = 22,	// 3 bits: vk::CompareOp
-		KEY_STENCIL = 25,	// 3 bits: Stencil
-		KEY_BLEND = 28,
-		KEY_SRC = 29,		// 3 bits: the PVR's
-		KEY_DST = 32,		// 3 bits
-		KEY_KIND = 56,		// 4 bits: Kind
-	};
-	enum Stencil { STENCIL_NONE, STENCIL_SHADOW_SET, STENCIL_SHADOW_CLEAR, STENCIL_LATER_WINS, STENCIL_EARLIER_WINS };
-	enum Kind { KIND_POLY, KIND_GENERAL, KIND_MODVOL, KIND_PREPASS };
-	static constexpr u64 MODULE_BITS = (1ull << KEY_GOURAUD) | (3ull << KEY_RATE);
-	static constexpr u64 DEPTH_STENCIL_BITS = (3ull << KEY_CULL) | (1ull << KEY_LIST) | (1ull << KEY_ZWRITE)
-			| (7ull << KEY_DEPTH_OP) | (7ull << KEY_STENCIL);
-	static constexpr u64 BLEND_BITS = (1ull << KEY_BLEND) | (7ull << KEY_SRC) | (7ull << KEY_DST);
-
-private:
-	u64 Key(u32 listType, bool sortTriangles, const PolyParam& pp, ShadowPass shadowPass) const;
-	PsoChoice Choose(u64 key);
-	// the key of the general pipeline that draws for @key
-	u64 GeneralKey(u64 key) const
-	{
-		u64 fixed = MODULE_BITS;
-		const pso_ext::Functions& dynamic = GetContext()->DynamicState();
-		if (!dynamic.depthStencil)
-			fixed |= DEPTH_STENCIL_BITS;
-		if (!dynamic.blend)
-			fixed |= BLEND_BITS;
-		return (key & fixed) | ((u64)KIND_GENERAL << KEY_KIND);
-	}
-	void Prepare();
-	VkPipeline BuildPoly(u64 key, bool general, vk::PipelineCache cache);
-	// @cull: PsoCullIndex()'s (none where it is dynamic)
-	VkPipeline BuildModVol(ModVolMode mode, u32 cull, vk::PipelineCache cache);
-	VkPipeline BuildPrepass(int texture, int gouraud, int cull, int rate, vk::PipelineCache cache);
-
-	vk::PipelineVertexInputStateCreateInfo GetMainVertexInputStateCreateInfo(bool full = true) const
-	{
-		// Vertex input state
-		static const vk::VertexInputBindingDescription vertexBindingDescriptions[] =
-		{
-				{ 0, sizeof(Vertex) },
-		};
-		static const vk::VertexInputAttributeDescription vertexInputAttributeDescriptions[] =
-		{
-				vk::VertexInputAttributeDescription(0, 0, vk::Format::eR32G32B32Sfloat, offsetof(Vertex, x)),	// pos
-				vk::VertexInputAttributeDescription(1, 0, vk::Format::eR8G8B8A8Uint, offsetof(Vertex, col)),	// base color
-				vk::VertexInputAttributeDescription(2, 0, vk::Format::eR8G8B8A8Uint, offsetof(Vertex, vtx_spc)), // offset color
-				vk::VertexInputAttributeDescription(3, 0, vk::Format::eR32G32Sfloat, offsetof(Vertex, u)),		// tex coord
-		};
-		static const vk::VertexInputAttributeDescription vertexInputLightAttributeDescriptions[] =
-		{
-				vk::VertexInputAttributeDescription(0, 0, vk::Format::eR32G32B32Sfloat, offsetof(Vertex, x)),	// pos
-		};
-		return vk::PipelineVertexInputStateCreateInfo(
-				vk::PipelineVertexInputStateCreateFlags(),
-				ARRAY_SIZE(vertexBindingDescriptions),
-				vertexBindingDescriptions,
-				full ? ARRAY_SIZE(vertexInputAttributeDescriptions) : ARRAY_SIZE(vertexInputLightAttributeDescriptions),
-				full ? vertexInputAttributeDescriptions : vertexInputLightAttributeDescriptions);
-	}
-
-	PsoTable pipelines;		// the polygons' own
-	PsoTable general;		// the general ones
-	// the modifier volumes': by mode and cull mode (mode * 3 + PsoCullIndex()), made with the general ones
-	// (mutable: a draw's getter may make one, PsoGet())
-	mutable PsoSlot modVolSlots[(int)ModVolMode::Depth * 3 + 3] = {};
-	// the depth prepass's: [textured][Gouraud][no culling, front, back][SSAA: shaded at each sample]
-	mutable PsoSlot prepassSlots[2][2][3][2] = {};
-	/* Prepare()'s, for the device: with VK_EXT_extended_dynamic_state the
-	 * cull mode is not in those pipelines (only their none slots are made)
-	 * but set with the draws (cullSetter); otherwise a pipeline each */
-	u32 cullKept = 3;
-	void (VKAPI_PTR *cullSetter)(VkCommandBuffer, VkCullModeFlags) = nullptr;
-	u64 lastKey = ~0ull;
-	PsoChoice lastChoice = {};
-
-	vk::UniquePipelineLayout pipelineLayout;
-	vk::UniqueDescriptorSetLayout perFrameLayout;
-	vk::UniqueDescriptorSetLayout perPolyLayout;
+	vk::PipelineLayout GetPipelineLayout() const { return vk::PipelineLayout(m.pipelineLayout); }
+	vk::DescriptorSetLayout GetPerFrameDSLayout() const { return vk::DescriptorSetLayout(m.perFrameLayout); }
+	vk::DescriptorSetLayout GetPerPolyDSLayout() const { return vk::DescriptorSetLayout(m.perPolyLayout); }
+	vk::RenderPass GetRenderPass() const { return vk::RenderPass(m.renderPass); }
 
 protected:
-	VulkanContext *GetContext() const { return VulkanContext::Instance(); }
-
-	vk::RenderPass renderPass;
-	u32 samples = 1;
-	ShaderManager *shaderManager = nullptr;
-	// PsoKeyLog's: the screen's, the textures'
-	u32 who = 1;
+	vk_pipeline_mgr m;
 };
 
+/* renders to a texture's: a render pass of their own */
 class RttPipelineManager : public PipelineManager
 {
 public:
-	RttPipelineManager() { who = 2; }
-
-	/* @samples: SSAA's. Then the polygons are drawn into attachments of
-	 * that many samples, and a second subpass resolves them into the
-	 * texture: see MakeSsaaRenderPass(). */
+	RttPipelineManager() { m.who = 2; }
 	void Init(ShaderManager *shaderManager, u32 samples = 1)
 	{
-		if (samples > 1)
-		{
-			rttRenderPass = MakeSsaaRenderPass(samples);
-			PipelineManager::Init(shaderManager, *rttRenderPass, samples);
-			return;
-		}
-		// RTT render pass
-	    vk::AttachmentDescription attachmentDescriptions[] = {
-	    		vk::AttachmentDescription(vk::AttachmentDescriptionFlags(), vk::Format::eR8G8B8A8Unorm, vk::SampleCountFlagBits::e1,
-	    				vk::AttachmentLoadOp::eClear, vk::AttachmentStoreOp::eStore, vk::AttachmentLoadOp::eDontCare, vk::AttachmentStoreOp::eDontCare,
-						vk::ImageLayout::eColorAttachmentOptimal,
-						vk::ImageLayout::eShaderReadOnlyOptimal),
-				vk::AttachmentDescription(vk::AttachmentDescriptionFlags(), GetContext()->GetDepthFormat(), vk::SampleCountFlagBits::e1,
-						vk::AttachmentLoadOp::eClear, vk::AttachmentStoreOp::eDontCare, vk::AttachmentLoadOp::eClear, vk::AttachmentStoreOp::eDontCare,
-						vk::ImageLayout::eUndefined, vk::ImageLayout::eDepthStencilAttachmentOptimal),
-	    };
-	    vk::AttachmentReference colorReference(0, vk::ImageLayout::eColorAttachmentOptimal);
-	    vk::AttachmentReference depthReference(1, vk::ImageLayout::eDepthStencilAttachmentOptimal);
-	    vk::SubpassDescription subpass(vk::SubpassDescriptionFlags(), vk::PipelineBindPoint::eGraphics, 0, nullptr, 1, &colorReference, nullptr, &depthReference);
-	    vk::SubpassDependency dependencies[] {
-	    	vk::SubpassDependency(VK_SUBPASS_EXTERNAL, 0, vk::PipelineStageFlagBits::eFragmentShader, vk::PipelineStageFlagBits::eColorAttachmentOutput,
-	    			vk::AccessFlagBits::eShaderRead, vk::AccessFlagBits::eColorAttachmentWrite),
-			vk::SubpassDependency(0, VK_SUBPASS_EXTERNAL, vk::PipelineStageFlagBits::eColorAttachmentOutput, vk::PipelineStageFlagBits::eFragmentShader,
-					vk::AccessFlagBits::eColorAttachmentWrite, vk::AccessFlagBits::eShaderRead),
-			// one depth attachment for every render to a texture: the last one done with it before this one clears it
-			vk::SubpassDependency(VK_SUBPASS_EXTERNAL, 0,
-					vk::PipelineStageFlagBits::eEarlyFragmentTests | vk::PipelineStageFlagBits::eLateFragmentTests,
-					vk::PipelineStageFlagBits::eEarlyFragmentTests | vk::PipelineStageFlagBits::eLateFragmentTests,
-					vk::AccessFlagBits::eDepthStencilAttachmentWrite,
-					vk::AccessFlagBits::eDepthStencilAttachmentRead | vk::AccessFlagBits::eDepthStencilAttachmentWrite),
-	    };
-
-	    rttRenderPass = GetContext()->GetDevice().createRenderPassUnique(vk::RenderPassCreateInfo(vk::RenderPassCreateFlags(), 2, attachmentDescriptions,
-	    		1, &subpass, ARRAY_SIZE(dependencies), dependencies));
-
-		PipelineManager::Init(shaderManager, *rttRenderPass);
+		if (!vk_pipeline_mgr_rtt_init(&m, shaderManager->Raw(), samples))
+			throwResultException(vk::Result::eErrorInitializationFailed, "vk_pipeline_mgr_rtt_init");
 	}
-
-private:
-	vk::UniqueRenderPass MakeSsaaRenderPass(u32 samples);
-
-	vk::UniqueRenderPass rttRenderPass;
 };
 
-/* The render pass of SSAA's frames, the screen's and the textures':
- * With @hdrFormat, a subpass after the resolve encodes the picture, its
- * input, into attachment 3, the HDR output's image (hdr_encode_vk.h).
- * attachment 0 the picture (@colorFormat, a single sample), 1 and 2 the
- * colour and depth attachments of @samples the polygons are drawn into.
- * Subpass 0 draws, subpass 1 resolves 1 into 0 (SsaaResolve). Only the
- * picture is stored; it is all written by the resolve, so not loaded. */
-vk::UniqueRenderPass MakeSsaaRenderPass(vk::Format colorFormat, u32 samples, vk::ImageLayout pictureLayout,
-		vk::Format hdrFormat = vk::Format::eUndefined);
+static inline vk::UniqueRenderPass MakeSsaaRenderPass(vk::Format colorFormat, u32 samples, vk::ImageLayout pictureLayout,
+		vk::Format hdrFormat = vk::Format::eUndefined)
+{
+	const VkRenderPass renderPass = vk_make_ssaa_render_pass((VkFormat)colorFormat, samples, (VkImageLayout)pictureLayout, (VkFormat)hdrFormat);
+	if (renderPass == VK_NULL_HANDLE)
+		throwResultException(vk::Result::eErrorInitializationFailed, "vkCreateRenderPass");
+	return vk::UniqueRenderPass(vk::RenderPass(renderPass), vk::ObjectDestroy<vk::Device, vk::DispatchLoaderStatic>(vk::Device(vkc.device)));
+}

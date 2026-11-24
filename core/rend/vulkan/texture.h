@@ -207,6 +207,7 @@ public:
 	void Init() { vk_samplers_init(&s); }
 	vk::Sampler GetSampler(TSP tsp) { return vk::Sampler(vk_samplers_get(&s, tsp.full)); }
 	void Term() { vk_samplers_term(&s); }
+	vk_samplers *Raw() { return &s; }
 	static const u32 TSP_Mask = VK_SAMPLER_TSP_MASK;
 
 private:

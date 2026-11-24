@@ -48,6 +48,29 @@ typedef struct vk_raster_modules
 bool vk_raster_modules_make(vk_raster_modules *r, int first, int last);
 void vk_raster_modules_term(vk_raster_modules *r);
 
+/* std140 alignment required; shaders/position.glsl, and rend/depth_scale.h
+ * for depth_scale: 1/fZ_max, which for a frame decoded on the GPU is the
+ * decode's own word, copied over this one before the render pass */
+typedef struct VertexShaderUniforms
+{
+	float normal_matrix[16];
+	float depth_scale;
+	float depth_mul;	/* 1 / what the matrix scales z by */
+	float pad[2];
+} VertexShaderUniforms;
+
+/* std140 alignment required */
+typedef struct FragmentShaderUniforms
+{
+	float colorClampMin[4];
+	float colorClampMax[4];
+	float sp_FOG_COL_RAM[4];	/* Only using 3 elements but easier for std140 */
+	float sp_FOG_COL_VERT[4];	/* same comment */
+	float cp_AlphaTestValue;
+	float sp_FOG_DENSITY;
+	float shade_scale_factor;
+} FragmentShaderUniforms;
+
 #ifdef __cplusplus
 }
 
@@ -159,29 +182,6 @@ struct PrepassShaderParams
 	bool gouraud;
 	int sampleRate;	/* as FragmentShaderParams */
 	int samples;
-};
-
-/* std140 alignment required; shaders/position.glsl, and rend/depth_scale.h
- * for depth_scale: 1/fZ_max, which for a frame decoded on the GPU is the
- * decode's own word, copied over this one before the render pass */
-struct VertexShaderUniforms
-{
-	float normal_matrix[16];
-	float depth_scale;
-	float depth_mul;	/* 1 / what the matrix scales z by */
-	float pad[2];
-};
-
-/* std140 alignment required */
-struct FragmentShaderUniforms
-{
-	float colorClampMin[4];
-	float colorClampMax[4];
-	float sp_FOG_COL_RAM[4];	/* Only using 3 elements but easier for std140 */
-	float sp_FOG_COL_VERT[4];	/* same comment */
-	float cp_AlphaTestValue;
-	float sp_FOG_DENSITY;
-	float shade_scale_factor;
 };
 
 /* The per-triangle renderer's shaders, and the quads': made in Init(),

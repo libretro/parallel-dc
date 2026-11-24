@@ -35,7 +35,7 @@ extern "C" {
  * after is made on the draw path, and counted in draw_path). */
 
 /* What the stencil buffer is used for, as the Vulkan renderers' pipelines
- * use it (vulkan/pipeline.cpp): the modifier volumes' bits 0 and 1, bit 7
+ * use it (vulkan/vk_pipeline.c): the modifier volumes' bits 0 and 1, bit 7
  * for a polygon that takes shadows, bit 6 for a pixel drawn again for its
  * shadow (rend/shadows.h). */
 typedef enum DX11Stencil
