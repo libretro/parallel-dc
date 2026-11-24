@@ -177,6 +177,44 @@ VkPipeline vk_pipeline_mgr_prepass(vk_pipeline_mgr *m, const PolyParam *pp);
  * image (hdr_encode_vk.h). VK_NULL_HANDLE if it could not be made. */
 VkRenderPass vk_make_ssaa_render_pass(VkFormat colorFormat, u32 samples, VkImageLayout pictureLayout, VkFormat hdrFormat);
 
+/* ---- what the renderers' pipelines are made of (the per-pixel one's too) ---- */
+
+typedef struct vk_pipe_states
+{
+	VkPipelineVertexInputStateCreateInfo vertexInput;
+	VkPipelineInputAssemblyStateCreateInfo inputAssembly;
+	VkPipelineViewportStateCreateInfo viewport;
+	VkPipelineRasterizationStateCreateInfo rasterization;
+	VkPipelineMultisampleStateCreateInfo multisample;
+	VkPipelineDepthStencilStateCreateInfo depthStencil;
+	VkPipelineColorBlendAttachmentState blendAttachment;
+	VkPipelineColorBlendStateCreateInfo blend;
+	VkDynamicState dynamicStates[18];
+	VkPipelineDynamicStateCreateInfo dynamic;
+	VkPipelineShaderStageCreateInfo stages[2];
+	VkSpecializationMapEntry entries[3];
+	VkSpecializationInfo specialization;
+	s32 values[3];
+} vk_pipe_states;
+
+/* No vertex input (the caller's), @topology, @cull (none, front, back),
+ * @samples a pixel shaded at each sample (@perSample) or once a pixel; no
+ * depth, stencil or blending; the viewport and scissor dynamic */
+void vk_pipe_states_init(vk_pipe_states *s, VkPrimitiveTopology topology, u32 cull, u32 samples, bool perSample);
+void vk_pipe_states_dynamic(vk_pipe_states *s, VkDynamicState state);
+/* the general pipelines' dynamic states: what the device can set with the draws */
+void vk_pipe_states_general(vk_pipe_states *s);
+/* the stages: @specialized, with the pipeline's specialization constants
+ * (pso_key.h): the key, -1 for the one read from the push constants, and
+ * SSAA's samples a pixel */
+void vk_pipe_states_stages(vk_pipe_states *s, VkShaderModule vertex, VkShaderModule fragment, bool specialized, s32 key, u32 samples);
+VkPipeline vk_pipe_states_make(vk_pipe_states *s, VkPipelineLayout layout, VkRenderPass renderPass, u32 subpass, VkPipelineCache cache);
+VkCullModeFlags vk_pipe_cull_mode(u32 cull);
+void vk_pipe_stencil_op(VkStencilOpState *s, VkStencilOp fail, VkStencilOp pass, VkStencilOp depthFail, VkCompareOp compare,
+		u32 compareMask, u32 writeMask, u32 reference);
+/* the PVR's blend instruction's (@src: the source's) */
+VkBlendFactor vk_pipe_blend_factor(u32 instr, bool src);
+
 #ifdef __cplusplus
 }
 #endif

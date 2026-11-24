@@ -189,12 +189,12 @@ void vk_desc_sets_term(vk_desc_sets *d)
 
 /* ---- the pipelines ---- */
 
-static VkCullModeFlags cull_mode(u32 cull)
+VkCullModeFlags vk_pipe_cull_mode(u32 cull)
 {
 	return cull == 2 ? VK_CULL_MODE_BACK_BIT : cull == 1 ? VK_CULL_MODE_FRONT_BIT : VK_CULL_MODE_NONE;
 }
 
-static void stencil_op(VkStencilOpState *s, VkStencilOp fail, VkStencilOp pass, VkStencilOp depthFail, VkCompareOp compare,
+void vk_pipe_stencil_op(VkStencilOpState *s, VkStencilOp fail, VkStencilOp pass, VkStencilOp depthFail, VkCompareOp compare,
 		u32 compareMask, u32 writeMask, u32 reference)
 {
 	s->failOp = fail;
@@ -212,28 +212,28 @@ static void stencil_state(VkStencilOpState *s, u32 stencil)
 	switch (stencil)
 	{
 	case VK_STENCIL_SHADOW_SET:
-		stencil_op(s, VK_STENCIL_OP_KEEP, VK_STENCIL_OP_REPLACE, VK_STENCIL_OP_KEEP, VK_COMPARE_OP_ALWAYS, 0, 0x80, 0x80);
+		vk_pipe_stencil_op(s, VK_STENCIL_OP_KEEP, VK_STENCIL_OP_REPLACE, VK_STENCIL_OP_KEEP, VK_COMPARE_OP_ALWAYS, 0, 0x80, 0x80);
 		break;
 	case VK_STENCIL_SHADOW_CLEAR:
-		stencil_op(s, VK_STENCIL_OP_KEEP, VK_STENCIL_OP_REPLACE, VK_STENCIL_OP_KEEP, VK_COMPARE_OP_ALWAYS, 0, 0x80, 0);
+		vk_pipe_stencil_op(s, VK_STENCIL_OP_KEEP, VK_STENCIL_OP_REPLACE, VK_STENCIL_OP_KEEP, VK_COMPARE_OP_ALWAYS, 0, 0x80, 0);
 		break;
 	/* Drawn again for its shadow: where this polygon is the one showing
 	 * (same depth), takes shadows (stencil bit 7) and is in a volume
 	 * (bit 0). Bit 6 marks the pixels drawn this way; whether one already
 	 * marked may be drawn over is what tells the two kinds apart. */
 	case VK_STENCIL_LATER_WINS:
-		stencil_op(s, VK_STENCIL_OP_KEEP, VK_STENCIL_OP_REPLACE, VK_STENCIL_OP_KEEP, VK_COMPARE_OP_EQUAL, 0x81, 0x40, 0xC1);
+		vk_pipe_stencil_op(s, VK_STENCIL_OP_KEEP, VK_STENCIL_OP_REPLACE, VK_STENCIL_OP_KEEP, VK_COMPARE_OP_EQUAL, 0x81, 0x40, 0xC1);
 		break;
 	case VK_STENCIL_EARLIER_WINS:
-		stencil_op(s, VK_STENCIL_OP_KEEP, VK_STENCIL_OP_INVERT, VK_STENCIL_OP_KEEP, VK_COMPARE_OP_EQUAL, 0xC1, 0x40, 0x81);
+		vk_pipe_stencil_op(s, VK_STENCIL_OP_KEEP, VK_STENCIL_OP_INVERT, VK_STENCIL_OP_KEEP, VK_COMPARE_OP_EQUAL, 0xC1, 0x40, 0x81);
 		break;
 	default:
-		stencil_op(s, VK_STENCIL_OP_KEEP, VK_STENCIL_OP_KEEP, VK_STENCIL_OP_KEEP, VK_COMPARE_OP_NEVER, 0, 0, 0);
+		vk_pipe_stencil_op(s, VK_STENCIL_OP_KEEP, VK_STENCIL_OP_KEEP, VK_STENCIL_OP_KEEP, VK_COMPARE_OP_NEVER, 0, 0, 0);
 		break;
 	}
 }
 
-static VkBlendFactor blend_factor(u32 instr, bool src)
+VkBlendFactor vk_pipe_blend_factor(u32 instr, bool src)
 {
 	switch (instr)
 	{
@@ -420,7 +420,7 @@ void vk_pipeline_mgr_set_dynamic_state(const vk_pipeline_mgr *m, VkCommandBuffer
 		const u32 stencil = (u32)(key >> VK_KEY_STENCIL) & 7;
 		VkStencilOpState state;
 		stencil_state(&state, stencil);
-		f->CmdSetCullMode(cmd, cull_mode((u32)(key >> VK_KEY_CULL) & 3));
+		f->CmdSetCullMode(cmd, vk_pipe_cull_mode((u32)(key >> VK_KEY_CULL) & 3));
 		f->CmdSetPrimitiveTopology(cmd, ((key >> VK_KEY_LIST) & 1) ? VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST : VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP);
 		f->CmdSetDepthTestEnable(cmd, VK_TRUE);
 		f->CmdSetDepthWriteEnable(cmd, (VkBool32)((key >> VK_KEY_ZWRITE) & 1));
@@ -443,8 +443,8 @@ void vk_pipeline_mgr_set_dynamic_state(const vk_pipeline_mgr *m, VkCommandBuffer
 		equation.alphaBlendOp = VK_BLEND_OP_ADD;
 		if (enable)
 		{
-			equation.srcColorBlendFactor = equation.srcAlphaBlendFactor = blend_factor((u32)(key >> VK_KEY_SRC) & 7, true);
-			equation.dstColorBlendFactor = equation.dstAlphaBlendFactor = blend_factor((u32)(key >> VK_KEY_DST) & 7, false);
+			equation.srcColorBlendFactor = equation.srcAlphaBlendFactor = vk_pipe_blend_factor((u32)(key >> VK_KEY_SRC) & 7, true);
+			equation.dstColorBlendFactor = equation.dstAlphaBlendFactor = vk_pipe_blend_factor((u32)(key >> VK_KEY_DST) & 7, false);
 		}
 		f->CmdSetColorBlendEquation(cmd, 0, 1, &equation);
 		f->CmdSetColorWriteMask(cmd, 0, 1, &writeMask);
@@ -496,39 +496,23 @@ static const VkVertexInputAttributeDescription main_attributes[] =
 	{ 2, 0, VK_FORMAT_R8G8B8A8_UINT, offsetof(Vertex, vtx_spc) },	/* offset color */
 	{ 3, 0, VK_FORMAT_R32G32_SFLOAT, offsetof(Vertex, u) },			/* tex coord */
 };
-static const VkVertexInputBindingDescription modvol_bindings[] = { { 0, sizeof(float) * 3, VK_VERTEX_INPUT_RATE_VERTEX } };
-static const VkVertexInputAttributeDescription modvol_attributes[] = { { 0, 0, VK_FORMAT_R32G32B32_SFLOAT, 0 } };	/* pos */
-
-/* What every pipeline here has the same of, or nearly: filled in by the
- * builders, then given to vk_pso_create() */
-typedef struct pipe_states
+/* the main vertices' every attribute (@full), else their position only */
+static void main_input(vk_pipe_states *s, bool full)
 {
-	VkPipelineVertexInputStateCreateInfo vertexInput;
-	VkPipelineInputAssemblyStateCreateInfo inputAssembly;
-	VkPipelineViewportStateCreateInfo viewport;
-	VkPipelineRasterizationStateCreateInfo rasterization;
-	VkPipelineMultisampleStateCreateInfo multisample;
-	VkPipelineDepthStencilStateCreateInfo depthStencil;
-	VkPipelineColorBlendAttachmentState blendAttachment;
-	VkPipelineColorBlendStateCreateInfo blend;
-	VkDynamicState dynamicStates[18];
-	VkPipelineDynamicStateCreateInfo dynamic;
-	VkPipelineShaderStageCreateInfo stages[2];
-	VkSpecializationMapEntry entries[3];
-	VkSpecializationInfo specialization;
-	s32 values[3];
-} pipe_states;
-
-/* @full: the main vertices' every attribute, else their position only;
- * @samples a pixel, shaded at each sample (@perSample) or once a pixel */
-static void states_init(pipe_states *s, bool full, VkPrimitiveTopology topology, u32 cull, u32 samples, bool perSample)
-{
-	memset(s, 0, sizeof(*s));
-	s->vertexInput.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
 	s->vertexInput.vertexBindingDescriptionCount = ARRAY_SIZE(main_bindings);
 	s->vertexInput.pVertexBindingDescriptions = main_bindings;
 	s->vertexInput.vertexAttributeDescriptionCount = full ? ARRAY_SIZE(main_attributes) : 1;
 	s->vertexInput.pVertexAttributeDescriptions = main_attributes;
+}
+
+static const VkVertexInputBindingDescription modvol_bindings[] = { { 0, sizeof(float) * 3, VK_VERTEX_INPUT_RATE_VERTEX } };
+static const VkVertexInputAttributeDescription modvol_attributes[] = { { 0, 0, VK_FORMAT_R32G32B32_SFLOAT, 0 } };	/* pos */
+
+
+void vk_pipe_states_init(vk_pipe_states *s, VkPrimitiveTopology topology, u32 cull, u32 samples, bool perSample)
+{
+	memset(s, 0, sizeof(*s));
+	s->vertexInput.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
 	s->inputAssembly.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
 	s->inputAssembly.topology = topology;
 	s->viewport.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
@@ -536,7 +520,7 @@ static void states_init(pipe_states *s, bool full, VkPrimitiveTopology topology,
 	s->viewport.scissorCount = 1;
 	s->rasterization.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
 	s->rasterization.polygonMode = VK_POLYGON_MODE_FILL;
-	s->rasterization.cullMode = cull_mode(cull);
+	s->rasterization.cullMode = vk_pipe_cull_mode(cull);
 	s->rasterization.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
 	s->rasterization.lineWidth = 1.0f;
 	s->multisample.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
@@ -556,15 +540,12 @@ static void states_init(pipe_states *s, bool full, VkPrimitiveTopology topology,
 	s->dynamic.pDynamicStates = s->dynamicStates;
 }
 
-static void states_dynamic(pipe_states *s, VkDynamicState state)
+void vk_pipe_states_dynamic(vk_pipe_states *s, VkDynamicState state)
 {
 	s->dynamicStates[s->dynamic.dynamicStateCount++] = state;
 }
 
-/* the stages: @specialized, with the pipeline's specialization constants
- * (pso_key.h): the key, -1 for the one read from the push constants, and
- * SSAA's samples a pixel */
-static void states_stages(pipe_states *s, VkShaderModule vertex, VkShaderModule fragment, bool specialized, s32 key, u32 samples)
+void vk_pipe_states_stages(vk_pipe_states *s, VkShaderModule vertex, VkShaderModule fragment, bool specialized, s32 key, u32 samples)
 {
 	u32 log2n = 0, i;
 	for (i = 0; i < 2; i++)
@@ -599,7 +580,7 @@ static void states_stages(pipe_states *s, VkShaderModule vertex, VkShaderModule 
 	s->stages[1].pSpecializationInfo = &s->specialization;
 }
 
-static VkPipeline states_make(const vk_pipeline_mgr *m, pipe_states *s, VkPipelineCache cache)
+VkPipeline vk_pipe_states_make(vk_pipe_states *s, VkPipelineLayout layout, VkRenderPass renderPass, u32 subpass, VkPipelineCache cache)
 {
 	VkGraphicsPipelineCreateInfo info;
 	memset(&info, 0, sizeof(info));
@@ -614,9 +595,33 @@ static VkPipeline states_make(const vk_pipeline_mgr *m, pipe_states *s, VkPipeli
 	info.pDepthStencilState = &s->depthStencil;
 	info.pColorBlendState = &s->blend;
 	info.pDynamicState = &s->dynamic;
-	info.layout = m->pipelineLayout;
-	info.renderPass = m->renderPass;
+	info.layout = layout;
+	info.renderPass = renderPass;
+	info.subpass = subpass;
 	return vk_pso_create(vkc.device, cache, &info);
+}
+
+void vk_pipe_states_general(vk_pipe_states *s)
+{
+	if (vkc.dynamicState.depthStencil)
+	{
+		vk_pipe_states_dynamic(s, (VkDynamicState)VK_PSO_DYNAMIC_STATE_CULL_MODE);
+		vk_pipe_states_dynamic(s, (VkDynamicState)VK_PSO_DYNAMIC_STATE_PRIMITIVE_TOPOLOGY);
+		vk_pipe_states_dynamic(s, (VkDynamicState)VK_PSO_DYNAMIC_STATE_DEPTH_TEST_ENABLE);
+		vk_pipe_states_dynamic(s, (VkDynamicState)VK_PSO_DYNAMIC_STATE_DEPTH_WRITE_ENABLE);
+		vk_pipe_states_dynamic(s, (VkDynamicState)VK_PSO_DYNAMIC_STATE_DEPTH_COMPARE_OP);
+		vk_pipe_states_dynamic(s, (VkDynamicState)VK_PSO_DYNAMIC_STATE_STENCIL_TEST_ENABLE);
+		vk_pipe_states_dynamic(s, (VkDynamicState)VK_PSO_DYNAMIC_STATE_STENCIL_OP);
+		vk_pipe_states_dynamic(s, VK_DYNAMIC_STATE_STENCIL_COMPARE_MASK);
+		vk_pipe_states_dynamic(s, VK_DYNAMIC_STATE_STENCIL_WRITE_MASK);
+		vk_pipe_states_dynamic(s, VK_DYNAMIC_STATE_STENCIL_REFERENCE);
+	}
+	if (vkc.dynamicState.blend)
+	{
+		vk_pipe_states_dynamic(s, (VkDynamicState)VK_PSO_DYNAMIC_STATE_COLOR_BLEND_ENABLE);
+		vk_pipe_states_dynamic(s, (VkDynamicState)VK_PSO_DYNAMIC_STATE_COLOR_BLEND_EQUATION);
+		vk_pipe_states_dynamic(s, (VkDynamicState)VK_PSO_DYNAMIC_STATE_COLOR_WRITE_MASK);
+	}
 }
 
 /* @cull: PsoCullIndex()'s (none where it is dynamic) */
@@ -624,10 +629,11 @@ static VkPipeline build_modvol(const vk_pipeline_mgr *m, int mode, u32 cull, VkP
 {
 	const bool main = mode == VK_MODVOL_FINAL || mode == VK_MODVOL_DEPTH;
 	VkStencilOpState stencil;
-	pipe_states s;
+	vk_pipe_states s;
 
-	states_init(&s, false, mode == VK_MODVOL_FINAL ? VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP : VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
+	vk_pipe_states_init(&s, mode == VK_MODVOL_FINAL ? VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP : VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
 			cull, m->samples, false);
+	main_input(&s, false);
 	if (!main)
 	{
 		s.vertexInput.pVertexBindingDescriptions = modvol_bindings;
@@ -639,21 +645,21 @@ static VkPipeline build_modvol(const vk_pipeline_mgr *m, int mode, u32 cull, VkP
 	switch (mode)
 	{
 	case VK_MODVOL_XOR:
-		stencil_op(&stencil, VK_STENCIL_OP_KEEP, VK_STENCIL_OP_INVERT, VK_STENCIL_OP_KEEP, VK_COMPARE_OP_ALWAYS, 0, 2, 2);
+		vk_pipe_stencil_op(&stencil, VK_STENCIL_OP_KEEP, VK_STENCIL_OP_INVERT, VK_STENCIL_OP_KEEP, VK_COMPARE_OP_ALWAYS, 0, 2, 2);
 		break;
 	case VK_MODVOL_OR:
-		stencil_op(&stencil, VK_STENCIL_OP_KEEP, VK_STENCIL_OP_REPLACE, VK_STENCIL_OP_KEEP, VK_COMPARE_OP_ALWAYS, 2, 2, 2);
+		vk_pipe_stencil_op(&stencil, VK_STENCIL_OP_KEEP, VK_STENCIL_OP_REPLACE, VK_STENCIL_OP_KEEP, VK_COMPARE_OP_ALWAYS, 2, 2, 2);
 		break;
 	case VK_MODVOL_INCLUSION:
-		stencil_op(&stencil, VK_STENCIL_OP_ZERO, VK_STENCIL_OP_REPLACE, VK_STENCIL_OP_ZERO, VK_COMPARE_OP_LESS_OR_EQUAL, 3, 3, 1);
+		vk_pipe_stencil_op(&stencil, VK_STENCIL_OP_ZERO, VK_STENCIL_OP_REPLACE, VK_STENCIL_OP_ZERO, VK_COMPARE_OP_LESS_OR_EQUAL, 3, 3, 1);
 		break;
 	case VK_MODVOL_EXCLUSION:
-		stencil_op(&stencil, VK_STENCIL_OP_ZERO, VK_STENCIL_OP_KEEP, VK_STENCIL_OP_ZERO, VK_COMPARE_OP_EQUAL, 3, 3, 1);
+		vk_pipe_stencil_op(&stencil, VK_STENCIL_OP_ZERO, VK_STENCIL_OP_KEEP, VK_STENCIL_OP_ZERO, VK_COMPARE_OP_EQUAL, 3, 3, 1);
 		break;
 	case VK_MODVOL_FINAL:
 		/* takes shadows, in a volume, and not drawn again for it (bit 6);
 		 * clears the volume bits and that mark */
-		stencil_op(&stencil, VK_STENCIL_OP_ZERO, VK_STENCIL_OP_ZERO, VK_STENCIL_OP_ZERO, VK_COMPARE_OP_EQUAL, 0xC1, 0x43, 0x81);
+		vk_pipe_stencil_op(&stencil, VK_STENCIL_OP_ZERO, VK_STENCIL_OP_ZERO, VK_STENCIL_OP_ZERO, VK_COMPARE_OP_EQUAL, 0xC1, 0x43, 0x81);
 		break;
 	default:
 		break;
@@ -678,10 +684,10 @@ static VkPipeline build_modvol(const vk_pipeline_mgr *m, int mode, u32 cull, VkP
 
 	/* (the cull mode set with the draws, where it can be: vk_pso_cull) */
 	if (m->cullSetter != NULL && mode != VK_MODVOL_FINAL)
-		states_dynamic(&s, (VkDynamicState)VK_PSO_DYNAMIC_STATE_CULL_MODE);
+		vk_pipe_states_dynamic(&s, (VkDynamicState)VK_PSO_DYNAMIC_STATE_CULL_MODE);
 
-	states_stages(&s, m->modules->m[RSPV_MODVOL_VERT], m->modules->m[RSPV_MODVOL_FRAG], false, 0, 0);
-	return states_make(m, &s, cache);
+	vk_pipe_states_stages(&s, m->modules->m[RSPV_MODVOL_VERT], m->modules->m[RSPV_MODVOL_FRAG], false, 0, 0);
+	return vk_pipe_states_make(&s, m->pipelineLayout, m->renderPass, 0, cache);
 }
 
 /* A polygon's pipeline, all of it from @key; @general: the one that draws
@@ -691,10 +697,11 @@ static VkPipeline build_poly(const vk_pipeline_mgr *m, u64 key, bool general, Vk
 	const u32 rate = (u32)(key >> VK_KEY_RATE) & 3;
 	const u32 stencil = (u32)(key >> VK_KEY_STENCIL) & 7;
 	const bool gouraud = ((key >> VK_KEY_GOURAUD) & 1) != 0;
-	pipe_states s;
+	vk_pipe_states s;
 
-	states_init(&s, true, ((key >> VK_KEY_LIST) & 1) ? VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST : VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP,
+	vk_pipe_states_init(&s, ((key >> VK_KEY_LIST) & 1) ? VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST : VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP,
 			(u32)(key >> VK_KEY_CULL) & 3, m->samples, rate == 1);
+	main_input(&s, true);
 
 	/* depth and stencil */
 	stencil_state(&s.depthStencil.front, stencil);
@@ -713,47 +720,28 @@ static VkPipeline build_poly(const vk_pipeline_mgr *m, u64 key, bool general, Vk
 	{
 		const u32 src = (u32)(key >> VK_KEY_SRC) & 7, dst = (u32)(key >> VK_KEY_DST) & 7;
 		s.blendAttachment.blendEnable = VK_TRUE;
-		s.blendAttachment.srcColorBlendFactor = s.blendAttachment.srcAlphaBlendFactor = blend_factor(src, true);
-		s.blendAttachment.dstColorBlendFactor = s.blendAttachment.dstAlphaBlendFactor = blend_factor(dst, false);
+		s.blendAttachment.srcColorBlendFactor = s.blendAttachment.srcAlphaBlendFactor = vk_pipe_blend_factor(src, true);
+		s.blendAttachment.dstColorBlendFactor = s.blendAttachment.dstAlphaBlendFactor = vk_pipe_blend_factor(dst, false);
 	}
 
 	/* the general pipeline's states that are set with each draw (vk_pipeline_mgr_set_dynamic_state()) */
 	if (general)
-	{
-		if (vkc.dynamicState.depthStencil)
-		{
-			states_dynamic(&s, (VkDynamicState)VK_PSO_DYNAMIC_STATE_CULL_MODE);
-			states_dynamic(&s, (VkDynamicState)VK_PSO_DYNAMIC_STATE_PRIMITIVE_TOPOLOGY);
-			states_dynamic(&s, (VkDynamicState)VK_PSO_DYNAMIC_STATE_DEPTH_TEST_ENABLE);
-			states_dynamic(&s, (VkDynamicState)VK_PSO_DYNAMIC_STATE_DEPTH_WRITE_ENABLE);
-			states_dynamic(&s, (VkDynamicState)VK_PSO_DYNAMIC_STATE_DEPTH_COMPARE_OP);
-			states_dynamic(&s, (VkDynamicState)VK_PSO_DYNAMIC_STATE_STENCIL_TEST_ENABLE);
-			states_dynamic(&s, (VkDynamicState)VK_PSO_DYNAMIC_STATE_STENCIL_OP);
-			states_dynamic(&s, VK_DYNAMIC_STATE_STENCIL_COMPARE_MASK);
-			states_dynamic(&s, VK_DYNAMIC_STATE_STENCIL_WRITE_MASK);
-			states_dynamic(&s, VK_DYNAMIC_STATE_STENCIL_REFERENCE);
-		}
-		if (vkc.dynamicState.blend)
-		{
-			states_dynamic(&s, (VkDynamicState)VK_PSO_DYNAMIC_STATE_COLOR_BLEND_ENABLE);
-			states_dynamic(&s, (VkDynamicState)VK_PSO_DYNAMIC_STATE_COLOR_BLEND_EQUATION);
-			states_dynamic(&s, (VkDynamicState)VK_PSO_DYNAMIC_STATE_COLOR_WRITE_MASK);
-		}
-	}
+		vk_pipe_states_general(&s);
 
 	/* the module of the interpolation and sample rate: the rest is the key's */
-	states_stages(&s, m->modules->m[gouraud ? RSPV_TRI_VERT_G1 : RSPV_TRI_VERT_G0],
+	vk_pipe_states_stages(&s, m->modules->m[gouraud ? RSPV_TRI_VERT_G1 : RSPV_TRI_VERT_G0],
 			m->modules->m[RSPV_TRI_FRAG_G0_R0 + (gouraud ? 3 : 0) + rate],
 			true, general ? -1 : (s32)(key & ((1u << TRI_SC_BITS) - 1)), m->samples);
-	return states_make(m, &s, cache);
+	return vk_pipe_states_make(&s, m->pipelineLayout, m->renderPass, 0, cache);
 }
 
 /* A pipeline of the depth prepass of a sorted translucent list (rend/sorter.h):
  * depth only, written where the depth test passes (the colour pass's test) */
 static VkPipeline build_prepass(const vk_pipeline_mgr *m, int texture, int gouraud, u32 cull, int rate, VkPipelineCache cache)
 {
-	pipe_states s;
-	states_init(&s, true, VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, cull, m->samples, rate == 1);
+	vk_pipe_states s;
+	vk_pipe_states_init(&s, VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, cull, m->samples, rate == 1);
+	main_input(&s, true);
 	s.depthStencil.depthTestEnable = VK_TRUE;
 	s.depthStencil.depthWriteEnable = VK_TRUE;
 	s.depthStencil.depthCompareOp = VK_COMPARE_OP_GREATER_OR_EQUAL;
@@ -761,13 +749,13 @@ static VkPipeline build_prepass(const vk_pipeline_mgr *m, int texture, int goura
 	s.blendAttachment.alphaBlendOp = VK_BLEND_OP_ADD;
 	/* (the cull mode set with the draws, where it can be: vk_pso_cull) */
 	if (m->cullSetter != NULL)
-		states_dynamic(&s, (VkDynamicState)VK_PSO_DYNAMIC_STATE_CULL_MODE);
+		vk_pipe_states_dynamic(&s, (VkDynamicState)VK_PSO_DYNAMIC_STATE_CULL_MODE);
 	/* (the module: textured, Gouraud, and the rate: 1 at each sample, 2 once a pixel) */
-	states_stages(&s, m->modules->m[gouraud ? RSPV_TRI_VERT_G1 : RSPV_TRI_VERT_G0],
+	vk_pipe_states_stages(&s, m->modules->m[gouraud ? RSPV_TRI_VERT_G1 : RSPV_TRI_VERT_G0],
 			m->modules->m[RSPV_PREPASS_FRAG_T0_G0_R0 + (texture ? 6 : 0) + (gouraud ? 3 : 0)
 				+ (m->samples > 1 ? (rate == 1 ? 1 : 2) : 0)],
 			true, 0, m->samples);
-	return states_make(m, &s, cache);
+	return vk_pipe_states_make(&s, m->pipelineLayout, m->renderPass, 0, cache);
 }
 
 /* the pipeline thread's, and a draw's */
