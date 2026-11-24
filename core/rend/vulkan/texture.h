@@ -295,6 +295,7 @@ public:
 	void Cleanup() { vk_texcache_cleanup(&c); }
 	void ClearLater() { vk_texcache_clear_later(&c); }
 	void Clear() { vk_texcache_clear(&c); }
+	vk_texcache *Raw() { return &c; }
 
 private:
 	vk_texcache c;

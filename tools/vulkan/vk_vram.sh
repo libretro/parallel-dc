@@ -2,7 +2,7 @@
 # Renders to textures draw into the screen's attachments - the depth with
 # the per-triangle and per-strip renderers, the colour and depth the
 # per-pixel one keeps between its passes - which are made large enough for
-# a render of a screen (TextureDrawer::ShareExtent()), and none of their
+# a render of a screen (vk_rtt_share_extent()), and none of their
 # own is made: no more video memory than the screen's, at the console's
 # resolution and above. And a render draws its own pixels, not the whole
 # texture, a power of two, that it is in: past them the texture is black,

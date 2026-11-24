@@ -78,7 +78,7 @@ than it has); they are made when first drawn and kept in the cache.
 3. **Renders to textures.** Done: a render draws with the screen's
    attachments - the depth; the per-pixel renderer's colour and depth -
    which are made at least as large as a render of a screen, 640x480
-   times Render To Texture Upscaling (`TextureDrawer::ShareExtent()`),
+   times Render To Texture Upscaling (`vk_rtt_share_extent()`),
    and it draws its own pixels, not the whole texture they are in, whose
    rest is cleared black once (`Texture::ClearOutside()`). Nothing is
    made for a render, and no more video memory is taken than the screen's
@@ -87,7 +87,7 @@ than it has); they are made when first drawn and kept in the cache.
    (logged). With SSAA, or the upscaler, where the screen's attachments
    are not of a single sample or are kept past a frame, the texture
    drawers have their own, made with them (SSAA's as large as a render can
-   be, `TextureDrawer::MaxSide()`, in memory made only when needed where
+   be, `vk_rtt_max_side()`, in memory made only when needed where
    SSAA is done to them). `tools/vulkan/vk_vram.sh` says how the renders
    were drawn and how much image memory there was at the most, and judges
    the black past a render. A framebuffer's place for each image; the

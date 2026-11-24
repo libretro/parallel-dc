@@ -220,7 +220,7 @@ static VkRenderPass make(const vk_oit_passes *p, bool initial, bool last, bool d
 	/* final; the depth for the translucent depth-only pass when the frame goes on */
 	subpass(&subpasses[2], 1, &colorInput, &swapChainReference, &depthReference);
 
-	/* (what reads the picture reads it anywhere: not by region, see drawer.cpp) */
+	/* (what reads the picture reads it anywhere: not by region, see vk_screen_drawer.c) */
 	if (p->rtt)
 		d = dep(d, 2, VK_SUBPASS_EXTERNAL, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
 				VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT, 0);

@@ -812,12 +812,12 @@ void OITScreenDrawer::MakeFramebuffers()
 
 	SetScreenSize(viewport.extent.width, viewport.extent.height);
 	/* (renders to textures draw into the attachments too, when they can:
-	 * as large as those need, TextureDrawer::ShareExtent()) */
+	 * as large as those need, vk_rtt_share_extent()) */
 	{
-		const vk::Extent2D size = SharesAttachments() ? TextureDrawer::ShareExtent(viewport.extent) : viewport.extent;
+		const vk::Extent2D size = SharesAttachments() ? vk::Extent2D(vk_rtt_share_extent(viewport.extent)) : viewport.extent;
 		/* (the lists' heads as large as those renders too: made while
 		 * the game runs, for the first of them, otherwise) */
-		const vk::Extent2D heads = TextureDrawer::ShareExtent(viewport.extent);
+		const vk::Extent2D heads = vk::Extent2D(vk_rtt_share_extent(viewport.extent));
 		InitBuffers(heads.width, heads.height);
 		MakeAttachments(size.width, size.height);
 	}

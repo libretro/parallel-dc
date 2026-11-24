@@ -36,18 +36,14 @@ public:
 
 		samples = SsaaSamples();
 		samplerManager.Init();
-		textureDrawer.SetCommandPool(&texCommandPool);
-		textureDrawer.Init(&samplerManager, &shaderManager, &textureCache, RttSamples());
-		textureDrawer.SetGpuDraw(taDecoder.Draw());
+		vk_rtt_drawer_set_pool(&textureDrawer, &texCommandPool.p);
+		InitTextureDrawer();
+		textureDrawer.base.gpuDraw = reinterpret_cast<const vk_ta_gpu_draw *>(taDecoder.Draw());
 
-		screenDrawer.Init(&samplerManager, &shaderManager, samples);
-		screenDrawer.SetCommandPool(&texCommandPool);
-		screenDrawer.SetGpuDraw(taDecoder.Draw());
-		textureDrawer.ShareDepth(&screenDrawer);
+		vk_screen_drawer_set_pool(&screenDrawer, &texCommandPool.p);
+		screenDrawer.base.gpuDraw = reinterpret_cast<const vk_ta_gpu_draw *>(taDecoder.Draw());
+		InitScreenDrawer();
 		taDecoder.WantSort(true);
-		BaseInit(screenDrawer.GetRenderPass(), screenDrawer.GetOsdSubpass());
-		InitOverlay(screenDrawer.OverlayPass());
-		screenDrawer.SetQuadPipeline(&quadPipeline);
 
 		return true;
 	}
@@ -60,20 +56,29 @@ public:
 		samples = SsaaSamples();
 		if (samples != was)
 		{
-			textureDrawer.Init(&samplerManager, &shaderManager, &textureCache, RttSamples());
+			InitTextureDrawer();
 			quadPipeline.Forget();
 		}
-		screenDrawer.Init(&samplerManager, &shaderManager, samples);
-		textureDrawer.ShareDepth(&screenDrawer);
-		BaseInit(screenDrawer.GetRenderPass(), screenDrawer.GetOsdSubpass());
-		InitOverlay(screenDrawer.OverlayPass());
-		screenDrawer.SetQuadPipeline(&quadPipeline);
+		InitScreenDrawer();
 		// what this size no longer needs is given back once the frames that used it are done
 		GetContext()->GetHeap().TrimSoon();
 	}
 
-	void KeepPicture() override { screenDrawer.KeepPicture(); }
-	void SetRestoredPicture(vk::ImageView view, vk::Extent2D size) override { screenDrawer.SetRestoredPicture(view, size); }
+	void KeepPicture() override { vk_screen_drawer_keep_picture(&screenDrawer); }
+	void SetRestoredPicture(vk::ImageView view, vk::Extent2D size) override
+	{
+		vk_screen_drawer_set_restored_picture(&screenDrawer, (VkImageView)view, (VkExtent2D)size);
+	}
+	VulkanRenderer()
+	{
+		vk_screen_drawer_construct(&screenDrawer);
+		vk_rtt_drawer_construct(&textureDrawer);
+	}
+	~VulkanRenderer()
+	{
+		vk_rtt_drawer_free(&textureDrawer);
+		vk_screen_drawer_free(&screenDrawer);
+	}
 
 protected:
 	/* A sorted pass's translucent triangles are sorted from the frame's
@@ -96,8 +101,8 @@ public:
 		GetContext()->ReleasePicture();
 		texCommandPool.WaitAll();
 		DropQuads();
-		screenDrawer.Term();
-		textureDrawer.Term();
+		vk_screen_drawer_term(&screenDrawer);
+		vk_rtt_drawer_term(&textureDrawer);
 		samplerManager.Term();
 		BaseVulkanRenderer::Term();
 	}
@@ -115,27 +120,30 @@ public:
 			return false;
 		}
 
-		Drawer *drawer;
+		const VkImageView fogView = (VkImageView)fogTexture->GetImageView();
+		const VkImageView paletteView = (VkImageView)paletteTexture->GetImageView();
 		if (pvrrc.isRTT)
-			drawer = &textureDrawer;
-		else
-			drawer = &screenDrawer;
-
-		SetParsed(*drawer);
-		drawer->Draw(fogTexture.get(), paletteTexture.get());
-
-		if (!pvrrc.isRTT)
 		{
-			/* (the chip's write-out before what goes over the picture, which
-			 * then goes in a render pass of its own: writeout.h) */
-			const bool after = screenDrawer.HasWriteOut() && vmus->Drawing() && screenDrawer.WriteOutBeforeOsd();
-			vmus->DrawOSD(screenDrawer.GetCurrentCommandBuffer(), vk::Extent2D(screen_width, screen_height), &texCommandPool,
-					after ? &overlayQuadPipeline : nullptr);
+			SetParsed(&textureDrawer.base);
+			if (!vk_rtt_drawer_draw(&textureDrawer, fogView, paletteView))
+				throwResultException(vk::Result::eErrorOutOfDeviceMemory, "vk_rtt_drawer_draw");
+			vk_rtt_drawer_end(&textureDrawer);
+			return false;
 		}
 
-		drawer->EndRenderPass();
+		SetParsed(&screenDrawer.base);
+		if (!vk_screen_drawer_draw(&screenDrawer, fogView, paletteView))
+			throwResultException(vk::Result::eErrorOutOfDeviceMemory, "vk_screen_drawer_draw");
+		/* (the chip's write-out before what goes over the picture, which
+		 * then goes in a render pass of its own: writeout.h) */
+		const bool after = vk_screen_drawer_has_writeout(&screenDrawer) && vmus->Drawing()
+				&& vk_screen_drawer_writeout_before_osd(&screenDrawer);
+		vmus->DrawOSD(vk::CommandBuffer(screenDrawer.cmd), vk::Extent2D(screen_width, screen_height), &texCommandPool,
+				after ? &overlayQuadPipeline : nullptr);
+		if (!vk_screen_drawer_end(&screenDrawer))
+			throwResultException(vk::Result::eErrorInitializationFailed, "vk_screen_drawer_end");
 
-		return !pvrrc.isRTT;
+		return true;
 	}
 
 private:
@@ -157,9 +165,26 @@ private:
 	 * screen's */
 	u32 RttSamples() const { return GetContext()->HasLazyMemory() ? samples : 1; }
 
+	void InitTextureDrawer()
+	{
+		if (!vk_rtt_drawer_init(&textureDrawer, samplerManager.Raw(), shaderManager.Raw(), textureCache.Raw(), RttSamples()))
+			throwResultException(vk::Result::eErrorInitializationFailed, "vk_rtt_drawer_init");
+	}
+	/* (and the textures' depth, shared with it, and what draws over it) */
+	void InitScreenDrawer()
+	{
+		if (!vk_screen_drawer_init(&screenDrawer, samplerManager.Raw(), shaderManager.Raw(), samples)
+				|| !vk_rtt_drawer_share_depth(&textureDrawer, &screenDrawer))
+			throwResultException(vk::Result::eErrorInitializationFailed, "vk_screen_drawer_init");
+		BaseInit(vk::RenderPass(screenDrawer.renderPass), vk_screen_drawer_osd_subpass(&screenDrawer));
+		InitOverlay(vk::RenderPass(screenDrawer.writeOut.overlayPass));
+		if (!vk_screen_drawer_set_quad_pipeline(&screenDrawer, &quadPipeline.p))
+			throwResultException(vk::Result::eErrorOutOfDeviceMemory, "vk_screen_drawer_set_quad_pipeline");
+	}
+
 	SamplerManager samplerManager;
-	ScreenDrawer screenDrawer;
-	TextureDrawer textureDrawer;
+	vk_screen_drawer screenDrawer;
+	vk_rtt_drawer textureDrawer;
 };
 
 const renderer_ops *rend_Vulkan(void)

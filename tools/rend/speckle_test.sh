@@ -135,25 +135,18 @@ closing $R/dx12/oit/dx12_oitrenderer.c 'DX12_OF_MV_INCLUSION : DX12_OF_MV_EXCLUS
 # frame's tiles with only its opaque polygons drawn yet. The per-pixel and
 # SSAA render passes have the fragment shader in theirs.)
 awk '
-   /emplace_back\(VK_SUBPASS_EXTERNAL, 0,/ { on = 1; text = "" }
+   /dep\(d, VK_SUBPASS_EXTERNAL, 0,/ { on = 1; text = "" }
    on { text = text $0 }
-   on && /\);/ { on = 0; if (text ~ /eFragmentShader/ && text ~ /eTransfer/ && text ~ /eColorAttachmentWrite/) found = 1 }
-   END { exit !found }' $R/vulkan/drawer.cpp \
-   || bad "$R/vulkan/drawer.cpp: the screen's render pass clears its picture with no dependency on the frontend's reading of it"
+   on && /\);/ { on = 0; if (text ~ /VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT/ && text ~ /VK_PIPELINE_STAGE_TRANSFER_BIT/ \
+      && text ~ /VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT/) found = 1 }
+   END { exit !found }' $R/vulkan/vk_screen_drawer.c \
+   || bad "$R/vulkan/vk_screen_drawer.c: the screen's render pass clears its picture with no dependency on the frontend's reading of it"
 
 # (and no render pass's dependency out to what reads its pictures after it
 # is by region: that reader is in another render pass, or a copy, and reads
 # anywhere; by region it may read tiles not drawn yet)
-for f in $R/vulkan/drawer.cpp; do
-   [ -f "$f" ] || continue
-   awk '
-      /(emplace_back|SubpassDependency)\( *[0-9a-z]+, *VK_SUBPASS_EXTERNAL *,/ { on = 1; text = "" }
-      on { text = text $0 }
-      on && /\)[,;][[:space:]]*$/ { on = 0; if (text ~ /eByRegion/) bad = 1 }
-      END { exit bad }' "$f" || bad "$f: a dependency out of a render pass to what reads its picture is by region"
-done
 # (the render passes made in C: their dependencies are dep() calls)
-for f in $R/vulkan/oit/vk_oit_renderpass.c $R/vulkan/vk_pipeline.c; do
+for f in $R/vulkan/vk_screen_drawer.c $R/vulkan/oit/vk_oit_renderpass.c $R/vulkan/vk_pipeline.c; do
    awk '
       /dep\(d, *[0-9a-z]+, *VK_SUBPASS_EXTERNAL *,/ { on = 1; text = "" }
       on { text = text $0 }

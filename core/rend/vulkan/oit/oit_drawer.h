@@ -213,7 +213,7 @@ class OITScreenDrawer : public OITDrawer
 {
 public:
 	/* Renders to textures draw into this drawer's attachments too, which
-	 * are then made large enough for them (TextureDrawer::ShareExtent()):
+	 * are then made large enough for them (vk_rtt_share_extent()):
 	 * not with SSAA or the upscaler, when they are not of a single sample
 	 * and of no use past a frame */
 	bool SharesAttachments() const
@@ -489,8 +489,8 @@ public:
 	}
 	/* The screen's drawer's attachments, which this draws into when they
 	 * are large enough (OITScreenDrawer::SharesAttachments(), and
-	 * TextureDrawer::ShareExtent()); made of its own, as large as
-	 * TextureDrawer::CommonRender(), where there are none to share - now,
+	 * vk_rtt_share_extent()); made of its own, as large as
+	 * vk_rtt_common_render(), where there are none to share - now,
 	 * not while the game runs. Said after the screen's drawer is made, or
 	 * made again. */
 	void ShareAttachments(OITScreenDrawer *screen)
@@ -501,7 +501,7 @@ public:
 			DropAttachments();
 		else
 		{
-			const vk::Extent2D common = TextureDrawer::CommonRender();
+			const vk::Extent2D common = vk::Extent2D(vk_rtt_common_render());
 			MakeAttachments((int)common.width, (int)common.height);
 		}
 	}

@@ -1,4 +1,4 @@
-#define PVR_REGS_FOR_RENDERER	// see hw/pvr/pvr_regs.h
+#define PVR_REGS_FOR_RENDERER	/* see hw/pvr/pvr_regs.h */
 /*
 	Copyright 2021 flyinghead
 

@@ -54,6 +54,20 @@ for f in $files; do
          break
       fi
    done
+   # (a // comment on a directive's line is no comment to C89 but part of
+   # the directive - a macro's body, unseen while only #ifdef reads it -
+   # and MSVC takes it as one: held to /* */ there too, the file's own
+   # lines and the macros of the core's headers it includes)
+   cpp=$( { sed 's#"\([^"\\]\|\\.\)*"#""#g' "$f" | grep -n '^[[:space:]]*#.*//' | sed "s#^#$f:#"
+      $CC $cflags -std=c89 -dD -E "$f" 2>/dev/null | awk '
+         /^# [0-9]+ "/ { sys = ($0 ~ / 3( |$)/); file = $3; next }
+         !sys && /^#[ \t]*define/ { t = $0; gsub(/"([^"\\]|\\.)*"/, "\"\"", t); if (t ~ /\/\//) print file ": " $0 }'; } \
+      | sort -u)
+   if [ -n "$cpp" ]; then
+      echo "$cpp" | sed "s#^#  #"
+      echo "c89_check: FAIL: $f (a // comment on a directive's line)"
+      fails=$((fails + 1))
+   fi
 done
 [ $fails -eq 0 ] || { echo "c89_check: $fails of $n files not C89"; exit 1; }
 echo "c89_check: $n files, all C89"

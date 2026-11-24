@@ -226,9 +226,10 @@ protected:
 
 	/* What @drawer draws this frame from: the slice the parse wrote, or
 	 * (nothing) the main buffer it copies the lists into */
-	void SetParsed(BaseDrawer& drawer)
+	void SetParsed(BaseDrawer& drawer) { SetParsed(drawer.Base()); }
+	void SetParsed(vk_base_drawer *drawer)
 	{
-		BaseDrawer::Parsed parsed = {};
+		vk_parsed parsed = {};
 		if (parsedSlot >= 0 && parsedSlot == texCommandPool.GetIndex())
 		{
 			const parse_arena_t& a = parseArena.arena;
@@ -244,7 +245,7 @@ protected:
 		}
 		else if (!pvrrc.gpu && parsedCopied++ == 0 && parseArenaOk)
 			WARN_LOG(RENDERER, "Vulkan: a render copied to the card though its memory has the parse's room\n");
-		drawer.SetParsed(parsed);
+		drawer->parsed = parsed;
 	}
 	void DetachParse()
 	{

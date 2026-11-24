@@ -272,9 +272,9 @@ ifeq ($(HAVE_VULKAN), 1)
 					$(CORE_DIR)/core/rend/vulkan/oit/vk_oit_pipeline.c \
 					$(CORE_DIR)/core/rend/vulkan/vk_drawer_base.c \
 					$(CORE_DIR)/core/rend/vulkan/vk_compute_drawer.c \
-					$(CORE_DIR)/core/rend/vulkan/vk_drawer.c
+					$(CORE_DIR)/core/rend/vulkan/vk_drawer.c \
+					$(CORE_DIR)/core/rend/vulkan/vk_screen_drawer.c
 	SOURCES_CXX += \
-					$(CORE_DIR)/core/rend/vulkan/drawer.cpp \
 					$(CORE_DIR)/core/rend/vulkan/vulkan_renderer.cpp \
 					$(CORE_DIR)/core/rend/vulkan/oit/oit_drawer.cpp \
 					$(CORE_DIR)/core/rend/vulkan/oit/oit_renderer.cpp
