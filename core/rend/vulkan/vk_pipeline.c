@@ -17,6 +17,7 @@
 
     You should have received a copy of the GNU General Public License
     along with Flycast.  If not, see <https://www.gnu.org/licenses/>.
+*/
 /* See vk_pipeline.h */
 #include <stdlib.h>
 #include <string.h>

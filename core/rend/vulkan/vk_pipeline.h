@@ -17,6 +17,7 @@
 
     You should have received a copy of the GNU General Public License
     along with Flycast.  If not, see <https://www.gnu.org/licenses/>.
+*/
 /* The per-triangle renderer's pipelines (pso.h), its descriptor sets, and
  * the render pass of SSAA's frames */
 #ifndef VK_PIPELINE_H

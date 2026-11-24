@@ -152,7 +152,7 @@ void vk_motion_pass_construct(vk_motion_pass *m)
 	PsoOwnInit(&m->builder, m->pipelines, 3);
 }
 
-static void free_sized(void *object)
+static void motion_sized_free(void *object)
 {
 	vk_motion_sized *s = (vk_motion_sized *)object;
 	u32 i;
@@ -171,9 +171,9 @@ void vk_motion_pass_term(vk_motion_pass *m, vk_cmd_pool *pool)
 	if (m->sized != NULL)
 	{
 		if (pool != NULL)
-			vk_cmd_pool_defer(pool, m->sized, free_sized);
+			vk_cmd_pool_defer(pool, m->sized, motion_sized_free);
 		else
-			free_sized(m->sized);
+			motion_sized_free(m->sized);
 		m->sized = NULL;
 	}
 	/* (the pipeline thread done with what it has of them before what they are made of goes) */
@@ -265,7 +265,7 @@ static bool make_sized(vk_motion_pass *m, const VkImageView *depthViews, u32 cou
 	s->framebuffers = (VkFramebuffer *)(s->attachments + count);
 	s->count = count;
 	if (m->sized != NULL)
-		free_sized(m->sized);
+		motion_sized_free(m->sized);
 	m->sized = s;
 	for (i = 0; i < count; i++)
 	{

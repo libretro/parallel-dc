@@ -39,8 +39,11 @@ for f in $files; do
       esac
       # (the core options' texts are longer than the 509 characters C89
       # promises: MSVC, the C89 compiler there is, takes 2048)
+      # (a comment opened inside another, and a function named as a newer
+      # C library names one of its own: tools/c89/newer_libc.h)
       if ! out=$($CC $cflags $extra -std=c89 -pedantic -Wno-long-long -Wno-variadic-macros -Wno-overlength-strings -Werror \
-            -Wdeclaration-after-statement -Werror=implicit-function-declaration -fsyntax-only "$f" 2>&1); then
+            -Wdeclaration-after-statement -Werror=implicit-function-declaration -Werror=comment \
+            -include tools/c89/newer_libc.h -fsyntax-only "$f" 2>&1); then
          echo "$out" | grep -m 5 "error" | sed "s#^#  #"
          case $extra in
          "$NOREC") echo "c89_check: FAIL: $f (no recompilers)" ;;
