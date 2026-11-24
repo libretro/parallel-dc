@@ -23,6 +23,7 @@
 #include "rtt_read.h"
 #include "rend/last_picture.h"
 #include "drawer.h"
+#include "vk_drawer_base.h"
 #include "hw/pvr/pvr_mem.h"
 
 /* The sorted passes' triangles and their prepasses', their indices written
@@ -50,76 +51,15 @@ TileClipping BaseDrawer::SetTileClip(u32 val, vk::Rect2D& clipRect)
 
 void BaseDrawer::SetBaseScissor()
 {
-	bool wide_screen_on = settings.rend.WideScreen && !pvrrc.isRenderFramebuffer
-			&& !matrices.IsClipped();
-	if (!wide_screen_on)
-	{
-		if (pvrrc.isRenderFramebuffer)
-		{
-			baseScissor = vk::Rect2D(vk::Offset2D(0, 0),
-					vk::Extent2D(640, 480));
-		}
-		else
-		{
-			float width;
-			float height;
-			float min_x;
-			float min_y;
-			min_x = xform_x(&matrices.GetScissorMatrix(), pvrrc.fb_X_CLIP.min);
-				min_y = xform_y(&matrices.GetScissorMatrix(), pvrrc.fb_Y_CLIP.min);
-				width = xform_w(&matrices.GetScissorMatrix(), pvrrc.fb_X_CLIP.max - pvrrc.fb_X_CLIP.min + 1);
-				height = xform_h(&matrices.GetScissorMatrix(), pvrrc.fb_Y_CLIP.max - pvrrc.fb_Y_CLIP.min + 1);
-			if (width < 0)
-			{
-				min_x += width;
-				width = -width;
-			}
-			if (height < 0)
-			{
-				min_y += height;
-				height = -height;
-			}
-
-			baseScissor = vk::Rect2D(
-					vk::Offset2D((u32) std::max(lroundf(min_x), 0L),
-							(u32) std::max(lroundf(min_y), 0L)),
-					vk::Extent2D((u32) std::max(lroundf(width), 0L),
-							(u32) std::max(lroundf(height), 0L)));
-		}
-	}
-	else
-	{
-		baseScissor = vk::Rect2D(vk::Offset2D(0, 0),
-				vk::Extent2D(screen_width, screen_height));
-	}
+	VkRect2D rect;
+	vk_drawer_base_scissor(matrices.Raw(), &rect);
+	baseScissor = vk::Rect2D(rect);
 	currentScissor = { 0, 0, 0, 0 };
 }
 
-// Vulkan uses the color values of the first vertex for flat shaded triangle strips.
-// On Dreamcast the last vertex is the provoking one so we must copy it onto the first.
 void BaseDrawer::SetProvokingVertices()
 {
-	auto setProvokingVertex = [](const List<PolyParam>& list) {
-		for (int i = 0; i < list.used(); i++)
-		{
-			const PolyParam& pp = list.head()[i];
-			if (!pp.pcw.Gouraud && pp.count > 2)
-			{
-				for (int i = 0; i < pp.count - 2; i++)
-				{
-					Vertex *vertex = &pvrrc.verts.head()[pvrrc.idx.head()[pp.first + i]];
-					Vertex *lastVertex = &pvrrc.verts.head()[pvrrc.idx.head()[pp.first + i + 2]];
-					memcpy(vertex->col, lastVertex->col, 4);
-					memcpy(vertex->vtx_spc, lastVertex->vtx_spc, 4);
-					memcpy(vertex->col1, lastVertex->col1, 4);
-					memcpy(vertex->spc1, lastVertex->spc1, 4);
-				}
-			}
-		}
-	};
-	setProvokingVertex(pvrrc.global_param_op);
-	setProvokingVertex(pvrrc.global_param_pt);
-	setProvokingVertex(pvrrc.global_param_tr);
+	vk_drawer_provoking_vertices();
 }
 
 void Drawer::DrawPoly(const vk::CommandBuffer& cmdBuffer, u32 listType, bool sortTriangles, const PolyParam& poly, u32 first, u32 count,

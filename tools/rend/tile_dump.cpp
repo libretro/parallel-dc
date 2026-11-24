@@ -1,6 +1,6 @@
 /* The frames a game draws to the screen, written as the compute renderer's
  * words (rend/tile/pvr_compute.h, ComputeFrame::Pack() of
- * rend/vulkan/compute_drawer.cpp), for tile_test to draw on a device and
+ * rend/vulkan/vk_compute_drawer.c), for tile_test to draw on a device and
  * with the reference. Linked into one program with the core's objects and
  * tools/threads/headless.c as the frontend (tile_test.sh): the link puts
  * __wrap_ta_parse_vdrc() in the place of the parse, and headless.c's

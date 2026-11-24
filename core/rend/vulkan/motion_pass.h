@@ -63,6 +63,7 @@ public:
 		vk_motion_pass_submit(&m, image, (VkImage)depthImage, (VkImageView)depthView, (VkFormat)depthFormat);
 	}
 	bool Recorded() const { return m.recorded; }
+	vk_motion_pass *Raw() { return &m; }
 
 private:
 	vk_motion_pass m;

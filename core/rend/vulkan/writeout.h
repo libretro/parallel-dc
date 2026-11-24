@@ -25,7 +25,7 @@
 extern "C" {
 #endif
 
-/* (compute_drawer.cpp has the kernels' SPIR-V) */
+/* (vk_compute_drawer.c has the kernels' SPIR-V) */
 const u32 *vk_compute_kernel(u32 kernel, size_t *size);
 
 typedef struct vk_writeout

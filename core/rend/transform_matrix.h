@@ -83,6 +83,7 @@ public:
 	static float RttHorizontalScale() { return transform_matrix_rtt_hscale(); }
 	void Jitter(float x, float y) { transform_matrix_jitter(&m, x, y); }
 	void CalcMatrices(const rend_context *renderingContext) { transform_matrix_calc(&m, renderingContext); }
+	const transform_matrix_t *Raw() const { return &m; }
 
 private:
 	transform_matrix_t m;

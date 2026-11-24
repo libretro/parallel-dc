@@ -13,7 +13,7 @@
 #   core/rend/vulkan/compute_spv.inc
 #                                the compute renderer's kernels
 #                                (rend/tile/pvr_compute.h, after the shared
-#                                rules' headers; vulkan/compute_drawer.cpp)
+#                                rules' headers; vulkan/vk_compute_drawer.c)
 #
 # and the OpenGL renderers' (gles/ta_decoder_gl.c), whose OpenGL takes
 # SPIR-V (4.6, ARB_gl_spirv) or else compiles the text once:

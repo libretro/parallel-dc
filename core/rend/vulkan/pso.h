@@ -210,7 +210,7 @@ u32 vk_pso_worker_built(void);
 u32 vk_pso_worker_sync_built(void);
 
 /* Slots of a builder's own, not a table's: the device's utility pipelines
- * (quad.h, ssaa.h, tex_decoder.h, compute_drawer.cpp), handed to the worker
+ * (quad.h, ssaa.h, tex_decoder.h, vk_compute_drawer.c), handed to the worker
  * with vk_pso_worker_build_soon() where the device made them before. Init:
  * @n of them, empty, keyed 0 to @n - 1. Drop: what the worker has of them
  * dropped, the pipelines destroyed, empty again (nothing done if they are).
