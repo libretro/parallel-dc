@@ -59,6 +59,7 @@ public:
 		vk_ssaa_resolve_set_samples_view(&r, (VkImageView)samplesView, &commandPool->p);
 	}
 	void Term() { vk_ssaa_resolve_term(&r); }
+	vk_ssaa_resolve *Raw() const { return &r; }
 
 private:
 	mutable vk_ssaa_resolve r;	/* (a draw may make its pipeline) */

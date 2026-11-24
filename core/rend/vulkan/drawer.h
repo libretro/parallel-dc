@@ -37,43 +37,45 @@
 #include "gpu_timer.h"
 #include "writeout.h"
 #include "rend/depth_scale.h"
+#include "vk_drawer.h"
+#include <type_traits>
 #include "rend/ta_gpu.h"
 #include "rend/upscaler.h"
 #include "motion_pass.h"
 
+/* The C++ drawers' view of a vk_base_drawer (vk_drawer_base.h) */
 class BaseDrawer
 {
 public:
+	BaseDrawer() { vk_base_drawer_construct(&b); }
+	~BaseDrawer() { vk_base_drawer_term(&b); }
+	BaseDrawer(const BaseDrawer&) = delete;
+	BaseDrawer& operator=(const BaseDrawer&) = delete;
+
 	void SetScissor(const vk::CommandBuffer& cmdBuffer, const vk::Rect2D& scissor)
 	{
-		if (scissor != currentScissor)
-		{
-			cmdBuffer.setScissor(0, scissor);
-			currentScissor = scissor;
-		}
+		vk_base_drawer_set_scissor(&b, (VkCommandBuffer)cmdBuffer, &static_cast<const VkRect2D&>(scissor));
 	}
-	void SetCommandPool(CommandPool *commandPool) { this->commandPool = commandPool; }
-	// what a frame decoded on the GPU is drawn from (pvrrc.gpu)
-	void SetGpuDraw(const TaGpuDraw *gpuDraw) { this->gpuDraw = gpuDraw; }
-	/* Where a frame the parse wrote where the card reads it is
-	 * (rend/parse_arena.h): its vertices, its indices, and the room after
-	 * them for the sorted passes' */
-	struct Parsed
+	void SetCommandPool(CommandPool *commandPool)
 	{
-		vk::Buffer buffer;
-		vk::DeviceSize vertices = 0, indices = 0;
-		vk::DeviceSize modVols = 0;	// the volumes' triangles drawn (ModVolList()'s)
-		u32 sortRoom = 0;		// bytes
-	};
+		this->commandPool = commandPool;
+		b.pool = commandPool != nullptr ? &commandPool->p : nullptr;
+	}
+	// what a frame decoded on the GPU is drawn from (pvrrc.gpu)
+	void SetGpuDraw(const TaGpuDraw *gpuDraw) { b.gpuDraw = reinterpret_cast<const vk_ta_gpu_draw *>(gpuDraw); }
+	typedef vk_parsed Parsed;
 	/* This render's frame was parsed there; none (a null buffer): it is
 	 * copied into the main buffer */
-	void SetParsed(const Parsed& parsed) { this->parsed = parsed; }
+	void SetParsed(const Parsed& parsed) { b.parsed = parsed; }
 
 protected:
 	VulkanContext *GetContext() const { return VulkanContext::Instance(); }
-	TileClipping SetTileClip(u32 val, vk::Rect2D& clipRect);
-	void SetBaseScissor();
-	void SetProvokingVertices();
+	TileClipping SetTileClip(u32 val, vk::Rect2D& clipRect)
+	{
+		return (TileClipping)vk_base_drawer_tile_clip(&b, val, &static_cast<VkRect2D&>(clipRect));
+	}
+	void SetBaseScissor() { vk_base_drawer_set_base_scissor(&b); }
+	void SetProvokingVertices() { vk_drawer_provoking_vertices(); }
 
 	u32 align(vk::DeviceSize offset, u32 alignment)
 	{
@@ -84,288 +86,101 @@ protected:
 	T MakeFragmentUniforms()
 	{
 		T fragUniforms;
-
-		//VERT and RAM fog color constants
-		u8* fog_colvert_bgra = (u8*)&FOG_COL_VERT;
-		u8* fog_colram_bgra = (u8*)&FOG_COL_RAM;
-		fragUniforms.sp_FOG_COL_VERT[0] = fog_colvert_bgra[2] / 255.0f;
-		fragUniforms.sp_FOG_COL_VERT[1] = fog_colvert_bgra[1] / 255.0f;
-		fragUniforms.sp_FOG_COL_VERT[2] = fog_colvert_bgra[0] / 255.0f;
-
-		fragUniforms.sp_FOG_COL_RAM[0] = fog_colram_bgra[2] / 255.0f;
-		fragUniforms.sp_FOG_COL_RAM[1] = fog_colram_bgra[1] / 255.0f;
-		fragUniforms.sp_FOG_COL_RAM[2] = fog_colram_bgra[0] / 255.0f;
-
-		//Fog density constant
-		u8* fog_density = (u8*)&FOG_DENSITY;
-		float fog_den_mant = fog_density[1] / 128.0f;  //bit 7 -> x. bit, so [6:0] -> fraction -> /128
-		s32 fog_den_exp = (s8)fog_density[0];
-		fragUniforms.sp_FOG_DENSITY = fog_den_mant * powf(2.0f, fog_den_exp);
-
-		fragUniforms.colorClampMin[0] = ((pvrrc.fog_clamp_min >> 16) & 0xFF) / 255.0f;
-		fragUniforms.colorClampMin[1] = ((pvrrc.fog_clamp_min >> 8) & 0xFF) / 255.0f;
-		fragUniforms.colorClampMin[2] = ((pvrrc.fog_clamp_min >> 0) & 0xFF) / 255.0f;
-		fragUniforms.colorClampMin[3] = ((pvrrc.fog_clamp_min >> 24) & 0xFF) / 255.0f;
-
-		fragUniforms.colorClampMax[0] = ((pvrrc.fog_clamp_max >> 16) & 0xFF) / 255.0f;
-		fragUniforms.colorClampMax[1] = ((pvrrc.fog_clamp_max >> 8) & 0xFF) / 255.0f;
-		fragUniforms.colorClampMax[2] = ((pvrrc.fog_clamp_max >> 0) & 0xFF) / 255.0f;
-		fragUniforms.colorClampMax[3] = ((pvrrc.fog_clamp_max >> 24) & 0xFF) / 255.0f;
-
-		// half a step under the reference: see the same in gles/gles.c
-		fragUniforms.cp_AlphaTestValue = ((PT_ALPHA_REF & 0xFF) - 0.5f) / 255.0f;
-
+		vk_base_drawer_fragment_uniforms(&fragUniforms);
 		return fragUniforms;
 	}
+	const TaGpuDraw *GpuDraw() const { return reinterpret_cast<const TaGpuDraw *>(b.gpuDraw); }
 
-	/* The frame's vertices and indices: where they are (geometry: the main
-	 * buffer, or where the parse wrote them), or the GPU's decode's
-	 * (pvrrc.gpu) */
 	void BindGeometry(const vk::CommandBuffer& cmdBuffer, vk::DeviceSize indexOffset) const
 	{
-		const vk::DeviceSize zero = 0;
-		if (pvrrc.gpu)
-		{
-			cmdBuffer.bindVertexBuffers(0, 1, &gpuDraw->vertices, &zero);
-			cmdBuffer.bindIndexBuffer(gpuDraw->indices, 0, vk::IndexType::eUint32);
-		}
-		else
-		{
-			cmdBuffer.bindVertexBuffers(0, 1, &geometry, &geometryVertices);
-			cmdBuffer.bindIndexBuffer(geometry, indexOffset, vk::IndexType::eUint32);
-		}
+		vk_base_drawer_bind_geometry(&b, (VkCommandBuffer)cmdBuffer, indexOffset);
 	}
-	/* Where this render's vertices and indices are drawn from: the main
-	 * buffer, or a frame the parse wrote where the card reads it (parsed).
-	 * Laid out by SortIntoMainBuffer() / UploadMainBuffer(). */
-	vk::Buffer geometry;
-	vk::DeviceSize geometryVertices = 0;
-	bool geometryParsed = false;
-	Parsed parsed;
-	/* The geometry for this render, the main buffer's or the parse's: the
-	 * parse's if it wrote the frame where the card reads it and the sorted
-	 * passes' @sortedBytes fit after its indices */
-	bool UseParsed(u32 sortedBytes)
-	{
-		geometryParsed = !pvrrc.gpu && parsed.buffer && sortedBytes <= parsed.sortRoom;
-		return geometryParsed;
-	}
-	/* ...and with the main buffer laid out, where the draws bind it */
-	void SetGeometry(vk::Buffer mainBuffer)
-	{
-		geometry = geometryParsed ? parsed.buffer : mainBuffer;
-		geometryVertices = geometryParsed ? parsed.vertices : 0;
-	}
-	/* ...the modifier volumes' triangles, as the vertex buffer: the main
-	 * buffer's (ModVolList()), or those of the GPU's decode where the frame
-	 * has none cut (rend/modvol_clip.h) */
+	bool UseParsed(u32 sortedBytes) { return vk_base_drawer_use_parsed(&b, sortedBytes); }
+	void SetGeometry(vk::Buffer mainBuffer) { vk_base_drawer_set_geometry(&b, (VkBuffer)mainBuffer); }
 	void BindModVolTriangles(const vk::CommandBuffer& cmdBuffer, vk::Buffer mainBuffer, vk::DeviceSize modVolOffset) const
 	{
-		const vk::DeviceSize zero = 0;
-		if (!ModVolsOnCpu())
-			cmdBuffer.bindVertexBuffers(0, 1, &gpuDraw->modtrig, &zero);
-		// (where the parse wrote them, with the frame's geometry: geometryParsed)
-		else if (geometryParsed)
-			cmdBuffer.bindVertexBuffers(0, 1, &parsed.buffer, &parsed.modVols);
-		else
-			cmdBuffer.bindVertexBuffers(0, 1, &mainBuffer, &modVolOffset);
+		vk_base_drawer_bind_modvol_triangles(&b, (VkCommandBuffer)cmdBuffer, (VkBuffer)mainBuffer, modVolOffset);
 	}
-	bool ModVolsOnCpu() const { return !pvrrc.gpu || pvrrc.mv_clip.used() != 0; }
-	// the volumes' triangles the main buffer has: the cut ones when the frame has them, else the parse's
+	bool ModVolsOnCpu() const { return vk_base_drawer_modvols_on_cpu(); }
 	const List<ModTriangle>& ModVolList() const { return pvrrc.mv_clip.used() != 0 ? pvrrc.mv_clip : pvrrc.modtrig; }
-	// ...and back to the vertices
-	void BindVertices(const vk::CommandBuffer& cmdBuffer) const
-	{
-		const vk::DeviceSize zero = 0;
-		cmdBuffer.bindVertexBuffers(0, 1, pvrrc.gpu ? &gpuDraw->vertices : &geometry, pvrrc.gpu ? &zero : &geometryVertices);
-	}
-	u32 ModVolTriangles() const { return ModVolsOnCpu() ? (u32)ModVolList().used() : pvrrc.gpu_modtrig; }
-
-	/* How DrawIndices() draws a frame decoded on the GPU: its draw groups;
-	 * the sorted translucent triangles, whose indices the CPU wrote
-	 * (TA_GPU_SORT); or the draw groups drawn again for shadows, by the
-	 * commands the GPU wrote for that (TA_GPU_SHADOWS) */
-	enum class GpuDraws { Groups, Sorted, Shadows };
-
-	/* A polygon parameter's indices drawn: @count from @first; or, of a
-	 * frame decoded on the GPU, a draw group's (PolyParam::first and count:
-	 * see TA_GPU_DRAW), by its command, or for a translucent one by its
-	 * draw records, with their count or all of its room */
+	void BindVertices(const vk::CommandBuffer& cmdBuffer) const { vk_base_drawer_bind_vertices(&b, (VkCommandBuffer)cmdBuffer); }
+	u32 ModVolTriangles() const { return vk_base_drawer_modvol_triangles(); }
 	void DrawIndices(const vk::CommandBuffer& cmdBuffer, u32 listType, u32 first, u32 count) const
 	{
-		const u32 stride = sizeof(VkDrawIndexedIndirectCommand);	// (rend/ta_gpu.h's records)
-		if (!pvrrc.gpu || gpuDraws == GpuDraws::Sorted)
-			cmdBuffer.drawIndexed(count, 1, first, 0, 0);
-		else if (gpuDraws == GpuDraws::Shadows)
-			cmdBuffer.drawIndexedIndirect(gpuDraw->commands, gpuDraw->shadowCommands + (vk::DeviceSize)first * stride, 1, stride);
-		else if (listType != ListType_Translucent)
-			cmdBuffer.drawIndexedIndirect(gpuDraw->commands, (vk::DeviceSize)first * stride, 1, stride);
-		else if (gpuDraw->drawCount != nullptr)
-			gpuDraw->drawCount((VkCommandBuffer)cmdBuffer, (VkBuffer)gpuDraw->trDraws, (VkDeviceSize)(first + 1) * stride,
-					(VkBuffer)gpuDraw->trDraws, (VkDeviceSize)first * stride, count, stride);
-		else
-			cmdBuffer.drawIndexedIndirect(gpuDraw->trDraws, (vk::DeviceSize)(first + 1) * stride, count, stride);
+		vk_base_drawer_draw_indices(&b, (VkCommandBuffer)cmdBuffer, listType, first, count);
 	}
 
-	/* The vertex shaders' uniforms (shaders/position.glsl) for the render
-	 * being recorded, in the buffer of swap chain image @image: the matrix
-	 * and 1/fZ_max from the host; for a frame decoded on the GPU, 1/fZ_max
-	 * is the decode's word, copied over the host's before the render pass
-	 * (so this is called before the render pass begins). The buffers are
-	 * made with the drawer (MakeVertexUniforms()); a swap chain the
-	 * frontend made longer while the game runs has the new images' made
-	 * here. */
 	/* every swap chain image's vertex uniform buffer, before the first
 	 * frame: nothing allocated while the game runs */
-	template<typename T>
 	void MakeVertexUniforms()
 	{
-		while ((int)vertexUniformBuffers.size() < GetContext()->GetSwapChainSize())
-			vertexUniformBuffers.push_back(std::unique_ptr<BufferData>(new BufferData(sizeof(T),
-					vk::BufferUsageFlagBits::eUniformBuffer | vk::BufferUsageFlagBits::eTransferDst)));
+		if (!vk_base_drawer_make_vertex_uniforms(&b, (u32)GetContext()->GetSwapChainSize()))
+			throwResultException(vk::Result::eErrorOutOfDeviceMemory, "vk_base_drawer_make_vertex_uniforms");
 	}
-
-	template<typename T>
 	vk::Buffer WriteVertexUniforms(const vk::CommandBuffer& cmdBuffer, int image)
 	{
-		while ((int)vertexUniformBuffers.size() <= image)
-			vertexUniformBuffers.push_back(std::unique_ptr<BufferData>(new BufferData(sizeof(T),
-					vk::BufferUsageFlagBits::eUniformBuffer | vk::BufferUsageFlagBits::eTransferDst)));
-		T uniforms;
-		xform_to_mat4(&matrices.GetNormalMatrix(), uniforms.normal_matrix);
-		uniforms.depth_scale = pvr_depth_scale(pvrrc.fZ_max);
-		uniforms.depth_mul = 1.f / matrices.GetNormalMatrix().sz;
-		uniforms.pad[0] = uniforms.pad[1] = 0.f;
-		BufferData& buffer = *vertexUniformBuffers[image];
-		buffer.upload(sizeof(uniforms), &uniforms);
-		if (pvrrc.gpu && gpuDraw != nullptr && gpuDraw->frame && cmdBuffer)
-		{
-			cmdBuffer.copyBuffer(gpuDraw->frame, *buffer.buffer,
-					vk::BufferCopy(TAG_O_ZSCALE * 4, offsetof(T, depth_scale), 4));
-			const vk::MemoryBarrier copied(vk::AccessFlagBits::eTransferWrite, vk::AccessFlagBits::eUniformRead);
-			cmdBuffer.pipelineBarrier(vk::PipelineStageFlagBits::eTransfer, vk::PipelineStageFlagBits::eVertexShader, {}, copied, nullptr, nullptr);
-		}
-		return *buffer.buffer;
+		const VkBuffer buffer = vk_base_drawer_write_vertex_uniforms(&b, (VkCommandBuffer)cmdBuffer, image);
+		if (buffer == VK_NULL_HANDLE)
+			throwResultException(vk::Result::eErrorOutOfDeviceMemory, "vk_base_drawer_write_vertex_uniforms");
+		return vk::Buffer(buffer);
 	}
 
-	vk::Rect2D baseScissor;
-	vk::Rect2D currentScissor;
-	TransformMatrix<false> matrices;
+	vk_base_drawer b;
+	/* (its members, as the C++ drawers name them) */
+	vk::Rect2D& baseScissor = reinterpret_cast<vk::Rect2D&>(b.baseScissor);
+	vk::Rect2D& currentScissor = reinterpret_cast<vk::Rect2D&>(b.currentScissor);
+	TransformMatrix<false>& matrices = reinterpret_cast<TransformMatrix<false>&>(b.matrices);
+	vk::Buffer& geometry = reinterpret_cast<vk::Buffer&>(b.geometry);
+	vk::DeviceSize& geometryVertices = b.geometryVertices;
+	vk::Buffer& vertexUniformBuffer = reinterpret_cast<vk::Buffer&>(b.vertexUniformBuffer);
 	CommandPool *commandPool = nullptr;
-	const TaGpuDraw *gpuDraw = nullptr;
-	GpuDraws gpuDraws = GpuDraws::Groups;
-	std::vector<std::unique_ptr<BufferData>> vertexUniformBuffers;
-	vk::Buffer vertexUniformBuffer;	// this render's
 };
+static_assert(sizeof(TransformMatrix<false>) == sizeof(transform_matrix_t) && std::is_standard_layout<TransformMatrix<false>>::value,
+		"TransformMatrix is transform_matrix_t");
+static_assert(sizeof(vk::Rect2D) == sizeof(VkRect2D) && sizeof(vk::Buffer) == sizeof(VkBuffer), "vk:: wrappers are their handles");
 
+/* The C++ drawers' view of a vk_tri_drawer (vk_drawer.h) */
 class Drawer : public BaseDrawer
 {
 public:
-	Drawer() = default;
-	/* (its sort lists are its own) */
-	Drawer(const Drawer&) = delete;
-	Drawer& operator=(const Drawer&) = delete;
-	virtual ~Drawer()
+	Drawer() { vk_tri_drawer_construct(&t, &b); }
+	virtual ~Drawer() { vk_tri_drawer_free(&t); }
+	bool Draw(const Texture *fogTexture, const Texture *paletteTexture)
 	{
-		SortPassesFree(&sortedPasses);
-		SortPassesFree(&prepassPasses);
+		currentScissor = vk::Rect2D();
+		/* (which works the matrices out for this render, and writes the
+		 * vertex uniforms from them: taken before it, they were the last
+		 * render's - of two renders to textures of different sizes in one
+		 * frame, each was drawn with the other's, at the wrong scale) */
+		const vk::CommandBuffer cmdBuffer = BeginRenderPass();
+		const vk::Extent2D extent = ResolveExtent();
+		if (!vk_tri_drawer_draw(&t, (VkCommandBuffer)cmdBuffer, (VkImageView)fogTexture->GetImageView(),
+				(VkImageView)paletteTexture->GetImageView(), samples, ssaaResolve.Raw(), extent.width, extent.height))
+			throwResultException(vk::Result::eErrorOutOfDeviceMemory, "vk_tri_drawer_draw");
+		return !pvrrc.isRTT;
 	}
-	bool Draw(const Texture *fogTexture, const Texture *paletteTexture);
 	virtual void EndRenderPass() = 0;
 
 protected:
 	virtual vk::CommandBuffer BeginRenderPass() = 0;
-	void NewImage()
-	{
-		imageIndex = (imageIndex + 1) % GetContext()->GetSwapChainSize();
-	}
+	void NewImage() { vk_tri_drawer_new_image(&t); }
 
 	void Init(SamplerManager *samplerManager, PipelineManager *pipelineManager)
 	{
-		this->pipelineManager = pipelineManager;
 		this->samplerManager = samplerManager;
-		/* (the passes' sorted draws: room before the first frame) */
-		SortPassesReserve(&sortedPasses);
-		SortPassesReserve(&prepassPasses);
-
-		int size = GetContext()->GetSwapChainSize();
-		if (descriptorSets.size() > size)
-			descriptorSets.resize(size);
-		else
-			while (descriptorSets.size() < size)
-			{
-				descriptorSets.emplace_back();
-				descriptorSets.back().Init(samplerManager, pipelineManager->GetPipelineLayout(), pipelineManager->GetPerFrameDSLayout(), pipelineManager->GetPerPolyDSLayout());
-			}
-		/* (a frame's buffers made now, not when it first draws: a render
-		 * to a texture may come long after the game started) */
-		MakeVertexUniforms<VertexShaderUniforms>();
-		GetMainBuffer(0);
+		if (!vk_tri_drawer_init(&t, samplerManager->Raw(), pipelineManager->Raw()))
+			throwResultException(vk::Result::eErrorOutOfDeviceMemory, "vk_tri_drawer_init");
 	}
-	int GetCurrentImage() const { return imageIndex; }
-	DescriptorSets& GetCurrentDescSet() { return descriptorSets[GetCurrentImage()]; }
-
-	BufferData* GetMainBuffer(u32 size)
-	{
-		if (mainBuffers.empty())
-		{
-			for (int i = 0; i < GetContext()->GetSwapChainSize(); i++)
-				mainBuffers.push_back(std::unique_ptr<BufferData>(new BufferData(std::max(512 * 1024u, size),
-						vk::BufferUsageFlagBits::eVertexBuffer | vk::BufferUsageFlagBits::eIndexBuffer | vk::BufferUsageFlagBits::eUniformBuffer)));
-		}
-		else if (mainBuffers[GetCurrentImage()]->bufferSize < size)
-		{
-			u32 newSize = mainBuffers[GetCurrentImage()]->bufferSize;
-			while (newSize < size)
-				newSize *= 2;
-			INFO_LOG(RENDERER, "Increasing main buffer size %d -> %d\n", (u32)mainBuffers[GetCurrentImage()]->bufferSize, newSize);
-			mainBuffers[GetCurrentImage()] = std::unique_ptr<BufferData>(new BufferData(newSize,
-					vk::BufferUsageFlagBits::eVertexBuffer | vk::BufferUsageFlagBits::eIndexBuffer | vk::BufferUsageFlagBits::eUniformBuffer));
-		}
-		return mainBuffers[GetCurrentImage()].get();
-	};
+	int GetCurrentImage() const { return t.imageIndex; }
 
 	vk::CommandBuffer currentCommandBuffer;
 	SamplerManager *samplerManager = nullptr;
-	struct {
-		vk::DeviceSize indexOffset = 0;
-		vk::DeviceSize modVolOffset = 0;
-		vk::DeviceSize fragmentUniformOffset = 0;
-	} offsets;
 	/* SSAA: the samples a pixel of this drawer's render pass (1: off), and
 	 * the resolve its last subpass does at the end of Draw(), over this */
 	u32 samples = 1;
 	SsaaResolve ssaaResolve;
 	virtual vk::Extent2D ResolveExtent() const = 0;
-
-private:
-	void SortTriangles(u32 *out);
-	void DrawPoly(const vk::CommandBuffer& cmdBuffer, u32 listType, bool sortTriangles, const PolyParam& poly, u32 first, u32 count,
-			PipelineManager::ShadowPass shadowPass = PipelineManager::ShadowPass::None, const vk::Rect2D *within = nullptr);
-	void DrawShadowed(const vk::CommandBuffer& cmdBuffer, u32 listType, const List<PolyParam>& polys, u32 first, u32 last,
-			const ScreenBounds& area, const vk::Rect2D& scissor);
-	void DrawSorted(const vk::CommandBuffer& cmdBuffer, const SortTrigDrawParam *polys, u32 count, bool multipass);
-	void DrawPrepass(const vk::CommandBuffer& cmdBuffer, const SortTrigDrawParam *polys, u32 count);
-   void DrawList(const vk::CommandBuffer& cmdBuffer, u32 listType, bool sortTriangles, const List<PolyParam>& polys, u32 first, u32 last);
-	void DrawModVols(const vk::CommandBuffer& cmdBuffer, int first, int count, const RenderPass& previous_pass, const RenderPass& current_pass,
-			int render_pass);
-	BufferData *SortIntoMainBuffer();
-	void UploadMainBuffer(BufferData *buffer, const FragmentShaderUniforms& fragmentUniforms);
-
-	int imageIndex = 0;
-	std::vector<DescriptorSets> descriptorSets;
-	std::vector<std::unique_ptr<BufferData>> mainBuffers;
-	PipelineManager *pipelineManager = nullptr;
-
-	// Per-triangle sort results
-	grow_buf_t sortedPasses = GROW_BUF_INIT;	/* SortPasses(): a SortList a pass */
-	// (their indices: in the main buffer, sorted there)
-	u32 sortedIndexCount = 0;
-	// ...and the depth prepasses of the sorted lists (rend/sorter.h), their indexes after each pass's sorted ones
-	grow_buf_t prepassPasses = GROW_BUF_INIT;
-	/* The push constants last pushed for the colours: the prepass pushes
-	 * its own, and puts these back for the polygons after it that push none */
-	std::array<float, 6> pushed = {};
+	vk_tri_drawer t;
 };
 
 class ScreenDrawer : public Drawer

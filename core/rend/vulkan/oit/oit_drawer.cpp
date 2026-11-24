@@ -357,7 +357,7 @@ void OITDrawer::UploadMainBuffer(const OITDescriptorSets::FragmentShaderUniforms
 	buffer->upload(nchunks, chunkSizes, chunks);
 	SetGeometry(buffer->buffer.get());
 	if (here)
-		offsets.indexOffset = parsed.indices;
+		offsets.indexOffset = b.parsed.indices;
 	u32 *trPolyParams = (u32 *)((u8 *)buffer->MapMemory() + offsets.polyParamsOffset);
 	if (trPolys == 0)
 		trPolyParams[0] = 0;
@@ -427,7 +427,7 @@ bool OITDrawer::Draw(const Texture *fogTexture, const Texture *paletteTexture)
 			offsets.polyParamsSize, att->Depth()->GetStencilView(),
 			att->Depth()->GetImageView(), paletteTexture->GetImageView(),
 			RenderPasses::DepthInputLayout(depthWrites),
-			pvrrc.gpu ? gpuDraw->trParams : vk::Buffer(), pvrrc.gpu ? gpuDraw->trParamsSize : 0);
+			pvrrc.gpu ? GpuDraw()->trParams : vk::Buffer(), pvrrc.gpu ? GpuDraw()->trParamsSize : 0);
 	GetCurrentDescSet().BindPerFrameDescriptorSets(cmdBuffer);
 	/* SSAA: the samples' colour, one image for every render pass, read in
 	 * the general layout; without, the two that take turns */
@@ -986,7 +986,7 @@ vk::CommandBuffer OITTextureDrawer::NewFrame()
 
 	vk::CommandBuffer commandBuffer = commandPool->Allocate();
 	commandBuffer.begin(vk::CommandBufferBeginInfo(vk::CommandBufferUsageFlagBits::eOneTimeSubmit));
-	vertexUniformBuffer = WriteVertexUniforms<OITDescriptorSets::VertexShaderUniforms>(commandBuffer, GetCurrentImage());
+	vertexUniformBuffer = WriteVertexUniforms(commandBuffer, GetCurrentImage());
 
 	/* What the render draws: its own pixels, the texture's from the first
 	 * (Texture::ClearOutside()) */
@@ -1115,7 +1115,7 @@ vk::CommandBuffer OITScreenDrawer::NewFrame()
 		upscaler_jitter(&jx, &jy);
 		matrices.Jitter(jx, jy);
 	}
-	vertexUniformBuffer = WriteVertexUniforms<OITDescriptorSets::VertexShaderUniforms>(commandBuffer, GetCurrentImage());
+	vertexUniformBuffer = WriteVertexUniforms(commandBuffer, GetCurrentImage());
 
 	SetBaseScissor();
 

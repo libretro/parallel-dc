@@ -88,7 +88,7 @@ protected:
 			}
 		/* (a frame's buffers made now, not when it first draws: a render
 		 * to a texture may come long after the game started) */
-		MakeVertexUniforms<OITDescriptorSets::VertexShaderUniforms>();
+		MakeVertexUniforms();
 		GetMainBuffer(0);
 	}
 	void Term()
@@ -100,7 +100,7 @@ protected:
 		depthAttachment.reset();
 		depthAttachments.clear();
 		mainBuffers.clear();
-		vertexUniformBuffers.clear();
+		vk_base_drawer_free_vertex_uniforms(&b);
 		descriptorSets.clear();
 	}
 
@@ -409,13 +409,10 @@ public:
 			return nullptr;
 		}
 		std::vector<vk::Buffer> uniforms;
+		if (!vk_base_drawer_make_vertex_uniforms(&b, (u32)depthViews.size()))
+			throwResultException(vk::Result::eErrorOutOfDeviceMemory, "vk_base_drawer_make_vertex_uniforms");
 		for (size_t i = 0; i < depthViews.size(); i++)
-		{
-			while (vertexUniformBuffers.size() <= i)
-				vertexUniformBuffers.push_back(std::unique_ptr<BufferData>(new BufferData(sizeof(OITDescriptorSets::VertexShaderUniforms),
-						vk::BufferUsageFlagBits::eUniformBuffer | vk::BufferUsageFlagBits::eTransferDst)));
-			uniforms.push_back(*vertexUniformBuffers[i]->buffer);
-		}
+			uniforms.push_back(vk::Buffer(b.vertexUniformBuffers[i].buffer));
 		computeMotionPass.InitSampled(viewport.extent, depthViews, uniforms, sizeof(OITDescriptorSets::VertexShaderUniforms),
 				shaderManager->GetMotionVertexShader(), shaderManager->GetMotionDepthShader(), commandPool);
 		return &computeMotionPass;
@@ -430,7 +427,7 @@ public:
 		float jx, jy;
 		upscaler_jitter(&jx, &jy);
 		matrices.Jitter(jx, jy);
-		WriteVertexUniforms<OITDescriptorSets::VertexShaderUniforms>(vk::CommandBuffer(), slot);
+		WriteVertexUniforms(vk::CommandBuffer(), slot);
 	}
 	// ...and after it is recorded: the vectors and the depth to the upscaler
 	void ComputeMotionEnd(int slot, vk::Image depthImage, vk::ImageView depthView)

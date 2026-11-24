@@ -109,6 +109,7 @@ public:
 	vk::DescriptorSetLayout GetPerFrameDSLayout() const { return vk::DescriptorSetLayout(m.perFrameLayout); }
 	vk::DescriptorSetLayout GetPerPolyDSLayout() const { return vk::DescriptorSetLayout(m.perPolyLayout); }
 	vk::RenderPass GetRenderPass() const { return vk::RenderPass(m.renderPass); }
+	vk_pipeline_mgr *Raw() { return &m; }
 
 protected:
 	vk_pipeline_mgr m;

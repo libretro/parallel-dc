@@ -228,11 +228,11 @@ protected:
 	 * (nothing) the main buffer it copies the lists into */
 	void SetParsed(BaseDrawer& drawer)
 	{
-		BaseDrawer::Parsed parsed;
+		BaseDrawer::Parsed parsed = {};
 		if (parsedSlot >= 0 && parsedSlot == texCommandPool.GetIndex())
 		{
 			const parse_arena_t& a = parseArena.arena;
-			parsed.buffer = vk::Buffer(parseArena.buffer);
+			parsed.buffer = parseArena.buffer;
 			parsed.vertices = parse_arena_offset(&a, (unsigned)parsedSlot, PARSE_ARENA_VERTS);
 			parsed.indices = parse_arena_offset(&a, (unsigned)parsedSlot, PARSE_ARENA_IDX);
 			parsed.sortRoom = (u32)(a.space[PARSE_ARENA_IDX] - pvrrc.idx.bytes());
