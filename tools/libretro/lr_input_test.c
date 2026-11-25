@@ -62,11 +62,24 @@ static u32 rnd(void)
    return rng;
 }
 
+/* The machine's time, in seconds: the SH4 scheduler's cycles, which the
+ * rumble counts its durations in (lr_input_vblank(), here after each step
+ * of it); and the host's clock, which stands still - and, built with the
+ * input that counted them in it, kept the motors running for ever */
 static double now;
-double os_GetSeconds(void)
+u64 sh4_sched_now64(void)
 {
    mix(0x7100);
-   return now;
+   return (u64)(now * SH4_MAIN_CLOCK + 0.5);
+}
+static void step(double seconds)
+{
+   now += seconds;
+   lr_input_vblank();
+}
+double os_GetSeconds(void)
+{
+   return 1000.0;
 }
 void AudioHoldbackSerialize(void **data, unsigned int *total_size)
 {
@@ -170,8 +183,10 @@ static int16_t fake_input(unsigned port, unsigned device, unsigned index, unsign
    return v;
 }
 
+static uint16_t motor[4][2];	/* what the frontend was last told, a port's strong and weak */
 static bool fake_rumble(unsigned port, enum retro_rumble_effect effect, uint16_t strength)
 {
+   motor[port & 3][effect == RETRO_RUMBLE_WEAK] = strength;
    mix(0x7300 | port);
    mix((u32)effect);
    mix(strength);
@@ -329,7 +344,7 @@ int main(void)
          u32 r = rnd() % 100;
          frame_seed = rnd();
          if (rnd() % 4 == 0)
-            now += (rnd() % 400) / 1000.0;
+            step((rnd() % 400) / 1000.0);
          if (r < 25)
             UpdateInputState(p);
          else if (r < 35)
@@ -419,7 +434,7 @@ int main(void)
          UpdateInputState(0);
          for (t = 0; t < 2600; t += 1)
          {
-            now += 0.001;
+            step(0.001);
             frame_seed = (u32)t;
             UpdateInputState(0);
          }
@@ -433,6 +448,59 @@ int main(void)
          UpdateInputState(0);
       }
       printf("wheel %08x\n", (unsigned)hash);
+   }
+   /* The vibration pack's run down in the machine's time, whatever the
+    * host's clock does (it stands still here): on at 499 ms of the 500 it
+    * was asked for, off at 500 - and a state loaded that moves the
+    * machine's time back, or far ahead, takes none of what it had left,
+    * nor do the frames run-ahead runs again (here 50 ms of them, every
+    * 10 ms, which count once) */
+   {
+      static const double jumps[4] = { 0.0, -30.0, 90.0, 0.0 };
+      int j, ms;
+      settings.System = DC_PLATFORM_DREAMCAST;
+      lr_rumble.set_rumble_state = fake_rumble;
+      for (j = 0; j < 4; j++)
+      {
+         UpdateVibration(1, 7 << 8, 500);	/* (all the power, no frequency: for the longest it may) */
+         for (ms = 1; ms <= 500; ms++)
+         {
+            if (ms == 250)
+               step(jumps[j]);
+            if (j == 3 && ms % 10 == 0)
+            {
+               int again;
+               step(-0.050);
+               for (again = 0; again < 50; again++)
+                  step(0.001);
+            }
+            step(0.001);
+            UpdateInputState(1);
+            if ((motor[1][0] != 0) != (ms < 500))
+            {
+               printf("lr_input_test: FAIL: the vibration pack %s at %d ms of its 500 (%s %+g s)\n",
+                     motor[1][0] != 0 ? "still on" : "off", ms, j == 3 ? "run-ahead, the machine's time moved" : "the machine's time moved",
+                     jumps[j]);
+               return 1;
+            }
+         }
+      }
+      /* ...and so is the wheel's shake, 300 ms of it */
+      settings.System = DC_PLATFORM_NAOMI;
+      naomi_ffb_enabled = true;
+      naomi_ffb_rumble(NAOMI_FFB_SHAKE, 0.5f, 300);
+      UpdateInputState(0);
+      for (ms = 1; ms <= 300; ms++)
+      {
+         step(0.001);
+         UpdateInputState(0);
+         if ((motor[0][1] != 0) != (ms < 300))
+         {
+            printf("lr_input_test: FAIL: the wheel's shake %s at %d ms of its 300\n", motor[0][1] != 0 ? "still on" : "off", ms);
+            return 1;
+         }
+      }
+      printf("machine time %08x\n", (unsigned)hash);
    }
    printf("done %08x\n", (unsigned)hash);
    return 0;

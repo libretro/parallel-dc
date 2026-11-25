@@ -17,9 +17,6 @@
 #include <stdarg.h>
 #include <math.h>
 #include "types.h"
-#ifndef _WIN32
-#include <sys/time.h>
-#endif
 
 #ifdef HAVE_LIBNX
 #include <stdlib.h>
@@ -402,7 +399,6 @@ void retro_set_environment(retro_environment_t cb)
 void retro_keyboard_event(bool down, unsigned keycode, uint32_t character, uint16_t key_modifiers);
 
 /* Now comes the interesting stuff */
-static void os_seconds_start(void);
 
 void retro_init(void)
 {
@@ -410,7 +406,6 @@ void retro_init(void)
    unsigned color_mode = RETRO_PIXEL_FORMAT_XRGB8888;
    struct retro_keyboard_callback kb_callback;
 
-   os_seconds_start();
    screen_width  = 640;
    screen_height = 480;
    /* Logging */
@@ -3426,6 +3421,8 @@ void os_DoEvents(void)
 	 * delivered as unique frames and the frontend's pacing/frame-time
 	 * tracking breaks. */
 	is_dupe = !rend_frame_produced();
+	/* (the machine's time, for the rumble's durations) */
+	lr_input_vblank();
 #if !defined(TARGET_NO_THREADS)
 	/* In threaded rendering this is the emulation thread; retro_run polls. */
 	if (!settings.rend.ThreadedRendering)
@@ -3469,63 +3466,6 @@ void os_DoEvents(void)
 	dc_stop();
 }
 
-
-/* The clock's time, and where it started: when the core was first set up
- * (os_seconds_start(), from retro_init()) */
-#ifdef _WIN32
-#if defined(_MSC_VER) || defined(_MSC_EXTENSIONS)
-  #define DELTA_EPOCH_IN_MICROSECS  11644473600000000Ui64
-#else
-  #define DELTA_EPOCH_IN_MICROSECS  11644473600000000ULL
-#endif
-
-static u64 os_seconds_now(void)
-{
-   FILETIME ft;
-   unsigned __int64 tmpres = 0;
-
-   GetSystemTimeAsFileTime(&ft);
-
-   tmpres |= ft.dwHighDateTime;
-   tmpres <<= 32;
-   tmpres |= ft.dwLowDateTime;
-
-   tmpres /= 10;  /*convert into microseconds*/
-   /*converting file time to unix epoch*/
-   tmpres -= DELTA_EPOCH_IN_MICROSECS;
-   return tmpres;
-}
-#endif
-
-static u64 os_seconds_base;
-
-static void os_seconds_start(void)
-{
-   static bool started;
-#ifndef _WIN32
-   struct timeval t;
-#endif
-   if (started)
-      return;
-   started = true;
-#ifdef _WIN32
-   os_seconds_base = os_seconds_now();
-#else
-   gettimeofday(&t, NULL);
-   os_seconds_base = t.tv_sec;
-#endif
-}
-
-double os_GetSeconds(void)
-{
-#ifdef _WIN32
-   return (double)(os_seconds_now() - os_seconds_base) / 1000000.0;	/* microsecond -> second */
-#else
-   struct timeval t;
-   gettimeofday(&t, NULL);
-   return t.tv_sec - os_seconds_base + t.tv_usec / 1000000.0;
-#endif
-}
 
 int msgboxf(const char* text, unsigned int type, ...)
 {

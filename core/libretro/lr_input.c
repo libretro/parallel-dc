@@ -13,6 +13,7 @@
 #include "oslib/oslib.h"
 #include "oslib/audiostream.h"
 #include "hw/maple/maple_cfg.h"
+#include "hw/sh4/sh4_sched.h"
 #include "hw/maple/maple_devs.h"
 #include "hw/naomi/naomi_cart.h"
 #include "hw/naomi/naomi_periph.h"
@@ -68,7 +69,42 @@ static int naomi_ffb_word;			/* the emulator's side */
 static retro_atomic_int_t naomi_ffb_request;
 static int naomi_ffb_applied;		/* the frontend's side */
 static uint32_t naomi_ffb_shake_stop;
-static uint32_t get_time_ms(void);
+
+/* The machine's time, in ms: what the rumble's durations are counted in,
+ * as the machine counts them - the host's clock is not it (one set back
+ * left the motors running; fast-forward, slow motion and pauses stretched
+ * them). Counted at each vblank, on the emulation thread, from the SH4's
+ * cycles past the furthest they had been: the frames run-ahead runs again
+ * count once. A state loaded or a reset, which move them back or ahead by
+ * more than a second, counts as no time, so what a motor had left it still
+ * has. Read from either thread. */
+static retro_atomic_int_t emu_ms;
+static u64 emu_cycles, emu_cycles_top;
+
+void lr_input_vblank(void)
+{
+   const u64 now = sh4_sched_now64();
+   if (now >= emu_cycles_top ? now - emu_cycles_top > SH4_MAIN_CLOCK : emu_cycles_top - now > SH4_MAIN_CLOCK)
+      emu_cycles_top = now;
+   else if (now > emu_cycles_top)
+   {
+      emu_cycles += now - emu_cycles_top;
+      emu_cycles_top = now;
+   }
+   retro_atomic_store_release_int(&emu_ms, (int)(u32)(emu_cycles / (SH4_MAIN_CLOCK / 1000)));
+}
+
+static u32 emu_time_ms(void)
+{
+   return (u32)retro_atomic_load_acquire_int(&emu_ms);
+}
+
+/* @ms from now, in the machine's time (never 0, which is none) */
+static u32 emu_deadline(u32 ms)
+{
+   const u32 t = emu_time_ms() + ms;
+   return t != 0 ? t : 1;
+}
 
 /* round()'s, half away from zero, for C89 */
 static double lr_round(double x)
@@ -128,11 +164,11 @@ static void naomi_ffb_update(void)
       {
          const int weak = (word >> 8) & 0xff;
          lr_rumble.set_rumble_state(0, RETRO_RUMBLE_WEAK, weak * 257);
-         naomi_ffb_shake_stop = weak != 0 ? (get_time_ms() + ((word >> 16) & 0xff) * 10) | 1 : 0;
+         naomi_ffb_shake_stop = weak != 0 ? emu_deadline(((word >> 16) & 0xff) * 10) : 0;
       }
       naomi_ffb_applied = word;
    }
-   if (naomi_ffb_shake_stop != 0 && (int32_t)(get_time_ms() - naomi_ffb_shake_stop) >= 0)
+   if (naomi_ffb_shake_stop != 0 && (int32_t)(emu_time_ms() - naomi_ffb_shake_stop) >= 0)
    {
       naomi_ffb_shake_stop = 0;
       lr_rumble.set_rumble_state(0, RETRO_RUMBLE_WEAK, 0);
@@ -351,11 +387,6 @@ uint32_t map_gamepad_button(unsigned device, unsigned id)
    if (id == RETRO_DEVICE_ID_JOYPAD_R3 && device == RETRO_DEVICE_JOYPAD && SYSTEM_IS_NAOMI() && !allow_service_buttons)
 	  mapped = NAOMI_BTN8_KEY;
    return mapped;
-}
-
-static uint32_t get_time_ms(void)
-{
-   return (uint32_t)(os_GetSeconds() * 1000.0);
 }
 
 static void get_analog_stick( retro_input_state_t input_state_cb,
@@ -1011,14 +1042,15 @@ void UpdateInputState(u32 port)
    }
    if (lr_rumble.set_rumble_state != NULL && vib_stop_time[port] > 0)
    {
-	  if (get_time_ms() >= vib_stop_time[port])
+	  const u32 now = emu_time_ms();
+	  if ((s32)(now - vib_stop_time[port]) >= 0)
 	  {
 		 vib_stop_time[port] = 0;
 		 lr_rumble.set_rumble_state(port, RETRO_RUMBLE_STRONG, 0);
 	  }
 	  else if (vib_delta[port] > 0.0)
 	  {
-		 u32 rem_time = vib_stop_time[port] - get_time_ms();
+		 u32 rem_time = vib_stop_time[port] - now;
 		 lr_rumble.set_rumble_state(port, RETRO_RUMBLE_STRONG, 65535 * vib_strength[port] * rem_time * vib_delta[port]);
 	  }
    }
@@ -1356,9 +1388,9 @@ void UpdateVibration(u32 port, u32 value, u32 max_duration)
    lr_rumble.set_rumble_state(port, RETRO_RUMBLE_STRONG, (u16)(65535 * strength));
 
    if (FREQ > 0 && (!CNT || INC))
-	  vib_stop_time[port] = get_time_ms() + MIN((int)(1000 * (INC ? abs(INC) * MAX(POW_POS, POW_NEG) : 1) / FREQ), (int)max_duration);
+	  vib_stop_time[port] = emu_deadline((u32)MIN((int)(1000 * (INC ? abs(INC) * MAX(POW_POS, POW_NEG) : 1) / FREQ), (int)max_duration));
    else
-	  vib_stop_time[port] = get_time_ms() + max_duration;
+	  vib_stop_time[port] = emu_deadline(max_duration);
    if (INC == 0 || strength == 0)
 	  vib_delta[port] = 0.0;
    else

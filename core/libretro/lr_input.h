@@ -54,6 +54,9 @@ uint32_t map_gamepad_button(unsigned device, unsigned id);
 void naomi_ffb_clear(void);
 /* Every motor stopped, and nothing waiting to run it down later */
 void rumble_stop(void);
+/* At each vblank, on the emulation thread: the machine's time moves on for
+ * the rumble's durations */
+void lr_input_vblank(void);
 /* All four ports sampled for the emulation thread (threaded rendering) */
 void CaptureInput(void);
 void retro_keyboard_event(bool down, unsigned keycode, uint32_t character, uint16_t key_modifiers);

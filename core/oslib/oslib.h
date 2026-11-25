@@ -9,8 +9,6 @@
 extern "C" {
 #endif
 
-double os_GetSeconds(void);
-
 void os_DoEvents(void);
 
 static TYPES_INLINE u32 bitscanrev(u32 v)
