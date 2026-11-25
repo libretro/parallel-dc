@@ -233,16 +233,13 @@ static void upload(vk_renderer *r, vk_texture *t, int width, int height, u8 *pix
 	t->commandBuffer = VK_NULL_HANDLE;
 }
 
-/* The frame submitted and @t (@width x @height) handed over as @extentX x
- * @extentY: with the HDR output, encoded first, in the same submission */
-static void present_texture(vk_renderer *r, vk_texture *t, int width, int height, s32 extentX, s32 extentY)
+void vk_renderer_present(vk_cmd_pool *pool, VkImage image, VkImageView view, u32 width, u32 height, s32 extentX, s32 extentY,
+		VkImageView sums)
 {
-	VkImage image = vk_texture_image(t);
-	VkImageView view = vk_texture_view(t);
 	bool hdr = false;
 	if (vkc.hdr != NULL)
 	{
-		VkCommandBuffer cmd = vk_cmd_pool_allocate(&r->texCommandPool);
+		VkCommandBuffer cmd = vk_cmd_pool_allocate(pool);
 		VkCommandBufferBeginInfo begin;
 		VkImage i = image;
 		VkImageView v = view;
@@ -250,8 +247,7 @@ static void present_texture(vk_renderer *r, vk_texture *t, int width, int height
 		begin.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
 		begin.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
 		vkBeginCommandBuffer(cmd, &begin);
-		hdr = vkc_hdr_encode(&r->texCommandPool, (unsigned)r->texCommandPool.index, (unsigned)r->texCommandPool.frames, cmd,
-				&i, &v, (u32)width, (u32)height, VK_NULL_HANDLE);
+		hdr = vkc_hdr_encode(pool, (unsigned)pool->index, (unsigned)pool->frames, cmd, &i, &v, width, height, sums);
 		vkEndCommandBuffer(cmd);
 		if (hdr)
 		{
@@ -259,8 +255,14 @@ static void present_texture(vk_renderer *r, vk_texture *t, int width, int height
 			view = v;
 		}
 	}
-	vk_cmd_pool_end_frame(&r->texCommandPool);
+	vk_cmd_pool_end_frame(pool);
 	vkc_present_frame(image, view, extentX, extentY, hdr);
+}
+
+static void present_texture(vk_renderer *r, vk_texture *t, int width, int height, s32 extentX, s32 extentY)
+{
+	vk_renderer_present(&r->texCommandPool, vk_texture_image(t), vk_texture_view(t), (u32)width, (u32)height, extentX, extentY,
+			VK_NULL_HANDLE);
 }
 
 /* the texture a picture of the CPU's is handed to the frontend in, for the frontend's frame index */

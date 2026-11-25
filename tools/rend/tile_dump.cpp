@@ -13,7 +13,7 @@
  *   TILE_W, TILE_H  the picture's size (default the core's screen)
  *
  * And renders to a texture, as the compute renderer draws them, at the
- * size of the texture they go to (OITTextureDrawer::ComputeSize(), with
+ * size of the texture they go to (vk_oit_rtt_texture_size(), with
  * Render To Texture Upscaling), from TILE_DUMP_FROM too (rtt_NNNNN.bin):
  *   TILE_DUMP_RTT       at most this many (default 4; 0 none)
  *   TILE_DUMP_RTT_EVERY one render to a texture in this many (default 10)
@@ -30,7 +30,7 @@
 #include "hw/pvr/Renderer_if.h"
 #include "rend/rtt_watch.h"
 #include "rend/vulkan/compute_drawer.h"
-#include "rend/vulkan/oit/oit_drawer.h"
+#include "rend/vulkan/oit/vk_oit_drawer.h"
 #include "refsw/refsw_dump.h"
 
 #include <algorithm>
@@ -145,7 +145,7 @@ static void rtt_dump(TA_context *ctx, const char *dir, u32 n)
 		return;	// (no pixel: the renderers draw nothing)
 	if (words.empty())
 		words.resize(ComputeFrame::MaxWords());
-	const vk::Extent2D size = OITTextureDrawer::ComputeSize();
+	const vk::Extent2D size = vk::Extent2D(vk_oit_rtt_texture_size());
 	ComputeFrame::Layout layout;
 	layout.width = size.width;
 	layout.height = size.height;

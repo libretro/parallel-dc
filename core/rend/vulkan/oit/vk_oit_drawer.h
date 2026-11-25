@@ -149,6 +149,11 @@ void vk_oit_drawer_drop_attachments(vk_oit_drawer *d);
  * not be made. */
 bool vk_oit_drawer_draw(vk_oit_drawer *d, VkCommandBuffer cmd, VkImageView fogView, VkImageView paletteView);
 
+/* the size of the texture the render to a texture in pvrrc goes to, with
+ * Render To Texture Upscaling (vk_oit_renderer.c's; the compute renderer
+ * draws into it too) */
+VkExtent2D vk_oit_rtt_texture_size(void);
+
 #ifdef __cplusplus
 }
 #endif

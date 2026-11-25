@@ -9,6 +9,8 @@
 # types.h, which every file includes, first among them. Third-party
 # headers (deps/, libretro-common/) are system headers here.
 #
+# And the build has no C++ at all.
+#
 #   sh tools/c89/c89_check.sh [make arguments...]
 #
 # CC (default cc) is the compiler; the make arguments, the build's (e.g.
@@ -17,7 +19,7 @@ set -e
 cd "$(dirname "$0")/../.."
 CC=${CC:-cc}
 flags=$(make -s -f Makefile -f - "$@" c89-flags <<'MK'
-c89-flags: ; @echo $(INCFLAGS) $(CFLAGS) $(MFLAGS) ; echo $(filter core/% ./core/%,$(SOURCES_C))
+c89-flags: ; @echo $(INCFLAGS) $(CFLAGS) $(MFLAGS) ; echo $(filter core/% ./core/%,$(SOURCES_C)) ; echo $(SOURCES_CXX)
 MK
 )
 cflags=$(echo "$flags" | sed -n 1p | sed 's/ -std=[^ ]*//g; s/ -c / /g' \
@@ -25,6 +27,13 @@ cflags=$(echo "$flags" | sed -n 1p | sed 's/ -std=[^ ]*//g; s/ -c / /g' \
 files=$(echo "$flags" | sed -n 2p | tr ' ' '\n' | sed 's#^\./##' | grep -v '^core/deps/\|^core/libretro-common/' | sort -u)
 fails=0
 n=0
+# (and none of the build's is C++: the core is C)
+cxx=$(echo "$flags" | sed -n 3p)
+if [ -n "$cxx" ]; then
+   echo "  $cxx"
+   echo "c89_check: FAIL: C++ in the build"
+   fails=$((fails + 1))
+fi
 # (a file with code for where there is no recompiler - the DSP's
 # interpreter where there is a DSP recompiler - is held to it there too)
 NOREC="-DFEAT_SHREC=DYNAREC_NONE -DFEAT_AREC=DYNAREC_NONE -DFEAT_DSPREC=DYNAREC_NONE"

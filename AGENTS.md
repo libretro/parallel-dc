@@ -132,9 +132,10 @@ not in `retro_run`, not on the emulation thread.
 
 ## MSVC C89, gradually
 
-New code is C89 that MSVC compiles, and code touched in C++ files moves
-toward it, a piece at a time. No big-bang rewrite: each change leaves the
-code it touches closer, and never adds C++ that was not there.
+The core is C89 that MSVC compiles: no C++ is left in its build, and
+none is added (`tools/c89/c89_check.sh` fails a build that has any).
+What follows is how C++ was moved to it, a piece at a time, and holds for
+any that comes in with code from elsewhere.
 
 - **New files are C89.** `.c` files, test harnesses and tools included:
   declarations at the top of a block, `/* */` comments, no designated

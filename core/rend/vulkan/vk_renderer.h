@@ -102,6 +102,12 @@ bool vk_renderer_render(vk_renderer *r);
  * (nothing) the main buffer it copies the lists into */
 void vk_renderer_set_parsed(vk_renderer *r, vk_base_drawer *drawer);
 
+/* The frame of @pool submitted and @image (@width x @height) handed over
+ * as @extentX x @extentY: with the HDR output, encoded first in the same
+ * submission, from SSAA's channel sums @sums where there are */
+void vk_renderer_present(vk_cmd_pool *pool, VkImage image, VkImageView view, u32 width, u32 height, s32 extentX, s32 extentY,
+		VkImageView sums);
+
 /* The per-triangle renderer: renderer_ops' own (rend_Vulkan()) */
 
 #ifdef __cplusplus

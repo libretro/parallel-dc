@@ -767,7 +767,7 @@ static char *data_path(const char *name, const char *suffix)
 typedef struct PsoCacheFileHeader
 {
 	char magic[8];
-	u32 version;	/* of the keys' layout (pipeline.h, oit_pipeline.h) */
+	u32 version;	/* of the keys' layout (vk_pipeline.h, oit/vk_oit_pipeline.h) */
 	u32 keyCount;
 	u64 dataSize;
 } PsoCacheFileHeader;

@@ -276,10 +276,8 @@ ifeq ($(HAVE_VULKAN), 1)
 					$(CORE_DIR)/core/rend/vulkan/vk_screen_drawer.c \
 					$(CORE_DIR)/core/rend/vulkan/vk_renderer.c \
 					$(CORE_DIR)/core/rend/vulkan/oit/vk_oit_buffer.c \
-					$(CORE_DIR)/core/rend/vulkan/oit/vk_oit_drawer.c
-	SOURCES_CXX += \
-					$(CORE_DIR)/core/rend/vulkan/oit/oit_drawer.cpp \
-					$(CORE_DIR)/core/rend/vulkan/oit/oit_renderer.cpp
+					$(CORE_DIR)/core/rend/vulkan/oit/vk_oit_drawer.c \
+					$(CORE_DIR)/core/rend/vulkan/oit/vk_oit_renderer.c
 endif
 
 # Direct3D 11, on Windows: the frontend's device, the shaders compiled when
