@@ -1,8 +1,8 @@
-/* ta_words.h against ta_structs.h's unions: every field of every word,
- * read and changed, the same both ways, for words of every bit. See
- * sorter_run.sh. */
+/* core/hw/pvr/ta_words.h against ta_structs.h's unions: every field of
+ * every word, read and changed, the same both ways, for words of every
+ * bit. See sorter_run.sh. */
 #include <stdio.h>
-#include "hw/pvr/ta_structs.h"
+#include "ta_structs.h"
 
 static unsigned bad;
 static u32 rng = 0x9E3779B9u;

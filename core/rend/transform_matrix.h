@@ -22,8 +22,7 @@
 #define REND_TRANSFORM_MATRIX_H
 /* The matrices a frame is drawn with: the game's coordinates to clip
  * space (normal), to the scissor rectangles' (scissor), and to pixels
- * (viewport). C89, for C and C++ alike (transform_matrix.c); C++ has
- * TransformMatrix<invertY>. */
+ * (viewport): transform_matrix.c. */
 #include "xform.h"
 #include "hw/pvr/ta_ctx.h"
 
@@ -62,32 +61,6 @@ float transform_matrix_rtt_hscale(void);
 
 #ifdef __cplusplus
 }
-
-template<bool invertY>
-class TransformMatrix
-{
-public:
-	TransformMatrix() { transform_matrix_init(&m, invertY); }
-	TransformMatrix(const rend_context& renderingContext)
-	{
-		transform_matrix_init(&m, invertY);
-		CalcMatrices(&renderingContext);
-	}
-
-	bool IsClipped() const { return transform_matrix_clipped(&m); }
-	const xform& GetNormalMatrix() const { return m.normal; }
-	const xform& GetScissorMatrix() const { return m.scissor; }
-	const xform& GetViewportMatrix() const { return m.viewport; }
-	float GetSidebarWidth() const { return m.sidebar_width; }
-	vec2f GetDreamcastViewport() const { return m.dc_viewport; }
-	static float RttHorizontalScale() { return transform_matrix_rtt_hscale(); }
-	void Jitter(float x, float y) { transform_matrix_jitter(&m, x, y); }
-	void CalcMatrices(const rend_context *renderingContext) { transform_matrix_calc(&m, renderingContext); }
-	const transform_matrix_t *Raw() const { return &m; }
-
-private:
-	transform_matrix_t m;
-};
 #endif
 
 #endif

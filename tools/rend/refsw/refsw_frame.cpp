@@ -35,6 +35,7 @@
 #include <vector>
 
 #include "types.h"
+#include "../../pvr/ta_structs.h"
 #include "hw/pvr/pvr_mem.h"
 #include "hw/pvr/ta_ctx.h"
 #include "rend/TexCache.h"

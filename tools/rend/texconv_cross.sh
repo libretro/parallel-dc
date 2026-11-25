@@ -20,7 +20,7 @@ trap 'rm -rf "$WORK"' EXIT
 I="-I./core/libretro -I./core -I./core/deps -I./core/libretro-common/include -I./core/deps/khronos $DEFS -D__LIBRETRO__ -DNDEBUG -DPVR_REGS_FOR_RENDERER -O2"
 "$P-gcc" $I -c core/rend/texconv.c -o "$WORK/texconv.o"
 # (only the converters: what else the test can do, it is not asked to)
-"$P-g++" $I -fpermissive -w -static -o "$WORK/texconv_test" tools/rend/texconv_test.cpp "$WORK/texconv.o" \
+"$P-gcc" $I -w -static -o "$WORK/texconv_test" tools/rend/texconv_test.c "$WORK/texconv.o" \
    -Wl,--unresolved-symbols=ignore-all
 (echo "# random"; "$RUN" "$WORK/texconv_test"; echo "# ramp"; "$RUN" "$WORK/texconv_test" ramp) > "$WORK/out.txt"
 if cmp -s "$WORK/out.txt" tools/rend/texconv_expected.txt; then

@@ -12,11 +12,11 @@
 #include <stdio.h>
 #include <string.h>
 
-extern "C" void __real_spg_sync(void);
-extern "C" void *__real_dlopen(const char *file, int mode);
+void __real_spg_sync(void);
+void *__real_dlopen(const char *file, int mode);
 
 /* headless.c opens the core; "self" is the program, the core linked in */
-extern "C" void *__wrap_dlopen(const char *file, int mode)
+void *__wrap_dlopen(const char *file, int mode)
 {
 	return __real_dlopen(file != NULL && strcmp(file, "self") == 0 ? NULL : file, mode);
 }
@@ -24,7 +24,7 @@ extern "C" void *__wrap_dlopen(const char *file, int mode)
 static unsigned long long reads, lines, different;
 static u32 last_line = ~0u;
 
-extern "C" void __wrap_spg_sync(void)
+void __wrap_spg_sync(void)
 {
 	u32 status, line;
 
@@ -47,8 +47,8 @@ extern "C" void __wrap_spg_sync(void)
 }
 
 /* (headless.c leaves through _exit(), past the destructors) */
-extern "C" void __real__exit(int status);
-extern "C" void __wrap__exit(int status)
+void __real__exit(int status);
+void __wrap__exit(int status)
 {
 	printf("spg_beam_test: %llu reads, %llu lines, %llu different\n", reads, lines, different);
 	fflush(stdout);

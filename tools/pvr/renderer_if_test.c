@@ -7,7 +7,7 @@
  * of V22 saved and loaded. What it asks of the renderer, the frames, the
  * scheduler and the other thread goes into a hash, step by step; it must
  * be what it always was (renderer_if_expected.txt). The renderer is
- * renderer_if_shim.cpp's. See renderer_if_run.sh. */
+ * renderer_if_shim.c's. See renderer_if_run.sh. */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -26,13 +26,6 @@
 #include "serialize.h"
 #include "libretro/emu_baton.h"
 
-#ifdef RENDERER_IF_TEST_OLD
-/* (the old C++ file's: through renderer_if_shim.cpp) */
-#define rend_single_frame old_rend_single_frame
-bool old_rend_single_frame(void);
-extern int max_idx, max_mvo, max_op, max_pt, max_tr, max_vtx, max_modt, ovrn;
-#endif
-
 #define STEPS 6000
 #define CTXS 4
 
@@ -50,7 +43,7 @@ static u8 ctx_regs[CTXS][pvr_RendRegSize];
 static TA_context *queued;	/* QueueRender()'s */
 static bool picture_kept;
 
-/* For renderer_if_shim.cpp: what each renderer made answers */
+/* For renderer_if_shim.c: what each renderer made answers */
 int fake_init_ok = 1;
 
 void mix(u32 v)

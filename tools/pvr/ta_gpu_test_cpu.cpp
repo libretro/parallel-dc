@@ -13,6 +13,7 @@
  * for byte. The totals are printed at the end; the first differences as
  * they come. */
 #include "types.h"
+#include "ta_structs.h"
 #include "hw/pvr/ta.h"
 #include "hw/pvr/Renderer_if.h"
 #include "rend/ta_gpu.h"

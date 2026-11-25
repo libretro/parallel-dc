@@ -4,7 +4,7 @@
  * video memory and watched for changes, and the framebuffer read. C89, for
  * C and C++ alike. A renderer's texture is a texcache_data with its own
  * calls (texcache_ops); C++ has it as a class to derive from
- * (TexCacheImpl<>), and the cache of them (BaseTextureCache<>). */
+ * (TexCacheImpl<>), for the reference renderer (tools/rend/refsw). */
 #include "types.h"
 #include "oslib/oslib.h"
 #include "hw/pvr/Renderer_if.h"
@@ -18,17 +18,10 @@
 #include "rend/tex_map.h"
 
 #ifdef __cplusplus
-#include <algorithm>
-#include <array>
-#include <memory>
-#include <unordered_map>
-#endif
-
-#ifdef __cplusplus
 extern "C" {
 #endif
 
-/* Stops the custom texture loader, which then has no texture: see BaseTextureCache::Clear() */
+/* Stops the custom texture loader, which then has no texture: see texcache_map_clear() */
 void texcache_stop_custom_loads(void);
 /* Room for the locks on video memory of @textures textures, made now, so
  * that locking one takes none: more is made if it runs out, and that is
@@ -43,7 +36,7 @@ void texcache_scratch_largest(void);
  * next, only ever grown. Render thread only. */
 void *texcache_scratch(size_t size);
 /* How many times textures are scaled up (xBRZ), 1 for not: for the pools'
- * plans (TexPoolBook::Plan()) */
+ * plans (tex_pool_plan()) */
 static INLINE u32 texcache_upscale_factor(void)
 {
 #ifdef HAVE_TEXUPSCALE
@@ -330,8 +323,7 @@ void texcache_map_clear(tex_map_t *m);
 
 /* The framebuffer the game wrote, as RGBA8: its geometry first, so that a
  * renderer can find room of that size where the card reads it, then
- * converted straight there at that room's pitch. ReadFramebuffer() does
- * both into the texture cache's memory. */
+ * converted straight there at that room's pitch. */
 typedef struct FramebufferRead
 {
 	u32 addr;      /* first texel, in the 32-bit area */
@@ -352,68 +344,6 @@ static INLINE void MakeFogTexture(u8 *tex_data)
 extern const f32 D_Adjust_LoD_Bias[16];
 
 #ifdef __cplusplus
-}
-
-/* A converter's texels, as C++ has them: the picture or mipmapped
- * texture of tex_buf_t (texconv.h) for texels of pixel_type */
-template<class pixel_type>
-class PixelBuffer
-{
-	tex_buf_t b;
-
-public:
-	PixelBuffer() { b.start = b.level = NULL; b.pitch = 0; b.borrowed = false; }
-	~PixelBuffer() { deinit(); }
-
-	// How much memory a picture this size takes, with every smaller level if @mipmapped
-	static size_t bytes(u32 width, u32 height, bool mipmapped)
-	{
-		return tex_buf_bytes(width, height, mipmapped, sizeof(pixel_type));
-	}
-
-	/* On memory the caller has, bytes() of it or more: nothing is
-	 * allocated and nothing freed. For what is converted and handed on at
-	 * once, texture after texture (texcache_scratch()). */
-	void init(u32 width, u32 height, bool mipmapped, void *memory)
-	{
-		tex_buf_borrow(&b, width, height, mipmapped, memory);
-	}
-
-	void init(u32 width, u32 height)
-	{
-		tex_buf_alloc(&b, width, height, sizeof(pixel_type));
-	}
-
-	void deinit() { tex_buf_free(&b); }
-
-	void steal_data(PixelBuffer &buffer)
-	{
-		deinit();
-		b = buffer.b;
-		buffer.b.start = buffer.b.level = NULL;
-		buffer.b.borrowed = false;
-	}
-
-	void set_mipmap(int level) { tex_buf_set_mipmap(&b, level, sizeof(pixel_type)); }
-
-	pixel_type *data(u32 x = 0, u32 y = 0) { return (pixel_type *)TEX_BUF_AT(&b, x, y, sizeof(pixel_type)); }
-
-	// pixels from one line to the next
-	u32 pitch() const { return b.pitch; }
-
-	/* what a converter (tex_conv_fn) writes to */
-	tex_buf_t *raw() { return &b; }
-};
-
-/* For a renderer with nowhere of its own to convert to: where textures are converted */
-static inline void ReadFramebuffer(PixelBuffer<u32>& pb, int& width, int& height)
-{
-	FramebufferRead fb;
-	ReadFramebufferGeometry(&fb);
-	width = fb.width;
-	height = fb.height;
-	pb.init(width, height, false, texcache_scratch(PixelBuffer<u32>::bytes(width, height, false)));
-	ReadFramebufferTo(&fb, (u8 *)pb.data(), (size_t)width * 4);
 }
 
 typedef struct texd_plan texd_plan;
@@ -523,32 +453,6 @@ const texcache_ops TexCacheImpl<D>::table = {
 	TexCacheImpl<D>::del
 };
 
-template<typename Texture>
-class BaseTextureCache
-{
-public:
-	/* Room for @textures, and their locks on video memory, made now: the
-	 * renderer's start (rend/tex_map.h, texcache_reserve()) */
-	void Reserve(u32 textures) { texcache_map_reserve(cache.Map(), textures); }
-	/* ...as many as a pool of @images textures' images serves: twice
-	 * that, no fewer than 1024 */
-	void ReserveFor(u32 images) { texcache_map_reserve_for(cache.Map(), images); }
-
-	/* (texcache_data first in each: where the map's element starts) */
-	Texture *getTextureCacheData(TSP tsp, TCW tcw, int area = 0)
-	{
-		return static_cast<Texture *>(static_cast<BaseTextureCacheData *>(
-				texcache_map_get(cache.Map(), NULL, tsp.full, tcw.full, area)));
-	}
-
-	virtual ~BaseTextureCache() {}
-
-	void CollectCleanup() { texcache_map_collect(cache.Map()); }
-	void Clear() { texcache_map_clear(cache.Map()); }
-
-protected:
-	TexMap<Texture> cache;
-};
 #endif
 
 #endif

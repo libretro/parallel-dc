@@ -108,54 +108,6 @@ void sh4_regalloc_cleanup(sh4_regalloc *ra);
 
 #ifdef __cplusplus
 }
-
-/* (for the recompilers in C++: the host registers of their own types, and
- * the loads and write-backs theirs) */
-template<typename nreg_t, typename nregf_t, bool AllocVec2 = false>
-class RegAlloc
-{
-public:
-	RegAlloc()
-	{
-		sh4_regalloc_init(&ra, AllocVec2, preload_cb, writeback_cb, preload_fpu_cb, writeback_fpu_cb, this);
-	}
-	virtual ~RegAlloc() {}
-
-	void DoAlloc(RuntimeBlockInfo* block, const nreg_t* regs_avail, const nregf_t* regsf_avail)
-	{
-		u32 g[SH4_REGALLOC_HOST_MAX], f[SH4_REGALLOC_HOST_MAX], ng = 0, nf = 0;
-		while (*regs_avail != (nreg_t)-1)
-			g[ng++] = (u32)*regs_avail++;
-		while (*regsf_avail != (nregf_t)-1)
-			f[nf++] = (u32)*regsf_avail++;
-		ra.user = this;
-		sh4_regalloc_begin(&ra, block, g, ng, f, nf);
-	}
-	void OpBegin(shil_opcode* op, int opid) { sh4_regalloc_op_begin(&ra, op, opid); }
-	void OpEnd(shil_opcode* op) { sh4_regalloc_op_end(&ra, op); }
-	void SetOpnum(int num) { sh4_regalloc_set_opnum(&ra, num); }
-	bool IsAllocAny(const shil_param& prm) { return sh4_regalloc_is_alloc_any(&ra, &prm); }
-	bool IsAllocg(const shil_param& prm) { return sh4_regalloc_is_allocg(&ra, &prm); }
-	bool IsAllocf(const shil_param& prm) { return sh4_regalloc_is_allocf(&ra, &prm); }
-	nreg_t mapg(const shil_param& prm) { return (nreg_t)sh4_regalloc_mapg(&ra, &prm); }
-	/* index: which register of a pair */
-	nregf_t mapf(const shil_param& prm, int index = 0) { return (nregf_t)sh4_regalloc_mapf(&ra, &prm, index); }
-	bool reg_used(nreg_t host_reg) { return sh4_regalloc_reg_used(&ra, (u32)host_reg, false); }
-	bool regf_used(nregf_t host_reg) { return sh4_regalloc_reg_used(&ra, (u32)host_reg, true); }
-	void Cleanup() { sh4_regalloc_cleanup(&ra); }
-
-	virtual void Preload(u32 reg, nreg_t nreg) = 0;
-	virtual void Writeback(u32 reg, nreg_t nreg) = 0;
-	virtual void Preload_FPU(u32 reg, nregf_t nreg) = 0;
-	virtual void Writeback_FPU(u32 reg, nregf_t nreg) = 0;
-
-private:
-	static void preload_cb(sh4_regalloc *alloc, u32 reg, u32 host) { ((RegAlloc *)alloc->user)->Preload(reg, (nreg_t)host); }
-	static void writeback_cb(sh4_regalloc *alloc, u32 reg, u32 host) { ((RegAlloc *)alloc->user)->Writeback(reg, (nreg_t)host); }
-	static void preload_fpu_cb(sh4_regalloc *alloc, u32 reg, u32 host) { ((RegAlloc *)alloc->user)->Preload_FPU(reg, (nregf_t)host); }
-	static void writeback_fpu_cb(sh4_regalloc *alloc, u32 reg, u32 host) { ((RegAlloc *)alloc->user)->Writeback_FPU(reg, (nregf_t)host); }
-	sh4_regalloc ra;
-};
 #endif
 
 #endif

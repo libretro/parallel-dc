@@ -120,7 +120,7 @@ typedef struct renderer_ops
 	u64 (*get_texture)(u32 tsp, u32 tcw, int area);
 	void (*options_changed)(void);
 	/* Made in renderer_create(), given back after term() or an init()
-	 * that failed (a C++ class's: renderer_class.h) */
+	 * that failed */
 	void (*create)(void);
 	void (*release)(void);
 	void (*present)(void);
@@ -131,8 +131,7 @@ typedef struct renderer_ops
 	bool (*ready)(void);
 } renderer_ops;
 
-/* The renderers renderer_create() chooses from: C, but the Vulkan per-pixel
- * renderer, a C++ class (rend/renderer_class.h) */
+/* The renderers renderer_create() chooses from */
 const renderer_ops *rend_GLES2(void);
 const renderer_ops *rend_GL4(void);
 const renderer_ops *rend_Vulkan(void);

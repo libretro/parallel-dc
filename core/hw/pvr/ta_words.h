@@ -1,10 +1,10 @@
 #ifndef TA_WORDS_H
 #define TA_WORDS_H
-/* The tile accelerator's control words (ta_structs.h's PCW, ISP_TSP,
- * ISP_Modvol, TSP and TCW) as plain words, for C: each field's place
- * (_S, its lowest bit) and width (_B) in the word as the hardware has it,
- * whatever the host's byte order, and the word's field read or changed.
- * C89. C++ has the unions as well; TAW_FULL() is the word either way. */
+/* The tile accelerator's control words (PCW, ISP_TSP, ISP_Modvol, TSP and
+ * TCW) as plain words: each field's place (_S, its lowest bit) and width
+ * (_B) in the word as the hardware has it, whatever the host's byte order,
+ * and the word's field read or changed. tools/pvr/ta_words_test.c checks
+ * them against the bit-field unions (tools/pvr/ta_structs.h). */
 #include "types.h"
 
 #define TAW_MASK(f) ((((u32)1 << f##_B) - 1) << f##_S)

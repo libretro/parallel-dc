@@ -53,40 +53,6 @@ void node_pool_set_ran_out(void (*ran_out)(size_t made));
 
 #ifdef __cplusplus
 }
-
-#include <new>
-
-/* For the standard containers that are left */
-namespace node_pool
-{
-template<class T>
-struct Allocator
-{
-	typedef T value_type;
-	typedef T *pointer;
-	typedef const T *const_pointer;
-	typedef T &reference;
-	typedef const T &const_reference;
-	typedef size_t size_type;
-	typedef ptrdiff_t difference_type;
-	template<class U> struct rebind { typedef Allocator<U> other; };
-
-	Allocator() {}
-	template<class U> Allocator(const Allocator<U>&) {}
-
-	T *allocate(size_t n, const void * = 0)
-	{
-		T *p = (T *)node_pool_alloc(n * sizeof(T));
-		if (p == NULL)
-			throw std::bad_alloc();
-		return p;
-	}
-	void deallocate(T *p, size_t n) { node_pool_free(p, n * sizeof(T)); }
-	size_t max_size() const { return (size_t)-1 / sizeof(T); }
-	template<class U> bool operator==(const Allocator<U>&) const { return true; }
-	template<class U> bool operator!=(const Allocator<U>&) const { return false; }
-};
-}
 #endif
 
 #endif

@@ -45,7 +45,8 @@ struct Vertex
 	float u1,v1;
 };
 
-/* (in C the control words are their u32s: ta_structs.h's unions are C++) */
+/* (the control words are their u32s; the tools' C++ has
+ * tools/pvr/ta_structs.h's unions) */
 #ifdef __cplusplus
 #define TA_WORD(T) T
 #else

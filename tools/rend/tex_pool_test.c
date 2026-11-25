@@ -1,5 +1,5 @@
 /* What the texture pool makes at the start (rend/tex_pool.h,
- * TexPoolBook::Plan()): the images renders to a texture and textures
+ * tex_pool_plan()): the images renders to a texture and textures
  * scaled up are drawn into, so that none is made while a game runs.
  *
  *   sh tools/rend/tex_pool_test.sh */
@@ -7,7 +7,7 @@
 #include <stdio.h>
 
 /* (the core's log, which the pool speaks to: nowhere here) */
-extern "C" { retro_log_printf_t log_cb = NULL; }
+retro_log_printf_t log_cb = NULL;
 
 static int fails;
 
@@ -33,8 +33,8 @@ static void at_least(const char *what, u32 got, u32 least)
 enum { F565 = 0, F8888 = 3, TARGET = 5, FORMATS = 6 };
 static const u32 texel[FORMATS] = { 2, 2, 2, 4, 1, 4 };
 static const u32 use[FORMATS] = { 6, 8, 6, 4, 2, 0 };
-static const u8 kind[FORMATS] = { 0, 0, 0, 0, 0, TexPoolBook::TARGETS };
-static u32 counts[TexPoolBook::CLASSES];
+static const u8 kind[FORMATS] = { 0, 0, 0, 0, 0, TEX_POOL_TARGETS };
+static u32 counts[TEX_POOL_CLASSES];
 
 static void plan(u32 budget_mib, u32 upscale, u32 upMax, u32 rtt)
 {
@@ -42,12 +42,12 @@ static void plan(u32 budget_mib, u32 upscale, u32 upMax, u32 rtt)
    budget.budget_kib = budget_mib << 10;
    budget.usage_kib = 0;
    budget.exact = true;
-   TexPoolBook::Plan(budget, texel, use, kind, FORMATS, counts, upscale, upMax, rtt);
+   tex_pool_plan(&budget, texel, use, kind, FORMATS, counts, upscale, upMax, rtt);
 }
 
 static u32 target(u32 w, u32 h)
 {
-   return counts[TexPoolBook::Class(TARGET, w, h, false)];
+   return counts[tex_pool_class(TARGET, w, h, false)];
 }
 
 int main(void)
@@ -87,10 +87,10 @@ int main(void)
     * many as the same share has room for) */
    plan(8192, 1, 0, 1);
    {
-      const u32 plain256 = counts[TexPoolBook::Class(F8888, 256, 256, true)];
+      const u32 plain256 = counts[tex_pool_class(F8888, 256, 256, true)];
       plan(8192, 2, 256, 1);
-      expect("565 128x128 mipmapped, scaled 2x", counts[TexPoolBook::Class(F565, 128, 128, true)], 0);
-      at_least("8888 256x256 mipmapped, scaled 2x", counts[TexPoolBook::Class(F8888, 256, 256, true)], plain256 + 1);
+      expect("565 128x128 mipmapped, scaled 2x", counts[tex_pool_class(F565, 128, 128, true)], 0);
+      at_least("8888 256x256 mipmapped, scaled 2x", counts[tex_pool_class(F8888, 256, 256, true)], plain256 + 1);
    }
 
    if (fails)

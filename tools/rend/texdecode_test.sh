@@ -46,10 +46,9 @@ sh tools/rend/kernels_dxbc.sh check
 sh tools/rend/kernels_dx12.sh check
 [ -f core/rend/TexCache.o ] || { echo "build the core first: core/rend/TexCache.o is not there" >&2; exit 1; }
 
-# the header as C89 and as C++
+# the header as C89
 printf '#include "texdecode.h"\nint main(void) { struct texd_plan p; (void)p; return (int)texd_texel(0, 0, 0, 0, 0, 0); }\n' > "$WORK/c89.c"
 ${CC:-cc} -std=c89 -pedantic -Wall -Wextra -Werror -Wno-unused-function -Icore/rend -Icore/libretro-common/include -c -o "$WORK/c89.o" "$WORK/c89.c"
-${CXX:-c++} -x c++ -std=c++11 -Wall -Wextra -Werror -Wno-unused-function -Icore/rend -Icore/libretro-common/include -c -o "$WORK/cxx.o" "$WORK/c89.c"
 
 # the kernels, as the renderer has them (tools/rend/kernels_spv.sh's way: rend/texdecode_spv.inc), and the Direct3D one
 for f in r8ui r16ui r32ui; do
@@ -62,11 +61,11 @@ glslangValidator -D -e main -S comp -V -I"$PWD/core/rend" -o "$WORK/hlsl.spv" to
 echo "texdecode: kernels compile (Vulkan GLSL r8ui, r16ui, r32ui; HLSL)"
 
 ${CC:-cc} -std=c99 -O2 -Wall -iquote core/rend -Icore/libretro-common/include -Icore/deps/khronos -iquote tools/rend -c -o "$WORK/test.o" tools/rend/texdecode_test.c
-${CXX:-g++} -I./core/libretro -I./core -I./core/deps -I./core/libretro-common/include -I./core/deps/khronos -Itools/rend \
+${CC:-cc} -I./core/libretro -I./core -I./core/deps -I./core/libretro-common/include -I./core/deps/khronos -Itools/rend \
    -DTARGET_LINUX_x64 -DHOST_CPU=0x20000004 -D__LIBRETRO__ -DHAVE_GLSYM_PRIVATE -DNO_VERIFY -DNDEBUG \
    -DHAVE_GL3 -DHAVE_GL4 -DCORE -DHAVE_TEXUPSCALE -DHAVE_OPENGL -DHAVE_VULKAN -O2 -w \
-   -c -o "$WORK/cpu.o" tools/rend/texdecode_cpu.cpp
-${CXX:-g++} -o "$WORK/texdecode_test" "$WORK/test.o" "$WORK/cpu.o" core/rend/TexCache.o core/rend/tex_map.o core/rend/texconv.o core/rend/vram_lock.o core/rend/custom_texture.o core/rend/band_pool.o core/libretro-common/encodings/encoding_xxh32.o \
+   -c -o "$WORK/cpu.o" tools/rend/texdecode_cpu.c
+${CC:-cc} -o "$WORK/texdecode_test" "$WORK/test.o" "$WORK/cpu.o" core/rend/TexCache.o core/rend/tex_map.o core/rend/texconv.o core/rend/vram_lock.o core/rend/custom_texture.o core/rend/band_pool.o core/libretro-common/encodings/encoding_xxh32.o \
    -l:libvulkan.so.1 -Wl,--unresolved-symbols=ignore-all
 
 LVP=/usr/share/vulkan/icd.d/lvp_icd.json

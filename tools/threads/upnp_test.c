@@ -27,8 +27,9 @@ static int failures;
 
 int main(int argc, char **argv)
 {
-	miniupnp_t upnp = {};
+	miniupnp_t upnp;
 
+	memset(&upnp, 0, sizeof(upnp));
 	if (argc != 2)
 		return 2;
 	if (!strcmp(argv[1], "found"))
@@ -45,6 +46,7 @@ int main(int argc, char **argv)
 	else
 	{
 		time_t start = time(NULL);
+
 		CHECK(!miniupnp_init(&upnp));
 		/* (given up in its time, a few seconds) */
 		CHECK(time(NULL) - start < 10);

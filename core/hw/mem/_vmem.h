@@ -114,11 +114,6 @@ void _vmem_term(void);
 /* functions to register and map handlers/memory */
 _vmem_handler _vmem_register_handler(_vmem_ReadMem8FP* read8,_vmem_ReadMem16FP* read16,_vmem_ReadMem32FP* read32, _vmem_WriteMem8FP* write8,_vmem_WriteMem16FP* write16,_vmem_WriteMem32FP* write32);
 
-#ifdef __cplusplus
-#define  _vmem_register_handler_Template(read,write) _vmem_register_handler \
-									(read<u8>,read<u16>,read<u32>,	\
-									write<u8>,write<u16>,write<u32>)
-#endif
 
 void _vmem_map_handler(_vmem_handler Handler,u32 start,u32 end);
 /* Where a write of @sz bytes to @addr goes: the memory, and *@ismem true,
@@ -190,27 +185,4 @@ u32 _vmem_get_vram_offset(void *addr);
 
 #ifdef __cplusplus
 }
-
-/* The access of sizeof(T), for the recompilers' templates */
-template<typename T, typename Trv> static inline Trv _vmem_readt(u32 addr)
-{
-	return sizeof(T) == 1 ? (Trv)(T)_vmem_ReadMem8(addr)
-		: sizeof(T) == 2 ? (Trv)(T)_vmem_ReadMem16(addr)
-		: sizeof(T) == 4 ? (Trv)(T)_vmem_ReadMem32(addr)
-		: (Trv)(T)_vmem_ReadMem64(addr);
-}
-template<typename T> static inline void _vmem_writet(u32 addr, T data)
-{
-	if (sizeof(T) == 1)
-		_vmem_WriteMem8(addr, (u8)data);
-	else if (sizeof(T) == 2)
-		_vmem_WriteMem16(addr, (u16)data);
-	else if (sizeof(T) == 4)
-		_vmem_WriteMem32(addr, (u32)data);
-	else
-		_vmem_WriteMem64(addr, (u64)data);
-}
-/* dynarec helpers */
-static inline void *_vmem_read_const(u32 addr, bool& ismem, u32 sz) { return _vmem_read_ptr(addr, &ismem, sz); }
-static inline void *_vmem_write_const(u32 addr, bool& ismem, u32 sz) { return _vmem_write_ptr(addr, &ismem, sz); }
 #endif

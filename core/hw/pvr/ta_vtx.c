@@ -2425,7 +2425,7 @@ void FillBGP(TA_context* ctx)
 	cv[3].v = max_v;
 }
 
-/* A region array tile's word (ta_structs.h's RegionArrayTile) */
+/* A region array tile's word */
 #define REGION_X(w) (((w) >> 2) & 0x3F)
 #define REGION_Y(w) (((w) >> 8) & 0x3F)
 #define REGION_PRESORT(w) (((w) >> 29) & 1)

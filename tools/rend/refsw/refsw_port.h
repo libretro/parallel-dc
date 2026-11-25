@@ -18,7 +18,7 @@
 #define PVR_REGS_FOR_RENDERER
 #include "types.h"
 #include "hw/pvr/pvr_regs.h"
-#include "hw/pvr/ta_structs.h"
+#include "../../pvr/ta_structs.h"
 #include "hw/pvr/ta_ctx.h"
 
 #include <algorithm>

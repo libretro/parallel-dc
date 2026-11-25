@@ -6,8 +6,9 @@
 #
 # sorter_test.c is built with sorter.c and ta_list.c, with the C flags the
 # core is built with; what it prints must be what it always was
-# (sorter_expected.txt). tools/pvr/ta_words_test.cpp reads and changes
-# every field both ways, ta_structs.h's unions and ta_words.h's macros.
+# (sorter_expected.txt). tools/pvr/ta_words_test.c reads and changes
+# every field both ways, tools/pvr/ta_structs.h's unions and ta_words.h's
+# macros.
 # Extra flags, such as -fsanitize=address,undefined, go to the compiler and
 # the link.
 set -e
@@ -23,13 +24,8 @@ CCMD=$(make -n -B core/hw/pvr/ta_list.o 2>/dev/null | grep 'ta_list\.c' | tail -
 CCMD=${CCMD% -o *}
 CFLAGS_T=$(echo "$CCMD" | sed 's| [^ ]*ta_list\.c||; s/ -MMD -MP//')
 CC=${CFLAGS_T%% *}
-XCMD=$(make -s print-cxx-compile 2>/dev/null)
-[ -n "$XCMD" ] || { echo "cannot get the core's C++ compile flags from make" >&2; exit 1; }
-CXXFLAGS_T=$(echo "$XCMD" | sed 's/-DGIT_VERSION=[^ ]* [^ ]*//')
-CXX=${CXXFLAGS_T%% *}
-
-eval "$CXXFLAGS_T $EXTRA tools/pvr/ta_words_test.cpp -o \"$WORK/ta_words_test.o\""
-"$CXX" $EXTRA -o "$WORK/ta_words_test" "$WORK/ta_words_test.o"
+eval "$CFLAGS_T $EXTRA -Itools/pvr tools/pvr/ta_words_test.c -o \"$WORK/ta_words_test.o\""
+"$CC" $EXTRA -o "$WORK/ta_words_test" "$WORK/ta_words_test.o"
 "$WORK/ta_words_test"
 
 for SRC in core/rend/sorter.c core/hw/pvr/ta_list.c tools/rend/sorter_test.c; do

@@ -33,7 +33,7 @@ typedef struct simd256_t
 
 #include "ta_words.h"
 
-/* A block's parameter control word (ta_structs.h's PCW): its parameter
+/* A block's parameter control word (PCW): its parameter
  * type, list type, and the byte of object control first in memory */
 static u32 pcw_word(const void *p)
 {

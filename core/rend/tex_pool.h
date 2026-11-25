@@ -29,8 +29,7 @@
  *
  * The lists are threaded through the images' own entries, and nothing is
  * allocated to take an image or to give one back. Only the thread that
- * renders touches a pool. C89, for C and C++ alike; C++ has the book as
- * TexPoolBook. */
+ * renders touches a pool. */
 #ifndef REND_TEX_POOL_H
 #define REND_TEX_POOL_H
 
@@ -191,52 +190,6 @@ void tex_pool_summary(const tex_pool_book_t *b, const char *api);
 
 #ifdef __cplusplus
 }
-
-class TexPoolBook : public tex_pool_book_t
-{
-public:
-	enum { SIZES = TEX_POOL_SIZES, MIN_LOG2 = TEX_POOL_MIN_LOG2, MAX_FORMATS = TEX_POOL_MAX_FORMATS,
-			MAX_FRAMES = TEX_POOL_MAX_FRAMES };
-	enum { TEXTURES = TEX_POOL_TEXTURES, TARGETS = TEX_POOL_TARGETS };
-	enum { FORMAT_8888 = TEX_POOL_FORMAT_8888 };
-	enum { CLASSES = TEX_POOL_CLASSES };
-
-	TexPoolBook() { memset(static_cast<tex_pool_book_t *>(this), 0, sizeof(tex_pool_book_t)); frames = 1; }
-
-	static int Class(u32 format, u32 width, u32 height, bool mips) { return tex_pool_class(format, width, height, mips); }
-	static u32 Format(int cls) { return tex_pool_format(cls); }
-	static u32 Width(int cls) { return tex_pool_width(cls); }
-	static u32 Height(int cls) { return tex_pool_height(cls); }
-	static bool Mips(int cls) { return tex_pool_mips(cls); }
-	static u32 Bytes(int cls, u32 texel) { return tex_pool_bytes(cls, texel); }
-	static u32 RectShare(u32 lw, u32 lh) { return tex_pool_rect_share(lw, lh); }
-	static u32 Least(u32 s) { return tex_pool_least(s); }
-	static u32 TargetCount(u32 lw, u32 lh) { return tex_pool_target_count(lw, lh); }
-	static int Drawn(u32 f, u32 lw, u32 lh, bool mips, u32 k, u32 upMax, const u32 *texel, u32 *bytes)
-	{
-		return tex_pool_drawn(f, lw, lh, mips, k, upMax, texel, bytes);
-	}
-	static u64 Plan(const VramBudget& budget, const u32 *texel, const u32 *use, const u8 *kind, u32 formats, u32 *counts,
-			u32 upscale = 1, u32 upMax = 0, u32 rtt = 1)
-	{
-		return tex_pool_plan(&budget, texel, use, kind, formats, counts, upscale, upMax, rtt);
-	}
-
-	void Reset(u32 frames) { tex_pool_reset(this, frames); }
-	TexPoolEntry *Take(int cls) { return tex_pool_take(this, cls); }
-	void Made(TexPoolEntry *e, int cls, u32 bytes, bool late, const char *format) { tex_pool_made(this, e, cls, bytes, late, format); }
-	void Give(TexPoolEntry *e) { tex_pool_give(this, e); }
-	void Retire(TexPoolEntry *e) { tex_pool_retire(this, e); }
-	void Frame(u32 index) { tex_pool_frame(this, index); }
-	template<typename Fn>
-	void Drain(Fn fn)
-	{
-		TexPoolEntry *e;
-		while ((e = tex_pool_drain(this)) != NULL)
-			fn(e);
-	}
-	void Summary(const char *api) const { tex_pool_summary(this, api); }
-};
 #endif
 
 #endif

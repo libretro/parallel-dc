@@ -68,7 +68,6 @@ $CC -O1 -g $VDEFS -fsanitize=address,undefined \
    -lm -lpthread
 done
 
-CXX=${CXX:-c++}
 STREAM_SRC="core/imgread/chd_image.c core/imgread/chd.c core/imgread/disc.c core/deps/coreio/coreio.c
    core/archive/archive.c $L/formats/chd/rchd.c
    $L/encodings/encoding_huffman.c $L/encodings/encoding_rzstd.c $L/encodings/encoding_xxh64.c
@@ -93,10 +92,10 @@ for san in address,undefined thread; do
          -Icore -Icore/libretro -Icore/deps -I$L/include \
          -c "$s" -o "$WORK/o_$v/$(echo "$s" | tr / _).o"
    done
-   $CXX -std=c++11 -fpermissive -w -O1 -g $DEFS -fsanitize=$san \
+   $CC -O1 -g $DEFS -fsanitize=$san \
       -fno-sanitize-recover=undefined \
       -Icore -Icore/libretro -Icore/deps -I$L/include \
-      -o "$WORK/chd_streams_test_$v" tools/chd/chd_streams_test.cpp \
+      -o "$WORK/chd_streams_test_$v" tools/chd/chd_streams_test.c \
       "$WORK/o_$v"/*.o \
       -Wl,--wrap=chd_image_read_hunk -lm -lpthread
 done

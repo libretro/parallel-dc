@@ -9,7 +9,6 @@
 #   sh tools/threads/upnp_test.sh
 set -e
 cd "$(dirname "$0")/../.."
-CXX=${CXX:-c++}
 CC=${CC:-cc}
 WORK=${TMPDIR:-/tmp}/upnp_test.$$
 mkdir -p "$WORK"
@@ -32,8 +31,8 @@ done
 # system headers as tools/c89/c89_check.sh has them)
 $CC -std=c89 -pedantic -Wno-long-long -Wno-variadic-macros -Werror -Wdeclaration-after-statement \
    -g -O1 $SAN -Icore -Icore/libretro -isystem core/deps -isystem $L/include -DENABLE_MODEM -c -o "$WORK/miniupnp.o" core/network/miniupnp.c
-$CXX -std=c++11 -fpermissive -g -O1 $SAN $INC -DENABLE_MODEM -o "$WORK/upnp_test" \
-   tools/threads/upnp_test.cpp "$WORK/miniupnp.o" $objs -lpthread
+$CC -g -O1 $SAN $INC -DENABLE_MODEM -o "$WORK/upnp_test" \
+   tools/threads/upnp_test.c "$WORK/miniupnp.o" $objs -lpthread
 
 fail() { echo "upnp_test: $1" >&2; exit 1; }
 

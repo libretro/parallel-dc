@@ -1,7 +1,7 @@
 #!/bin/sh
 # The parse's speed: the test disc built with -DLIVE_HEAVY (live_disc.py
 # --heavy: about 14,000 vertices a frame) run on tools/threads/headless.c,
-# every frame from the 100th parsed again and timed (ta_parse_bench.cpp).
+# every frame from the 100th parsed again and timed (ta_parse_bench.c).
 # The core's own objects are linked in, so the core has to be built for
 # this machine first (make platform=unix).
 #
@@ -22,12 +22,12 @@ mkdir -p "$WORK"
 [ -n "${KEEP:-}" ] || trap 'rm -rf "$WORK"' EXIT
 [ -f core/libretro/lr_contexts.o ] || { echo "build the core first: core/libretro/lr_contexts.o is not there" >&2; exit 1; }
 
-CORE_FLAGS=$(make -s platform=unix print-cxx-compile 2>/dev/null \
+CORE_FLAGS=$(make -s platform=unix print-cc-compile 2>/dev/null \
    | sed -e 's/^[^ ]* //' -e 's/ -c / /' -e 's/-DGIT_VERSION=[^ ]* [^ ]*//')
 OBJS=$(make -n platform=unix -W core/libretro/lr_contexts.c 2>/dev/null | tail -1 | tr ' ' '\n' | grep '\.o$' | grep -v 'glslang.js.o')
 ${CC:-cc} -O1 -c -o "$WORK/headless.o" tools/threads/headless.c
-${CXX:-g++} $CORE_FLAGS -w -c -o "$WORK/bench.o" tools/pvr/ta_parse_bench.cpp
-${CXX:-g++} -rdynamic -o "$WORK/ta_parse_bench" "$WORK/headless.o" "$WORK/bench.o" $OBJS \
+${CC:-cc} $CORE_FLAGS -w -c -o "$WORK/bench.o" tools/pvr/ta_parse_bench.c
+${CC:-cc} -rdynamic -o "$WORK/ta_parse_bench" "$WORK/headless.o" "$WORK/bench.o" $OBJS \
    -Wl,--wrap=dlopen -Wl,--wrap=_exit -Wl,--wrap=ta_parse_vdrc -lGL -lrt -lpthread -lm -ldl
 # an OpenGL that does nothing, for the core's renderer (headless.sh's)
 nm -D --undefined-only "$WORK/ta_parse_bench" | awk '{print $NF}' | sed 's/@.*//' | grep '^gl' \

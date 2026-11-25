@@ -75,10 +75,9 @@ DEVICE=${TILE_DEVICE:-vulkan}
 [ "$DEVICE" = vulkan ] || [ "$DEVICE" = d3d12 ] || { echo "TILE_DEVICE is vulkan or d3d12" >&2; exit 2; }
 [ "$DEVICE" = vulkan ] || sh tools/rend/kernels_dx12.sh check
 
-# the header as C89 and as C++
+# the header as C89
 printf '#include "pvr_compute.h"\nint main(void) { return (int)pvrc_fixed(1.0f) + (int)pvrc_fragments_kept(16384u); }\n' > "$WORK/c89.c"
 ${CC:-cc} -std=c89 -pedantic -Wall -Wextra -Werror -Wno-unused-function -Icore/rend/tile -Icore/libretro-common/include -c -o "$WORK/c89.o" "$WORK/c89.c"
-${CXX:-c++} -x c++ -std=c++11 -Wall -Wextra -Werror -Wno-unused-function -Icore/rend/tile -Icore/libretro-common/include -c -o "$WORK/cxx.o" "$WORK/c89.c"
 
 # the kernels, as kernels_spv.sh makes them, with nothing fused (PVRC_EXACT)
 K_WALK=$(awk '$1 == "#define" && $2 == "PVRC_K_WALK" { print $3 }' core/rend/tile/pvr_compute.h)

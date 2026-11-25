@@ -22,17 +22,6 @@
 
 #define STEPS 5000
 
-#ifndef MAPLE_PORTS
-/* (C++'s alone, before) */
-#define MAPLE_PORTS 4
-extern MapleDeviceType maple_devices[MAPLE_PORTS];
-#endif
-
-#ifdef MAPLE_CFG_TEST_OLD
-/* (the old C++ file's of C++ linkage: through the shim) */
-#define mcfg_Create old_mcfg_Create
-#define mcfg_DestroyDevice old_mcfg_DestroyDevice
-#endif
 void mcfg_Create(MapleDeviceType type, u32 bus, u32 port, int player_num);
 void mcfg_DestroyDevice(int i, int j);
 MapleDeviceType maple_dev_type(maple_device *dev);
@@ -45,6 +34,7 @@ void tdev_abs(maple_device *dev);
 void tdev_image(maple_device *dev, void *img);
 void tdev_vibration(maple_device *dev, u32 value, u32 duration);
 void tdev_changed(maple_device *dev, bool changed);
+void tlatch_init(void);
 void tlatch_publish(const u32 *kcodes, const s8 *joy, const u8 *trig, const u32 *mouse);
 
 settings_t settings;
@@ -145,14 +135,11 @@ void t_maple_naomi_eeprom_load(void)
 	EEPROM_loaded = true;
 }
 
-#ifndef MAPLE_CFG_TEST_OLD
-/* (the old file's are C++'s: the shim's) */
 void UpdateInputState(u32 port) { t_UpdateInputState(port); }
 void UpdateInputStateMouse(u32 port) { t_UpdateInputStateMouse(port); }
 void UpdateInputStateArcade(void) { t_UpdateInputStateArcade(); }
 void UpdateVibration(u32 port, u32 value, u32 max_duration) { t_UpdateVibration(port, value, max_duration); }
 void maple_naomi_eeprom_load(void) { t_maple_naomi_eeprom_load(); }
-#endif
 
 bool ra_unserialize(void *src, unsigned int src_size, void **dest, unsigned int *total_size)
 {
@@ -426,6 +413,7 @@ static void step(void)
 int main(void)
 {
 	int n;
+	tlatch_init();
 	settings.System = DC_PLATFORM_DREAMCAST;
 	for (n = 0; n < MAPLE_PORTS; n++)
 		maple_devices[n] = MDT_SegaController;

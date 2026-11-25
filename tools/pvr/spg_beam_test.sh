@@ -1,6 +1,6 @@
 #!/bin/sh
 # The beam SPG_STATUS reads give, kept from read to read on a line by
-# spg_beam(), against the beam found afresh at each (spg_beam_test.cpp):
+# spg_beam(), against the beam found afresh at each (spg_beam_test.c):
 # the test disc run on tools/threads/headless.c, straight and then with
 # every frame run ahead (a state saved and loaded each frame). The core's
 # own objects are linked in, so the core has to be built for this machine
@@ -22,8 +22,8 @@ CORE_FLAGS=$(make -n platform=unix -W core/hw/pvr/spg.c core/hw/pvr/spg.o 2>/dev
    | sed -e 's/^[^ ]* //' -e 's/ -c / /' -e 's/ -MMD -MP .*$//' -e 's/-DGIT_VERSION=[^ ]* [^ ]*//')
 OBJS=$(make -n platform=unix -W core/hw/pvr/spg.c 2>/dev/null | tail -1 | tr ' ' '\n' | grep '\.o$' | grep -v 'glslang.js.o')
 ${CC:-cc} -O1 -c -o "$WORK/headless.o" tools/threads/headless.c
-${CXX:-g++} $CORE_FLAGS -w -c -o "$WORK/test.o" tools/pvr/spg_beam_test.cpp
-${CXX:-g++} -rdynamic -o "$WORK/spg_beam_test" "$WORK/headless.o" "$WORK/test.o" $OBJS \
+${CC:-cc} $CORE_FLAGS -w -c -o "$WORK/test.o" tools/pvr/spg_beam_test.c
+${CC:-cc} -rdynamic -o "$WORK/spg_beam_test" "$WORK/headless.o" "$WORK/test.o" $OBJS \
    -Wl,--wrap=dlopen -Wl,--wrap=_exit -Wl,--wrap=spg_sync -lGL -lrt -lpthread -lm -ldl
 # an OpenGL that does nothing, for the core's renderer (headless.sh's)
 nm -D --undefined-only "$WORK/spg_beam_test" | awk '{print $NF}' | sed 's/@.*//' | grep '^gl' \

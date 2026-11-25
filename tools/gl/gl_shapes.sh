@@ -14,13 +14,10 @@
 #
 #   sh tools/gl/gl_shapes.sh
 #
-# The renderers' C files the same way, as C89 (CLANG and CC).
+# The renderers' C files, as C89.
 #
-# CLANGXX and CXX, CLANG and CC: the compilers (clang++ and g++, clang and
-# gcc by default).
+# CLANG and CC: the compilers (clang and gcc by default).
 cd "$(dirname "$0")/../.."
-CLANGXX=${CLANGXX:-clang++}
-CXX=${CXX:-g++}
 CLANG=${CLANG:-clang}
 CC=${CC:-gcc}
 COMMON="-I./core/libretro -I./core -I./core/deps -I./core/libretro-common/include
@@ -28,17 +25,9 @@ COMMON="-I./core/libretro -I./core -I./core/deps -I./core/libretro-common/includ
    -I./core/deps/picotcp/modules -I./core/deps/khronos -D__LIBRETRO__
    -DHAVE_GLSYM_PRIVATE -DHAVE_THREADS -DHAVE_TEXUPSCALE
    -DHAVE_CHD -fsyntax-only"
-FLAGS="$COMMON -std=c++11 -fno-rtti -fpermissive -fno-operator-names"
 CFLAGS_S="$COMMON -std=c89 -Wno-long-long -Werror=implicit-function-declaration -Werror=incompatible-pointer-types"
-GL="$FLAGS -DHAVE_OPENGL"
-GLES="$FLAGS -DHAVE_OPENGLES -DHAVE_OPENGLES2 -DHAVE_GL3"
-# the renderers' sources, and what else draws with OpenGL
-FILES=$( (ls core/rend/gles/*.cpp core/rend/gl4/*.cpp 2>/dev/null
-          grep -rlE '#include.*(gles\.h|gl4\.h|glcache\.h)' core --include=*.cpp) \
-   | grep -v -E '^core/(deps|libretro-common)/' | sort -u)
 fails=0
 
-# the C ones
 CFILES=$(ls core/rend/gles/*.c core/rend/gl4/*.c 2>/dev/null)
 for f in $CFILES; do
    if ! $CLANG $CFLAGS_S -DHAVE_OPENGL -DHAVE_GL4 "$f" > /tmp/gl_shapes.$$ 2>&1; then
@@ -56,30 +45,10 @@ for f in $CFILES; do
       fails=$((fails + 1))
    fi
 done
-FILES="$FILES
-$CFILES"
-
-for f in $FILES; do
-   case $f in *.c) continue ;; esac
-   # (the per-pixel renderer is desktop OpenGL only: not on the Switch)
-   if ! $CLANGXX $GL -DHAVE_GL4 "$f" > /tmp/gl_shapes.$$ 2>&1; then
-      echo "FAIL clang: $f"; grep -E 'error' /tmp/gl_shapes.$$ | head -5
-      fails=$((fails + 1))
-   fi
-   case $f in core/rend/gl4/*) continue ;; esac
-   if ! $CXX $GL -DHAVE_LIBNX -DTARGET_LIBNX "$f" > /tmp/gl_shapes.$$ 2>&1; then
-      echo "FAIL libnx: $f"; grep -E 'error' /tmp/gl_shapes.$$ | head -5
-      fails=$((fails + 1))
-   fi
-   if ! $CXX $GLES "$f" > /tmp/gl_shapes.$$ 2>&1; then
-      echo "FAIL gles: $f"; grep -E 'error' /tmp/gl_shapes.$$ | head -5
-      fails=$((fails + 1))
-   fi
-done
 rm -f /tmp/gl_shapes.$$
 
 if [ $fails != 0 ]; then
    echo "gl_shapes: $fails failed"
    exit 1
 fi
-echo "gl_shapes: $(echo "$FILES" | wc -l) files, as macOS, the Switch and GLES=1 build them: all passed"
+echo "gl_shapes: $(echo "$CFILES" | wc -l) files, as macOS, the Switch and GLES=1 build them: all passed"

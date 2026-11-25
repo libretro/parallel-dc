@@ -3,7 +3,7 @@
 #
 #   sh tools/threads/run.sh
 #
-# Builds tools/threads/threads_test.cpp against the core's own headers, so
+# Builds tools/threads/threads_test.c against the core's own headers, so
 # it runs the very events, lock-free containers and thread handshakes the
 # core does, and runs it twice: under ThreadSanitizer, which reports any
 # handoff that lets two threads at the same data, and under
@@ -16,7 +16,6 @@ ROOT=$(cd "$(dirname "$0")/../.." && pwd)
 cd "$ROOT"
 
 CC=${CC:-cc}
-CXX=${CXX:-c++}
 DEFS=$(make -n -B core/hw/pvr/ta_ctx.o \
        | grep -o -- '-D[A-Za-z0-9_]*\(=[A-Za-z0-9_]*\)\?' \
        | grep -v GIT_VERSION | sort -u | tr '\n' ' ')
@@ -37,9 +36,9 @@ for san in thread address,undefined; do
       -c $L/rthreads/retro_eventcount.c -o "$WORK/retro_eventcount.o"
    $CC -O1 -g $DEFS -fsanitize=$san -fno-sanitize-recover=undefined $INC \
       -c core/libretro/emu_baton.c -o "$WORK/emu_baton.o"
-   $CXX -std=c++11 -fpermissive -O1 -g $DEFS \
+   $CC -O1 -g $DEFS \
       -fsanitize=$san -fno-sanitize-recover=undefined $INC \
-      -o "$WORK/threads_test" tools/threads/threads_test.cpp \
+      -o "$WORK/threads_test" tools/threads/threads_test.c \
       "$WORK/emu_baton.o" "$WORK/rthreads.o" "$WORK/retro_eventcount.o" -lpthread
    # The NAOMI link board: the core's own naomi_m3comm.c against a
    # stand-in for the network.
@@ -89,10 +88,10 @@ for san in thread address,undefined; do
    $CC -O1 -g -fsanitize=$san -fno-sanitize-recover=undefined $DEFS $INC \
       -Icore/deps/picotcp/include -Icore/deps/picotcp/modules \
       -c core/network/picoppp.c -o "$WORK/picoppp.o"
-   $CXX -std=c++11 -fpermissive -O1 -g -w $DEFS \
+   $CC -O1 -g $DEFS \
       -fsanitize=$san -fno-sanitize-recover=undefined $INC \
       -Icore/deps/picotcp/include -Icore/deps/picotcp/modules \
-      -o "$WORK/pico_test" tools/threads/pico_test.cpp "$WORK/picoppp.o" \
+      -o "$WORK/pico_test" tools/threads/pico_test.c "$WORK/picoppp.o" \
       "$WORK/dcnet.o" "$WORK/dns.o" "$WORK"/pico/*.o "$WORK/rthreads.o" "$WORK/features_cpu.o" \
       "$WORK/rtime.o" "$WORK/net_socket.o" "$WORK/net_compat.o" -lpthread
    # The save writer: the core's own savewriter.c over libretro-common's

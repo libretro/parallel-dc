@@ -41,7 +41,6 @@ static void RETRO_CALLCONV test_log(enum retro_log_level level, const char *fmt,
 }
 retro_log_printf_t log_cb = test_log;
 
-/* (stdclass.h's get_writable_data_path() is made from it) */
 size_t writable_data_path(char *out, size_t size, const char *name)
 {
 	const size_t d = strlen(dataDir), l = d + strlen(name);

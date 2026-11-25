@@ -8,7 +8,6 @@
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
-#include <vector>
 #include "rend/upscaler.h"
 #include "hw/pvr/ta_ctx.h"
 
@@ -56,52 +55,59 @@ static const struct retro_hw_render_upscaler_interface iface = {
 
 /* --- frames --- */
 static rend_context ctx;
-static bool overrun;
+static unsigned char overrun;
 
-static void frame_begin()
+#define APPEND(list, T) ((T *)ta_list_append(&(list).l, sizeof(T)))
+
+static void frame_begin(void)
 {
-   ctx.verts.Clear();
-   ctx.idx.Clear();
-   ctx.global_param_op.Clear();
-   ctx.global_param_pt.Clear();
+   ta_list_clear(&ctx.verts.l);
+   ta_list_clear(&ctx.idx.l);
+   ta_list_clear(&ctx.global_param_op.l);
+   ta_list_clear(&ctx.global_param_pt.l);
 }
 
 /* a strip of @n vertices at @x, @y (a row, a step apart), sent under header words @tsp, @tcw */
-static void strip(List<PolyParam>& list, u32 tsp, u32 tcw, int n, float x, float y)
+static void strip(ta_list_t *list, u32 tsp, u32 tcw, int n, float x, float y)
 {
-   PolyParam *pp = list.Append();
+   PolyParam *pp = (PolyParam *)ta_list_append(list, sizeof(PolyParam));
+   int i;
    memset(pp, 0, sizeof(*pp));
-   pp->first = ctx.idx.used();
+   pp->first = TA_LIST_USED(ctx.idx, u32);
    pp->count = n;
-   pp->tsp.full = tsp;
-   pp->tcw.full = tcw;
-   pp->isp.full = 0x90800000u;
+   pp->tsp = tsp;
+   pp->tcw = tcw;
+   pp->isp = 0x90800000u;
    pp->texid = tcw;
-   for (int i = 0; i < n; i++)
+   for (i = 0; i < n; i++)
    {
-      Vertex *v = ctx.verts.Append();
+      Vertex *v = APPEND(ctx.verts, Vertex);
       memset(v, 0, sizeof(*v));
       v->x = x + 10.f * i;
       v->y = y + (i & 1) * 10.f;
       v->z = 1.f;
-      *ctx.idx.Append() = ctx.verts.used() - 1;
+      *APPEND(ctx.idx, u32) = TA_LIST_USED(ctx.verts, Vertex) - 1;
    }
 }
 
-static float prev_x(const std::vector<float>& prev, const PolyParam& pp, int v) { return prev[ctx.idx.head()[pp.first + v] * 2]; }
-static float prev_y(const std::vector<float>& prev, const PolyParam& pp, int v) { return prev[ctx.idx.head()[pp.first + v] * 2 + 1]; }
+/* where the frame before had a strip's vertex @v */
+static float *prev;
+static float prev_x(const PolyParam *pp, int v) { return prev[TA_LIST_HEAD(ctx.idx, u32)[pp->first + v] * 2]; }
+static float prev_y(const PolyParam *pp, int v) { return prev[TA_LIST_HEAD(ctx.idx, u32)[pp->first + v] * 2 + 1]; }
+#define OP (&ctx.global_param_op.l)
+#define PT (&ctx.global_param_pt.l)
 
-int main()
+int main(void)
 {
-   std::vector<float> prev;
-   int w, h;
+   int w, h, i, v;
    float jx, jy;
    struct retro_hw_upscaler_image mv, depth;
 
-   ctx.verts.Init(1024, &overrun, "verts");
-   ctx.idx.Init(1024, &overrun, "idx");
-   ctx.global_param_op.Init(64, &overrun, "op");
-   ctx.global_param_pt.Init(64, &overrun, "pt");
+   ta_list_init(&ctx.verts.l, 1024 * sizeof(Vertex), sizeof(Vertex), &overrun, "verts");
+   ta_list_init(&ctx.idx.l, 1024 * sizeof(u32), sizeof(u32), &overrun, "idx");
+   ta_list_init(&ctx.global_param_op.l, 64 * sizeof(PolyParam), sizeof(PolyParam), &overrun, "op");
+   ta_list_init(&ctx.global_param_pt.l, 64 * sizeof(PolyParam), sizeof(PolyParam), &overrun, "pt");
+   prev = (float *)malloc(1024 * 2 * sizeof(float));
    memset(&mv, 0, sizeof(mv));
    memset(&depth, 0, sizeof(depth));
    mv.image = 1;
@@ -136,15 +142,13 @@ int main()
 
    /* The first frame: nothing before it, every vertex where it is */
    frame_begin();
-   strip(ctx.global_param_op, 0x11, 0x100, 4, 100.f, 100.f);
-   strip(ctx.global_param_op, 0x22, 0x200, 6, 300.f, 100.f);
-   strip(ctx.global_param_op, 0x11, 0x100, 4, 100.f, 300.f);   /* the same header again */
-   strip(ctx.global_param_pt, 0x33, 0x300, 3, 500.f, 300.f);
-   prev.resize((size_t)ctx.verts.used() * 2);
-   upscaler_match(&ctx, prev.data());
-   CHECK(prev.size() == (size_t)ctx.verts.used() * 2);
-   for (int i = 0; i < ctx.verts.used(); i++)
-      CHECK(prev[i * 2] == ctx.verts.head()[i].x && prev[i * 2 + 1] == ctx.verts.head()[i].y);
+   strip(OP, 0x11, 0x100, 4, 100.f, 100.f);
+   strip(OP, 0x22, 0x200, 6, 300.f, 100.f);
+   strip(OP, 0x11, 0x100, 4, 100.f, 300.f);   /* the same header again */
+   strip(PT, 0x33, 0x300, 3, 500.f, 300.f);
+   upscaler_match(&ctx, prev);
+   for (i = 0; i < TA_LIST_USED(ctx.verts, Vertex); i++)
+      CHECK(prev[i * 2] == TA_LIST_HEAD(ctx.verts, Vertex)[i].x && prev[i * 2 + 1] == TA_LIST_HEAD(ctx.verts, Vertex)[i].y);
    upscaler_jitter(&jx, &jy);
    CHECK(jx >= -0.5f && jx <= 0.5f && jy >= -0.5f && jy <= 0.5f);
    upscaler_submit(&mv, &depth, RETRO_HW_UPSCALER_DEPTH_INVERTED);
@@ -158,26 +162,25 @@ int main()
     * first header moved otherwise; the punch-through one went far; a new
     * strip has no match */
    frame_begin();
-   strip(ctx.global_param_op, 0x11, 0x100, 4, 103.f, 102.f);
-   strip(ctx.global_param_op, 0x22, 0x200, 6, 290.f, 100.f);
-   strip(ctx.global_param_op, 0x11, 0x100, 4, 100.f, 310.f);
-   strip(ctx.global_param_op, 0x44, 0x400, 4, 400.f, 400.f);
-   strip(ctx.global_param_pt, 0x33, 0x300, 3, 100.f, 100.f);
-   prev.resize((size_t)ctx.verts.used() * 2);
-   upscaler_match(&ctx, prev.data());
+   strip(OP, 0x11, 0x100, 4, 103.f, 102.f);
+   strip(OP, 0x22, 0x200, 6, 290.f, 100.f);
+   strip(OP, 0x11, 0x100, 4, 100.f, 310.f);
+   strip(OP, 0x44, 0x400, 4, 400.f, 400.f);
+   strip(PT, 0x33, 0x300, 3, 100.f, 100.f);
+   upscaler_match(&ctx, prev);
    {
-      const PolyParam *op = ctx.global_param_op.head();
-      const PolyParam *pt = ctx.global_param_pt.head();
-      for (int v = 0; v < 4; v++)
-         CHECK(prev_x(prev, op[0], v) == 100.f + 10.f * v && prev_y(prev, op[0], v) == 100.f + (v & 1) * 10.f);
-      for (int v = 0; v < 6; v++)
-         CHECK(prev_x(prev, op[1], v) == 300.f + 10.f * v);
-      for (int v = 0; v < 4; v++)
-         CHECK(prev_y(prev, op[2], v) == 300.f + (v & 1) * 10.f);
-      for (int v = 0; v < 4; v++)
-         CHECK(prev_x(prev, op[3], v) == 400.f + 10.f * v && prev_y(prev, op[3], v) == 400.f + (v & 1) * 10.f);
-      for (int v = 0; v < 3; v++)
-         CHECK(prev_x(prev, pt[0], v) == 100.f + 10.f * v);   /* too far: still */
+      const PolyParam *op = TA_LIST_HEAD(ctx.global_param_op, PolyParam);
+      const PolyParam *pt = TA_LIST_HEAD(ctx.global_param_pt, PolyParam);
+      for (v = 0; v < 4; v++)
+         CHECK(prev_x(&op[0], v) == 100.f + 10.f * v && prev_y(&op[0], v) == 100.f + (v & 1) * 10.f);
+      for (v = 0; v < 6; v++)
+         CHECK(prev_x(&op[1], v) == 300.f + 10.f * v);
+      for (v = 0; v < 4; v++)
+         CHECK(prev_y(&op[2], v) == 300.f + (v & 1) * 10.f);
+      for (v = 0; v < 4; v++)
+         CHECK(prev_x(&op[3], v) == 400.f + 10.f * v && prev_y(&op[3], v) == 400.f + (v & 1) * 10.f);
+      for (v = 0; v < 3; v++)
+         CHECK(prev_x(&pt[0], v) == 100.f + 10.f * v);   /* too far: still */
    }
    upscaler_jitter(&jx, &jy);
    upscaler_submit(&mv, &depth, 0);
@@ -192,26 +195,23 @@ int main()
 
    /* A strip whose vertex count changed is another strip */
    frame_begin();
-   strip(ctx.global_param_op, 0x11, 0x100, 5, 110.f, 110.f);
-   prev.resize((size_t)ctx.verts.used() * 2);
-   upscaler_match(&ctx, prev.data());
-   CHECK(prev_x(prev, ctx.global_param_op.head()[0], 0) == 110.f);
+   strip(OP, 0x11, 0x100, 5, 110.f, 110.f);
+   upscaler_match(&ctx, prev);
+   CHECK(prev_x(TA_LIST_HEAD(ctx.global_param_op, PolyParam), 0) == 110.f);
    upscaler_submit(&mv, &depth, 0);
 
    /* A reset: the frame after it matches nothing, and says so */
    frame_begin();
-   strip(ctx.global_param_op, 0x11, 0x100, 5, 120.f, 110.f);
+   strip(OP, 0x11, 0x100, 5, 120.f, 110.f);
    upscaler_reset();
-   prev.resize((size_t)ctx.verts.used() * 2);
-   upscaler_match(&ctx, prev.data());
-   CHECK(prev_x(prev, ctx.global_param_op.head()[0], 0) == 120.f);
+   upscaler_match(&ctx, prev);
+   CHECK(prev_x(TA_LIST_HEAD(ctx.global_param_op, PolyParam), 0) == 120.f);
    upscaler_submit(&mv, &depth, 0);
    CHECK(got_count == 4 && (got.flags & RETRO_HW_UPSCALER_RESET));
    frame_begin();
-   strip(ctx.global_param_op, 0x11, 0x100, 5, 125.f, 110.f);
-   prev.resize((size_t)ctx.verts.used() * 2);
-   upscaler_match(&ctx, prev.data());
-   CHECK(prev_x(prev, ctx.global_param_op.head()[0], 0) == 120.f);
+   strip(OP, 0x11, 0x100, 5, 125.f, 110.f);
+   upscaler_match(&ctx, prev);
+   CHECK(prev_x(TA_LIST_HEAD(ctx.global_param_op, PolyParam), 0) == 120.f);
    upscaler_submit(&mv, &depth, 0);
    CHECK(got_count == 5 && !(got.flags & RETRO_HW_UPSCALER_RESET));
 
@@ -220,6 +220,11 @@ int main()
    upscaler_submit(&mv, &depth, 0);
    CHECK(got_count == 5);
 
+   free(prev);
+   ta_list_free(&ctx.verts.l);
+   ta_list_free(&ctx.idx.l);
+   ta_list_free(&ctx.global_param_op.l);
+   ta_list_free(&ctx.global_param_pt.l);
    if (failures)
    {
       printf("upscaler_test: %d failure(s)\n", failures);

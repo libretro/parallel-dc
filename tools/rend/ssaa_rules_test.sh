@@ -47,10 +47,7 @@ trap 'rm -rf "$WORK"' EXIT
 INC="-Icore/rend -Icore/libretro-common/include"
 ${CC:-cc} -std=c89 -pedantic -Wall -Wextra -Werror -Wdeclaration-after-statement -O2 \
    $INC -o "$WORK/ssaa_rules_test" tools/rend/ssaa_rules_test.c -lm
-${CXX:-c++} -x c++ -std=c++11 -Wall -Wextra -Werror -O2 \
-   $INC -o "$WORK/ssaa_rules_test_cxx" tools/rend/ssaa_rules_test.c -lm
 "$WORK/ssaa_rules_test"
-"$WORK/ssaa_rules_test_cxx" >/dev/null
 
 if ! command -v glslangValidator >/dev/null 2>&1; then
    echo "ssaa_rules_test: no glslangValidator, shaders not checked"

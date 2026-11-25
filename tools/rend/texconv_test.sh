@@ -6,7 +6,7 @@
 #   sh tools/rend/texconv_test.sh
 #
 # Needs the core built for this machine first (it links core/rend/TexCache.o, tex_map.o, texconv.o and vram_lock.o).
-# See texconv_test.cpp.
+# See texconv_test.c.
 set -e
 cd "$(dirname "$0")/../.."
 [ -f core/rend/TexCache.o ] || { echo "build the core first: core/rend/TexCache.o is not there" >&2; exit 1; }
@@ -17,10 +17,10 @@ trap 'rm -rf "$WORK"' EXIT
 ${CC:-cc} -O2 -Dxxh32=texconv_xxh32 -Dxxh32_reset=texconv_xxh32_reset -Dxxh32_update=texconv_xxh32_update \
    -Dxxh32_digest=texconv_xxh32_digest -I./core/libretro-common/include \
    -c -o "$WORK/xxhash.o" core/libretro-common/encodings/encoding_xxh32.c
-${CXX:-g++} -I./core/libretro -I./core -I./core/deps -I./core/libretro-common/include -I./core/deps/khronos \
+${CC:-cc} -I./core/libretro -I./core -I./core/deps -I./core/libretro-common/include -I./core/deps/khronos \
    -DTARGET_LINUX_x64 -DHOST_CPU=0x20000004 -D__LIBRETRO__ -DHAVE_GLSYM_PRIVATE -DNO_VERIFY -DNDEBUG \
-   -DHAVE_GL3 -DHAVE_GL4 -DCORE -DHAVE_TEXUPSCALE -DHAVE_OPENGL -DHAVE_VULKAN -DPVR_REGS_FOR_RENDERER -O2 -fpermissive -w \
-   -o "$WORK/texconv_test" tools/rend/texconv_test.cpp core/rend/TexCache.o core/rend/tex_map.o core/rend/texconv.o core/rend/vram_lock.o core/rend/custom_texture.o core/rend/band_pool.o "$WORK/xxhash.o" -Wl,--unresolved-symbols=ignore-all
+   -DHAVE_GL3 -DHAVE_GL4 -DCORE -DHAVE_TEXUPSCALE -DHAVE_OPENGL -DHAVE_VULKAN -DPVR_REGS_FOR_RENDERER -O2 -w \
+   -o "$WORK/texconv_test" tools/rend/texconv_test.c core/rend/TexCache.o core/rend/tex_map.o core/rend/texconv.o core/rend/vram_lock.o core/rend/custom_texture.o core/rend/band_pool.o "$WORK/xxhash.o" -Wl,--unresolved-symbols=ignore-all
 (echo "# random"; "$WORK/texconv_test"; echo "# ramp"; "$WORK/texconv_test" ramp) > "$WORK/out.txt"
 if cmp -s "$WORK/out.txt" tools/rend/texconv_expected.txt; then
    echo "texture converters: $(grep -vc '^#' "$WORK/out.txt") results, all as upstream's"

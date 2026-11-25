@@ -1,7 +1,7 @@
 /* Where a texture's mipmap levels are in the memory they are uploaded from.
  *
  * The texture cache converts the levels one after another from the
- * smallest, 1x1 first (PixelBuffer). Vulkan copies a level to its image
+ * smallest, 1x1 first (tex_buf_t). Vulkan copies a level to its image
  * from a place in a buffer that has to be a multiple of four bytes, and of
  * the texel's size. With four-byte texels every level starts at one. With
  * two-byte texels the 1x1 level is two bytes and puts all the others out by

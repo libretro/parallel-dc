@@ -2,7 +2,6 @@
 #include "types.h"
 
 #ifdef __cplusplus
-#include "ta_structs.h"
 extern "C" {
 #endif
 

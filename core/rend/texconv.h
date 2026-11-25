@@ -4,8 +4,7 @@
  * each pixel format of the PowerVR's - planar, twiddled, compressed,
  * paletted - to 16, 32 or 8 bits a texel. Pure functions of video memory,
  * the codebook and the palette. And the tables they use: the twiddle
- * tables and the palette converted for the renderer. C89, for C and C++
- * alike; TexCache.h has PixelBuffer, C++'s face of tex_buf_t. */
+ * tables and the palette converted for the renderer. */
 #include <stddef.h>
 #include <retro_inline.h>
 #include "types.h"

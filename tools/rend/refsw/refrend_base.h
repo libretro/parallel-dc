@@ -6,7 +6,7 @@
 
 #include <functional>
 #include "refrend_regs.h"
-#include "hw/pvr/ta_structs.h" // for ISP_TSP and co
+#include "../../pvr/ta_structs.h" // for ISP_TSP and co
 #include "hw/pvr/ta_ctx.h" // for Vertex
 
 struct RegionArrayEntry {

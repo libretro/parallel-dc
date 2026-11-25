@@ -12,9 +12,7 @@
  * which means the room was too small for the game: it is said, once.
  *
  * An element is @elem bytes, made by @make (NULL: all zeros) and unmade by
- * @unmake (NULL: nothing). C89, for C and C++ alike; C++ has TexMap<T>,
- * whose T is value-initialized, as a map's new values were. Render thread
- * only. */
+ * @unmake (NULL: nothing). Render thread only. */
 #ifndef REND_TEX_MAP_H
 #define REND_TEX_MAP_H
 
@@ -23,7 +21,6 @@
 #include "types.h"
 
 #ifdef __cplusplus
-#include <new>
 extern "C" {
 #endif
 
@@ -83,47 +80,6 @@ static INLINE void *tex_map_at(const tex_map_t *m, u32 e, u64 *key)
 
 #ifdef __cplusplus
 }
-
-template<typename T>
-class TexMap
-{
-public:
-	TexMap() { tex_map_init(&m, sizeof(T), make, unmake); m.name = "Texture cache"; }
-	~TexMap() { tex_map_free(&m); }
-	TexMap(const TexMap&) = delete;
-	TexMap& operator=(const TexMap&) = delete;
-
-	void Name(const char *what) { m.name = what; }
-	void Reserve(u32 textures) { tex_map_reserve(&m, textures); }
-	T *Find(u64 key) const { return (T *)tex_map_find(&m, key); }
-	T *Add(u64 key) { return (T *)tex_map_add(&m, key); }
-	void Remove(u64 key) { tex_map_remove(&m, key); }
-	u32 Size() const { return m.count; }
-	/* Each one there is, @fn(key, texture), until it says false. Not to be
-	 * added to or taken from meanwhile. */
-	template<typename Fn>
-	void Each(Fn fn)
-	{
-		u32 e;
-		u64 key;
-		for (e = 0; e < tex_map_places(&m); e++)
-		{
-			T *t = (T *)tex_map_at(&m, e, &key);
-			if (t != NULL && !fn(key, *t))
-				return;
-		}
-	}
-	void Clear() { tex_map_clear(&m); }
-	/* (the C one: rend/TexCache.h's texcache_map_*) */
-	tex_map_t *Map() { return &m; }
-
-private:
-	/* (value-initialized, as a map's new value is: what has no
-	 * initializer of its own starts at zero) */
-	static void make(void *e) { new (e) T(); }
-	static void unmake(void *e) { ((T *)e)->~T(); }
-	tex_map_t m;
-};
 #endif
 
 #endif

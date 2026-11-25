@@ -8,7 +8,7 @@
  * video memory, paletted ones with each palette format and selection and
  * as the palette indices the GPU looks up itself, 16-bit formats to 16
  * bits and to 32, Force Texture LOD0 on and off: each one is made by the
- * texture cache itself (texdecode_cpu.cpp, against core/rend/TexCache.o),
+ * texture cache itself (texdecode_cpu.c, against core/rend/TexCache.o),
  * which converts it on the CPU and says what it would have handed a
  * renderer that converts on the GPU - the bytes to copy and the levels to
  * make. Then

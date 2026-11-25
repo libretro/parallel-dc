@@ -33,9 +33,9 @@ static uintptr_t reader_thread;
 static long      reader_decodes;
 static long      decodes;
 
-extern "C" bool __real_chd_image_read_hunk(chd_image_t *img, uint32_t hunk, uint8_t *dst);
+bool __real_chd_image_read_hunk(chd_image_t *img, uint32_t hunk, uint8_t *dst);
 
-extern "C" bool __wrap_chd_image_read_hunk(chd_image_t *img, uint32_t hunk, uint8_t *dst)
+bool __wrap_chd_image_read_hunk(chd_image_t *img, uint32_t hunk, uint8_t *dst)
 {
 	if (sthread_get_current_thread_id() == reader_thread)
 		reader_decodes++;

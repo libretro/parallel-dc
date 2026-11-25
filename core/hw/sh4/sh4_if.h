@@ -429,28 +429,6 @@ static TYPES_INLINE void sh4_sr_SetFull(u32 value)
 
 #define do_sqw_nommu sh4rcb.do_sqw_nommu
 
-#ifdef __cplusplus
-}
-template<typename T>
-s32 rcb_noffs(T* ptr)  
-{ 
-	s32 rv= (u8*)ptr - (u8*)p_sh4rcb-sizeof(Sh4RCB); 
-	verify(rv<0);
-
-	return rv;
-}
-
-template<typename T>
-s32 rcb_poffs(T* ptr)  
-{ 
-	s32 rv= (u8*)ptr - (u8*)p_sh4rcb-sizeof(Sh4RCB); 
-	verify(rv>=0);
-
-	return rv;
-}
-extern "C" {
-#endif
-
 #define sh4rcb (*p_sh4rcb)
 #define Sh4cntx (sh4rcb.cntx)
 
