@@ -1356,6 +1356,10 @@ endif
 print-cxx-compile:
 	@echo '$(CXX) $(INCFLAGS) $(CFLAGS) $(MFLAGS) $(CXXFLAGS)'
 
+# ...and its C, for the tools' C test programs that take the core's headers
+print-cc-compile:
+	@echo '$(CC) $(INCFLAGS) $(CFLAGS) $(MFLAGS)'
+
 %.o: %.cpp
 	@$(if $(E), $(shell echo echo CXX $<),)
 	$(CXX) $(INCFLAGS) $(CFLAGS) $(MFLAGS) $(CXXFLAGS) $(DEPFLAGS) $< -o $@

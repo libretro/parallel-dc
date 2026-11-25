@@ -3,7 +3,7 @@
  * the opaque and punch-through lists into the depth and tag buffers, the
  * modifier volumes into the stencil, the tags shaded, then the translucent
  * list peeled a layer a pass from the back. The frame is a dump of what the
- * TA parse left (refsw_dump.h, written by tools/rend/tile_dump.cpp).
+ * TA parse left (refsw_dump.h, written by tools/rend/tile_dump.c).
  *
  *   refsw_frame FRAME.bin OUT.ppm [PROBE...]
  *

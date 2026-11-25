@@ -74,36 +74,6 @@ void vk_writeout_record(vk_writeout *w, VkCommandBuffer cmd, u32 index, VkImage 
 
 #ifdef __cplusplus
 }
-
-#include <vector>
-
-/* The C++ renderers' view of a vk_writeout */
-class VulkanWriteOut
-{
-public:
-	VulkanWriteOut() { vk_writeout_construct(&w); }
-	~VulkanWriteOut() { vk_writeout_term(&w); }
-	VulkanWriteOut(const VulkanWriteOut&) = delete;
-	VulkanWriteOut& operator=(const VulkanWriteOut&) = delete;
-	static bool Wanted() { return vk_writeout_wanted(); }
-	void Init(const std::vector<vk::ImageView>& views, vk::Extent2D extent)
-	{
-		if (!vk_writeout_init(&w, reinterpret_cast<const VkImageView *>(views.data()), (u32)views.size(), extent.width, extent.height))
-			throwResultException(vk::Result::eErrorInitializationFailed, "vk_writeout_init");
-	}
-	void Term() { vk_writeout_term(&w); }
-	bool Runs(u32 height) const { return vk_writeout_runs(&w, height); }
-	/* (null when none was made) */
-	vk::RenderPass OverlayPass() const { return vk::RenderPass(w.overlayPass); }
-	void BeginOverlay(vk::CommandBuffer cmd, u32 index) { vk_writeout_begin_overlay(&w, (VkCommandBuffer)cmd, index); }
-	void Record(vk::CommandBuffer cmd, u32 index, vk::Image image, vk::ImageView view, u32 width, u32 height)
-	{
-		vk_writeout_record(&w, (VkCommandBuffer)cmd, index, (VkImage)image, (VkImageView)view, width, height);
-	}
-
-private:
-	vk_writeout w;
-};
 #endif
 
 #endif

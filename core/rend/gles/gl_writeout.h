@@ -23,7 +23,7 @@ void gl_writeout_term(void);
 /* whether the pass is made: the screen's picture is to be a texture */
 bool gl_writeout_ready(void);
 /* The pass in place over @texture, @width x @height, when the frame in the
- * registers has a write-out (ComputeFrame::WriteOut()) */
+ * registers has a write-out (compute_frame_write_out()) */
 void gl_writeout_pass(u32 texture, int width, int height);
 /* The per-pixel renderer's: the framebuffer to draw the screen in, its
  * picture (0: none made, the frontend's @frontend instead); the first

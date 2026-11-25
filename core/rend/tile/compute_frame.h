@@ -1,11 +1,10 @@
 /* The compute renderer's frame (rend/tile/pvr_compute.h's PVRC_F_* words),
  * as both renderers that have it hand it to the kernels: Vulkan's
- * (vulkan/compute_drawer.h) and Direct3D 12's (dx12/dx12_compute.h). The
+ * (vulkan/vk_compute_drawer.h) and Direct3D 12's (dx12/dx12_compute.h). The
  * rules a frame's words are made by are the raster renderers': each
  * renderer gives its transform, its base scissor and its flat shading's
  * colours (compute_frame_renderer), which are the same in both. Also what
- * the tests build their frames with (tools/rend/tile_dump.cpp). C89; C++
- * has it as the ComputeFrame class too. */
+ * the tests build their frames with (tools/rend/tile_dump.c). */
 #ifndef REND_TILE_COMPUTE_FRAME_H
 #define REND_TILE_COMPUTE_FRAME_H
 #include <retro_common_api.h>
@@ -13,9 +12,6 @@
 #include "types.h"
 #include "rend/xform.h"
 #include "rend/tile/pvr_compute.h"
-#ifdef __cplusplus
-#include "rend/transform_matrix.h"
-#endif
 
 RETRO_BEGIN_DECLS
 
@@ -87,77 +83,5 @@ extern bool compute_frame_scalers_off;
 u32 compute_frame_write_out(u32 height);
 
 RETRO_END_DECLS
-
-#ifdef __cplusplus
-class ComputeFrame
-{
-public:
-	struct Slots
-	{
-		/* a texture's slot, or PVRC_NONE when they are all taken */
-		virtual u32 Slot(u64 texid, TSP tsp) = 0;
-		virtual ~Slots() = default;
-	};
-	typedef compute_frame_layout Layout;
-	virtual ~ComputeFrame() = default;
-	/* compute_frame_pack() with this renderer's part */
-	u32 Pack(const Layout& layout, Slots& slots, u32 *out, u32 room, u32 *prims)
-	{
-		Bound b = { this, &slots };
-		compute_frame_renderer r;
-		r.self = &b;
-		r.slot = SlotOf;
-		r.begin = BeginOf;
-		r.base_scissor = BaseScissorOf;
-		r.provoking_vertices = ProvokingVerticesOf;
-		return compute_frame_pack(&layout, &r, out, room, prims, &why);
-	}
-	enum
-	{
-		Why_None = CF_WHY_NONE, Why_Passes = CF_WHY_PASSES, Why_Room = CF_WHY_ROOM,
-		Why_Textures = CF_WHY_TEXTURES, Why_Rtt = CF_WHY_RTT, Why_Osd = CF_WHY_OSD,
-		Why_Picture = CF_WHY_PICTURE, Why_Decode = CF_WHY_DECODE, Why_Count = CF_WHY_COUNT
-	};
-	u32 why = Why_None;
-
-	static u32 MaxWords() { return compute_frame_max_words(); }
-	static u32 MaxPrims() { return compute_frame_max_prims(); }
-	static u32 TileLog2(u32 width) { return compute_frame_tile_log2(width); }
-	static u32 MaxRttTiles() { return compute_frame_max_rtt_tiles(); }
-	static u32 RttScale() { return compute_frame_rtt_scale(); }
-	static u32 WriteOut(u32 height) { return compute_frame_write_out(height); }
-
-protected:
-	/* The renderer's: compute_frame_renderer's */
-	virtual const xform& Begin() = 0;
-	virtual void BaseScissor(int& x, int& y, int& width, int& height) = 0;
-	virtual void ProvokingVertices() = 0;
-
-private:
-	struct Bound
-	{
-		ComputeFrame *frame;
-		Slots *slots;
-	};
-	static u32 SlotOf(void *self, u64 texid, u32 tsp)
-	{
-		TSP t;
-		t.full = tsp;
-		return ((Bound *)self)->slots->Slot(texid, t);
-	}
-	static const xform *BeginOf(void *self)
-	{
-		return &((Bound *)self)->frame->Begin();
-	}
-	static void BaseScissorOf(void *self, int *x, int *y, int *width, int *height)
-	{
-		((Bound *)self)->frame->BaseScissor(*x, *y, *width, *height);
-	}
-	static void ProvokingVerticesOf(void *self)
-	{
-		((Bound *)self)->frame->ProvokingVertices();
-	}
-};
-#endif
 
 #endif

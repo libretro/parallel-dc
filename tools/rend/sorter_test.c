@@ -11,6 +11,7 @@
 #include "types.h"
 #include "hw/pvr/Renderer_if.h"
 #include "rend/sorter.h"
+#include "rend/vulkan/pso_key.h"
 
 #ifdef SORTER_TEST_OLD
 /* (the old code's C++ functions, and its header's, through a shim) */
@@ -316,8 +317,19 @@ static void frame(int n, int passes)
 
 int main(void)
 {
+	/* the prepass's alpha as the Vulkan shader has it (shaders/prepass.frag,
+	 * pso_key.h), both stored as floats (on 32-bit x86, whose x87 keeps
+	 * floats wider, the literals are otherwise compared at the wider
+	 * precision) */
+	volatile float alpha = PREPASS_ALPHA_MIN, alphaGlsl = (float)PREPASS_ALPHA_MIN_GLSL;
 	int f;
 	SortList *lists;
+
+	if (alpha != alphaGlsl)
+	{
+		printf("sorter_test: FAIL: PREPASS_ALPHA_MIN %.9g, the Vulkan shader's %.9g\n", alpha, alphaGlsl);
+		return 1;
+	}
 
 	ta_list_init(&ctx.rend.verts.l, MAX_VERTS * sizeof(Vertex), sizeof(Vertex), (unsigned char *)&ctx.rend.Overrun, NULL);
 	ta_list_init(&ctx.rend.idx.l, MAX_IDX * sizeof(u32), sizeof(u32), (unsigned char *)&ctx.rend.Overrun, NULL);

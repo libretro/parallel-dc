@@ -70,12 +70,12 @@ fi
 # the dumper: the frontend, the dump and the core's objects, with
 # ta_parse_vdrc() and the frontend's dlopen() wrapped (tile_test.sh's way)
 if [ ! -x "$WORK/tile_dump" ]; then
-   CORE_FLAGS=$(make -s platform=unix print-cxx-compile 2>/dev/null \
+   CORE_FLAGS=$(make -s platform=unix print-cc-compile 2>/dev/null \
       | sed -e 's/^[^ ]* //' -e 's/ -c / /' -e 's/-DGIT_VERSION=[^ ]* [^ ]*//')
    OBJS=$(make -n platform=unix -W core/libretro/lr_contexts.c 2>/dev/null | tail -1 | tr ' ' '\n' | grep '\.o$' | grep -v 'glslang.js.o')
    ${CC:-cc} -O1 -c -o "$WORK/headless.o" tools/threads/headless.c
-   ${CXX:-g++} $CORE_FLAGS -w -c -o "$WORK/dump.o" tools/rend/tile_dump.cpp
-   ${CXX:-g++} -rdynamic -o "$WORK/tile_dump" "$WORK/headless.o" "$WORK/dump.o" $OBJS \
+   ${CC:-cc} $CORE_FLAGS -w -c -o "$WORK/dump.o" tools/rend/tile_dump.c
+   ${CC:-cc} -rdynamic -o "$WORK/tile_dump" "$WORK/headless.o" "$WORK/dump.o" $OBJS \
       -Wl,--wrap=dlopen -Wl,--wrap=ta_parse_vdrc -l:libvulkan.so.1 -lGL -lrt -lpthread -lm -ldl
    nm -D --undefined-only "$WORK/tile_dump" | awk '{print $NF}' | sed 's/@.*//' | grep '^gl' \
       | python3 tools/threads/headless_gl.py > "$WORK/nogl.c" || true

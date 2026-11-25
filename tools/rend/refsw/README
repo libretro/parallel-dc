@@ -46,7 +46,7 @@ Written here:
   refsw_port.h         what the files above took from the rest of libswirl,
                        given from this core's headers (see its comment)
   refsw_frame.cpp      the frame walk and the checker program
-  refsw_dump.h         the frame file tools/rend/tile_dump.cpp writes
+  refsw_dump.h         the frame file tools/rend/tile_dump.c writes
   ../refsw_test.sh     builds everything, runs a game to a frame, draws it
 
 libswirl's refrend_base.cpp - the front end that walked the chip's region

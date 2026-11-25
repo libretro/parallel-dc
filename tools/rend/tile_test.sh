@@ -5,7 +5,7 @@
 #   sh tools/rend/tile_test.sh CONTENT FRAMES [key=value ...]
 #        CONTENT run for FRAMES frames with the core options given; some of
 #        the frames it draws to the screen written as the compute
-#        renderer's words (tile_dump.cpp: TILE_DUMP_EVERY, TILE_DUMP_MAX,
+#        renderer's words (tile_dump.c: TILE_DUMP_EVERY, TILE_DUMP_MAX,
 #        TILE_DUMP_FROM), and some of its renders to a texture
 #        (TILE_DUMP_RTT, TILE_DUMP_RTT_EVERY), then each drawn by the kernels
 #        on the device and by the reference (TILE_SAMPLES, TILE_KEEP), and
@@ -161,12 +161,12 @@ fi
 
 # the frames: the frontend, the dump, and the core's objects, with
 # ta_parse_vdrc() and the frontend's dlopen() wrapped
-CORE_FLAGS=$(make -s platform=unix print-cxx-compile 2>/dev/null \
+CORE_FLAGS=$(make -s platform=unix print-cc-compile 2>/dev/null \
    | sed -e 's/^[^ ]* //' -e 's/ -c / /' -e 's/-DGIT_VERSION=[^ ]* [^ ]*//')
 OBJS=$(make -n platform=unix -W core/libretro/lr_contexts.c 2>/dev/null | tail -1 | tr ' ' '\n' | grep '\.o$' | grep -v 'glslang.js.o')
 ${CC:-cc} -O1 -c -o "$WORK/headless.o" tools/threads/headless.c
-${CXX:-g++} $CORE_FLAGS -w -c -o "$WORK/dump.o" tools/rend/tile_dump.cpp
-${CXX:-g++} -rdynamic -o "$WORK/tile_dump" "$WORK/headless.o" "$WORK/dump.o" $OBJS \
+${CC:-cc} $CORE_FLAGS -w -c -o "$WORK/dump.o" tools/rend/tile_dump.c
+${CC:-cc} -rdynamic -o "$WORK/tile_dump" "$WORK/headless.o" "$WORK/dump.o" $OBJS \
    -Wl,--wrap=dlopen -Wl,--wrap=ta_parse_vdrc -l:libvulkan.so.1 -lGL -lrt -lpthread -lm -ldl
 nm -D --undefined-only "$WORK/tile_dump" | awk '{print $NF}' | sed 's/@.*//' | grep '^gl' \
    | python3 tools/threads/headless_gl.py > "$WORK/nogl.c" || true

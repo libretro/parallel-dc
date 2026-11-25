@@ -69,38 +69,6 @@ void vk_desc_cache_term(vk_desc_cache *c);
 
 #ifdef __cplusplus
 }
-
-#include "vulkan_context.h"
-
-/* The C++ renderers' view, until they are C too */
-class TexDescCache
-{
-public:
-	TexDescCache() { vk_desc_cache_construct(&c); }
-	~TexDescCache() { vk_desc_cache_term(&c); }
-	TexDescCache(const TexDescCache&) = delete;
-	TexDescCache& operator=(const TexDescCache&) = delete;
-	/* (the frame slots' are in a vector: moved, the sets go with it) */
-	TexDescCache(TexDescCache&& o) noexcept { c = o.c; vk_desc_cache_construct(&o.c); }
-	TexDescCache& operator=(TexDescCache&& o) noexcept
-	{
-		if (this != &o)
-		{
-			vk_desc_cache_term(&c);
-			c = o.c;
-			vk_desc_cache_construct(&o.c);
-		}
-		return *this;
-	}
-
-	void SetLayout(vk::DescriptorSetLayout layout) { vk_desc_cache_set_layout(&c, (VkDescriptorSetLayout)layout); }
-	vk::DescriptorSet Find(const TexDescKey& key) { return vk::DescriptorSet(vk_desc_cache_find(&c, &key)); }
-	vk::DescriptorSet Add(const TexDescKey& key) { return vk::DescriptorSet(vk_desc_cache_add(&c, &key)); }
-	void NextUse() { vk_desc_cache_next_use(&c); }
-
-private:
-	vk_desc_cache c;
-};
 #endif
 
 #endif

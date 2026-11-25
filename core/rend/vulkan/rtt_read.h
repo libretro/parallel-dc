@@ -28,16 +28,6 @@ void vk_read_picture(VkImage image, VkFormat format, u32 width, u32 height, u8 *
 
 #ifdef __cplusplus
 }
-
-static inline void vk_rtt_watch(vk_texture *texture, u32 addr, u32 x0, u32 y0, u32 width, u32 height)
-{
-	vk_rtt_watch_texture(texture, addr, x0, y0, width, height);
-}
-
-static inline void vk_read_picture(vk::Image image, vk::Format format, u32 width, u32 height, u8 *rgba)
-{
-	vk_read_picture((VkImage)image, (VkFormat)format, width, height, rgba);
-}
 #endif
 
 #endif
