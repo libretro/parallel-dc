@@ -1352,6 +1352,10 @@ DEPFLAGS = -MMD -MP
 -include $(OBJECTS:.o=.d)
 endif
 
+# what the core's C++ is compiled with, for the tools' C++ test programs
+print-cxx-compile:
+	@echo '$(CXX) $(INCFLAGS) $(CFLAGS) $(MFLAGS) $(CXXFLAGS)'
+
 %.o: %.cpp
 	@$(if $(E), $(shell echo echo CXX $<),)
 	$(CXX) $(INCFLAGS) $(CFLAGS) $(MFLAGS) $(CXXFLAGS) $(DEPFLAGS) $< -o $@

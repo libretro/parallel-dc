@@ -23,10 +23,9 @@ CCMD=$(make -n -B core/hw/pvr/ta_list.o 2>/dev/null | grep 'ta_list\.c' | tail -
 CCMD=${CCMD% -o *}
 CFLAGS_T=$(echo "$CCMD" | sed 's| [^ ]*ta_list\.c||; s/ -MMD -MP//')
 CC=${CFLAGS_T%% *}
-XCMD=$(make -n -B core/libretro/lr_contexts.o 2>/dev/null | grep 'lr_contexts\.cpp' | tail -n 1)
+XCMD=$(make -s print-cxx-compile 2>/dev/null)
 [ -n "$XCMD" ] || { echo "cannot get the core's C++ compile flags from make" >&2; exit 1; }
-XCMD=${XCMD% -o *}
-CXXFLAGS_T=$(echo "$XCMD" | sed 's| [^ ]*lr_contexts\.cpp||; s/ -MMD -MP//; s/-DGIT_VERSION=[^ ]* [^ ]*//')
+CXXFLAGS_T=$(echo "$XCMD" | sed 's/-DGIT_VERSION=[^ ]* [^ ]*//')
 CXX=${CXXFLAGS_T%% *}
 
 eval "$CXXFLAGS_T $EXTRA tools/pvr/ta_words_test.cpp -o \"$WORK/ta_words_test.o\""

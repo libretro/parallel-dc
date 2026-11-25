@@ -32,34 +32,6 @@
 
 /* ---- What goes once the frames that may use it are done ---- */
 
-static void attachment_gone(void *object)
-{
-	vk_attachment_free((vk_attachment *)object);
-	free(object);
-}
-
-/* @a goes once the frames of @pool that may use it are done (now with no
- * pool), and is left empty */
-static void defer_attachment(vk_cmd_pool *pool, vk_attachment *a)
-{
-	vk_attachment *kept;
-	if (a->image == VK_NULL_HANDLE && a->view == VK_NULL_HANDLE)
-	{
-		vk_attachment_free(a);
-		memset(a, 0, sizeof(*a));
-		return;
-	}
-	kept = pool != NULL ? (vk_attachment *)malloc(sizeof(*kept)) : NULL;
-	if (kept != NULL)
-	{
-		*kept = *a;
-		vk_cmd_pool_defer(pool, kept, attachment_gone);
-	}
-	else
-		vk_attachment_free(a);
-	memset(a, 0, sizeof(*a));
-}
-
 typedef struct framebuffer_box
 {
 	VkFramebuffer framebuffer;
@@ -343,7 +315,7 @@ bool vk_screen_drawer_init(vk_screen_drawer *d, vk_samplers *samplers, vk_raster
 			 * as it does from one kept across a new context, at whatever
 			 * size the screen now is - and here nothing is read back or
 			 * loaded again. It goes after the next frame. */
-			defer_attachment(pool, &d->carriedPicture);
+			vk_attachment_defer(pool, &d->carriedPicture);
 			if (d->havePicture && image < d->images && d->colorAttachments[image].image != VK_NULL_HANDLE)
 			{
 				d->carriedPicture = d->colorAttachments[image];
@@ -354,12 +326,12 @@ bool vk_screen_drawer_init(vk_screen_drawer *d, vk_samplers *samplers, vk_raster
 			for (i = 0; i < d->images; i++)
 			{
 				defer_framebuffer(pool, &d->framebuffers[i]);
-				defer_attachment(pool, &d->colorAttachments[i]);
-				defer_attachment(pool, &d->hdrAttachments[i]);
-				defer_attachment(pool, &d->depthAttachments[i]);
+				vk_attachment_defer(pool, &d->colorAttachments[i]);
+				vk_attachment_defer(pool, &d->hdrAttachments[i]);
+				vk_attachment_defer(pool, &d->depthAttachments[i]);
 			}
-			defer_attachment(pool, &d->depthAttachment);
-			defer_attachment(pool, &d->samplesAttachment);
+			vk_attachment_defer(pool, &d->depthAttachment);
+			vk_attachment_defer(pool, &d->samplesAttachment);
 			vk_motion_pass_term(&d->motionPass, pool);
 		}
 		screen_images_drop(d, 0);
@@ -681,7 +653,7 @@ bool vk_screen_drawer_end(vk_screen_drawer *d)
 	d->havePicture = true;
 	d->restoredPicture = VK_NULL_HANDLE;
 	/* (this frame may have drawn it: it goes when the frame is done with) */
-	defer_attachment(pool, &d->carriedPicture);
+	vk_attachment_defer(pool, &d->carriedPicture);
 	/* The HDR output: the picture encoded in the render pass's last
 	 * subpass, where it is; on a frame the chip's write-out changes after
 	 * the render pass, once that is done (and what goes over it drawn), in
@@ -806,8 +778,8 @@ void vk_rtt_drawer_free(vk_rtt_drawer *d)
 static bool rtt_ssaa_attachments(vk_rtt_drawer *d, u32 side)
 {
 	const VkSampleCountFlagBits n = (VkSampleCountFlagBits)d->samples;
-	defer_attachment(d->base.pool, &d->depthAttachment);
-	defer_attachment(d->base.pool, &d->samplesAttachment);
+	vk_attachment_defer(d->base.pool, &d->depthAttachment);
+	vk_attachment_defer(d->base.pool, &d->samplesAttachment);
 	if (!vk_attachment_init(&d->depthAttachment, side, side, vkc.depthFormat,
 			VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT, true, n)
 			|| !vk_attachment_init(&d->samplesAttachment, side, side, VK_FORMAT_R8G8B8A8_UNORM,
@@ -827,8 +799,8 @@ bool vk_rtt_drawer_init(vk_rtt_drawer *d, vk_samplers *samplers, vk_raster_modul
 	if (samples != d->samples)
 	{
 		/* (the depth attachment is of the other kind: one of the right kind is made below or when first needed) */
-		defer_attachment(d->base.pool, &d->depthAttachment);
-		defer_attachment(d->base.pool, &d->samplesAttachment);
+		vk_attachment_defer(d->base.pool, &d->depthAttachment);
+		vk_attachment_defer(d->base.pool, &d->samplesAttachment);
 		d->samples = samples;
 	}
 	/* The attachments are made now, never while the game runs: SSAA's, as
@@ -860,14 +832,14 @@ bool vk_rtt_drawer_share_depth(vk_rtt_drawer *d, const vk_screen_drawer *screen)
 	if (shared != NULL)
 	{
 		/* (its own goes once the frames that may use it are done) */
-		defer_attachment(d->base.pool, &d->depthAttachment);
+		vk_attachment_defer(d->base.pool, &d->depthAttachment);
 		return true;
 	}
 	common = vk_rtt_common_render();
 	if (d->depthAttachment.image == VK_NULL_HANDLE || d->depthAttachment.extent.width < common.width
 			|| d->depthAttachment.extent.height < common.height)
 	{
-		defer_attachment(d->base.pool, &d->depthAttachment);
+		vk_attachment_defer(d->base.pool, &d->depthAttachment);
 		return vk_attachment_init(&d->depthAttachment, common.width, common.height, vkc.depthFormat,
 				VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT, true, VK_SAMPLE_COUNT_1_BIT);
 	}
@@ -982,7 +954,7 @@ static bool rtt_begin(vk_rtt_drawer *d)
 					d->saidLarger = true;
 					WARN_LOG(RENDERER, "Render to a texture of %u x %u: a depth made for it\n", areaWidth, areaHeight);
 				}
-				defer_attachment(pool, &d->depthAttachment);
+				vk_attachment_defer(pool, &d->depthAttachment);
 				if (!vk_attachment_init(&d->depthAttachment, w, h, vkc.depthFormat,
 						VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT, true, VK_SAMPLE_COUNT_1_BIT))
 					return false;

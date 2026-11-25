@@ -48,6 +48,11 @@ typedef struct vk_attachment
 bool vk_attachment_init(vk_attachment *a, u32 width, u32 height, VkFormat format, VkImageUsageFlags usage, bool readable,
 		VkSampleCountFlagBits samples);
 void vk_attachment_free(vk_attachment *a);
+/* @a goes once the frames of @pool that may use it are done (now with no
+ * pool), and is left empty */
+void vk_attachment_defer(vk_cmd_pool *pool, vk_attachment *a);
+/* ...and so does @b */
+void vk_buffer_defer(vk_cmd_pool *pool, vk_buffer *b);
 
 /* A framebuffer kept while its render pass, size and views are the same
  * (by their serials: vk_new_view_serial()) */

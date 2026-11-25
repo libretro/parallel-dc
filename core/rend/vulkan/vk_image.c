@@ -668,3 +668,54 @@ vk_pooled_image *vk_tex_pool_take_target(vk_tex_pool *p, u32 width, u32 height, 
 	e = tex_pool_take(&p->book, cls);
 	return e != NULL ? (vk_pooled_image *)e : make(p, cls, true);
 }
+
+static void attachment_gone(void *object)
+{
+	vk_attachment_free((vk_attachment *)object);
+	free(object);
+}
+
+void vk_attachment_defer(vk_cmd_pool *pool, vk_attachment *a)
+{
+	vk_attachment *kept;
+	if (a->image == VK_NULL_HANDLE && a->view == VK_NULL_HANDLE)
+	{
+		vk_attachment_free(a);
+		memset(a, 0, sizeof(*a));
+		return;
+	}
+	kept = pool != NULL ? (vk_attachment *)malloc(sizeof(*kept)) : NULL;
+	if (kept != NULL)
+	{
+		*kept = *a;
+		vk_cmd_pool_defer(pool, kept, attachment_gone);
+	}
+	else
+		vk_attachment_free(a);
+	memset(a, 0, sizeof(*a));
+}
+
+static void buffer_gone(void *object)
+{
+	vk_buffer_free((vk_buffer *)object);
+	free(object);
+}
+
+void vk_buffer_defer(vk_cmd_pool *pool, vk_buffer *b)
+{
+	vk_buffer *kept;
+	if (b->buffer == VK_NULL_HANDLE)
+	{
+		memset(b, 0, sizeof(*b));
+		return;
+	}
+	kept = pool != NULL ? (vk_buffer *)malloc(sizeof(*kept)) : NULL;
+	if (kept != NULL)
+	{
+		*kept = *b;
+		vk_cmd_pool_defer(pool, kept, buffer_gone);
+	}
+	else
+		vk_buffer_free(b);
+	memset(b, 0, sizeof(*b));
+}

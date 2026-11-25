@@ -274,7 +274,8 @@ ifeq ($(HAVE_VULKAN), 1)
 					$(CORE_DIR)/core/rend/vulkan/vk_compute_drawer.c \
 					$(CORE_DIR)/core/rend/vulkan/vk_drawer.c \
 					$(CORE_DIR)/core/rend/vulkan/vk_screen_drawer.c \
-					$(CORE_DIR)/core/rend/vulkan/vk_renderer.c
+					$(CORE_DIR)/core/rend/vulkan/vk_renderer.c \
+					$(CORE_DIR)/core/rend/vulkan/oit/vk_oit_buffer.c
 	SOURCES_CXX += \
 					$(CORE_DIR)/core/rend/vulkan/oit/oit_drawer.cpp \
 					$(CORE_DIR)/core/rend/vulkan/oit/oit_renderer.cpp
@@ -442,7 +443,7 @@ SOURCES_C += $(CORE_DIR)/core/node_pool.c \
 endif
 
 SOURCES_C += $(CORE_DIR)/core/libretro/libretro.c
-SOURCES_CXX += $(CORE_DIR)/core/libretro/lr_contexts.cpp
+SOURCES_C += $(CORE_DIR)/core/libretro/lr_contexts.c
 
 SOURCES_C += $(CORE_DIR)/core/libretro/common.c
 SOURCES_C += $(CORE_DIR)/core/libretro/lr_input.c

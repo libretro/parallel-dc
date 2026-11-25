@@ -19,368 +19,49 @@
     along with Flycast.  If not, see <https://www.gnu.org/licenses/>.
 */
 #pragma once
-#include <algorithm>
-#include <memory>
-#include "../buffer.h"
-#include "../texture.h"
+#include "../vulkan_context.h"
 #include "../commandpool.h"
-#include "rend/oit_size.h"
-#include "rend/oit_bands.h"
+#include "vk_oit_buffer.h"
 
+/* The C++ per-pixel drawers' view of a vk_oit_buffers (vk_oit_buffer.h) */
 class OITBuffers
 {
 public:
-	/* The fragments are spread over this many storage buffers when the
-	 * device cannot bind them as one (the shaders' PixelBuffer[]) */
-	static constexpr u32 Bindings = 4;
-	/* Render passes of a frame whose fragments are counted (OITDrawer::Draw()) */
-	static constexpr u32 Counts = 64;
-	// Frame slots counted: the command pool's, which are the swap chain's
-	static constexpr u32 CountSlots = OIT_BANDS_SLOTS;
+	OITBuffers() { vk_oit_buffers_construct(&o); }
+	~OITBuffers() { vk_oit_buffers_free(&o); }
+	OITBuffers(const OITBuffers&) = delete;
+	OITBuffers& operator=(const OITBuffers&) = delete;
 
-	/* The fragment buffer for a picture of @width x @height: rend/oit_size.h,
-	 * no more than the device can bind. One storage buffer is no larger
-	 * than the device can allocate in one piece, nor than a shader can be
-	 * given as one (Mesa's software Vulkan stops at 128 MB, and a buffer
-	 * bound past the limit drew nothing at all). */
-	vk::DeviceSize PlannedSize(int width, int height) const
-	{
-		const u32 kib = VulkanContext::Instance()->GetVramBudget().available_kib();
-		if (compact)
-			return oit_fallback_buffer_bytes((u32)std::max(width, 0), (u32)std::max(height, 0), kib, (u64)BindingLimit() * Bindings);
-		return oit_buffer_bytes((u32)std::max(width, 0), (u32)std::max(height, 0), kib, (u64)BindingLimit() * Bindings);
-	}
-
-	/* The compute renderer draws the screen's frames: the buffer is for
-	 * the frames it leaves to the per-pixel renderer alone
-	 * (oit_fallback_buffer_bytes()). Before the renderer is set up, or
-	 * made again for a size: never while a game runs. */
-	void SetCompact(bool on)
-	{
-		compact = on;
-		plannedSize = 0;
-	}
-
+	vk::DeviceSize PlannedSize(int width, int height) const { return vk_oit_buffers_planned_size(&o, width, height); }
+	void SetCompact(bool on) { vk_oit_buffers_set_compact(&o, on); }
 	/* With SSAA and the HDR output: an image of each pixel's channel sums,
 	 * which the screen's last pass stores (OIT_FINAL_FRAG_S1_SUMS) for the
-	 * encode to take the exact average from (VulkanContext::HdrEncode()).
-	 * Before the renderer is set up, like SetCompact(), or made again for
-	 * a size; made at the next Init(). */
-	void SetSums(bool on)
-	{
-		sums = on;
-	}
-	bool Sums() const { return sums; }
+	 * encode to take the exact average from. Before the renderer is set
+	 * up, or made again for a size; made at the next Init(). */
+	void SetSums(bool on) { o.sums = on; }
+	bool Sums() const { return o.sums; }
 	// (null without)
-	vk::ImageView GetSumsView() const { return sumsAttachment ? sumsAttachment->GetImageView() : vk::ImageView(); }
-
-	/* The screen's size: the fragment buffer is made for it, at the next
-	 * Init(). Renders to a texture larger than the screen are drawn in
-	 * more bands rather than the buffer made again while a game runs. */
-	void SetScreenSize(int width, int height)
-	{
-		plannedSize = PlannedSize(width, height);
-	}
-
+	vk::ImageView GetSumsView() const { return vk::ImageView(o.sumsAttachment.view); }
+	void SetScreenSize(int width, int height) { vk_oit_buffers_set_screen_size(&o, width, height); }
 	void Init(int width, int height, CommandPool *commandPool)
 	{
-		const VulkanContext *context = VulkanContext::Instance();
-		if (!descSetLayout)
-		{
-			// Descriptor set and pipeline layout
-			vk::DescriptorSetLayoutBinding descSetLayoutBindings[] = {
-					{ 0, vk::DescriptorType::eStorageBuffer, Bindings, vk::ShaderStageFlagBits::eFragment },	// pixel buffer
-					{ 1, vk::DescriptorType::eStorageBuffer, 1, vk::ShaderStageFlagBits::eFragment },		// pixel counter
-					{ 2, vk::DescriptorType::eStorageImage, 1, vk::ShaderStageFlagBits::eFragment },		// a-buffer pointers
-					// (SSAA's channel sums, for the HDR output: written only with SetSums(), read by its shader alone)
-					{ 3, vk::DescriptorType::eStorageImage, 1, vk::ShaderStageFlagBits::eFragment },
-			};
-
-			descSetLayout = context->GetDevice().createDescriptorSetLayoutUnique(
-					vk::DescriptorSetLayoutCreateInfo(vk::DescriptorSetLayoutCreateFlags(), ARRAY_SIZE(descSetLayoutBindings), descSetLayoutBindings));
-		}
-		// (the renderer's set-up: the layout only, the buffers are for the screen's size)
-		if (width <= 0 || height <= 0)
-			return;
-		bool remake = false;
-		if (plannedSize == 0)
-			plannedSize = PlannedSize(width, height);
-		if (pixelBuffers[0] == nullptr || plannedSize != bufferSize)
-		{
-			MakePixelBuffers(commandPool);
-			remake = true;
-		}
-		if (!counts)
-		{
-			// (read by the CPU once a frame's fence has passed: see ChooseBands())
-			counts = std::unique_ptr<BufferData>(new BufferData(CountSlots * Counts * sizeof(u32), vk::BufferUsageFlagBits::eTransferDst));
-			std::fill(std::begin(written), std::end(written), 0);
-		}
-		if (width > maxWidth || height > maxHeight || !abufferPointerAttachment || sums != (sumsAttachment != nullptr))
-		{
-			maxWidth = std::max(maxWidth, width);
-			maxHeight = std::max(maxHeight, height);
-			/* Frames already handed to the GPU may still be using the image and
-			 * the descriptor set that names it. Neither is touched: the image is
-			 * retired, to be destroyed once those frames are done, and so is the
-			 * descriptor set, with a new one written in its place below.
-			 *
-			 * This used to wait for the frontend's frames, which are not the
-			 * ones in question - the core submits its own - and then rewrote
-			 * the descriptor set those were using. */
-			if (abufferPointerAttachment)
-				commandPool->DeferDelete(std::move(abufferPointerAttachment));
-			abufferPointerAttachment = std::unique_ptr<FramebufferAttachment>(
-					new FramebufferAttachment(context->GetPhysicalDevice(), context->GetDevice()));
-			// (cleared when it is first used: see OnNewFrame)
-			abufferPointerAttachment->Init(maxWidth, maxHeight, vk::Format::eR32Uint,
-					vk::ImageUsageFlagBits::eStorage | vk::ImageUsageFlagBits::eTransferDst);
-			abufferPointerTransitionNeeded = true;
-			if (sumsAttachment)
-				commandPool->DeferDelete(std::move(sumsAttachment));
-			if (sums)
-			{
-				sumsAttachment = std::unique_ptr<FramebufferAttachment>(
-						new FramebufferAttachment(context->GetPhysicalDevice(), context->GetDevice()));
-				sumsAttachment->Init(maxWidth, maxHeight, vk::Format::eR16G16B16A16Uint,
-						vk::ImageUsageFlagBits::eStorage | vk::ImageUsageFlagBits::eSampled, false);
-			}
-			firstFrameAfterInit = true;
-			remake = true;
-		}
-		if (!remake)
-			return;
-
-		if (descSet)
-			commandPool->DeferFree(std::move(descSet), context->GetDescriptorPool());
-		descSet = vk_alloc_desc_set(context->GetDevice(), context->GetDescriptorPool(), descSetLayout.get());
-		/* (on the stack: nothing allocated for them) */
-		vk::WriteDescriptorSet writeDescriptorSets[4];
-		u32 writes = 0;
-		// (the buffers not needed are given the first again: the shaders never go to them)
-		vk::DescriptorBufferInfo pixelBufferInfo[Bindings];
-		for (u32 i = 0; i < Bindings; i++)
-			pixelBufferInfo[i] = vk::DescriptorBufferInfo(*pixelBuffers[i < bindings ? i : 0]->buffer, 0, bindingSize);
-		writeDescriptorSets[writes++] = (vk::WriteDescriptorSet(*descSet, 0, 0, Bindings, vk::DescriptorType::eStorageBuffer, nullptr, pixelBufferInfo, nullptr));
-		vk::DescriptorBufferInfo pixelCounterBufferInfo(*pixelCounter->buffer, 0, 2 * sizeof(u32));
-		writeDescriptorSets[writes++] = (vk::WriteDescriptorSet(*descSet, 1, 0, 1, vk::DescriptorType::eStorageBuffer, nullptr, &pixelCounterBufferInfo, nullptr));
-		vk::DescriptorImageInfo pointerImageInfo(vk::Sampler(), abufferPointerAttachment->GetImageView(), vk::ImageLayout::eGeneral);
-		writeDescriptorSets[writes++] = (vk::WriteDescriptorSet(*descSet, 2, 0, 1, vk::DescriptorType::eStorageImage, &pointerImageInfo, nullptr, nullptr));
-		vk::DescriptorImageInfo sumsImageInfo(vk::Sampler(), sumsAttachment ? sumsAttachment->GetImageView() : vk::ImageView(), vk::ImageLayout::eGeneral);
-		if (sumsAttachment)
-			writeDescriptorSets[writes++] = (vk::WriteDescriptorSet(*descSet, 3, 0, 1, vk::DescriptorType::eStorageImage, &sumsImageInfo, nullptr, nullptr));
-		context->GetDevice().updateDescriptorSets(writes, writeDescriptorSets, 0, nullptr);
+		if (!vk_oit_buffers_init(&o, width, height, commandPool != nullptr ? &commandPool->p : nullptr))
+			throwResultException(vk::Result::eErrorOutOfDeviceMemory, "vk_oit_buffers_init");
 	}
-
 	void BindDescriptorSet(vk::CommandBuffer cmdBuffer, vk::PipelineLayout pipelineLayout, u32 firstSet)
 	{
-		cmdBuffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, pipelineLayout, firstSet, 1, &descSet.get(), 0, nullptr);
+		vkCmdBindDescriptorSets((VkCommandBuffer)cmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, (VkPipelineLayout)pipelineLayout,
+				firstSet, 1, &o.descSet, 0, nullptr);
 	}
+	void OnNewFrame(vk::CommandBuffer commandBuffer) { vk_oit_buffers_on_new_frame(&o, (VkCommandBuffer)commandBuffer); }
+	void ResetPixelCounter(vk::CommandBuffer commandBuffer) { vk_oit_buffers_reset_pixel_counter(&o, (VkCommandBuffer)commandBuffer); }
+	void CountPass(vk::CommandBuffer commandBuffer) { vk_oit_buffers_count_pass(&o, (VkCommandBuffer)commandBuffer); }
+	u32 ChooseBands(int slot, bool rtt) { return vk_oit_buffers_choose_bands(&o, slot, rtt); }
+	void SetBands(u32 bands) { vk_oit_buffers_set_bands(&o, bands); }
+	vk::DeviceSize GetSize() const { return o.bufferSize; }
+	void Term() { vk_oit_buffers_term(&o); }
+	vk::DescriptorSetLayout GetDescriptorSetLayout() const { return vk::DescriptorSetLayout(o.descSetLayout); }
+	bool isFirstFrameAfterInit() const { return o.firstFrameAfterInit; }
 
-	void OnNewFrame(vk::CommandBuffer commandBuffer)
-	{
-		if (sumsAttachment)
-		{
-			/* The sums: in the general layout from the first; after that,
-			 * the frame before's encode done reading them before this
-			 * frame's last pass stores them again */
-			vk::ImageSubresourceRange range(vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1);
-			vk::ImageMemoryBarrier barrier(vk::AccessFlags(), vk::AccessFlagBits::eShaderWrite,
-					abufferPointerTransitionNeeded ? vk::ImageLayout::eUndefined : vk::ImageLayout::eGeneral, vk::ImageLayout::eGeneral,
-					VK_QUEUE_FAMILY_IGNORED, VK_QUEUE_FAMILY_IGNORED, sumsAttachment->GetImage(), range);
-			commandBuffer.pipelineBarrier(vk::PipelineStageFlagBits::eFragmentShader, vk::PipelineStageFlagBits::eFragmentShader, {}, nullptr, nullptr,
-					barrier);
-		}
-		if (abufferPointerTransitionNeeded)
-		{
-			abufferPointerTransitionNeeded = false;
-
-			vk::ImageSubresourceRange imageSubresourceRange(vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1);
-			// (made ready for the clear below, which is what uses it next)
-			vk::ImageMemoryBarrier imageMemoryBarrier(vk::AccessFlags(), vk::AccessFlagBits::eTransferWrite,
-					vk::ImageLayout::eUndefined, vk::ImageLayout::eGeneral, VK_QUEUE_FAMILY_IGNORED, VK_QUEUE_FAMILY_IGNORED,
-					abufferPointerAttachment->GetImage(), imageSubresourceRange);
-			commandBuffer.pipelineBarrier(vk::PipelineStageFlagBits::eTopOfPipe, vk::PipelineStageFlagBits::eTransfer, {}, nullptr, nullptr,
-					imageMemoryBarrier);
-			/* The lists start empty. The image is new and holds nothing
-			 * that means anything; every frame leaves the lists empty for
-			 * the next, and this does it for the first. */
-			const vk::ClearColorValue endOfList(std::array<uint32_t, 4>{ 0xffffffffu, 0xffffffffu, 0xffffffffu, 0xffffffffu });
-			commandBuffer.clearColorImage(abufferPointerAttachment->GetImage(), vk::ImageLayout::eGeneral, endOfList, imageSubresourceRange);
-			vk::ImageMemoryBarrier cleared(vk::AccessFlagBits::eTransferWrite, vk::AccessFlagBits::eShaderRead | vk::AccessFlagBits::eShaderWrite,
-					vk::ImageLayout::eGeneral, vk::ImageLayout::eGeneral, VK_QUEUE_FAMILY_IGNORED, VK_QUEUE_FAMILY_IGNORED,
-					abufferPointerAttachment->GetImage(), imageSubresourceRange);
-			commandBuffer.pipelineBarrier(vk::PipelineStageFlagBits::eTransfer, vk::PipelineStageFlagBits::eFragmentShader, {}, nullptr, nullptr,
-					cleared);
-		}
-		else
-		{
-			firstFrameAfterInit = false;
-		}
-	}
-
-	void ResetPixelCounter(vk::CommandBuffer commandBuffer)
-	{
-    	/* The render passes and frames before this must be done counting... */
-    	vk::BufferMemoryBarrier barrier(vk::AccessFlagBits::eShaderWrite, vk::AccessFlagBits::eTransferWrite,
-    			VK_QUEUE_FAMILY_IGNORED, VK_QUEUE_FAMILY_IGNORED, *pixelCounter->buffer, 0, VK_WHOLE_SIZE);
-    	commandBuffer.pipelineBarrier(vk::PipelineStageFlagBits::eFragmentShader, vk::PipelineStageFlagBits::eTransfer,
-    			{}, nullptr, barrier, nullptr);
-    	// (the count back at nothing, and after it how many fragments there is room for)
-    	vk::BufferCopy copy(0, 0, 2 * sizeof(u32));
-    	commandBuffer.copyBuffer(*pixelCounterReset->buffer, *pixelCounter->buffer, 1, &copy);
-    	/* ...and the next render pass's shaders must see it back at nothing. (From upstream.) */
-    	barrier.srcAccessMask = vk::AccessFlagBits::eTransferWrite;
-    	barrier.dstAccessMask = vk::AccessFlagBits::eShaderRead | vk::AccessFlagBits::eShaderWrite;
-    	commandBuffer.pipelineBarrier(vk::PipelineStageFlagBits::eTransfer, vk::PipelineStageFlagBits::eFragmentShader,
-    			{}, nullptr, barrier, nullptr);
-	}
-
-	/* How many fragments the render pass just ended asked for, those that
-	 * found no room too (the shaders count them all), copied out for the
-	 * CPU to read when this frame slot comes round again: see ChooseBands().
-	 * Nothing waits for it. */
-	void CountPass(vk::CommandBuffer commandBuffer)
-	{
-		if (countSlot >= CountSlots || written[countSlot] >= Counts)
-			return;
-		vk::BufferMemoryBarrier barrier(vk::AccessFlagBits::eShaderWrite, vk::AccessFlagBits::eTransferRead,
-				VK_QUEUE_FAMILY_IGNORED, VK_QUEUE_FAMILY_IGNORED, *pixelCounter->buffer, 0, VK_WHOLE_SIZE);
-		commandBuffer.pipelineBarrier(vk::PipelineStageFlagBits::eFragmentShader, vk::PipelineStageFlagBits::eTransfer,
-				{}, nullptr, barrier, nullptr);
-		const vk::DeviceSize offset = (countSlot * Counts + written[countSlot]) * sizeof(u32);
-		vk::BufferCopy copy(0, offset, sizeof(u32));
-		commandBuffer.copyBuffer(*pixelCounter->buffer, *counts->buffer, 1, &copy);
-		// (and the counter is not reset before it has been read)
-		vk::BufferMemoryBarrier toHost(vk::AccessFlagBits::eTransferWrite, vk::AccessFlagBits::eHostRead,
-				VK_QUEUE_FAMILY_IGNORED, VK_QUEUE_FAMILY_IGNORED, *counts->buffer, offset, sizeof(u32));
-		commandBuffer.pipelineBarrier(vk::PipelineStageFlagBits::eTransfer, vk::PipelineStageFlagBits::eTransfer | vk::PipelineStageFlagBits::eHost,
-				{}, nullptr, toHost, nullptr);
-		written[countSlot]++;
-	}
-
-	/* The bands a frame about to be drawn in frame slot @slot is drawn in,
-	 * a render to a texture's if @rtt (rend/oit_bands.h), the slot's fence
-	 * waited for by the command pool: what the frame drawn there before
-	 * counted goes to the bands of its kind, whichever drawer drew it */
-	u32 ChooseBands(int slot, bool rtt)
-	{
-		countSlot = slot >= 0 && slot < (int)CountSlots ? (u32)slot : CountSlots;
-		if (countSlot == CountSlots)
-			return bandState.bands[rtt ? 1 : 0];
-		if (written[countSlot] != 0)
-		{
-			const u32 *count = (const u32 *)counts->MapMemory() + countSlot * Counts;
-			const u32 kind = bandState.rtt[countSlot];
-			u32 fragments = 0;
-
-			for (u32 i = 0; i < written[countSlot]; i++)
-				fragments = std::max(fragments, count[i]);
-			if (oit_bands_count(&bandState, countSlot, fragments, capacity))
-				NOTICE_LOG(RENDERER, "Vulkan per-pixel renderer: %u translucent fragments in a band of %u%s, room for %u: %u band%s\n",
-						fragments, std::max(bandState.drawn_in[countSlot], 1u), kind ? " (a render to a texture)" : "",
-						capacity, bandState.bands[kind], bandState.bands[kind] > 1 ? "s" : "");
-		}
-		written[countSlot] = 0;
-		return oit_bands_begin(&bandState, countSlot, rtt);
-	}
-	// ...and the bands this one is drawn in
-	void SetBands(u32 bands)
-	{
-		if (countSlot < CountSlots)
-			bandState.drawn_in[countSlot] = bands;
-	}
-
-	vk::DeviceSize GetSize() const { return bufferSize; }
-
-	void Term()
-	{
-		for (auto& buffer : pixelBuffers)
-			buffer.reset();
-		bufferSize = 0;
-		pixelCounter.reset();
-		pixelCounterReset.reset();
-		counts.reset();
-		abufferPointerAttachment.reset();
-		sumsAttachment.reset();
-		descSet.reset();
-		maxWidth = maxHeight = 0;
-		oit_bands_init(&bandState);
-	}
-
-	vk::DescriptorSetLayout GetDescriptorSetLayout() const { return *descSetLayout; }
-	bool isFirstFrameAfterInit() const { return firstFrameAfterInit; }
-
-private:
-	static oit_bands_t MakeBandState()
-	{
-		oit_bands_t b;
-		oit_bands_init(&b);
-		return b;
-	}
-	static vk::DeviceSize BindingLimit()
-	{
-		const VulkanContext *context = VulkanContext::Instance();
-		return std::min<vk::DeviceSize>(context->GetMaxMemoryAllocationSize(), context->GetMaxStorageBufferRange())
-				& ~(vk::DeviceSize)(OIT_FRAGMENT_BYTES - 1);
-	}
-
-	/* The fragment buffer, of plannedSize: in as few storage buffers as
-	 * the device allows, all of one size. The ones it replaces are retired
-	 * like the pointer image, and so is the counter's reset value, which
-	 * says how many fragments there is room for. */
-	void MakePixelBuffers(CommandPool *commandPool)
-	{
-		const vk::DeviceSize limit = BindingLimit();
-		bindings = (u32)std::min<vk::DeviceSize>((plannedSize + limit - 1) / limit, Bindings);
-		bindingSize = (plannedSize / bindings) & ~(vk::DeviceSize)(OIT_FRAGMENT_BYTES - 1);
-		bufferSize = plannedSize;
-		capacity = (u32)std::min<vk::DeviceSize>(bindingSize / OIT_FRAGMENT_BYTES * bindings, 0xffffffffu);
-		for (u32 i = 0; i < Bindings; i++)
-		{
-			if (pixelBuffers[i])
-				commandPool->DeferDelete(std::move(pixelBuffers[i]));
-			if (i < bindings)
-				pixelBuffers[i] = std::unique_ptr<BufferData>(new BufferData(bindingSize,
-						vk::BufferUsageFlagBits::eStorageBuffer, vk::MemoryPropertyFlagBits::eDeviceLocal));
-		}
-		if (!pixelCounter)
-			pixelCounter = std::unique_ptr<BufferData>(new BufferData(2 * sizeof(u32),
-					vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eTransferDst | vk::BufferUsageFlagBits::eTransferSrc,
-					vk::MemoryPropertyFlagBits::eDeviceLocal));
-		if (pixelCounterReset)
-			commandPool->DeferDelete(std::move(pixelCounterReset));
-		pixelCounterReset = std::unique_ptr<BufferData>(new BufferData(2 * sizeof(u32), vk::BufferUsageFlagBits::eTransferSrc));
-		const u32 reset[2] = { 0, capacity };
-		pixelCounterReset->upload(sizeof(reset), reset);
-		NOTICE_LOG(RENDERER, "Vulkan per-pixel renderer: fragment buffer of %u MB in %u storage buffer%s (room for %u fragments)\n",
-				(u32)(bufferSize >> 20), bindings, bindings > 1 ? "s" : "", capacity);
-	}
-
-	vk::UniqueDescriptorSet descSet;
-	vk::UniqueDescriptorSetLayout descSetLayout;
-
-	std::unique_ptr<BufferData> pixelBuffers[Bindings];
-	bool compact = false;
-	vk::DeviceSize plannedSize = 0;
-	vk::DeviceSize bufferSize = 0;
-	vk::DeviceSize bindingSize = 0;
-	u32 bindings = 0;
-	u32 capacity = 0;
-	std::unique_ptr<BufferData> pixelCounter;
-	std::unique_ptr<BufferData> pixelCounterReset;
-	std::unique_ptr<FramebufferAttachment> abufferPointerAttachment;
-	std::unique_ptr<FramebufferAttachment> sumsAttachment;
-	bool sums = false;
-	bool abufferPointerTransitionNeeded = false;
-	bool firstFrameAfterInit = false;
-	int maxWidth = 0;
-	int maxHeight = 0;
-
-	// the counts copied out, Counts for each frame slot; CPU side
-	std::unique_ptr<BufferData> counts;
-	u32 written[CountSlots] = {};
-	u32 countSlot = CountSlots;
-	// the bands of the screen's frames and of renders to a texture, and what each slot's was drawn in
-	oit_bands_t bandState = MakeBandState();
+	mutable vk_oit_buffers o;
 };
