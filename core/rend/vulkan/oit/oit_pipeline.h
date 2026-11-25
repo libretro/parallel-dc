@@ -152,6 +152,7 @@ public:
 		return vk::RenderPass(renderPass);
 	}
 	void Reset() { vk_oit_pipeline_mgr_reset(&m); }
+	vk_oit_pipeline_mgr *Raw() { return &m; }
 
 protected:
 	vk_oit_pipeline_mgr m;

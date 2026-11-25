@@ -41,7 +41,7 @@
 #      - on a device, when CONTENT and STATE are given: the core is built
 #        again with RACE_TEST, which records the draws between two
 #        barriers a triangle at a time, the draws' triangles taken in turn
-#        (vulkan/oit/oit_drawer.cpp, gl4/abuffer.c, dx12/oit/
+#        (vulkan/oit/vk_oit_drawer.c, gl4/abuffer.c, dx12/oit/
 #        dx12_oitrenderer.c: list_draws_*()), as a GPU may run them, and the
 #        picture it draws has to be the same, byte for byte, as the core's
 #        own - with Vulkan (lavapipe) and OpenGL 4 (llvmpipe), per-pixel
@@ -124,7 +124,7 @@ closing() {
       /(listDraws\.Draw|list_draws_draw)\(/ && state == 0 { barrier = 0 }
       END { exit !(before && after) }' "$1" || bad "$1: the translucent modifier volumes' closing draw has no barrier before and after it ($3)"
 }
-closing $R/vulkan/oit/oit_drawer.cpp 'GetTrModifierVolumePipeline[(]mv_mode == 1' Vulkan
+closing $R/vulkan/oit/vk_oit_drawer.c 'vk_oit_pipeline_mgr_trmodvol[(]d->pipelines, sum' Vulkan
 closing $R/gl4/abuffer.c 'g_abuffer_tr_modvol_shaders[[]mv_mode == 1' "OpenGL 4"
 closing $R/dx12/oit/dx12_oitrenderer.c 'DX12_OF_MV_INCLUSION : DX12_OF_MV_EXCLUSION' "Direct3D 12"
 
@@ -173,14 +173,14 @@ if [ -z "$WORK" ]; then
    [ -n "$KEEP" ] || trap 'rm -rf "$WORK"' EXIT
 fi
 mkdir -p "$WORK/shots"
-[ -f parallel_dc_libretro.so ] && [ -f core/rend/vulkan/oit/oit_drawer.o ] || { echo "speckle_test: build the core first (make platform=unix)" >&2; exit 2; }
+[ -f parallel_dc_libretro.so ] && [ -f core/rend/vulkan/oit/vk_oit_drawer.o ] || { echo "speckle_test: build the core first (make platform=unix)" >&2; exit 2; }
 LVP=/usr/share/vulkan/icd.d/lvp_icd.json
 [ -f $LVP ] && [ -z "$VK_ICD_FILENAMES" ] && export VK_ICD_FILENAMES=$LVP
 
 ${CC:-cc} -O2 -Icore/libretro-common/include -o "$WORK/lagmeter" tools/lag/lagmeter.c -ldl -lEGL -lGL
 # the core again, its per-pixel renderers' list draws recorded as a GPU may run them
-LINK=$(make -n platform=unix -W core/rend/vulkan/oit/oit_drawer.cpp 2>/dev/null | tail -1)
-for file in core/rend/vulkan/oit/oit_drawer.cpp core/rend/gl4/abuffer.c; do
+LINK=$(make -n platform=unix -W core/rend/vulkan/oit/vk_oit_drawer.c 2>/dev/null | tail -1)
+for file in core/rend/vulkan/oit/vk_oit_drawer.c core/rend/gl4/abuffer.c; do
    src=${file%.*}
    o=$WORK/$(basename $src)_race.o
    line=$(make -n platform=unix -W $file $src.o 2>/dev/null | grep -m1 "$file")

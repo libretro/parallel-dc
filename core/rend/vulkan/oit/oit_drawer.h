@@ -32,12 +32,22 @@
 #include "oit_buffer.h"
 #include "../drawer.h"
 #include "../motion_pass.h"
+#include "vk_oit_drawer.h"
 
+/* The C++ per-pixel drawers' view of a vk_oit_drawer (vk_oit_drawer.h) */
 class OITDrawer : public BaseDrawer
 {
 public:
-	virtual ~OITDrawer() = default;
-	bool Draw(const Texture *fogTexture, const Texture *paletteTexture);
+	OITDrawer() { vk_oit_drawer_construct(&o, &b, Kind(), this); }
+	virtual ~OITDrawer() { vk_oit_drawer_term(&o); }
+	bool Draw(const Texture *fogTexture, const Texture *paletteTexture)
+	{
+		const vk::CommandBuffer cmdBuffer = NewFrame();
+		if (!vk_oit_drawer_draw(&o, (VkCommandBuffer)cmdBuffer, (VkImageView)fogTexture->GetImageView(),
+				(VkImageView)paletteTexture->GetImageView()))
+			throwResultException(vk::Result::eErrorOutOfDeviceMemory, "vk_oit_drawer_draw");
+		return !pvrrc.isRTT;
+	}
 
 	virtual vk::CommandBuffer NewFrame() = 0;
 	virtual void EndFrame() = 0;
@@ -45,169 +55,88 @@ public:
 	/* Clipped to the band being drawn, when a frame is drawn in bands */
 	void SetScissor(const vk::CommandBuffer& cmdBuffer, const vk::Rect2D& scissor)
 	{
-		if (band.extent.height == 0)
-		{
-			BaseDrawer::SetScissor(cmdBuffer, scissor);
-			return;
-		}
-		const s32 top = std::max(scissor.offset.y, band.offset.y);
-		const s32 bottom = std::max(top, std::min(scissor.offset.y + (s32)scissor.extent.height, band.offset.y + (s32)band.extent.height));
-		BaseDrawer::SetScissor(cmdBuffer, vk::Rect2D(vk::Offset2D(scissor.offset.x, top), vk::Extent2D(scissor.extent.width, (u32)(bottom - top))));
+		vk_oit_drawer_set_scissor(&o, (VkCommandBuffer)cmdBuffer, &static_cast<const VkRect2D&>(scissor));
 	}
 
 	/* The attachments made, for another drawer to draw into as well (see
 	 * OITTextureDrawer::ShareAttachments()): they are at least this large */
 	bool AttachmentsCover(u32 width, u32 height) const
 	{
-		return colorAttachments[0] && (int)width <= maxWidth && (int)height <= maxHeight;
+		return o.colorAttachments[0].image != VK_NULL_HANDLE && (int)width <= o.maxWidth && (int)height <= o.maxHeight;
 	}
-	FramebufferAttachment *ColorAttachment(int i) const { return colorAttachments[i].get(); }
-	FramebufferAttachment *DepthAttachment() const { return depthAttachment.get(); }
+	FramebufferAttachment *ColorAttachment(int i) { return reinterpret_cast<FramebufferAttachment *>(&o.colorAttachments[i]); }
+	FramebufferAttachment *DepthAttachment() { return reinterpret_cast<FramebufferAttachment *>(&o.depthAttachment); }
+	vk_oit_drawer *Raw() { return &o; }
 
 protected:
 	// SSAA's channel sums, when the buffers have them (OITBuffers::SetSums())
-	vk::ImageView GetSumsView() const { return oitBuffers->GetSumsView(); }
+	vk::ImageView GetSumsView() const { return vk::ImageView(o.buffers->sumsAttachment.view); }
 	void Init(SamplerManager *samplerManager, OITPipelineManager *pipelineManager, OITBuffers *oitBuffers)
 	{
 		this->pipelineManager = pipelineManager;
-		this->samplerManager = samplerManager;
-		if (!quadBuffer)
-			quadBuffer = std::unique_ptr<QuadBuffer>(new QuadBuffer());
-		this->oitBuffers = oitBuffers;
-		if (descriptorSets.size() > GetContext()->GetSwapChainSize())
-			descriptorSets.resize(GetContext()->GetSwapChainSize());
-		else
-			while (descriptorSets.size() < GetContext()->GetSwapChainSize())
-			{
-				descriptorSets.push_back(OITDescriptorSets());
-				descriptorSets.back().Init(samplerManager,
-						pipelineManager->GetPipelineLayout(),
-						pipelineManager->GetPerFrameDSLayout(),
-						pipelineManager->GetPerPolyDSLayout(),
-						pipelineManager->GetColorInputDSLayout());
-			}
-		/* (a frame's buffers made now, not when it first draws: a render
-		 * to a texture may come long after the game started) */
-		MakeVertexUniforms();
-		GetMainBuffer(0);
+		if (!vk_oit_drawer_init(&o, samplerManager->Raw(), pipelineManager->Raw(), &oitBuffers->o))
+			throwResultException(vk::Result::eErrorOutOfDeviceMemory, "vk_oit_drawer_init");
 	}
-	void Term()
+	void Term() { vk_oit_drawer_term(&o); }
+	int GetCurrentImage() const { return o.imageIndex; }
+	void NewImage() { vk_oit_drawer_new_image(&o); }
+	OITDescriptorSets& GetCurrentDescSet() { return reinterpret_cast<OITDescriptorSets&>(*vk_oit_drawer_desc_set(&o)); }
+
+	void MakeBuffers(int width, int height)
 	{
-		quadBuffer.reset();
-		colorAttachments[0].reset();
-		colorAttachments[1].reset();
-		tempFramebuffers.clear();
-		depthAttachment.reset();
-		depthAttachments.clear();
-		mainBuffers.clear();
-		vk_base_drawer_free_vertex_uniforms(&b);
-		descriptorSets.clear();
+		if (!vk_oit_drawer_make_buffers(&o, width, height))
+			throwResultException(vk::Result::eErrorOutOfDeviceMemory, "vk_oit_drawer_make_buffers");
 	}
-
-	int GetCurrentImage() const { return imageIndex; }
-
-	void NewImage() { imageIndex = (imageIndex + 1) % GetContext()->GetSwapChainSize(); }
-
-	OITDescriptorSets& GetCurrentDescSet() { return descriptorSets[GetCurrentImage()]; }
-
-	BufferData* GetMainBuffer(u32 size)
-	{
-		if (mainBuffers.empty())
-		{
-			for (int i = 0; i < GetContext()->GetSwapChainSize(); i++)
-				mainBuffers.push_back(std::unique_ptr<BufferData>(new BufferData(std::max(512 * 1024u, size),
-						vk::BufferUsageFlagBits::eVertexBuffer | vk::BufferUsageFlagBits::eIndexBuffer | vk::BufferUsageFlagBits::eUniformBuffer
-						| vk::BufferUsageFlagBits::eStorageBuffer)));
-		}
-		else if (mainBuffers[GetCurrentImage()]->bufferSize < size)
-		{
-			u32 newSize = mainBuffers[GetCurrentImage()]->bufferSize;
-			while (newSize < size)
-				newSize *= 2;
-			INFO_LOG(RENDERER, "Increasing main buffer size %d -> %d\n", (u32)mainBuffers[GetCurrentImage()]->bufferSize, newSize);
-			mainBuffers[GetCurrentImage()] = std::unique_ptr<BufferData>(new BufferData(newSize,
-					vk::BufferUsageFlagBits::eVertexBuffer | vk::BufferUsageFlagBits::eIndexBuffer | vk::BufferUsageFlagBits::eUniformBuffer
-					| vk::BufferUsageFlagBits::eStorageBuffer));
-	}
-		return mainBuffers[GetCurrentImage()].get();
-	};
-
-	void MakeBuffers(int width, int height);
 	// (MakeBuffers()'s buffers alone)
-	void InitBuffers(int width, int height) { oitBuffers->Init(width, height, commandPool); }
+	void InitBuffers(int width, int height)
+	{
+		if (!vk_oit_buffers_init(o.buffers, width, height, b.pool))
+			throwResultException(vk::Result::eErrorOutOfDeviceMemory, "vk_oit_buffers_init");
+	}
 	/* (MakeBuffers()'s attachments and their framebuffers, at least
 	 * @width by @height) */
-	void MakeAttachments(int width, int height);
+	void MakeAttachments(int width, int height)
+	{
+		if (!vk_oit_drawer_make_attachments(&o, width, height))
+			throwResultException(vk::Result::eErrorOutOfDeviceMemory, "vk_oit_drawer_make_attachments");
+	}
 	// ...and none: they go once the frames that may use them are done
-	void DropAttachments();
-	void MakeSampleAttachments();
-	vk::DeviceSize GetIndexOffset() const { return offsets.indexOffset; }
+	void DropAttachments() { vk_oit_drawer_drop_attachments(&o); }
+	vk::DeviceSize GetIndexOffset() const { return o.offsets.indexOffset; }
 	// (what the lists of fragments a render pass asked for: OITBuffers::CountPass())
-	void CountPass(vk::CommandBuffer cmdBuffer) { oitBuffers->CountPass(cmdBuffer); }
-	void SetScreenSize(int width, int height) { oitBuffers->SetScreenSize(width, height); }
+	void CountPass(vk::CommandBuffer cmdBuffer) { vk_oit_buffers_count_pass(o.buffers, (VkCommandBuffer)cmdBuffer); }
+	void SetScreenSize(int width, int height) { vk_oit_buffers_set_screen_size(o.buffers, width, height); }
 	virtual vk::Format GetColorFormat() const = 0;
 	virtual vk::Framebuffer GetFinalFramebuffer() const = 0;
 	/* In the colour subpass of a frame's first pass, before any polygon:
 	 * the screen's drawer puts the last picture there when the render will
 	 * cover only part of it. True if it drew, and what was bound is gone. */
 	virtual bool DrawLastPicture(vk::CommandBuffer) { return false; }
+	FramebufferAttachment *Depth() { return reinterpret_cast<FramebufferAttachment *>(vk_oit_drawer_depth(&o)); }
 
-	vk::Rect2D viewport;
-	/* A frame's translucent fragments that do not all fit in the buffer
-	 * (OITBuffers) are not dropped: the frame is drawn in this many
-	 * horizontal bands, all of it once a band, clipped to the band. Each
-	 * band's lists start empty, so they need the room of one band's
-	 * fragments. How many is told by the frames before (OITBuffers::ChooseBands()). */
-	u32 bands = 1;
-	vk::Rect2D band;	// the one being drawn; no height when not in bands
-	std::array<std::unique_ptr<FramebufferAttachment>, 2> colorAttachments;
-	std::unique_ptr<FramebufferAttachment> depthAttachment;
-	/* For the temporal upscaler (rend/upscaler.h): the depth is one an
-	 * image, kept past the frame and readable, as the frontend has the
-	 * frames for a while; one for all otherwise */
-	bool upscaled = false;
-	std::vector<std::unique_ptr<FramebufferAttachment>> depthAttachments;
-	FramebufferAttachment *Depth() const { return upscaled ? depthAttachments[GetCurrentImage()].get() : depthAttachment.get(); }
-	vk::CommandBuffer currentCommandBuffer;
+	vk_oit_drawer o;
+	/* (its members, as the C++ drawers name them) */
+	vk::Rect2D& viewport = reinterpret_cast<vk::Rect2D&>(o.viewport);
+	bool& upscaled = o.upscaled;
+	int& maxWidth = o.maxWidth;
+	int& maxHeight = o.maxHeight;
+	vk::CommandBuffer& currentCommandBuffer = reinterpret_cast<vk::CommandBuffer&>(o.cmd);
 	OITPipelineManager *pipelineManager = nullptr;
-	int maxWidth = 0;
-	int maxHeight = 0;
-	/* The attachments a frame is drawn into: this drawer's own, or another
-	 * one's that it shares (OITTextureDrawer::ShareAttachments()) */
-	OITDrawer *attachmentsOf = this;
-	u32 attachmentSamples = 1;	// SSAA's, of the attachments made
-	bool attachmentsUpscaled = false;	// ...and whether they were made for the upscaler
 
 private:
-   void DrawPoly(const vk::CommandBuffer& cmdBuffer, u32 listType, bool autosort, Pass pass,
-			const PolyParam& poly, u32 first, u32 count);
-   void DrawList(const vk::CommandBuffer& cmdBuffer, u32 listType, bool sortTriangles, Pass pass,
-			const List<PolyParam>& polys, u32 first, u32 last);
-	template<bool Translucent>
-	void DrawModifierVolumes(const vk::CommandBuffer& cmdBuffer, int first, int count, const ModifierVolumeParam *modVolParams);
-	void UploadMainBuffer(
-			const OITDescriptorSets::FragmentShaderUniforms& fragmentUniforms);
-
-	struct {
-		vk::DeviceSize indexOffset = 0;
-		vk::DeviceSize modVolOffset = 0;
-		vk::DeviceSize fragmentUniformOffset = 0;
-		vk::DeviceSize polyParamsOffset = 0;
-		vk::DeviceSize polyParamsSize = 0;
-	} offsets;
-
-	std::unique_ptr<QuadBuffer> quadBuffer;
-
-	// the render passes' before the last, two taking turns; by image when the depth is one an image
-	std::vector<std::array<vk::UniqueFramebuffer, 2>> tempFramebuffers;
-
-	SamplerManager *samplerManager = nullptr;
-	OITBuffers *oitBuffers = nullptr;
-	bool needDepthTransition = false;
-	int imageIndex = 0;
-	std::vector<OITDescriptorSets> descriptorSets;
-	std::vector<std::unique_ptr<BufferData>> mainBuffers;
+	static VkFramebuffer FinalFramebufferOf(void *self) { return (VkFramebuffer)static_cast<OITDrawer *>(self)->GetFinalFramebuffer(); }
+	static bool DrawLastPictureOf(void *self, VkCommandBuffer cmd)
+	{
+		return static_cast<OITDrawer *>(self)->DrawLastPicture(vk::CommandBuffer(cmd));
+	}
+	static const vk_oit_drawer_kind *Kind()
+	{
+		static const vk_oit_drawer_kind kind = { FinalFramebufferOf, DrawLastPictureOf };
+		return &kind;
+	}
 };
+static_assert(sizeof(FramebufferAttachment) == sizeof(vk_attachment) && sizeof(OITDescriptorSets) == sizeof(vk_oit_desc_sets)
+		&& sizeof(vk::CommandBuffer) == sizeof(VkCommandBuffer), "the C++ views are their C structs");
 
 class OITScreenDrawer : public OITDrawer
 {
@@ -227,6 +156,7 @@ public:
 	{
 		// (the upscaler wants the depth kept, which SSAA's samples are not)
 		upscaled = upscaler_active() && samples == 1;
+		o.colorFormat = (VkFormat)GetColorFormat();
 		this->shaderManager = shaderManager;
 		if (!screenPipelineManager)
 			screenPipelineManager = std::unique_ptr<OITPipelineManager>(new OITPipelineManager());
@@ -237,8 +167,8 @@ public:
 		if (upscaled)
 		{
 			std::vector<vk::ImageView> depthViews;
-			for (const auto& attachment : depthAttachments)
-				depthViews.push_back(attachment->GetImageView());
+			for (u32 i = 0; i < o.depthAttachmentCount; i++)
+				depthViews.push_back(vk::ImageView(o.depthAttachments[i].view));
 			motionPass.Init(viewport.extent, GetContext()->GetDepthFormat(), vk::ImageLayout::eDepthStencilReadOnlyOptimal,
 					depthViews, screenPipelineManager->GetPipelineLayout(),
 					shaderManager->GetMotionVertexShader(), shaderManager->GetMotionShader(), commandPool);
@@ -496,7 +426,7 @@ public:
 	void ShareAttachments(OITScreenDrawer *screen)
 	{
 		this->screen = screen;
-		attachmentsOf = this;
+		o.attachmentsOf = &o;
 		if (screen != nullptr && screen->SharesAttachments())
 			DropAttachments();
 		else
