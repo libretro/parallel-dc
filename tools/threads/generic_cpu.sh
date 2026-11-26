@@ -32,7 +32,7 @@ trap cleanup EXIT
 # (the compilers, with the flags they are to have, under their own names)
 if [ -n "$CROSS_FLAGS" ]; then
    mkdir -p "$WORK/bin"
-   for TOOL in gcc g++; do
+   for TOOL in gcc; do
       printf '#!/bin/sh\nexec %s %s "$@"\n' "$(command -v "$CROSS-$TOOL")" "$CROSS_FLAGS" > "$WORK/bin/$CROSS-$TOOL"
       chmod +x "$WORK/bin/$CROSS-$TOOL"
    done
@@ -48,11 +48,11 @@ fi
 git worktree add --detach "$WORK/src" >/dev/null
 MAKEARGS="-C $WORK/src -j$(nproc) platform=unix ARCH=$ARCH CC=$CROSS-gcc $MAKE_EXTRA"
 # An OpenGL that does nothing to link with, of the functions the core calls
-make $MAKEARGS CXX="$CROSS-g++ -L$WORK/gl" -k >/dev/null 2>&1 || true
+make $MAKEARGS LDFLAGS_END=-L$WORK/gl -k >/dev/null 2>&1 || true
 find "$WORK/src/core" -name '*.o' -exec "$CROSS-nm" --undefined-only {} + 2>/dev/null \
    | awk '{print $NF}' | grep '^gl' | sort -u | python3 tools/threads/headless_gl.py > "$WORK/gl/nogl.c"
 "$CROSS-gcc" -O1 -shared -fPIC -o "$WORK/gl/libGL.so" "$WORK/gl/nogl.c"
-make $MAKEARGS CXX="$CROSS-g++ -L$WORK/gl"
+make $MAKEARGS LDFLAGS_END=-L$WORK/gl
 
 LD_LIBRARY_PATH=$WORK/gl CC=$CROSS-gcc NM=$CROSS-nm RUN="$QEMU -L $SYSROOT" WORK=$WORK/run \
    sh tools/threads/headless.sh "$WORK/src/parallel_dc_libretro.so"

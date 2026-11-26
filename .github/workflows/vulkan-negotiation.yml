@@ -379,12 +379,14 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
             build-essential mingw-w64 wine wine64 xvfb mesa-vulkan-drivers libvulkan1 python3 libgl1-mesa-dri
-      - name: Build the core for Windows
-        run: make -j"$(nproc)" platform=win CC=x86_64-w64-mingw32-gcc CXX=x86_64-w64-mingw32-g++
+      - name: Build the core for Windows, with no C++ compiler
+        run: make -j"$(nproc)" platform=win CC=x86_64-w64-mingw32-gcc CXX=false
+      - name: No C++ runtime needed by the Windows core
+        run: OBJDUMP=x86_64-w64-mingw32-objdump sh tools/c89/no_cxx_runtime.sh parallel_dc_libretro.dll
       - name: The core's C as MSVC C89 takes it, with the Windows headers (AGENTS.md)
-        run: CC=x86_64-w64-mingw32-gcc sh tools/c89/c89_check.sh platform=win CC=x86_64-w64-mingw32-gcc CXX=x86_64-w64-mingw32-g++
+        run: CC=x86_64-w64-mingw32-gcc sh tools/c89/c89_check.sh platform=win CC=x86_64-w64-mingw32-gcc
       - name: The core's C for 32-bit Windows as MSVC C89 takes it, with the system's calling conventions (a handler the system calls is WINAPI)
-        run: CC=i686-w64-mingw32-gcc sh tools/c89/c89_check.sh platform=win ARCH=i686 CC=i686-w64-mingw32-gcc CXX=i686-w64-mingw32-g++
+        run: CC=i686-w64-mingw32-gcc sh tools/c89/c89_check.sh platform=win ARCH=i686 CC=i686-w64-mingw32-gcc
       - name: Nothing built for Windows that the core does not use
         run: NM=x86_64-w64-mingw32-nm OBJDUMP=x86_64-w64-mingw32-objdump python3 tools/unused_sources.py platform=win
       - name: HDR output with Direct3D 11 and 12 (24-bit, refused, HDR10, scRGB, each renderer)

@@ -7,7 +7,6 @@ INCFLAGS    += -I$(CORE_DIR)/core/libretro \
 					-I$(LIBRETRO_COMM_DIR)/include
 
 SOURCES_C   ?=
-SOURCES_CXX :=
 SOURCES_C += $(CORE_DIR)/core/hw/pvr/renderer_dispatch.c
 
 # CHD images are read by libretro-common's clean-room rchd reader. Its
@@ -104,7 +103,7 @@ SOURCES_C += $(CORE_DIR)/core/hw/maple/jvs_bridge.c
 SOURCES_C += $(CORE_DIR)/core/hw/maple/maple_devs.c
 # ...and a strip's indices (make_index()'s)
 SOURCES_C += $(CORE_DIR)/core/hw/pvr/ta_index.c
-# ...and what C++ has become C, MSVC C89 (AGENTS.md: gradually)
+# ...and more of the core's C
 SOURCES_C += $(CORE_DIR)/core/hw/gdrom/gdrom_response.c \
 					$(CORE_DIR)/core/hw/maple/vmu_beep.c \
 					$(CORE_DIR)/core/rend/last_picture.c \

@@ -15,7 +15,7 @@ CC=${CC:-arm-webos-linux-gnueabi-gcc}
 WORK=$(mktemp -d "${TMPDIR:-/tmp}/webos_libc.XXXXXX")
 trap 'rm -rf "$WORK"' EXIT
 
-make -n platform=webos CC=WEBOS_CC CXX=WEBOS_CXX 2>/dev/null \
+make -n platform=webos CC=WEBOS_CC 2>/dev/null \
    | grep '^WEBOS_CC .* -c .*\.c ' \
    | sed -e "s#^WEBOS_CC #$CC #" -e 's/ -o [^ ]*\.o/ /' -e 's/ -MMD -MP//' \
          -e 's/ -c / -fsyntax-only -Werror=implicit-function-declaration -Werror=implicit-int /' \

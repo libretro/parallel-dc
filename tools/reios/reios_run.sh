@@ -19,7 +19,7 @@ mkdir -p "$WORK/game"
 trap 'rm -rf "$WORK"' EXIT
 
 if [ -n "$WINDOWS" ]; then
-   MAKEARGS="platform=win CC=x86_64-w64-mingw32-gcc CXX=x86_64-w64-mingw32-g++"
+   MAKEARGS="platform=win CC=x86_64-w64-mingw32-gcc"
    LIBS="-static"
    EXE="$WORK/reios_test.exe"
    GAME=$(winepath -w "$WORK/game" 2>/dev/null)

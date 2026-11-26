@@ -23,7 +23,7 @@ mkdir -p "$WORK"
 trap 'rm -rf "$WORK"' EXIT
 
 if [ -n "$WINDOWS" ]; then
-   MAKEARGS="platform=win CC=x86_64-w64-mingw32-gcc CXX=x86_64-w64-mingw32-g++"
+   MAKEARGS="platform=win CC=x86_64-w64-mingw32-gcc"
    LIBS="-static"
    EXE="$WORK/regalloc_test.exe"
    RUN="wine"

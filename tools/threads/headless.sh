@@ -14,7 +14,7 @@
 # It is for cores that cannot be run any other way on the machine at hand,
 # which is to say a core built for another processor, under qemu:
 #
-#   make platform=arm64 CC=aarch64-linux-gnu-gcc CXX=aarch64-linux-gnu-g++ \
+#   make platform=arm64 CC=aarch64-linux-gnu-gcc \
 #        AS=aarch64-linux-gnu-gcc
 #   CC=aarch64-linux-gnu-gcc NM=aarch64-linux-gnu-nm GLES=1 \
 #   RUN="qemu-aarch64 -cpu cortex-a72 -L /usr/aarch64-linux-gnu" \
@@ -37,7 +37,7 @@
 # Windows build - its calling convention, and the paths only it takes -
 # gets run on Linux:
 #
-#   make platform=win CC=x86_64-w64-mingw32-gcc CXX=x86_64-w64-mingw32-g++
+#   make platform=win CC=x86_64-w64-mingw32-gcc
 #   WINDOWS=1 CC=x86_64-w64-mingw32-gcc \
 #   OBJDUMP=x86_64-w64-mingw32-objdump \
 #   RUN=wine tools/threads/headless.sh parallel_dc_libretro.dll
@@ -45,7 +45,7 @@
 # And a core for 32-bit ARM, whose recompiler is another one again:
 #
 #   make platform=armv7-neon-hardfloat CC=arm-linux-gnueabihf-gcc \
-#        CXX=arm-linux-gnueabihf-g++ AS=arm-linux-gnueabihf-gcc \
+#        AS=arm-linux-gnueabihf-gcc \
 #        LDFLAGS_END=-Wl,--unresolved-symbols=ignore-all
 #   CC=arm-linux-gnueabihf-gcc NM=arm-linux-gnueabihf-nm \
 #   RUN="qemu-arm -cpu cortex-a15 -L /usr/arm-linux-gnueabihf" \
@@ -103,7 +103,7 @@ if [ -n "$WINDOWS" ]; then
       "$CC" -O1 -shared -o "$WORK/opengl32.dll" "$WORK/nogl.c"
    fi
    # and the compiler's runtime libraries, if the core wants them
-   for DLL in libgomp-1.dll libwinpthread-1.dll libgcc_s_seh-1.dll libgcc_s_dw2-1.dll libstdc++-6.dll; do
+   for DLL in libgomp-1.dll libwinpthread-1.dll libgcc_s_seh-1.dll libgcc_s_dw2-1.dll; do
       F=$("$CC" -print-file-name=$DLL)
       [ -f "$F" ] && cp "$F" "$WORK/"
    done

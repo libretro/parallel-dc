@@ -30,11 +30,9 @@ endif
 TARGET_NAME   := parallel_dc
 
 ifeq ($(HAVE_CLANG),1)
-	CXX      = ${CC_PREFIX}clang++
 	CC       = ${CC_PREFIX}clang
 	SHARED   := -fuse-ld=lld
 else
-	CXX      ?= ${CC_PREFIX}g++
 	CC       ?= ${CC_PREFIX}gcc
 	SHARED   :=
 endif
@@ -54,7 +52,6 @@ LDFLAGS_END :=
 INCFLAGS :=
 LIBS     :=
 CFLAGS   := 
-CXXFLAGS :=
 
 GIT_VERSION := " $(shell git rev-parse --short HEAD || echo unknown)"
 
@@ -189,7 +186,6 @@ else ifneq (,$(findstring rpi,$(platform)))
 			ARM_FLOAT_ABI_HARD = 0
 			CPUFLAGS += -DTARGET_LINUX_ARMv8 -frename-registers
 			CFLAGS += -march=armv8-a+crc -mcpu=cortex-a72 -mtune=cortex-a72 $(CPUFLAGS)
-			CXXFLAGS += -march=armv8-a+crc -mcpu=cortex-a72 -mtune=cortex-a72 $(CPUFLAGS)
 			# Look at GNU assembler man pages for actual aarch64 parameters, don't make them up.
 			ASFLAGS += -march=armv8-a+crc -mcpu=cortex-a72 -c
 			WITH_DYNAREC=arm64
@@ -199,10 +195,8 @@ else ifneq (,$(findstring rpi,$(platform)))
 			# as of 2020-05-07, the following workaround doesn't seem required
 			# CORE_DEFINES += -DRPI4_SET_UNIFORM_ATTRIBUTES_BUG
 			CFLAGS += -marm -mfloat-abi=hard -mcpu=cortex-a72 -mtune=cortex-a72 -mfpu=neon-vfpv4 $(CPUFLAGS)
-			CXXFLAGS += -marm -mfloat-abi=hard -mcpu=cortex-a72 -mtune=cortex-a72 -mfpu=neon-vfpv4 $(CPUFLAGS)
 			ifeq ($(HAVE_CLANG),0)
 				CFLAGS += -mvectorize-with-neon-quad
-				CXXFLAGS += -mvectorize-with-neon-quad
 			endif
 			ASFLAGS += $(CFLAGS) -c -frename-registers -fno-strict-aliasing -ffast-math -ftree-vectorize
 		endif
@@ -213,12 +207,10 @@ else ifneq (,$(findstring rpi,$(platform)))
 				ARM_FLOAT_ABI_HARD = 0
 				CPUFLAGS += -DTARGET_LINUX_ARMv8 -frename-registers
 				CFLAGS += -march=armv8-a+crc -mcpu=cortex-a53 -mtune=cortex-a53 $(CPUFLAGS)
-				CXXFLAGS += -march=armv8-a+crc -mcpu=cortex-a53 -mtune=cortex-a53 $(CPUFLAGS)
 				ASFLAGS += $(CFLAGS) -c -frename-registers -fno-strict-aliasing -ffast-math -ftree-vectorize
 				WITH_DYNAREC=arm64
 			else
 				CFLAGS += -mtune=cortex-a53 -mfpu=neon-fp-armv8 -mfloat-abi=hard
-				CXXFLAGS += -mtune=cortex-a53 -mfpu=neon-fp-armv8 -mfloat-abi=hard
 			endif
 	else
 		ifeq (,$(findstring mesa,$(platform)))
@@ -231,7 +223,6 @@ else ifneq (,$(findstring rpi,$(platform)))
 		endif
 		ifneq (,$(findstring rpi2,$(platform)))
 			CFLAGS += -mcpu=cortex-a7 -mfpu=neon-vfpv4 -mfloat-abi=hard
-			CXXFLAGS += -mcpu=cortex-a7 -mfpu=neon-vfpv4 -mfloat-abi=hard
 		endif
 		CORE_DEFINES += -DLOW_END
 	endif
@@ -259,7 +250,6 @@ else ifeq ($(platform), classic_armv7_a7)
 	-fno-unwind-tables -fno-asynchronous-unwind-tables -fno-unroll-loops \
 	-fmerge-all-constants -fno-math-errno \
 	-marm -mtune=cortex-a7 -mfpu=neon-vfpv4 -mfloat-abi=hard
-	CXXFLAGS += $(CFLAGS)
 	ASFLAGS += $(CFLAGS)
 	LDFLAGS += -marm -mtune=cortex-a7 -mfpu=neon-vfpv4 -mfloat-abi=hard
 	ifeq ($(shell echo `$(CC) -dumpversion` "< 4.9" | bc -l), 1)
@@ -270,7 +260,7 @@ else ifeq ($(platform), classic_armv7_a7)
 		LDFLAGS += -march=armv7ve
 		# If gcc is 5.0 or later
 		ifeq ($(shell echo `$(CC) -dumpversion` ">= 5" | bc -l), 1)
-			LDFLAGS += -static-libgcc -static-libstdc++
+			LDFLAGS += -static-libgcc
 		endif
 	endif
 	PLATFORM_EXT := unix
@@ -295,7 +285,6 @@ else ifeq ($(platform), classic_armv8_a35)
 	-fno-stack-protector -fno-ident -fomit-frame-pointer \
 	-fmerge-all-constants -ffast-math -funroll-all-loops \
 	-marm -mcpu=cortex-a35 -mfpu=neon-fp-armv8 -mfloat-abi=hard
-	CXXFLAGS += $(CFLAGS)
 	ASFLAGS += $(CFLAGS)
 	LDFLAGS += -marm -mcpu=cortex-a35 -mfpu=neon-fp-armv8 -mfloat-abi=hard -Ofast -flto -fuse-linker-plugin
 	PLATFORM_EXT := unix
@@ -320,21 +309,13 @@ else ifeq ($(platform), sun8i)
 	SINGLE_PREC_FLAGS = 1
 	CPUFLAGS += -DNO_ASM -DARM_ASM -frename-registers -ftree-vectorize
 	CFLAGS += -marm -mfloat-abi=hard -mtune=cortex-a7 -mfpu=neon-vfpv4 -mfloat-abi=hard $(CPUFLAGS)
-	CXXFLAGS += -marm -mfloat-abi=hard -mtune=cortex-a7 -mfpu=neon-vfpv4 -mfloat-abi=hard $(CPUFLAGS)
 	ifeq ($(HAVE_CLANG),0)
 		CFLAGS += -mvectorize-with-neon-quad
-		CXXFLAGS += -mvectorize-with-neon-quad
 	endif
 	ifeq ($(shell echo `$(CC) -dumpversion` "< 4.9" | bc -l), 1)
 		CFLAGS += -march=armv7-a
-		CXXFLAGS += -march=armv7-a
 	else
 		CFLAGS += -march=armv7ve
-		CXXFLAGS += -march=armv7ve
-		# If gcc is 5.0 or later
-		ifeq ($(shell echo `$(CC) -dumpversion` ">= 5" | bc -l), 1)
-			CXXFLAGS += -static-libgcc -static-libstdc++
-		endif
 	endif
 	ASFLAGS += $(CFLAGS) -c -frename-registers -fno-strict-aliasing -ffast-math -ftree-vectorize
 	PLATFORM_EXT := unix
@@ -363,7 +344,6 @@ else ifeq ($(platform), sun8i_legacy)
 	-fno-stack-protector -fno-ident -fomit-frame-pointer \
 	-fmerge-all-constants -ffast-math -funroll-all-loops \
 	-marm -mtune=cortex-a7 -mfpu=neon-vfpv4 -mfloat-abi=hard
-	CXXFLAGS += $(CFLAGS)
 	ASFLAGS += $(CFLAGS)
 	LDFLAGS += -marm -mtune=cortex-a7 -mfpu=neon-vfpv4 -mfloat-abi=hard -Ofast -flto -fuse-linker-plugin
 	ifeq ($(shell echo `$(CC) -dumpversion` "< 4.9" | bc -l), 1)
@@ -374,7 +354,7 @@ else ifeq ($(platform), sun8i_legacy)
 		LDFLAGS += -march=armv7ve
 		# If gcc is 5.0 or later
 		ifeq ($(shell echo `$(CC) -dumpversion` ">= 5" | bc -l), 1)
-			LDFLAGS += -static-libgcc -static-libstdc++
+			LDFLAGS += -static-libgcc
 		endif
 	endif
 	PLATFORM_EXT := unix
@@ -397,7 +377,6 @@ else ifeq ($(platform), arm64_cortex_a53_gles2)
 	SINGLE_PREC_FLAGS = 1
 	CPUFLAGS += -DHOST_CPU=0x20000006 -DTARGET_LINUX_ARMv8 -frename-registers
 	CFLAGS += -mcpu=cortex-a53 -mtune=cortex-a53 $(CPUFLAGS)
-	CXXFLAGS += -mcpu=cortex-a53 -mtune=cortex-a53 $(CPUFLAGS)
 	ASFLAGS += $(CFLAGS) -c -frename-registers -fno-strict-aliasing -ffast-math -ftree-vectorize
 	PLATFORM_EXT := unix
 	WITH_DYNAREC=arm64
@@ -421,7 +400,6 @@ else ifeq ($(platform), odroidc4)
 	SINGLE_PREC_FLAGS = 1
 	CPUFLAGS += -DHOST_CPU=0x20000006 -DTARGET_LINUX_ARMv8 -frename-registers
 	CFLAGS += -mcpu=cortex-a55 -mtune=cortex-a55 $(CPUFLAGS)
-	CXXFLAGS += -mcpu=cortex-a55 -mtune=cortex-a55 $(CPUFLAGS)
 	ASFLAGS += $(CFLAGS) -c -frename-registers -fno-strict-aliasing -ffast-math -ftree-vectorize
 	PLATFORM_EXT := unix
 	WITH_DYNAREC=arm64
@@ -444,7 +422,6 @@ else ifeq ($(platform), arm64)
 	SINGLE_PREC_FLAGS = 1
 	CPUFLAGS += -DTARGET_LINUX_ARMv8 -frename-registers
 	CFLAGS += $(CPUFLAGS)
-	CXXFLAGS += $(CPUFLAGS)
 	ASFLAGS += $(CFLAGS) -c -frename-registers -fno-strict-aliasing -ffast-math -ftree-vectorize
 	PLATFORM_EXT := unix
 	WITH_DYNAREC=arm64
@@ -452,7 +429,6 @@ else ifeq ($(platform), arm64)
 	HAVE_LTCG = 0
 	LDFLAGS := $(filter-out -flto, $(LDFLAGS))
 	CFLAGS := $(filter-out -flto, $(CFLAGS))
-	CXXFLAGS := $(filter-out -flto, $(CXXFLAGS))
 #######################################
 
 # nvidia developer jetson nano kit (jetson-nano)
@@ -467,7 +443,6 @@ else ifeq ($(platform), jetson-nano)
 	SINGLE_PREC_FLAGS = 1
 	CPUFLAGS += -DTARGET_LINUX_ARMv8 -frename-registers
 	CFLAGS += -march=armv8-a+crc -mtune=cortex-a57 -mcpu=cortex-a57+crc+fp+simd $(CPUFLAGS)
-	CXXFLAGS += -march=armv8-a+crc -mtune=cortex-a57 -mcpu=cortex-a57+crc+fp+simd $(CPUFLAGS)
 	ASFLAGS += $(CFLAGS) -c -frename-registers -fno-strict-aliasing -ffast-math -ftree-vectorize
 	PLATFORM_EXT := unix
 	ARCH=arm
@@ -477,7 +452,6 @@ else ifeq ($(platform), jetson-nano)
 	HAVE_LTCG = 0
 	LDFLAGS := $(filter-out -flto, $(LDFLAGS))
 	CFLAGS := $(filter-out -flto, $(CFLAGS))
-	CXXFLAGS := $(filter-out -flto, $(CXXFLAGS))
 
 # Nintendo Switch (Libnx)
 else ifeq ($(platform), libnx)
@@ -511,7 +485,6 @@ else ifeq ($(platform), odroid-n2)
 	SINGLE_PREC_FLAGS = 1
 	CPUFLAGS += -DTARGET_LINUX_ARMv8 -frename-registers
 	CFLAGS += -mcpu=cortex-a73 -mtune=cortex-a73.cortex-a53 $(CPUFLAGS)
-	CXXFLAGS += -mcpu=cortex-a73 -mtune=cortex-a73.cortex-a53 $(CPUFLAGS)
 	ASFLAGS += $(CFLAGS) -c -frename-registers -fno-strict-aliasing -ffast-math -ftree-vectorize
 	PLATFORM_EXT := unix
 	WITH_DYNAREC=arm64
@@ -550,19 +523,15 @@ else ifneq (,$(findstring AMLG,$(platform)))
 
   CPUFLAGS += -DNO_ASM -DARM_ASM -frename-registers -ftree-vectorize
   CFLAGS += -march=armv8-a+crc -mfloat-abi=hard -mfpu=neon-fp-armv8 $(CPUFLAGS)
-  CXXFLAGS += -march=armv8-a+crc -mfloat-abi=hard -mfpu=neon-fp-armv8 $(CPUFLAGS)
 
   ifneq (,$(findstring AMLG12,$(platform)))
     ifneq (,$(findstring AMLG12B,$(platform)))
       CFLAGS += -mtune=cortex-a73.cortex-a53
-      CXXFLAGS += -mtune=cortex-a73.cortex-a53
     else
       CFLAGS += -mtune=cortex-a53
-      CXXFLAGS += -mtune=cortex-a53
     endif
   else ifneq (,$(findstring AMLGX,$(platform)))
     CFLAGS += -mtune=cortex-a53
-    CXXFLAGS += -mtune=cortex-a53
     CORE_DEFINES += -DLOW_END
   endif
 
@@ -587,28 +556,22 @@ else ifneq (,$(findstring RK,$(platform)))
 
   ifneq (,$(findstring RK33,$(platform)))
     CFLAGS += -march=armv8-a+crc -mfpu=neon-fp-armv8
-    CXXFLAGS += -march=armv8-a+crc -mfpu=neon-fp-armv8
 
     ifneq (,$(findstring RK3399,$(platform)))
       CFLAGS += -mtune=cortex-a72.cortex-a53
-      CXXFLAGS += -mtune=cortex-a72.cortex-a53
     else ifneq (,$(findstring RK3328,$(platform)))
       CFLAGS += -mtune=cortex-a53
-      CXXFLAGS += -mtune=cortex-a53
       CORE_DEFINES += -DLOW_END
     endif
 
     ifeq ($(HAVE_CLANG),0)
       CFLAGS += -mvectorize-with-neon-quad
-      CXXFLAGS += -mvectorize-with-neon-quad
     endif
   else ifneq (,$(findstring RK3288,$(platform)))
     CFLAGS += -march=armv7ve -mtune=cortex-a17 -mfpu=neon-vfpv4
-    CXXFLAGS += -march=armv7ve -mtune=cortex-a17 -mfpu=neon-vfpv4
   endif
 
   CFLAGS += -mfloat-abi=hard $(CPUFLAGS)
-  CXXFLAGS += -mfloat-abi=hard $(CPUFLAGS)
 
   ASFLAGS += $(CFLAGS) -c -frename-registers -fno-strict-aliasing -ffast-math -ftree-vectorize
   PLATFORM_EXT := unix
@@ -627,10 +590,8 @@ else ifeq ($(platform), rockpro64)
 	SINGLE_PREC_FLAGS = 1
 	CPUFLAGS += -DNO_ASM -DARM_ASM -frename-registers -ftree-vectorize
 	CFLAGS += -marm -mfloat-abi=hard -mcpu=cortex-a72 -mtune=cortex-a72.cortex-a53 -mfpu=neon-fp-armv8 $(CPUFLAGS)
-	CXXFLAGS += -marm -mfloat-abi=hard -mcpu=cortex-a72 -mtune=cortex-a72.cortex-a53 -mfpu=neon-fp-armv8 $(CPUFLAGS)
 	ifeq ($(HAVE_CLANG),0)
 		CFLAGS += -mvectorize-with-neon-quad
-		CXXFLAGS += -mvectorize-with-neon-quad
 	endif
 	ASFLAGS += $(CFLAGS) -c -frename-registers -fno-strict-aliasing -ffast-math -ftree-vectorize
 	PLATFORM_EXT := unix
@@ -650,7 +611,6 @@ else ifeq ($(platform), tinkerboard)
     SINGLE_PREC_FLAGS = 1
     CPUFLAGS += -DNO_ASM -DARM_ASM -frename-registers -ftree-vectorize
     CFLAGS += -marm -mfpu=neon-vfpv4 -mtune=cortex-a17 -mfloat-abi=hard $(CPUFLAGS)
-    CXXFLAGS += -marm -mfpu=neon-vfpv4 -mtune=cortex-a17 -mfloat-abi=hard $(CPUFLAGS)
     ASFLAGS += $(CFLAGS) -c -frename-registers -fno-strict-aliasing -ffast-math -ftree-vectorize
     PLATFORM_EXT := unix
     WITH_DYNAREC=arm
@@ -671,7 +631,6 @@ else ifneq (,$(findstring odroid,$(platform)))
 
 	CPUFLAGS += -DNO_ASM -DARM_ASM -frename-registers -ftree-vectorize
 	CFLAGS += -marm -mfloat-abi=hard $(CPUFLAGS)
-	CXXFLAGS += -marm -mfloat-abi=hard $(CPUFLAGS)
 
 	ifneq (,$(findstring ODROIDC,$(BOARD)))
 		# ODROID-C1
@@ -716,7 +675,6 @@ else ifneq (,$(findstring osx,$(platform)))
 	OSXVER = `sw_vers -productVersion | cut -d. -f 2`
 	OSX_LT_MAVERICKS = `(( $(OSXVER) <= 9)) && echo "YES"`
         fpic += -mmacosx-version-min=10.7
-	LDFLAGS += -stdlib=libc++
 	fpic = -fPIC
 	CFLAGS += -DHAVE_GLSYM_PRIVATE
 	SINGLE_PREC_FLAGS=1
@@ -772,9 +730,7 @@ else ifneq (,$(filter ios-arm64 tvos-arm64,$(platform)))
 		IOSSDK := $(shell xcodebuild -version -sdk $(APPLE_SDK) Path)
 	endif
 	CC  = clang -arch arm64 -isysroot $(IOSSDK) $(APPLE_MINVER)
-	CXX = clang++ -arch arm64 -isysroot $(IOSSDK) $(APPLE_MINVER)
 	SHARED += -dynamiclib
-	LDFLAGS += -stdlib=libc++
 	fpic = -fPIC
 	GLES = 1
 	GL_LIB := -framework OpenGLES
@@ -812,16 +768,13 @@ else ifneq (,$(findstring ios,$(platform)))
 
 	CC = clang -arch armv7 -isysroot $(IOSSDK)
 	CC_AS = perl ./tools/gas-preprocessor.pl $(CC)
-	CXX = clang++ -arch armv7 -isysroot $(IOSSDK)
 	ifeq ($(platform),ios9)
 		CC         += -miphoneos-version-min=8.0
 		CC_AS      += -miphoneos-version-min=8.0
-		CXX        += -miphoneos-version-min=8.0
 		PLATCFLAGS += -miphoneos-version-min=8.0
 	else
 		CC += -miphoneos-version-min=5.0
 		CC_AS += -miphoneos-version-min=5.0
-		CXX += -miphoneos-version-min=5.0
 		PLATCFLAGS += -miphoneos-version-min=5.0
 	endif
 
@@ -852,7 +805,6 @@ else ifneq (,$(findstring android,$(platform)))
 	SHARED += -shared -Wl,--version-script=link.T -Wl,--no-undefined -Wl,--warn-common
 
 	CC = arm-linux-androideabi-gcc
-	CXX = arm-linux-androideabi-g++
 	WITH_DYNAREC=arm
 	HAVE_GENERIC_JIT = 0
 	FORCE_GLES = 1
@@ -873,7 +825,6 @@ else ifeq ($(platform), qnx)
 
 	CC = qcc -Vgcc_ntoarmv7le
 	CC_AS = qcc -Vgcc_ntoarmv7le
-	CXX = QCC -Vgcc_ntoarmv7le
 	AR = QCC -Vgcc_ntoarmv7le
 	WITH_DYNAREC=arm
 	HAVE_GENERIC_JIT = 0
@@ -923,7 +874,6 @@ else ifneq (,$(findstring armv,$(platform)))
 	# the compiler: it built with the toolchain's defaults, and where those
 	# are not NEON the recompiler's assembly file did not assemble at all.
 	CFLAGS += $(CPUFLAGS)
-	CXXFLAGS += $(CPUFLAGS)
 	ASFLAGS += $(CFLAGS) -c
 	DEFINES += -DTHREADED_RENDERING_DEFAULT
 
@@ -943,7 +893,6 @@ else ifeq ($(platform), webos)
 	SINGLE_PREC_FLAGS = 1
 	CPUFLAGS += -marm -march=armv7-a -mfpu=neon -mfloat-abi=softfp -D__arm__ -DARM_ASM -DNOSSE -DNO_ASM
 	CFLAGS += $(CPUFLAGS)
-	CXXFLAGS += $(CPUFLAGS)
 	PLATFORM_EXT := unix
 	ARCH = arm
 	WITH_DYNAREC = arm
@@ -972,13 +921,12 @@ else
 	EXT       ?= dll
 	HAVE_GENERIC_JIT = 0
 	TARGET := $(TARGET_NAME)_libretro.$(EXT)
-	LDFLAGS += -shared -static-libgcc -static-libstdc++ -Wl,--version-script=link.T -lwinmm -lgdi32
+	LDFLAGS += -shared -static-libgcc -Wl,--version-script=link.T -lwinmm -lgdi32
 	GL_LIB := -lopengl32
 	LIBS := -lws2_32 -liphlpapi
 	PLATFORM_EXT := win32
 	SINGLE_PREC_FLAGS=1
 	CC ?= gcc
-	CXX ?= g++
 	WINDOWS_BUILD = 1
 	# win64 and win32 name the CPU built for, whatever the machine is
 ifeq ($(platform), win64)
@@ -1069,7 +1017,6 @@ else ifeq ($(GL_LIB),)
 endif
 
 CFLAGS       += $(HOST_CPU_FLAGS)
-CXXFLAGS     += $(HOST_CPU_FLAGS)
 RZDCY_CFLAGS += $(HOST_CPU_FLAGS)
 
 # The SH4's floating point is done in the host's, and has to come out the
@@ -1198,7 +1145,6 @@ ifeq ($(NO_NVMEM),1)
 	CORE_DEFINES += -DTARGET_NO_NVMEM=1
 endif
 
-RZDCY_CXXFLAGS := $(RZDCY_CFLAGS) -fexceptions -fno-rtti -std=gnu++11
 
 ifeq (,$(findstring msvc,$(platform)))
 	CORE_DEFINES   += -funroll-loops
@@ -1217,7 +1163,6 @@ ifeq ($(HAVE_TEXUPSCALE), 1)
 ifeq ($(WINDOWS_BUILD), 1)
 	LDFLAGS_END += -Wl,-Bstatic -lwsock32 -lws2_32 -liphlpapi
 endif
-	NEED_CXX11=1
 	NEED_PTHREAD=1
 endif
 
@@ -1253,10 +1198,6 @@ ifeq ($(HAVE_GENERIC_JIT), 1)
 	CORE_DEFINES += -DTARGET_PORTABLE_REC
 endif
 
-ifeq ($(NEED_CXX11), 1)
-	CXXFLAGS     += -std=c++11
-endif
-
 # Content files are memory-mapped where the platform has mmap().
 ifeq ($(WINDOWS_BUILD), 1)
 else ifeq ($(platform), libnx)
@@ -1273,13 +1214,10 @@ CORE_DEFINES += -DHAVE_CHD -DHAVE_RCHD -DHAVE_RCHD_DEFLATE -DHAVE_RCHD_LZMA -DHA
 endif
 
 RZDCY_CFLAGS   += $(CORE_DEFINES)
-RZDCY_CXXFLAGS += $(CORE_DEFINES)
 CFLAGS         += $(CORE_DEFINES)
-CXXFLAGS       += $(CORE_DEFINES)
 
 CFLAGS   += $(OPTFLAGS) -c
 CFLAGS   += -fno-strict-aliasing
-CXXFLAGS += -fno-rtti -fpermissive -fno-operator-names
 LIBS     += -lm 
 
 PREFIX        ?= /usr/local
@@ -1287,7 +1225,7 @@ PREFIX        ?= /usr/local
 ifneq (,$(findstring arm, $(ARCH)))
 	CC_AS    = ${CC_PREFIX}${CC} #The ngen_arm.S must be compiled with gcc, not as
 endif
-# The recompilers' assembly files include build.h and need what the C++ is
+# The recompilers' assembly files include build.h and need what the C is
 # built with, HOST_CPU above all: without it the 32-bit one leaves out the
 # sound processor's entry point, and the link fails. That goes by what is
 # being built for, not by the machine doing the building, which is all
@@ -1320,18 +1258,16 @@ ifeq ($(LTO_TEST),1)
 endif
 
 CFLAGS     += $(fpic)
-CXXFLAGS   += $(fpic)
 LDFLAGS    += $(fpic)
 
-OBJECTS := $(SOURCES_CXX:.cpp=.o) $(SOURCES_C:.c=.o) $(SOURCES_ASM:.S=.o)
-OBJECTS:=$(OBJECTS:.cc=.o)
+OBJECTS := $(SOURCES_C:.c=.o) $(SOURCES_ASM:.S=.o)
 
 ifneq (,$(findstring msvc,$(platform)))
 	OBJOUT = -Fo
 	LINKOUT = -out:
 	LD = link.exe
 else
-	LD = $(CXX)
+	LD = $(CC)
 endif
 
 all: $(TARGET)	
@@ -1357,14 +1293,6 @@ endif
 print-cc-compile:
 	@echo '$(CC) $(INCFLAGS) $(CFLAGS) $(MFLAGS)'
 
-%.o: %.cpp
-	@$(if $(E), $(shell echo echo CXX $<),)
-	$(CXX) $(INCFLAGS) $(CFLAGS) $(MFLAGS) $(CXXFLAGS) $(DEPFLAGS) $< -o $@
-
-%.o: %.cc
-	@$(if $(E), $(shell echo echo CXX $<),)
-	$(CXX) $(INCFLAGS) $(CFLAGS) $(MFLAGS) $(CXXFLAGS) $(DEPFLAGS) $< -o $@
-	
 %.o: %.c
 	@$(if $(E), $(shell echo echo CC $<),)
 	$(CC) $(INCFLAGS) $(CFLAGS) $(MFLAGS) $(DEPFLAGS) $< -o $@

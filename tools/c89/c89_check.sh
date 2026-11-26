@@ -19,7 +19,7 @@ set -e
 cd "$(dirname "$0")/../.."
 CC=${CC:-cc}
 flags=$(make -s -f Makefile -f - "$@" c89-flags <<'MK'
-c89-flags: ; @echo $(INCFLAGS) $(CFLAGS) $(MFLAGS) ; echo $(filter core/% ./core/%,$(SOURCES_C)) ; echo $(SOURCES_CXX)
+c89-flags: ; @echo $(INCFLAGS) $(CFLAGS) $(MFLAGS) ; echo $(filter core/% ./core/%,$(SOURCES_C)) ; echo $(filter %.cpp %.cc %.cxx %.C,$(SOURCES_C) $(SOURCES_ASM))
 MK
 )
 cflags=$(echo "$flags" | sed -n 1p | sed 's/ -std=[^ ]*//g; s/ -c / /g' \

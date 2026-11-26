@@ -9,7 +9,7 @@
 set -e
 cd "$(dirname "$0")/../.."
 CC_I686=${CC_I686:-i686-w64-mingw32-gcc}
-FLAGS=$(make -s -n -B platform=win64 CC=XCC CXX=XCXX core/rend/vulkan/vk_renderer.o 2>/dev/null | sed -n 's/^XCC //p' | head -1 \
+FLAGS=$(make -s -n -B platform=win64 CC=XCC core/rend/vulkan/vk_renderer.o 2>/dev/null | sed -n 's/^XCC //p' | head -1 \
    | sed 's/ -c .*//; s/ -o [^ ]*//; s/-DHOST_CPU=[^ ]*//g; s/-DGIT_VERSION=[^ ]* [^ ]*//')
 [ -n "$FLAGS" ] || { echo "vk_i686: no flags from the Makefile"; exit 1; }
 fails=0

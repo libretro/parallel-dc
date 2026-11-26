@@ -134,7 +134,10 @@ not in `retro_run`, not on the emulation thread.
 
 The core is C89 that MSVC compiles, and so are its tools: no C++ is left
 in the repository, and none is added (`tools/c89/c89_check.sh` fails a
-build that has any). What follows is how C++ was moved to it, a piece at
+build that has any). The core is linked as C, by the C compiler: a build
+needs no C++ compiler, and the core no C++ runtime
+(`sh tools/c89/no_cxx_runtime.sh CORE`; CI builds with `CXX=false`).
+What follows is how C++ was moved to it, a piece at
 a time, and holds for any that comes in with code from elsewhere.
 
 - **New files are C89.** `.c` files, test harnesses and tools included:
