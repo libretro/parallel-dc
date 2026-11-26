@@ -40,6 +40,10 @@
  * glBufferStorage, a glBufferData larger than the buffer ever was), programs
  * and shaders made; with GLF_ALLOC_SITES, where in the core each was
  * (tools/gl/gl_allocs.sh).
+ * GLF_OPTION="N:key=value": that core option changed before frame N, as
+ * from a frontend's menu. GLF_ERRORS=1: what glGetError() has after each
+ * frame is counted, and a run with any fails, saying how many and the
+ * first and its frame (tools/rend/retexture.sh).
  *
  * Built with: cc -rdynamic -o gl_frames gl_frames.c -lEGL -lGL -ldl */
 #define _GNU_SOURCE
@@ -61,8 +65,15 @@ static int have_hw, gles;
 static char **options;
 static int option_count;
 static unsigned last_w, last_h;
+/* GLF_OPTION's: the key=value, and whether the core has still to be told */
+static const char *changed_option;
+static int option_news;
 
 static GLuint fbo, color, depth;
+/* GLF_ERRORS: how many, and the first */
+static long gl_errors;
+static GLenum first_error;
+static int first_error_frame;
 static unsigned fb_w, fb_h;
 
 static PFNGLGENFRAMEBUFFERSPROC p_glGenFramebuffers;
@@ -444,6 +455,11 @@ static bool environment(unsigned cmd, void *data)
          struct retro_variable *var = (struct retro_variable *)data;
          size_t len = strlen(var->key);
          int i;
+         if (changed_option && !strncmp(changed_option, var->key, len) && changed_option[len] == '=')
+         {
+            var->value = changed_option + len + 1;
+            return true;
+         }
          for (i = 0; i < option_count; i++)
             if (!strncmp(options[i], var->key, len) && options[i][len] == '=')
             {
@@ -456,7 +472,8 @@ static bool environment(unsigned cmd, void *data)
       case RETRO_ENVIRONMENT_SET_VARIABLES:
          return true;
       case RETRO_ENVIRONMENT_GET_VARIABLE_UPDATE:
-         *(bool *)data = false;
+         *(bool *)data = option_news != 0;
+         option_news = 0;
          return true;
       case RETRO_ENVIRONMENT_SET_SYSTEM_AV_INFO:
       case RETRO_ENVIRONMENT_SET_GEOMETRY:
@@ -668,6 +685,11 @@ int main(int argc, char **argv)
    for (i = 0; i < frames; i++)
    {
       frame_no = i;
+      if (getenv("GLF_OPTION") && strchr(getenv("GLF_OPTION"), ':') && i == atoi(getenv("GLF_OPTION")))
+      {
+         changed_option = strchr(getenv("GLF_OPTION"), ':') + 1;
+         option_news = 1;
+      }
 #ifdef ALLOC_COUNT
       if (getenv("GLF_ALLOCS") && i == atoi(getenv("GLF_ALLOCS")))
       {
@@ -678,6 +700,18 @@ int main(int argc, char **argv)
       in_run = 1;
       retro_run();
       in_run = 0;
+      if (getenv("GLF_ERRORS"))
+      {
+         GLenum e;
+         while ((e = glGetError()) != GL_NO_ERROR)
+         {
+            if (!gl_errors++)
+            {
+               first_error = e;
+               first_error_frame = i;
+            }
+         }
+      }
       if (ahead_at >= 0 && i >= ahead_at)
       {
          /* the state after this frame; the frame after it, shown; back to the state */
@@ -709,6 +743,12 @@ int main(int argc, char **argv)
       alloc_count_print("gl_frames", what, getenv("GLF_ALLOC_SITES") != NULL);
    }
 #endif
+   if (gl_errors)
+   {
+      fprintf(stderr, "gl_frames: %ld OpenGL errors, the first 0x%04x after frame %d\n",
+            gl_errors, (unsigned)first_error, first_error_frame);
+      return 1;
+   }
    if (last_w == 0 || last_h == 0)
    {
       fprintf(stderr, "gl_frames: no frame was drawn\n");

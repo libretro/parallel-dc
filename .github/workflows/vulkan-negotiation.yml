@@ -34,7 +34,9 @@ name: Vulkan negotiation
 # sorter's sort against a stable sort by < (tools/rend/sort_pairs_test.sh),
 # and the texture cache's map against a plain list (tools/rend/tex_map_test.sh).
 # And polygons drawn outside a clipping rectangle, with OpenGL and OpenGL
-# ES, each renderer (tools/gl/gl_clip.sh).
+# ES, each renderer (tools/gl/gl_clip.sh). And a texture made again in
+# another shape mid-game, with OpenGL, OpenGL ES and Vulkan, with no
+# OpenGL error and nothing from the validation layer (tools/rend/retexture.sh).
 # And textures of one channel - the fog table, paletted indices - on
 # OpenGL ES 2 and 3 and OpenGL 2 and 3+ (tools/gl/gl_channels.sh).
 # And the fog coefficient against the hardware's, and the core's own
@@ -102,6 +104,7 @@ on:
       - 'tools/vulkan/**'
       - 'core/rend/upscaler.*'
       - 'tools/rend/upscaler_test.*'
+      - 'tools/rend/retexture.sh'
       - 'core/rend/rtt_watch.*'
       - 'core/rend/gles/**'
       - 'core/rend/gl4/**'
@@ -200,6 +203,7 @@ on:
       - 'tools/vulkan/**'
       - 'core/rend/upscaler.*'
       - 'tools/rend/upscaler_test.*'
+      - 'tools/rend/retexture.sh'
       - 'core/rend/rtt_watch.*'
       - 'core/rend/gles/**'
       - 'core/rend/gl4/**'
@@ -299,6 +303,8 @@ jobs:
           sh tools/gl/gl_dma.sh
       - name: Polygons drawn outside a clipping rectangle, with OpenGL and OpenGL ES (each renderer)
         run: sh tools/gl/gl_clip.sh
+      - name: A texture made again in another shape mid-game (Texture Upscaling turned on and off), OpenGL, OpenGL ES and Vulkan
+        run: VK_DRIVER_FILES=/usr/share/vulkan/icd.d/lvp_icd.json sh tools/rend/retexture.sh
       - name: Textures of one channel (fog table, paletted indices), OpenGL ES 2 and 3, OpenGL 2 and 3+
         run: sh tools/gl/gl_channels.sh
       - name: The fog against the hardware's, and the core's own OpenGL ES 2 shaders drawn with on an OpenGL ES 2 context

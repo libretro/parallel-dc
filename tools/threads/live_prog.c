@@ -30,8 +30,9 @@
  * -DLIVE_SLANT -DLIVE_HSCALE for PROGRAM_HSCALE, with -DLIVE_CULL for
  * PROGRAM_CULL, with -DLIVE_ATLAS for PROGRAM_ATLAS, with -DLIVE_DMA
  * for PROGRAM_DMA, with -DLIVE_CLIP for PROGRAM_CLIP, with -DLIVE_KEEP for
- * PROGRAM_KEEP, with -DLIVE_HEAVY for PROGRAM_HEAVY, and with
- * -DLIVE_BLEND for PROGRAM_BLEND, and with -DLIVE_ODD for PROGRAM_ODD. */
+ * PROGRAM_KEEP, with -DLIVE_HEAVY for PROGRAM_HEAVY, with
+ * -DLIVE_BLEND for PROGRAM_BLEND, with -DLIVE_ODD for PROGRAM_ODD, and with
+ * -DLIVE_RETEX for PROGRAM_RETEX. */
 typedef unsigned int u32;
 typedef unsigned short u16;
 #define PVR(off) (*(volatile u32 *)(0xA05F8000 + (off)))
@@ -622,6 +623,32 @@ static void ta_volume(u32 x0, u32 y0, u32 x1, u32 y1, u32 near)
    ta_send(0, 0, 0, 0, 0, 0, 0, 0);                    /* end of the volume list */
 }
 
+#ifdef LIVE_RETEX
+/* With -DLIVE_RETEX, bottom right: a 1024 by 1024 mipmapped compressed
+ * RGB565 texture, every texel the codebook's first entry, drawn small. Its
+ * colour is rewritten every 16 frames, blue and red in turn, and from
+ * frame 200 on it is green. A texture that size with its levels is one no
+ * renderer keeps a pool for, and every rewrite makes it again. */
+#define RETEX_ADDRESS 0x500000
+#define RETEX_INDICES (256 * 4 * 2 + 0x15556 + 1024 * 1024 / 4)
+
+static void retex_frame(u32 frame)
+{
+   volatile u32 *tex = (volatile u32 *)(0xA4000000 + RETEX_ADDRESS);
+   const u32 c = frame >= 200 ? 0x07E0 : (frame & 16) ? 0xF800 : 0x001F;
+   u32 i;
+
+   if (frame == 64)
+      for (i = 0; i < RETEX_INDICES / 4; i++)
+         tex[i] = 0;
+   if (frame == 64 || (frame & 15) == 0)
+   {
+      tex[0] = c | (c << 16);
+      tex[1] = c | (c << 16);
+   }
+}
+#endif
+
 #ifdef LIVE_ATLAS
 /* With -DLIVE_ATLAS, over the top of the screen: textures of every
  * layout, each drawn texel for texel at an internal resolution of 2x, a
@@ -892,6 +919,11 @@ static void ta_scene(void)
 #endif
 #ifdef LIVE_ATLAS
    ta_atlas();
+#endif
+#ifdef LIVE_RETEX
+   ta_quad(TA_TEXTURED, TSP_PLAIN | (4u << 8) | (7u << 3) | 7u,
+         (1u << 31) | (1u << 30) | (1u << 27) | (RETEX_ADDRESS >> 3), 0xFFFFFFFF, F(0.95f),
+         F(296.0f), F(200.0f), F(316.0f), F(236.0f));
 #endif
 #ifdef LIVE_DMA
    /* the three DMA_ textures, RGB565 and not twiddled */
@@ -2204,6 +2236,9 @@ void cmain(void)
           * of two buffers in turn */
          if (frame >= 64)
          {
+#ifdef LIVE_RETEX
+            retex_frame(frame);
+#endif
 #ifdef LIVE_ATLAS
             atlas_frame(frame - 64);
             PVR(0xE4) = 10;                            /* TEXT_CONTROL: a stride of 320 */
