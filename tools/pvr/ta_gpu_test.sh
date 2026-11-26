@@ -1,6 +1,6 @@
 #!/bin/sh
 # GPU-side TA processing's decode against the core's own parse, byte for
-# byte, on the frames a game draws. See ta_gpu_test_cpu.cpp.
+# byte, on the frames a game draws. See ta_gpu_test_cpu.c.
 #
 #   sh tools/pvr/ta_gpu_test.sh update
 #        the kernels' SPIR-V (core/rend/ta_gpu_spv.inc) made again from
@@ -45,10 +45,9 @@ mkdir -p "$WORK"
 sh tools/rend/kernels_spv.sh check
 [ -f core/libretro/lr_contexts.o ] || { echo "build the core first: core/libretro/lr_contexts.o is not there" >&2; exit 1; }
 
-# the header as C89 and as C++
+# the header as C89
 printf '#define TAG_IDX_PUT(at, v) ((void)(at), (void)(v))\n#include "ta_gpu.h"\nint main(void) { tag_elem e = tag_elem_none(); (void)e; return (int)tag_fadd(1u, 2u); }\n' > "$WORK/c89.c"
 ${CC:-cc} -std=c89 -pedantic -Wall -Wextra -Werror -Wno-unused-function -Icore/rend -Icore/libretro-common/include -c -o "$WORK/c89.o" "$WORK/c89.c"
-${CXX:-c++} -x c++ -std=c++11 -Wall -Wextra -Werror -Wno-unused-function -Icore/rend -Icore/libretro-common/include -c -o "$WORK/cxx.o" "$WORK/c89.c"
 
 # the kernels, as the renderer has them (tools/rend/kernels_spv.sh's way: rend/ta_gpu_spv.inc)
 KERNELS=$(awk '$1 == "#define" && $2 == "TAG_KERNELS" { print $3 }' core/rend/ta_gpu.h)
@@ -77,13 +76,13 @@ fi
 
 # the program: the frontend, the comparison, and the core's objects, with
 # ta_parse_vdrc() and the frontend's dlopen() wrapped
-CORE_FLAGS=$(make -s platform=unix print-cxx-compile 2>/dev/null \
+CORE_FLAGS=$(make -s platform=unix print-cc-compile 2>/dev/null \
    | sed -e 's/^[^ ]* //' -e 's/ -c / /' -e 's/-DGIT_VERSION=[^ ]* [^ ]*//')
 OBJS=$(make -n platform=unix -W core/libretro/lr_contexts.c 2>/dev/null | tail -1 | tr ' ' '\n' | grep '\.o$' | grep -v 'glslang.js.o')
 ${CC:-cc} -O1 -c -o "$WORK/headless.o" tools/threads/headless.c
 ${CC:-cc} -std=c99 -O2 -Wall $DEVICE_FLAGS -iquote core/rend -Icore/libretro-common/include -Icore/deps/khronos -iquote tools/pvr -c -o "$WORK/test.o" tools/pvr/ta_gpu_test.c
-${CXX:-g++} $CORE_FLAGS -Itools/pvr -w -c -o "$WORK/cpu.o" tools/pvr/ta_gpu_test_cpu.cpp
-${CXX:-g++} -rdynamic -o "$WORK/ta_gpu_test" "$WORK/headless.o" "$WORK/test.o" "$WORK/cpu.o" $OBJS \
+${CC:-cc} $CORE_FLAGS -Itools/pvr -w -c -o "$WORK/cpu.o" tools/pvr/ta_gpu_test_cpu.c
+${CC:-cc} -rdynamic -o "$WORK/ta_gpu_test" "$WORK/headless.o" "$WORK/test.o" "$WORK/cpu.o" $OBJS \
    -Wl,--wrap=dlopen -Wl,--wrap=_exit -Wl,--wrap=ta_parse_vdrc $DEVICE_LIBS -lGL -lrt -lpthread -lm -ldl
 # an OpenGL that does nothing, for the core's renderer (headless.sh's)
 nm -D --undefined-only "$WORK/ta_gpu_test" | awk '{print $NF}' | sed 's/@.*//' | grep '^gl' \

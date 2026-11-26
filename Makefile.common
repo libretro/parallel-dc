@@ -83,7 +83,7 @@ SOURCES_C += $(CORE_DIR)/core/hw/naomi/naomi_interleave.c
 # What a GD-ROM game's DIMM board leaves in the NAOMI's memory
 SOURCES_C += $(CORE_DIR)/core/hw/naomi/naomi_dimm.c
 
-# The lists a frame's parse appends to (List<T>'s, typed: helper_classes.h)
+# The lists a frame's parse appends to
 SOURCES_C += $(CORE_DIR)/core/hw/pvr/ta_list.c
 SOURCES_C += $(CORE_DIR)/core/hw/pvr/ta.c $(CORE_DIR)/core/hw/pvr/ta_ctx.c $(CORE_DIR)/core/hw/pvr/ta_vtx.c
 # ...the translucent polygons sorted

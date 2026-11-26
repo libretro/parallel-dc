@@ -1,8 +1,7 @@
 #ifndef TA_LIST_H
 #define TA_LIST_H
 /* A list a frame's parse appends to: a block of fixed room, where the
- * elements go one after another, and where the next one goes. C89, for C
- * and C++ alike; List<T> (helper_classes.h) is the typed face C++ sees.
+ * elements go one after another, and where the next one goes.
  *
  * It is kept as three places - the first element, the next one, the end
  * of the room - so that appending reads two of them and writes one; a

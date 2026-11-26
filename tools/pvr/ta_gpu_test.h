@@ -1,4 +1,4 @@
-/* What ta_gpu_test.c gives ta_gpu_test_cpu.cpp: the decode on the device
+/* What ta_gpu_test.c gives ta_gpu_test_cpu.c: the decode on the device
  * and as the model, and the softfloat check */
 #ifndef TA_GPU_TEST_H
 #define TA_GPU_TEST_H

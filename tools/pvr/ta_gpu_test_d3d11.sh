@@ -47,13 +47,13 @@ sh tools/rend/kernels_dx12.sh check
 [ -f core/libretro/lr_contexts.o ] || { echo "build the core first: core/libretro/lr_contexts.o is not there" >&2; exit 1; }
 
 # the program: ta_gpu_test.sh's, with the device another program's
-CORE_FLAGS=$(make -s platform=unix print-cxx-compile 2>/dev/null \
+CORE_FLAGS=$(make -s platform=unix print-cc-compile 2>/dev/null \
    | sed -e 's/^[^ ]* //' -e 's/ -c / /' -e 's/-DGIT_VERSION=[^ ]* [^ ]*//')
 OBJS=$(make -n platform=unix -W core/libretro/lr_contexts.c 2>/dev/null | tail -1 | tr ' ' '\n' | grep '\.o$' | grep -v 'glslang.js.o')
 ${CC:-cc} -O1 -c -o "$WORK/headless.o" tools/threads/headless.c
 ${CC:-cc} -std=c99 -O2 -Wall -DTGT_REPLAY -iquote core/rend -Icore/libretro-common/include -iquote tools/pvr -c -o "$WORK/test.o" tools/pvr/ta_gpu_test.c
-${CXX:-g++} $CORE_FLAGS -Itools/pvr -w -c -o "$WORK/cpu.o" tools/pvr/ta_gpu_test_cpu.cpp
-${CXX:-g++} -rdynamic -o "$WORK/ta_gpu_test" "$WORK/headless.o" "$WORK/test.o" "$WORK/cpu.o" $OBJS \
+${CC:-cc} $CORE_FLAGS -Itools/pvr -w -c -o "$WORK/cpu.o" tools/pvr/ta_gpu_test_cpu.c
+${CC:-cc} -rdynamic -o "$WORK/ta_gpu_test" "$WORK/headless.o" "$WORK/test.o" "$WORK/cpu.o" $OBJS \
    -Wl,--wrap=dlopen -Wl,--wrap=_exit -Wl,--wrap=ta_parse_vdrc -lGL -lrt -lpthread -lm -ldl
 nm -D --undefined-only "$WORK/ta_gpu_test" | awk '{print $NF}' | sed 's/@.*//' | grep '^gl' \
    | python3 tools/threads/headless_gl.py > "$WORK/nogl.c" || true

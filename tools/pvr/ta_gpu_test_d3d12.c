@@ -6,7 +6,7 @@
  * the dispatches' arguments copied out of the frame's words, the sorted
  * indices in write-combined memory of a custom heap that the prepass's
  * kernel writes in place. Each decode's outputs, as far as
- * ta_gpu_test_cpu.cpp looks at them, are read back (a readback for the
+ * ta_gpu_test_cpu.c looks at them, are read back (a readback for the
  * test, which the renderers never do) and written to cNNNNNN.out; how many
  * errors there were to DIR/errors. Built with mingw-w64 and run under wine
  * with vkd3d-proton, or on Windows: see ta_gpu_test_d3d12.sh. */
@@ -348,7 +348,7 @@ static void decode(const unsigned *head, const unsigned char *ta, const unsigned
    run();
 }
 
-/* What ta_gpu_test_cpu.cpp looks at: each piece copied to the readback
+/* What ta_gpu_test_cpu.c looks at: each piece copied to the readback
  * buffer and written out (buffer, first word, words, the words) */
 struct piece { unsigned buf, first, words; };
 

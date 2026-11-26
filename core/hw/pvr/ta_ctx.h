@@ -1,28 +1,18 @@
 #ifndef TA_CTX_H
 #define TA_CTX_H
-/* A frame of tile accelerator data and what its parse makes of it. C89,
- * for C and C++ alike; C++ has the lists typed (List<T>, helper_classes.h)
- * and the functions below as members too, as it always had them. */
+/* A frame of tile accelerator data and what its parse makes of it. */
 #include "ta.h"
 #include "pvr_regs.h"
 #include "ta_list.h"
 #include "ta_index.h"
 #include "../../rend/parse_arena.h"
 #ifdef __cplusplus
-#include "helper_classes.h"
-#endif
-
-#ifdef __cplusplus
 extern "C" {
 #endif
 
-/* A list of T's: List<T> in C++, its ta_list_t in C */
-#ifdef __cplusplus
-#define TA_LIST(T) List<T>
-#else
+/* A list of T's */
 #define TA_LIST(T) struct { ta_list_t l; }
-#endif
-/* ...its first element, how many it has and their bytes (List<T>'s head(), used(), bytes()) */
+/* ...its first element, how many it has and their bytes */
 #define TA_LIST_HEAD(list, T) ((T *)(list).l.base)
 #define TA_LIST_USED(list, T) ((int)((T *)(list).l.cur - (T *)(list).l.base))
 #define TA_LIST_BYTES(list) ((u32)((const u8 *)(list).l.cur - (const u8 *)(list).l.base))
@@ -111,14 +101,6 @@ struct tad_context
 	 * array points to (ta_select_passes()). */
 	u32 ol_base[10];
 
-#ifdef __cplusplus
-	void ForgetOlBases() { tad_forget_ol_bases(this); }
-	void Clear() { tad_clear(this); }
-	void ClearPartial() { tad_clear_partial(this); }
-	void Continue() { tad_continue(this); }
-	u8* End() const { return tad_end(this); }
-	void Reset(u8* ptr) { tad_reset(this, ptr); }
-#endif
 };
 
 static INLINE void tad_forget_ol_bases(tad_context *t)
@@ -251,9 +233,6 @@ struct rend_context
 	TA_LIST(u32) mv_clip_range;
 	bool mv_clip_full;
 
-#ifdef __cplusplus
-	void Clear() { rend_context_clear(this); }
-#endif
 };
 
 #define TA_DATA_SIZE (8 * 1024 * 1024)
@@ -367,20 +346,6 @@ struct TA_context
 			sa2:    idx: 36094, vtx: 24520, op: 1330, pt: 10, tr: 177, mvo: 39, modt: 360, ov: 0
 	*/
 
-#ifdef __cplusplus
-	/* the render draws every render pass of the data */
-	bool AllPasses() const { return tactx_all_passes(this); }
-	void MarkRend(u32 render_pass) { tactx_mark_rend(this, render_pass); }
-	static size_t VertRoom() { return tactx_vert_room(); }
-	static size_t IdxRoom() { return tactx_idx_room(); }
-	static size_t ModTrigRoom() { return tactx_modtrig_room(); }
-	static size_t MvClipRoom() { return tactx_mv_clip_room(); }
-	static void ArenaRooms(size_t *room) { tactx_arena_rooms(room); }
-	void ArenaLists(ta_list_t **lists) { tactx_arena_lists(this, lists); }
-	bool Alloc(u8 *data = NULL, int slot = -1) { return tactx_alloc_lists(this, data, slot); }
-	void Reset() { tactx_reset_lists(this); }
-	void Free() { tactx_free_lists(this); }
-#endif
 };
 
 extern TA_context* ta_ctx;

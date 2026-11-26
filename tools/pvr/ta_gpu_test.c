@@ -1,7 +1,7 @@
 /* GPU-side TA processing, its decode (core/rend/ta_gpu.h): the kernels run
  * on a Vulkan device - or, built with TGT_GL, in OpenGL (ta_gpu_test_gl.c) -
  * and the same steps run one after the other on the CPU (the model), for
- * ta_gpu_test_cpu.cpp to compare with the core's own parse of each frame.
+ * ta_gpu_test_cpu.c to compare with the core's own parse of each frame.
  * See ta_gpu_test.sh.
  *
  * The device is Mesa's software one where it is installed (lavapipe); the

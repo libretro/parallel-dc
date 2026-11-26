@@ -235,9 +235,6 @@ u32 GenPrepassTo(int first, int count, bool lastPass, SortList *draws, u32 *out,
 
 #ifdef __cplusplus
 }
-
-static inline bool operator==(const PrepassKey& a, const PrepassKey& b) { return PrepassKeyEq(&a, &b); }
-static inline bool operator<(const PrepassKey& a, const PrepassKey& b) { return PrepassKeyLess(&a, &b); }
 #endif
 
 #endif

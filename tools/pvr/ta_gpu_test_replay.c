@@ -9,7 +9,7 @@
  *                    is right gives; the sizes and the layout to init
  *   (ta_gpu_test_d3d12.exe decodes every cNNNNNN.in, one after the other in
  *    the same buffers, and writes what each decode made, as far as
- *    ta_gpu_test_cpu.cpp looks at it, to cNNNNNN.out)
+ *    ta_gpu_test_cpu.c looks at it, to cNNNNNN.out)
  *   TAG_REPLAY=read  each decode answered with its cNNNNNN.out, in buffers
  *                    that keep what a decode did not write, as the
  *                    device's do; a decode asked for that is not the one

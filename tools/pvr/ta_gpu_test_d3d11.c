@@ -12,7 +12,7 @@
  * own at u1. Not NVAPI's multi-draw, nor its UAV
  * overlap: what the draws are given, the commands and the translucent
  * draw records, is what is compared. Each decode's outputs, as far as
- * ta_gpu_test_cpu.cpp looks at them, are read back (a readback for the
+ * ta_gpu_test_cpu.c looks at them, are read back (a readback for the
  * test, which the renderers never do) and written to cNNNNNN.out; how many
  * errors there were to DIR/errors. Built with mingw-w64 and run under wine,
  * or on Windows: see ta_gpu_test_d3d11.sh. */
@@ -288,7 +288,7 @@ static void decode(unsigned call, const unsigned *head, const unsigned char *ta,
    ID3D11DeviceContext_CSSetShaderResources(dc, 0, 2, no_inputs);
 }
 
-/* What ta_gpu_test_cpu.cpp looks at: each piece copied to the readback
+/* What ta_gpu_test_cpu.c looks at: each piece copied to the readback
  * buffer and written out (buffer, first word, words, the words) */
 struct piece { unsigned buf, first, words; };
 
