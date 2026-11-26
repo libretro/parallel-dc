@@ -168,6 +168,9 @@ void dc_apply_game_settings(void)
       settings.dreamcast.cable = game_cable;
    if (game_alpha_sort_mode >= 0)
       settings.pvr.Emulation.AlphaSortMode = game_alpha_sort_mode;
+   /* (what the flash says until the game is unloaded) */
+   if (game_broadcast >= 0)
+      settings.dreamcast.broadcast = (u32)game_broadcast;
 }
 
 static void LoadSpecialSettingsCPU(void)
@@ -321,6 +324,11 @@ static void LoadSpecialSettings(void)
 			|| !strcmp(id, "12502D-50")		/* Caesar's Palace 2000 (EU) */
 			|| !strcmp(id, "T46605D 80"))		/* Evil Twin - Cyprien's Chronicles */
 		game_broadcast = 1;
+	/* Left at Default, the standard is the region's, as a console made for
+	 * it has in its flash: PAL for Europe, NTSC for the others. (The flash
+	 * kept whatever the last explicit choice had written there.) */
+	else if (settings.dreamcast.broadcast > 3)
+		game_broadcast = settings.dreamcast.region == 2 ? 1 : 0;
 	if (game_broadcast >= 0)
 	{
 		NOTICE_LOG(BOOT, "Forcing %s broadcasting\n", game_broadcast == 0 ? "NTSC" : "PAL");

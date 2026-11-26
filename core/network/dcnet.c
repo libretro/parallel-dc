@@ -429,7 +429,8 @@ void dcnet_run(bool bba)
 	power_smash = !bba
 			&& (strcmp(game_id, "HDR-0113") == 0		/* Power Smash */
 				|| strcmp(game_id, "HDR-0091") == 0		/* Pro Yakyuu Team de Asobou Net! */
-				|| strcmp(game_id, "HDR-0040") == 0);	/* Virtual-On Oratorio Tangram */
+				|| strcmp(game_id, "HDR-0040") == 0		/* Virtual-On Oratorio Tangram */
+				|| strcmp(game_id, "T34201M") == 0);	/* Frame Gride */
 	port = bba ? TAP_PORT : power_smash ? POWER_SMASH_PPP_PORT : PPP_PORT;
 	to_net_head = to_net_len = 0;
 

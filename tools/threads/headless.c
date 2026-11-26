@@ -56,6 +56,8 @@
  *                    "option DESCRIPTION; VALUE|VALUE...", each time it declares
  *                    its options (the plain list of them, which is the form a
  *                    frontend that answers no more than this one is given).
+ *   HEADLESS_REGION  set: at the end, "region PAL" or "region NTSC", as
+ *                    retro_get_region() says
  *
  * It has to be started with the do-nothing OpenGL library preloaded:
  * headless.sh does all of it.
@@ -385,6 +387,7 @@ int main(int argc, char **argv)
       SYM(bool, retro_unserialize, (const void *, size_t))
       SYM(void *, retro_get_memory_data, (unsigned))
       SYM(size_t, retro_get_memory_size, (unsigned))
+      SYM(unsigned, retro_get_region, (void))
 
       if (getenv("HEADLESS_SOUND"))
          sound = fopen(getenv("HEADLESS_SOUND"), "wb");
@@ -636,6 +639,9 @@ int main(int argc, char **argv)
             printf("shown %u\n", frames_shown);
          printf("peek %08lx = %08x\n", addr, (unsigned)word);
       }
+      /* HEADLESS_REGION: the broadcast standard the core says the machine has now */
+      if (getenv("HEADLESS_REGION"))
+         printf("region %s\n", retro_get_region() == RETRO_REGION_PAL ? "PAL" : "NTSC");
       fflush(stdout);
       /* No retro_deinit: the test is over, and a core's shutdown under an
        * OpenGL that does nothing is not what is being tested. */

@@ -399,14 +399,15 @@ static void dcnet_modem(pthread_t *th)
 	CHECK(LOAD(pings_seen) == 5);
 }
 
-/* Power Smash: its frames each with a flag at both ends, however they came */
-static void dcnet_power_smash(void)
+/* Power Smash and the others that want their frames each with a flag at
+ * both ends, however they came (the server on their own port) */
+static void dcnet_power_smash(const char *product)
 {
 	static const char want[] = "~abc~~def~~ghi~";
 	bytes got = { NULL, 0, 0 };
 	retro_time_t t0;
 
-	memcpy(ip_meta.product_number, "HDR-0113  ", 10);
+	memcpy(ip_meta.product_number, product, 10);
 	net_device = NET_DEVICE_MODEM;
 	CHECK(start_pico());
 	t0 = cpu_features_get_time_usec();
@@ -418,7 +419,7 @@ static void dcnet_power_smash(void)
 	stop_pico();
 	memset(ip_meta.product_number, ' ', 10);
 	CHECK(got.n == strlen(want) && !memcmp(got.p, want, strlen(want)));
-	printf("dcnet power smash: %.*s\n", (int)got.n, got.n ? (const char *)got.p : "");
+	printf("dcnet power smash (%.*s): %.*s\n", (int)strcspn(product, " "), product, (int)got.n, got.n ? (const char *)got.p : "");
 	bytes_free(&got);
 }
 
@@ -1150,7 +1151,10 @@ int main(void)
 	pico_bba_relay();
 	if (!open_relay()) { printf("no relay ports\n"); return 1; }
 	dcnet_modem(&th);
-	dcnet_power_smash();
+	dcnet_power_smash("HDR-0113  ");	/* Power Smash */
+	dcnet_power_smash("HDR-0091  ");	/* Pro Yakyuu Team de Asobou Net! */
+	dcnet_power_smash("HDR-0040  ");	/* Virtual-On Oratorio Tangram */
+	dcnet_power_smash("T34201M   ");	/* Frame Gride */
 	dcnet_bba();
 	retro_atomic_store_release_int(&relay_stop, 1);
 	pthread_join(th, NULL);

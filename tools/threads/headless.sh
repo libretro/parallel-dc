@@ -7,8 +7,9 @@
 # and the sound, sample for sample. Both SH4 timings are run, and the
 # first of them again with the MMU on. Then a program that rewrites its
 # own code, for the recompilers' links between blocks; a NAOMI cartridge,
-# for the built-in BIOS's way into a game's test program; and romsets, for
-# the loader's way with a merged one.
+# for the built-in BIOS's way into a game's test program; romsets, for
+# the loader's way with a merged one; and the broadcast standard each
+# region gives.
 #
 # It is for cores that cannot be run any other way on the machine at hand,
 # which is to say a core built for another processor, under qemu:
@@ -539,6 +540,38 @@ tr -d '\r' < "$WORK/other.out" | grep -q "^state refused\$" || {
    echo "FAIL: a NAOMI's state was not refused by a Dreamcast: $(cat "$WORK/other.out")" >&2
    exit 1
 }
+
+# The broadcast standard left at Default is the region's, as a console
+# made for it has in its flash: PAL for Europe, NTSC for the others (the
+# disc runs in all three). A standard chosen is the one chosen. And it is
+# still the game's after a reset, which reads the options again.
+echo "== headless: the broadcast standard, by region"
+unset HEADLESS_RESET HEADLESS_SWAP HEADLESS_SAVE HEADLESS_LOAD HEADLESS_OPTION HEADLESS_OPTION2 HEADLESS_SKIP HEADLESS_AHEAD
+if [ -n "$WINDOWS" ]; then
+   :
+elif [ -z "$GLES" ]; then
+   LD_PRELOAD=$WORK/libGLESv2.so.2
+   export LD_PRELOAD
+fi
+for CASE in Europe:Default:PAL USA:Default:NTSC Japan:Default:NTSC Europe:NTSC:NTSC USA:PAL:PAL; do
+   REGION=${CASE%%:*}
+   STANDARD=${CASE#*:}
+   WANT=${STANDARD#*:}
+   STANDARD=${STANDARD%%:*}
+   HEADLESS_DIR=$WORK/dir HEADLESS_REGION=1 HEADLESS_RESET=10 \
+      $RUN "$WORK/$FRONTEND" "$CORE" "$WORK/test.gdi" 20 \
+      reicast_use_real_bios=disabled reicast_threaded_rendering=disabled \
+      reicast_region=$REGION reicast_broadcast=$STANDARD $EXTRA \
+      > "$WORK/region.out" 2> "$WORK/region.log" || {
+      echo "FAIL: the run ended badly" >&2
+      tail -n 20 "$WORK/region.log" >&2
+      exit 1
+   }
+   tr -d '\r' < "$WORK/region.out" | grep -qx "region $WANT" || {
+      echo "FAIL: region $REGION, broadcast $STANDARD: not $WANT after a reset: $(cat "$WORK/region.out")" >&2
+      exit 1
+   }
+done
 
 # And a state loaded into a machine just started is the machine it was: a
 # frame on from it, the state is what the machine that saved it had a frame

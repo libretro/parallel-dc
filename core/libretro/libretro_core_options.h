@@ -463,7 +463,7 @@ struct retro_core_option_v2_definition option_defs_us[] = {
       CORE_OPTION_NAME "_broadcast",
       "Broadcast Standard",
       NULL,
-      "Force video standard.",
+      "Force video standard. 'Default' is the region's: PAL for Europe, NTSC for the others.",
       NULL,
       "video",
       {
