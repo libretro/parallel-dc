@@ -21,7 +21,7 @@
  *   region       n_region_tiles words of the region array's table (may be 0)
  *
  * Written by tools/rend/tile_dump.c (REFSW_DUMP_DIR), read by
- * tools/rend/refsw/refsw_frame.cpp. */
+ * tools/rend/refsw/refsw_frame.c. */
 #ifndef REFSW_DUMP_H
 #define REFSW_DUMP_H
 

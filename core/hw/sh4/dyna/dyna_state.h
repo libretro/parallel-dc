@@ -1,4 +1,4 @@
-/* What of the recompiler a state's loading needs, for C and C++ alike. */
+/* What of the recompiler a state's loading needs. */
 #ifndef DYNA_STATE_H
 #define DYNA_STATE_H
 #include "types.h"

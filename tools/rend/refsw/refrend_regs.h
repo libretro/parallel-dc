@@ -6,8 +6,8 @@
 
 #include "types.h"
 
-#pragma pack(push, 1) 
-union RegionArrayEntryControl {
+#pragma pack(push, 1)
+typedef union RegionArrayEntryControl {
     struct {
         u32 res0 : 2;
         u32 tilex : 6;
@@ -19,11 +19,11 @@ union RegionArrayEntryControl {
         u32 last_region : 1;
     };
     u32 full;
-};
+} RegionArrayEntryControl;
 
 typedef u32 pvr32addr_t;
 
-union ListPointer {
+typedef union ListPointer {
     struct
     {
         u32 pad0 : 2;
@@ -32,9 +32,9 @@ union ListPointer {
         u32 empty : 1;
     };
     u32 full;
-};
+} ListPointer;
 
-union ObjectListEntry {
+typedef union ObjectListEntry {
     struct {
         u32 pad0 : 31;
         u32 is_not_triangle_strip : 1;
@@ -74,6 +74,6 @@ union ObjectListEntry {
     } link;
 
     u32 full;
-};
+} ObjectListEntry;
 
 #pragma pack(pop)

@@ -1,6 +1,6 @@
 #pragma once
 /* The recompiler's decoders for the opcodes it takes by hand (decoder.cpp;
- * empty with no recompiler): C and C++ */
+ * empty with no recompiler) */
 #ifdef __cplusplus
 extern "C" {
 #endif

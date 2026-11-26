@@ -35,13 +35,8 @@ struct Vertex
 	float u1,v1;
 };
 
-/* (the control words are their u32s; the tools' C++ has
- * tools/pvr/ta_structs.h's unions) */
-#ifdef __cplusplus
-#define TA_WORD(T) T
-#else
+/* (the control words are their u32s: hw/pvr/ta_words.h reads them) */
 #define TA_WORD(T) u32
-#endif
 
 typedef struct PolyParam PolyParam;
 struct PolyParam

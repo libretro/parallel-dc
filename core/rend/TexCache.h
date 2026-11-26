@@ -1,10 +1,9 @@
 #ifndef TEXCACHE_H
 #define TEXCACHE_H
 /* The texture cache (TexCache.c): a texture's state, how it is made from
- * video memory and watched for changes, and the framebuffer read. C89, for
- * C and C++ alike. A renderer's texture is a texcache_data with its own
- * calls (texcache_ops); C++ has it as a class to derive from
- * (TexCacheImpl<>), for the reference renderer (tools/rend/refsw). */
+ * video memory and watched for changes, and the framebuffer read. A
+ * renderer's texture is a texcache_data with its own calls
+ * (texcache_ops). */
 #include "types.h"
 #include "oslib/oslib.h"
 #include "hw/pvr/Renderer_if.h"
@@ -57,20 +56,13 @@ typedef tex_conv_fn TexConvFP;
 typedef tex_conv_fn TexConvFP8;
 typedef tex_conv_fn TexConvFP32;
 
-/* What a texture's texels are made into: TextureType in C++ */
+/* What a texture's texels are made into */
 #define TEX_TYPE_565  0
 #define TEX_TYPE_5551 1
 #define TEX_TYPE_4444 2
 #define TEX_TYPE_8888 3
 #define TEX_TYPE_8    4
-#ifdef __cplusplus
-}
-enum class TextureType : int { _565, _5551, _4444, _8888, _8 };
-extern "C" {
-#define TEXCACHE_TYPE TextureType
-#else
 #define TEXCACHE_TYPE int
-#endif
 
 /* After this many updates a texture is treated as frequently updated: its vram
  * is left writable and changes are detected by content hash instead of a write
@@ -345,114 +337,6 @@ extern const f32 D_Adjust_LoD_Bias[16];
 
 #ifdef __cplusplus
 }
-
-typedef struct texd_plan texd_plan;
-
-/* A renderer's texture, as C++ has it: texcache_data, its calls the
- * cache's, and the defaults of the renderer's own (TexCacheImpl<>) */
-struct BaseTextureCacheData : public texcache_data
-{
-	BaseTextureCacheData()
-	{
-		ops = NULL;
-		piece_hash = NULL;
-		piece_first = 0;
-		pieces = 0;
-		area = 0;
-	}
-
-	void PrintTextureName() { texcache_print_name(this); }
-	bool IsPaletted() const { return texcache_is_paletted(this); }
-	bool IsMipmapped() const { return texcache_is_mipmapped(this); }
-	const char *GetPixelFormatName() const { return texcache_pixel_format_name(this); }
-	bool IsCustomTextureAvailable() const { return texcache_custom_available(this); }
-	void Create() { texcache_create(this); }
-	void ComputeHash() { texcache_compute_hash(this); }
-	bool HashPieces(u32 *changed) { return texcache_hash_pieces(this, changed); }
-	bool HashChanged() { return texcache_hash_changed(this); }
-	bool FromRender(u32 stride, u32 rows) { return texcache_from_render(this, stride, rows); }
-	void Update() { texcache_update(this); }
-	bool PlanDecode(texd_plan& plan, u32 stride, u32 rows, u32 out, bool mipmapped)
-	{
-		return texcache_plan_decode(this, &plan, stride, rows, out, mipmapped);
-	}
-	u32 ChangedRegions(TexRegion *regions, u32 stride, u32 rows, bool mipmapped)
-	{
-		return texcache_changed_regions(this, regions, stride, rows, mipmapped);
-	}
-	bool UpdatePart(u32 stride, u32 rows, bool mipmapped, bool need_32bit_buffer)
-	{
-		return texcache_update_part(this, stride, rows, mipmapped, need_32bit_buffer);
-	}
-	void *ConvertInto(u32 width, u32 height, size_t bytes, u32 pixel, bool mipmaps, bool direct)
-	{
-		return texcache_convert_into(this, width, height, bytes, pixel, mipmaps, direct);
-	}
-	bool ClearOpaque() const { return texcache_clear_opaque(this); }
-	void CheckCustomTexture() { texcache_check_custom(this); }
-	bool NeedsUpdate() { return texcache_needs_update(this); }
-	bool Delete() { return texcache_delete(this); }
-	static bool IsGpuHandledPaletted(TSP tsp, TCW tcw, int area = 0)
-	{
-		return tex_gpu_paletted(tsp.full, tcw.full, area);
-	}
-
-	/* What a renderer's texture has unless it has its own (TexCacheImpl<>) */
-	void *UploadMemory(u32 width, u32 height, size_t bytes, u32 pixel, bool mipmaps) { return NULL; }
-	bool GpuDecode(const texd_plan& plan) { return false; }
-	bool PartMemory(size_t bytes, void **memory) { return false; }
-	void UploadPart(const TexRegion *regions, u32 count, u8 *data, const size_t *offset) {}
-	bool CopyRender(BaseTextureCacheData *from, u32 x, u32 y, u32 scale, u32 columns) { return false; }
-	int GpuDecodePart(const texd_plan& plan, const TexRegion *regions, u32 count) { return TEXP_CPU; }
-	bool Force32BitTexture(TextureType type) const { return false; }
-};
-
-/* A renderer's texture class D: its calls the cache's (texcache_ops),
- * D's own where it has them, BaseTextureCacheData's where it has not */
-template<class D>
-struct TexCacheImpl : public BaseTextureCacheData
-{
-	TexCacheImpl() { ops = &table; }
-
-private:
-	static D *self(texcache_data *t) { return static_cast<D *>(static_cast<BaseTextureCacheData *>(t)); }
-	static const D *self(const texcache_data *t) { return static_cast<const D *>(static_cast<const BaseTextureCacheData *>(t)); }
-	static void get_id(texcache_data *t, char *s, size_t n) { self(t)->GetId(s, n); }
-	static void upload_to_gpu(texcache_data *t, int width, int height, u8 *data, bool mipmapped, bool mipmaps_included)
-	{
-		self(t)->UploadToGPU(width, height, data, mipmapped, mipmaps_included);
-	}
-	static void *upload_memory(texcache_data *t, u32 width, u32 height, size_t bytes, u32 pixel, bool mipmaps)
-	{
-		return self(t)->UploadMemory(width, height, bytes, pixel, mipmaps);
-	}
-	static bool gpu_decode(texcache_data *t, const struct texd_plan *plan) { return self(t)->GpuDecode(*plan); }
-	static bool part_memory(texcache_data *t, size_t bytes, void **memory) { return self(t)->PartMemory(bytes, memory); }
-	static void upload_part(texcache_data *t, const TexRegion *regions, u32 count, u8 *data, const size_t *offset)
-	{
-		self(t)->UploadPart(regions, count, data, offset);
-	}
-	static int gpu_decode_part(texcache_data *t, const struct texd_plan *plan, const TexRegion *regions, u32 count)
-	{
-		return self(t)->GpuDecodePart(*plan, regions, count);
-	}
-	static bool copy_render(texcache_data *t, texcache_data *from, u32 x, u32 y, u32 scale, u32 columns)
-	{
-		return self(t)->CopyRender(static_cast<BaseTextureCacheData *>(from), x, y, scale, columns);
-	}
-	static bool force_32bit(const texcache_data *t, int type) { return self(t)->Force32BitTexture((TextureType)type); }
-	static bool del(texcache_data *t) { return self(t)->Delete(); }
-	static const texcache_ops table;
-};
-
-template<class D>
-const texcache_ops TexCacheImpl<D>::table = {
-	TexCacheImpl<D>::get_id, TexCacheImpl<D>::upload_to_gpu, TexCacheImpl<D>::upload_memory,
-	TexCacheImpl<D>::gpu_decode, TexCacheImpl<D>::part_memory, TexCacheImpl<D>::upload_part,
-	TexCacheImpl<D>::gpu_decode_part, TexCacheImpl<D>::copy_render, TexCacheImpl<D>::force_32bit,
-	TexCacheImpl<D>::del
-};
-
 #endif
 
 #endif

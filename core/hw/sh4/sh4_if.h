@@ -319,7 +319,7 @@ struct sh4_if
 	IsCpuRunningFP* IsCpuRunning;
 };
 
-/* The SH4 as it runs, interpreter or recompiler (types.h has it for C++) */
+/* The SH4 as it runs, interpreter or recompiler */
 extern sh4_if sh4_cpu;
 
 

@@ -2,7 +2,6 @@
 #include "types.h"
 #include "hw/mem/_vmem.h"
 #ifdef __cplusplus
-#include "modules/mmu.h"
 extern "C" {
 #endif
 

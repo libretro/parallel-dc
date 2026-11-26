@@ -18,7 +18,6 @@
  * depth to be found by. */
 #ifndef SHADOWS_H
 #define SHADOWS_H
-/* C89, for C and C++ alike; C++ has its old names as well */
 #include <retro_inline.h>
 #include "types.h"
 #include "hw/pvr/Renderer_if.h"
@@ -30,11 +29,6 @@ typedef struct ScreenBounds ScreenBounds;
 struct ScreenBounds
 {
 	float min_x, min_y, max_x, max_y;
-#ifdef __cplusplus
-	void add(float x, float y);
-	bool empty() const;
-	bool overlaps(const ScreenBounds& o) const;
-#endif
 };
 
 /* (written so that a coordinate that is not a number changes nothing) */
@@ -217,36 +211,5 @@ static INLINE bool shadow_later_wins(u32 listType, const PolyParam *gp)
 	return listType == ListType_Punch_Through || ((0xCC >> TAW_GET(TAW_FULL(gp->isp), ISP_TSP_DepthMode)) & 1);
 }
 
-#ifdef __cplusplus
-inline void ScreenBounds::add(float x, float y)
-{
-	screen_bounds_add(this, x, y);
-}
-inline bool ScreenBounds::empty() const
-{
-	return screen_bounds_empty(this);
-}
-inline bool ScreenBounds::overlaps(const ScreenBounds& o) const
-{
-	return min_x <= o.max_x && max_x >= o.min_x && min_y <= o.max_y && max_y >= o.min_y;
-}
-
-static inline ScreenBounds ModVolBounds(int first, int count)
-{
-	return shadow_modvol_bounds(first, count);
-}
-static inline bool PolyOverlaps(const PolyParam *gp, const ScreenBounds& area)
-{
-	return poly_overlaps(gp, &area);
-}
-static inline void BoundsToScissor(const ScreenBounds& b, const xform& viewport, int *rect)
-{
-	bounds_to_scissor(&b, &viewport, rect);
-}
-static inline bool ShadowLaterWins(u32 listType, const PolyParam *gp)
-{
-	return shadow_later_wins(listType, gp);
-}
-#endif
 
 #endif

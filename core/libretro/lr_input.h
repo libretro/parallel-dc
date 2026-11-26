@@ -2,7 +2,7 @@
  * sticks, triggers, guns, mice and keyboard read from the frontend for
  * each port, the vibration packs and the NAOMI wheel's force feedback run
  * on its rumble, and the input's part of a state. libretro.cpp says how
- * (the settings below) and when. C89, for C and C++ alike. */
+ * (the settings below) and when. */
 #ifndef LR_INPUT_H
 #define LR_INPUT_H
 #include <libretro.h>

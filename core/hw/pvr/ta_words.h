@@ -11,11 +11,7 @@
 #define TAW_GET(w, f) (((u32)(w) >> f##_S) & (((u32)1 << f##_B) - 1))
 #define TAW_SET(w, f, v) (((u32)(w) & ~TAW_MASK(f)) | (((u32)(v) << f##_S) & TAW_MASK(f)))
 
-#ifdef __cplusplus
-#define TAW_FULL(x) ((x).full)
-#else
 #define TAW_FULL(x) (x)
-#endif
 
 /* bits that affect drawing (for caching params) */
 #ifndef PCW_DRAW_MASK

@@ -2,7 +2,7 @@
 #define VRAM_LOCK_H
 /* The locks on video memory (vram_lock.c): what a texture was made from,
  * write-protected while it is, so that a write to it - the game's, a DMA's,
- * a state's - has the texture made again. C89, for C and C++ alike. */
+ * a state's - has the texture made again. */
 #include "types.h"
 
 #ifdef __cplusplus

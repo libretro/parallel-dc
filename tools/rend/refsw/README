@@ -29,30 +29,35 @@ their header; the full text is there). Compatible with this core's GPL.
 
 Files
 -----
-From libswirl, kept as they are except where "Changes" says:
+From libswirl, made C (its C++ classes as structs and functions, its
+interface's methods refsw_<Method>(), its pixel pipeline's templates as
+functions that read the words' fields they were made for; what they compute
+is the C++'s to the bit: the same frames, probes and analyses printed the
+same), and otherwise kept as they are except where "Changes" says:
   license/bsd          the licence header the files include
   refrend_regs.h       the chip's region array / object list words
-  refrend_base.h       the renderer's interface (RefRendInterface) and
-                       parameter structures
+  refrend_base.h       the renderer's interface (libswirl's
+                       RefRendInterface, as functions) and parameter
+                       structures
   refsw.h              tile buffer layout, plane-equation interpolators,
-                       the pixel pipeline's interface
-  refsw.cpp            tile buffer operations, layer peeling buffers,
+                       the pixel pipeline's entry
+  refsw.c              tile buffer operations, layer peeling buffers,
                        the triangle rasterizer (ISP)
-  refsw_pixel.cpp      the pixel operations: depth test per render mode,
+  refsw_pixel.c        the pixel operations: depth test per render mode,
                        texture fetch, colour combiner, fog, blending
-  refsw_pixel.h, refsw_tsp_init.inl  the pipeline's function tables
+  refsw_pixel.h        the pipeline's two calls
 
 Written here:
   refsw_port.h         what the files above took from the rest of libswirl,
                        given from this core's headers (see its comment)
-  refsw_frame.cpp      the frame walk and the checker program
+  refsw_frame.c        the frame walk and the checker program
   refsw_dump.h         the frame file tools/rend/tile_dump.c writes
   ../refsw_test.sh     builds everything, runs a game to a frame, draws it
 
 libswirl's refrend_base.cpp - the front end that walked the chip's region
 array and object lists in video memory and drove the backend tile by tile
 - is not used: this core's TA parse keeps the polygons in its own lists
-and writes no object lists, so refsw_frame.cpp walks those lists instead,
+and writes no object lists, so refsw_frame.c walks those lists instead,
 doing for each tile exactly the sequence refrend_base.cpp's RenderPVR()
 did for a region array entry (background tag, clear, opaque list,
 punch-through list, opaque modifier volumes, shade the tags, then the
@@ -64,8 +69,8 @@ Changes to libswirl's files (all of them)
 -----------------------------------------
 refsw.h
   - #include "rend/gles/gles.h" replaced by #include "refsw_port.h", moved
-    above the other includes (it provides "using namespace std", the
-    register unions and text_info the files expect)
+    above the other includes (it provides the register unions and
+    text_info the files expect)
   - Vertex::spc renamed to this core's Vertex::vtx_spc (6 places in
     IPs3::Setup)
   - a triangle with a vertex REFSW_NEAR (65536) pixels or more off the
@@ -80,19 +85,17 @@ refsw.h
     street shadow had two light stripes through it. A triangle nearer than
     that is set up as before, to the bit (its float edges are then within
     about 1/256 pixel of the exact ones)
-refsw.cpp
+refsw.c
   - the registration with libswirl's frontend at the end (#if FEAT_TA ==
     TA_LLE ... #endif: rend_refsw, rend_refsw_debug, RegisterRendererBackend)
-    replaced by a plain factory, refsw_create(vram), that makes the
-    refsw_impl the same way (placement new in 32-byte aligned memory)
+    replaced by a plain factory, refsw_create(vram), and refsw_destroy()
   - RasterizeTriangle(): the cull's area, the edges and the 1/w plane of a
     triangle with a vertex far out in double precision (see refsw.h above)
-  - (cMutex texture_lock stays; refsw_port.h gives it as a do-nothing class:
-    one thread draws here)
+  - the texture lock around raw_GetTexture() is gone: one thread draws here
 refrend_base.h
   - DrawParameters gets a field: u32 shadow, the object's shadow bit
-refsw_pixel.cpp
-  - PixelFlush_tsp(): the stencil handed to InterpolateBase/InterpolateOffs
+refsw_pixel.c
+  - PixelFlush_tsp() (refsw_pixel_tsp()): the stencil handed to InterpolateBase/InterpolateOffs
     (which scale the colour by FPU_SHAD_SCALE where bit 0 is set) is the
     pixel's stencil only when entry->params.shadow is set, else 0. libswirl
     applied the modifier volumes' result to every object; the chip applies
@@ -108,7 +111,7 @@ refsw_pixel.cpp
     renderer of this core scales the colour only.
   - AlphaTest_tsp() (a punch-through polygon's TSP run from the ISP, for
     the alpha test) takes the entry of tag (tag >> 1) - 1, as
-    PixelFlush_tsp() in refsw.cpp does. libswirl took tag - 1, but
+    PixelFlush_tsp() in refsw.c does. libswirl took tag - 1, but
     AddFpuEntry() makes a tag the entry's number times two (bit 0 is
     TAG_INVALID): every punch-through pixel was shaded with another
     entry's parameters, or with what lay past the end of the list - on Jet
@@ -137,8 +140,9 @@ refsw_pixel.cpp
     the filter mixed a texture's first column with its second (or its
     last with its first), and at a flipped edge with the opposite edge's.
 Everything else - the rasterizer (but for a triangle far out: refsw.h), the
-depth tests, the peeling, the texture fetch, the colour combiner, fog, blending - is libswirl's text unchanged
-(diff the files against libswirl/rend/soft to see).
+depth tests, the peeling, the texture fetch, the colour combiner, fog,
+blending - is libswirl's arithmetic unchanged, its expressions as they were
+in C (diff the files against libswirl/rend/soft to see).
 
 What the walk takes from the parse, and the known departures
 ------------------------------------------------------------
@@ -168,7 +172,7 @@ What the walk takes from the parse, and the known departures
 - Sprites are the two triangles the parse makes of them, not the chip's
   quad with one plane.
 - The picture is the tile buffers' 8-bit BGRA through the chip's X and Y
-  scalers (refsw_frame.cpp's scaler_write(), the arithmetic in
+  scalers (refsw_frame.c's scaler_write(), the arithmetic in
   core/rend/tile/pvr_scaler.h, which the compute renderer shares): with
   SCALER_CTL's horizontal scaling the game draws twice as wide and each
   pair of pixels is averaged into one; with a vertical scale factor that
@@ -217,7 +221,7 @@ Using it
      tile buffers hold after each list and each peeled layer.
   REFSW_GEO=1 sh tools/rend/refsw_test.sh -f frame.bin
      the frame drawn with each triangle's coverage held to the exact
-     geometry (refsw_frame.cpp: the same cull and edge test as refsw, and
+     geometry (refsw_frame.c: the same cull and edge test as refsw, and
      again in long double; within 1.5 pixel of an edge every pixel, one in
      8 each way elsewhere): a pixel one covers and the other does not is a
      fault, unless it is within 1/256 pixel of an edge. Ends with "geo:

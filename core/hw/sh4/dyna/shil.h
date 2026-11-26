@@ -1,6 +1,6 @@
 #ifndef SHIL_H
 #define SHIL_H
-/* The recompilers' intermediate operations (shil): C, and seen by C++ */
+/* The recompilers' intermediate operations (shil) */
 #include <string.h>
 #include "hw/sh4/sh4_if.h"
 

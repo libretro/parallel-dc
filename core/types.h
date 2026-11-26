@@ -1,22 +1,16 @@
 #pragma once
 
-/* What every file of the core includes, C++ and C (MSVC C89) alike: what
- * only C++ takes is in #ifdef __cplusplus, and goes as the code that
- * uses it becomes C (AGENTS.md, MSVC C89, gradually). */
+/* What every file of the core includes (C, MSVC C89 included). */
 #include <stddef.h>
 #include <boolean.h>
 #include "build.h"
 #include "log/Log.h"
 
 /* (inline, as C89 has it) */
-#ifdef __cplusplus
-#define TYPES_INLINE inline
-#else
 #define TYPES_INLINE __inline
-#endif
 
 /* (a union without a name, which MSVC takes and C89 does not) */
-#if defined(__GNUC__) && !defined(__cplusplus)
+#if defined(__GNUC__)
 #define TYPES_ANON __extension__
 #else
 #define TYPES_ANON
@@ -109,7 +103,6 @@ typedef double f64;
 #include <stdlib.h>
 #include <stdio.h>
 
-/* (C linkage for what C and C++ both call; what only C++ has is outside it) */
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -350,7 +343,7 @@ void libCore_CDDA_Detach(void);
 #define INLINE
 /* sugest */
 #define SINLINE
-#elif !defined(__cplusplus) && defined(__GNUC__)
+#elif defined(__GNUC__)
 /* force; in C as "static INLINE" takes it (MinGW's __forceinline is
  * extern, and so is libretro-common's INLINE once this is it) */
 #define INLINE __inline__ __attribute__((__always_inline__))
@@ -519,8 +512,7 @@ enum RegIO
 typedef enum RegIO RegIO;
 
 /* A block of the machine's memory - main RAM, video RAM, the sound
- * chip's - its bytes and how many: C indexes data, C++ has an indexer and
- * Zero() */
+ * chip's - its bytes and how many */
 typedef struct VArray2 VArray2;
 struct VArray2
 {

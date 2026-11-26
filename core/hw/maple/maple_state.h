@@ -1,5 +1,5 @@
 /* The maple devices' part of a state, and what of the maple devices the rest
- * of the machine's state names, for C and C++ alike. */
+ * of the machine's state names. */
 #ifndef MAPLE_STATE_H
 #define MAPLE_STATE_H
 #include "types.h"

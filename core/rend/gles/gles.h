@@ -1,8 +1,7 @@
 #ifndef GLES_GLES_H
 #define GLES_GLES_H
-/* The OpenGL renderers' shared state and calls. What is C89 - the
- * context's state (gl), its programs' records, the state cache - is for C
- * and C++ alike; the rest is C++'s. */
+/* The OpenGL renderers' shared state and calls: the context's state (gl),
+ * its programs' records, the state cache. */
 #include <libretro.h>
 #include <glsm/glsm.h>
 #include <glsm/glsmsym.h>
@@ -21,7 +20,6 @@
 #include "rend/ta_gpu.h"
 
 #ifdef __cplusplus
-#include <unordered_map>
 extern "C" {
 #endif
 
@@ -222,9 +220,6 @@ struct gl_ctx
 	f32 max_anisotropy;
 	VramBudget vram_budget;	/* what video memory there was to use, at findGLVersion() */
 
-#ifdef __cplusplus
-	size_t get_index_size() { return index_type == GL_UNSIGNED_INT ? sizeof(u32) : sizeof(u16); }
-#endif
 };
 
 /* The frame's vertex and index buffers, where its strips are drawn from:
@@ -378,14 +373,6 @@ void gl_tex_flush(void);
 
 #ifdef __cplusplus
 }
-
-static inline void SetMVS_Mode(ModifierVolumeMode mv_mode, ISP_Modvol ispc)
-{
-	gl_set_mvs_mode(mv_mode, ispc.CullMode);
-}
-
-
-
 #endif
 
 #endif

@@ -1,8 +1,7 @@
 /* The NAOMI's I/O board bridge (the MIE, 315-6149): the maple device that
  * the game talks to its JVS I/O boards through, its EEPROM, the program
  * the game sends its processor and its RS-422 port. maple_devs.c's
- * maple_jamma is the device; this is all it does. C89, for C and C++
- * alike. */
+ * maple_jamma is the device; this is all it does. */
 #ifndef JVS_BRIDGE_H
 #define JVS_BRIDGE_H
 #include "types.h"

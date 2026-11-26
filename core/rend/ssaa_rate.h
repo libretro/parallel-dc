@@ -23,11 +23,5 @@ static INLINE bool ssaa_single_rate(const PolyParam *pp)
 				|| pp == TA_LIST_HEAD(pvrrc.global_param_op, PolyParam));
 }
 
-#ifdef __cplusplus
-static inline bool SsaaSingleRate(const PolyParam& pp)
-{
-	return ssaa_single_rate(&pp);
-}
-#endif
 
 #endif

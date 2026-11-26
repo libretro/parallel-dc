@@ -4,8 +4,7 @@
  * frame needs is had with grow_buf_reserve() each frame, which does nothing
  * once the block is as large as the frames need - no allocation, no copy,
  * no zeroing of what is about to be written over (the contents are not
- * kept when it grows; grow_buf_reserve_keep() keeps them). C89, for C and
- * C++ alike. */
+ * kept when it grows; grow_buf_reserve_keep() keeps them). */
 #include <stdlib.h>
 #include <string.h>
 #include <retro_inline.h>

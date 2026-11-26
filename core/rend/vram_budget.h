@@ -28,11 +28,6 @@ struct VramBudget
 	u32 budget_kib;	/* what may be used, all together */
 	u32 usage_kib;	/* of it, used already when it was read */
 	bool exact;	/* from the API; or an estimate */
-#ifdef __cplusplus
-	VramBudget() : budget_kib(0), usage_kib(0), exact(false) {}
-	/* what is left for new pools */
-	u32 available_kib() const { return budget_kib > usage_kib ? budget_kib - usage_kib : 0; }
-#endif
 };
 
 /* what is left for new pools */
@@ -54,11 +49,6 @@ static INLINE void vram_budget_say(const char *api, const VramBudget *budget)
 }
 
 #ifdef __cplusplus
-}
-
-static inline void vram_budget_log(const char *api, const VramBudget& budget)
-{
-	vram_budget_say(api, &budget);
 }
 #endif
 

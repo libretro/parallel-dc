@@ -204,19 +204,6 @@ struct RuntimeBlockInfo
 	RuntimeBlockInfo *temp_prev, *temp_next;
 	bool temp_listed;
 
-#ifdef __cplusplus
-	/* (for the recompilers in C++) */
-	bool Setup(u32 pc, fpscr_t cfg) { return bm_BlockSetup(this, pc, cfg); }
-	bool contains_code(const u8* ptr) const
-	{
-		return ((size_t)(ptr-(u8*)code)) < host_code_size;
-	}
-	u32 Relink();
-	void AddRef(RuntimeBlockInfo *other) { bm_BlockAddRef(this, other); }
-	void RemRef(RuntimeBlockInfo *other) { bm_BlockRemRef(this, other); }
-	void Discard() { bm_BlockDiscard(this); }
-	void SetProtectedFlags() { bm_BlockSetProtectedFlags(this); }
-#endif
 };
 
 /* whether @ptr is in the block's code */
@@ -260,19 +247,6 @@ void bm_Term(void);
 
 void bm_RamWriteAccess(u32 addr);
 #ifdef __cplusplus
-}
-
-/* (a block's operations, for a loop over them in C++) */
-struct BlockOps
-{
-	shil_opcode *first, *last;
-	shil_opcode *begin() const { return first; }
-	shil_opcode *end() const { return last; }
-};
-static inline BlockOps bm_Ops(const RuntimeBlockInfo *block)
-{
-	BlockOps ops = { block->oplist, block->oplist + block->op_count };
-	return ops;
 }
 #endif
 

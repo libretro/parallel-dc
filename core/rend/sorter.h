@@ -16,7 +16,7 @@
  */
 #ifndef SORTER_H
 #define SORTER_H
-/* The translucent polygons sorted (sorter.c). C89, for C and C++ alike. */
+/* The translucent polygons sorted (sorter.c). */
 #include "types.h"
 #include "hw/pvr/Renderer_if.h"
 #include "hw/pvr/ta_words.h"

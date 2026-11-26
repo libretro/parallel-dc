@@ -131,6 +131,7 @@ on:
       - 'tools/rend/texdecode_*'
       - 'tools/rend/tile_*'
       - 'tools/rend/refsw/**'
+      - 'tools/rend/refsw_test.sh'
       - 'tools/pvr/ta_gpu_test*'
       - 'tools/rend/bg_plane_test.*'
       - 'tools/rend/oit_bands_test.*'
@@ -228,6 +229,7 @@ on:
       - 'tools/rend/texdecode_*'
       - 'tools/rend/tile_*'
       - 'tools/rend/refsw/**'
+      - 'tools/rend/refsw_test.sh'
       - 'tools/pvr/ta_gpu_test*'
       - 'tools/rend/bg_plane_test.*'
       - 'tools/rend/oit_bands_test.*'
@@ -340,6 +342,8 @@ jobs:
           sh tools/pvr/ta_gpu_test.sh "$RUNNER_TEMP/plain/plain.gdi" 30
           sh tools/pvr/ta_gpu_test_d3d11.sh "$RUNNER_TEMP/plain/plain.gdi" 30
           sh tools/pvr/ta_gpu_test_d3d12.sh "$RUNNER_TEMP/plain/plain.gdi" 30
+          # the reference renderer on a frame with a texture over a render's memory (refsw_test.sh)
+          REFSW_FROM=40 REFSW_EVERY=37 REFSW_MAX=2 sh tools/rend/refsw_test.sh "$RUNNER_TEMP/plain/plain.gdi" 160
       - name: Vulkan - nothing made on the draw path, cold, every renderer, without the dynamic states, HDR (AGENTS.md)
         run: VK_DRIVER_FILES=/usr/share/vulkan/icd.d/lvp_icd.json sh tools/vulkan/vk_draw_path.sh
       - name: Vulkan - no allocation during play but the listed ones, every renderer (AGENTS.md)

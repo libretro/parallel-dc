@@ -104,22 +104,5 @@ static INLINE void intersect_clip_rect(int *clip_rect, int x, int y, int width, 
 	clip_rect[3] = tileclip_at_least_0(y1 - y0);
 }
 
-#ifdef __cplusplus
-enum class TileClipping {
-	Inside = TILECLIP_INSIDE,
-	Off = TILECLIP_OFF,
-	Outside = TILECLIP_OUTSIDE
-};
-
-static inline TileClipping GetTileClip(u32 val, const xform& viewport, int *clip_rect)
-{
-	return (TileClipping)tile_clip(val, &viewport, clip_rect);
-}
-
-static inline void IntersectClipRect(int *clip_rect, int x, int y, int width, int height)
-{
-	intersect_clip_rect(clip_rect, x, y, width, height);
-}
-#endif
 
 #endif

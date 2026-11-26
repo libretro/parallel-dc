@@ -14,7 +14,7 @@
 #   sh tools/rend/refsw_test.sh -f FRAME.bin [X,Y ...]
 #        a frame written before, drawn; each X,Y pixel probed (every
 #        triangle covering it, with its interpolated 1/w, and the tile
-#        buffers after each list: refsw_frame.cpp)
+#        buffers after each list: refsw_frame.c)
 #   sh tools/rend/refsw_test.sh -b
 #        only build the programs
 #
@@ -37,17 +37,19 @@ CORE_INC="-I./core/libretro -I./core -I./core/deps -I./core/libretro-common/incl
 # the renderer: refsw as it is, this core's texture cache, the frame walk
 if [ ! -x "$WORK/refsw_frame" ] || [ -n "$REFSW_REBUILD" ]; then
    for f in refsw refsw_pixel refsw_frame; do
-      ${CXX:-g++} $CORE_INC -Itools/rend/refsw $CORE_DEFS -std=c++11 -O2 -ffp-contract=off -fno-strict-aliasing -fno-rtti -w \
-         -c -o "$WORK/$f.o" tools/rend/refsw/$f.cpp
+      ${CC:-cc} $CORE_INC -Itools/rend/refsw $CORE_DEFS -O2 -ffp-contract=off -fno-strict-aliasing -Wall -Wno-unused-function \
+         -c -o "$WORK/$f.o" tools/rend/refsw/$f.c
    done
-   ${CXX:-g++} -o "$WORK/refsw_frame" "$WORK/refsw.o" "$WORK/refsw_pixel.o" "$WORK/refsw_frame.o" \
+   ${CC:-cc} -o "$WORK/refsw_frame" "$WORK/refsw.o" "$WORK/refsw_pixel.o" "$WORK/refsw_frame.o" \
       core/rend/TexCache.o core/rend/tex_map.o core/rend/texconv.o core/rend/vram_lock.o core/rend/custom_texture.o core/rend/band_pool.o core/libretro-common/encodings/encoding_xxh32.o -lm -Wl,--unresolved-symbols=ignore-all
 fi
 
 draw() {
    f=$1; shift
    out=$(dirname "$f")/$(basename "$f" .bin)
-   "$WORK/refsw_frame" "$f" "$out.ppm" "$@" | tee "$out.txt"
+   "$WORK/refsw_frame" "$f" "$out.ppm" "$@" > "$out.txt" \
+      || { cat "$out.txt"; echo "refsw_test: $f not drawn" >&2; exit 1; }
+   cat "$out.txt"
    if command -v convert > /dev/null; then
       convert "$out.ppm" "$out.png" && echo "refsw_test: $out.png"
    fi

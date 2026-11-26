@@ -45,7 +45,7 @@ u32 old_vram_write_epoch(void);
 #define ROUNDS 40
 #define STEPS 300
 
-/* What the old code's textures had (the old shim's BaseTextureCacheData) */
+/* What the old code's textures had */
 typedef struct owner_t
 {
 	u32 dirty;

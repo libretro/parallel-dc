@@ -107,6 +107,4 @@ const u32 *ta_type_lut(void);
 
 #ifdef __cplusplus
 }
-
-#include "ta_ctx.h"
 #endif

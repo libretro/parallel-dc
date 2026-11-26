@@ -34,7 +34,6 @@
  * always was, to the bit. */
 #ifndef MODVOL_CLIP_H
 #define MODVOL_CLIP_H
-/* C89, for C and C++ alike */
 #include <math.h>
 #include <retro_inline.h>
 #include "types.h"
@@ -229,11 +228,6 @@ static INLINE void mv_clip_range_get(const rend_context *rc, const ModifierVolum
 }
 
 #ifdef __cplusplus
-}
-
-static inline void mv_clip_range_of(const rend_context& rc, const ModifierVolumeParam *list, const ModifierVolumeParam& p, u32& first, u32& count)
-{
-	mv_clip_range_get(&rc, list, &p, &first, &count);
 }
 #endif
 

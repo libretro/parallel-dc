@@ -1,6 +1,6 @@
-/* The renderers' contexts as libretro.c has them (lr_contexts.cpp): the
- * frontend's Vulkan, Direct3D 9, 11 and 12 devices handed to the C++ that
- * draws with them. C89, for C and C++ alike. */
+/* The renderers' contexts as libretro.c has them (lr_contexts.c): the
+ * frontend's Vulkan, Direct3D 9, 11 and 12 devices handed to the renderers
+ * that draw with them. */
 #ifndef LR_CONTEXTS_H
 #define LR_CONTEXTS_H
 #include <boolean.h>

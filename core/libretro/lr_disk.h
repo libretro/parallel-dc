@@ -1,7 +1,7 @@
 /* The content's discs (lr_disk.c): the list a playlist (.m3u) or the
  * content itself gives, which of them is in the drive and whether its lid
  * is open, the frontend's disc control, and the disc's words in a state.
- * C89, for C and C++ alike. */
+ * */
 #ifndef LR_DISK_H
 #define LR_DISK_H
 #include <boolean.h>

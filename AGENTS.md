@@ -132,10 +132,10 @@ not in `retro_run`, not on the emulation thread.
 
 ## MSVC C89, gradually
 
-The core is C89 that MSVC compiles: no C++ is left in its build, and
-none is added (`tools/c89/c89_check.sh` fails a build that has any).
-What follows is how C++ was moved to it, a piece at a time, and holds for
-any that comes in with code from elsewhere.
+The core is C89 that MSVC compiles, and so are its tools: no C++ is left
+in the repository, and none is added (`tools/c89/c89_check.sh` fails a
+build that has any). What follows is how C++ was moved to it, a piece at
+a time, and holds for any that comes in with code from elsewhere.
 
 - **New files are C89.** `.c` files, test harnesses and tools included:
   declarations at the top of a block, `/* */` comments, no designated
@@ -151,9 +151,8 @@ any that comes in with code from elsewhere.
   that is cleared keeps its storage, and its bound is reserved before
   play (No allocations during play).
 - **A C++ file that has become C89 is renamed `.c`** and goes in the
-  build's `SOURCES_C`. Headers it includes are made to compile as both
-  (`types.h` and `Log.h` do: C++-only parts behind `__cplusplus`, the
-  C side in `extern "C"` or `RETRO_BEGIN_DECLS`). The log macros are a
+  build's `SOURCES_C`. Headers keep their `extern "C"` (or
+  `RETRO_BEGIN_DECLS`) guards and nothing else of C++. The log macros are a
   call to the frontend's `log_cb` and nothing more: each format ends in
   its own `\n` (`python3 tools/log/log_check.py`).
   `sh tools/c89/c89_check.sh [make arguments]` compiles every `.c` file

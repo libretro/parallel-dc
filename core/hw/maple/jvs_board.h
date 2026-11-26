@@ -1,7 +1,6 @@
 /* The NAOMI's JVS I/O boards, as the I/O board bridge (jvs_bridge.c)
  * has them on its bus: each kind of board the cabinets
- * have, what it answers a request with, and its part of a save state. C89,
- * for C and C++ alike. */
+ * have, what it answers a request with, and its part of a save state. */
 #ifndef JVS_BOARD_H
 #define JVS_BOARD_H
 #include "types.h"

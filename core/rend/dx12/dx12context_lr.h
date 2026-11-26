@@ -50,20 +50,6 @@
  * copy: a picture for each of its sync indexes. */
 
 #ifdef __cplusplus
-/* (the calls the inline setters below make, as C has them, for the C++
- * that includes this: core/libretro/lr_contexts.cpp) */
-#define IUnknown_AddRef(This) (This)->AddRef()
-#define IUnknown_Release(This) (This)->Release()
-#define ID3D12GraphicsCommandList_SetPipelineState(This, a) (This)->SetPipelineState(a)
-#define ID3D12GraphicsCommandList_IASetPrimitiveTopology(This, a) (This)->IASetPrimitiveTopology(a)
-#define ID3D12GraphicsCommandList_RSSetScissorRects(This, a, b) (This)->RSSetScissorRects(a, b)
-#define ID3D12GraphicsCommandList_RSSetViewports(This, a, b) (This)->RSSetViewports(a, b)
-#define ID3D12GraphicsCommandList_OMSetStencilRef(This, a) (This)->OMSetStencilRef(a)
-#define ID3D12GraphicsCommandList_IASetVertexBuffers(This, a, b, c) (This)->IASetVertexBuffers(a, b, c)
-#define ID3D12GraphicsCommandList_IASetIndexBuffer(This, a) (This)->IASetIndexBuffer(a)
-#define ID3D12GraphicsCommandList_OMSetBlendFactor(This, a) (This)->OMSetBlendFactor(a)
-#define ID3D12GraphicsCommandList_SetGraphicsRoot32BitConstants(This, a, b, c, d) (This)->SetGraphicsRoot32BitConstants(a, b, c, d)
-#define ID3D12GraphicsCommandList_SetGraphicsRootDescriptorTable(This, a, b) (This)->SetGraphicsRootDescriptorTable(a, b)
 extern "C" {
 #endif
 

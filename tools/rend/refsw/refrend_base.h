@@ -4,97 +4,90 @@
 */
 #include "license/bsd"
 
-#include <functional>
 #include "refrend_regs.h"
-#include "../../pvr/ta_structs.h" // for ISP_TSP and co
-#include "hw/pvr/ta_ctx.h" // for Vertex
+#include "refsw_port.h"
+#include "hw/pvr/ta_ctx.h" /* for Vertex */
 
-struct RegionArrayEntry {
+typedef struct RegionArrayEntry {
     RegionArrayEntryControl control;
     ListPointer opaque;
     ListPointer opaque_mod;
     ListPointer trans;
     ListPointer trans_mod;
     ListPointer puncht;
-};
+} RegionArrayEntry;
 
-struct DrawParameters
+typedef struct DrawParameters
 {
-    ISP_TSP isp;
+    REFSW_ISP_TSP isp;
     TSP tsp;
     TCW tcw;
     TSP tsp2;
     TSP tcw2;
-    u32 shadow; // the object's shadow bit (PCW bit 7): modifier volumes act on it (added to libswirl's: see README)
-};
+    u32 shadow; /* the object's shadow bit (PCW bit 7): modifier volumes act on it (added to libswirl's: see README) */
+} DrawParameters;
 
-enum RenderMode {
+typedef enum RenderMode {
     RM_OPAQUE,
     RM_PUNCHTHROUGH,
     RM_TRANSLUCENT,
     RM_MODIFIER,
     RM_COUNT
-};
+} RenderMode;
 
 #define TAG_INVALID 1
 
 typedef u32 parameter_tag_t;
 
-struct taRECT {
+typedef struct taRECT {
     int left, top, right, bottom;
-};
+} taRECT;
 
-struct RefRendInterface
-{
-    // backend specific init
-    virtual bool Init() = 0;
+/* The renderer's interface (libswirl's RefRendInterface, whose one
+ * backend is refsw.c's): a function a method */
+typedef struct refsw refsw;
 
-    // Clear the buffers
-    virtual void ClearBuffers(u32 paramValue, float depthValue, u32 stencilValue) = 0;
+/* (libswirl's backend factory: refsw.c) */
+refsw *refsw_create(u8 *vram);
+void refsw_destroy(refsw *backend);
 
-    // Clear only the param buffer (used for peeling)
-    virtual void ClearParamBuffer(u32 paramValue) = 0;
+/* Clear the buffers */
+void refsw_ClearBuffers(refsw *backend, u32 paramValue, float depthValue, u32 stencilValue);
 
-    // Clear and set DEPTH2 for peeling
-    virtual void PeelBuffers(float depthValue, u32 stencilValue) = 0;
+/* Clear only the param buffer (used for peeling) */
+void refsw_ClearParamBuffer(refsw *backend, u32 paramValue);
 
-    // Summarize tile after rendering modvol (inside)
-    virtual void SummarizeStencilOr() = 0;
-    
-    // Summarize tile after rendering modvol (outside)
-    virtual void SummarizeStencilAnd() = 0;
+/* Clear and set DEPTH2 for peeling */
+void refsw_PeelBuffers(refsw *backend, float depthValue, u32 stencilValue);
 
-    // Clear the pixel drawn counter
-    virtual void ClearPixelsDrawn() = 0;
+/* Summarize tile after rendering modvol (inside) */
+void refsw_SummarizeStencilOr(refsw *backend);
 
-    // Get the pixel drawn counter. Used during layer peeling to determine when to stop processing
-    virtual u32 GetPixelsDrawn() = 0;
+/* Summarize tile after rendering modvol (outside) */
+void refsw_SummarizeStencilAnd(refsw *backend);
 
-    // Add an entry to the fpu parameters list
-    virtual parameter_tag_t AddFpuEntry(DrawParameters* params, Vertex* vtx, RenderMode render_mode, ISP_BACKGND_T_type core_tag) = 0;
+/* Clear the pixel drawn counter */
+void refsw_ClearPixelsDrawn(refsw *backend);
 
-    // Clear the fpu parameters list
-    virtual void ClearFpuEntries() = 0;
+/* Get the pixel drawn counter. Used during layer peeling to determine when to stop processing */
+u32 refsw_GetPixelsDrawn(refsw *backend);
 
-    // Get the final output of the 32x32 tile. Used to write to the VRAM framebuffer
-    virtual u8* GetColorOutputBuffer() = 0;
+/* Add an entry to the fpu parameters list */
+parameter_tag_t refsw_AddFpuEntry(refsw *backend, DrawParameters *params, Vertex *vtx, RenderMode render_mode, ISP_BACKGND_T_type core_tag);
 
-    // Render to ACCUM from TAG buffer
-    // TAG holds references to triangles, ACCUM is the tile framebuffer
-    virtual void RenderParamTags(RenderMode rm, int tileX, int tileY) = 0;
+/* Clear the fpu parameters list */
+void refsw_ClearFpuEntries(refsw *backend);
 
-    // RasterizeTriangle
-    virtual void RasterizeTriangle(RenderMode render_mode, DrawParameters* params, parameter_tag_t tag, int vertex_offset, const Vertex& v1, const Vertex& v2, const Vertex& v3, const Vertex* v4, taRECT* area) = 0;
+/* Get the final output of the 32x32 tile. Used to write to the VRAM framebuffer */
+u8 *refsw_GetColorOutputBuffer(refsw *backend);
 
-    virtual ~RefRendInterface() { };
+/* Render to ACCUM from TAG buffer
+ * TAG holds references to triangles, ACCUM is the tile framebuffer */
+void refsw_RenderParamTags(refsw *backend, RenderMode rm, int tileX, int tileY);
 
-    // Debug-level
-    virtual u8* DebugGetAllBuffers() = 0;
+/* RasterizeTriangle */
+void refsw_RasterizeTriangle(refsw *backend, RenderMode render_mode, DrawParameters *params, parameter_tag_t tag, int vertex_offset,
+        const Vertex *v1, const Vertex *v2, const Vertex *v3, const Vertex *v4, taRECT *area);
 
-    virtual void DebugOnFrameStart(int fn) { }
-    virtual void DebugOnTileStart(int x, int y) { }
-};
-
-Renderer* rend_refred_base(u8* vram, function<RefRendInterface*()> createBackend);
-
-RefRendInterface*  rend_refred_debug(RefRendInterface* backend);
+/* Debug-level */
+u8 *refsw_DebugGetAllBuffers(refsw *backend);

@@ -45,9 +45,6 @@ typedef struct ngen_features
 	bool InterpreterFallback; /* if set all the non-branch opcodes are handled with the ifb opcode */
 } ngen_features;
 typedef struct RuntimeBlockInfo RuntimeBlockInfo;
-#ifdef __cplusplus
-extern "C"
-#endif
 bool dec_DecodeBlock(RuntimeBlockInfo* rbi,u32 max_cycles);
 
 typedef struct state_t
